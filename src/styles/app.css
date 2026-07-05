@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  /* Semantic palette on top of Tailwind's zinc scale */
+  --color-surface: #18181b; /* zinc-900 */
+  --color-surface-2: #27272a; /* zinc-800 */
+  --color-ink: #fafafa;
+  --color-ink-muted: #a1a1aa; /* zinc-400 */
+  --color-accent: #ef4444; /* red-500 */
+  --color-accent-deep: #7f1d1d; /* red-900 */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #09090b; /* zinc-950 */
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Keep tap targets from flashing the default highlight on mobile */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
