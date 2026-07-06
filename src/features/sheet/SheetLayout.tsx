@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import { Link, NavLink, Outlet, useParams } from 'react-router';
+import { DiceTray } from '@/features/dice/DiceTray';
 import { useCharacterSheet } from './useCharacterSheet';
 
 const tabs = [
@@ -55,6 +56,7 @@ export function Component() {
           </NavLink>
         ))}
       </nav>
+      <DiceTray />
     </div>
   );
 }
