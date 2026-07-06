@@ -5,8 +5,7 @@
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { DATA_TAG } from './config';
-import { ensurePack } from './loader';
+import { ensurePack, getActiveTag } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
 
@@ -17,7 +16,7 @@ let current: EntityRegistry | null = null;
 let currentSignature = '';
 
 async function cachedFilesMap(): Promise<Map<string, unknown>> {
-  const rows = await dataCacheRepo.filesByTag(DATA_TAG);
+  const rows = await dataCacheRepo.filesByTag(getActiveTag());
   const map = new Map<string, unknown>();
   for (const row of rows) map.set(row.path, row.json);
   return map;

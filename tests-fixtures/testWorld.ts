@@ -33,6 +33,16 @@ const background: DataEntity[] = [
     skillProficiencies: [{ history: true }],
     entries: ['2024-style background.'],
   },
+  {
+    name: 'Flexible Scholar',
+    source: 'TS2',
+    // XPHB pattern: two ALTERNATIVE weighted arrangements
+    ability: [
+      { choose: { weighted: { from: ['int', 'wis', 'cha'], weights: [2, 1] } } },
+      { choose: { weighted: { from: ['int', 'wis', 'cha'], weights: [1, 1, 1] } } },
+    ],
+    entries: ['Pick +2/+1 or +1/+1/+1.'],
+  },
 ];
 
 // Sources 'PHB' here exist only so uids line up with curated-table keys;
@@ -78,11 +88,28 @@ const cls: DataEntity[] = [
     ],
   },
   {
+    name: 'Pactcaster',
+    source: 'TST',
+    hd: { number: 1, faces: 8 },
+    proficiency: ['wis', 'cha'],
+    casterProgression: 'pact',
+    spellcastingAbility: 'cha',
+    multiclassing: {
+      requirements: { cha: 13 },
+      proficienciesGained: { armor: ['light'], weapons: ['simple'] },
+    },
+    classFeatures: [],
+  },
+  {
     name: 'Mage',
     source: 'TST',
     hd: { number: 1, faces: 6 },
     proficiency: ['int', 'wis'],
     startingProficiencies: { skills: [{ choose: { from: ['arcana'], count: 1 } }] },
+    multiclassing: {
+      requirements: { int: 13 },
+      proficienciesGained: {},
+    },
     casterProgression: 'full',
     spellcastingAbility: 'int',
     cantripProgression: [3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],

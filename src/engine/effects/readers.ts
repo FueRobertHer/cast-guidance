@@ -17,7 +17,9 @@ import { asEntityArray, type Collector, num } from './base';
 const SKILL_BY_LOWER = new Map(SKILLS.map((s) => [s.name.toLowerCase(), s.name]));
 
 function titleCase(s: string): string {
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+  // Word starts only after whitespace/start — keeps "smith's tools" from
+  // becoming "Smith'S Tools".
+  return s.replace(/(^|\s)\w/g, (c) => c.toUpperCase());
 }
 
 export function skillOptions(from?: readonly unknown[]): ChoiceOption[] {
@@ -86,6 +88,17 @@ export function readProficiencyList(
   }
 }
 
+function weightedOf(
+  entry: Record<string, unknown>,
+): { from: unknown[]; weights: number[] } | undefined {
+  const c = entry.choose as { weighted?: { from?: unknown[]; weights?: number[] } } | undefined;
+  if (c?.weighted === undefined) return undefined;
+  return {
+    from: (c.weighted.from ?? ABILITIES) as unknown[],
+    weights: Array.isArray(c.weighted.weights) ? c.weighted.weights : [1],
+  };
+}
+
 /** Race/feat `ability` blocks (2014 style) and XPHB background `ability`. */
 export function readAbilityBlock(
   col: Collector,
@@ -93,8 +106,39 @@ export function readAbilityBlock(
   origin: EffectOrigin,
   promptIdBase: string,
 ): void {
-  const entries = asEntityArray(raw);
+  let entries = asEntityArray(raw);
   let chooseIdx = 0;
+
+  // XPHB style: multiple weighted-choose entries are ALTERNATIVE arrangements
+  // ("+2/+1" OR "+1/+1/+1") — ask which arrangement first, then read only it.
+  if (entries.length > 1 && entries.every((e) => weightedOf(e) !== undefined)) {
+    const arrangements = entries.map(
+      (e) => weightedOf(e) as { from: unknown[]; weights: number[] },
+    );
+    let picked: number | undefined;
+    col.choice(
+      {
+        id: `${promptIdBase}:arrangement`,
+        origin,
+        kind: 'generic',
+        label: 'Ability bonus arrangement',
+        count: 1,
+        options: arrangements.map((a, i) => ({
+          id: String(i),
+          label: a.weights.map((w) => `+${w}`).join(' / '),
+        })),
+      },
+      (selected) => {
+        const idx = Number.parseInt(selected[0] ?? '', 10);
+        if (!Number.isNaN(idx) && idx >= 0 && idx < entries.length) picked = idx;
+      },
+    );
+    if (picked === undefined) return; // arrangement not chosen yet
+    const pickedEntry = entries[picked];
+    entries = pickedEntry !== undefined ? [pickedEntry] : [];
+    chooseIdx = picked; // keep follow-up prompt ids distinct per arrangement
+  }
+
   for (const entry of entries) {
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {

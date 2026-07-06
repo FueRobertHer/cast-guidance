@@ -480,8 +480,9 @@ export function Component() {
         </section>
       )}
 
-      {/* Spell slots (spend/restore) */}
-      {sheet.spellcasting.map((sc) => (
+      {/* Spell slots (spend/restore) — the leveled pool is character-wide,
+          so render its pips only on the first casting class. */}
+      {sheet.spellcasting.map((sc, scIdx) => (
         <section key={sc.classUid} className="rounded-lg bg-surface p-3 text-sm">
           <div className="mb-1.5 flex justify-between">
             <span className="font-semibold">{sc.className} spellcasting</span>
@@ -490,7 +491,7 @@ export function Component() {
               <strong className="text-ink">{fmt(sc.attackMod.value)}</strong>
             </span>
           </div>
-          {sc.pactSlots !== undefined ? (
+          {sc.pactSlots !== undefined && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-ink-muted">Pact (level {sc.pactSlots.level})</span>
               {Array.from({ length: sc.pactSlots.count }, (_, i) => (
@@ -511,8 +512,12 @@ export function Component() {
                 />
               ))}
             </div>
-          ) : (
+          )}
+          {scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0)) && (
             <div className="flex flex-col gap-1">
+              {sheet.spellcasting.length > 1 && (
+                <span className="text-xs text-ink-muted">Slots (shared across classes)</span>
+              )}
               {sc.slots.map((count, lvlIdx) =>
                 count > 0 ? (
                   <div key={`slots-${String(lvlIdx)}`} className="flex items-center gap-1.5">

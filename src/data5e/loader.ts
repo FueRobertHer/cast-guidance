@@ -1,4 +1,5 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
+import { db } from '@/db/db';
 import { runWhenIdle } from '@/lib/idle';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DATA_TAG, FETCH_CONCURRENCY } from './config';
@@ -12,7 +13,22 @@ import {
 } from './packs';
 import { GithubTagSource } from './source';
 
-const source = new GithubTagSource(DATA_TAG);
+// The active tag can differ from the build-time pin after a user-driven data
+// update; it's restored from settings at boot.
+let activeTag = DATA_TAG;
+let source = new GithubTagSource(activeTag);
+
+export function getActiveTag(): string {
+  return activeTag;
+}
+
+async function restoreActiveTag(): Promise<void> {
+  const row = await db.settings.get('dataTag');
+  if (typeof row?.value === 'string' && row.value !== activeTag) {
+    activeTag = row.value;
+    source = new GithubTagSource(activeTag);
+  }
+}
 
 /** In-flight de-dupe so concurrent callers share one fetch per file. */
 const inflight = new Map<string, Promise<unknown>>();
@@ -22,7 +38,7 @@ const inflight = new Map<string, Promise<unknown>>();
  * This is the single entry point every other data5e module reads through.
  */
 export async function getFile(path: string): Promise<unknown> {
-  const cached = await dataCacheRepo.getFile(DATA_TAG, path);
+  const cached = await dataCacheRepo.getFile(activeTag, path);
   if (cached) return cached.json;
 
   const existing = inflight.get(path);
@@ -34,8 +50,8 @@ export async function getFile(path: string): Promise<unknown> {
     try {
       const json = await source.fetchFile(path);
       await dataCacheRepo.putFile({
-        key: dataCacheRepo.key(DATA_TAG, path),
-        tag: DATA_TAG,
+        key: dataCacheRepo.key(activeTag, path),
+        tag: activeTag,
         path,
         pack: packOfPath(path),
         json,
@@ -105,17 +121,17 @@ async function fetchAll(paths: string[]): Promise<void> {
 export async function ensurePack(pack: PackId): Promise<void> {
   const status = dataStatusStore.getState();
   const all = await filesForPack(pack);
-  const cached = await dataCacheRepo.cachedPaths(DATA_TAG);
+  const cached = await dataCacheRepo.cachedPaths(activeTag);
   const missing = all.filter((p) => !cached.has(p));
   if (missing.length === 0) {
-    await dataCacheRepo.markPackComplete(DATA_TAG, pack);
+    await dataCacheRepo.markPackComplete(activeTag, pack);
     status.setPack(pack, 'ready');
     return;
   }
   status.setPack(pack, 'downloading');
   status.addTotal(missing.length);
   await fetchAll(missing);
-  await dataCacheRepo.markPackComplete(DATA_TAG, pack);
+  await dataCacheRepo.markPackComplete(activeTag, pack);
   status.setPack(pack, 'ready');
 }
 
@@ -144,6 +160,7 @@ export async function initDataLayer(): Promise<void> {
   const status = dataStatusStore.getState();
   status.setPhase('working');
   try {
+    await restoreActiveTag();
     await ensurePack('essentials');
     const packs = (await allPackIds()).filter((p) => p !== 'essentials');
     const drainNext = () => {
@@ -195,12 +212,89 @@ export async function ensureTypePacks(type: string): Promise<void> {
   }
 }
 
+/** Tags available on the mirror (newest first, top 15). */
+export async function listAvailableTags(): Promise<string[]> {
+  const res = await fetch('https://api.github.com/repos/5etools-mirror-3/5etools-src/tags', {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+  const tags = (await res.json()) as Array<{ name?: string }>;
+  return tags
+    .map((t) => t.name)
+    .filter((n): n is string => typeof n === 'string')
+    .slice(0, 15);
+}
+
+/**
+ * Install a different data tag: download everything under the new keyspace
+ * (old data stays live until the swap), sanity-check, flip, delete old rows.
+ */
+export async function updateToTag(newTag: string): Promise<void> {
+  if (newTag === activeTag) return;
+  const oldTag = activeTag;
+  const newSource = new GithubTagSource(newTag);
+  const status = dataStatusStore.getState();
+  status.setPhase('working');
+
+  const fetchNew = async (path: string): Promise<unknown> => {
+    const cached = await dataCacheRepo.getFile(newTag, path);
+    if (cached) return cached.json;
+    status.fileStarted(path);
+    const json = await newSource.fetchFile(path);
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(newTag, path),
+      tag: newTag,
+      path,
+      pack: packOfPath(path),
+      json,
+      bytes: 0,
+      fetchedAt: Date.now(),
+    });
+    status.fileDone();
+    return json;
+  };
+
+  // Static packs + indexes, then everything the indexes list.
+  const staticFiles = [...ESSENTIALS_FILES, ...ITEMS_FULL_FILES, ...LIBRARY_EXTRAS_FILES];
+  status.addTotal(staticFiles.length);
+  for (const path of staticFiles) await fetchNew(path);
+  const classIndex = (await fetchNew('class/index.json')) as Record<string, unknown>;
+  const spellsIndex = (await fetchNew('spells/index.json')) as Record<string, unknown>;
+  const dynamic = [
+    ...Object.values(classIndex ?? {}).map((f) => `class/${String(f)}`),
+    ...Object.values(spellsIndex ?? {}).map((f) => `spells/${String(f)}`),
+  ].filter((p) => p.endsWith('.json'));
+  status.addTotal(dynamic.length);
+  for (const path of dynamic) await fetchNew(path);
+
+  // Sanity: essentials must parse into non-empty entity arrays.
+  const races = (await dataCacheRepo.getFile(newTag, 'races.json'))?.json as
+    | { race?: unknown[] }
+    | undefined;
+  if (!Array.isArray(races?.race) || races.race.length === 0) {
+    throw new Error(`tag ${newTag} failed sanity check (races.json empty) — keeping ${oldTag}`);
+  }
+
+  // Atomic-enough swap: settings first, then in-memory, then cleanup.
+  await db.settings.put({ key: 'dataTag', value: newTag });
+  await dataCacheRepo.setMeta({
+    id: 'installed',
+    tag: newTag,
+    completedPacks: [],
+    installedAt: Date.now(),
+  });
+  activeTag = newTag;
+  source = newSource;
+  await dataCacheRepo.deleteTag(oldTag);
+  status.setPhase('done');
+}
+
 /** Sanity/UI helper: full-file inventory of what a complete install looks like. */
 export async function verifyFullOffline(): Promise<{ cached: number; total: number }> {
   const packs = await allPackIds();
   const lists = await Promise.all(packs.map((p) => filesForPack(p)));
   const all = new Set(lists.flat());
-  const cached = await dataCacheRepo.cachedPaths(DATA_TAG);
+  const cached = await dataCacheRepo.cachedPaths(activeTag);
   let have = 0;
   for (const p of all) if (cached.has(p)) have++;
   return { cached: have, total: all.size };

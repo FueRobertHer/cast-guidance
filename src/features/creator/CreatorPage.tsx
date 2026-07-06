@@ -37,14 +37,23 @@ type Step = (typeof STEPS)[number];
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
+const DRAFT_KEY = 'dnd-sheet:creator-draft';
+
 export function Component() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const step = (params.get('step') ?? 'basics') as Step;
   const registry = useRegistry(['essentials']);
-  const [doc, setDoc] = useState<CharacterDoc>(() =>
-    newCharacterDoc(crypto.randomUUID(), '', DATA_TAG),
-  );
+  // The in-progress draft survives reloads via sessionStorage.
+  const [doc, setDoc] = useState<CharacterDoc>(() => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (raw !== null) return JSON.parse(raw) as CharacterDoc;
+    } catch {
+      // corrupted draft — start fresh
+    }
+    return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
+  });
   const [bundleChoices, setBundleChoices] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -58,6 +67,11 @@ export function Component() {
     setDoc((d) => {
       const draft = structuredClone(d);
       recipe(draft);
+      try {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch {
+        // storage full/unavailable — draft just won't survive a reload
+      }
       return draft;
     });
   };
@@ -503,6 +517,7 @@ export function Component() {
           if (final.name.trim() === '') final.name = 'Unnamed hero';
           final.play.currentHp = sheet?.maxHp.value ?? 0;
           await characterRepo.put(final);
+          sessionStorage.removeItem(DRAFT_KEY);
           navigate(`/c/${final.id}`, { replace: true });
         };
         return (

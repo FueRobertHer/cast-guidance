@@ -264,6 +264,96 @@ describe('deriveSheet — overrides', () => {
   });
 });
 
+describe('deriveSheet — multiclass', () => {
+  function multiDoc(): CharacterDoc {
+    const doc = newCharacterDoc('mc1', 'Hexblade', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 8, dex: 14, con: 14, int: 16, wis: 12, cha: 14 };
+    doc.classes = [
+      { ref: { name: 'Mage', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+      { ref: { name: 'Pactcaster', source: 'TST' }, levels: 2, hp: ['avg', 'avg'] },
+    ];
+    doc.choices = { 'class:mage|tst:skill:0': ['Arcana'] };
+    return doc;
+  }
+
+  const sheet = deriveSheet(multiDoc(), ctx);
+
+  it('total level and proficiency bonus span both classes', () => {
+    expect(sheet.totalLevel).toBe(5);
+    expect(sheet.profBonus.value).toBe(3);
+  });
+
+  it('shares one multiclass slot table and keeps pact separate', () => {
+    const mage = sheet.spellcasting.find((b) => b.className === 'Mage');
+    const pact = sheet.spellcasting.find((b) => b.className === 'Pactcaster');
+    // combined caster level 3 (pact excluded) -> [4,2]
+    expect(mage?.slots).toEqual([4, 2, 0, 0, 0, 0, 0, 0, 0]);
+    expect(pact?.slots).toEqual([4, 2, 0, 0, 0, 0, 0, 0, 0]);
+    expect(pact?.pactSlots).toEqual({ count: 2, level: 1 });
+    expect(mage?.pactSlots).toBeUndefined();
+  });
+
+  it('later classes gain only multiclassing proficiencies, not saves', () => {
+    expect(sheet.armorProfs).toContain('light'); // Pactcaster proficienciesGained
+    expect(sheet.saves.cha.prof).toBe(false); // Pactcaster saves NOT gained
+    expect(sheet.saves.int.prof).toBe(true); // first class saves kept
+  });
+
+  it('HP: mage 6+2×4 + pact 2×5 + con 2×5 = 34', () => {
+    expect(sheet.maxHp.value).toBe(34);
+    expect(sheet.hitDice).toEqual({ d6: 3, d8: 2 });
+  });
+});
+
+describe('multiclass requirements helper', () => {
+  it('reads requirement text and validates scores', async () => {
+    const { meetsMulticlassRequirements, multiclassRequirementText } = await import('./multiclass');
+    const mage = ctx.get('class', 'Mage', 'TST');
+    expect(multiclassRequirementText(mage)).toBe('INT 13');
+    expect(
+      meetsMulticlassRequirements(mage, { str: 8, dex: 10, con: 10, int: 13, wis: 10, cha: 10 }),
+    ).toBe(true);
+    expect(
+      meetsMulticlassRequirements(mage, { str: 8, dex: 10, con: 10, int: 12, wis: 10, cha: 10 }),
+    ).toBe(false);
+    expect(multiclassRequirementText(ctx.get('class', 'Warrior', 'TST'))).toBeUndefined();
+  });
+});
+
+describe('deriveSheet — XPHB arrangement (either/or weighted abilities)', () => {
+  function flexDoc(): CharacterDoc {
+    const doc = warriorDoc();
+    doc.background = { name: 'Flexible Scholar', source: 'TS2' };
+    delete doc.choices['background:scholar|tst:skill:0'];
+    return doc;
+  }
+
+  it('asks for the arrangement first (one prompt, not two)', () => {
+    const sheet = deriveSheet(flexDoc(), ctx);
+    const abilityPrompts = sheet.pending.filter((p) =>
+      p.id.startsWith('background:flexible scholar|ts2:ability'),
+    );
+    expect(abilityPrompts).toHaveLength(1);
+    expect(abilityPrompts[0]?.id).toBe('background:flexible scholar|ts2:ability:arrangement');
+    expect(abilityPrompts[0]?.options.map((o) => o.label)).toEqual(['+2 / +1', '+1 / +1 / +1']);
+  });
+
+  it('after picking an arrangement, only its weighted prompt appears and applies', () => {
+    const doc = flexDoc();
+    doc.choices['background:flexible scholar|ts2:ability:arrangement'] = '1';
+    let sheet = deriveSheet(doc, ctx);
+    const weighted = sheet.pending.find((p) => p.kind === 'abilityWeighted');
+    expect(weighted?.id).toBe('background:flexible scholar|ts2:ability:w1');
+    expect(weighted?.count).toBe(3);
+
+    doc.choices[weighted?.id ?? ''] = ['int', 'wis', 'cha'];
+    sheet = deriveSheet(doc, ctx);
+    expect(sheet.abilities.int.value).toBe(11); // 10 + 1
+    expect(sheet.abilities.cha.value).toBe(9); // 8 + 1
+  });
+});
+
 describe('deriveSheet — 2024-style background', () => {
   it('applies weighted ability bonuses and the origin feat', () => {
     const doc = warriorDoc();

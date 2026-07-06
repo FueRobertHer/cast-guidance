@@ -80,6 +80,22 @@ export function calcSpellcasting(
   profBonus: number,
 ): SpellcastingBlock[] {
   const blocks: SpellcastingBlock[] = [];
+
+  // Multiclass spell slots: sum caster levels across slot-progression classes
+  // and read one shared table row. Pact magic stays separate.
+  let combinedCasterLevel = 0;
+  for (const entry of doc.classes) {
+    const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
+    const progression = str(cls?.casterProgression);
+    if (progression !== undefined && progression !== 'pact') {
+      combinedCasterLevel += casterLevelFor(progression, entry.levels);
+    }
+  }
+  const sharedSlots: number[] =
+    combinedCasterLevel > 0
+      ? [...(STANDARD_SLOTS[Math.min(combinedCasterLevel, 20) - 1] ?? [])]
+      : [0, 0, 0, 0, 0, 0, 0, 0, 0];
+
   for (const entry of doc.classes) {
     const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
     if (cls === undefined) continue;
@@ -98,16 +114,13 @@ export function calcSpellcasting(
       { label: `${abilityKey.toUpperCase()} modifier`, amount: mod },
     ];
 
-    let slots: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    // Spell slots are a character-wide pool: every caster block sees the
+    // shared multiclass table; pact magic is tracked on top for warlocks.
+    const slots: number[] = [...sharedSlots];
     let pactSlots: { count: number; level: number } | undefined;
     if (progression === 'pact') {
       const row = PACT_SLOTS[Math.min(entry.levels, 20) - 1];
       if (row !== undefined) pactSlots = { count: row[0], level: row[1] };
-    } else {
-      const casterLevel = casterLevelFor(progression, entry.levels);
-      if (casterLevel > 0) {
-        slots = [...(STANDARD_SLOTS[Math.min(casterLevel, 20) - 1] ?? slots)];
-      }
     }
 
     const cantrips = Array.isArray(cls.cantripProgression)

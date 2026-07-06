@@ -230,8 +230,8 @@ export function collectClasses(col: Collector): void {
     const isFirstClass = classIndex === 0;
     const classLevel = entry.levels;
 
-    // Saving throws + starting proficiencies apply to the first class only
-    // (multiclass gets the reduced list at M5).
+    // First class: saving throws + full starting proficiencies.
+    // Later classes: the reduced `multiclassing.proficienciesGained` list.
     if (isFirstClass) {
       const saves = Array.isArray(cls.proficiency) ? cls.proficiency.map(String) : [];
       for (const save of saves) {
@@ -239,7 +239,12 @@ export function collectClasses(col: Collector): void {
           col.add({ kind: 'saveProf', ability: save as Ability, origin });
         }
       }
-      const sp = (cls.startingProficiencies ?? {}) as DataEntity;
+    }
+    const profSource = isFirstClass
+      ? ((cls.startingProficiencies ?? {}) as DataEntity)
+      : (((cls.multiclassing as DataEntity | undefined)?.proficienciesGained ?? {}) as DataEntity);
+    {
+      const sp = profSource;
       for (const armor of Array.isArray(sp.armor) ? sp.armor : []) {
         const label =
           typeof armor === 'string'

@@ -6,6 +6,7 @@ import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
+import { meetsMulticlassRequirements, multiclassRequirementText } from '@/engine/multiclass';
 import { ABILITIES, type DerivedSheet } from '@/engine/types';
 import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
 import { rollLogStore } from '@/stores/rollLog';
@@ -130,21 +131,18 @@ export function Component() {
     return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
-  const entry = doc.classes[0];
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
-  const subclasses =
-    entry !== undefined
-      ? filterByRulesVersion(
-          registry
-            .byType('subclass')
-            .filter(
-              (s) =>
-                String(s.className).toLowerCase() === entry.ref.name.toLowerCase() &&
-                String(s.classSource).toLowerCase() === entry.ref.source.toLowerCase(),
-            ),
-          doc.rulesVersion,
-        )
-      : [];
+  const subclassesFor = (ref: { name: string; source: string }) =>
+    filterByRulesVersion(
+      registry
+        .byType('subclass')
+        .filter(
+          (s) =>
+            String(s.className).toLowerCase() === ref.name.toLowerCase() &&
+            String(s.classSource).toLowerCase() === ref.source.toLowerCase(),
+        ),
+      doc.rulesVersion,
+    );
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
     doc.race !== undefined
@@ -158,21 +156,27 @@ export function Component() {
       : [];
   const backgrounds = filterByRulesVersion([...registry.byType('background')], doc.rulesVersion);
 
-  const classEntity =
-    entry !== undefined ? registry.get('class', entry.ref.name, entry.ref.source) : undefined;
-  const hdFaces =
-    typeof (classEntity?.hd as { faces?: number } | undefined)?.faces === 'number'
-      ? ((classEntity?.hd as { faces: number }).faces ?? 8)
-      : 8;
+  const hdFacesOf = (ref: { name: string; source: string }): number => {
+    const cls = registry.get('class', ref.name, ref.source);
+    const faces = (cls?.hd as { faces?: number } | undefined)?.faces;
+    return typeof faces === 'number' ? faces : 8;
+  };
   const hpMethod = doc.hpMethod ?? 'average';
+  const totalLevels = doc.classes.reduce((s, c) => s + c.levels, 0);
+  const finalScores = Object.fromEntries(
+    ABILITIES.map((a) => [a, sheet.abilities[a].value]),
+  ) as Record<(typeof ABILITIES)[number], number>;
 
-  const levelUp = () => {
+  const levelUpClass = (idx: number) => {
     update((d) => {
-      const c = d.classes[0];
-      if (c === undefined || c.levels >= 20) return;
+      const c = d.classes[idx];
+      if (c === undefined || totalLevels >= 20) return;
       c.levels += 1;
       if ((d.hpMethod ?? 'average') === 'rolled') {
-        const r = roll(`1d${hdFaces}`, { label: `Level ${c.levels} hit points (d${hdFaces})` });
+        const faces = hdFacesOf(c.ref);
+        const r = roll(`1d${faces}`, {
+          label: `${c.ref.name} level ${c.levels} hit points (d${faces})`,
+        });
         rollLogStore.getState().append(r);
         c.hp = [...c.hp, r.total];
       } else {
@@ -216,77 +220,106 @@ export function Component() {
       </Section>
 
       <Section
-        title="Class & level"
-        summary={entry !== undefined ? `${entry.ref.name} ${entry.levels}` : 'none'}
+        title="Classes"
+        summary={doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / ') || 'none'}
         defaultOpen
       >
-        {entry !== undefined && (
-          <>
-            <div className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2">
-              <span className="text-sm font-semibold">Level {entry.levels}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    update((d) => {
-                      const c = d.classes[0];
-                      if (c === undefined || c.levels <= 1) return;
-                      c.levels -= 1;
-                      c.hp = c.hp.slice(0, c.levels);
-                    })
-                  }
-                  className="h-8 w-8 rounded-full bg-surface text-lg"
-                  title="Remove a level"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  onClick={levelUp}
-                  disabled={entry.levels >= 20}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-                >
-                  Level up
-                </button>
-              </div>
-            </div>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1 text-xs text-ink-muted">
+            HP per level (level 1 of your first class is always the full die)
+          </legend>
+          <div className="flex gap-1.5">
+            {(
+              [
+                ['average', 'Average'],
+                ['rolled', 'Rolled'],
+                ['max', 'Max'],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => update((d) => void (d.hpMethod = m))}
+                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                  hpMethod === m
+                    ? 'border-accent bg-accent-deep/40'
+                    : 'border-surface-2 text-ink-muted'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
-            <fieldset className="flex flex-col gap-1.5">
-              <legend className="mb-1 text-xs text-ink-muted">
-                HP per level (level 1 is always the full die)
-              </legend>
-              <div className="flex gap-1.5">
-                {(
-                  [
-                    ['average', `Average (${Math.floor(hdFaces / 2) + 1})`],
-                    ['rolled', 'Rolled'],
-                    ['max', `Max (${hdFaces})`],
-                  ] as const
-                ).map(([m, label]) => (
+        {doc.classes.map((entry, idx) => {
+          const faces = hdFacesOf(entry.ref);
+          const clsEntity = registry.get('class', entry.ref.name, entry.ref.source);
+          const reqText = multiclassRequirementText(clsEntity);
+          const reqMet = meetsMulticlassRequirements(clsEntity, finalScores);
+          const subclasses = subclassesFor(entry.ref);
+          return (
+            <div
+              key={`${entry.ref.name}|${entry.ref.source}`}
+              className="flex flex-col gap-2 rounded-lg border border-surface-2 p-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">
+                  {entry.ref.name} {entry.levels}
+                  <span className="ml-1.5 text-xs font-normal text-ink-muted">d{faces}</span>
+                </span>
+                <div className="flex items-center gap-2">
                   <button
-                    key={m}
                     type="button"
-                    onClick={() => update((d) => void (d.hpMethod = m))}
-                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
-                      hpMethod === m
-                        ? 'border-accent bg-accent-deep/40'
-                        : 'border-surface-2 text-ink-muted'
-                    }`}
+                    onClick={() =>
+                      update((d) => {
+                        const c = d.classes[idx];
+                        if (c === undefined) return;
+                        if (c.levels <= 1) {
+                          if (d.classes.length > 1) d.classes.splice(idx, 1);
+                          return;
+                        }
+                        c.levels -= 1;
+                        c.hp = c.hp.slice(0, c.levels);
+                      })
+                    }
+                    className="h-8 w-8 rounded-full bg-surface-2 text-lg"
+                    title={
+                      entry.levels <= 1 && doc.classes.length > 1
+                        ? 'Remove this class'
+                        : 'Remove a level'
+                    }
                   >
-                    {label}
+                    −
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => levelUpClass(idx)}
+                    disabled={totalLevels >= 20}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Level up
+                  </button>
+                </div>
               </div>
+
+              {doc.classes.length > 1 && reqText !== undefined && (
+                <p className={`text-xs ${reqMet ? 'text-ink-muted' : 'text-amber-300'}`}>
+                  Multiclass requirement: {reqText}
+                  {reqMet ? ' ✓' : ' — not met (allowed anyway, ask your DM)'}
+                </p>
+              )}
+
               {hpMethod === 'rolled' && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
+                <div className="flex flex-wrap gap-1.5">
                   {entry.hp.map((v, i) =>
-                    i === 0 ? (
+                    idx === 0 && i === 0 ? (
                       <span
-                        key={`hp-l1`}
+                        key="hp-l1"
                         className="rounded bg-surface-2 px-2 py-1 font-mono text-xs text-ink-muted"
                         title="Level 1 is always the maximum"
                       >
-                        L1: {hdFaces}
+                        L1: {faces}
                       </span>
                     ) : (
                       <span
@@ -301,7 +334,7 @@ export function Component() {
                           onChange={(e) => {
                             const n = Number.parseInt(e.target.value, 10);
                             update((d) => {
-                              const c = d.classes[0];
+                              const c = d.classes[idx];
                               if (c !== undefined) c.hp[i] = Number.isNaN(n) ? 'avg' : n;
                             });
                           }}
@@ -309,14 +342,14 @@ export function Component() {
                         />
                         <button
                           type="button"
-                          title={`Roll 1d${hdFaces}`}
+                          title={`Roll 1d${faces}`}
                           onClick={() => {
-                            const r = roll(`1d${hdFaces}`, {
-                              label: `Level ${i + 1} hit points (d${hdFaces})`,
+                            const r = roll(`1d${faces}`, {
+                              label: `${entry.ref.name} level ${i + 1} hit points (d${faces})`,
                             });
                             rollLogStore.getState().append(r);
                             update((d) => {
-                              const c = d.classes[0];
+                              const c = d.classes[idx];
                               if (c !== undefined) c.hp[i] = r.total;
                             });
                           }}
@@ -329,56 +362,56 @@ export function Component() {
                   )}
                 </div>
               )}
-            </fieldset>
 
-            {subclasses.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-ink-muted">Subclass</span>
-                <EntityCardList
-                  entities={subclasses}
-                  selectedUid={
-                    entry.subclass !== undefined
-                      ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
-                      : undefined
-                  }
-                  onSelect={(e) =>
-                    update((d) => {
-                      const c = d.classes[0];
-                      if (c !== undefined) c.subclass = { name: nameOf(e), source: sourceOf(e) };
-                    })
-                  }
-                />
-              </div>
-            )}
-          </>
-        )}
+              {subclasses.length > 0 && (
+                <details open={entry.subclass === undefined}>
+                  <summary className="cursor-pointer text-xs text-ink-muted">
+                    Subclass: {entry.subclass?.name ?? 'none picked'}
+                  </summary>
+                  <div className="pt-2">
+                    <EntityCardList
+                      entities={subclasses}
+                      selectedUid={
+                        entry.subclass !== undefined
+                          ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
+                          : undefined
+                      }
+                      onSelect={(e) =>
+                        update((d) => {
+                          const c = d.classes[idx];
+                          if (c !== undefined)
+                            c.subclass = { name: nameOf(e), source: sourceOf(e) };
+                        })
+                      }
+                    />
+                  </div>
+                </details>
+              )}
+            </div>
+          );
+        })}
+
         <details>
           <summary className="cursor-pointer text-xs text-ink-muted">
-            Change class (keeps level; class choices reset)
+            {doc.classes.length === 0 ? 'Pick a class' : 'Add a class (multiclass)'}
           </summary>
           <div className="pt-2">
             <EntityCardList
-              entities={classes}
-              selectedUid={
-                entry !== undefined
-                  ? `${entry.ref.name}|${entry.ref.source}`.toLowerCase()
-                  : undefined
-              }
+              entities={classes.filter(
+                (e) =>
+                  !doc.classes.some(
+                    (c) =>
+                      c.ref.name.toLowerCase() === nameOf(e).toLowerCase() &&
+                      c.ref.source.toLowerCase() === sourceOf(e).toLowerCase(),
+                  ),
+              )}
               onSelect={(e) =>
                 update((d) => {
-                  const levels = d.classes[0]?.levels ?? 1;
-                  d.classes = [
-                    {
-                      ref: { name: nameOf(e), source: sourceOf(e) },
-                      levels,
-                      hp: d.classes[0]?.hp ?? Array.from({ length: levels }, () => 'avg' as const),
-                    },
-                  ];
-                  // class-scoped choices are keyed by class uid, so they simply
-                  // stop matching; clear them to avoid orphans
-                  for (const key of Object.keys(d.choices)) {
-                    if (key.startsWith('class:')) delete d.choices[key];
-                  }
+                  d.classes.push({
+                    ref: { name: nameOf(e), source: sourceOf(e) },
+                    levels: 1,
+                    hp: ['avg'],
+                  });
                 })
               }
             />

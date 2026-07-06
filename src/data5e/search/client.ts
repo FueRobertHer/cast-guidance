@@ -1,5 +1,5 @@
 import { db } from '@/db/db';
-import { DATA_TAG } from '../config';
+import { getActiveTag } from '../loader';
 import type { EntityRegistry, EntityType } from '../normalize';
 import type { SearchDoc, SearchWorkerRequest, SearchWorkerResponse } from './protocol';
 
@@ -83,7 +83,7 @@ export async function ensureSearchIndex(
 ): Promise<void> {
   if (signature === indexedSignature && readyPromise !== null) return readyPromise;
   indexedSignature = signature;
-  const key = `${DATA_TAG}|official|${hashString(signature)}`;
+  const key = `${getActiveTag()}|official|${hashString(signature)}`;
 
   readyPromise = (async () => {
     const w = getWorker();
@@ -108,7 +108,7 @@ export async function ensureSearchIndex(
       const serialized = await done;
       if (serialized !== undefined) {
         // Keep only the latest index for this tag.
-        await db.searchIndexes.where('key').startsWith(`${DATA_TAG}|official|`).delete();
+        await db.searchIndexes.where('key').startsWith(`${getActiveTag()}|official|`).delete();
         await db.searchIndexes.put({ key, json: serialized });
       }
     }

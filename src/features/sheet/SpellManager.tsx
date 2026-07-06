@@ -24,10 +24,16 @@ export function castSpell(
   level: number,
 ): void {
   update((d) => {
-    if (block.pactSlots !== undefined) {
-      if (d.play.pactSlotsSpent < block.pactSlots.count) d.play.pactSlotsSpent += 1;
+    // Pact slots first when this class has them and the spell fits…
+    if (
+      block.pactSlots !== undefined &&
+      block.pactSlots.level >= level &&
+      d.play.pactSlotsSpent < block.pactSlots.count
+    ) {
+      d.play.pactSlotsSpent += 1;
       return;
     }
+    // …otherwise the shared leveled pool (multiclass warlocks can use both).
     for (let lvl = level; lvl <= 9; lvl++) {
       const total = block.slots[lvl - 1] ?? 0;
       const spent = d.play.slotsSpent[lvl - 1] ?? 0;

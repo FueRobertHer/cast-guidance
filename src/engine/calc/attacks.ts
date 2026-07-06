@@ -171,7 +171,13 @@ export function calcAttacks(
           ? (DMG_TYPE_LABELS[String(e.dmgType)] ?? String(e.dmgType))
           : undefined,
         str(e.dmg2),
-        props.map((p) => PROPERTY_LABELS[p] ?? p),
+        [
+          ...props.map((p) => PROPERTY_LABELS[p] ?? p),
+          // 2024 weapon mastery, e.g. "Sap|XPHB" -> "mastery: sap"
+          ...(Array.isArray(e.mastery)
+            ? e.mastery.map((m) => `mastery: ${String(m).split('|')[0]?.toLowerCase()}`)
+            : []),
+        ],
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',
       ),

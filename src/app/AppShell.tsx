@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router';
 import { initDataLayer, retryDataLayer } from '@/data5e/loader';
 import { useDataStatus } from '@/stores/dataStatus';
+import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
 
 function DataBanner() {
@@ -55,6 +56,7 @@ export function AppShell() {
       <DataBanner />
       <Outlet />
       <RollToast />
+      <PwaUpdateToast />
     </div>
   );
 }
