@@ -197,3 +197,60 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
 
   return reg;
 }
+
+/** Homebrew JSON keys are the same as official entity-array keys. */
+const HOMEBREW_TYPES: EntityType[] = [
+  'race',
+  'subrace',
+  'background',
+  'feat',
+  'optionalfeature',
+  'item',
+  'baseitem',
+  'itemGroup',
+  'magicvariant',
+  'spell',
+  'class',
+  'subclass',
+  'classFeature',
+  'subclassFeature',
+  'language',
+  'condition',
+  'disease',
+  'status',
+  'action',
+  'skill',
+  'sense',
+  'variantrule',
+];
+
+/**
+ * Merge homebrew files into a built registry. Homebrew flows through the SAME
+ * copy/mod machinery — `_copy` targets may be official entities.
+ */
+export function mergeHomebrew(
+  reg: EntityRegistry,
+  homebrew: ReadonlyMap<string, Record<string, unknown>>,
+): void {
+  for (const [, json] of homebrew) {
+    for (const type of HOMEBREW_TYPES) {
+      const arr = json[type];
+      if (!Array.isArray(arr)) continue;
+      const entities = arr.filter((e): e is Entity => typeof e === 'object' && e !== null);
+      if (entities.length === 0) continue;
+      reg.warnings.push(
+        ...resolveCopies(
+          entities,
+          byNameSource(entities, [...reg.byType(type)]),
+          `homebrew ${type}`,
+        ),
+      );
+      if (type === 'race' || type === 'subrace') {
+        const versions = entities.flatMap((e) => expandVersions(e, reg.warnings));
+        reg.addAll(type, [...entities, ...versions]);
+      } else {
+        reg.addAll(type, entities);
+      }
+    }
+  }
+}

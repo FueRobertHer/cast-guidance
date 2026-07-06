@@ -1,12 +1,13 @@
 /**
- * App-side registry singleton: hydrates from whatever files are cached in
- * IndexedDB, rebuilds when the cached file set grows (background drain), and
- * can force specific packs to be present first.
+ * App-side registry singleton: hydrates from cached official files plus
+ * enabled homebrew, rebuilds when either set changes, and can force packs
+ * to be present first.
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
+import { homebrewRepo } from '@/db/homebrewRepo';
 import { DATA_TAG } from './config';
 import { ensurePack } from './loader';
-import { type EntityRegistry, normalizeDataset } from './normalize';
+import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
 
 export type { EntityType } from './normalize';
@@ -22,12 +23,19 @@ async function cachedFilesMap(): Promise<Map<string, unknown>> {
   return map;
 }
 
-/** Current registry over all cached files; rebuilds only when the file set changes. */
+/** Current registry over all cached files + enabled homebrew. */
 export async function getRegistry(): Promise<EntityRegistry> {
-  const files = await cachedFilesMap();
-  const signature = [...files.keys()].sort().join(',');
+  const [files, brews] = await Promise.all([cachedFilesMap(), homebrewRepo.enabled()]);
+  const signature = `${[...files.keys()].sort().join(',')}|hb:${brews
+    .map((b) => b.id)
+    .sort()
+    .join(',')}`;
   if (current === null || signature !== currentSignature) {
-    current = normalizeDataset(files);
+    const reg = normalizeDataset(files);
+    const brewMap = new Map<string, Record<string, unknown>>();
+    for (const b of brews) brewMap.set(b.id, b.json as Record<string, unknown>);
+    mergeHomebrew(reg, brewMap);
+    current = reg;
     currentSignature = signature;
   }
   return current;
@@ -42,4 +50,9 @@ export async function ensureRegistry(packs: PackId[]): Promise<EntityRegistry> {
 /** Signature of the file set behind the current registry (search index key). */
 export function registrySignature(): string {
   return currentSignature;
+}
+
+/** Force a rebuild on next access (after homebrew add/remove/toggle). */
+export function invalidateRegistry(): void {
+  currentSignature = '';
 }

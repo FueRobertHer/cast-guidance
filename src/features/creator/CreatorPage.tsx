@@ -11,6 +11,7 @@ import { characterRepo } from '@/db/characterRepo';
 import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
 import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { SpellManager } from '@/features/sheet/SpellManager';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 import {
@@ -27,6 +28,7 @@ const STEPS = [
   'abilities',
   'background',
   'equipment',
+  'spells',
   'choices',
   'review',
 ] as const;
@@ -517,6 +519,11 @@ export function Component() {
           </div>
         );
       }
+
+      case 'spells':
+        return sheet !== null ? (
+          <SpellManager doc={doc} sheet={sheet} update={update} allowCasting={false} />
+        ) : null;
 
       case 'choices':
         return (

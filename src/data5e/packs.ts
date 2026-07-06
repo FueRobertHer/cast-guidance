@@ -24,6 +24,7 @@ export const ESSENTIALS_FILES: readonly string[] = [
   'conditionsdiseases.json',
   'class/index.json',
   'spells/index.json',
+  'generated/gendata-spell-source-lookup.json',
 ];
 
 export const ITEMS_FULL_FILES: readonly string[] = ['items.json', 'magicvariants.json'];
