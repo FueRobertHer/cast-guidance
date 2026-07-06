@@ -24,6 +24,7 @@ export const router = createBrowserRouter([
       },
       { path: 'library/:type?/:uid?', lazy: () => import('@/features/library/LibraryPage') },
       { path: 'homebrew', lazy: () => import('@/features/homebrew/ManageHomebrewPage') },
+      { path: 'homebrew/edit/:fileId', lazy: () => import('@/features/homebrew/BuilderPage') },
       { path: 'settings', lazy: () => import('@/features/settings/SettingsPage') },
     ],
   },

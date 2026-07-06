@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileUp, LinkIcon, Trash2 } from 'lucide-react';
+import { Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -17,6 +17,7 @@ function downloadJson(name: string, data: unknown): void {
 }
 
 export function Component() {
+  const navigate = useNavigate();
   const rows = useLiveQuery(
     async () => db.homebrewFiles.orderBy('addedAt').reverse().toArray(),
     [],
@@ -86,6 +87,29 @@ export function Component() {
         >
           <FileUp size={16} /> Import file
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            const name = window.prompt('Homebrew collection name (e.g. "My Table\'s Brews")');
+            if (name === null || name.trim() === '') return;
+            const abbrev =
+              window.prompt(
+                'Short source id shown on badges (e.g. MTB)',
+                name
+                  .split(/\s+/)
+                  .map((w) => w[0]?.toUpperCase() ?? '')
+                  .join('')
+                  .slice(0, 5),
+              ) ?? 'HB';
+            void homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB').then((row) => {
+              invalidateRegistry();
+              void navigate(`/homebrew/edit/${row.id}`);
+            });
+          }}
+          className="flex items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
+        >
+          <Hammer size={16} /> Create your own homebrew
+        </button>
         <input
           ref={fileInput}
           type="file"
@@ -135,6 +159,15 @@ export function Component() {
               <div className="truncate text-sm font-semibold">{r.fileName}</div>
               <div className="truncate text-xs text-ink-muted">{summary(r)}</div>
             </div>
+            {r.editable && (
+              <Link
+                to={`/homebrew/edit/${r.id}`}
+                title="Edit in the builder"
+                className="shrink-0 rounded p-1.5 text-purple-300 hover:text-purple-200"
+              >
+                <Pencil size={15} />
+              </Link>
+            )}
             <button
               type="button"
               title="Download"

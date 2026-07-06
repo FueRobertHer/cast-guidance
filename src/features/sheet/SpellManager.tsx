@@ -5,7 +5,11 @@ import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
-import { classSpellUids, getSpellClassLookup } from '@/data5e/spellLookup';
+import {
+  classSpellUids,
+  classSpellUidsFromEntities,
+  getSpellClassLookup,
+} from '@/data5e/spellLookup';
 import type { CharacterDoc, DerivedSheet, SpellcastingBlock } from '@/engine/types';
 import { SourceBadge } from '@/ui/SourceBadge';
 
@@ -67,6 +71,15 @@ function ClassSpells({
     );
   }, [block.className]);
 
+  // Homebrew spells carry classes.fromClassList inline — union them in.
+  const homebrewUids = useMemo(
+    () =>
+      registry !== null
+        ? classSpellUidsFromEntities(registry.byType('spell'), block.className)
+        : new Set<string>(),
+    [registry, block.className],
+  );
+
   const state = doc.spellcasting[block.classUid] ?? { known: [], prepared: [] };
   const knownUids = new Set(state.known.map((r) => `${r.name}|${r.source}`.toLowerCase()));
   const preparedUids = new Set(state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()));
@@ -74,7 +87,7 @@ function ClassSpells({
   const byLevel = useMemo(() => {
     if (registry === null || classUids === null) return new Map<number, Entity[]>();
     const spells = filterByRulesVersion([...registry.byType('spell')], doc.rulesVersion).filter(
-      (s) => classUids.has(uidOf(s)),
+      (s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)),
     );
     const f = filter.trim().toLowerCase();
     const filtered = f === '' ? spells : spells.filter((s) => nameOf(s).toLowerCase().includes(f));

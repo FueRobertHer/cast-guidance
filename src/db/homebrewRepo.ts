@@ -43,4 +43,31 @@ export const homebrewRepo = {
   async get(id: string): Promise<HomebrewFileRow | undefined> {
     return db.homebrewFiles.get(id);
   },
+
+  /** New in-app editable homebrew file (uuid id — edits don't change identity). */
+  async createEditable(fullName: string, abbreviation: string): Promise<HomebrewFileRow> {
+    const json: Record<string, unknown> = {
+      _meta: {
+        sources: [
+          { json: abbreviation, abbreviation, full: fullName, authors: [], version: '1.0.0' },
+        ],
+      },
+    };
+    const row: HomebrewFileRow = {
+      id: crypto.randomUUID(),
+      fileName: `${fullName.replaceAll(/[^\w-]+/g, '_')}.json`,
+      json,
+      enabled: true,
+      editable: true,
+      sourceIds: [abbreviation],
+      counts: {},
+      addedAt: Date.now(),
+    };
+    await db.homebrewFiles.put(row);
+    return row;
+  },
+
+  async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
+    await db.homebrewFiles.update(id, { json, counts: homebrewEntityCounts(json) });
+  },
 };
