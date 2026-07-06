@@ -15,6 +15,8 @@ export function useRegistry(packs: readonly PackId[] = []): EntityRegistry | nul
   const filesDone = useDataStatus((s) => s.filesDone);
   const key = packs.join(',');
 
+  // filesDone/phase retrigger a (signature-cached, cheap) registry check.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone are refresh triggers
   useEffect(() => {
     let alive = true;
     const run = async () => {
@@ -25,8 +27,6 @@ export function useRegistry(packs: readonly PackId[] = []): EntityRegistry | nul
     return () => {
       alive = false;
     };
-    // filesDone/phase retrigger a (signature-cached, cheap) registry check.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs
   }, [key, phase, filesDone]);
 
   return registry;

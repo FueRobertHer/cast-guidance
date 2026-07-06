@@ -3,6 +3,7 @@
  * unknown node types render their children (or nothing); unknown inline
  * tags render their body as plain text. Never crash on data.
  */
+/** biome-ignore-all lint/suspicious/noArrayIndexKey: entries are static data, index keys are stable */
 import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { RollChip } from '@/ui/RollChip';
@@ -183,10 +184,8 @@ export function InlineText({ text }: { text: string }): ReactNode {
     <>
       {tokens.map((t, i) =>
         t.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static token list
           <Fragment key={i}>{t.text}</Fragment>
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static token list
           <TagView key={i} tag={t.tag} args={t.args} />
         ),
       )}
@@ -221,7 +220,6 @@ function ListBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
   return (
     <ul className="ml-5 flex list-disc flex-col gap-1">
       {items.map((item, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: static data
         <li key={i}>
           <EntryNode node={item} depth={depth + 1} />
         </li>
@@ -244,7 +242,6 @@ function TableBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
           <thead>
             <tr>
               {colLabels.map((c, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static data
                 <th
                   key={i}
                   className="border-b border-surface-2 px-2 py-1 text-left text-ink-muted"
@@ -257,10 +254,8 @@ function TableBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
         )}
         <tbody>
           {rows.map((row, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static data
             <tr key={i} className="odd:bg-surface/40">
               {(Array.isArray(row) ? row : []).map((cell, j) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static data
                 <td key={j} className="px-2 py-1 align-top">
                   <EntryNode node={cell} depth={depth + 1} />
                 </td>
@@ -373,17 +368,18 @@ export function EntriesView({
   const list = Array.isArray(entries) ? entries : [entries];
   return (
     <div className="flex flex-col gap-2 leading-relaxed">
-      {list.map((node, i) => {
-        const rendered = <EntryNode node={node} depth={depth} />;
+      {list.map((node, i) =>
         // Bare strings become paragraphs; blocks manage their own layout.
-        return typeof node === 'string' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static data
-          <p key={i}>{rendered}</p>
+        typeof node === 'string' ? (
+          <p key={i}>
+            <EntryNode node={node} depth={depth} />
+          </p>
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static data
-          <Fragment key={i}>{rendered}</Fragment>
-        );
-      })}
+          <Fragment key={i}>
+            <EntryNode node={node} depth={depth} />
+          </Fragment>
+        ),
+      )}
     </div>
   );
 }

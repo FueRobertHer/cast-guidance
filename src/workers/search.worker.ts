@@ -16,7 +16,7 @@ let index: MiniSearch<SearchDoc> | null = null;
 
 const post = (msg: SearchWorkerResponse) => postMessage(msg);
 
-onmessage = (ev: MessageEvent<SearchWorkerRequest>) => {
+self.onmessage = (ev: MessageEvent<SearchWorkerRequest>) => {
   const msg = ev.data;
   try {
     switch (msg.kind) {
