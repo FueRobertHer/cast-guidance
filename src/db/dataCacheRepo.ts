@@ -20,6 +20,11 @@ export const dataCacheRepo = {
     return new Set(rows.map((r) => r.path));
   },
 
+  /** All cached rows for a tag (registry hydration). */
+  async filesByTag(tag: string): Promise<DataFileRow[]> {
+    return db.dataFiles.where('tag').equals(tag).toArray();
+  },
+
   async getMeta(): Promise<DataMetaRow | undefined> {
     return db.dataMeta.get('installed');
   },
