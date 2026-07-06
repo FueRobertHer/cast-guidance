@@ -1,6 +1,12 @@
 import { type DataEntity, type EffectOrigin, refUid } from '../types';
 import { type Collector, num, str } from './base';
-import { readAbilityBlock, readProficiencyList, readResistList, skillOptions } from './readers';
+import {
+  genericOptions,
+  readAbilityBlock,
+  readProficiencyList,
+  readResistList,
+  skillOptions,
+} from './readers';
 
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
   const doc = col.doc;
@@ -52,7 +58,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     'language',
     'Language',
     (name) => col.add({ kind: 'language', name, origin }),
-    () => LANGUAGE_OPTIONS,
+    (from) => (from !== undefined && from.length > 0 ? genericOptions(from) : LANGUAGE_OPTIONS),
   );
   readProficiencyList(
     col,
@@ -62,7 +68,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     'tool',
     'Tool proficiency',
     (name) => col.add({ kind: 'toolProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readProficiencyList(
     col,
@@ -72,7 +78,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     'generic',
     'Weapon proficiency',
     (name) => col.add({ kind: 'weaponProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readProficiencyList(
     col,
@@ -82,7 +88,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     'generic',
     'Armor proficiency',
     (name) => col.add({ kind: 'armorProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readResistList(col, e.resist, origin, `${idBase}:resist`);
 

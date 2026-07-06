@@ -1,13 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-
-/** Placeholder until engine/types.ts lands (M2); rows are self-contained JSON docs. */
-export interface CharacterDocRow {
-  id: string;
-  schemaVersion: number;
-  name: string;
-  updatedAt: string;
-  [key: string]: unknown;
-}
+import type { CharacterDoc } from '@/engine/types';
 
 export interface DataFileRow {
   /** `${tag}:${path}` */
@@ -63,7 +55,7 @@ export interface RollLogRow {
 export const db = new Dexie('dnd-sheet') as Dexie & {
   dataFiles: EntityTable<DataFileRow, 'key'>;
   dataMeta: EntityTable<DataMetaRow, 'id'>;
-  characters: EntityTable<CharacterDocRow, 'id'>;
+  characters: EntityTable<CharacterDoc, 'id'>;
   homebrewFiles: EntityTable<HomebrewFileRow, 'id'>;
   searchIndexes: EntityTable<SearchIndexRow, 'key'>;
   settings: EntityTable<SettingRow, 'key'>;

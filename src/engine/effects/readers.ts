@@ -28,6 +28,11 @@ export function skillOptions(from?: readonly unknown[]): ChoiceOption[] {
   return names.map((n) => ({ id: n, label: n }));
 }
 
+/** Options straight from the data's `from` list (tools, weapons, damage types…). */
+export function genericOptions(from?: readonly unknown[]): ChoiceOption[] {
+  return (from ?? []).map((f) => ({ id: String(f), label: titleCase(String(f)) }));
+}
+
 /**
  * Generic reader for `*Proficiencies`-shaped arrays. Emits fixed grants via
  * `grant`, and prompts for `choose`/`any`/`anyStandard` entries.

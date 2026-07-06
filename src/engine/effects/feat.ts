@@ -1,7 +1,13 @@
 import { emitCuratedEffects } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { asEntityArray, type Collector, num, str } from './base';
-import { readAbilityBlock, readProficiencyList, readResistList, skillOptions } from './readers';
+import {
+  genericOptions,
+  readAbilityBlock,
+  readProficiencyList,
+  readResistList,
+  skillOptions,
+} from './readers';
 
 /** Collect one feat entity. `instanceId` keeps repeatable feats' choices apart. */
 export function collectFeatEntity(
@@ -32,7 +38,7 @@ export function collectFeatEntity(
     'tool',
     'Tool proficiency',
     (name) => col.add({ kind: 'toolProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readProficiencyList(
     col,
@@ -42,7 +48,7 @@ export function collectFeatEntity(
     'language',
     'Language',
     (name) => col.add({ kind: 'language', name, origin }),
-    () => [],
+    genericOptions,
   );
   readProficiencyList(
     col,
@@ -52,7 +58,7 @@ export function collectFeatEntity(
     'generic',
     'Weapon proficiency',
     (name) => col.add({ kind: 'weaponProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readProficiencyList(
     col,
@@ -62,7 +68,7 @@ export function collectFeatEntity(
     'generic',
     'Armor proficiency',
     (name) => col.add({ kind: 'armorProf', name, origin }),
-    () => [],
+    genericOptions,
   );
   readResistList(col, e.resist, origin, `${idBase}:resist`);
 
