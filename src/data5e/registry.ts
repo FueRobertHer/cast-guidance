@@ -38,3 +38,8 @@ export async function ensureRegistry(packs: PackId[]): Promise<EntityRegistry> {
   await Promise.all(packs.map((p) => ensurePack(p)));
   return getRegistry();
 }
+
+/** Signature of the file set behind the current registry (search index key). */
+export function registrySignature(): string {
+  return currentSignature;
+}

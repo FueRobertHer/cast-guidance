@@ -173,6 +173,28 @@ export function retryDataLayer(): void {
   void initDataLayer();
 }
 
+/** Ensure every pack an entity type draws from (e.g. all spell sources). */
+export async function ensureTypePacks(type: string): Promise<void> {
+  await ensurePack('essentials');
+  if (type === 'spell') {
+    const packs = (await allPackIds()).filter((p) => p.startsWith('spells:'));
+    await Promise.all(packs.map((p) => ensurePack(p)));
+    return;
+  }
+  if (type === 'class' || type === 'subclass' || type.endsWith('Feature')) {
+    const packs = (await allPackIds()).filter((p) => p.startsWith('class:'));
+    await Promise.all(packs.map((p) => ensurePack(p)));
+    return;
+  }
+  if (type === 'item' || type === 'itemGroup' || type === 'magicvariant') {
+    await ensurePack('items-full');
+    return;
+  }
+  if (type === 'variantrule' || type === 'book') {
+    await ensurePack('library-extras');
+  }
+}
+
 /** Sanity/UI helper: full-file inventory of what a complete install looks like. */
 export async function verifyFullOffline(): Promise<{ cached: number; total: number }> {
   const packs = await allPackIds();
