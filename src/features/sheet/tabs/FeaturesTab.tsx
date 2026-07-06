@@ -19,6 +19,7 @@ export function Component() {
 
       {sorted.map((f, i) => (
         <details
+          // biome-ignore lint/suspicious/noArrayIndexKey: repeated feature names (e.g. ASI) need the index; list is derivation-stable
           key={`${f.origin.uid}:${f.name}:${i}`}
           className="rounded-lg bg-surface p-3"
           open={i < 3}

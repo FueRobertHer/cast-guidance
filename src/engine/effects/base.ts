@@ -13,6 +13,7 @@ export class Collector {
   readonly ctx: EngineContext;
   readonly effects: EffectInput[] = [];
   readonly pending: ChoicePrompt[] = [];
+  readonly resolved: Array<{ prompt: ChoicePrompt; selected: string[] }> = [];
   readonly features: FeatureCard[] = [];
   readonly warnings: string[] = [];
 
@@ -41,6 +42,7 @@ export class Collector {
       return;
     }
     const selected = Array.isArray(stored) ? stored.map(String) : [String(stored)];
+    this.resolved.push({ prompt, selected });
     apply(selected);
   }
 }

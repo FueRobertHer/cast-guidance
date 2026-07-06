@@ -9,6 +9,7 @@ const tabs = [
   { to: 'inventory', label: 'Items' },
   { to: 'spells', label: 'Spells' },
   { to: 'features', label: 'More' },
+  { to: 'build', label: 'Build' },
 ] as const;
 
 export function Component() {

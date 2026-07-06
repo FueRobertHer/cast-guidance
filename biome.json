@@ -19,7 +19,8 @@
     "rules": {
       "preset": "recommended",
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "warn",
+        "noAssignInExpressions": "off"
       }
     }
   },

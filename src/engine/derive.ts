@@ -122,6 +122,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     features: col.features,
     warnings: col.warnings,
     pending: col.pending,
+    resolvedChoices: col.resolved,
   };
 }
 

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router';
 import { initDataLayer, retryDataLayer } from '@/data5e/loader';
 import { useDataStatus } from '@/stores/dataStatus';
+import { RollToast } from '@/ui/RollToast';
 
 function DataBanner() {
   const phase = useDataStatus((s) => s.phase);
@@ -53,6 +54,7 @@ export function AppShell() {
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
       <DataBanner />
       <Outlet />
+      <RollToast />
     </div>
   );
 }

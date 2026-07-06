@@ -27,10 +27,10 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
       .then((ok) => setMissing(!ok));
   }, [id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
   const sheet = useMemo(() => {
     if (doc === null || registry === null) return null;
     return deriveSheet(doc, engineContextFor(registry));
-    // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
   }, [doc, registry, rev]);
 
   return {

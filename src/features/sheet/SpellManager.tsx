@@ -17,6 +17,28 @@ function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
 }
 
+/** Spend the lowest available slot ≥ `level` (pact-aware). Shared with PlayTab. */
+export function castSpell(
+  update: (recipe: (d: CharacterDoc) => void) => void,
+  block: SpellcastingBlock,
+  level: number,
+): void {
+  update((d) => {
+    if (block.pactSlots !== undefined) {
+      if (d.play.pactSlotsSpent < block.pactSlots.count) d.play.pactSlotsSpent += 1;
+      return;
+    }
+    for (let lvl = level; lvl <= 9; lvl++) {
+      const total = block.slots[lvl - 1] ?? 0;
+      const spent = d.play.slotsSpent[lvl - 1] ?? 0;
+      if (total > 0 && spent < total) {
+        d.play.slotsSpent[lvl - 1] = spent + 1;
+        return;
+      }
+    }
+  });
+}
+
 function ClassSpells({
   block,
   doc,
@@ -85,22 +107,7 @@ function ClassSpells({
     });
   };
 
-  const cast = (level: number) => {
-    update((d) => {
-      if (block.pactSlots !== undefined) {
-        if (d.play.pactSlotsSpent < block.pactSlots.count) d.play.pactSlotsSpent += 1;
-        return;
-      }
-      for (let lvl = level; lvl <= 9; lvl++) {
-        const total = block.slots[lvl - 1] ?? 0;
-        const spent = d.play.slotsSpent[lvl - 1] ?? 0;
-        if (total > 0 && spent < total) {
-          d.play.slotsSpent[lvl - 1] = spent + 1;
-          return;
-        }
-      }
-    });
-  };
+  const cast = (level: number) => castSpell(update, block, level);
 
   const cantripsKnown = state.known.filter((r) => {
     const uid = `${r.name}|${r.source}`.toLowerCase();

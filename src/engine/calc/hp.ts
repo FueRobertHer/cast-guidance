@@ -21,19 +21,20 @@ export function calcMaxHp(
     hitDice[die] = (hitDice[die] ?? 0) + entry.levels;
     totalLevel += entry.levels;
 
+    const method = doc.hpMethod ?? 'average';
     let classHp = 0;
     for (let lvl = 0; lvl < entry.levels; lvl++) {
       const isVeryFirstLevel = classIndex === 0 && lvl === 0;
       const rolled = entry.hp[lvl];
-      if (isVeryFirstLevel) {
-        classHp += faces; // max die at level 1
-      } else if (typeof rolled === 'number') {
-        classHp += rolled;
+      if (isVeryFirstLevel || method === 'max') {
+        classHp += faces; // level 1 is always the max die; 'max' rule applies it throughout
+      } else if (method === 'rolled' && typeof rolled === 'number') {
+        classHp += Math.max(1, Math.min(faces, rolled));
       } else {
         classHp += Math.floor(faces / 2) + 1; // average, rounded up
       }
     }
-    parts.push({ label: `${entry.ref.name} levels (${die})`, amount: classHp });
+    parts.push({ label: `${entry.ref.name} levels (${die}, ${method})`, amount: classHp });
   });
 
   if (totalLevel > 0 && conMod !== 0) {

@@ -118,14 +118,31 @@ export function DiceTray() {
           {error !== undefined && <p className="mb-2 text-xs text-accent">{error}</p>}
 
           {/* Roll log */}
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase text-ink-muted">History</span>
+            {rolls.length > 0 && (
+              <button
+                type="button"
+                onClick={() => rollLogStore.getState().clear()}
+                className="text-xs text-ink-muted underline hover:text-ink"
+              >
+                clear all
+              </button>
+            )}
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {rolls.length === 0 && <p className="text-sm text-ink-muted">No rolls yet.</p>}
             {rolls.map((r) => {
               const nat = r.meta?.d20?.natural;
+              const time = new Date(r.at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              });
               return (
                 <div
                   key={r.at + r.expr + String(r.total)}
-                  className="flex items-center justify-between border-b border-surface-2/40 py-2 text-sm last:border-b-0"
+                  className="group flex items-center justify-between gap-2 border-b border-surface-2/40 py-2 text-sm last:border-b-0"
                 >
                   <div className="min-w-0">
                     <div className="truncate">
@@ -139,7 +156,7 @@ export function DiceTray() {
                       )}
                     </div>
                     <div className="truncate font-mono text-xs text-ink-muted">
-                      {r.expr} ·{' '}
+                      {time} · {r.expr} ·{' '}
                       {r.terms
                         .map((t) =>
                           t.kind === 'dice'
@@ -151,13 +168,23 @@ export function DiceTray() {
                         .join(' ')}
                     </div>
                   </div>
-                  <span
-                    className={`ml-2 shrink-0 text-lg font-bold ${
-                      nat === 20 ? 'text-emerald-300' : nat === 1 ? 'text-accent' : ''
-                    }`}
-                  >
-                    {r.total}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={`text-lg font-bold ${
+                        nat === 20 ? 'text-emerald-300' : nat === 1 ? 'text-accent' : ''
+                      }`}
+                    >
+                      {r.total}
+                    </span>
+                    <button
+                      type="button"
+                      title="Remove roll (accidental click?)"
+                      onClick={() => rollLogStore.getState().remove(r.at)}
+                      className="rounded px-1 text-ink-muted/60 hover:text-accent"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               );
             })}

@@ -78,6 +78,8 @@ export interface PlayState {
   inspiration: boolean;
   currency: { cp: number; sp: number; ep: number; gp: number; pp: number };
   xp: number;
+  /** Per-turn action economy; true = used this turn. Optional for older docs. */
+  turn?: { action: boolean; bonus: boolean; reaction: boolean };
 }
 
 export interface CharacterDoc {
@@ -94,6 +96,12 @@ export interface CharacterDoc {
     method: 'standard' | 'pointbuy' | 'roll' | 'manual';
     base: Record<Ability, number>;
   };
+  /**
+   * How HP is gained per level (level 1 is always the max die):
+   * 'average' (PHB default), 'rolled' (per-level values in classes[].hp),
+   * 'max' (table rule: full die every level). Optional; default 'average'.
+   */
+  hpMethod?: 'average' | 'rolled' | 'max';
   race?: EntityRef;
   subrace?: EntityRef;
   background?: EntityRef;
@@ -272,6 +280,8 @@ export interface DerivedSheet {
   features: FeatureCard[];
   warnings: string[];
   pending: ChoicePrompt[];
+  /** Choices already made — powers "change this pick" in the build editor. */
+  resolvedChoices: Array<{ prompt: ChoicePrompt; selected: string[] }>;
 }
 
 /** 18 skills and their abilities — game constants. */

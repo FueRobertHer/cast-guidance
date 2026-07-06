@@ -1,10 +1,12 @@
 import { Minus, Moon, Plus, Sun } from 'lucide-react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
+import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { RollChip } from '@/ui/RollChip';
+import { castSpell } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
@@ -66,7 +68,13 @@ function longRest(play: PlayState, sheet: DerivedSheet): void {
 
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
+  const registry = useRegistry();
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
+
+  const spellLevelOf = (name: string, source: string): number => {
+    const e = registry?.get('spell', name, source);
+    return typeof e?.level === 'number' ? e.level : 1;
+  };
 
   const play = doc.play;
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
@@ -89,9 +97,9 @@ export function Component() {
           <button
             type="button"
             onClick={() => hpDelta(-1)}
-            onDoubleClick={() => hpDelta(-5)}
+            onDoubleClick={() => hpDelta(-4)}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-deep text-xl"
-            title="Damage (double-tap −5)"
+            title="Damage (double-tap −5 total)"
           >
             <Minus size={22} />
           </button>
@@ -120,9 +128,9 @@ export function Component() {
           <button
             type="button"
             onClick={() => hpDelta(1)}
-            onDoubleClick={() => hpDelta(5)}
+            onDoubleClick={() => hpDelta(4)}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/70 text-xl"
-            title="Heal (double-tap +5)"
+            title="Heal (double-tap +5 total)"
           >
             <Plus size={22} />
           </button>
@@ -250,6 +258,60 @@ export function Component() {
           <div className="text-2xl font-bold">{sheet.speedWalk.value}</div>
           <div className="text-xs text-ink-muted">Speed (ft)</div>
         </div>
+      </section>
+
+      {/* Turn tracker: action economy */}
+      <section className="flex items-center gap-2 rounded-lg bg-surface p-3">
+        {(
+          [
+            ['action', 'Action'],
+            ['bonus', 'Bonus'],
+            ['reaction', 'Reaction'],
+          ] as const
+        ).map(([key, label]) => {
+          const used = play.turn?.[key] ?? false;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() =>
+                update((d) => {
+                  const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+                  turn[key] = !turn[key];
+                  d.play.turn = turn;
+                })
+              }
+              className={`flex-1 rounded-lg border px-2 py-2 text-sm font-semibold transition-colors ${
+                used
+                  ? 'border-surface-2 bg-surface-2 text-ink-muted line-through'
+                  : key === 'bonus'
+                    ? 'border-emerald-300/50 text-emerald-300'
+                    : key === 'reaction'
+                      ? 'border-sky-300/50 text-sky-300'
+                      : 'border-accent/60 text-ink'
+              }`}
+              title={
+                used
+                  ? `${label} used — tap to undo`
+                  : `Tap when you use your ${label.toLowerCase()}`
+              }
+            >
+              {label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() =>
+            update((d) => {
+              d.play.turn = { action: false, bonus: false, reaction: false };
+            })
+          }
+          className="shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-xs font-semibold"
+          title="Reset action, bonus action, and reaction"
+        >
+          End turn
+        </button>
       </section>
 
       {/* Conditions */}
@@ -478,6 +540,51 @@ export function Component() {
               )}
             </div>
           )}
+
+          {/* Known / prepared spells, castable right here */}
+          {(() => {
+            const state = doc.spellcasting[sc.classUid];
+            if (state === undefined || state.known.length === 0) return null;
+            const preparedUids = new Set(
+              state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()),
+            );
+            const registrySpells = [...state.known].sort((a, b) => a.name.localeCompare(b.name));
+            return (
+              <div className="mt-2 flex flex-col gap-1 border-t border-surface-2/40 pt-2">
+                {registrySpells.map((ref) => {
+                  const uid = `${ref.name}|${ref.source}`.toLowerCase();
+                  const prepared = preparedUids.has(uid);
+                  const level = spellLevelOf(ref.name, ref.source);
+                  return (
+                    <div key={uid} className="flex items-center gap-2 text-sm">
+                      <span className="w-6 shrink-0 text-xs text-ink-muted">
+                        {level === 0 ? 'c' : `L${level}`}
+                      </span>
+                      <Link
+                        to={`/library/spell/${encodeURIComponent(uid)}`}
+                        className={`min-w-0 flex-1 truncate ${prepared ? '' : 'text-ink-muted'}`}
+                      >
+                        {ref.name}
+                        {prepared && (
+                          <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
+                        )}
+                      </Link>
+                      {level > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => castSpell(update, sc, level)}
+                          className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                          title={`Cast (spends the lowest available slot ≥ L${level})`}
+                        >
+                          Cast
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </section>
       ))}
     </div>

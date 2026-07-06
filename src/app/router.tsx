@@ -19,6 +19,7 @@ export const router = createBrowserRouter([
           { path: 'inventory', lazy: () => import('@/features/sheet/tabs/InventoryTab') },
           { path: 'spells', lazy: () => import('@/features/sheet/tabs/SpellsTab') },
           { path: 'features', lazy: () => import('@/features/sheet/tabs/FeaturesTab') },
+          { path: 'build', lazy: () => import('@/features/sheet/BuildPage') },
         ],
       },
       { path: 'library/:type?/:uid?', lazy: () => import('@/features/library/LibraryPage') },

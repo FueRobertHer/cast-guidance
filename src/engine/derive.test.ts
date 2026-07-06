@@ -193,6 +193,58 @@ describe('deriveSheet — full caster (Mage 3)', () => {
   });
 });
 
+describe('deriveSheet — HP gain methods', () => {
+  // Warrior 5, d10, CON 14 (+2), no Tough: average = 10 + 4×6 + 10 = 44
+  it('defaults to average (44)', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx);
+    expect(sheet.maxHp.value).toBe(44);
+  });
+
+  it('max rule: full die every level (10 + 40 + 10 = 60)', () => {
+    const doc = warriorDoc();
+    doc.hpMethod = 'max';
+    expect(deriveSheet(doc, ctx).maxHp.value).toBe(60);
+  });
+
+  it('rolled: uses per-level values, level 1 stays max (10 + 3+7+10+1 + 10 = 41)', () => {
+    const doc = warriorDoc();
+    doc.hpMethod = 'rolled';
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('fixture has a class');
+    entry.hp = ['avg', 3, 7, 10, 1];
+    expect(deriveSheet(doc, ctx).maxHp.value).toBe(41);
+  });
+
+  it('rolled falls back to average for un-rolled levels', () => {
+    const doc = warriorDoc();
+    doc.hpMethod = 'rolled';
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('fixture has a class');
+    entry.hp = ['avg', 10, 'avg', 'avg', 'avg']; // 10 + (10+6+6+6) + 10 = 48
+    expect(deriveSheet(doc, ctx).maxHp.value).toBe(48);
+  });
+
+  it('rolled values outside the die are clamped', () => {
+    const doc = warriorDoc();
+    doc.hpMethod = 'rolled';
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('fixture has a class');
+    entry.hp = ['avg', 99, 0, 'avg', 'avg']; // clamps to 10 and 1 -> 10+(10+1+6+6)+10 = 43
+    expect(deriveSheet(doc, ctx).maxHp.value).toBe(43);
+  });
+});
+
+describe('deriveSheet — resolved choices', () => {
+  it('exposes made choices with their prompts and selections', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx);
+    const skillChoice = sheet.resolvedChoices.find(
+      (r) => r.prompt.id === 'class:warrior|tst:skill:0',
+    );
+    expect(skillChoice?.selected).toEqual(['Athletics', 'Intimidation']);
+    expect(sheet.resolvedChoices.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
 describe('deriveSheet — overrides', () => {
   it('overrides AC and marks it, keeping the breakdown', () => {
     const doc = warriorDoc();
