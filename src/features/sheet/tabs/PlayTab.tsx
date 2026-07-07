@@ -41,6 +41,7 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
     play.tempHp -= fromTemp;
     dmg -= fromTemp;
     play.currentHp = Math.max(0, play.currentHp - dmg);
+    if (play.currentHp === 0) play.concentratingOn = undefined; // dropping to 0 breaks concentration
   } else {
     play.currentHp = Math.min(maxHp, play.currentHp + delta);
     if (play.currentHp > 0) play.deathSaves = { success: 0, fail: 0 };
@@ -118,6 +119,8 @@ export function Component() {
                 update((d) => {
                   d.play.currentHp = Math.max(0, Math.min(sheet.maxHp.value, n));
                   d.play.hpInitialized = true;
+                  if (d.play.currentHp === 0) d.play.concentratingOn = undefined;
+                  else d.play.deathSaves = { success: 0, fail: 0 };
                 });
             }}
           >
@@ -311,6 +314,47 @@ export function Component() {
           <div className="text-2xl font-bold">{sheet.speedWalk.value}</div>
           <div className="text-xs text-ink-muted">Speed (ft)</div>
         </div>
+      </section>
+
+      {/* Inspiration + concentration */}
+      <section className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => update((d) => void (d.play.inspiration = !d.play.inspiration))}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${
+            play.inspiration
+              ? 'border-amber-300 bg-amber-300/10 text-amber-300'
+              : 'border-surface-2 text-ink-muted'
+          }`}
+          title="Heroic Inspiration — reroll a d20"
+        >
+          {play.inspiration ? '★' : '☆'} Inspiration
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            update((d) => {
+              if (d.play.concentratingOn !== undefined) {
+                d.play.concentratingOn = undefined;
+                return;
+              }
+              const label = window.prompt('Concentrating on…', '');
+              if (label !== null && label.trim() !== '') {
+                d.play.concentratingOn = { label: label.trim() };
+              }
+            })
+          }
+          className={`flex flex-1 items-center justify-center gap-1.5 truncate rounded-lg border px-3 py-2 text-sm font-semibold ${
+            play.concentratingOn !== undefined
+              ? 'border-sky-300 bg-sky-300/10 text-sky-300'
+              : 'border-surface-2 text-ink-muted'
+          }`}
+          title="Concentration — tap to set or clear"
+        >
+          {play.concentratingOn !== undefined
+            ? `◈ ${play.concentratingOn.label}`
+            : '◇ Concentration'}
+        </button>
       </section>
 
       {/* Turn tracker: action economy */}
