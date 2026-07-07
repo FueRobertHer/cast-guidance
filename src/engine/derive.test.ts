@@ -234,6 +234,46 @@ describe('deriveSheet — HP gain methods', () => {
   });
 });
 
+describe('deriveSheet — multi-count choices stay pending until full (Rogue bug)', () => {
+  it('keeps a 2-skill class choice pending after only one pick', () => {
+    const doc = warriorDoc();
+    doc.choices['class:warrior|tst:skill:0'] = ['Athletics']; // only 1 of 2
+    const sheet = deriveSheet(doc, ctx);
+    const prompt = sheet.pending.find((p) => p.id === 'class:warrior|tst:skill:0');
+    expect(prompt).toBeDefined();
+    expect(prompt?.count).toBe(2);
+    // The one pick still applies immediately.
+    expect(sheet.skills.Athletics?.prof).toBe(1);
+  });
+
+  it('resolves the choice once both picks are made', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx); // fixture picks 2
+    expect(sheet.pending.some((p) => p.id === 'class:warrior|tst:skill:0')).toBe(false);
+  });
+});
+
+describe('deriveSheet — language options never empty', () => {
+  it('offers standard languages for an anyStandard prompt', () => {
+    const doc = warriorDoc();
+    delete doc.choices['race:testfolk|tst:lang:0'];
+    const sheet = deriveSheet(doc, ctx);
+    const lang = sheet.pending.find((p) => p.id === 'race:testfolk|tst:lang:0');
+    expect(lang?.options.length).toBeGreaterThan(8);
+    expect(lang?.options.some((o) => o.label === 'Draconic')).toBe(true);
+  });
+});
+
+describe('deriveSheet — innate spells (additionalSpells)', () => {
+  it('grants level-gated racial spells at the character level', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx); // Testfolk, level 5
+    const names = sheet.grantedSpells.map((g) => g.name);
+    expect(names).toContain('guidance'); // "_" always
+    expect(names).toContain('aid'); // gate 3 <= 5
+    expect(names).not.toContain('flame strike'); // gate 9 > 5
+    expect(sheet.grantedSpells.find((g) => g.name === 'aid')?.ability).toBe('wis');
+  });
+});
+
 describe('deriveSheet — resolved choices', () => {
   it('exposes made choices with their prompts and selections', () => {
     const sheet = deriveSheet(warriorDoc(), ctx);

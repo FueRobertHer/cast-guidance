@@ -14,8 +14,21 @@ const race: DataEntity[] = [
     darkvision: 60,
     skillProficiencies: [{ perception: true }],
     languageProficiencies: [{ common: true, anyStandard: 1 }],
+    // Innate spells: guidance always, aid from level 3 (both apply at level 5).
+    additionalSpells: [
+      {
+        ability: 'wis',
+        known: { _: ['guidance|tst'], '3': ['aid|tst'], '9': ['flame strike|tst'] },
+      },
+    ],
     entries: [{ name: 'Keen Senses', type: 'entries', entries: ['You see well.'] }],
   },
+];
+
+const spell: DataEntity[] = [
+  { name: 'Guidance', source: 'TST', level: 0, school: 'D', entries: ['+1d4 to a check.'] },
+  { name: 'Aid', source: 'TST', level: 2, school: 'A', entries: ['Boost max HP.'] },
+  { name: 'Flame Strike', source: 'TST', level: 5, school: 'V', entries: ['Fire from the sky.'] },
 ];
 
 const background: DataEntity[] = [
@@ -263,6 +276,7 @@ const WORLD: Record<string, DataEntity[]> = {
   baseitem,
   item,
   itemGroup: [],
+  spell,
 };
 
 export function makeTestContext(): EngineContext {

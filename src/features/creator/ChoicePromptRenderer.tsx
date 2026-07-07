@@ -45,6 +45,8 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
   const options = searchable
     ? prompt.options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase()))
     : prompt.options;
+  // Options with descriptions (feats) render as a readable list, not chips.
+  const detailed = prompt.options.some((o) => o.description !== undefined && o.description !== '');
 
   return (
     <fieldset className="flex flex-col gap-2 rounded-lg bg-surface p-3">
@@ -63,29 +65,56 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
           className="rounded bg-surface-2 px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted"
         />
       )}
-      <div className={`flex flex-wrap gap-1.5 ${searchable ? 'max-h-48 overflow-y-auto' : ''}`}>
-        {options.map((o) => {
-          const times = selected.filter((s) => s === o.id).length;
-          const active = times > 0;
-          return (
-            <button
-              key={o.id}
-              type="button"
-              disabled={o.disabled !== undefined}
-              title={o.disabled?.reason}
-              onClick={() => toggle(o.id)}
-              className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                active
-                  ? 'border-accent bg-accent-deep/60 font-semibold'
-                  : 'border-surface-2 bg-surface-2/50 text-ink-muted hover:text-ink'
-              } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
-            >
-              {o.label}
-              {times > 1 && <span className="ml-1 text-xs">×{times}</span>}
-            </button>
-          );
-        })}
-      </div>
+      {detailed ? (
+        <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+          {options.map((o) => {
+            const active = selected.includes(o.id);
+            return (
+              <button
+                key={o.id}
+                type="button"
+                disabled={o.disabled !== undefined}
+                title={o.disabled?.reason}
+                onClick={() => toggle(o.id)}
+                className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors ${
+                  active
+                    ? 'border-accent bg-accent-deep/40'
+                    : 'border-surface-2 bg-surface-2/40 hover:bg-surface-2'
+                } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
+              >
+                <span className="text-sm font-semibold">{o.label}</span>
+                {o.description !== undefined && o.description !== '' && (
+                  <span className="text-xs text-ink-muted">{o.description}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={`flex flex-wrap gap-1.5 ${searchable ? 'max-h-48 overflow-y-auto' : ''}`}>
+          {options.map((o) => {
+            const times = selected.filter((s) => s === o.id).length;
+            const active = times > 0;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                disabled={o.disabled !== undefined}
+                title={o.disabled?.reason}
+                onClick={() => toggle(o.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  active
+                    ? 'border-accent bg-accent-deep/60 font-semibold'
+                    : 'border-surface-2 bg-surface-2/50 text-ink-muted hover:text-ink'
+                } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
+              >
+                {o.label}
+                {times > 1 && <span className="ml-1 text-xs">×{times}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {selected.length < prompt.count && (
         <p className="text-xs text-amber-300">{prompt.count - selected.length} more to pick</p>
       )}

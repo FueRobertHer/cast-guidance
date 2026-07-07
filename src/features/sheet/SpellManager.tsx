@@ -100,7 +100,7 @@ function ClassSpells({
     }
     for (const list of map.values()) list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
     return map;
-  }, [registry, classUids, doc.rulesVersion, filter]);
+  }, [registry, classUids, homebrewUids, doc.rulesVersion, filter]);
 
   const toggle = (spell: Entity, list: 'known' | 'prepared') => {
     update((d) => {

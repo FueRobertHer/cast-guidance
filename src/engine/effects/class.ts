@@ -1,8 +1,35 @@
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import { readProficiencyList, skillOptions } from './readers';
+
+/** "str 13" / "int 13 or wis 13" from a feat/entity prerequisite array. */
+function summarizePrerequisite(raw: unknown): string {
+  if (!Array.isArray(raw)) return '';
+  const parts: string[] = [];
+  for (const req of raw) {
+    if (req === null || typeof req !== 'object') continue;
+    const r = req as Record<string, unknown>;
+    const ability = r.ability;
+    if (Array.isArray(ability)) {
+      for (const a of ability) {
+        if (a !== null && typeof a === 'object') {
+          for (const [k, v] of Object.entries(a)) parts.push(`${k.toUpperCase()} ${v}`);
+        }
+      }
+    }
+    if (typeof r.level === 'number') parts.push(`level ${r.level}`);
+    else if (r.level !== null && typeof r.level === 'object') {
+      const lv = (r.level as { level?: number }).level;
+      if (typeof lv === 'number') parts.push(`level ${lv}`);
+    }
+    if (typeof r.other === 'string') parts.push(r.other);
+    if (Array.isArray(r.spellcasting2020) || r.spellcasting === true) parts.push('spellcasting');
+  }
+  return parts.join(', ');
+}
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
 export interface ClassFeatureRef {
@@ -121,10 +148,15 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
             options: col.ctx
               .byType('feat')
               .filter((f) => str(f.name) !== undefined)
-              .map((f) => ({
-                id: `${str(f.name)}|${str(f.source)}`.toLowerCase(),
-                label: `${str(f.name)} (${str(f.source)})`,
-              })),
+              .map((f) => {
+                const prereq = summarizePrerequisite(f.prerequisite);
+                const summary = summarizeEntries(f.entries);
+                return {
+                  id: `${str(f.name)}|${str(f.source)}`.toLowerCase(),
+                  label: `${str(f.name)} (${str(f.source)})`,
+                  description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
+                };
+              }),
           },
           (picked) => {
             const uid = picked[0];

@@ -1,4 +1,4 @@
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -11,10 +11,34 @@ export function Component() {
   return (
     <div className="flex flex-col gap-4">
       {sheet.pending.length > 0 && (
-        <p className="rounded-lg border border-amber-300/40 bg-surface p-3 text-sm text-amber-300">
-          {sheet.pending.length} unresolved choice{sheet.pending.length > 1 ? 's' : ''} — finish
-          them in the creator or level-up flow.
-        </p>
+        <Link
+          to="../build"
+          className="block rounded-lg border border-amber-300/40 bg-amber-300/10 p-3 text-sm text-amber-200"
+        >
+          {sheet.pending.length} unresolved choice{sheet.pending.length > 1 ? 's' : ''} — tap to
+          resolve in the Build tab.
+        </Link>
+      )}
+
+      {sheet.grantedSpells.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold text-ink-muted">Innate & granted spells</h2>
+          <div className="flex flex-col rounded-lg bg-surface">
+            {sheet.grantedSpells.map((g) => (
+              <Link
+                key={`${g.name}|${g.source}`}
+                to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
+                className="flex items-center justify-between border-b border-surface-2/40 px-3 py-2 text-sm last:border-b-0"
+              >
+                <span className="capitalize">{g.name}</span>
+                <span className="text-xs text-ink-muted">
+                  {g.origin}
+                  {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
       {sorted.map((f, i) => (

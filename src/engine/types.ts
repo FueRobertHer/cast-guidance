@@ -159,7 +159,7 @@ export type EffectInput = { origin: EffectOrigin } & (
       resetOn: 'short' | 'long';
     }
   | { kind: 'action'; economy: 'action' | 'bonus' | 'reaction'; label: string; roll?: string }
-  | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability }
+  | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
   | { kind: 'note'; text: string }
 );
 
@@ -170,6 +170,8 @@ export type EffectInput = { origin: EffectOrigin } & (
 export interface ChoiceOption {
   id: string;
   label: string;
+  /** One-line summary shown under the label (e.g. what a feat does). */
+  description?: string;
   disabled?: { reason: string };
 }
 
@@ -278,6 +280,8 @@ export interface DerivedSheet {
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];
+  /** Innate / granted spells (racial, feat). Cast without preparation. */
+  grantedSpells: Array<{ name: string; source: string; ability?: Ability; origin: string }>;
   warnings: string[];
   pending: ChoicePrompt[];
   /** Choices already made — powers "change this pick" in the build editor. */

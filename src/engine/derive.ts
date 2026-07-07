@@ -19,7 +19,7 @@ import { collectClasses } from './effects/class';
 import { collectFeats } from './effects/feat';
 import { collectItems } from './effects/item';
 import { collectRace } from './effects/race';
-import type { CharacterDoc, ChoicePrompt, DerivedSheet, EngineContext } from './types';
+import type { CharacterDoc, ChoicePrompt, DerivedSheet, EffectInput, EngineContext } from './types';
 
 export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet {
   const col = new Collector(doc, ctx);
@@ -120,10 +120,28 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     actions,
     resources,
     features: col.features,
+    grantedSpells: dedupeGrantedSpells(effects),
     warnings: col.warnings,
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['grantedSpells'] {
+  const seen = new Set<string>();
+  const out: DerivedSheet['grantedSpells'] = [];
+  for (const e of effectsOf(effects, 'grantSpell')) {
+    const key = `${e.spell.name}|${e.spell.source}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      name: e.spell.name,
+      source: e.spell.source,
+      ability: e.ability,
+      origin: e.origin.label,
+    });
+  }
+  return out;
 }
 
 /** Just the unresolved choices (wizard/level-up drive off this). */

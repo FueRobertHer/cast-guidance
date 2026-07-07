@@ -42,8 +42,14 @@ export class Collector {
       return;
     }
     const selected = Array.isArray(stored) ? stored.map(String) : [String(stored)];
-    this.resolved.push({ prompt, selected });
+    // Apply what's chosen so far, but a multi-pick that isn't full yet stays
+    // pending so the UI keeps showing it (fixes "closes after one" on Rogue).
     apply(selected);
+    if (selected.length < prompt.count) {
+      this.pending.push(prompt);
+    } else {
+      this.resolved.push({ prompt, selected });
+    }
   }
 }
 

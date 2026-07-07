@@ -1,7 +1,9 @@
 import { type DataEntity, type EffectOrigin, refUid } from '../types';
+import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, num, str } from './base';
 import {
   genericOptions,
+  languageOptions,
   readAbilityBlock,
   readProficiencyList,
   readResistList,
@@ -58,7 +60,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     'language',
     'Language',
     (name) => col.add({ kind: 'language', name, origin }),
-    (from) => (from !== undefined && from.length > 0 ? genericOptions(from) : LANGUAGE_OPTIONS),
+    languageOptions,
   );
   readProficiencyList(
     col,
@@ -91,34 +93,8 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     genericOptions,
   );
   readResistList(col, e.resist, origin, `${idBase}:resist`);
-
-  if (e.additionalSpells !== undefined) {
-    col.add({
-      kind: 'note',
-      text: 'Grants innate spells — see the racial trait text. (Automated in M4.)',
-      origin,
-    });
-  }
+  collectAdditionalSpells(col, e.additionalSpells, origin);
 }
-
-const LANGUAGE_OPTIONS = [
-  'Common',
-  'Dwarvish',
-  'Elvish',
-  'Giant',
-  'Gnomish',
-  'Goblin',
-  'Halfling',
-  'Orc',
-  'Abyssal',
-  'Celestial',
-  'Draconic',
-  'Deep Speech',
-  'Infernal',
-  'Primordial',
-  'Sylvan',
-  'Undercommon',
-].map((l) => ({ id: l, label: l }));
 
 export function collectRace(col: Collector): void {
   const { race, subrace } = raceEntity(col);

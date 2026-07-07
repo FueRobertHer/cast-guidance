@@ -1,15 +1,16 @@
 import { ChevronUp, Dices, RefreshCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import { meetsMulticlassRequirements, multiclassRequirementText } from '@/engine/multiclass';
-import { ABILITIES, type DerivedSheet } from '@/engine/types';
+import { ABILITIES, type DerivedSheet, SKILLS } from '@/engine/types';
 import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
 import { rollLogStore } from '@/stores/rollLog';
+import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { EntityCardList } from '@/ui/EntityCardList';
 import type { CharacterSheetState } from './useCharacterSheet';
 
@@ -99,14 +100,16 @@ function Section({
   summary,
   children,
   defaultOpen = false,
+  id,
 }: {
   title: string;
   summary?: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  id?: string;
 }) {
   return (
-    <details open={defaultOpen} className="group rounded-lg bg-surface">
+    <details id={id} open={defaultOpen} className="group scroll-mt-4 rounded-lg bg-surface">
       <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
         <span className="text-sm font-semibold">{title}</span>
         <span className="flex items-center gap-2 text-xs text-ink-muted">
@@ -185,9 +188,29 @@ export function Component() {
     });
   };
 
+  const openChoices = () => {
+    const el = document.getElementById('build-choices');
+    if (el instanceof HTMLDetailsElement) el.open = true;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <ChangeBar sheet={sheet} />
+
+      {sheet.pending.length > 0 && (
+        <button
+          type="button"
+          onClick={openChoices}
+          className="flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2.5 text-left text-sm text-amber-200"
+        >
+          <span>
+            <strong>{sheet.pending.length}</strong> decision
+            {sheet.pending.length > 1 ? 's' : ''} to make — skills, feats, languages…
+          </span>
+          <span className="shrink-0 font-semibold">Resolve →</span>
+        </button>
+      )}
 
       <Section title="Identity" summary={`${doc.rulesVersion} rules`} defaultOpen>
         <label className="flex flex-col gap-1">
@@ -515,6 +538,7 @@ export function Component() {
       </Section>
 
       <Section
+        id="build-choices"
         title="Choices"
         summary={
           sheet.pending.length > 0
@@ -523,14 +547,24 @@ export function Component() {
         }
         defaultOpen={sheet.pending.length > 0}
       >
-        {sheet.pending.map((prompt) => (
-          <ChoicePromptRenderer
-            key={prompt.id}
-            prompt={prompt}
-            value={doc.choices[prompt.id]}
-            onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
-          />
-        ))}
+        {sheet.pending.map((prompt) =>
+          // Subclass is chosen in the Classes section above; point there.
+          prompt.kind === 'generic' && prompt.options.length === 0 ? (
+            <p
+              key={prompt.id}
+              className="rounded-lg bg-surface-2/60 px-3 py-2 text-sm text-amber-200"
+            >
+              {prompt.label} — choose it in the Classes section above.
+            </p>
+          ) : (
+            <ChoicePromptRenderer
+              key={prompt.id}
+              prompt={prompt}
+              value={doc.choices[prompt.id]}
+              onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
+            />
+          ),
+        )}
         {sheet.resolvedChoices.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="text-xs font-semibold uppercase text-ink-muted">Made choices</span>
@@ -563,6 +597,127 @@ export function Component() {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Derived stats & skills"
+        summary={`HP ${sheet.maxHp.value} · AC ${sheet.ac.value}`}
+      >
+        <p className="text-xs text-ink-muted">Tap any value to see exactly how it's calculated.</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ['Max HP', sheet.maxHp],
+              ['Armor Class', sheet.ac],
+              ['Initiative', sheet.initiative],
+              ['Speed', sheet.speedWalk],
+              ['Prof. bonus', sheet.profBonus],
+              ['Passive Perc.', sheet.passivePerception],
+            ] as const
+          ).map(([label, value]) => (
+            <BreakdownSheet
+              key={label}
+              title={label}
+              value={value}
+              trigger={
+                <button type="button" className="rounded-lg bg-surface-2 p-2 text-center">
+                  <div className="text-lg font-bold">{value.value}</div>
+                  <div className="text-[10px] text-ink-muted">{label}</div>
+                </button>
+              }
+            />
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase text-ink-muted">Saving throws</span>
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+            {ABILITIES.map((a) => (
+              <BreakdownSheet
+                key={a}
+                title={`${a.toUpperCase()} save`}
+                value={sheet.saves[a].total}
+                trigger={
+                  <button
+                    type="button"
+                    className={`rounded-lg px-2 py-1.5 text-sm ${
+                      sheet.saves[a].prof
+                        ? 'bg-accent-deep/40 font-semibold'
+                        : 'bg-surface-2 text-ink-muted'
+                    }`}
+                  >
+                    {a.toUpperCase()} {sheet.saves[a].total.value >= 0 ? '+' : ''}
+                    {sheet.saves[a].total.value}
+                  </button>
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase text-ink-muted">Skills</span>
+          <div className="flex flex-col rounded-lg bg-surface-2/40">
+            {SKILLS.map(({ name }) => {
+              const s = sheet.skills[name];
+              if (s === undefined) return null;
+              return (
+                <BreakdownSheet
+                  key={name}
+                  title={`${name} check`}
+                  value={s.total}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-left text-sm last:border-b-0"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${
+                            s.prof === 2
+                              ? 'bg-amber-300'
+                              : s.prof === 1
+                                ? 'bg-accent'
+                                : 'bg-surface-2'
+                          }`}
+                        />
+                        {name}
+                        <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
+                      </span>
+                      <span className="font-mono font-semibold">
+                        {s.total.value >= 0 ? '+' : ''}
+                        {s.total.value}
+                      </span>
+                    </button>
+                  }
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {sheet.grantedSpells.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase text-ink-muted">
+              Innate & granted spells
+            </span>
+            <div className="flex flex-col rounded-lg bg-surface-2/40">
+              {sheet.grantedSpells.map((g) => (
+                <Link
+                  key={`${g.name}|${g.source}`}
+                  to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
+                  className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-sm last:border-b-0"
+                >
+                  <span className="capitalize">{g.name}</span>
+                  <span className="text-xs text-ink-muted">
+                    {g.origin}
+                    {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                  </span>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
       </Section>

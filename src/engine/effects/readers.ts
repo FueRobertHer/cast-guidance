@@ -35,6 +35,31 @@ export function genericOptions(from?: readonly unknown[]): ChoiceOption[] {
   return (from ?? []).map((f) => ({ id: String(f), label: titleCase(String(f)) }));
 }
 
+/** Standard + common exotic languages — the fallback for `any`/`anyStandard`. */
+export const LANGUAGE_OPTIONS: ChoiceOption[] = [
+  'Common',
+  'Dwarvish',
+  'Elvish',
+  'Giant',
+  'Gnomish',
+  'Goblin',
+  'Halfling',
+  'Orc',
+  'Abyssal',
+  'Celestial',
+  'Deep Speech',
+  'Draconic',
+  'Infernal',
+  'Primordial',
+  'Sylvan',
+  'Undercommon',
+].map((l) => ({ id: l, label: l }));
+
+/** Language options: explicit `from` list when present, else the standard set. */
+export function languageOptions(from?: readonly unknown[]): ChoiceOption[] {
+  return from !== undefined && from.length > 0 ? genericOptions(from) : LANGUAGE_OPTIONS;
+}
+
 /**
  * Generic reader for `*Proficiencies`-shaped arrays. Emits fixed grants via
  * `grant`, and prompts for `choose`/`any`/`anyStandard` entries.

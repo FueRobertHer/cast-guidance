@@ -1,13 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Copy, Download, FileUp, Plus, Trash2 } from 'lucide-react';
+import { Copy, Download, FileUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { DATA_TAG } from '@/data5e/config';
 import { invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { migrateCharacter } from '@/engine/migrate';
-import type { CharacterDoc } from '@/engine/types';
+import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { assertCharacterExport, CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
@@ -49,10 +50,24 @@ function classSummary(doc: CharacterDoc): string {
 }
 
 export function Component() {
+  const navigate = useNavigate();
   const rows = useLiveQuery(async () => db.characters.orderBy('updatedAt').reverse().toArray(), []);
   const characters = (rows ?? []) as unknown as CharacterDoc[];
   const importInput = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
+
+  // New characters open straight in the Build page (the primary editor).
+  const createBlank = async () => {
+    const doc = newCharacterDoc(crypto.randomUUID(), 'New hero', DATA_TAG);
+    await characterRepo.put(doc);
+    void navigate(`/c/${doc.id}/build`);
+  };
+
+  const rename = (c: CharacterDoc) => {
+    const name = window.prompt('Rename hero', c.name);
+    if (name === null || name.trim() === '') return;
+    void characterRepo.put({ ...c, name: name.trim(), updatedAt: new Date().toISOString() });
+  };
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
@@ -88,6 +103,14 @@ export function Component() {
             </Link>
             <button
               type="button"
+              title="Rename"
+              onClick={() => rename(c)}
+              className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              type="button"
               title="Export"
               onClick={() => void exportCharacter(c)}
               className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
@@ -118,19 +141,28 @@ export function Component() {
         ))}
       </div>
 
-      <Link
-        to="/create"
+      <button
+        type="button"
+        onClick={() => void createBlank()}
         className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 font-semibold text-white"
       >
         <Plus size={18} /> New character
-      </Link>
-      <button
-        type="button"
-        onClick={() => importInput.current?.click()}
-        className="flex items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm font-semibold"
-      >
-        <FileUp size={16} /> Import character
       </button>
+      <div className="flex gap-2">
+        <Link
+          to="/create"
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm font-semibold"
+        >
+          Guided wizard
+        </Link>
+        <button
+          type="button"
+          onClick={() => importInput.current?.click()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm font-semibold"
+        >
+          <FileUp size={16} /> Import
+        </button>
+      </div>
       <input
         ref={importInput}
         type="file"

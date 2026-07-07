@@ -1,7 +1,13 @@
 import { type EffectOrigin, refUid } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
-import { genericOptions, readAbilityBlock, readProficiencyList, skillOptions } from './readers';
+import {
+  genericOptions,
+  languageOptions,
+  readAbilityBlock,
+  readProficiencyList,
+  skillOptions,
+} from './readers';
 
 export function collectBackground(col: Collector): void {
   const ref = col.doc.background;
@@ -36,7 +42,7 @@ export function collectBackground(col: Collector): void {
     'language',
     'Language',
     (name) => col.add({ kind: 'language', name, origin }),
-    genericOptions,
+    languageOptions,
   );
   readProficiencyList(
     col,

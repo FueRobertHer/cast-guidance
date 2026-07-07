@@ -1,8 +1,10 @@
 import { emitCuratedEffects } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
+import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import {
   genericOptions,
+  languageOptions,
   readAbilityBlock,
   readProficiencyList,
   readResistList,
@@ -48,7 +50,7 @@ export function collectFeatEntity(
     'language',
     'Language',
     (name) => col.add({ kind: 'language', name, origin }),
-    genericOptions,
+    languageOptions,
   );
   readProficiencyList(
     col,
@@ -106,13 +108,7 @@ export function collectFeatEntity(
     }
   }
 
-  if (e.additionalSpells !== undefined) {
-    col.add({
-      kind: 'note',
-      text: 'Grants spells — see the feat text. (Automated in M4.)',
-      origin,
-    });
-  }
+  collectAdditionalSpells(col, e.additionalSpells, origin);
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
   emitCuratedEffects(col, uid, origin);

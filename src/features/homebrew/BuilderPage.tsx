@@ -50,6 +50,7 @@ const CASTER_CLASSES = [
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: children is always a form control (input/select/textarea)
     <label className="flex flex-col gap-1">
       <span className="text-xs text-ink-muted">{label}</span>
       {children}
