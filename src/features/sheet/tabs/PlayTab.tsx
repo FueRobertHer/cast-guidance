@@ -7,7 +7,7 @@ import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { RollChip } from '@/ui/RollChip';
-import { castSpell } from '../SpellManager';
+import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
@@ -80,6 +80,8 @@ export function Component() {
     const e = registry?.get('spell', name, source);
     return typeof e?.level === 'number' ? e.level : 1;
   };
+  const spellConcentrationOf = (name: string, source: string): boolean =>
+    spellNeedsConcentration(registry?.get('spell', name, source));
 
   const play = doc.play;
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
@@ -674,9 +676,19 @@ export function Component() {
                       {level > 0 && (
                         <button
                           type="button"
-                          onClick={() => castSpell(update, sc, level)}
+                          onClick={() =>
+                            castSpell(update, sc, level, {
+                              name: ref.name,
+                              source: ref.source,
+                              concentration: spellConcentrationOf(ref.name, ref.source),
+                            })
+                          }
                           className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={`Cast (spends the lowest available slot ≥ L${level})`}
+                          title={`Cast (spends the lowest available slot ≥ L${level}${
+                            spellConcentrationOf(ref.name, ref.source)
+                              ? ', starts concentration'
+                              : ''
+                          })`}
                         >
                           Cast
                         </button>

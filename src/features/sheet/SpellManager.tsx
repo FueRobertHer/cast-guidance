@@ -21,13 +21,36 @@ function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
 }
 
-/** Spend the lowest available slot ≥ `level` (pact-aware). Shared with PlayTab. */
+/** Does the spell require concentration (from its `duration` block)? */
+export function spellNeedsConcentration(e: Entity | undefined): boolean {
+  const d = e?.duration;
+  return (
+    Array.isArray(d) &&
+    d.some((x) => (x as { concentration?: boolean } | null)?.concentration === true)
+  );
+}
+
+export interface CastSpellInfo {
+  name: string;
+  source: string;
+  concentration?: boolean;
+}
+
+/**
+ * Cast a spell: spend the lowest available slot ≥ `level` (pact-aware). When
+ * the spell needs concentration, it becomes the active concentration (dropping
+ * any prior one — you can only concentrate on one).
+ */
 export function castSpell(
   update: (recipe: (d: CharacterDoc) => void) => void,
   block: SpellcastingBlock,
   level: number,
+  spell?: CastSpellInfo,
 ): void {
   update((d) => {
+    if (spell?.concentration === true) {
+      d.play.concentratingOn = { label: spell.name };
+    }
     // Pact slots first when this class has them and the spell fits…
     if (
       block.pactSlots !== undefined &&
@@ -126,7 +149,12 @@ function ClassSpells({
     });
   };
 
-  const cast = (level: number) => castSpell(update, block, level);
+  const cast = (level: number, spell: Entity) =>
+    castSpell(update, block, level, {
+      name: nameOf(spell),
+      source: sourceOf(spell),
+      concentration: spellNeedsConcentration(spell),
+    });
 
   const cantripsKnown = state.known.filter((r) => {
     const uid = `${r.name}|${r.source}`.toLowerCase();
@@ -211,9 +239,11 @@ function ClassSpells({
                       {allowCasting && lvl > 0 && (known || prepared) && (
                         <button
                           type="button"
-                          onClick={() => cast(lvl)}
+                          onClick={() => cast(lvl, s)}
                           className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={`Cast at level ${lvl} (spends a slot)`}
+                          title={`Cast at level ${lvl} (spends a slot${
+                            spellNeedsConcentration(s) ? ', starts concentration' : ''
+                          })`}
                         >
                           Cast
                         </button>
