@@ -274,6 +274,49 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
   });
 });
 
+describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {
+  function sneakDoc(): CharacterDoc {
+    const doc = newCharacterDoc('sn1', 'Sly', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 8, dex: 16, con: 12, int: 14, wis: 10, cha: 10 };
+    doc.classes = [{ ref: { name: 'Sneak', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    doc.choices = { 'class:sneak|tst:skill:0': ['Stealth', 'Acrobatics'] };
+    return doc;
+  }
+
+  it('emits an expertise prompt limited to proficient skills', () => {
+    const sheet = deriveSheet(sneakDoc(), ctx);
+    const prompt = sheet.pending.find((p) => p.id === 'class:sneak|tst:expertise:1');
+    expect(prompt).toBeDefined();
+    expect(prompt?.count).toBe(2);
+    const opts = prompt?.options.map((o) => o.id).sort();
+    expect(opts).toEqual(['Acrobatics', 'Stealth']); // only proficient skills
+  });
+
+  it('applies expertise (2× proficiency) when chosen', () => {
+    const doc = sneakDoc();
+    doc.choices['class:sneak|tst:expertise:1'] = ['Stealth'];
+    const sheet = deriveSheet(doc, ctx);
+    // DEX +3, proficiency +2, expertise doubles it => 3 + 4 = 7
+    expect(sheet.skills.Stealth?.prof).toBe(2);
+    expect(sheet.skills.Stealth?.total.value).toBe(7);
+    // Acrobatics still just proficient (3 + 2 = 5)
+    expect(sheet.skills.Acrobatics?.total.value).toBe(5);
+  });
+});
+
+describe('deriveSheet — ASI stacking +2 on one ability', () => {
+  it('applies two picks of the same ability as +2', () => {
+    const doc = warriorDoc();
+    doc.choices['class:warrior|tst:asi:4'] = 'asi';
+    delete doc.choices['class:warrior|tst:asi:4:feat'];
+    doc.choices['class:warrior|tst:asi:4:abilities'] = ['con', 'con'];
+    const sheet = deriveSheet(doc, ctx);
+    // CON base 14 + 2 (ASI) = 16
+    expect(sheet.abilities.con.value).toBe(16);
+  });
+});
+
 describe('deriveSheet — resolved choices', () => {
   it('exposes made choices with their prompts and selections', () => {
     const sheet = deriveSheet(warriorDoc(), ctx);

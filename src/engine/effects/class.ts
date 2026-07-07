@@ -3,7 +3,7 @@ import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
-import { readProficiencyList, skillOptions } from './readers';
+import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
 
 /** "str 13" / "int 13 or wis 13" from a feat/entity prerequisite array. */
 function summarizePrerequisite(raw: unknown): string {
@@ -336,6 +336,25 @@ export function collectClasses(col: Collector): void {
 
       if (ref.name.startsWith('Ability Score Improvement')) {
         handleAsi(col, origin, classUid, ref.level);
+      }
+      // Rogue/Bard "Expertise" is prose-only in the data — emit the choice.
+      if (ref.name === 'Expertise') {
+        const featOrigin: EffectOrigin = { ...origin, label: `${origin.label} Expertise` };
+        col.choice(
+          {
+            id: `class:${classUid}:expertise:${ref.level}`,
+            origin: featOrigin,
+            kind: 'expertise',
+            label: `Expertise — 2 proficient skills (level ${ref.level})`,
+            count: 2,
+            options: expertiseOptions(col),
+          },
+          (selected) => {
+            for (const s of selected) {
+              col.add({ kind: 'skillProf', skill: s, level: 2, origin: featOrigin });
+            }
+          },
+        );
       }
       emitCurated(col, `${ref.name}|${origin.label}`.toLowerCase(), {
         ...origin,

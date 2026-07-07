@@ -621,6 +621,28 @@ export function Component() {
           })()}
         </section>
       ))}
+
+      {/* Innate / granted spells — cast per their own rules (no slots) */}
+      {sheet.grantedSpells.length > 0 && (
+        <section className="rounded-lg bg-surface p-3 text-sm">
+          <div className="mb-1.5 font-semibold">Innate & granted spells</div>
+          <div className="flex flex-col gap-1">
+            {sheet.grantedSpells.map((g) => (
+              <Link
+                key={`${g.name}|${g.source}`}
+                to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
+                className="flex items-center justify-between border-b border-surface-2/40 py-1.5 last:border-b-0"
+              >
+                <span className="capitalize">{g.name}</span>
+                <span className="text-xs text-ink-muted">
+                  {g.origin}
+                  {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

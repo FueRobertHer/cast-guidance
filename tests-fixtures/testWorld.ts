@@ -114,6 +114,17 @@ const cls: DataEntity[] = [
     classFeatures: [],
   },
   {
+    name: 'Sneak',
+    source: 'TST',
+    hd: { number: 1, faces: 8 },
+    proficiency: ['dex', 'int'],
+    startingProficiencies: {
+      skills: [{ choose: { from: ['stealth', 'acrobatics', 'perception'], count: 2 } }],
+    },
+    // Expertise is prose-only in real data — the engine emits the choice.
+    classFeatures: ['Expertise|Sneak|TST|1'],
+  },
+  {
     name: 'Mage',
     source: 'TST',
     hd: { number: 1, faces: 6 },
@@ -139,6 +150,14 @@ const classFeature: DataEntity[] = [
     classSource: 'TST',
     level: 1,
     entries: ['You are gritty.'],
+  },
+  {
+    name: 'Expertise',
+    source: 'TST',
+    className: 'Sneak',
+    classSource: 'TST',
+    level: 1,
+    entries: ['Choose two of your skill proficiencies to gain Expertise.'],
   },
   {
     name: 'Warrior Path',

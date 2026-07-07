@@ -25,8 +25,8 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
       onChange(prompt.kind === 'asiOrFeat' ? id : [id]);
       return;
     }
-    // Weighted ability picks allow repeats; order matters.
-    if (prompt.kind === 'abilityWeighted' || prompt.kind === 'ability') {
+    // Weighted ability picks are distinct, order-sensitive slots.
+    if (prompt.kind === 'abilityWeighted') {
       const next = [...selected];
       const existing = next.indexOf(id);
       if (existing >= 0) next.splice(existing, 1);
@@ -42,11 +42,25 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
     onChange(next);
   };
 
+  // ASI-style ability picks allow stacking on one ability (+2), so they use
+  // steppers rather than toggles.
+  const addOne = (id: string) => {
+    if (selected.length < prompt.count) onChange([...selected, id]);
+  };
+  const removeOne = (id: string) => {
+    const i = selected.indexOf(id);
+    if (i < 0) return;
+    const next = [...selected];
+    next.splice(i, 1);
+    onChange(next);
+  };
+
   const options = searchable
     ? prompt.options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase()))
     : prompt.options;
   // Options with descriptions (feats) render as a readable list, not chips.
   const detailed = prompt.options.some((o) => o.description !== undefined && o.description !== '');
+  const stepper = prompt.kind === 'ability' && prompt.count > 1;
 
   return (
     <fieldset className="flex flex-col gap-2 rounded-lg bg-surface p-3">
@@ -65,7 +79,44 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
           className="rounded bg-surface-2 px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted"
         />
       )}
-      {detailed ? (
+      {stepper ? (
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          {options.map((o) => {
+            const times = selected.filter((s) => s === o.id).length;
+            return (
+              <div
+                key={o.id}
+                className={`flex items-center justify-between gap-1 rounded-lg border px-2 py-1.5 ${
+                  times > 0 ? 'border-accent bg-accent-deep/40' : 'border-surface-2 bg-surface-2/40'
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-label={`Decrease ${o.label}`}
+                  onClick={() => removeOne(o.id)}
+                  disabled={times === 0}
+                  className="h-6 w-6 shrink-0 rounded-full bg-surface text-sm disabled:opacity-30"
+                >
+                  −
+                </button>
+                <span className="text-sm font-semibold">
+                  {o.label}
+                  {times > 0 && <span className="ml-1 text-emerald-300">+{times}</span>}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Increase ${o.label}`}
+                  onClick={() => addOne(o.id)}
+                  disabled={selected.length >= prompt.count}
+                  className="h-6 w-6 shrink-0 rounded-full bg-surface text-sm disabled:opacity-30"
+                >
+                  +
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : detailed ? (
         <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {options.map((o) => {
             const active = selected.includes(o.id);

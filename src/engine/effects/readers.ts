@@ -60,6 +60,12 @@ export function languageOptions(from?: readonly unknown[]): ChoiceOption[] {
   return from !== undefined && from.length > 0 ? genericOptions(from) : LANGUAGE_OPTIONS;
 }
 
+/** Expertise offers skills you're already proficient in (RAW), else all. */
+export function expertiseOptions(col: Collector): ChoiceOption[] {
+  const prof = col.proficientSkills();
+  return prof.length > 0 ? prof.map((n) => ({ id: n, label: n })) : skillOptions();
+}
+
 /**
  * Generic reader for `*Proficiencies`-shaped arrays. Emits fixed grants via
  * `grant`, and prompts for `choose`/`any`/`anyStandard` entries.

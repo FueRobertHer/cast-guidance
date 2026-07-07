@@ -30,6 +30,15 @@ export class Collector {
     this.warnings.push(message);
   }
 
+  /** Skills the character is already proficient in (for expertise choices). */
+  proficientSkills(): string[] {
+    const out = new Set<string>();
+    for (const e of this.effects) {
+      if (e.kind === 'skillProf' && e.level >= 1) out.add(e.skill);
+    }
+    return [...out];
+  }
+
   /**
    * Resolve a choice from doc.choices or surface the prompt. When resolved,
    * `apply` receives the selected option ids (repeats allowed for weighted

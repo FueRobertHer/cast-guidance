@@ -3,6 +3,7 @@ import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import {
+  expertiseOptions,
   genericOptions,
   languageOptions,
   readAbilityBlock,
@@ -86,7 +87,7 @@ export function collectFeatEntity(
           kind: 'expertise',
           label: 'Expertise',
           count,
-          options: skillOptions(),
+          options: expertiseOptions(col),
         },
         (selected) => {
           for (const s of selected) col.add({ kind: 'skillProf', skill: s, level: 2, origin });
