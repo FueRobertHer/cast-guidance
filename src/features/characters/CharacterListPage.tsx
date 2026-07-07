@@ -1,12 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Copy, Download, FileUp, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
+import { engineContextFor } from '@/data5e/engineAdapter';
+import { useRegistry } from '@/data5e/hooks';
 import { invalidateRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { deriveSheet } from '@/engine/derive';
 import { migrateCharacter } from '@/engine/migrate';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { assertCharacterExport, CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
@@ -49,12 +52,36 @@ function classSummary(doc: CharacterDoc): string {
     .join(' / ');
 }
 
+interface Vitals {
+  hp: number;
+  maxHp: number;
+  ac: number;
+}
+
 export function Component() {
   const navigate = useNavigate();
+  const registry = useRegistry(['essentials']);
   const rows = useLiveQuery(async () => db.characters.orderBy('updatedAt').reverse().toArray(), []);
   const characters = (rows ?? []) as unknown as CharacterDoc[];
   const importInput = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
+
+  // At-a-glance vitals per character (few characters → deriving all is cheap).
+  const vitals = useMemo(() => {
+    const map = new Map<string, Vitals>();
+    if (registry === null) return map;
+    const ctx = engineContextFor(registry);
+    for (const c of characters) {
+      if (c.classes.length === 0) continue;
+      try {
+        const sheet = deriveSheet(c, ctx);
+        map.set(c.id, { hp: c.play.currentHp, maxHp: sheet.maxHp.value, ac: sheet.ac.value });
+      } catch {
+        // skip a character that can't derive (e.g. missing homebrew)
+      }
+    }
+    return map;
+  }, [characters, registry]);
 
   // New characters open straight in the Build page (the primary editor).
   const createBlank = async () => {
@@ -100,6 +127,27 @@ export function Component() {
                 {c.race !== undefined ? ` · ${c.race.name}` : ''}
                 {` · ${c.rulesVersion}`}
               </div>
+              {(() => {
+                const v = vitals.get(c.id);
+                if (v === undefined) return null;
+                const ratio = v.maxHp > 0 ? Math.max(0, Math.min(1, v.hp / v.maxHp)) : 0;
+                const color =
+                  ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
+                return (
+                  <div className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
+                    <span className="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
+                      <span
+                        className={`block h-full ${color}`}
+                        style={{ width: `${ratio * 100}%` }}
+                      />
+                    </span>
+                    <span className="font-mono">
+                      {v.hp}/{v.maxHp}
+                    </span>
+                    <span>AC {v.ac}</span>
+                  </div>
+                );
+              })()}
             </Link>
             <button
               type="button"
