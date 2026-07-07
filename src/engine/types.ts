@@ -80,6 +80,12 @@ export interface PlayState {
   xp: number;
   /** Per-turn action economy; true = used this turn. Optional for older docs. */
   turn?: { action: boolean; bonus: boolean; reaction: boolean };
+  /**
+   * False for a freshly built character: the sheet fills currentHp to the
+   * derived max the first time HP exists, then flips this true. Undefined on
+   * pre-existing docs, which are left exactly as saved.
+   */
+  hpInitialized?: boolean;
 }
 
 export interface CharacterDoc {
@@ -331,6 +337,7 @@ export function emptyPlayState(): PlayState {
     inspiration: false,
     currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     xp: 0,
+    hpInitialized: false,
   };
 }
 

@@ -32,6 +32,9 @@ const CONDITIONS = [
 
 /** Damage eats temp HP first; healing caps at max. */
 function applyHp(play: PlayState, delta: number, maxHp: number): void {
+  // Any manual HP change means the character is in play now: stop auto-tracking
+  // max HP so a deliberate 0-HP / damaged state sticks across level-ups.
+  play.hpInitialized = true;
   if (delta < 0) {
     let dmg = -delta;
     const fromTemp = Math.min(play.tempHp, dmg);
@@ -114,6 +117,7 @@ export function Component() {
               if (!Number.isNaN(n))
                 update((d) => {
                   d.play.currentHp = Math.max(0, Math.min(sheet.maxHp.value, n));
+                  d.play.hpInitialized = true;
                 });
             }}
           >
@@ -136,6 +140,26 @@ export function Component() {
             <Plus size={22} />
           </button>
         </div>
+        {/* HP bar: green → amber → red as it drops; temp HP shows as a cyan cap */}
+        {sheet.maxHp.value > 0 &&
+          (() => {
+            const ratio = Math.max(0, Math.min(1, play.currentHp / sheet.maxHp.value));
+            const color =
+              ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
+            const tempPct =
+              play.tempHp > 0 ? Math.min(100, (play.tempHp / sheet.maxHp.value) * 100) : 0;
+            return (
+              <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2">
+                <div
+                  className={`h-full ${color} transition-all`}
+                  style={{ width: `${ratio * 100}%` }}
+                />
+                {tempPct > 0 && (
+                  <div className="h-full bg-sky-400/70" style={{ width: `${tempPct}%` }} />
+                )}
+              </div>
+            );
+          })()}
         <div className="mt-3 flex items-center justify-between text-xs">
           <button
             type="button"

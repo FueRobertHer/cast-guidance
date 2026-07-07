@@ -33,6 +33,19 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     return deriveSheet(doc, engineContextFor(registry));
   }, [doc, registry, rev]);
 
+  // While a character is still being built (HP never manually touched),
+  // currentHp tracks the derived max — so leveling up keeps you at full.
+  // The first time the player damages/heals HP in play, it locks (see PlayTab).
+  // Never affects saved characters (hpInitialized === undefined).
+  useEffect(() => {
+    if (doc === null || sheet === null) return;
+    if (doc.play.hpInitialized === false && doc.play.currentHp !== sheet.maxHp.value) {
+      characterSessionStore.getState().update((d) => {
+        d.play.currentHp = sheet.maxHp.value;
+      });
+    }
+  }, [doc, sheet]);
+
   return {
     doc,
     sheet,
