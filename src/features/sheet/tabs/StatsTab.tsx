@@ -1,13 +1,14 @@
 import { useOutletContext } from 'react-router';
 import { roll } from '@/dice/roll';
 import { ABILITIES } from '@/engine/types';
+import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 function rollCheck(label: string, modifier: number) {
   const expr = `1d20${modifier >= 0 ? '+' : ''}${modifier}`;
-  rollLogStore.getState().append(roll(expr, { label }));
+  rollLogStore.getState().append(roll(expr, { label, advantage: currentAdvantage() }));
 }
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;

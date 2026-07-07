@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import { Link, NavLink, Outlet, useParams } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
+import { AdvToggle } from '@/ui/AdvToggle';
+import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
 
 const tabs = [
@@ -33,10 +35,11 @@ export function Component() {
         <Link to="/" className="text-ink-muted hover:text-ink">
           <ArrowLeft size={20} />
         </Link>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-lg font-bold">{state.doc?.name ?? '…'}</h1>
           <p className="truncate text-xs text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
         </div>
+        {id !== undefined && <HistoryDrawer charId={id} />}
       </header>
       <main className="flex-1 p-4 pb-24 lg:pb-4 lg:pl-40">
         <Outlet context={state} />
@@ -57,6 +60,7 @@ export function Component() {
           </NavLink>
         ))}
       </nav>
+      <AdvToggle />
       <DiceTray />
     </div>
   );

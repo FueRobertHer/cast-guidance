@@ -3,19 +3,16 @@ import { useState } from 'react';
 import { Drawer } from 'vaul';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
+import { useAdvMode } from '@/stores/advMode';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 
 const QUICK = [4, 6, 8, 10, 12, 20, 100];
 
-export type AdvMode = 'normal' | 'adv' | 'dis';
-
-let globalAdvMode: AdvMode = 'normal';
-export const getAdvMode = (): AdvMode => globalAdvMode;
-
 export function DiceTray() {
   const rolls = useRollLog((s) => s.rolls);
   const [expr, setExpr] = useState('');
-  const [advMode, setAdvMode] = useState<AdvMode>('normal');
+  const advMode = useAdvMode((s) => s.mode);
+  const setAdvMode = useAdvMode((s) => s.set);
   const [error, setError] = useState<string>();
 
   const doRoll = (expression: string, label?: string) => {
@@ -65,7 +62,6 @@ export function DiceTray() {
                 type="button"
                 onClick={() => {
                   setAdvMode(mode);
-                  globalAdvMode = mode;
                 }}
                 className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
                   advMode === mode

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
+import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 
 export interface RollChipProps {
@@ -33,7 +34,11 @@ export function RollChip({ expr, display, label, variant = 'dice' }: RollChipPro
   if (!valid.current) return <span>{display ?? expr}</span>;
 
   const onRoll = () => {
-    const r = roll(expr, { label });
+    // d20-style chips honor the global advantage toggle.
+    const r = roll(expr, {
+      label,
+      advantage: variant === 'd20' ? currentAdvantage() : undefined,
+    });
     rollLogStore.getState().append(r);
     setResult(r.total);
     clearTimeout(timer.current);

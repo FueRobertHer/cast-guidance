@@ -20,6 +20,7 @@ export const characterRepo = {
 
   async delete(id: string): Promise<void> {
     await db.characters.delete(id);
+    await db.characterHistory.where('charId').equals(id).delete();
   },
 
   async duplicate(id: string): Promise<CharacterDoc | undefined> {

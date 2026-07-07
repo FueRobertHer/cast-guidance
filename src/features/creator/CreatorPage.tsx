@@ -239,6 +239,12 @@ export function Component() {
                             c.subclass = { name: nameOf(e), source: sourceOf(e) };
                         })
                       }
+                      onDeselect={() =>
+                        update((d) => {
+                          const c = d.classes[0];
+                          if (c !== undefined) c.subclass = undefined;
+                        })
+                      }
                     />
                   </div>
                 )}
@@ -278,6 +284,7 @@ export function Component() {
                   onSelect={(e) =>
                     update((d) => void (d.subrace = { name: nameOf(e), source: sourceOf(e) }))
                   }
+                  onDeselect={() => update((d) => void (d.subrace = undefined))}
                 />
               </div>
             )}

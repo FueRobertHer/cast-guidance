@@ -11,10 +11,13 @@ export function EntityCardList({
   entities,
   selectedUid,
   onSelect,
+  onDeselect,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
   onSelect: (e: Entity) => void;
+  /** When provided, tapping the selected card clears the pick (optional fields). */
+  onDeselect?: () => void;
 }) {
   const [filter, setFilter] = useState('');
   const list = useMemo(() => {
@@ -37,14 +40,27 @@ export function EntityCardList({
           <button
             key={uidOf(e)}
             type="button"
-            onClick={() => onSelect(e)}
+            onClick={() => {
+              if (selectedUid === uidOf(e) && onDeselect !== undefined) onDeselect();
+              else onSelect(e);
+            }}
+            title={
+              selectedUid === uidOf(e) && onDeselect !== undefined
+                ? 'Tap again to unselect'
+                : undefined
+            }
             className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm ${
               selectedUid === uidOf(e)
                 ? 'border-accent bg-accent-deep/40 font-semibold'
                 : 'border-surface-2 bg-surface hover:bg-surface-2'
             }`}
           >
-            <span className="truncate">{nameOf(e)}</span>
+            <span className="truncate">
+              {nameOf(e)}
+              {selectedUid === uidOf(e) && onDeselect !== undefined && (
+                <span className="ml-1.5 text-xs font-normal text-ink-muted">✕ unselect</span>
+              )}
+            </span>
             <SourceBadge source={sourceOf(e)} />
           </button>
         ))}

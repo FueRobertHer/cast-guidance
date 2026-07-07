@@ -3,6 +3,7 @@ import { Link, useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
+import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { RollChip } from '@/ui/RollChip';
@@ -219,7 +220,32 @@ export function Component() {
                 ))}
               </div>
             ))}
-            <RollChip expr="1d20" label="Death save" variant="d20" />
+            <button
+              type="button"
+              onClick={() =>
+                update((d) => {
+                  const r = roll('1d20', { label: 'Death save', advantage: currentAdvantage() });
+                  rollLogStore.getState().append(r);
+                  const nat = r.meta?.d20?.natural;
+                  const saves = d.play.deathSaves;
+                  if (nat === 20) {
+                    // Natural 20: back up with 1 hit point.
+                    d.play.currentHp = 1;
+                    d.play.deathSaves = { success: 0, fail: 0 };
+                  } else if (nat === 1) {
+                    saves.fail = Math.min(3, saves.fail + 2);
+                  } else if (r.total >= 10) {
+                    saves.success = Math.min(3, saves.success + 1);
+                  } else {
+                    saves.fail = Math.min(3, saves.fail + 1);
+                  }
+                })
+              }
+              className="rounded-lg bg-accent-deep px-3 py-1.5 text-xs font-semibold"
+              title="Roll a death save — successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
+            >
+              🎲 Roll save
+            </button>
           </div>
         </section>
       )}
@@ -245,9 +271,12 @@ export function Component() {
         <button
           type="button"
           onClick={() =>
-            rollLogStore
-              .getState()
-              .append(roll(`1d20${fmt(sheet.initiative.value)}`, { label: 'Initiative' }))
+            rollLogStore.getState().append(
+              roll(`1d20${fmt(sheet.initiative.value)}`, {
+                label: 'Initiative',
+                advantage: currentAdvantage(),
+              }),
+            )
           }
           className="rounded-lg bg-surface p-3"
         >

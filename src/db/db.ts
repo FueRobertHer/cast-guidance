@@ -52,6 +52,15 @@ export interface RollLogRow {
   result: unknown;
 }
 
+/** One point-in-time snapshot of a character (version history). */
+export interface CharacterHistoryRow {
+  id: string;
+  charId: string;
+  at: number;
+  label: string;
+  doc: CharacterDoc;
+}
+
 export const db = new Dexie('dnd-sheet') as Dexie & {
   dataFiles: EntityTable<DataFileRow, 'key'>;
   dataMeta: EntityTable<DataMetaRow, 'id'>;
@@ -60,6 +69,7 @@ export const db = new Dexie('dnd-sheet') as Dexie & {
   searchIndexes: EntityTable<SearchIndexRow, 'key'>;
   settings: EntityTable<SettingRow, 'key'>;
   rollLog: EntityTable<RollLogRow, 'id'>;
+  characterHistory: EntityTable<CharacterHistoryRow, 'id'>;
 };
 
 db.version(1).stores({
@@ -70,4 +80,8 @@ db.version(1).stores({
   searchIndexes: 'key',
   settings: 'key',
   rollLog: 'id, at, charId',
+});
+
+db.version(2).stores({
+  characterHistory: 'id, charId, at',
 });
