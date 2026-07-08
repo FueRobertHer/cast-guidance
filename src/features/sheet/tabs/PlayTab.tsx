@@ -4,6 +4,7 @@ import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
+import { notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { RollChip } from '@/ui/RollChip';
@@ -48,16 +49,36 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
   }
 }
 
-function shortRest(play: PlayState, sheet: DerivedSheet): void {
+/** Reset short-rest state and return a human summary of what was restored. */
+function shortRest(play: PlayState, sheet: DerivedSheet): string[] {
+  const restored: string[] = [];
+  for (const r of sheet.resources) {
+    if (r.resetOn === 'short' && play.resources.some((x) => x.key === r.key && x.used > 0)) {
+      restored.push(r.label);
+    }
+  }
   for (const r of sheet.resources) {
     if (r.resetOn === 'short') {
       play.resources = play.resources.filter((x) => x.key !== r.key);
     }
   }
-  play.pactSlotsSpent = 0;
+  if (play.pactSlotsSpent > 0) {
+    restored.push('pact slots');
+    play.pactSlotsSpent = 0;
+  }
+  return restored;
 }
 
-function longRest(play: PlayState, sheet: DerivedSheet): void {
+/** Reset long-rest state and return a human summary of what was restored. */
+function longRest(play: PlayState, sheet: DerivedSheet): string[] {
+  const restored: string[] = [];
+  const hpHealed = sheet.maxHp.value - play.currentHp;
+  if (hpHealed > 0) restored.push(`+${hpHealed} HP`);
+  if (play.slotsSpent.some((n) => n > 0)) restored.push('spell slots');
+  if (play.pactSlotsSpent > 0) restored.push('pact slots');
+  if (play.resources.some((r) => r.used > 0)) restored.push('resources');
+  if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
+
   play.currentHp = sheet.maxHp.value;
   play.tempHp = 0;
   play.slotsSpent = play.slotsSpent.map(() => 0);
@@ -65,10 +86,15 @@ function longRest(play: PlayState, sheet: DerivedSheet): void {
   play.resources = [];
   play.deathSaves = { success: 0, fail: 0 };
   // Regain half your total hit dice (minimum 1)
+  let hitDiceBack = 0;
   for (const [die, total] of Object.entries(sheet.hitDice)) {
     const spent = play.hitDiceSpent[die] ?? 0;
-    play.hitDiceSpent[die] = Math.max(0, spent - Math.max(1, Math.floor(total / 2)));
+    const back = Math.min(spent, Math.max(1, Math.floor(total / 2)));
+    hitDiceBack += back;
+    play.hitDiceSpent[die] = spent - back;
   }
+  if (hitDiceBack > 0) restored.push(`${hitDiceBack} hit ${hitDiceBack === 1 ? 'die' : 'dice'}`);
+  return restored;
 }
 
 export function Component() {
@@ -457,7 +483,16 @@ export function Component() {
       <section className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => update((d) => shortRest(d.play, sheet))}
+          onClick={() => {
+            let restored: string[] = [];
+            update((d) => void (restored = shortRest(d.play, sheet)));
+            notify({
+              title: 'Short rest',
+              detail:
+                restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Nothing to restore',
+              tone: restored.length > 0 ? 'good' : 'info',
+            });
+          }}
           className="flex items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2.5 text-sm font-semibold"
         >
           <Sun size={16} /> Short rest
@@ -466,7 +501,13 @@ export function Component() {
           type="button"
           onClick={() => {
             if (window.confirm('Long rest: full HP, all slots and resources restored?')) {
-              update((d) => longRest(d.play, sheet));
+              let restored: string[] = [];
+              update((d) => void (restored = longRest(d.play, sheet)));
+              notify({
+                title: 'Long rest complete',
+                detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
+                tone: 'good',
+              });
             }
           }}
           className="flex items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2.5 text-sm font-semibold"
