@@ -4,7 +4,7 @@ import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
-import { notify } from '@/stores/notices';
+import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { RollChip } from '@/ui/RollChip';
@@ -47,6 +47,30 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
     play.currentHp = Math.min(maxHp, play.currentHp + delta);
     if (play.currentHp > 0) play.deathSaves = { success: 0, fail: 0 };
   }
+}
+
+/**
+ * A concentrating character who takes damage must make a CON save
+ * (DC = max(10, half the damage taken)). Rolls it, logs it, and breaks
+ * concentration on a failure. Mutates the draft; returns a notice to show.
+ * No-op when not concentrating or already dropped to 0 HP (that breaks it too).
+ */
+function rollConcentration(play: PlayState, damageTaken: number, conSave: number): Notice | null {
+  const label = play.concentratingOn?.label;
+  if (label === undefined || damageTaken <= 0 || play.currentHp === 0) return null;
+  const dc = Math.max(10, Math.floor(damageTaken / 2));
+  const r = roll(`1d20${fmt(conSave)}`, {
+    label: `Concentration save (DC ${dc})`,
+    advantage: currentAdvantage(),
+  });
+  rollLogStore.getState().append(r);
+  const held = r.total >= dc;
+  if (!held) play.concentratingOn = undefined;
+  return {
+    title: held ? 'Concentration held' : 'Concentration broken',
+    detail: `${label} · rolled ${r.total} vs DC ${dc}`,
+    tone: held ? 'good' : 'warn',
+  };
 }
 
 /** Reset short-rest state and return a human summary of what was restored. */
@@ -112,7 +136,19 @@ export function Component() {
   const play = doc.play;
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
-  const hpDelta = (delta: number) => update((d) => applyHp(d.play, delta, sheet.maxHp.value));
+  const hpDelta = (delta: number) => {
+    // Healing is a plain apply; damage may force a concentration save.
+    if (delta >= 0) {
+      update((d) => applyHp(d.play, delta, sheet.maxHp.value));
+      return;
+    }
+    let notice: Notice | null = null;
+    update((d) => {
+      applyHp(d.play, delta, sheet.maxHp.value);
+      notice = rollConcentration(d.play, -delta, sheet.saves.con.total.value);
+    });
+    if (notice !== null) notify(notice);
+  };
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
   const setUsed = (key: string, used: number) =>
@@ -143,13 +179,20 @@ export function Component() {
               const v = window.prompt('Set current HP', String(play.currentHp));
               if (v === null) return;
               const n = Number.parseInt(v, 10);
-              if (!Number.isNaN(n))
-                update((d) => {
-                  d.play.currentHp = Math.max(0, Math.min(sheet.maxHp.value, n));
-                  d.play.hpInitialized = true;
-                  if (d.play.currentHp === 0) d.play.concentratingOn = undefined;
-                  else d.play.deathSaves = { success: 0, fail: 0 };
-                });
+              if (Number.isNaN(n)) return;
+              let notice: Notice | null = null;
+              update((d) => {
+                const target = Math.max(0, Math.min(sheet.maxHp.value, n));
+                const damageTaken = d.play.currentHp - target;
+                d.play.currentHp = target;
+                d.play.hpInitialized = true;
+                if (target === 0) d.play.concentratingOn = undefined;
+                else {
+                  d.play.deathSaves = { success: 0, fail: 0 };
+                  notice = rollConcentration(d.play, damageTaken, sheet.saves.con.total.value);
+                }
+              });
+              if (notice !== null) notify(notice);
             }}
           >
             <div className="text-4xl font-bold">
