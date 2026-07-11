@@ -3,6 +3,7 @@ import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
+import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
 
 /** "str 13" / "int 13 or wis 13" from a feat/entity prerequisite array. */
@@ -238,7 +239,9 @@ function handleOptionalFeatureProgression(
             type: 'class',
           };
           col.features.push({ name: ofOrigin.label, origin: ofOrigin, entries: of.entries });
-          emitCurated(col, uid, ofOrigin);
+          if (!emitCurated(col, uid, ofOrigin)) {
+            proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+          }
         }
       },
     );
@@ -356,10 +359,10 @@ export function collectClasses(col: Collector): void {
           },
         );
       }
-      emitCurated(col, `${ref.name}|${origin.label}`.toLowerCase(), {
-        ...origin,
-        label: ref.name,
-      });
+      const featureOrigin: EffectOrigin = { ...origin, label: ref.name };
+      if (!emitCurated(col, `${ref.name}|${origin.label}`.toLowerCase(), featureOrigin)) {
+        proseScanFeature(col, ref.name, feature.entries, featureOrigin);
+      }
     }
 
     // Subclass features
@@ -389,10 +392,10 @@ export function collectClasses(col: Collector): void {
             origin: subOrigin,
             entries: feature.entries,
           });
-          emitCurated(col, `${ref.name}|${subOrigin.label}`.toLowerCase(), {
-            ...subOrigin,
-            label: ref.name,
-          });
+          const subFeatureOrigin: EffectOrigin = { ...subOrigin, label: ref.name };
+          if (!emitCurated(col, `${ref.name}|${subOrigin.label}`.toLowerCase(), subFeatureOrigin)) {
+            proseScanFeature(col, ref.name, feature.entries, subFeatureOrigin);
+          }
         }
       }
     }

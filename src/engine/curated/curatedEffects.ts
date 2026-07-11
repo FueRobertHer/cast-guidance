@@ -209,11 +209,14 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'action', economy: 'bonus', label: 'Rage', origin });
   },
   'second wind|fighter': (col, origin) => {
+    // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
+    const lvl = classLevel(col, 'Fighter');
+    const uses2024 = lvl >= 10 ? 4 : lvl >= 4 ? 3 : 2;
     col.add({
       kind: 'resource',
       key: 'second-wind',
       label: 'Second Wind',
-      max: 1,
+      max: col.doc.rulesVersion === '2024' ? uses2024 : 1,
       resetOn: 'short',
       origin,
     });
@@ -255,6 +258,30 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  'channel divinity|cleric': (col, origin) => {
+    // Scales with cleric level; the prose scanner can't see level gates.
+    const lvl = classLevel(col, 'Cleric');
+    const uses =
+      col.doc.rulesVersion === '2024' ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
+    col.add({
+      kind: 'resource',
+      key: 'channel-divinity',
+      label: 'Channel Divinity',
+      max: uses,
+      resetOn: 'short',
+      origin,
+    });
+  },
+  'font of magic|sorcerer': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'sorcery-points',
+      label: 'Sorcery Points',
+      max: 'level:Sorcerer',
+      resetOn: 'long',
+      origin,
+    });
+  },
   'bardic inspiration|bard': (col, origin) => {
     col.add({
       kind: 'resource',
@@ -277,121 +304,11 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
 
-  // --- Racial traits (keyed `trait:<traitName>`, race-agnostic mechanics) ---
-  'trait:relentless endurance': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'relentless-endurance',
-      label: 'Relentless Endurance',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({
-      kind: 'note',
-      text: 'Relentless Endurance: when reduced to 0 HP (not killed outright), drop to 1 HP instead. Once per long rest.',
-      origin,
-    });
-  },
-  'trait:breath weapon': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'breath-weapon',
-      label: 'Breath Weapon',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'action', label: 'Breath Weapon', origin });
-  },
-  "trait:stone's endurance": (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'stones-endurance',
-      label: "Stone's Endurance",
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-    col.add({
-      kind: 'action',
-      economy: 'reaction',
-      label: "Stone's Endurance (reduce damage)",
-      roll: '1d12',
-      origin,
-    });
-  },
-  'trait:healing hands': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'healing-hands',
-      label: 'Healing Hands',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'action', label: 'Healing Hands', origin });
-  },
-  'trait:fey step': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'fey-step',
-      label: 'Fey Step',
-      max: 1,
-      resetOn: 'short',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Fey Step (teleport 30 ft)', origin });
-  },
-  'trait:celestial revelation': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'celestial-revelation',
-      label: 'Celestial Revelation',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Celestial Revelation', origin });
-  },
-  'trait:adrenaline rush': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'adrenaline-rush',
-      label: 'Adrenaline Rush',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Adrenaline Rush (Dash)', origin });
-  },
-  'trait:hidden step': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'hidden-step',
-      label: 'Hidden Step',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Hidden Step (invisibility)', origin });
-  },
-  'trait:fury of the small': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'fury-of-the-small',
-      label: 'Fury of the Small',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'trait:nimble escape': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Nimble Escape (Disengage/Hide)', origin });
-  },
-  'trait:dwarven toughness': (col, origin) => {
-    col.add({ kind: 'hpPerLevel', amount: 1, origin });
-  },
+  // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
+  // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
+  // Stone's Endurance, …) are handled per-source by the prose scanner, which
+  // reads each printing's actual wording. Curate here only what prose can't
+  // see (passive numbers with no usage phrasing).
   'trait:surprise attack': (col, origin) => {
     col.add({
       kind: 'action',
@@ -401,75 +318,21 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'trait:large form': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'large-form',
-      label: 'Large Form',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Large Form (become Large)', origin });
-  },
-  'trait:draconic flight': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'draconic-flight',
-      label: 'Draconic Flight',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Draconic Flight (wings, 10 min)', origin });
-  },
-  'trait:giant ancestry': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'giant-ancestry',
-      label: 'Giant Ancestry',
-      max: 'profBonus',
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'trait:radiant soul': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'radiant-soul',
-      label: 'Radiant Soul',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'trait:necrotic shroud': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'necrotic-shroud',
-      label: 'Necrotic Shroud',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-  },
-  'trait:radiant consumption': (col, origin) => {
-    col.add({
-      kind: 'resource',
-      key: 'radiant-consumption',
-      label: 'Radiant Consumption',
-      max: 1,
-      resetOn: 'long',
-      origin,
-    });
-  },
 };
 
-/** Racial traits live in `race.entries` by name — key them `trait:<name>`. */
-export function emitCuratedTrait(col: Collector, traitName: string, origin: EffectOrigin): void {
-  CURATED[`trait:${traitName.toLowerCase()}`]?.(col, origin);
+/**
+ * Racial traits live in `race.entries` by name — key them `trait:<name>`.
+ * Returns whether a curated entry handled it (callers fall back to prose scan).
+ */
+export function emitCuratedTrait(col: Collector, traitName: string, origin: EffectOrigin): boolean {
+  const fn = CURATED[`trait:${traitName.toLowerCase()}`];
+  fn?.(col, origin);
+  return fn !== undefined;
 }
 
-export function emitCuratedEffects(col: Collector, key: string, origin: EffectOrigin): void {
-  CURATED[key]?.(col, origin);
+/** Returns whether a curated entry handled the key (callers fall back to prose scan). */
+export function emitCuratedEffects(col: Collector, key: string, origin: EffectOrigin): boolean {
+  const fn = CURATED[key];
+  fn?.(col, origin);
+  return fn !== undefined;
 }

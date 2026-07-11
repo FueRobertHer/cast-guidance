@@ -478,3 +478,40 @@ describe('deriveSheet — curated racial traits and feats', () => {
     expect(res?.resetOn).toBe('long');
   });
 });
+
+describe('deriveSheet — generic prose scan (Prosefolk)', () => {
+  const doc = warriorDoc();
+  doc.race = { name: 'Prosefolk', source: 'TST' };
+  const sheet = deriveSheet(doc, ctx);
+
+  it('profBonus-limited bonus-action trait → resource + action', () => {
+    const res = sheet.resources.find((r) => r.key === 'test-surge');
+    expect(res?.max).toBe(3); // prof bonus at level 5
+    expect(res?.resetOn).toBe('long');
+    expect(sheet.actions.some((a) => a.label === 'Test Surge' && a.economy === 'bonus')).toBe(true);
+  });
+
+  it('once-per-short-rest reaction trait → 1-use short resource + reaction', () => {
+    const res = sheet.resources.find((r) => r.key === 'once-guard');
+    expect(res?.max).toBe(1);
+    expect(res?.resetOn).toBe('short');
+    expect(sheet.actions.some((a) => a.label === 'Once Guard' && a.economy === 'reaction')).toBe(
+      true,
+    );
+  });
+
+  it('per-level HP rider → +1 HP per level', () => {
+    // Warrior baseline is 44; Test Toughness adds 1×5 levels.
+    expect(sheet.maxHp.value).toBe(49);
+  });
+
+  it('no-usage prose emits nothing', () => {
+    expect(sheet.resources.some((r) => r.key === 'plain-lore')).toBe(false);
+    expect(sheet.actions.some((a) => a.label === 'Plain Lore')).toBe(false);
+  });
+
+  it('curated traits are not double-emitted by the prose scan', () => {
+    const s2 = deriveSheet(warriorDoc(), ctx);
+    expect(s2.resources.filter((r) => r.key === 'relentless-endurance')).toHaveLength(1);
+  });
+});

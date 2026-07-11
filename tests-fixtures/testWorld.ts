@@ -31,6 +31,40 @@ const race: DataEntity[] = [
       },
     ],
   },
+  {
+    // Exercises the generic prose scanner (no curated entries match these).
+    name: 'Prosefolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Test Surge',
+        type: 'entries',
+        entries: [
+          'As a bonus action, you surge. You can use this trait a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+      {
+        name: 'Once Guard',
+        type: 'entries',
+        entries: [
+          'As a reaction, you guard an ally. Once you use this trait, you can’t do so again until you finish a short or long rest.',
+        ],
+      },
+      {
+        name: 'Test Toughness',
+        type: 'entries',
+        entries: [
+          'Your hit point maximum increases by 1, and it increases by 1 every time you gain a level.',
+        ],
+      },
+      {
+        name: 'Plain Lore',
+        type: 'entries',
+        entries: ['You know things. This trait has no usage limits at all.'],
+      },
+    ],
+  },
 ];
 
 const spell: DataEntity[] = [

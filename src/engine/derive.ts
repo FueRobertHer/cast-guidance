@@ -71,12 +71,20 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   const spellcasting = calcSpellcasting(doc, col, abilities, profBonus.value);
   const resources = calcResources(doc, effects, abilities, profBonus.value);
 
-  const actions = effectsOf(effects, 'action').map((e) => ({
-    economy: e.economy,
-    label: e.label,
-    roll: e.roll,
-    origin: e.origin.label,
-  }));
+  const seenActions = new Set<string>();
+  const actions = effectsOf(effects, 'action')
+    .filter((e) => {
+      const key = `${e.economy}:${e.label}`;
+      if (seenActions.has(key)) return false;
+      seenActions.add(key);
+      return true;
+    })
+    .map((e) => ({
+      economy: e.economy,
+      label: e.label,
+      roll: e.roll,
+      origin: e.origin.label,
+    }));
 
   const classLabel = doc.classes
     .map(

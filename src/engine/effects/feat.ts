@@ -2,6 +2,7 @@ import { emitCuratedEffects } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
+import { proseScanFeature } from './proseScan';
 import {
   expertiseOptions,
   genericOptions,
@@ -112,7 +113,9 @@ export function collectFeatEntity(
   collectAdditionalSpells(col, e.additionalSpells, origin);
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
-  emitCuratedEffects(col, uid, origin);
+  if (!emitCuratedEffects(col, uid, origin)) {
+    proseScanFeature(col, origin.label, e.entries, origin);
+  }
 }
 
 export function collectFeats(col: Collector): void {

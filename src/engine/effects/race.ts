@@ -2,6 +2,7 @@ import { emitCuratedTrait } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
+import { proseScanFeature } from './proseScan';
 import {
   genericOptions,
   languageOptions,
@@ -97,10 +98,13 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   collectAdditionalSpells(col, e.additionalSpells, origin);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
-  // only in prose — pull the curated ones through by trait name.
+  // only in prose — curated table first, generic prose scan for the long tail.
   for (const entry of asEntityArray(e.entries)) {
     const traitName = str(entry.name);
-    if (traitName !== undefined) emitCuratedTrait(col, traitName, origin);
+    if (traitName === undefined) continue;
+    if (!emitCuratedTrait(col, traitName, origin)) {
+      proseScanFeature(col, traitName, entry.entries, origin);
+    }
   }
 }
 

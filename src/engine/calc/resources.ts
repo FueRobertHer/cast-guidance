@@ -8,7 +8,11 @@ export function calcResources(
   profBonus: number,
 ): DerivedResource[] {
   const out: DerivedResource[] = [];
+  const seen = new Set<string>();
   for (const e of effectsOf(effects, 'resource')) {
+    // First wins: curated entries emit before prose-scanned duplicates.
+    if (seen.has(e.key)) continue;
+    seen.add(e.key);
     let max: number;
     if (typeof e.max === 'number') {
       max = e.max;
