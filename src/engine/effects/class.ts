@@ -213,6 +213,7 @@ function handleOptionalFeatureProgression(
       .map((of) => ({
         id: `${str(of.name)}|${str(of.source)}`.toLowerCase(),
         label: `${str(of.name)} (${str(of.source)})`,
+        description: summarizeEntries(of.entries),
       }));
 
     col.choice(

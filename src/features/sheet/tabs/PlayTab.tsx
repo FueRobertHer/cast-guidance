@@ -277,6 +277,9 @@ export function Component() {
               </div>
             );
           })()}
+        <p className="mt-1.5 text-center text-[10px] text-ink-muted">
+          tap ±1 · double-tap ±5 · tap the number to type it
+        </p>
         <div className="mt-3 flex items-center justify-between text-xs">
           <button
             type="button"

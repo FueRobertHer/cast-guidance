@@ -125,6 +125,8 @@ function Section({
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry(['essentials']);
+  // Tap-to-swap for ability scores (tap one value, then another).
+  const [swapFrom, setSwapFrom] = useState<(typeof ABILITIES)[number] | null>(null);
 
   useEffect(() => {
     void ensureTypePacks('class');
@@ -163,6 +165,24 @@ export function Component() {
     const cls = registry.get('class', ref.name, ref.source);
     const faces = (cls?.hd as { faces?: number } | undefined)?.faces;
     return typeof faces === 'number' ? faces : 8;
+  };
+
+  /** Class level at which the subclass is chosen (from gainSubclassFeature refs). */
+  const subclassLevelOf = (ref: { name: string; source: string }): number => {
+    const cls = registry.get('class', ref.name, ref.source);
+    const feats = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
+    for (const f of feats) {
+      if (
+        typeof f === 'object' &&
+        f !== null &&
+        (f as { gainSubclassFeature?: boolean }).gainSubclassFeature === true
+      ) {
+        const raw = String((f as { classFeature?: unknown }).classFeature ?? '');
+        const lvl = Number.parseInt(raw.split('|')[3] ?? '', 10);
+        if (!Number.isNaN(lvl)) return lvl;
+      }
+    }
+    return 1;
   };
   const hpMethod = doc.hpMethod ?? 'average';
   const totalLevels = doc.classes.reduce((s, c) => s + c.levels, 0);
@@ -386,7 +406,13 @@ export function Component() {
                 </div>
               )}
 
-              {subclasses.length > 0 && (
+              {subclasses.length > 0 &&
+              entry.subclass === undefined &&
+              entry.levels < subclassLevelOf(entry.ref) ? (
+                <p className="text-xs text-ink-muted">
+                  Subclass unlocks at level {subclassLevelOf(entry.ref)}.
+                </p>
+              ) : subclasses.length > 0 ? (
                 <details open={entry.subclass === undefined}>
                   <summary className="cursor-pointer text-xs text-ink-muted">
                     Subclass: {entry.subclass?.name ?? 'none picked'}
@@ -415,17 +441,22 @@ export function Component() {
                     />
                   </div>
                 </details>
-              )}
+              ) : null}
             </div>
           );
         })}
 
-        <details>
-          <summary className="cursor-pointer text-xs text-ink-muted">
-            {doc.classes.length === 0 ? 'Pick a class' : 'Add a class (multiclass)'}
+        <details open={doc.classes.length === 0}>
+          <summary
+            className={`cursor-pointer text-xs ${
+              doc.classes.length === 0 ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            }`}
+          >
+            {doc.classes.length === 0 ? 'Pick a class — start here' : 'Add a class (multiclass)'}
           </summary>
           <div className="pt-2">
             <EntityCardList
+              dedupe
               entities={classes.filter(
                 (e) =>
                   !doc.classes.some(
@@ -450,6 +481,7 @@ export function Component() {
 
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
         <EntityCardList
+          dedupe
           entities={races}
           selectedUid={
             doc.race !== undefined ? `${doc.race.name}|${doc.race.source}`.toLowerCase() : undefined
@@ -481,6 +513,64 @@ export function Component() {
       </Section>
 
       <Section title="Abilities" summary={ABILITIES.map((a) => doc.abilities.base[a]).join('/')}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              update((d) => {
+                const arr = [15, 14, 13, 12, 10, 8];
+                ABILITIES.forEach((a, i) => {
+                  d.abilities.base[a] = arr[i] ?? 10;
+                });
+              })
+            }
+            className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
+          >
+            Standard array
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const scores = ABILITIES.map(() => {
+                const dice = [1, 2, 3, 4].map(() => roll('1d6').total);
+                dice.sort((x, y) => x - y);
+                // 4d6 drop lowest
+                return dice.slice(1).reduce((s, v) => s + v, 0);
+              });
+              update((d) => {
+                ABILITIES.forEach((a, i) => {
+                  d.abilities.base[a] = scores[i] ?? 10;
+                });
+              });
+            }}
+            className="flex items-center gap-1 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
+          >
+            <Dices size={12} /> Roll 4d6
+          </button>
+          {(() => {
+            // Passive point-buy meter — shows only when all scores are in range.
+            const COST: Record<number, number> = {
+              8: 0,
+              9: 1,
+              10: 2,
+              11: 3,
+              12: 4,
+              13: 5,
+              14: 7,
+              15: 9,
+            };
+            const costs = ABILITIES.map((a) => COST[doc.abilities.base[a]]);
+            if (costs.some((c) => c === undefined)) return null;
+            const total = costs.reduce<number>((s, c) => s + (c ?? 0), 0);
+            return (
+              <span
+                className={`ml-auto text-xs ${total === 27 ? 'text-emerald-300' : total > 27 ? 'text-amber-300' : 'text-ink-muted'}`}
+              >
+                Point buy: {total}/27
+              </span>
+            );
+          })()}
+        </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {ABILITIES.map((a) => {
             const final = sheet.abilities[a];
@@ -490,6 +580,7 @@ export function Component() {
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
+                    aria-label={`Decrease ${a}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
@@ -499,9 +590,31 @@ export function Component() {
                   >
                     −
                   </button>
-                  <span className="w-6 text-center font-bold">{doc.abilities.base[a]}</span>
                   <button
                     type="button"
+                    aria-label={`Swap ${a} with another ability`}
+                    onClick={() => {
+                      if (swapFrom === null) setSwapFrom(a);
+                      else {
+                        const from = swapFrom;
+                        setSwapFrom(null);
+                        if (from === a) return;
+                        update((d) => {
+                          const t = d.abilities.base[from];
+                          d.abilities.base[from] = d.abilities.base[a];
+                          d.abilities.base[a] = t;
+                        });
+                      }
+                    }}
+                    className={`w-8 rounded text-center font-bold ${
+                      swapFrom === a ? 'bg-accent-deep/60 ring-1 ring-accent' : ''
+                    }`}
+                  >
+                    {doc.abilities.base[a]}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Increase ${a}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
@@ -521,10 +634,16 @@ export function Component() {
             );
           })}
         </div>
+        <p className="text-xs text-ink-muted">
+          {swapFrom !== null
+            ? `Swapping ${swapFrom.toUpperCase()} — tap another score to trade values.`
+            : 'Tip: tap a score, then another, to swap the two values.'}
+        </p>
       </Section>
 
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
         <EntityCardList
+          dedupe
           entities={backgrounds}
           selectedUid={
             doc.background !== undefined

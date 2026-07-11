@@ -192,23 +192,30 @@ export function Component() {
       <button
         type="button"
         onClick={() => void createBlank()}
-        className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 font-semibold text-white"
+        className="flex flex-col items-center rounded-lg bg-accent px-4 py-3 text-white"
       >
-        <Plus size={18} /> New character
+        <span className="flex items-center gap-2 font-semibold">
+          <Plus size={18} /> New character
+        </span>
+        <span className="text-xs text-white/75">free-form editor — change anything, anytime</span>
       </button>
       <div className="flex gap-2">
         <Link
           to="/create"
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm font-semibold"
+          className="flex flex-1 flex-col items-center rounded-lg bg-surface px-4 py-2.5"
         >
-          Guided wizard
+          <span className="text-sm font-semibold">Guided wizard</span>
+          <span className="text-[10px] text-ink-muted">step-by-step, good first time</span>
         </Link>
         <button
           type="button"
           onClick={() => importInput.current?.click()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm font-semibold"
+          className="flex flex-1 flex-col items-center rounded-lg bg-surface px-4 py-2.5"
         >
-          <FileUp size={16} /> Import
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <FileUp size={16} /> Import
+          </span>
+          <span className="text-[10px] text-ink-muted">from an exported file</span>
         </button>
       </div>
       <input
