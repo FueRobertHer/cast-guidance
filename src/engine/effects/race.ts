@@ -1,6 +1,7 @@
+import { emitCuratedTrait } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
-import { type Collector, num, str } from './base';
+import { asEntityArray, type Collector, num, str } from './base';
 import {
   genericOptions,
   languageOptions,
@@ -94,6 +95,13 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   );
   readResistList(col, e.resist, origin, `${idBase}:resist`);
   collectAdditionalSpells(col, e.additionalSpells, origin);
+
+  // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
+  // only in prose — pull the curated ones through by trait name.
+  for (const entry of asEntityArray(e.entries)) {
+    const traitName = str(entry.name);
+    if (traitName !== undefined) emitCuratedTrait(col, traitName, origin);
+  }
 }
 
 export function collectRace(col: Collector): void {

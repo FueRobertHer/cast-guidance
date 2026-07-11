@@ -51,6 +51,8 @@ export function castSpell(
     if (spell?.concentration === true) {
       d.play.concentratingOn = { label: spell.name };
     }
+    // Cantrips cost no slot — casting only matters for the concentration trigger.
+    if (level === 0) return;
     // Pact slots first when this class has them and the spell fits…
     if (
       block.pactSlots !== undefined &&
@@ -236,18 +238,26 @@ function ClassSpells({
                           {prepared ? 'prepared' : 'prepare'}
                         </button>
                       )}
-                      {allowCasting && lvl > 0 && (known || prepared) && (
-                        <button
-                          type="button"
-                          onClick={() => cast(lvl, s)}
-                          className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={`Cast at level ${lvl} (spends a slot${
-                            spellNeedsConcentration(s) ? ', starts concentration' : ''
-                          })`}
-                        >
-                          Cast
-                        </button>
-                      )}
+                      {allowCasting &&
+                        (known || prepared) &&
+                        // Leveled spells spend a slot; cantrips only get a Cast
+                        // button when they concentrate (so the tracker fires).
+                        (lvl > 0 || spellNeedsConcentration(s)) && (
+                          <button
+                            type="button"
+                            onClick={() => cast(lvl, s)}
+                            className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                            title={
+                              lvl === 0
+                                ? 'Cast cantrip (starts concentration)'
+                                : `Cast at level ${lvl} (spends a slot${
+                                    spellNeedsConcentration(s) ? ', starts concentration' : ''
+                                  })`
+                            }
+                          >
+                            Cast
+                          </button>
+                        )}
                     </div>
                   );
                 })}

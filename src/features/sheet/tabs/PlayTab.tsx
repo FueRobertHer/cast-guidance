@@ -757,7 +757,7 @@ export function Component() {
                           <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
                         )}
                       </Link>
-                      {level > 0 && (
+                      {(level > 0 || spellConcentrationOf(ref.name, ref.source)) && (
                         <button
                           type="button"
                           onClick={() =>
@@ -768,11 +768,15 @@ export function Component() {
                             })
                           }
                           className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={`Cast (spends the lowest available slot ≥ L${level}${
-                            spellConcentrationOf(ref.name, ref.source)
-                              ? ', starts concentration'
-                              : ''
-                          })`}
+                          title={
+                            level === 0
+                              ? 'Cast cantrip (starts concentration)'
+                              : `Cast (spends the lowest available slot ≥ L${level}${
+                                  spellConcentrationOf(ref.name, ref.source)
+                                    ? ', starts concentration'
+                                    : ''
+                                })`
+                          }
                         >
                           Cast
                         </button>

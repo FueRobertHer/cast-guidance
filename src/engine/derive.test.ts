@@ -459,3 +459,22 @@ describe('deriveSheet — 2024-style background', () => {
     expect(sheet.maxHp.value).toBe(49); // 10+24 + 3×5 CON
   });
 });
+
+describe('deriveSheet — curated racial traits and feats', () => {
+  it('emits a resource for a curated racial trait (Relentless Endurance)', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx);
+    const res = sheet.resources.find((r) => r.key === 'relentless-endurance');
+    expect(res).toBeDefined();
+    expect(res?.max).toBe(1);
+    expect(res?.resetOn).toBe('long');
+  });
+
+  it('emits a Luck resource for the Lucky feat', () => {
+    const doc = warriorDoc();
+    doc.feats = [{ ref: { name: 'Lucky', source: 'PHB' }, instanceId: 'a' }];
+    const sheet = deriveSheet(doc, ctx);
+    const res = sheet.resources.find((r) => r.key === 'luck');
+    expect(res?.max).toBe(3);
+    expect(res?.resetOn).toBe('long');
+  });
+});

@@ -42,6 +42,59 @@ export const CURATED: Record<string, CuratedFn> = {
   'speedy|xphb': (col, origin) => {
     col.add({ kind: 'speedBonus', amount: 10, origin });
   },
+  'lucky|phb': (col, origin) => {
+    col.add({ kind: 'resource', key: 'luck', label: 'Luck', max: 3, resetOn: 'long', origin });
+  },
+  'lucky|xphb': (col, origin) => {
+    // 2024: luck points equal to your proficiency bonus.
+    col.add({
+      kind: 'resource',
+      key: 'luck',
+      label: 'Luck Points',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'polearm master|phb': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Polearm strike (butt end)',
+      roll: '1d4',
+      origin,
+    });
+  },
+  'polearm master|xphb': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Polearm strike (butt end)',
+      roll: '1d4',
+      origin,
+    });
+  },
+  'martial adept|phb': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'superiority-die',
+      label: 'Superiority Die',
+      max: 1,
+      resetOn: 'short',
+      origin,
+    });
+    col.add({
+      kind: 'note',
+      text: 'Martial Adept: one superiority die (d6); learn two maneuvers.',
+      origin,
+    });
+  },
+  'healer|phb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'action', label: 'Healer (kit)', roll: '1d6+4', origin });
+  },
+  'healer|xphb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Healer (kit)', roll: '1d6+4', origin });
+  },
 
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   'defense|phb': (col, origin) => {
@@ -168,7 +221,68 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+
+  // --- Racial traits (keyed `trait:<traitName>`, race-agnostic mechanics) ---
+  'trait:relentless endurance': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'relentless-endurance',
+      label: 'Relentless Endurance',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({
+      kind: 'note',
+      text: 'Relentless Endurance: when reduced to 0 HP (not killed outright), drop to 1 HP instead. Once per long rest.',
+      origin,
+    });
+  },
+  'trait:breath weapon': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'breath-weapon',
+      label: 'Breath Weapon',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'action', label: 'Breath Weapon', origin });
+  },
+  "trait:stone's endurance": (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'stones-endurance',
+      label: "Stone's Endurance",
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: 'reaction',
+      label: "Stone's Endurance (reduce damage)",
+      roll: '1d12',
+      origin,
+    });
+  },
+  'trait:healing hands': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'healing-hands',
+      label: 'Healing Hands',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'action', label: 'Healing Hands', origin });
+  },
 };
+
+/** Racial traits live in `race.entries` by name — key them `trait:<name>`. */
+export function emitCuratedTrait(col: Collector, traitName: string, origin: EffectOrigin): void {
+  CURATED[`trait:${traitName.toLowerCase()}`]?.(col, origin);
+}
 
 export function emitCuratedEffects(col: Collector, key: string, origin: EffectOrigin): void {
   CURATED[key]?.(col, origin);

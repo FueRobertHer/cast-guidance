@@ -21,7 +21,15 @@ const race: DataEntity[] = [
         known: { _: ['guidance|tst'], '3': ['aid|tst'], '9': ['flame strike|tst'] },
       },
     ],
-    entries: [{ name: 'Keen Senses', type: 'entries', entries: ['You see well.'] }],
+    entries: [
+      { name: 'Keen Senses', type: 'entries', entries: ['You see well.'] },
+      // Curated-trait hook: real races carry this mechanic in prose only.
+      {
+        name: 'Relentless Endurance',
+        type: 'entries',
+        entries: ['Drop to 1 HP instead of 0 once per long rest.'],
+      },
+    ],
   },
 ];
 
@@ -76,6 +84,11 @@ const feat: DataEntity[] = [
     source: 'TST',
     skillProficiencies: [{ any: 3 }],
     entries: ['Pick three skills.'],
+  },
+  {
+    name: 'Lucky',
+    source: 'PHB',
+    entries: ['3 luck points (prose only in real data).'],
   },
 ];
 
