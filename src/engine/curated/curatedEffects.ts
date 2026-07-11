@@ -95,6 +95,61 @@ export const CURATED: Record<string, CuratedFn> = {
   'healer|xphb': (col, origin) => {
     col.add({ kind: 'action', economy: 'bonus', label: 'Healer (kit)', roll: '1d6+4', origin });
   },
+  'crossbow expert|phb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Crossbow Expert bonus attack', origin });
+  },
+  'crossbow expert|xphb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Crossbow Expert bonus attack', origin });
+  },
+  'shield master|phb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Shield Master shove', origin });
+  },
+  'shield master|xphb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Shield Master shove', origin });
+  },
+  'telekinetic|tce': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic shove (5 ft)', origin });
+  },
+  'telekinetic|xphb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic shove (5 ft)', origin });
+  },
+  'inspiring leader|phb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'action', label: 'Inspiring Leader (temp HP)', origin });
+  },
+  'inspiring leader|xphb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'action', label: 'Inspiring Leader (temp HP)', origin });
+  },
+  'chef|tce': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'chef-treats',
+      label: 'Chef Treats',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'chef|xphb': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'chef-treats',
+      label: 'Chef Treats',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'great weapon master|phb': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'GWM bonus attack (on crit or kill)',
+      origin,
+    });
+  },
+  'charger|phb': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Charge attack (+5 dmg)', origin });
+  },
 
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   'defense|phb': (col, origin) => {
@@ -276,6 +331,137 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
     col.add({ kind: 'action', economy: 'action', label: 'Healing Hands', origin });
+  },
+  'trait:fey step': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'fey-step',
+      label: 'Fey Step',
+      max: 1,
+      resetOn: 'short',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Fey Step (teleport 30 ft)', origin });
+  },
+  'trait:celestial revelation': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'celestial-revelation',
+      label: 'Celestial Revelation',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Celestial Revelation', origin });
+  },
+  'trait:adrenaline rush': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'adrenaline-rush',
+      label: 'Adrenaline Rush',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Adrenaline Rush (Dash)', origin });
+  },
+  'trait:hidden step': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'hidden-step',
+      label: 'Hidden Step',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Hidden Step (invisibility)', origin });
+  },
+  'trait:fury of the small': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'fury-of-the-small',
+      label: 'Fury of the Small',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'trait:nimble escape': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Nimble Escape (Disengage/Hide)', origin });
+  },
+  'trait:dwarven toughness': (col, origin) => {
+    col.add({ kind: 'hpPerLevel', amount: 1, origin });
+  },
+  'trait:surprise attack': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'action',
+      label: 'Surprise Attack (+2d6, first round)',
+      roll: '2d6',
+      origin,
+    });
+  },
+  'trait:large form': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'large-form',
+      label: 'Large Form',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Large Form (become Large)', origin });
+  },
+  'trait:draconic flight': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'draconic-flight',
+      label: 'Draconic Flight',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Draconic Flight (wings, 10 min)', origin });
+  },
+  'trait:giant ancestry': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'giant-ancestry',
+      label: 'Giant Ancestry',
+      max: 'profBonus',
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'trait:radiant soul': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'radiant-soul',
+      label: 'Radiant Soul',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'trait:necrotic shroud': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'necrotic-shroud',
+      label: 'Necrotic Shroud',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'trait:radiant consumption': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'radiant-consumption',
+      label: 'Radiant Consumption',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
   },
 };
 

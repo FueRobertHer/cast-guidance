@@ -55,13 +55,18 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
  * concentration on a failure. Mutates the draft; returns a notice to show.
  * No-op when not concentrating or already dropped to 0 HP (that breaks it too).
  */
-function rollConcentration(play: PlayState, damageTaken: number, conSave: number): Notice | null {
+function rollConcentration(
+  play: PlayState,
+  damageTaken: number,
+  conSave: number,
+  adv: 'adv' | 'dis' | undefined,
+): Notice | null {
   const label = play.concentratingOn?.label;
   if (label === undefined || damageTaken <= 0 || play.currentHp === 0) return null;
   const dc = Math.max(10, Math.floor(damageTaken / 2));
   const r = roll(`1d20${fmt(conSave)}`, {
     label: `Concentration save (DC ${dc})`,
-    advantage: currentAdvantage(),
+    advantage: adv,
   });
   rollLogStore.getState().append(r);
   const held = r.total >= dc;
@@ -136,21 +141,54 @@ export function Component() {
   const play = doc.play;
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
+  /** Does the character have one of these feats/features (by `name|source` uid)? */
+  const hasFeature = (...uids: string[]) => sheet.features.some((f) => uids.includes(f.origin.uid));
+  // War Caster: advantage on concentration saves (a global DIS cancels it).
+  const concAdv = (): 'adv' | 'dis' | undefined => {
+    const base = currentAdvantage();
+    if (!hasFeature('war caster|phb', 'war caster|xphb')) return base;
+    return base === 'dis' ? undefined : 'adv';
+  };
+
+  const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
+
   const hpDelta = (delta: number) => {
     // Healing is a plain apply; damage may force a concentration save.
     if (delta >= 0) {
       update((d) => applyHp(d.play, delta, sheet.maxHp.value));
       return;
     }
+    // Relentless Endurance: when the hit would drop to 0, offer 1 HP instead.
+    const dmgToHp = Math.max(0, -delta - play.tempHp);
+    const wouldDrop = play.currentHp > 0 && play.currentHp - dmgToHp <= 0;
+    const relentless = sheet.resources.find((r) => r.key === 'relentless-endurance');
+    const useRelentless =
+      wouldDrop &&
+      relentless !== undefined &&
+      usedOf('relentless-endurance') < relentless.max &&
+      window.confirm('Relentless Endurance: drop to 1 HP instead of 0? (once per long rest)');
     let notice: Notice | null = null;
     update((d) => {
+      const concentration = d.play.concentratingOn;
       applyHp(d.play, delta, sheet.maxHp.value);
-      notice = rollConcentration(d.play, -delta, sheet.saves.con.total.value);
+      if (useRelentless && d.play.currentHp === 0) {
+        d.play.currentHp = 1;
+        d.play.concentratingOn = concentration; // never actually hit 0
+        const entry = d.play.resources.find((r) => r.key === 'relentless-endurance');
+        if (entry !== undefined) entry.used += 1;
+        else d.play.resources.push({ key: 'relentless-endurance', used: 1 });
+      }
+      notice = rollConcentration(d.play, -delta, sheet.saves.con.total.value, concAdv());
     });
     if (notice !== null) notify(notice);
+    else if (useRelentless) {
+      notify({
+        title: 'Relentless Endurance',
+        detail: 'Dropped to 1 HP instead of 0 — used for the day',
+        tone: 'good',
+      });
+    }
   };
-
-  const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
   const setUsed = (key: string, used: number) =>
     update((d) => {
       const entry = d.play.resources.find((r) => r.key === key);
@@ -189,7 +227,12 @@ export function Component() {
                 if (target === 0) d.play.concentratingOn = undefined;
                 else {
                   d.play.deathSaves = { success: 0, fail: 0 };
-                  notice = rollConcentration(d.play, damageTaken, sheet.saves.con.total.value);
+                  notice = rollConcentration(
+                    d.play,
+                    damageTaken,
+                    sheet.saves.con.total.value,
+                    concAdv(),
+                  );
                 }
               });
               if (notice !== null) notify(notice);
@@ -322,7 +365,14 @@ export function Component() {
               type="button"
               onClick={() =>
                 update((d) => {
-                  const r = roll('1d20', { label: 'Death save', advantage: currentAdvantage() });
+                  // Durable (2024) grants advantage on death saves.
+                  const base = currentAdvantage();
+                  const adv = hasFeature('durable|xphb')
+                    ? base === 'dis'
+                      ? undefined
+                      : 'adv'
+                    : base;
+                  const r = roll('1d20', { label: 'Death save', advantage: adv });
                   rollLogStore.getState().append(r);
                   const nat = r.meta?.d20?.natural;
                   const saves = d.play.deathSaves;
