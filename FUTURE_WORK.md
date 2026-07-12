@@ -16,8 +16,13 @@ accepts both rules editions' wording. Still needed:
 - **FTD Chromatic/Metallic/Gem Dragonborn** — different breath mechanics
   (Metallic gets a second breath, Gem gets telepathy; areas differ). Extend
   the `DRACONIC_ANCESTRY` table + `linkDraconicAncestry` branch.
-- **Warlock** — pact choice should gate invocation options; invocations with
-  prerequisites should disable with reasons.
+- **Warlock invocations** — *partially done*: every optional-feature pick
+  (invocations, metamagic, maneuvers, fighting styles) now shows its
+  prerequisite text (level, Pact Boon, patron, known spell) in the option
+  description, and options with an unmet **level** prerequisite are disabled
+  with a reason. Still deferred: enforcing pact/patron/known-spell gates, which
+  depend on *other* picks the class collector doesn't resolve at option-build
+  time (they'd need a second pass over the resolved Pact Boon / spell list).
 - **Cleric domains / Druid circles / Paladin oaths** — *done*: subclass
   `additionalSpells` are now collected (they live on the subclass entity, not
   its features, and were previously dropped entirely), the `prepared` key is
@@ -71,8 +76,10 @@ where a printing's mechanics can't be extracted from its own text (the
   strip that opens the rules text.
 - ~~Death saves UI~~ — already present (nat-1/nat-20 handling, Durable feat).
 
-Remaining: a "use it" button for resources with no dice (spend without a roll);
-spell-slot tap-to-cast polish.
+Spending a use without a roll already works: tap the next resource pip (a
+max-1 resource is a single tappable pip), so no separate "use it" button is
+needed. Remaining: spell-slot tap-to-cast polish; recommended starter spells
+per class in the wizard's Spells step (decision support, still open).
 
 ## Accessibility
 

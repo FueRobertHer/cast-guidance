@@ -357,7 +357,18 @@ const optionalfeature: DataEntity[] = [
     name: 'Archery',
     source: 'PHB',
     featureType: ['FS:T'],
+    // Synthetic pact gate: prereq text is shown but not enforced (depends on
+    // other picks the collector doesn't resolve).
+    prerequisite: [{ pact: 'Blade' }],
     entries: ['+2 ranged attack (prose).'],
+  },
+  {
+    name: 'Precision',
+    source: 'PHB',
+    featureType: ['FS:T'],
+    // Level gate: deterministic from the class entry, so it's enforced.
+    prerequisite: [{ level: 10 }],
+    entries: ['+2 to a weapon attack (prose).'],
   },
 ];
 

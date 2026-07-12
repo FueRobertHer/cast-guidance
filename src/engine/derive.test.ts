@@ -288,6 +288,28 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
   });
 });
 
+describe('deriveSheet — optional-feature prerequisites', () => {
+  it('level-gates optional feature options and labels their prerequisites', () => {
+    const doc = warriorDoc(); // Warrior 5
+    delete doc.choices['class:warrior|tst:optfeature:FS:T'];
+    const sheet = deriveSheet(doc, ctx);
+    const prompt = sheet.pending.find((p) => p.id === 'class:warrior|tst:optfeature:FS:T');
+    expect(prompt).toBeDefined();
+    // Precision needs level 10; the character is level 5 -> disabled with reason.
+    const precision = prompt?.options.find((o) => o.id === 'precision|phb');
+    expect(precision?.disabled?.reason).toContain('level 10');
+    expect(precision?.description).toContain('Prereq: level 10');
+    // Pact prereqs are informational only (depend on other picks) — not disabled.
+    const archery = prompt?.options.find((o) => o.id === 'archery|phb');
+    expect(archery?.description).toContain('Pact of the Blade');
+    expect(archery?.disabled).toBeUndefined();
+    // Defense has no prereq — plain description, selectable.
+    const defense = prompt?.options.find((o) => o.id === 'defense|phb');
+    expect(defense?.disabled).toBeUndefined();
+    expect(defense?.description).not.toContain('Prereq');
+  });
+});
+
 describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {
   it('surfaces Stunning Strike as a Con save at the ki DC (8 + prof + Wis)', () => {
     const doc = newCharacterDoc('m1', 'Kwai', 'test-tag');

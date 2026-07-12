@@ -27,10 +27,37 @@ function summarizePrerequisite(raw: unknown): string {
       const lv = (r.level as { level?: number }).level;
       if (typeof lv === 'number') parts.push(`level ${lv}`);
     }
+    // Warlock invocation gates: Pact Boon, patron, and known-spell prerequisites.
+    if (typeof r.pact === 'string') parts.push(`Pact of the ${r.pact}`);
+    if (typeof r.patron === 'string') parts.push(`${r.patron.split('|')[0]} patron`);
+    if (Array.isArray(r.spell)) {
+      const spells = r.spell
+        .map((s) => (typeof s === 'string' ? (s.split('#')[0] ?? s).split('|')[0] : undefined))
+        .filter((s): s is string => s !== undefined);
+      if (spells.length > 0) parts.push(`knows ${spells.join(' or ')}`);
+    }
     if (typeof r.other === 'string') parts.push(r.other);
     if (Array.isArray(r.spellcasting2020) || r.spellcasting === true) parts.push('spellcasting');
   }
   return parts.join(', ');
+}
+
+/** Highest numeric level prerequisite (used to gate optional-feature picks). */
+function requiredLevel(raw: unknown): number | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  let need: number | undefined;
+  for (const req of raw) {
+    if (req === null || typeof req !== 'object') continue;
+    const lvRaw = (req as Record<string, unknown>).level;
+    const lv =
+      typeof lvRaw === 'number'
+        ? lvRaw
+        : lvRaw !== null && typeof lvRaw === 'object'
+          ? (lvRaw as { level?: number }).level
+          : undefined;
+    if (typeof lv === 'number') need = need === undefined ? lv : Math.max(need, lv);
+  }
+  return need;
 }
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
@@ -211,11 +238,24 @@ function handleOptionalFeatureProgression(
         const types = Array.isArray(of.featureType) ? of.featureType.map(String) : [];
         return types.some((t) => featureTypes.includes(t));
       })
-      .map((of) => ({
-        id: `${str(of.name)}|${str(of.source)}`.toLowerCase(),
-        label: `${str(of.name)} (${str(of.source)})`,
-        description: summarizeEntries(of.entries),
-      }));
+      .map((of) => {
+        const prereq = summarizePrerequisite(of.prerequisite);
+        const summary = summarizeEntries(of.entries);
+        // Level is deterministic from this class entry, so disable options the
+        // character can't take yet. Pact/patron/spell gates depend on other
+        // picks we don't resolve here — shown as text, not enforced.
+        const need = requiredLevel(of.prerequisite);
+        const disabled =
+          need !== undefined && classLevel < need
+            ? { reason: `Requires level ${need}` }
+            : undefined;
+        return {
+          id: `${str(of.name)}|${str(of.source)}`.toLowerCase(),
+          label: `${str(of.name)} (${str(of.source)})`,
+          description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
+          ...(disabled !== undefined ? { disabled } : {}),
+        };
+      });
 
     col.choice(
       {
