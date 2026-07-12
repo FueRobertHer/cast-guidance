@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router';
 import { initDataLayer, retryDataLayer } from '@/data5e/loader';
 import { useDataStatus } from '@/stores/dataStatus';
+import { DialogHost } from '@/ui/dialogs';
 import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
@@ -56,6 +57,7 @@ export function AppShell() {
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
       <DataBanner />
       <Outlet />
+      <DialogHost />
       <NoticeToast />
       <RollToast />
       <PwaUpdateToast />

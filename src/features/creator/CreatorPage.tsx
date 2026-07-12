@@ -167,6 +167,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
+              dedupe
               entities={classes}
               selectedUid={
                 entry !== undefined
@@ -258,6 +259,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
+              dedupe
               entities={races}
               selectedUid={
                 doc.race !== undefined
@@ -391,6 +393,7 @@ export function Component() {
       case 'background':
         return (
           <EntityCardList
+            dedupe
             entities={backgrounds}
             selectedUid={
               doc.background !== undefined

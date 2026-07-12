@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { askConfirm, askText } from '@/ui/dialogs';
 
 function downloadJson(name: string, data: unknown): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -89,22 +90,25 @@ export function Component() {
         </button>
         <button
           type="button"
-          onClick={() => {
-            const name = window.prompt('Homebrew collection name (e.g. "My Table\'s Brews")');
-            if (name === null || name.trim() === '') return;
-            const abbrev =
-              window.prompt(
-                'Short source id shown on badges (e.g. MTB)',
-                name
-                  .split(/\s+/)
-                  .map((w) => w[0]?.toUpperCase() ?? '')
-                  .join('')
-                  .slice(0, 5),
-              ) ?? 'HB';
-            void homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB').then((row) => {
-              invalidateRegistry();
-              void navigate(`/homebrew/edit/${row.id}`);
+          onClick={async () => {
+            const name = await askText({
+              title: 'Homebrew collection name',
+              placeholder: 'e.g. "My Table\'s Brews"',
             });
+            if (name === null || name.trim() === '') return;
+            const suggested = name
+              .split(/\s+/)
+              .map((w) => w[0]?.toUpperCase() ?? '')
+              .join('')
+              .slice(0, 5);
+            const abbrev =
+              (await askText({
+                title: 'Short source id (shown on badges)',
+                initial: suggested,
+              })) ?? 'HB';
+            const row = await homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB');
+            invalidateRegistry();
+            void navigate(`/homebrew/edit/${row.id}`);
           }}
           className="flex items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
         >
@@ -179,12 +183,14 @@ export function Component() {
             <button
               type="button"
               title="Delete"
-              onClick={() => {
-                if (
-                  window.confirm(`Remove "${r.fileName}"? Characters using it will show warnings.`)
-                ) {
-                  void homebrewRepo.delete(r.id).then(invalidateRegistry);
-                }
+              onClick={async () => {
+                const ok = await askConfirm({
+                  title: `Remove "${r.fileName}"?`,
+                  detail: 'Characters using it will show warnings.',
+                  confirmLabel: 'Remove',
+                  danger: true,
+                });
+                if (ok) void homebrewRepo.delete(r.id).then(invalidateRegistry);
               }}
               className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
             >

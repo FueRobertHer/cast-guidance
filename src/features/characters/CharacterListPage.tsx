@@ -13,6 +13,7 @@ import { deriveSheet } from '@/engine/derive';
 import { migrateCharacter } from '@/engine/migrate';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { assertCharacterExport, CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { askConfirm, askText } from '@/ui/dialogs';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // Embed all enabled homebrew — files are small and this keeps exports self-contained.
@@ -90,8 +91,8 @@ export function Component() {
     void navigate(`/c/${doc.id}/build`);
   };
 
-  const rename = (c: CharacterDoc) => {
-    const name = window.prompt('Rename hero', c.name);
+  const rename = async (c: CharacterDoc) => {
+    const name = await askText({ title: 'Rename hero', initial: c.name });
     if (name === null || name.trim() === '') return;
     void characterRepo.put({ ...c, name: name.trim(), updatedAt: new Date().toISOString() });
   };
@@ -152,7 +153,7 @@ export function Component() {
             <button
               type="button"
               title="Rename"
-              onClick={() => rename(c)}
+              onClick={() => void rename(c)}
               className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
             >
               <Pencil size={16} />
@@ -176,10 +177,14 @@ export function Component() {
             <button
               type="button"
               title="Delete"
-              onClick={() => {
-                if (window.confirm(`Delete ${c.name}? This cannot be undone.`)) {
-                  void characterRepo.delete(c.id);
-                }
+              onClick={async () => {
+                const ok = await askConfirm({
+                  title: `Delete ${c.name}?`,
+                  detail: 'This cannot be undone.',
+                  confirmLabel: 'Delete',
+                  danger: true,
+                });
+                if (ok) void characterRepo.delete(c.id);
               }}
               className="rounded p-2 text-ink-muted hover:bg-accent-deep hover:text-ink"
             >

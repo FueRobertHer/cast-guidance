@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { getActiveTag, listAvailableTags, updateToTag, verifyFullOffline } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { useDataStatus } from '@/stores/dataStatus';
+import { askConfirm } from '@/ui/dialogs';
 
 function useStorageEstimate() {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number }>();
@@ -36,13 +37,12 @@ export function Component() {
   const offlineReady = offline !== undefined && offline.cached === offline.total;
 
   const runUpdate = async (tag: string) => {
-    if (
-      !window.confirm(
-        `Install data version ${tag}? The current version stays until the new one downloads and passes checks (~2.5 MB).`,
-      )
-    ) {
-      return;
-    }
+    const ok = await askConfirm({
+      title: `Install data version ${tag}?`,
+      detail: 'The current version stays until the new one downloads and passes checks (~2.5 MB).',
+      confirmLabel: 'Install',
+    });
+    if (!ok) return;
     setUpdating(true);
     setUpdateMsg(undefined);
     try {

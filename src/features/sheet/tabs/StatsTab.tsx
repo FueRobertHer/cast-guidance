@@ -19,6 +19,9 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-xs text-ink-muted">
+        🎲 Tap any modifier to roll it — the DIS/N/ADV switch applies to every roll.
+      </p>
       {/* Abilities: tap = check roll, ⓘ = breakdown */}
       <section className="grid grid-cols-3 gap-2 sm:grid-cols-6">
         {ABILITIES.map((a) => {

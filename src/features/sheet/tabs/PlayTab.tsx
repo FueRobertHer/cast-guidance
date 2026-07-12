@@ -7,6 +7,7 @@ import { currentAdvantage } from '@/stores/advMode';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { RollChip } from '@/ui/RollChip';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -152,7 +153,7 @@ export function Component() {
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
 
-  const hpDelta = (delta: number) => {
+  const hpDelta = async (delta: number) => {
     // Healing is a plain apply; damage may force a concentration save.
     if (delta >= 0) {
       update((d) => applyHp(d.play, delta, sheet.maxHp.value));
@@ -166,7 +167,11 @@ export function Component() {
       wouldDrop &&
       relentless !== undefined &&
       usedOf('relentless-endurance') < relentless.max &&
-      window.confirm('Relentless Endurance: drop to 1 HP instead of 0? (once per long rest)');
+      (await askConfirm({
+        title: 'Relentless Endurance',
+        detail: 'Drop to 1 HP instead of 0? Once per long rest.',
+        confirmLabel: 'Stay at 1 HP',
+      }));
     let notice: Notice | null = null;
     update((d) => {
       const concentration = d.play.concentratingOn;
@@ -203,8 +208,8 @@ export function Component() {
         <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={() => hpDelta(-1)}
-            onDoubleClick={() => hpDelta(-4)}
+            onClick={() => void hpDelta(-1)}
+            onDoubleClick={() => void hpDelta(-4)}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-deep text-xl"
             title="Damage (double-tap −5 total)"
           >
@@ -213,11 +218,15 @@ export function Component() {
           <button
             type="button"
             className="text-center"
-            onClick={() => {
-              const v = window.prompt('Set current HP', String(play.currentHp));
-              if (v === null) return;
-              const n = Number.parseInt(v, 10);
-              if (Number.isNaN(n)) return;
+            onClick={async () => {
+              const n = await askNumber({
+                title: 'Set current HP',
+                initial: play.currentHp,
+                min: 0,
+                max: sheet.maxHp.value,
+                hint: `0–${sheet.maxHp.value}`,
+              });
+              if (n === null) return;
               let notice: Notice | null = null;
               update((d) => {
                 const target = Math.max(0, Math.min(sheet.maxHp.value, n));
@@ -249,8 +258,8 @@ export function Component() {
           </button>
           <button
             type="button"
-            onClick={() => hpDelta(1)}
-            onDoubleClick={() => hpDelta(4)}
+            onClick={() => void hpDelta(1)}
+            onDoubleClick={() => void hpDelta(4)}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/70 text-xl"
             title="Heal (double-tap +5 total)"
           >
@@ -284,11 +293,14 @@ export function Component() {
           <button
             type="button"
             className="text-ink-muted underline"
-            onClick={() => {
-              const v = window.prompt('Temporary HP', String(play.tempHp));
-              if (v === null) return;
-              const n = Number.parseInt(v, 10);
-              if (!Number.isNaN(n)) update((d) => void (d.play.tempHp = Math.max(0, n)));
+            onClick={async () => {
+              const n = await askNumber({
+                title: 'Temporary HP',
+                initial: play.tempHp,
+                min: 0,
+                hint: "Temp HP doesn't stack — a new source replaces the old value.",
+              });
+              if (n !== null) update((d) => void (d.play.tempHp = n));
             }}
           >
             temp HP
@@ -456,18 +468,19 @@ export function Component() {
         </button>
         <button
           type="button"
-          onClick={() =>
-            update((d) => {
-              if (d.play.concentratingOn !== undefined) {
-                d.play.concentratingOn = undefined;
-                return;
-              }
-              const label = window.prompt('Concentrating on…', '');
-              if (label !== null && label.trim() !== '') {
-                d.play.concentratingOn = { label: label.trim() };
-              }
-            })
-          }
+          onClick={async () => {
+            if (play.concentratingOn !== undefined) {
+              update((d) => void (d.play.concentratingOn = undefined));
+              return;
+            }
+            const label = await askText({
+              title: 'Concentrating on…',
+              placeholder: 'e.g. Bless — casting a concentration spell sets this automatically',
+            });
+            if (label !== null && label.trim() !== '') {
+              update((d) => void (d.play.concentratingOn = { label: label.trim() }));
+            }
+          }}
           className={`flex flex-1 items-center justify-center gap-1.5 truncate rounded-lg border px-3 py-2 text-sm font-semibold ${
             play.concentratingOn !== undefined
               ? 'border-sky-300 bg-sky-300/10 text-sky-300'
@@ -535,10 +548,22 @@ export function Component() {
         </button>
       </section>
 
-      {/* Conditions */}
-      <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">Conditions</h2>
-        <div className="flex flex-wrap gap-1.5">
+      {/* Conditions — active ones stay visible; the full list is behind a fold */}
+      <details className="group rounded-lg bg-surface" open={play.conditions.length > 0}>
+        <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
+          <span className="text-sm font-semibold text-ink-muted">
+            Conditions
+            {play.conditions.length > 0 && (
+              <span className="ml-2 font-normal text-amber-300">
+                {play.conditions
+                  .map((c) => `${c.id}${c.level !== undefined ? ` ${c.level}` : ''}`)
+                  .join(', ')}
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-ink-muted group-open:hidden">tap to edit</span>
+        </summary>
+        <div className="flex flex-wrap gap-1.5 border-t border-surface-2/40 p-3">
           {CONDITIONS.map((c) => {
             const active = play.conditions.find((x) => x.id === c);
             const isExhaustion = c === 'Exhaustion';
@@ -546,6 +571,7 @@ export function Component() {
               <button
                 key={c}
                 type="button"
+                title={isExhaustion ? 'Tap to add a level (past 6 clears it)' : undefined}
                 onClick={() =>
                   update((d) => {
                     const idx = d.play.conditions.findIndex((x) => x.id === c);
@@ -573,7 +599,7 @@ export function Component() {
             );
           })}
         </div>
-      </section>
+      </details>
 
       {/* Rests */}
       <section className="grid grid-cols-2 gap-2">
@@ -595,16 +621,20 @@ export function Component() {
         </button>
         <button
           type="button"
-          onClick={() => {
-            if (window.confirm('Long rest: full HP, all slots and resources restored?')) {
-              let restored: string[] = [];
-              update((d) => void (restored = longRest(d.play, sheet)));
-              notify({
-                title: 'Long rest complete',
-                detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
-                tone: 'good',
-              });
-            }
+          onClick={async () => {
+            const ok = await askConfirm({
+              title: 'Long rest',
+              detail: 'Full HP, all spell slots and resources restored; regain half your hit dice.',
+              confirmLabel: 'Rest',
+            });
+            if (!ok) return;
+            let restored: string[] = [];
+            update((d) => void (restored = longRest(d.play, sheet)));
+            notify({
+              title: 'Long rest complete',
+              detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
+              tone: 'good',
+            });
           }}
           className="flex items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2.5 text-sm font-semibold"
         >
