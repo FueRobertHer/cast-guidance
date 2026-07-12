@@ -119,9 +119,6 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Library</h1>
-        <Link to="/" className="text-sm text-ink-muted hover:text-ink">
-          Characters
-        </Link>
       </header>
       <GlobalSearch />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
 import { getActiveTag, listAvailableTags, updateToTag, verifyFullOffline } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { useDataStatus } from '@/stores/dataStatus';
@@ -62,9 +61,6 @@ export function Component() {
     <main className="flex flex-1 flex-col gap-6 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Settings</h1>
-        <Link to="/" className="text-sm text-ink-muted hover:text-ink">
-          Characters
-        </Link>
       </header>
 
       <section className="flex flex-col gap-2">

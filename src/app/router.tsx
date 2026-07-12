@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router';
+import { AppNavLayout } from '@/app/AppNav';
 import { AppShell } from '@/app/AppShell';
 
 // Route modules export `Component` (react-router lazy route module convention),
@@ -8,7 +9,17 @@ export const router = createBrowserRouter([
     path: '/',
     element: <AppShell />,
     children: [
-      { index: true, lazy: () => import('@/features/characters/CharacterListPage') },
+      {
+        // Top-level sections share the persistent app nav.
+        element: <AppNavLayout />,
+        children: [
+          { index: true, lazy: () => import('@/features/characters/CharacterListPage') },
+          { path: 'library/:type?/:uid?', lazy: () => import('@/features/library/LibraryPage') },
+          { path: 'homebrew', lazy: () => import('@/features/homebrew/ManageHomebrewPage') },
+          { path: 'settings', lazy: () => import('@/features/settings/SettingsPage') },
+        ],
+      },
+      // Focused, full-screen flows (own navigation, no app tab bar).
       { path: 'create', lazy: () => import('@/features/creator/CreatorPage') },
       {
         path: 'c/:id',
@@ -22,10 +33,7 @@ export const router = createBrowserRouter([
           { path: 'build', lazy: () => import('@/features/sheet/BuildPage') },
         ],
       },
-      { path: 'library/:type?/:uid?', lazy: () => import('@/features/library/LibraryPage') },
-      { path: 'homebrew', lazy: () => import('@/features/homebrew/ManageHomebrewPage') },
       { path: 'homebrew/edit/:fileId', lazy: () => import('@/features/homebrew/BuilderPage') },
-      { path: 'settings', lazy: () => import('@/features/settings/SettingsPage') },
     ],
   },
 ]);

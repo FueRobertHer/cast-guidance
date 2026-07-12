@@ -34,7 +34,7 @@ export function RollToast() {
 
   return (
     <output
-      className="fixed inset-x-4 bottom-16 z-30 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80"
+      className="fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80"
       aria-live="polite"
     >
       <div className="min-w-0">

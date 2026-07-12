@@ -37,7 +37,7 @@ export function DiceTray() {
         <button
           type="button"
           title="Dice tray"
-          className="fixed right-4 bottom-16 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg lg:bottom-6"
+          className="fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg lg:bottom-6"
         >
           <Dices size={22} />
         </button>
