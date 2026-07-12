@@ -20,6 +20,7 @@ import {
   backgroundBlurb,
   classAbilityHint,
   classBlurb,
+  makeSubclassBlurb,
   pointBuyFocusFor,
   raceBlurb,
   standardArrayFor,
@@ -333,6 +334,7 @@ export function Component() {
                     <span className="text-sm font-semibold">Subclass</span>
                     <EntityCardList
                       entities={subclasses}
+                      describe={makeSubclassBlurb(registry)}
                       selectedUid={
                         entry.subclass !== undefined
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()

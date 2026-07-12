@@ -4,9 +4,39 @@
  * (ability bonuses, granted skills) cover everything the curated maps miss.
  */
 import type { Entity } from '@/data5e/copyMod';
+import { summarizeEntries } from '@/engine/summarize';
 import { ABILITIES, type Ability } from '@/engine/types';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
+
+interface RegistryLike {
+  byType(type: string): readonly Entity[];
+}
+
+/**
+ * Describe a subclass by summarizing its lowest-level (identity) feature, so a
+ * picker can answer "what makes this subclass different" without curating the
+ * hundreds of subclasses. Returns a `describe` fn bound to the registry.
+ */
+export function makeSubclassBlurb(registry: RegistryLike): (sub: Entity) => string | undefined {
+  return (sub) => {
+    const shortName = String(sub.shortName ?? '').toLowerCase();
+    const className = String(sub.className ?? '').toLowerCase();
+    const source = String(sub.source ?? '').toLowerCase();
+    if (shortName === '') return undefined;
+    const feats = registry
+      .byType('subclassFeature')
+      .filter(
+        (f) =>
+          String(f.subclassShortName ?? '').toLowerCase() === shortName &&
+          String(f.className ?? '').toLowerCase() === className &&
+          String(f.subclassSource ?? '').toLowerCase() === source,
+      )
+      .sort((a, b) => (Number(a.level) || 0) - (Number(b.level) || 0));
+    const summary = summarizeEntries(feats[0]?.entries);
+    return summary !== '' ? summary : undefined;
+  };
+}
 
 // --- Classes ---------------------------------------------------------------
 

@@ -46,6 +46,11 @@ where a printing's mechanics can't be extracted from its own text (the
 
 ## Creation wizard
 
+- **Picker descriptions** — *done*: class/race/background pickers carry curated +
+  data-derived one-liners, and the **subclass** picker (both the wizard and the
+  Build editor) now summarizes each subclass's identity feature via a shared
+  `makeSubclassBlurb(registry)` — answering "what makes these different" without
+  curating hundreds of subclasses.
 - **Point-buy assistant** — *done*: a per-class "focus 15/15/15" preset is
   offered in point-buy mode (standard-array auto-assign already existed).
 - **Racial ability-bonus awareness in auto-assign** — deferred. Analysis:

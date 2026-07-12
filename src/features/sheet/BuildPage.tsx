@@ -13,7 +13,12 @@ import {
 } from '@/engine/multiclass';
 import { ABILITIES, type DerivedSheet, SKILLS } from '@/engine/types';
 import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
-import { backgroundBlurb, classBlurb, raceBlurb } from '@/features/creator/pickerHints';
+import {
+  backgroundBlurb,
+  classBlurb,
+  makeSubclassBlurb,
+  raceBlurb,
+} from '@/features/creator/pickerHints';
 import { pruneChoicesFor } from '@/lib/pruneChoices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -156,6 +161,7 @@ export function Component() {
         ),
       doc.rulesVersion,
     );
+  const subclassBlurb = makeSubclassBlurb(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
     doc.race !== undefined
@@ -422,6 +428,7 @@ export function Component() {
                   <div className="pt-2">
                     <EntityCardList
                       entities={subclasses}
+                      describe={subclassBlurb}
                       selectedUid={
                         entry.subclass !== undefined
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
