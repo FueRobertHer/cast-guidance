@@ -299,8 +299,15 @@ export interface DerivedSheet {
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];
-  /** Innate / granted spells (racial, feat). Cast without preparation. */
-  grantedSpells: Array<{ name: string; source: string; ability?: Ability; origin: string }>;
+  /** Innate / granted spells (racial, feat, domain). Cast without preparation. */
+  grantedSpells: Array<{
+    name: string;
+    source: string;
+    ability?: Ability;
+    /** 'prepared' = always-prepared (domain/oath/circle), cast with class slots. */
+    usage?: string;
+    origin: string;
+  }>;
   warnings: string[];
   pending: ChoicePrompt[];
   /** Choices already made — powers "change this pick" in the build editor. */

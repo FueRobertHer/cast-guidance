@@ -998,16 +998,23 @@ export function Component() {
       {/* Innate / granted spells — cast per their own rules (no slots) */}
       {sheet.grantedSpells.length > 0 && (
         <section className="rounded-lg bg-surface p-3 text-sm">
-          <div className="mb-1.5 font-semibold">Innate & granted spells</div>
+          <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => (
               <Link
                 key={`${g.name}|${g.source}`}
                 to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                className="flex items-center justify-between border-b border-surface-2/40 py-1.5 last:border-b-0"
+                className="flex items-center justify-between gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
               >
-                <span className="capitalize">{g.name}</span>
-                <span className="text-xs text-ink-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="capitalize">{g.name}</span>
+                  {g.usage === 'prepared' && (
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                      Always prepared
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-xs text-ink-muted">
                   {g.origin}
                   {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
                 </span>

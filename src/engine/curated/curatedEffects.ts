@@ -258,6 +258,19 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // Stunning Strike states its effect but leaves the DC to the "ki save DC"
+  // defined in the Ki/Monk's Focus feature — the prose scanner can't resolve a
+  // cross-feature DC, so pin it here: Con save vs 8 + prof + Wis mod.
+  'stunning strike|monk': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'action',
+      label: 'Stunning Strike',
+      note: 'spend 1 focus/ki · stunned until your next turn on a failed save',
+      save: { targetAbility: 'con', dcAbility: 'wis' },
+      origin,
+    });
+  },
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');

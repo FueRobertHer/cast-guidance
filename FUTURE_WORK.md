@@ -18,14 +18,20 @@ accepts both rules editions' wording. Still needed:
   the `DRACONIC_ANCESTRY` table + `linkDraconicAncestry` branch.
 - **Warlock** — pact choice should gate invocation options; invocations with
   prerequisites should disable with reasons.
-- **Cleric domains / Druid circles / Sorcerer origins** — domain spells are
-  granted (additionalSpells) but "always prepared" isn't surfaced as such in
-  the spell manager.
-- **Class-wide save DCs (Monk ki, Battle Master maneuvers, etc.)** — these
-  features reference a DC *defined in a separate feature* ("your ki save DC"),
-  so the prose scanner can't resolve them inline. Needs cross-feature DC
-  inference: find the class's key ability and compute 8 + prof + mod. The
-  scanner already handles features that restate the formula themselves.
+- **Cleric domains / Druid circles / Paladin oaths** — *done*: subclass
+  `additionalSpells` are now collected (they live on the subclass entity, not
+  its features, and were previously dropped entirely), the `prepared` key is
+  granted as always-prepared with the class's spellcasting ability, and the
+  sheet tags them "Always prepared" (`src/engine/effects/additionalSpells.ts`,
+  `class.ts`, PlayTab). Warlock `expanded` lists surface as a note since we
+  have no learn-a-spell picker yet.
+- **Class-wide save DCs** — *partially done*. Monk **Stunning Strike** is now
+  curated (Con save vs 8 + prof + Wis) because its DC lives in a separate
+  feature the prose scanner can't reach. **Battle Master maneuvers stay
+  deferred**: the maneuver DC is "8 + prof + your Strength *or* Dexterity
+  modifier (your choice)" — an unresolved player choice, so auto-picking one
+  ability would print a wrong DC. Revisit once maneuvers get a DC-ability
+  prompt. The scanner already handles features that restate the formula.
 - **Aasimar revelations, Genasi, Tortle shell** — verify prose scanner output
   and curate where the text defeats it.
 

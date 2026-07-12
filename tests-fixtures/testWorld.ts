@@ -218,6 +218,18 @@ const cls: DataEntity[] = [
     classFeatures: ['Expertise|Sneak|TST|1'],
   },
   {
+    name: 'Monk',
+    source: 'TST',
+    hd: { number: 1, faces: 8 },
+    proficiency: ['str', 'dex'],
+    startingProficiencies: {
+      weapons: ['simple'],
+      skills: [{ choose: { from: ['acrobatics', 'athletics'], count: 1 } }],
+    },
+    // Ki resource + Stunning Strike are curated (see curatedEffects.ts).
+    classFeatures: ['Ki|Monk|TST|2', 'Stunning Strike|Monk|TST|5'],
+  },
+  {
     name: 'Mage',
     source: 'TST',
     hd: { number: 1, faces: 6 },
@@ -284,6 +296,22 @@ const classFeature: DataEntity[] = [
     level: 1,
     entries: ['You cast spells.'],
   },
+  {
+    name: 'Ki',
+    source: 'TST',
+    className: 'Monk',
+    classSource: 'TST',
+    level: 2,
+    entries: ['Your ki save DC = 8 + your proficiency bonus + your Wisdom modifier.'],
+  },
+  {
+    name: 'Stunning Strike',
+    source: 'TST',
+    className: 'Monk',
+    classSource: 'TST',
+    level: 5,
+    entries: ['Spend 1 ki; the target must make a Constitution saving throw or be stunned.'],
+  },
 ];
 
 const subclass: DataEntity[] = [
@@ -294,6 +322,14 @@ const subclass: DataEntity[] = [
     className: 'Warrior',
     classSource: 'TST',
     subclassFeatures: ['Path of Tests|Warrior|TST|Tests|TST|3'],
+    // Domain-style always-prepared spells + a warlock-style expanded list. Both
+    // live on the subclass entity itself, not its features.
+    additionalSpells: [
+      {
+        prepared: { '1': ['bless|tst'], '3': ['cure wounds|tst'], '9': ['flame strike|tst'] },
+        expanded: { '1': ['shield|tst'] },
+      },
+    ],
   },
 ];
 

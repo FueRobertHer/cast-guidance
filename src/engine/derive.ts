@@ -161,6 +161,7 @@ function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['gra
       name: e.spell.name,
       source: e.spell.source,
       ability: e.ability,
+      usage: e.usage,
       origin: e.origin.label,
     });
   }

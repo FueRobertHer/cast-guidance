@@ -1,6 +1,7 @@
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
+import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import { proseScanFeature } from './proseScan';
@@ -377,6 +378,17 @@ export function collectClasses(col: Collector): void {
           uid: refUid(entry.subclass),
           type: 'subclass',
         };
+        // Domain / oath / circle "always prepared" spells live on the subclass
+        // entity (not its features). Default their casting ability to the class's.
+        const subAbility = str(cls.spellcastingAbility);
+        collectAdditionalSpells(
+          col,
+          sub.additionalSpells,
+          subOrigin,
+          subAbility !== undefined && (ABILITIES as readonly string[]).includes(subAbility)
+            ? (subAbility as Ability)
+            : undefined,
+        );
         const subRefs = Array.isArray(sub.subclassFeatures) ? sub.subclassFeatures : [];
         for (const rawRef of subRefs) {
           if (typeof rawRef !== 'string') continue;

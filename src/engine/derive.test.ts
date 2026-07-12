@@ -272,6 +272,40 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
     expect(names).not.toContain('flame strike'); // gate 9 > 5
     expect(sheet.grantedSpells.find((g) => g.name === 'aid')?.ability).toBe('wis');
   });
+
+  it('grants subclass always-prepared spells and surfaces expanded ones', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx); // Warrior 5 / Path of Tests
+    expect(sheet.grantedSpells.find((g) => g.name === 'bless')?.usage).toBe('prepared');
+    expect(sheet.grantedSpells.find((g) => g.name === 'cure wounds')?.usage).toBe('prepared');
+    // Level-gated: flame strike is a "9" entry, character is level 5.
+    expect(sheet.grantedSpells.some((g) => g.name === 'flame strike')).toBe(false);
+    // Expanded lists can't be auto-granted without a picker — surfaced as a note.
+    expect(
+      sheet.warnings.some(
+        (w) => w.toLowerCase().includes('expands your spell options') && w.includes('shield'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {
+  it('surfaces Stunning Strike as a Con save at the ki DC (8 + prof + Wis)', () => {
+    const doc = newCharacterDoc('m1', 'Kwai', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 12, dex: 16, con: 14, int: 10, wis: 16, cha: 8 };
+    doc.classes = [
+      {
+        ref: { name: 'Monk', source: 'TST' },
+        levels: 5,
+        hp: ['avg', 'avg', 'avg', 'avg', 'avg'],
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    const ss = sheet.actions.find((a) => a.label === 'Stunning Strike');
+    expect(ss?.save?.targetAbility).toBe('con');
+    // WIS 16 -> +3, level 5 prof +3, DC = 8 + 3 + 3 = 14.
+    expect(ss?.save?.dc).toBe(14);
+  });
 });
 
 describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {
