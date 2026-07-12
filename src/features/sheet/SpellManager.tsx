@@ -12,6 +12,7 @@ import {
 } from '@/data5e/spellLookup';
 import type { CharacterDoc, DerivedSheet, SpellcastingBlock } from '@/engine/types';
 import { SourceBadge } from '@/ui/SourceBadge';
+import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -175,6 +176,18 @@ function ClassSpells({
             ` · prepared ${state.prepared.length}/${block.preparedMax}`}
         </span>
       </header>
+      {(() => {
+        const rec = recommendedStarters(block.className);
+        if (rec === undefined) return null;
+        const picks = [...rec.cantrips, ...rec.level1];
+        if (picks.length === 0) return null;
+        return (
+          <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
+            <span className="text-amber-300">★ New to {block.className}?</span> Solid first picks:{' '}
+            {picks.join(', ')}.
+          </p>
+        );
+      })()}
       <label className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
         <Search size={14} className="shrink-0 text-ink-muted" />
         <input
@@ -213,6 +226,14 @@ function ClassSpells({
                         to={`/library/spell/${encodeURIComponent(uid)}`}
                         className="min-w-0 flex-1 truncate hover:text-amber-200"
                       >
+                        {isRecommendedStarter(block.className, nameOf(s), lvl) && (
+                          <span
+                            className="mr-1 text-amber-300"
+                            title={`Recommended first pick for ${block.className}`}
+                          >
+                            ★
+                          </span>
+                        )}
                         {nameOf(s)}
                       </Link>
                       <SourceBadge source={sourceOf(s)} />

@@ -78,8 +78,15 @@ where a printing's mechanics can't be extracted from its own text (the
 
 Spending a use without a roll already works: tap the next resource pip (a
 max-1 resource is a single tappable pip), so no separate "use it" button is
-needed. Remaining: spell-slot tap-to-cast polish; recommended starter spells
-per class in the wizard's Spells step (decision support, still open).
+needed.
+
+- **Recommended starter spells** — *done*: the spell picker now shows a curated
+  "New to {Class}? Solid first picks: …" shortlist plus a ★ on recommended
+  cantrip/1st-level rows (`src/features/sheet/spellHints.ts`), for all nine
+  spellcasting classes. The full list stays fully selectable — this is guidance,
+  not a gate. Higher-level "what to pick as you level" guidance is still open.
+
+Remaining: spell-slot tap-to-cast polish.
 
 ## Accessibility
 
