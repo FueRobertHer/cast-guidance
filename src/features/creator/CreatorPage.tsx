@@ -13,12 +13,14 @@ import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
 import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
+import { pruneChoicesFor } from '@/lib/pruneChoices';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 import {
   backgroundBlurb,
   classAbilityHint,
   classBlurb,
+  pointBuyFocusFor,
   raceBlurb,
   standardArrayFor,
 } from './pickerHints';
@@ -372,6 +374,8 @@ export function Component() {
               }
               onSelect={(e) =>
                 update((d) => {
+                  if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
+                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
                   d.race = { name: nameOf(e), source: sourceOf(e) };
                   d.subrace = undefined;
                 })
@@ -388,9 +392,17 @@ export function Component() {
                       : undefined
                   }
                   onSelect={(e) =>
-                    update((d) => void (d.subrace = { name: nameOf(e), source: sourceOf(e) }))
+                    update((d) => {
+                      if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                      d.subrace = { name: nameOf(e), source: sourceOf(e) };
+                    })
                   }
-                  onDeselect={() => update((d) => void (d.subrace = undefined))}
+                  onDeselect={() =>
+                    update((d) => {
+                      if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                      d.subrace = undefined;
+                    })
+                  }
                 />
               </div>
             )}
@@ -449,12 +461,27 @@ export function Component() {
               ))}
             </div>
             {doc.abilities.method === 'pointbuy' && (
-              <p
-                className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? 'text-accent' : 'text-ink-muted'}`}
-              >
-                Points: {cost ?? '—'} / {POINT_BUY_BUDGET}
-                {cost === undefined && ' (scores must stay 8–15)'}
-              </p>
+              <div className="flex flex-col gap-2">
+                <p
+                  className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? 'text-accent' : 'text-ink-muted'}`}
+                >
+                  Points: {cost ?? '—'} / {POINT_BUY_BUDGET}
+                  {cost === undefined && ' (scores must stay 8–15)'}
+                </p>
+                {(() => {
+                  const focus = className !== undefined ? pointBuyFocusFor(className) : undefined;
+                  if (focus === undefined) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => update((d) => void (d.abilities.base = { ...focus }))}
+                      className="self-start rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Focus a {className} (15/15/15 in key abilities)
+                    </button>
+                  );
+                })()}
+              </div>
             )}
             {doc.abilities.method === 'standard' && (
               <p className="text-sm text-ink-muted">
@@ -531,7 +558,10 @@ export function Component() {
                 : undefined
             }
             onSelect={(e) =>
-              update((d) => void (d.background = { name: nameOf(e), source: sourceOf(e) }))
+              update((d) => {
+                if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
+                d.background = { name: nameOf(e), source: sourceOf(e) };
+              })
             }
           />
         );

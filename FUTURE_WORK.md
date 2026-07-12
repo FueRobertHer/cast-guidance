@@ -5,22 +5,27 @@ here were consciously deferred — each lists why and what "done" looks like.
 
 ## Curated content linkages (the Dragonborn treatment, applied everywhere)
 
-The engine now supports typed actions (damage type, area, save DC) and
-pre-answered choice prompts. PHB Dragonborn ancestry is fully linked
-(subrace → resistance auto-resolved → breath weapon typed with computed DC in
-`src/engine/effects/race.ts`). The same treatment is still needed for:
+The engine supports typed actions (damage type, area, save DC), level-scaled
+dice (both 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10)" phrasings), and
+pre-answered choice prompts. **Done:** PHB *and* 2024 (XPHB) Dragonborn
+ancestry are fully linked in `src/engine/effects/race.ts` — the ancestry
+(subrace name for 2014, race name for 2024) resolves the resistance and types
+the breath weapon with a computed DC. The scanner's save-DC matcher now
+accepts both rules editions' wording. Still needed:
 
-- **2024 (XPHB) Dragonborn** — ancestry is a choice prompt in data rather than
-  a subrace; the chosen ancestry should type the breath weapon the same way.
 - **FTD Chromatic/Metallic/Gem Dragonborn** — different breath mechanics
-  (Metallic gets a second breath, Gem gets telepathy; areas differ).
+  (Metallic gets a second breath, Gem gets telepathy; areas differ). Extend
+  the `DRACONIC_ANCESTRY` table + `linkDraconicAncestry` branch.
 - **Warlock** — pact choice should gate invocation options; invocations with
   prerequisites should disable with reasons.
 - **Cleric domains / Druid circles / Sorcerer origins** — domain spells are
   granted (additionalSpells) but "always prepared" isn't surfaced as such in
   the spell manager.
-- **Paladin auras, Monk ki save DCs, Battle Master maneuver DCs** — the new
-  `save` field on action effects can carry these; curated entries needed.
+- **Class-wide save DCs (Monk ki, Battle Master maneuvers, etc.)** — these
+  features reference a DC *defined in a separate feature* ("your ki save DC"),
+  so the prose scanner can't resolve them inline. Needs cross-feature DC
+  inference: find the class's key ability and compute 8 + prof + mod. The
+  scanner already handles features that restate the formula themselves.
 - **Aasimar revelations, Genasi, Tortle shell** — verify prose scanner output
   and curate where the text defeats it.
 
@@ -30,11 +35,13 @@ where a printing's mechanics can't be extracted from its own text (the
 
 ## Creation wizard
 
-- **Point-buy assistant** — auto-assign exists for the standard array; a
-  "spend my 27 points for a <class>" preset would serve optimizers.
-- **Racial ability-bonus awareness in auto-assign** — the priority tables are
-  class-only; a Half-Elf Paladin should be nudged differently than a
-  Dragonborn Paladin.
+- **Point-buy assistant** — *done*: a per-class "focus 15/15/15" preset is
+  offered in point-buy mode (standard-array auto-assign already existed).
+- **Racial ability-bonus awareness in auto-assign** — deferred. Analysis:
+  fixed racial bonuses (2014) don't change the optimal base-array assignment,
+  and choice bonuses (Half-Elf) are a separate prompt — so the payoff is
+  marginal and the "priority vs boosted" interaction is subjective. Revisit
+  only if players ask for a smarter dump-stat placement.
 - **Equipment gold alternative** — 2024 rules offer "gold instead of gear";
   the wizard only grants the gear bundles (gold entries become note items).
 - **Background equipment slots** — class `equipmentType` slots get concrete
@@ -45,26 +52,29 @@ where a printing's mechanics can't be extracted from its own text (the
 - **Spell picking guidance** — the Spells step lists everything castable;
   "recommended starter spells" per class would complete the decision support.
 
-## Sheet & play
+## Sheet & play — mostly done
 
-- **Attacks tap-to-explain** — actions and resources open their rules text;
-  weapon attack rows should open the item card the same way.
-- **More tab deep filter** — the filter matches card names; racial traits
-  live nested inside the race card ("breath" doesn't find Breath Weapon).
-  Fix: index nested entry names, or split race cards into per-trait cards.
-- **Consumed-resource ↔ action link** — rolling Breath Weapon's dice doesn't
-  tick the resource pip; a "use it" affordance that rolls AND spends would
-  close the loop.
-- **Conditions explainers** — condition chips should tap-to-explain like
-  actions do (data exists in the `condition` entity type).
-- **Death saves UI** at 0 HP.
+- ~~Attacks tap-to-explain~~ — *done*: weapon rows open the item's prose plus
+  a plain-English gloss of each property (`src/features/sheet/weaponInfo.ts`).
+- ~~More tab deep filter~~ — *done*: matches nested trait names and full body
+  text via `flattenEntries`.
+- ~~Consumed-resource ↔ action link~~ — *done*: rolling a limited-use action
+  spends its resource pip (`RollChip.onRolled`), and each action shows
+  "N/max left".
+- ~~Conditions explainers~~ — *done*: active conditions get a "what these do"
+  strip that opens the rules text.
+- ~~Death saves UI~~ — already present (nat-1/nat-20 handling, Durable feat).
+
+Remaining: a "use it" button for resources with no dice (spend without a roll);
+spell-slot tap-to-cast polish.
 
 ## Accessibility
 
-- Picker buttons and choice chips now carry accessible names; a full
-  screen-reader pass (focus order, drawer focus traps, live regions for roll
-  results) hasn't been done.
-- Color-only proficiency dots on the Stats tab need a non-color signal.
+- ~~Color-only proficiency dots~~ — *done*: `ProfDot` distinguishes by shape
+  (ring / filled / ringed) and carries the state as screen-reader text.
+- Picker buttons and choice chips carry accessible names; a full screen-reader
+  pass (focus order, drawer focus traps, live regions for roll results) still
+  hasn't been done.
 
 ## Data / engine
 
@@ -73,8 +83,7 @@ where a printing's mechanics can't be extracted from its own text (the
   no-op because the subrace template has no entries of its own. Fixing this
   in `copyMod.ts` would give every versioned subrace its substituted prose
   (and would let the curated Dragonborn table shrink).
-- **Choice descriptions for tools/instruments** — skills have curated
-  one-liners; tool proficiencies are still bare names.
-- **Stale choice garbage collection** — removing a race/background leaves
-  orphaned `doc.choices` keys (harmless but untidy); class removal cleans up
-  after itself, the others should too.
+- ~~Choice descriptions for tools/instruments~~ — *done*: `toolOptions` adds a
+  use hint per tool (falls back to a category label).
+- ~~Stale choice garbage collection~~ — *done*: `pruneChoicesFor` sweeps
+  orphaned picks when race, subrace, background, or class change.

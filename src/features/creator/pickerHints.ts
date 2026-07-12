@@ -76,6 +76,19 @@ export function standardArrayFor(className: string): Record<Ability, number> | u
   return out;
 }
 
+/**
+ * Point-buy preset that spends all 27 points on the class's top three
+ * abilities (15/15/15, rest 8) — the classic focused optimizer spread.
+ * Costs 3×9 = 27, so it's always legal.
+ */
+export function pointBuyFocusFor(className: string): Record<Ability, number> | undefined {
+  const prio = CLASS_ABILITY_PRIORITY[className.toLowerCase()];
+  if (prio === undefined) return undefined;
+  const out = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+  for (const a of prio.slice(0, 3)) out[a] = 15;
+  return out;
+}
+
 // --- Races -------------------------------------------------------------------
 
 /** Flavor for the core options a new player is most likely to weigh. */

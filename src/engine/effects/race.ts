@@ -10,6 +10,7 @@ import {
   readProficiencyList,
   readResistList,
   skillOptions,
+  toolOptions,
 } from './readers';
 
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
@@ -78,7 +79,7 @@ function collectFrom(
     'tool',
     'Tool proficiency',
     (name) => col.add({ kind: 'toolProf', name, origin }),
-    genericOptions,
+    toolOptions,
   );
   readProficiencyList(
     col,
@@ -134,16 +135,25 @@ const DRACONIC_ANCESTRY: Record<string, { type: string; area: string; targetAbil
 };
 
 function linkDraconicAncestry(col: Collector): void {
-  if (col.doc.race?.name.toLowerCase() !== 'dragonborn') return;
-  const color = col.doc.subrace?.name
-    .toLowerCase()
-    .match(/(black|blue|brass|bronze|copper|gold|green|red|silver|white)\)?\s*$/)?.[1];
+  const raceName = col.doc.race?.name.toLowerCase() ?? '';
+  if (!raceName.includes('dragonborn')) return;
+  // The ancestry color lives in the subrace name (2014 PHB) or the race name
+  // itself (2024 XPHB versioned races like "Dragonborn (Blue)").
+  const hay = `${raceName} ${col.doc.subrace?.name.toLowerCase() ?? ''}`;
+  const color = hay.match(/\b(black|blue|brass|bronze|copper|gold|green|red|silver|white)\b/)?.[1];
   const ancestry = color !== undefined ? DRACONIC_ANCESTRY[color] : undefined;
   if (ancestry === undefined) return;
+  // 2024 breath weapon is a DEX save and the player picks cone or line each
+  // use; 2014 fixes the shape and save per ancestry.
+  const is2024 = col.doc.rulesVersion === '2024';
+  const note = is2024
+    ? `${ancestry.type} · 15 ft cone or 30 ft line`
+    : `${ancestry.type} · ${ancestry.area}`;
+  const targetAbility = is2024 ? ('dex' as const) : ancestry.targetAbility;
   for (const e of col.effects) {
     if (e.kind === 'action' && e.label.toLowerCase() === 'breath weapon') {
-      e.note = `${ancestry.type} · ${ancestry.area}`;
-      e.save = { targetAbility: ancestry.targetAbility, dcAbility: 'con' };
+      e.note = note;
+      e.save = { targetAbility, dcAbility: 'con' };
     }
   }
 }

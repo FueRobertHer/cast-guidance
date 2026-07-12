@@ -2,6 +2,7 @@ import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import { EntriesView } from '@/data5e/entries/renderEntries';
+import { flattenEntries } from '@/engine/effects/proseScan';
 import type { FeatureCard } from '@/engine/types';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -36,7 +37,14 @@ export function Component() {
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
   const f = filter.trim().toLowerCase();
-  const matches = (card: FeatureCard) => f === '' || card.name.toLowerCase().includes(f);
+  // Match the card title, the origin, AND the full trait text — so "breath"
+  // finds Breath Weapon nested inside the Dragonborn card, not just top-level
+  // card names.
+  const matches = (card: FeatureCard) =>
+    f === '' ||
+    card.name.toLowerCase().includes(f) ||
+    card.origin.label.toLowerCase().includes(f) ||
+    flattenEntries(card.entries).includes(f);
   const grouped = GROUPS.map((g) => ({
     title: g.title,
     cards: sheet.features

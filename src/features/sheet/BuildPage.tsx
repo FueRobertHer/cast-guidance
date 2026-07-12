@@ -14,10 +14,12 @@ import {
 import { ABILITIES, type DerivedSheet, SKILLS } from '@/engine/types';
 import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
 import { backgroundBlurb, classBlurb, raceBlurb } from '@/features/creator/pickerHints';
+import { pruneChoicesFor } from '@/lib/pruneChoices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { ProfDot } from '@/ui/ProfDot';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -322,11 +324,8 @@ export function Component() {
                         const c = d.classes[idx];
                         if (c === undefined) return;
                         if (c.levels <= 1) {
-                          const uid = `${c.ref.name}|${c.ref.source}`.toLowerCase();
                           d.classes.splice(idx, 1);
-                          for (const key of Object.keys(d.choices)) {
-                            if (key.startsWith(`class:${uid}`)) delete d.choices[key];
-                          }
+                          pruneChoicesFor(d, 'class', c.ref);
                           return;
                         }
                         c.levels -= 1;
@@ -493,6 +492,8 @@ export function Component() {
           }
           onSelect={(e) =>
             update((d) => {
+              if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
+              if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
               d.race = { name: nameOf(e), source: sourceOf(e) };
               d.subrace = undefined;
             })
@@ -509,9 +510,17 @@ export function Component() {
                   : undefined
               }
               onSelect={(e) =>
-                update((d) => void (d.subrace = { name: nameOf(e), source: sourceOf(e) }))
+                update((d) => {
+                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                  d.subrace = { name: nameOf(e), source: sourceOf(e) };
+                })
               }
-              onDeselect={() => update((d) => void (d.subrace = undefined))}
+              onDeselect={() =>
+                update((d) => {
+                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                  d.subrace = undefined;
+                })
+              }
             />
           </>
         )}
@@ -657,7 +666,10 @@ export function Component() {
               : undefined
           }
           onSelect={(e) =>
-            update((d) => void (d.background = { name: nameOf(e), source: sourceOf(e) }))
+            update((d) => {
+              if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
+              d.background = { name: nameOf(e), source: sourceOf(e) };
+            })
           }
         />
       </Section>
@@ -799,15 +811,7 @@ export function Component() {
                       className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-left text-sm last:border-b-0"
                     >
                       <span className="flex items-center gap-2">
-                        <span
-                          className={`inline-block h-2 w-2 rounded-full ${
-                            s.prof === 2
-                              ? 'bg-amber-300'
-                              : s.prof === 1
-                                ? 'bg-accent'
-                                : 'bg-surface-2'
-                          }`}
-                        />
+                        <ProfDot level={s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
                       </span>

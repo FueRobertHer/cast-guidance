@@ -106,16 +106,21 @@ export function proseScanFeature(
   const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
   let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
 
-  // Level-scaled dice ("increases to 3d6 at 6th level, 4d6 at 11th level…"):
-  // use the biggest step the character's total level has reached.
+  // Level-scaled dice — use the biggest step the character's total level has
+  // reached. Two phrasings: 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10),
+  // 11 (3d10)". Both give absolute dice for a level threshold.
   if (roll !== undefined) {
     const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+    const steps: Array<[number, string]> = [];
     for (const m of text.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
-      const stepDice = m[1];
-      const stepLevel = Number(m[2]);
-      if (stepDice !== undefined && totalLevel >= stepLevel) {
-        roll = stepDice.replaceAll(' ', '');
-      }
+      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
+    }
+    for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th)? \((\d+d\d+)\)/g)) {
+      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
+    }
+    steps.sort((a, b) => a[0] - b[0]);
+    for (const [stepLevel, stepDice] of steps) {
+      if (totalLevel >= stepLevel) roll = stepDice.replaceAll(' ', '');
     }
   }
 
@@ -133,11 +138,18 @@ export function proseScanFeature(
         /must (?:then )?(?:each )?make an? (strength|dexterity|constitution|intelligence|wisdom|charisma) saving throw/,
       )?.[1] ?? ''
     ];
+  // DC phrasing varies: 2014 "equals 8 + your X modifier + your proficiency
+  // bonus"; 2024 "(8 plus your X modifier and proficiency bonus)". Accept both
+  // orders of ability/proficiency too.
   const dcAbility =
     ABILITY_WORDS[
       text.match(
-        /dc (?:for this saving throw )?equals 8 \+ your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier \+ your proficiency bonus/,
-      )?.[1] ?? ''
+        /8 (?:\+|plus) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier (?:\+|and) (?:your )?proficiency bonus/,
+      )?.[1] ??
+        text.match(
+          /8 (?:\+|plus) your proficiency bonus (?:\+|and) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+        )?.[1] ??
+        ''
     ];
   const save =
     targetAbility !== undefined && dcAbility !== undefined
@@ -148,7 +160,11 @@ export function proseScanFeature(
     col.add({ kind: 'action', economy: 'bonus', label: name, roll, note, save, origin });
   } else if (/as a reaction|use your reaction/.test(text)) {
     col.add({ kind: 'action', economy: 'reaction', label: name, roll, note, save, origin });
-  } else if (uses !== undefined && /as an action|use your action/.test(text)) {
+  } else if (
+    uses !== undefined &&
+    // "replace one of your attacks" is the 2024 phrasing for Attack-action riders.
+    /as an action|use your action|replace one of your attacks/.test(text)
+  ) {
     col.add({ kind: 'action', economy: 'action', label: name, roll, note, save, origin });
   }
 

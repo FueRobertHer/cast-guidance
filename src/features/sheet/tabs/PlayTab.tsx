@@ -12,6 +12,7 @@ import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
+import { weaponInfoEntries } from '../weaponInfo';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
@@ -600,6 +601,33 @@ export function Component() {
             );
           })}
         </div>
+        {/* Rules text for whatever's currently active — no rulebook needed. */}
+        {play.conditions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-surface-2/40 p-3">
+            <span className="w-full text-[10px] font-semibold uppercase text-ink-muted">
+              What these do
+            </span>
+            {play.conditions.map((c) => {
+              const e = registry?.get('condition', c.id) ?? registry?.get('status', c.id);
+              if (e?.entries === undefined) return null;
+              return (
+                <FeatureInfoSheet
+                  key={c.id}
+                  title={c.id}
+                  entries={e.entries}
+                  trigger={
+                    <button
+                      type="button"
+                      className="rounded-full border border-surface-2 px-2.5 py-1 text-xs text-ink-muted underline decoration-dashed underline-offset-2"
+                    >
+                      {c.id}
+                    </button>
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
       </details>
 
       {/* Rests */}
@@ -711,7 +739,25 @@ export function Component() {
                 className="flex items-center justify-between gap-2 border-b border-surface-2/40 px-3 py-2.5 text-sm last:border-b-0"
               >
                 <div className="min-w-0">
-                  <div className="truncate font-semibold">{a.label}</div>
+                  {(() => {
+                    const info = weaponInfoEntries(registry, a.label, a.properties);
+                    return info !== undefined ? (
+                      <FeatureInfoSheet
+                        title={a.label}
+                        entries={info}
+                        trigger={
+                          <button
+                            type="button"
+                            className="truncate text-left font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                          >
+                            {a.label}
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <div className="truncate font-semibold">{a.label}</div>
+                    );
+                  })()}
                   <div className="truncate text-xs text-ink-muted">
                     {a.properties.join(', ')}
                     {a.range !== undefined ? ` · ${a.range}` : ''}
@@ -747,11 +793,28 @@ export function Component() {
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
+              // Limited-use actions share a name with their resource — rolling
+              // one spends a use so the pips stay honest.
+              const linkedResource = sheet.resources.find(
+                (r) => r.label.toLowerCase() === a.label.toLowerCase(),
+              );
+              const spendLinked =
+                linkedResource !== undefined
+                  ? () => {
+                      const used = usedOf(linkedResource.key);
+                      if (used < linkedResource.max) setUsed(linkedResource.key, used + 1);
+                    }
+                  : undefined;
+              const remaining =
+                linkedResource !== undefined
+                  ? linkedResource.max - usedOf(linkedResource.key)
+                  : undefined;
               const mechanics = [
                 a.note,
                 a.save !== undefined
                   ? `DC ${a.save.dc} ${a.save.targetAbility.toUpperCase()} save`
                   : undefined,
+                remaining !== undefined ? `${remaining}/${linkedResource?.max} left` : undefined,
               ]
                 .filter((s) => s !== undefined)
                 .join(' · ');
@@ -787,7 +850,12 @@ export function Component() {
                   <span className="flex items-center gap-1.5">
                     {name}
                     {a.roll !== undefined && (
-                      <RollChip expr={a.roll} label={a.label} variant="damage" />
+                      <RollChip
+                        expr={a.roll}
+                        label={a.label}
+                        variant="damage"
+                        onRolled={spendLinked}
+                      />
                     )}
                   </span>
                   {mechanics !== '' && (

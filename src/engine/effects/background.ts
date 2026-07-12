@@ -2,11 +2,11 @@ import { type EffectOrigin, refUid } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import {
-  genericOptions,
   languageOptions,
   readAbilityBlock,
   readProficiencyList,
   skillOptions,
+  toolOptions,
 } from './readers';
 
 export function collectBackground(col: Collector): void {
@@ -52,7 +52,7 @@ export function collectBackground(col: Collector): void {
     'tool',
     'Tool proficiency',
     (name) => col.add({ kind: 'toolProf', name, origin }),
-    genericOptions,
+    toolOptions,
   );
 
   // XPHB (2024) backgrounds: weighted ability bonuses + an origin feat.

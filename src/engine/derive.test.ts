@@ -567,3 +567,38 @@ describe('deriveSheet — dragonborn ancestry linkage', () => {
     expect(lang?.options.find((o) => o.id === 'Elvish')?.disabled).toBeUndefined();
   });
 });
+
+describe('deriveSheet — 2024 versioned Dragonborn (color in race name)', () => {
+  function xDragonbornDoc(levels: number): CharacterDoc {
+    const doc = newCharacterDoc('x1', 'Vex', 'test-tag');
+    doc.rulesVersion = '2024';
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Dragonborn (Blue)', source: 'XTST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('types the breath weapon (DEX save, flexible area, computed DC) from the race name', () => {
+    const sheet = deriveSheet(xDragonbornDoc(1), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw).toBeDefined();
+    expect(bw?.note).toBe('lightning · 15 ft cone or 30 ft line');
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 }); // 8 + CON 2 + prof 2
+    expect(bw?.roll).toBe('1d10');
+  });
+
+  it('scales breath-weapon dice with the 2024 "levels 5 (2d10)" phrasing', () => {
+    const sheet = deriveSheet(xDragonbornDoc(11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('3d10'); // level 11 step
+  });
+
+  it('grants the resistance and a proficiency-bonus-limited resource', () => {
+    const sheet = deriveSheet(xDragonbornDoc(1), ctx);
+    expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');
+    expect(sheet.resources.some((r) => r.label === 'Breath Weapon')).toBe(true);
+  });
+});

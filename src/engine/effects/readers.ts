@@ -69,6 +69,41 @@ export function genericOptions(from?: readonly unknown[]): ChoiceOption[] {
   return (from ?? []).map((f) => ({ id: String(f), label: titleCase(String(f)) }));
 }
 
+/** One-line "what is it" per tool the choice lists commonly offer. */
+const TOOL_USES: Record<string, string> = {
+  "thieves' tools": 'pick locks, disarm traps',
+  "smith's tools": 'forge and repair metal gear',
+  "carpenter's tools": 'build and repair wood',
+  "alchemist's supplies": 'craft acids, fire, reagents',
+  'herbalism kit': 'make potions of healing, antitoxin',
+  "poisoner's kit": 'craft and apply poisons',
+  'disguise kit': 'alter your appearance',
+  'forgery kit': 'fake documents and seals',
+  "navigator's tools": 'chart courses, avoid getting lost',
+  "cartographer's tools": 'draw and read maps',
+  "cook's utensils": 'prepare food on a rest',
+  "tinker's tools": 'repair and improvise devices',
+  "brewer's supplies": 'brew drinks; know purified water',
+  "mason's tools": 'work stone',
+  "painter's supplies": 'create art, spot forgeries',
+};
+const TOOL_CATEGORY: Array<[RegExp, string]> = [
+  [/ tools$| supplies$| kit$| utensils$/, "artisan's tools"],
+  [/ set$/, 'gaming set'],
+  [/^dice set$/, 'gaming set'],
+  [/instrument|lute|flute|drum|horn|pipes|viol|lyre|harp/, 'musical instrument'],
+];
+
+/** Tool proficiency options with a short use hint (falls back to category). */
+export function toolOptions(from?: readonly unknown[]): ChoiceOption[] {
+  return (from ?? []).map((f) => {
+    const raw = String(f);
+    const lower = raw.toLowerCase();
+    const use = TOOL_USES[lower] ?? TOOL_CATEGORY.find(([re]) => re.test(lower))?.[1];
+    return { id: raw, label: titleCase(raw), description: use };
+  });
+}
+
 /** Standard + common exotic languages — the fallback for `any`/`anyStandard`. */
 export const LANGUAGE_OPTIONS: ChoiceOption[] = [
   'Common',

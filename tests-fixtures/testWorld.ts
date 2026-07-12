@@ -52,6 +52,25 @@ const race: DataEntity[] = [
     ],
   },
   {
+    // 2024-style versioned Dragonborn: the ancestry color is baked into the
+    // race NAME (no subrace), the breath weapon "replaces an attack", scales in
+    // "levels 5 (2d10)" form, and states the DC as "8 plus … and …".
+    name: 'Dragonborn (Blue)',
+    source: 'XTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['lightning'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in either a 15-foot cone or a 30-foot line that is 5 feet wide. Each creature in that area must make a Dexterity saving throw (8 plus your Constitution modifier and proficiency bonus). On a failed save, a creature takes 1d10 damage. This damage increases by 1d10 when you reach character levels 5 (2d10), 11 (3d10), and 17 (4d10). You can use this Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
     // Exercises the generic prose scanner (no curated entries match these).
     name: 'Prosefolk',
     source: 'TST',
