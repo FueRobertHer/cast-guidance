@@ -515,3 +515,55 @@ describe('deriveSheet — generic prose scan (Prosefolk)', () => {
     expect(s2.resources.filter((r) => r.key === 'relentless-endurance')).toHaveLength(1);
   });
 });
+
+describe('deriveSheet — dragonborn ancestry linkage', () => {
+  function dragonbornDoc(withSubrace: boolean, levels = 1): CharacterDoc {
+    const doc = newCharacterDoc('d1', 'Rina', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Dragonborn', source: 'TST' };
+    if (withSubrace) doc.subrace = { name: 'Dragonborn (Blue)', source: 'TST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('subrace ancestry pre-answers the racial resistance choice', () => {
+    const sheet = deriveSheet(dragonbornDoc(true), ctx);
+    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(false);
+    expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');
+  });
+
+  it('keeps the resistance prompt when no subrace fixes it', () => {
+    const sheet = deriveSheet(dragonbornDoc(false), ctx);
+    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(true);
+  });
+
+  it('types the breath weapon from the ancestry (damage, area, save DC)', () => {
+    const sheet = deriveSheet(dragonbornDoc(true), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('2d6');
+    expect(bw?.note).toBe('lightning · 5 by 30 ft line');
+    // DC = 8 + CON mod (+2) + proficiency (+2)
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 });
+  });
+
+  it('scales breath weapon dice with total level', () => {
+    const sheet = deriveSheet(dragonbornDoc(true, 11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('4d6');
+  });
+
+  it('disables already-known languages in language prompts', () => {
+    const doc = dragonbornDoc(true);
+    doc.background = { name: 'Linguist', source: 'TST' };
+    const sheet = deriveSheet(doc, ctx);
+    const lang = sheet.pending.find((p) => p.kind === 'language');
+    expect(lang).toBeDefined();
+    // Dragonborn already speak Common and Draconic; open picks can't re-buy them.
+    expect(lang?.options.find((o) => o.id === 'Common')?.disabled).toBeDefined();
+    expect(lang?.options.find((o) => o.id === 'Draconic')?.disabled).toBeDefined();
+    expect(lang?.options.find((o) => o.id === 'Elvish')?.disabled).toBeUndefined();
+  });
+});

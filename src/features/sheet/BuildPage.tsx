@@ -6,11 +6,17 @@ import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
-import { meetsMulticlassRequirements, multiclassRequirementText } from '@/engine/multiclass';
+import {
+  meetsMulticlassRequirements,
+  multiclassRequirementText,
+  subclassUnlockLevel,
+} from '@/engine/multiclass';
 import { ABILITIES, type DerivedSheet, SKILLS } from '@/engine/types';
 import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
+import { backgroundBlurb, classBlurb, raceBlurb } from '@/features/creator/pickerHints';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import type { CharacterSheetState } from './useCharacterSheet';
 
@@ -167,23 +173,8 @@ export function Component() {
     return typeof faces === 'number' ? faces : 8;
   };
 
-  /** Class level at which the subclass is chosen (from gainSubclassFeature refs). */
-  const subclassLevelOf = (ref: { name: string; source: string }): number => {
-    const cls = registry.get('class', ref.name, ref.source);
-    const feats = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
-    for (const f of feats) {
-      if (
-        typeof f === 'object' &&
-        f !== null &&
-        (f as { gainSubclassFeature?: boolean }).gainSubclassFeature === true
-      ) {
-        const raw = String((f as { classFeature?: unknown }).classFeature ?? '');
-        const lvl = Number.parseInt(raw.split('|')[3] ?? '', 10);
-        if (!Number.isNaN(lvl)) return lvl;
-      }
-    }
-    return 1;
-  };
+  const subclassLevelOf = (ref: { name: string; source: string }): number =>
+    subclassUnlockLevel(registry.get('class', ref.name, ref.source));
   const hpMethod = doc.hpMethod ?? 'average';
   const totalLevels = doc.classes.reduce((s, c) => s + c.levels, 0);
   const finalScores = Object.fromEntries(
@@ -314,24 +305,36 @@ export function Component() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={async () => {
+                      // Removing the only level-1 class = swapping class; ask,
+                      // then clear it so the "Pick a class" list reopens.
+                      if (entry.levels <= 1 && doc.classes.length === 1) {
+                        const ok = await askConfirm({
+                          title: `Remove ${entry.ref.name}?`,
+                          detail:
+                            'Class-linked choices (skills, fighting styles…) reset. Pick a new class right after.',
+                          confirmLabel: 'Remove class',
+                          danger: true,
+                        });
+                        if (!ok) return;
+                      }
                       update((d) => {
                         const c = d.classes[idx];
                         if (c === undefined) return;
                         if (c.levels <= 1) {
-                          if (d.classes.length > 1) d.classes.splice(idx, 1);
+                          const uid = `${c.ref.name}|${c.ref.source}`.toLowerCase();
+                          d.classes.splice(idx, 1);
+                          for (const key of Object.keys(d.choices)) {
+                            if (key.startsWith(`class:${uid}`)) delete d.choices[key];
+                          }
                           return;
                         }
                         c.levels -= 1;
                         c.hp = c.hp.slice(0, c.levels);
-                      })
-                    }
+                      });
+                    }}
                     className="h-8 w-8 rounded-full bg-surface-2 text-lg"
-                    title={
-                      entry.levels <= 1 && doc.classes.length > 1
-                        ? 'Remove this class'
-                        : 'Remove a level'
-                    }
+                    title={entry.levels <= 1 ? 'Remove this class' : 'Remove a level'}
                   >
                     −
                   </button>
@@ -457,6 +460,7 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               dedupe
+              describe={classBlurb}
               entities={classes.filter(
                 (e) =>
                   !doc.classes.some(
@@ -482,6 +486,7 @@ export function Component() {
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
         <EntityCardList
           dedupe
+          describe={raceBlurb}
           entities={races}
           selectedUid={
             doc.race !== undefined ? `${doc.race.name}|${doc.race.source}`.toLowerCase() : undefined
@@ -644,6 +649,7 @@ export function Component() {
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
         <EntityCardList
           dedupe
+          describe={backgroundBlurb}
           entities={backgrounds}
           selectedUid={
             doc.background !== undefined

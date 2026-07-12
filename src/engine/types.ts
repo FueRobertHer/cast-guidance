@@ -164,7 +164,16 @@ export type EffectInput = { origin: EffectOrigin } & (
       max: number | 'profBonus' | `abilityMod:${Ability}` | `level:${string}`;
       resetOn: 'short' | 'long';
     }
-  | { kind: 'action'; economy: 'action' | 'bonus' | 'reaction'; label: string; roll?: string }
+  | {
+      kind: 'action';
+      economy: 'action' | 'bonus' | 'reaction';
+      label: string;
+      roll?: string;
+      /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
+      note?: string;
+      /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
+      save?: { targetAbility: Ability; dcAbility: Ability };
+    }
   | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
   | { kind: 'note'; text: string }
 );
@@ -283,6 +292,10 @@ export interface DerivedSheet {
     label: string;
     roll?: string;
     origin: string;
+    /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
+    note?: string;
+    /** Computed save DC + the ability the target saves with. */
+    save?: { targetAbility: Ability; dc: number };
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];

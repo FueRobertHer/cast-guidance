@@ -9,6 +9,8 @@ export interface ParsedBundleItem {
   label: string;
   /** Resolvable "name|source" item uid, when the entry names a concrete item. */
   uid?: string;
+  /** Open slot ("any martial weapon") the player fills with a concrete item. */
+  equipmentType?: string;
   quantity: number;
 }
 
@@ -49,6 +51,7 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
     };
     return {
       label: labels[e.equipmentType] ?? e.equipmentType,
+      equipmentType: e.equipmentType,
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
     };
   }
@@ -85,10 +88,19 @@ export function parseStartingEquipment(entity: DataEntity | undefined): Equipmen
   return groups;
 }
 
-export function bundleToEquipment(bundle: EquipmentBundle): EquipmentEntry[] {
-  return bundle.items.map((item) => {
-    if (item.uid !== undefined) {
-      const [name, source] = item.uid.split('|');
+/**
+ * Materialize a bundle. `slotPicks` maps an item's index within the bundle to
+ * the concrete "name|source" uid the player chose for an equipmentType slot;
+ * unfilled slots become labeled note items so nothing silently disappears.
+ */
+export function bundleToEquipment(
+  bundle: EquipmentBundle,
+  slotPicks: Record<number, string> = {},
+): EquipmentEntry[] {
+  return bundle.items.map((item, idx) => {
+    const uid = item.uid ?? (item.equipmentType !== undefined ? slotPicks[idx] : undefined);
+    if (uid !== undefined) {
+      const [name, source] = uid.split('|');
       return {
         id: crypto.randomUUID(),
         ref: { name: name ?? item.label, source: source ?? '' },
@@ -104,6 +116,50 @@ export function bundleToEquipment(bundle: EquipmentBundle): EquipmentEntry[] {
       equipped: false,
       attuned: false,
     };
+  });
+}
+
+/**
+ * Concrete items that satisfy an `equipmentType` slot, drawn from baseitems
+ * (weapons/armor) or items (instruments, tools, gaming sets).
+ */
+export function itemsForEquipmentType(
+  type: string,
+  baseitems: readonly DataEntity[],
+  items: readonly DataEntity[],
+): DataEntity[] {
+  const typeCode = (e: DataEntity) => String(e.type ?? '').split('|')[0];
+  const isWeapon = (e: DataEntity) => e.weaponCategory !== undefined;
+  const category = (e: DataEntity) =>
+    String(e.weaponCategory ?? '')
+      .split('|')[0]
+      ?.toLowerCase();
+  const melee = (e: DataEntity) => typeCode(e) === 'M';
+  const byType = (code: string) => (e: DataEntity) => typeCode(e) === code;
+  const filters: Record<string, (e: DataEntity) => boolean> = {
+    weaponSimple: (e) => isWeapon(e) && category(e) === 'simple',
+    weaponSimpleMelee: (e) => isWeapon(e) && category(e) === 'simple' && melee(e),
+    weaponMartial: (e) => isWeapon(e) && category(e) === 'martial',
+    weaponMartialMelee: (e) => isWeapon(e) && category(e) === 'martial' && melee(e),
+    armorLight: byType('LA'),
+    instrumentMusical: byType('INS'),
+    setGaming: byType('GS'),
+    toolArtisan: byType('AT'),
+  };
+  const filter = filters[type];
+  if (filter === undefined) return [];
+  const pool =
+    type.startsWith('weapon') || type === 'armorLight' ? baseitems : [...baseitems, ...items];
+  // Core printings only — starting gear means longswords, not laser rifles.
+  const coreSources = new Set(['phb', 'xphb']);
+  const seen = new Set<string>();
+  return pool.filter((e) => {
+    if (!coreSources.has(String(e.source ?? '').toLowerCase())) return false;
+    if (!filter(e)) return false;
+    const key = String(e.name ?? '').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 

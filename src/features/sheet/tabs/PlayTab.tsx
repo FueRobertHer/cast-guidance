@@ -8,6 +8,7 @@ import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
+import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -649,10 +650,28 @@ export function Component() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {sheet.resources.map((r) => {
               const used = usedOf(r.key);
+              const info = findFeatureInfo(sheet.features, r.label, r.origin);
               return (
                 <div key={r.key} className="rounded-lg bg-surface p-3">
                   <div className="mb-1.5 flex items-baseline justify-between text-sm">
-                    <span className="font-semibold">{r.label}</span>
+                    {info !== undefined ? (
+                      <FeatureInfoSheet
+                        title={info.title}
+                        subtitle={r.origin}
+                        entries={info.entries}
+                        trigger={
+                          <button
+                            type="button"
+                            className="font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            title="What does this do?"
+                          >
+                            {r.label}
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <span className="font-semibold">{r.label}</span>
+                    )}
                     <span className="text-xs text-ink-muted">{r.resetOn} rest</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -724,24 +743,59 @@ export function Component() {
       {sheet.actions.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Actions</h2>
+          <p className="text-xs text-ink-muted">Tap a name for the full rules text.</p>
           <div className="flex flex-wrap gap-1.5">
-            {sheet.actions.map((a) => (
-              <span
-                key={`${a.origin}:${a.label}`}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
-                  a.economy === 'bonus'
-                    ? 'border-emerald-300/40 text-emerald-300'
-                    : a.economy === 'reaction'
-                      ? 'border-sky-300/40 text-sky-300'
-                      : 'border-surface-2'
-                }`}
-              >
-                {a.label}
-                {a.roll !== undefined && (
-                  <RollChip expr={a.roll} label={a.label} variant="damage" />
-                )}
-              </span>
-            ))}
+            {sheet.actions.map((a) => {
+              const info = findFeatureInfo(sheet.features, a.label, a.origin);
+              const mechanics = [
+                a.note,
+                a.save !== undefined
+                  ? `DC ${a.save.dc} ${a.save.targetAbility.toUpperCase()} save`
+                  : undefined,
+              ]
+                .filter((s) => s !== undefined)
+                .join(' · ');
+              const name =
+                info !== undefined ? (
+                  <FeatureInfoSheet
+                    title={info.title}
+                    subtitle={[a.origin, mechanics].filter((s) => s !== '').join(' · ')}
+                    entries={info.entries}
+                    trigger={
+                      <button
+                        type="button"
+                        className="underline decoration-surface-2 decoration-dashed underline-offset-4"
+                      >
+                        {a.label}
+                      </button>
+                    }
+                  />
+                ) : (
+                  a.label
+                );
+              return (
+                <span
+                  key={`${a.origin}:${a.label}`}
+                  className={`flex flex-col rounded-2xl border px-3 py-1.5 text-sm ${
+                    a.economy === 'bonus'
+                      ? 'border-emerald-300/40 text-emerald-300'
+                      : a.economy === 'reaction'
+                        ? 'border-sky-300/40 text-sky-300'
+                        : 'border-surface-2'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {name}
+                    {a.roll !== undefined && (
+                      <RollChip expr={a.roll} label={a.label} variant="damage" />
+                    )}
+                  </span>
+                  {mechanics !== '' && (
+                    <span className="text-[11px] leading-tight text-ink-muted">{mechanics}</span>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </section>
       )}

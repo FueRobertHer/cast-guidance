@@ -44,6 +44,7 @@ export function EntityCardList({
   onSelect,
   onDeselect,
   dedupe = false,
+  describe,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
@@ -52,17 +53,23 @@ export function EntityCardList({
   onDeselect?: () => void;
   /**
    * Curate the default view: one printing per name (best source first) with
-   * UA / sidekicks / variants behind a "show everything" toggle. Filtering
-   * always searches everything.
+   * UA / sidekicks / variants behind a "show everything" toggle, core books
+   * sorted before setting-specific ones. Filtering always searches everything.
    */
   dedupe?: boolean;
+  /** One-line summary rendered under the name — decision support. */
+  describe?: (e: Entity) => string | undefined;
 }) {
   const [filter, setFilter] = useState('');
   const [showAll, setShowAll] = useState(false);
 
   const { list, hiddenCount } = useMemo(() => {
-    const sorted = [...entities].sort(
-      (a, b) => nameOf(a).localeCompare(nameOf(b)) || rankOf(a) - rankOf(b),
+    // Curated view: core books first (PHB before setting books), then A→Z —
+    // a new player should see Human before Aarakocra. Full lists stay A→Z.
+    const sorted = [...entities].sort((a, b) =>
+      dedupe
+        ? rankOf(a) - rankOf(b) || nameOf(a).localeCompare(nameOf(b))
+        : nameOf(a).localeCompare(nameOf(b)) || rankOf(a) - rankOf(b),
     );
     const f = filter.trim().toLowerCase();
     if (f !== '') {
@@ -97,34 +104,43 @@ export function EntityCardList({
         />
       )}
       <div className="grid max-h-96 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
-        {list.map((e) => (
-          <button
-            key={uidOf(e)}
-            type="button"
-            onClick={() => {
-              if (selectedUid === uidOf(e) && onDeselect !== undefined) onDeselect();
-              else onSelect(e);
-            }}
-            title={
-              selectedUid === uidOf(e) && onDeselect !== undefined
-                ? 'Tap again to unselect'
-                : undefined
-            }
-            className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm ${
-              selectedUid === uidOf(e)
-                ? 'border-accent bg-accent-deep/40 font-semibold'
-                : 'border-surface-2 bg-surface hover:bg-surface-2'
-            }`}
-          >
-            <span className="truncate">
-              {nameOf(e)}
-              {selectedUid === uidOf(e) && onDeselect !== undefined && (
-                <span className="ml-1.5 text-xs font-normal text-ink-muted">✕ unselect</span>
+        {list.map((e) => {
+          const blurb = describe?.(e);
+          return (
+            <button
+              key={uidOf(e)}
+              type="button"
+              aria-label={nameOf(e)}
+              onClick={() => {
+                if (selectedUid === uidOf(e) && onDeselect !== undefined) onDeselect();
+                else onSelect(e);
+              }}
+              title={
+                selectedUid === uidOf(e) && onDeselect !== undefined
+                  ? 'Tap again to unselect'
+                  : undefined
+              }
+              className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left text-sm ${
+                selectedUid === uidOf(e)
+                  ? 'border-accent bg-accent-deep/40'
+                  : 'border-surface-2 bg-surface hover:bg-surface-2'
+              }`}
+            >
+              <span className="flex w-full items-center justify-between gap-2">
+                <span className={`truncate ${selectedUid === uidOf(e) ? 'font-semibold' : ''}`}>
+                  {nameOf(e)}
+                  {selectedUid === uidOf(e) && onDeselect !== undefined && (
+                    <span className="ml-1.5 text-xs font-normal text-ink-muted">✕ unselect</span>
+                  )}
+                </span>
+                <SourceBadge source={sourceOf(e)} />
+              </span>
+              {blurb !== undefined && (
+                <span className="text-xs leading-snug text-ink-muted">{blurb}</span>
               )}
-            </span>
-            <SourceBadge source={sourceOf(e)} />
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
       {hiddenCount > 0 && (
         <button

@@ -1,5 +1,5 @@
 import { emitCuratedTrait } from '../curated/curatedEffects';
-import { type DataEntity, type EffectOrigin, refUid } from '../types';
+import { type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { proseScanFeature } from './proseScan';
@@ -27,7 +27,13 @@ function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity }
   return { race, subrace };
 }
 
-function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase: string): void {
+function collectFrom(
+  col: Collector,
+  e: DataEntity,
+  origin: EffectOrigin,
+  idBase: string,
+  predeterminedResists: readonly string[] = [],
+): void {
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
 
   const speed = e.speed;
@@ -94,7 +100,7 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     (name) => col.add({ kind: 'armorProf', name, origin }),
     genericOptions,
   );
-  readResistList(col, e.resist, origin, `${idBase}:resist`);
+  readResistList(col, e.resist, origin, `${idBase}:resist`, predeterminedResists);
   collectAdditionalSpells(col, e.additionalSpells, origin);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
@@ -108,15 +114,54 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   }
 }
 
+/**
+ * PHB Draconic Ancestry table (curated): the subrace color fixes the breath
+ * weapon's damage type, area, and save. The subrace data carries the resist
+ * but its `_versions` mods can't rebuild the trait prose, so the typed action
+ * comes from here and out-ranks the base race's generic one in dedupe.
+ */
+const DRACONIC_ANCESTRY: Record<string, { type: string; area: string; targetAbility: Ability }> = {
+  black: { type: 'acid', area: '5 by 30 ft line', targetAbility: 'dex' },
+  blue: { type: 'lightning', area: '5 by 30 ft line', targetAbility: 'dex' },
+  brass: { type: 'fire', area: '5 by 30 ft line', targetAbility: 'dex' },
+  bronze: { type: 'lightning', area: '5 by 30 ft line', targetAbility: 'dex' },
+  copper: { type: 'acid', area: '5 by 30 ft line', targetAbility: 'dex' },
+  gold: { type: 'fire', area: '15 ft cone', targetAbility: 'dex' },
+  green: { type: 'poison', area: '15 ft cone', targetAbility: 'con' },
+  red: { type: 'fire', area: '15 ft cone', targetAbility: 'dex' },
+  silver: { type: 'cold', area: '15 ft cone', targetAbility: 'con' },
+  white: { type: 'cold', area: '15 ft cone', targetAbility: 'con' },
+};
+
+function linkDraconicAncestry(col: Collector): void {
+  if (col.doc.race?.name.toLowerCase() !== 'dragonborn') return;
+  const color = col.doc.subrace?.name
+    .toLowerCase()
+    .match(/(black|blue|brass|bronze|copper|gold|green|red|silver|white)\)?\s*$/)?.[1];
+  const ancestry = color !== undefined ? DRACONIC_ANCESTRY[color] : undefined;
+  if (ancestry === undefined) return;
+  for (const e of col.effects) {
+    if (e.kind === 'action' && e.label.toLowerCase() === 'breath weapon') {
+      e.note = `${ancestry.type} · ${ancestry.area}`;
+      e.save = { targetAbility: ancestry.targetAbility, dcAbility: 'con' };
+    }
+  }
+}
+
 export function collectRace(col: Collector): void {
   const { race, subrace } = raceEntity(col);
+  // Resistances the subrace fixes outright (a Dragonborn ancestry's damage
+  // type) pre-answer any matching "choose a resistance" on the base race.
+  const subraceResists = Array.isArray(subrace?.resist)
+    ? subrace.resist.filter((r): r is string => typeof r === 'string')
+    : [];
   if (race !== undefined && col.doc.race !== undefined) {
     const origin: EffectOrigin = {
       label: str(race.name) ?? col.doc.race.name,
       uid: refUid(col.doc.race),
       type: 'race',
     };
-    collectFrom(col, race, origin, `race:${origin.uid}`);
+    collectFrom(col, race, origin, `race:${origin.uid}`, subraceResists);
     col.features.push({ name: origin.label, origin, entries: race.entries });
   }
   if (subrace !== undefined && col.doc.subrace !== undefined) {
@@ -130,4 +175,5 @@ export function collectRace(col: Collector): void {
       col.features.push({ name: origin.label, origin, entries: subrace.entries });
     }
   }
+  linkDraconicAncestry(col);
 }

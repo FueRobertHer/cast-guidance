@@ -71,20 +71,28 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   const spellcasting = calcSpellcasting(doc, col, abilities, profBonus.value);
   const resources = calcResources(doc, effects, abilities, profBonus.value);
 
-  const seenActions = new Set<string>();
-  const actions = effectsOf(effects, 'action')
-    .filter((e) => {
-      const key = `${e.economy}:${e.label}`;
-      if (seenActions.has(key)) return false;
-      seenActions.add(key);
-      return true;
-    })
-    .map((e) => ({
-      economy: e.economy,
-      label: e.label,
-      roll: e.roll,
-      origin: e.origin.label,
-    }));
+  // Same-named actions collapse to one; the printing with the most mechanics
+  // wins (a subrace's typed Breath Weapon beats the base race's generic one).
+  const actionByKey = new Map<string, (typeof effects)[number] & { kind: 'action' }>();
+  for (const e of effectsOf(effects, 'action')) {
+    const key = `${e.economy}:${e.label}`;
+    const cur = actionByKey.get(key);
+    if (cur === undefined || richness(e) > richness(cur)) actionByKey.set(key, e);
+  }
+  const actions = [...actionByKey.values()].map((e) => ({
+    economy: e.economy,
+    label: e.label,
+    roll: e.roll,
+    origin: e.origin.label,
+    note: e.note,
+    save:
+      e.save !== undefined
+        ? {
+            targetAbility: e.save.targetAbility,
+            dc: 8 + abilities[e.save.dcAbility].mod + profBonus.value,
+          }
+        : undefined,
+  }));
 
   const classLabel = doc.classes
     .map(
@@ -133,6 +141,13 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/** How much mechanical detail an action effect carries (for dedupe). */
+function richness(e: { roll?: string; note?: string; save?: unknown }): number {
+  return (
+    (e.roll !== undefined ? 1 : 0) + (e.note !== undefined ? 2 : 0) + (e.save !== undefined ? 2 : 0)
+  );
 }
 
 function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['grantedSpells'] {

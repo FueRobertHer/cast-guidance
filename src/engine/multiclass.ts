@@ -31,6 +31,23 @@ export function multiclassRequirementText(cls: DataEntity | undefined): string |
   return parts.length > 0 ? parts.join(' or ') : undefined;
 }
 
+/** Class level at which the subclass is chosen (from gainSubclassFeature refs). */
+export function subclassUnlockLevel(cls: DataEntity | undefined): number {
+  const feats = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
+  for (const f of feats) {
+    if (
+      typeof f === 'object' &&
+      f !== null &&
+      (f as { gainSubclassFeature?: boolean }).gainSubclassFeature === true
+    ) {
+      const raw = String((f as { classFeature?: unknown }).classFeature ?? '');
+      const lvl = Number.parseInt(raw.split('|')[3] ?? '', 10);
+      if (!Number.isNaN(lvl)) return lvl;
+    }
+  }
+  return 1;
+}
+
 /** Check final ability SCORES (not mods) against the class requirements. */
 export function meetsMulticlassRequirements(
   cls: DataEntity | undefined,

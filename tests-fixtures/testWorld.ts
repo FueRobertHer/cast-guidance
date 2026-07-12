@@ -32,6 +32,26 @@ const race: DataEntity[] = [
     ],
   },
   {
+    // PHB-shaped Dragonborn: the racial resistance is a `choose` the subrace
+    // pre-answers, and the Breath Weapon mechanics live in prose (the typed
+    // damage/area/save comes from the curated ancestry table in race.ts).
+    name: 'Dragonborn',
+    source: 'TST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: [{ choose: { from: ['acid', 'cold', 'fire', 'lightning', 'poison'] } }],
+    languageProficiencies: [{ common: true, draconic: true }],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'You can use your action to exhale destructive energy. Each creature in the area of the exhalation must make a saving throw. The DC for this saving throw equals 8 + your Constitution modifier + your proficiency bonus. A creature takes 2d6 damage on a failed save. The damage increases to 3d6 at 6th level, 4d6 at 11th level, and 5d6 at 16th level. After you use your breath weapon, you can’t use it again until you complete a short or long rest.',
+        ],
+      },
+    ],
+  },
+  {
     // Exercises the generic prose scanner (no curated entries match these).
     name: 'Prosefolk',
     source: 'TST',
@@ -79,6 +99,13 @@ const background: DataEntity[] = [
     source: 'TST',
     skillProficiencies: [{ choose: { from: ['arcana', 'history'], count: 2 } }],
     entries: ['You studied.'],
+  },
+  {
+    // Open language picks — exercises the "already known" dedup.
+    name: 'Linguist',
+    source: 'TST',
+    languageProficiencies: [{ anyStandard: 2 }],
+    entries: ['You collect tongues.'],
   },
   {
     name: 'Modern Scholar',
@@ -331,7 +358,15 @@ const item: DataEntity[] = [
 
 const WORLD: Record<string, DataEntity[]> = {
   race,
-  subrace: [],
+  subrace: [
+    {
+      name: 'Dragonborn (Blue)',
+      source: 'TST',
+      raceName: 'Dragonborn',
+      raceSource: 'TST',
+      resist: ['lightning'],
+    },
+  ],
   background,
   feat,
   class: cls,

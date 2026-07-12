@@ -154,11 +154,11 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   'defense|phb': (col, origin) => {
     col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: 'Defense: +1 AC applies only while wearing armor.', origin });
+    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
   },
   'defense|xphb': (col, origin) => {
     col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: 'Defense: +1 AC applies only while wearing armor.', origin });
+    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
   },
   'archery|phb': (col, origin) => {
     col.add({ kind: 'attackBonus', scope: 'ranged', amount: 2, origin });
@@ -170,7 +170,7 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'damageBonus', scope: 'melee', amount: 2, origin });
     col.add({
       kind: 'note',
-      text: 'Dueling: +2 damage applies while wielding a single one-handed weapon.',
+      text: '+2 damage applies while wielding a single one-handed weapon.',
       origin,
     });
   },

@@ -6,8 +6,19 @@
  * the matching effects. The curated table stays the precision override: call
  * this only when no curated entry handled the feature.
  */
-import type { EffectOrigin } from '../types';
+import type { Ability, EffectOrigin } from '../types';
 import type { Collector } from './base';
+
+const DAMAGE_TYPES =
+  'acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder';
+const ABILITY_WORDS: Record<string, Ability> = {
+  strength: 'str',
+  dexterity: 'dex',
+  constitution: 'con',
+  intelligence: 'int',
+  wisdom: 'wis',
+  charisma: 'cha',
+};
 
 /** Recursively flatten an entries tree to plain lowercase text. */
 export function flattenEntries(entries: unknown): string {
@@ -93,14 +104,52 @@ export function proseScanFeature(
   // only when limited-use (otherwise every prose "as an action" is noise).
   // Limited-use features also get their first dice expression as a roll chip.
   const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
-  const roll =
-    dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+  let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+
+  // Level-scaled dice ("increases to 3d6 at 6th level, 4d6 at 11th level…"):
+  // use the biggest step the character's total level has reached.
+  if (roll !== undefined) {
+    const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+    for (const m of text.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
+      const stepDice = m[1];
+      const stepLevel = Number(m[2]);
+      if (stepDice !== undefined && totalLevel >= stepLevel) {
+        roll = stepDice.replaceAll(' ', '');
+      }
+    }
+  }
+
+  // Mechanics the prose states outright: damage type, area, and save.
+  const dmgType = text.match(
+    new RegExp(`\\d+d\\d+(?: ?[+-] ?\\d+)? (${DAMAGE_TYPES}) damage`),
+  )?.[1];
+  const area = text.match(
+    /in a (\d+-foot-wide, \d+-foot-long line|\d+-foot(?:-radius)? (?:cone|line|sphere|cube|radius))/,
+  )?.[1];
+  const note = [dmgType, area].filter((s) => s !== undefined).join(' · ') || undefined;
+  const targetAbility =
+    ABILITY_WORDS[
+      text.match(
+        /must (?:then )?(?:each )?make an? (strength|dexterity|constitution|intelligence|wisdom|charisma) saving throw/,
+      )?.[1] ?? ''
+    ];
+  const dcAbility =
+    ABILITY_WORDS[
+      text.match(
+        /dc (?:for this saving throw )?equals 8 \+ your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier \+ your proficiency bonus/,
+      )?.[1] ?? ''
+    ];
+  const save =
+    targetAbility !== undefined && dcAbility !== undefined
+      ? { targetAbility, dcAbility }
+      : undefined;
+
   if (/as a bonus action/.test(text)) {
-    col.add({ kind: 'action', economy: 'bonus', label: name, roll, origin });
+    col.add({ kind: 'action', economy: 'bonus', label: name, roll, note, save, origin });
   } else if (/as a reaction|use your reaction/.test(text)) {
-    col.add({ kind: 'action', economy: 'reaction', label: name, roll, origin });
+    col.add({ kind: 'action', economy: 'reaction', label: name, roll, note, save, origin });
   } else if (uses !== undefined && /as an action|use your action/.test(text)) {
-    col.add({ kind: 'action', economy: 'action', label: name, roll, origin });
+    col.add({ kind: 'action', economy: 'action', label: name, roll, note, save, origin });
   }
 
   const hp = text.match(
