@@ -12,6 +12,7 @@ import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
 import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
+import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -19,11 +20,11 @@ import { weaponInfoEntries } from '../weaponInfo';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
+// Exhaustion is leveled, so it gets its own stepper below — not a plain chip.
 const CONDITIONS = [
   'Blinded',
   'Charmed',
   'Deafened',
-  'Exhaustion',
   'Frightened',
   'Grappled',
   'Incapacitated',
@@ -189,6 +190,24 @@ export function Component() {
         <AlertTriangle size={12} className="shrink-0" /> {text} ({reasons.join(', ')})
       </span>
     ) : null;
+
+  // Exhaustion: leveled effects (speed, disadvantage, death) with a real stepper.
+  const exLevel = exhaustionLevel(play.conditions);
+  const exInfo = exhaustionInfo(exLevel, doc.rulesVersion);
+  const displaySpeed = exInfo.speedAfter(sheet.speedWalk.value);
+  const setExhaustion = (level: number) =>
+    update((d) => {
+      const idx = d.play.conditions.findIndex((x) => x.id === 'Exhaustion');
+      const lvl = Math.max(0, Math.min(6, level));
+      if (lvl === 0) {
+        if (idx >= 0) d.play.conditions.splice(idx, 1);
+      } else if (idx >= 0) {
+        const e = d.play.conditions[idx];
+        if (e !== undefined) e.level = lvl;
+      } else {
+        d.play.conditions.push({ id: 'Exhaustion', level: lvl });
+      }
+    });
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
@@ -496,8 +515,17 @@ export function Component() {
           <div className="text-xs text-ink-muted">Initiative 🎲</div>
         </button>
         <div className="rounded-lg bg-surface p-3">
-          <div className="text-2xl font-bold">{sheet.speedWalk.value}</div>
-          <div className="text-xs text-ink-muted">Speed (ft)</div>
+          <div className="text-2xl font-bold">
+            {displaySpeed}
+            {displaySpeed !== sheet.speedWalk.value && (
+              <span className="ml-1.5 align-middle text-sm font-normal text-ink-muted line-through">
+                {sheet.speedWalk.value}
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-ink-muted">
+            Speed (ft){displaySpeed !== sheet.speedWalk.value ? ' · exhausted' : ''}
+          </div>
         </div>
       </section>
 
@@ -615,24 +643,14 @@ export function Component() {
         <div className="flex flex-wrap gap-1.5 border-t border-surface-2/40 p-3">
           {CONDITIONS.map((c) => {
             const active = play.conditions.find((x) => x.id === c);
-            const isExhaustion = c === 'Exhaustion';
             return (
               <button
                 key={c}
                 type="button"
-                title={isExhaustion ? 'Tap to add a level (past 6 clears it)' : undefined}
                 onClick={() =>
                   update((d) => {
                     const idx = d.play.conditions.findIndex((x) => x.id === c);
-                    if (isExhaustion) {
-                      if (idx === -1) d.play.conditions.push({ id: c, level: 1 });
-                      else {
-                        const entry = d.play.conditions[idx];
-                        const lvl = (entry?.level ?? 1) + 1;
-                        if (lvl > 6) d.play.conditions.splice(idx, 1);
-                        else if (entry !== undefined) entry.level = lvl;
-                      }
-                    } else if (idx === -1) d.play.conditions.push({ id: c });
+                    if (idx === -1) d.play.conditions.push({ id: c });
                     else d.play.conditions.splice(idx, 1);
                   })
                 }
@@ -643,10 +661,61 @@ export function Component() {
                 }`}
               >
                 {c}
-                {active?.level !== undefined ? ` ${active.level}` : ''}
               </button>
             );
           })}
+        </div>
+        {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
+        <div className="flex flex-col gap-2 border-t border-surface-2/40 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold">Exhaustion</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Decrease exhaustion"
+                onClick={() => setExhaustion(exLevel - 1)}
+                disabled={exLevel === 0}
+                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+              >
+                −
+              </button>
+              <span className="w-10 text-center text-sm font-bold">{exLevel} / 6</span>
+              <button
+                type="button"
+                aria-label="Increase exhaustion"
+                onClick={() => setExhaustion(exLevel + 1)}
+                disabled={exLevel >= 6}
+                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+              >
+                +
+              </button>
+            </div>
+          </div>
+          {exInfo.lines.length > 0 && (
+            <ul className="flex flex-col gap-0.5 text-xs text-amber-300">
+              {exInfo.lines.map((l) => (
+                <li key={l} className="flex items-center gap-1">
+                  <AlertTriangle size={11} className="shrink-0" /> {l}
+                </li>
+              ))}
+            </ul>
+          )}
+          {exInfo.dead && (
+            <button
+              type="button"
+              onClick={() =>
+                update((d) => {
+                  d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
+                  d.play.currentHp = 0;
+                  d.play.tempHp = 0;
+                  d.play.concentratingOn = undefined;
+                })
+              }
+              className="self-start rounded-lg border border-accent/60 px-3 py-1.5 text-xs font-semibold text-accent"
+            >
+              Apply death — drop to 0 HP
+            </button>
+          )}
         </div>
         {/* Rules text for whatever's currently active — no rulebook needed. */}
         {play.conditions.length > 0 && (
