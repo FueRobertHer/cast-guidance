@@ -11,6 +11,8 @@ export interface ParsedBundleItem {
   uid?: string;
   /** Open slot ("any martial weapon") the player fills with a concrete item. */
   equipmentType?: string;
+  /** Value in copper for a "gold instead of gear" entry — becomes currency. */
+  goldCp?: number;
   quantity: number;
 }
 
@@ -56,9 +58,14 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
     };
   }
   if (typeof e.value === 'number') {
-    return { label: `${Math.floor(e.value / 100)} gp`, quantity: 1 };
+    return { label: `${Math.floor(e.value / 100)} gp`, goldCp: e.value, quantity: 1 };
   }
   return undefined;
+}
+
+/** Total copper of the "gold instead of gear" entries in a bundle. */
+export function bundleGoldCp(bundle: EquipmentBundle): number {
+  return bundle.items.reduce((sum, i) => sum + (i.goldCp ?? 0), 0);
 }
 
 /** defaultData: [{ a: [...], b: [...] }, { _: [...] }] -> selectable bundles. */
@@ -97,7 +104,9 @@ export function bundleToEquipment(
   bundle: EquipmentBundle,
   slotPicks: Record<number, string> = {},
 ): EquipmentEntry[] {
-  return bundle.items.map((item, idx) => {
+  return bundle.items.flatMap((item, idx) => {
+    // Gold entries become spendable currency (handled by the caller), not items.
+    if (item.goldCp !== undefined) return [];
     const uid = item.uid ?? (item.equipmentType !== undefined ? slotPicks[idx] : undefined);
     if (uid !== undefined) {
       const [name, source] = uid.split('|');

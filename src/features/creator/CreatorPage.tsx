@@ -27,6 +27,7 @@ import {
   standardArrayFor,
 } from './pickerHints';
 import {
+  bundleGoldCp,
   bundleToEquipment,
   defaultStrings,
   type EquipmentBundle,
@@ -152,6 +153,7 @@ export function Component() {
   const applyEquipment = (choices: Record<string, string>, picks: Record<string, string>) => {
     update((d) => {
       const chosen: (typeof d.equipment)[number][] = [];
+      let goldCp = 0;
       for (const g of allEqGroups) {
         const key = `${g.source}:${g.groupIdx}`;
         const pick = choices[key] ?? g.bundles[0]?.key;
@@ -163,8 +165,17 @@ export function Component() {
           if (item.equipmentType !== undefined && v !== undefined) slotForBundle[idx] = v;
         });
         chosen.push(...bundleToEquipment(bundle, slotForBundle));
+        goldCp += bundleGoldCp(bundle);
       }
       d.equipment = chosen;
+      // A "gold instead of gear" pick becomes real starting currency to spend.
+      d.play.currency = {
+        cp: goldCp % 10,
+        sp: Math.floor((goldCp % 100) / 10),
+        ep: 0,
+        gp: Math.floor(goldCp / 100),
+        pp: 0,
+      };
       // Auto-equip armor, shield, and weapons so AC/attacks reflect the kit.
       for (const item of d.equipment) {
         if (item.ref === undefined) continue;

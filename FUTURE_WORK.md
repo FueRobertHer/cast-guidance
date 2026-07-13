@@ -15,9 +15,14 @@ text. Still open:
   known spell) are shown and unmet **level** gates are enforced, but the
   pact / patron / known-spell gates aren't. Needs a second pass over the resolved
   Pact Boon and spell list at option-build time.
-- **Battle Master maneuver save DC** — the DC is "8 + prof + Strength *or*
-  Dexterity (your choice)", so it needs a DC-ability prompt before it can be
-  auto-computed. Monk Stunning Strike (a fixed Wis DC) is already curated.
+- **Battle Master maneuver save DC** — needs *two* things, not just curation.
+  (1) A DC-ability prompt: the DC is "8 + prof + Strength *or* Dexterity (your
+  choice)". (2) A new surface: unlike Monk Stunning Strike (an action), maneuvers
+  are free riders on an attack, so curating them as action chips would wrongly
+  add a "Use" button + mark an economy slot. They need an *informational
+  computed-DC note* instead. Research done — the save-forcing maneuvers (PHB +
+  XPHB) are Disarming/Pushing/Trip Attack (Str save), Goading/Menacing Attack
+  (Wis save).
 - **FTD Metallic 2nd breath / Gem flight & telepathy** — the breath weapons work;
   Metallic's second breath option (enervating / repulsion) and Gem's flight and
   telepathy utility aren't surfaced as their own chips.
@@ -33,8 +38,6 @@ text. Still open:
 
 ## Creation / build
 
-- **Equipment gold alternative** — 2024's "gold instead of gear" isn't offered;
-  the wizard grants gear bundles (gold entries become note items).
 - **Background equipment slots** — class `equipmentType` slots get concrete
   pickers; backgrounds occasionally have them too (currently a labeled note item).
 - **Racial-bonus-aware auto-assign** — deferred: fixed bonuses don't change the
