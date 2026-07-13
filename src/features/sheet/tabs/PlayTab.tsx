@@ -142,8 +142,38 @@ export function Component() {
   };
   const spellConcentrationOf = (name: string, source: string): boolean =>
     spellNeedsConcentration(registry?.get('spell', name, source));
+  /** Which slice of the turn a spell's casting time uses (undefined for rituals). */
+  const spellCastEconomy = (
+    name: string,
+    source: string,
+  ): 'action' | 'bonus' | 'reaction' | undefined => {
+    const e = registry?.get('spell', name, source) ?? registry?.get('spell', name);
+    const unit = Array.isArray(e?.time)
+      ? String((e.time[0] as { unit?: unknown })?.unit ?? '')
+      : '';
+    return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
+  };
 
   const play = doc.play;
+
+  /** Mark a slice of the action economy used (attacks, casting). */
+  const markUsed = (kind: 'action' | 'bonus' | 'reaction') =>
+    update((d) => {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[kind] = true;
+      d.play.turn = turn;
+    });
+  /** Cast an innate/granted spell: no slot, just concentration + economy. */
+  const castGranted = (name: string, source: string) =>
+    update((d) => {
+      if (spellConcentrationOf(name, source)) d.play.concentratingOn = { label: name };
+      const eco = spellCastEconomy(name, source);
+      if (eco !== undefined) {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn[eco] = true;
+        d.play.turn = turn;
+      }
+    });
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
@@ -771,6 +801,7 @@ export function Component() {
                     display={fmt(a.toHit.value)}
                     label={`${a.label} attack`}
                     variant="d20"
+                    onRolled={() => markUsed('action')}
                   />
                   <RollChip expr={a.damage} label={`${a.label} damage`} variant="damage" />
                   {a.versatileDamage !== undefined && (
@@ -1021,30 +1052,25 @@ export function Component() {
                           </button>
                         }
                       />
-                      {(level > 0 || spellConcentrationOf(ref.name, ref.source)) && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            castSpell(update, sc, level, {
-                              name: ref.name,
-                              source: ref.source,
-                              concentration: spellConcentrationOf(ref.name, ref.source),
-                            })
-                          }
-                          className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={
-                            level === 0
-                              ? 'Cast cantrip (starts concentration)'
-                              : `Cast (spends the lowest available slot ≥ L${level}${
-                                  spellConcentrationOf(ref.name, ref.source)
-                                    ? ', starts concentration'
-                                    : ''
-                                })`
-                          }
-                        >
-                          Cast
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          castSpell(update, sc, level, {
+                            name: ref.name,
+                            source: ref.source,
+                            concentration: spellConcentrationOf(ref.name, ref.source),
+                            economy: spellCastEconomy(ref.name, ref.source),
+                          })
+                        }
+                        className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                        title={
+                          level === 0
+                            ? 'Cast cantrip (marks your action/bonus action)'
+                            : `Cast (spends the lowest available slot ≥ L${level})`
+                        }
+                      >
+                        Cast
+                      </button>
                     </div>
                   );
                 })}
@@ -1060,33 +1086,42 @@ export function Component() {
           <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => (
-              <SpellInfoSheet
+              <div
                 key={`${g.name}|${g.source}`}
-                name={g.name}
-                source={g.source}
-                subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
-                trigger={
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between gap-2 border-b border-surface-2/40 py-1.5 text-left last:border-b-0"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span className="capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
+                className="flex items-center gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
+              >
+                <SpellInfoSheet
+                  name={g.name}
+                  source={g.source}
+                  subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
+                      <span className="truncate capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
                         {g.name}
                       </span>
                       {g.usage === 'prepared' && (
-                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                        <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                           Always prepared
                         </span>
                       )}
-                    </span>
-                    <span className="shrink-0 text-xs text-ink-muted">
-                      {g.origin}
-                      {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
-                    </span>
-                  </button>
-                }
-              />
+                    </button>
+                  }
+                />
+                <span className="shrink-0 text-xs text-ink-muted">
+                  {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => castGranted(g.name, g.source)}
+                  className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                  title="Cast (marks your action/bonus action; starts concentration if needed)"
+                >
+                  Cast
+                </button>
+              </div>
             ))}
           </div>
         </section>

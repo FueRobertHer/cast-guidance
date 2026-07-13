@@ -35,12 +35,14 @@ export interface CastSpellInfo {
   name: string;
   source: string;
   concentration?: boolean;
+  /** Which slice of the turn casting uses (from the spell's casting time). */
+  economy?: 'action' | 'bonus' | 'reaction';
 }
 
 /**
- * Cast a spell: spend the lowest available slot ≥ `level` (pact-aware). When
- * the spell needs concentration, it becomes the active concentration (dropping
- * any prior one — you can only concentrate on one).
+ * Cast a spell: spend the lowest available slot ≥ `level` (pact-aware). Marks
+ * the action economy the casting time uses and, when the spell concentrates, it
+ * becomes the active concentration (dropping any prior one — one at a time).
  */
 export function castSpell(
   update: (recipe: (d: CharacterDoc) => void) => void,
@@ -52,7 +54,12 @@ export function castSpell(
     if (spell?.concentration === true) {
       d.play.concentratingOn = { label: spell.name };
     }
-    // Cantrips cost no slot — casting only matters for the concentration trigger.
+    if (spell?.economy !== undefined) {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[spell.economy] = true;
+      d.play.turn = turn;
+    }
+    // Cantrips cost no slot — casting only matters for concentration + economy.
     if (level === 0) return;
     // Pact slots first when this class has them and the spell fits…
     if (
