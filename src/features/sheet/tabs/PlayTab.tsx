@@ -1,4 +1,4 @@
-import { Minus, Moon, Plus, Sun } from 'lucide-react';
+import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
 import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
@@ -11,6 +11,7 @@ import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
 import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
+import { conditionLimits } from '../conditionEffects';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -174,6 +175,20 @@ export function Component() {
         d.play.turn = turn;
       }
     });
+
+  // What the active conditions stop you doing — shown as warnings, never blocks.
+  const limits = conditionLimits(play.conditions);
+  const spellHasVerbal = (name: string, source: string): boolean => {
+    const e = registry?.get('spell', name, source) ?? registry?.get('spell', name);
+    return (e?.components as { v?: boolean } | undefined)?.v === true;
+  };
+  /** Amber "you normally can't do this" line for a condition limit. */
+  const limitWarning = (text: string, reasons: readonly string[]) =>
+    reasons.length > 0 ? (
+      <span className="flex items-center gap-1 text-xs text-amber-300">
+        <AlertTriangle size={12} className="shrink-0" /> {text} ({reasons.join(', ')})
+      </span>
+    ) : null;
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
@@ -764,6 +779,8 @@ export function Component() {
       {sheet.attacks.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Attacks</h2>
+          {limitWarning("Can't take actions", limits.noActions)}
+          {limitWarning('Disadvantage on attack rolls', limits.attackDisadvantage)}
           <div className="flex flex-col rounded-lg bg-surface">
             {sheet.attacks.map((a) => (
               <div
@@ -823,6 +840,7 @@ export function Component() {
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Actions</h2>
           <p className="text-xs text-ink-muted">Tap a name for the full rules text.</p>
+          {limitWarning("Can't take actions or reactions", limits.noActions)}
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
@@ -1052,6 +1070,14 @@ export function Component() {
                           </button>
                         }
                       />
+                      {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
+                        <span
+                          className="shrink-0 text-amber-300"
+                          title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                        >
+                          <AlertTriangle size={12} />
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() =>
@@ -1113,6 +1139,14 @@ export function Component() {
                 <span className="shrink-0 text-xs text-ink-muted">
                   {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
                 </span>
+                {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
+                  <span
+                    className="shrink-0 text-amber-300"
+                    title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                  >
+                    <AlertTriangle size={12} />
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => castGranted(g.name, g.source)}
