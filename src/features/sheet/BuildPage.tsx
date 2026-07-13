@@ -467,6 +467,7 @@ export function Component() {
                 sheet={sheet}
                 doc={doc}
                 update={update}
+                registry={registry}
                 match={(o) =>
                   (o.type === 'class' &&
                     o.uid === `${entry.ref.name}|${entry.ref.source}`.toLowerCase()) ||
@@ -559,7 +560,13 @@ export function Component() {
             />
           </>
         )}
-        <OriginChoices sheet={sheet} doc={doc} update={update} match={(o) => o.type === 'race'} />
+        <OriginChoices
+          sheet={sheet}
+          doc={doc}
+          update={update}
+          registry={registry}
+          match={(o) => o.type === 'race'}
+        />
       </Section>
 
       <Section title="Abilities" summary={ABILITIES.map((a) => doc.abilities.base[a]).join('/')}>
@@ -713,6 +720,7 @@ export function Component() {
           sheet={sheet}
           doc={doc}
           update={update}
+          registry={registry}
           match={(o) => o.type === 'background'}
         />
       </Section>
@@ -741,7 +749,13 @@ export function Component() {
         if (!hasOther) return null;
         return (
           <Section id="build-choices" title="Feat & other choices" defaultOpen>
-            <OriginChoices sheet={sheet} doc={doc} update={update} match={isOther} />
+            <OriginChoices
+              sheet={sheet}
+              doc={doc}
+              update={update}
+              registry={registry}
+              match={isOther}
+            />
           </Section>
         );
       })()}

@@ -365,6 +365,7 @@ export function Component() {
                     sheet={sheet}
                     doc={doc}
                     update={update}
+                    registry={registry}
                     match={(o) =>
                       (o.type === 'class' &&
                         o.uid === `${entry.ref.name}|${entry.ref.source}`.toLowerCase()) ||
@@ -434,6 +435,7 @@ export function Component() {
                 sheet={sheet}
                 doc={doc}
                 update={update}
+                registry={registry}
                 match={(o) => o.type === 'race'}
               />
             )}
@@ -602,6 +604,7 @@ export function Component() {
                 sheet={sheet}
                 doc={doc}
                 update={update}
+                registry={registry}
                 match={(o) => o.type === 'background'}
               />
             )}
@@ -746,7 +749,13 @@ export function Component() {
               </p>
             )}
             {sheet !== null && (
-              <OriginChoices sheet={sheet} doc={doc} update={update} match={isOther} />
+              <OriginChoices
+                sheet={sheet}
+                doc={doc}
+                update={update}
+                registry={registry}
+                match={isOther}
+              />
             )}
           </div>
         );
