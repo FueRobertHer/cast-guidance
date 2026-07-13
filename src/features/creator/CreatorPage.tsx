@@ -11,11 +11,11 @@ import { characterRepo } from '@/db/characterRepo';
 import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
-import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { ABILITIES, type CharacterDoc, type EffectOrigin, newCharacterDoc } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
 import { pruneChoicesFor } from '@/lib/pruneChoices';
 import { EntityCardList } from '@/ui/EntityCardList';
-import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+import { OriginChoices } from './OriginChoices';
 import {
   backgroundBlurb,
   classAbilityHint,
@@ -356,6 +356,20 @@ export function Component() {
                     />
                   </div>
                 )}
+                {sheet !== null && (
+                  <OriginChoices
+                    sheet={sheet}
+                    doc={doc}
+                    update={update}
+                    match={(o) =>
+                      (o.type === 'class' &&
+                        o.uid === `${entry.ref.name}|${entry.ref.source}`.toLowerCase()) ||
+                      (o.type === 'subclass' &&
+                        entry.subclass !== undefined &&
+                        o.uid === `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase())
+                    }
+                  />
+                )}
               </>
             )}
           </div>
@@ -407,6 +421,14 @@ export function Component() {
                   }
                 />
               </div>
+            )}
+            {sheet !== null && (
+              <OriginChoices
+                sheet={sheet}
+                doc={doc}
+                update={update}
+                match={(o) => o.type === 'race'}
+              />
             )}
           </div>
         );
@@ -550,22 +572,32 @@ export function Component() {
 
       case 'background':
         return (
-          <EntityCardList
-            dedupe
-            describe={backgroundBlurb}
-            entities={backgrounds}
-            selectedUid={
-              doc.background !== undefined
-                ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
-                : undefined
-            }
-            onSelect={(e) =>
-              update((d) => {
-                if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
-                d.background = { name: nameOf(e), source: sourceOf(e) };
-              })
-            }
-          />
+          <div className="flex flex-col gap-4">
+            <EntityCardList
+              dedupe
+              describe={backgroundBlurb}
+              entities={backgrounds}
+              selectedUid={
+                doc.background !== undefined
+                  ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
+                  : undefined
+              }
+              onSelect={(e) =>
+                update((d) => {
+                  if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
+                  d.background = { name: nameOf(e), source: sourceOf(e) };
+                })
+              }
+            />
+            {sheet !== null && (
+              <OriginChoices
+                sheet={sheet}
+                doc={doc}
+                update={update}
+                match={(o) => o.type === 'background'}
+              />
+            )}
+          </div>
         );
 
       case 'equipment': {
@@ -675,28 +707,39 @@ export function Component() {
         ) : null;
 
       case 'choices': {
-        // Pending AND resolved prompts render together in a stable order, so
-        // finishing a pick never reflows the list under the player's finger
-        // and every choice stays revisable in place.
-        const prompts = [
-          ...(sheet?.pending ?? []),
-          ...(sheet?.resolvedChoices.map((r) => r.prompt) ?? []),
-        ].sort((a, b) => a.id.localeCompare(b.id));
+        // Race, class, and background picks now live on their own steps. This
+        // step is the catch-all for anything else a build generates — feat picks
+        // (from an ASI) and other origins without their own screen.
+        const classUids = new Set(
+          doc.classes.map((c) => `${c.ref.name}|${c.ref.source}`.toLowerCase()),
+        );
+        const subclassUids = new Set(
+          doc.classes
+            .filter((c) => c.subclass !== undefined)
+            .map((c) => `${c.subclass?.name}|${c.subclass?.source}`.toLowerCase()),
+        );
+        const isOther = (o: EffectOrigin) =>
+          o.type !== 'race' &&
+          o.type !== 'background' &&
+          !(o.type === 'class' && classUids.has(o.uid)) &&
+          !(o.type === 'subclass' && subclassUids.has(o.uid));
+        const hasOther =
+          sheet !== null &&
+          (sheet.pending.some(
+            (p) => isOther(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
+          ) ||
+            sheet.resolvedChoices.some((r) => isOther(r.prompt.origin)));
         return (
           <div className="flex flex-col gap-3">
-            {sheet !== null && sheet.pending.length === 0 && (
+            {!hasOther && (
               <p className="rounded-lg bg-surface p-4 text-sm text-emerald-300">
-                All choices made — review them below or keep going.
+                Nothing else to decide here — your skills, languages, and other picks live on the
+                Class, Species, and Background steps.
               </p>
             )}
-            {prompts.map((prompt) => (
-              <ChoicePromptRenderer
-                key={prompt.id}
-                prompt={prompt}
-                value={doc.choices[prompt.id]}
-                onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
-              />
-            ))}
+            {sheet !== null && (
+              <OriginChoices sheet={sheet} doc={doc} update={update} match={isOther} />
+            )}
           </div>
         );
       }
