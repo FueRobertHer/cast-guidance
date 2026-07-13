@@ -1,5 +1,5 @@
-import Dexie, { type EntityTable } from "dexie";
-import type { CharacterDoc } from "@/engine/types";
+import Dexie, { type EntityTable } from 'dexie';
+import type { CharacterDoc } from '@/engine/types';
 
 export interface DataFileRow {
   /** `${tag}:${path}` */
@@ -14,7 +14,7 @@ export interface DataFileRow {
 }
 
 export interface DataMetaRow {
-  id: "installed";
+  id: 'installed';
   tag: string;
   completedPacks: string[];
   installedAt: number;
@@ -61,27 +61,27 @@ export interface CharacterHistoryRow {
   doc: CharacterDoc;
 }
 
-export const db = new Dexie("cast-guidance") as Dexie & {
-  dataFiles: EntityTable<DataFileRow, "key">;
-  dataMeta: EntityTable<DataMetaRow, "id">;
-  characters: EntityTable<CharacterDoc, "id">;
-  homebrewFiles: EntityTable<HomebrewFileRow, "id">;
-  searchIndexes: EntityTable<SearchIndexRow, "key">;
-  settings: EntityTable<SettingRow, "key">;
-  rollLog: EntityTable<RollLogRow, "id">;
-  characterHistory: EntityTable<CharacterHistoryRow, "id">;
+export const db = new Dexie('cast-guidance') as Dexie & {
+  dataFiles: EntityTable<DataFileRow, 'key'>;
+  dataMeta: EntityTable<DataMetaRow, 'id'>;
+  characters: EntityTable<CharacterDoc, 'id'>;
+  homebrewFiles: EntityTable<HomebrewFileRow, 'id'>;
+  searchIndexes: EntityTable<SearchIndexRow, 'key'>;
+  settings: EntityTable<SettingRow, 'key'>;
+  rollLog: EntityTable<RollLogRow, 'id'>;
+  characterHistory: EntityTable<CharacterHistoryRow, 'id'>;
 };
 
 db.version(1).stores({
-  dataFiles: "key, tag, pack",
-  dataMeta: "id",
-  characters: "id, name, updatedAt",
-  homebrewFiles: "id, enabled, addedAt",
-  searchIndexes: "key",
-  settings: "key",
-  rollLog: "id, at, charId",
+  dataFiles: 'key, tag, pack',
+  dataMeta: 'id',
+  characters: 'id, name, updatedAt',
+  homebrewFiles: 'id, enabled, addedAt',
+  searchIndexes: 'key',
+  settings: 'key',
+  rollLog: 'id, at, charId',
 });
 
 db.version(2).stores({
-  characterHistory: "id, charId, at",
+  characterHistory: 'id, charId, at',
 });

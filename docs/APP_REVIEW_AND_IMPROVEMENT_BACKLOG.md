@@ -111,6 +111,13 @@ The highest-risk work is concentrated in boundaries around that foundation:
 - The app already has useful offline update prompting, version history, and self-contained
   character exports; the backlog should harden these rather than replace them.
 
+## Implementation progress
+
+| Date | Items | Status / evidence |
+|---|---|---|
+| 2026-07-13 | `REL-001`, `REL-002` | Implemented on `codex/character-session-safety`: character-scoped serialized save queues, route-scoped loading, stale-response protection, lifecycle flushing, visible save/load errors, and retry. Five persistence regression tests cover A-to-B saves, rapid A-to-B-to-C navigation, write failure/retry, write ordering, and rejected debounced writes. Browser lifecycle validation remains part of the E2E follow-up. |
+| 2026-07-13 | `DEV-001` | Complete: the three-file formatting baseline was corrected and `bun run lint` is green. |
+
 ## Recommended delivery sequence
 
 ### Milestone A — data safety and trustworthy rules guidance

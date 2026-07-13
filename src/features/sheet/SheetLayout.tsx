@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Check, CircleAlert, LoaderCircle } from 'lucide-react';
 import { Link, NavLink, Outlet, useParams } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { AdvToggle } from '@/ui/AdvToggle';
@@ -17,6 +17,35 @@ const tabs = [
 export function Component() {
   const { id } = useParams();
   const state = useCharacterSheet(id);
+
+  if (state.loadStatus === 'loading' || state.loadStatus === 'idle') {
+    return (
+      <main className="flex flex-1 items-center gap-2 p-4 text-sm text-ink-muted" role="status">
+        <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
+        Loading character…
+      </main>
+    );
+  }
+
+  if (state.loadStatus === 'error') {
+    return (
+      <main className="flex flex-1 flex-col gap-3 p-4" role="alert">
+        <p className="text-sm text-accent">Could not load this character: {state.error}</p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={state.retryLoad}
+            className="text-sm font-semibold text-accent"
+          >
+            Retry
+          </button>
+          <Link to="/" className="text-sm text-ink-muted">
+            Back to characters
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   if (state.missing) {
     return (
@@ -39,6 +68,28 @@ export function Component() {
           <h1 className="truncate text-lg font-bold">{state.doc?.name ?? '…'}</h1>
           <p className="truncate text-xs text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
         </div>
+        <span
+          className="flex items-center gap-1 text-xs text-ink-muted"
+          role="status"
+          aria-live="polite"
+        >
+          {state.saveStatus === 'pending' && 'Unsaved'}
+          {state.saveStatus === 'saving' && (
+            <>
+              <LoaderCircle size={13} className="animate-spin" aria-hidden="true" /> Saving
+            </>
+          )}
+          {state.saveStatus === 'saved' && (
+            <>
+              <Check size={13} aria-hidden="true" /> Saved
+            </>
+          )}
+          {state.saveStatus === 'error' && (
+            <>
+              <CircleAlert size={13} aria-hidden="true" /> Save failed
+            </>
+          )}
+        </span>
         {id !== undefined && <HistoryDrawer charId={id} />}
       </header>
       <main className="flex-1 p-4 pb-24 lg:pb-4 lg:pl-40">
