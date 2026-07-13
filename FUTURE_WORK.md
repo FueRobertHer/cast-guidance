@@ -1,153 +1,69 @@
 # Future work
 
-Known gaps and planned improvements, ordered roughly by player impact. Items
-here were consciously deferred — each lists why and what "done" looks like.
+Open gaps and planned improvements, ordered roughly by player impact. Completed
+work lives in git history — this doc tracks only what's **left**. Each item says
+why it's deferred and what "done" looks like.
 
-## Curated content linkages (the Dragonborn treatment, applied everywhere)
+## Content curation (the "Dragonborn treatment" long tail)
 
-The engine supports typed actions (damage type, area, save DC), level-scaled
-dice (both 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10)" phrasings), and
-pre-answered choice prompts. **Done:** PHB *and* 2024 (XPHB) Dragonborn
-ancestry are fully linked in `src/engine/effects/race.ts` — the ancestry
-(subrace name for 2014, race name for 2024) resolves the resistance and types
-the breath weapon with a computed DC. The scanner's save-DC matcher now
-accepts both rules editions' wording. Still needed:
+The engine types actions (damage / area / save DC), scales dice for both
+editions, and pre-answers choice prompts; the prose scanner handles most
+features, with a curated table for printings whose mechanics aren't in their own
+text. Still open:
 
-- **FTD Chromatic/Metallic/Gem Dragonborn** — *done* (breath weapon). Their
-  `_versions` substitute the real damage type into the breath-weapon prose, so
-  the scanner types them directly (chromatic = 30-ft line, gem/metallic = 15-ft
-  cone, all DEX saves) — no curated entries needed. The fix was making
-  `linkDraconicAncestry` *gap-filling* instead of clobbering: the PHB-based
-  table listed e.g. green as a cone/CON save, which was overwriting the correct
-  chromatic line/DEX. The scanner also learned the FTD "5th level (2d10)"
-  scaling phrasing. Still not surfaced as distinct chips: Metallic's second
-  breath option (enervating/repulsion) and Gem's flight/telepathy utility.
-- **Warlock invocations** — *partially done*: every optional-feature pick
-  (invocations, metamagic, maneuvers, fighting styles) now shows its
-  prerequisite text (level, Pact Boon, patron, known spell) in the option
-  description, and options with an unmet **level** prerequisite are disabled
-  with a reason. Still deferred: enforcing pact/patron/known-spell gates, which
-  depend on *other* picks the class collector doesn't resolve at option-build
-  time (they'd need a second pass over the resolved Pact Boon / spell list).
-- **Cleric domains / Druid circles / Paladin oaths** — *done*: subclass
-  `additionalSpells` are now collected (they live on the subclass entity, not
-  its features, and were previously dropped entirely), the `prepared` key is
-  granted as always-prepared with the class's spellcasting ability, and the
-  sheet tags them "Always prepared" (`src/engine/effects/additionalSpells.ts`,
-  `class.ts`, PlayTab). Warlock `expanded` lists surface as a note since we
-  have no learn-a-spell picker yet.
-- **Class-wide save DCs** — *partially done*. Monk **Stunning Strike** is now
-  curated (Con save vs 8 + prof + Wis) because its DC lives in a separate
-  feature the prose scanner can't reach. **Battle Master maneuvers stay
-  deferred**: the maneuver DC is "8 + prof + your Strength *or* Dexterity
-  modifier (your choice)" — an unresolved player choice, so auto-picking one
-  ability would print a wrong DC. Revisit once maneuvers get a DC-ability
-  prompt. The scanner already handles features that restate the formula.
-- **Aasimar revelations, Genasi, Tortle shell** — verify prose scanner output
-  and curate where the text defeats it.
+- **Warlock invocation enforcement** — prerequisites (level, Pact Boon, patron,
+  known spell) are shown and unmet **level** gates are enforced, but the
+  pact / patron / known-spell gates aren't. Needs a second pass over the resolved
+  Pact Boon and spell list at option-build time.
+- **Battle Master maneuver save DC** — the DC is "8 + prof + Strength *or*
+  Dexterity (your choice)", so it needs a DC-ability prompt before it can be
+  auto-computed. Monk Stunning Strike (a fixed Wis DC) is already curated.
+- **FTD Metallic 2nd breath / Gem flight & telepathy** — the breath weapons work;
+  Metallic's second breath option (enervating / repulsion) and Gem's flight and
+  telepathy utility aren't surfaced as their own chips.
+- **Aasimar revelations, Genasi, Tortle shell** — verify prose-scanner output and
+  curate where the text defeats it.
 
-Approach: keep the prose scanner as the long tail, add curated entries only
-where a printing's mechanics can't be extracted from its own text (the
-`_versions` template substitution problem that hit Dragonborn).
+## Creation / build
 
-## Creation wizard
-
-- **Picker descriptions** — *done*: class/race/background pickers carry curated +
-  data-derived one-liners, and the **subclass** picker (both the wizard and the
-  Build editor) now summarizes each subclass's identity feature via a shared
-  `makeSubclassBlurb(registry)` — answering "what makes these different" without
-  curating hundreds of subclasses.
-- **Point-buy assistant** — *done*: a per-class "focus 15/15/15" preset is
-  offered in point-buy mode (standard-array auto-assign already existed).
-- **Racial ability-bonus awareness in auto-assign** — deferred. Analysis:
-  fixed racial bonuses (2014) don't change the optimal base-array assignment,
-  and choice bonuses (Half-Elf) are a separate prompt — so the payoff is
-  marginal and the "priority vs boosted" interaction is subjective. Revisit
-  only if players ask for a smarter dump-stat placement.
-- **Equipment gold alternative** — 2024 rules offer "gold instead of gear";
-  the wizard only grants the gear bundles (gold entries become note items).
+- **Feat full-description popup** — race / subrace / background / class / subclass
+  cards have an ⓘ drawer (`EntityInfoSheet`); feats, picked through the
+  deliberately registry-free `ChoicePromptRenderer`, still show only a one-line
+  summary. A full popup needs registry access threaded into the prompt renderer.
+- **Equipment gold alternative** — 2024's "gold instead of gear" isn't offered;
+  the wizard grants gear bundles (gold entries become note items).
 - **Background equipment slots** — class `equipmentType` slots get concrete
-  pickers; backgrounds occasionally have them too (rare; currently a labeled
-  note item).
-- **Multiclass in the wizard** — deliberate: the wizard is single-class; the
-  Build page handles multiclassing. Revisit if new players ask for it.
-- **Spell picking guidance** — the Spells step lists everything castable;
-  "recommended starter spells" per class would complete the decision support.
-- **Choices placed at their origin** — *done*: skill/language/fighting-style/ASI
-  picks now render under the section that generates them (race under
-  Species/Race, class/subclass under the class card, background under
-  Background) via a shared `OriginChoices`, instead of one flat list. Both the
-  Build editor and wizard use it, so they stay in parity; feat/other-origin
-  picks fall back to a "Feat & other choices" section / the wizard's choices
-  step.
+  pickers; backgrounds occasionally have them too (currently a labeled note item).
+- **Racial-bonus-aware auto-assign** — deferred: fixed bonuses don't change the
+  optimal base-array assignment and choice bonuses are a separate prompt, so the
+  payoff is marginal.
+- **Spell guidance beyond level 1** — starter picks are curated for cantrips and
+  1st level; "what to pick as you level up" is still open.
+- **Multiclass in the wizard** — deliberate; the Build page handles multiclassing.
 
-## Sheet & play — mostly done
+## Sheet & play
 
-- ~~Attacks tap-to-explain~~ — *done*: weapon rows open the item's prose plus
-  a plain-English gloss of each property (`src/features/sheet/weaponInfo.ts`).
-- ~~More tab deep filter~~ — *done*: matches nested trait names and full body
-  text via `flattenEntries`.
-- ~~Consumed-resource ↔ action link~~ — *done*: rolling a limited-use action
-  spends its resource pip (`RollChip.onRolled`), and each action shows
-  "N/max left".
-- ~~Conditions explainers~~ — *done*: active conditions get a "what these do"
-  strip that opens the rules text.
-- ~~Death saves UI~~ — already present (nat-1/nat-20 handling, Durable feat).
-- ~~Spell tap-to-explain~~ — *done*: known and innate/granted spells open an
-  in-place rules popup (`SpellInfoSheet`) like weapons/actions instead of a
-  library link, with a source-tolerant lookup that fixes broken links (e.g.
-  Dancing Lights with a blank source).
-- ~~Known spells sorted by level~~ — *done*: the Play-tab list is level-ordered
-  (cantrips first) then alphabetical, not purely alphabetical.
-- ~~Passive combat options~~ — *done*: a "Combat options" strip surfaces
-  always-on capabilities (Extra Attack, Cunning Action, …) from the character's
-  features (`combatCapabilities.ts`), deduped against the action chips.
-- ~~Special resources (superiority dice)~~ — *done*: Battle Master Combat
-  Superiority (scaling count + die), Superior Technique, and Martial Adept share
-  one stacking `superiority-dice` pool (new `stack` flag on resource effects).
-- ~~Action economy on rolls/casts~~ — *done*: rolling an attack marks your
-  Action; every spell (cantrips + innate/granted included) has a Cast button
-  that marks the slice its casting time uses (action/bonus/reaction).
-- ~~Condition action limits~~ — *done*: active conditions warn (never block)
-  about what a character can't normally do — "can't take actions"
-  (incapacitating), a verbal-component ⚠ on spells while you "can't speak", and
-  "disadvantage on attack rolls" — each naming the responsible condition
-  (`conditionEffects.ts`).
-- ~~Full-description popups on build options~~ — *done*: race/subrace/background/
-  class/subclass cards get an ⓘ drawer (`EntityInfoSheet`) with header facts +
-  rules prose, like attacks/spells; subraces also gained their missing
-  ability-bonus one-liner. **Follow-up:** feats (picked via the registry-free
-  ASI prompt) still show only a one-line summary — a full popup needs registry
-  access threaded into `ChoicePromptRenderer`.
+- **Exhaustion — HP-max & disadvantage stay advisory.** The stepper applies the
+  speed reduction, lists every level's effects, and death is a manual button. But
+  the 2014 level-4 "HP maximum halved" and the disadvantage / 2024 −2-per-level
+  d20 penalties are shown as summary lines, not auto-applied to the HP cap or to
+  rolls. Also: **long rest doesn't reduce exhaustion** yet (2014: −1 level with
+  food and water; 2024: −1 per long rest).
+- **Spell-slot tap-to-cast polish** — casting from the slot pips vs. the spell
+  row could be unified.
 
-Spending a use without a roll already works: tap the next resource pip (a
-max-1 resource is a single tappable pip), so no separate "use it" button is
-needed.
+## Accessibility (lower priority)
 
-- **Recommended starter spells** — *done*: the spell picker now shows a curated
-  "New to {Class}? Solid first picks: …" shortlist plus a ★ on recommended
-  cantrip/1st-level rows (`src/features/sheet/spellHints.ts`), for all nine
-  spellcasting classes. The full list stays fully selectable — this is guidance,
-  not a gate. Higher-level "what to pick as you level" guidance is still open.
-
-Remaining: spell-slot tap-to-cast polish.
-
-## Accessibility
-
-- ~~Color-only proficiency dots~~ — *done*: `ProfDot` distinguishes by shape
-  (ring / filled / ringed) and carries the state as screen-reader text.
-- Picker buttons and choice chips carry accessible names; a full screen-reader
-  pass (focus order, drawer focus traps, live regions for roll results) still
-  hasn't been done.
+- Picker and choice controls carry accessible names, and proficiency dots encode
+  state by shape + screen-reader text. A full screen-reader pass — focus order,
+  drawer focus traps, live regions for roll results — hasn't been done.
 
 ## Data / engine
 
-- **`_versions` `_mod` against merged race+subrace entries** — subrace
-  version mods that target base-race entries (removeArr/replaceArr) silently
-  no-op because the subrace template has no entries of its own. Fixing this
-  in `copyMod.ts` would give every versioned subrace its substituted prose
-  (and would let the curated Dragonborn table shrink).
-- ~~Choice descriptions for tools/instruments~~ — *done*: `toolOptions` adds a
-  use hint per tool (falls back to a category label).
-- ~~Stale choice garbage collection~~ — *done*: `pruneChoicesFor` sweeps
-  orphaned picks when race, subrace, background, or class change.
+- **`_versions` `_mod` against merged race+subrace entries** — subrace version
+  mods that target base-race entries (`removeArr` / `replaceArr`) silently no-op,
+  because the subrace template has no entries of its own. Fixing it in
+  `copyMod.ts` would give every versioned subrace its substituted prose. **Low
+  priority:** the curated fallbacks already produce correct output, and the FTD
+  Dragonborn work confirmed the `_versions` expansion itself is sound — so this
+  is cleanup, not a bug fix.
