@@ -105,6 +105,20 @@ where a printing's mechanics can't be extracted from its own text (the
 - ~~Special resources (superiority dice)~~ — *done*: Battle Master Combat
   Superiority (scaling count + die), Superior Technique, and Martial Adept share
   one stacking `superiority-dice` pool (new `stack` flag on resource effects).
+- ~~Action economy on rolls/casts~~ — *done*: rolling an attack marks your
+  Action; every spell (cantrips + innate/granted included) has a Cast button
+  that marks the slice its casting time uses (action/bonus/reaction).
+- ~~Condition action limits~~ — *done*: active conditions warn (never block)
+  about what a character can't normally do — "can't take actions"
+  (incapacitating), a verbal-component ⚠ on spells while you "can't speak", and
+  "disadvantage on attack rolls" — each naming the responsible condition
+  (`conditionEffects.ts`).
+- ~~Full-description popups on build options~~ — *done*: race/subrace/background/
+  class/subclass cards get an ⓘ drawer (`EntityInfoSheet`) with header facts +
+  rules prose, like attacks/spells; subraces also gained their missing
+  ability-bonus one-liner. **Follow-up:** feats (picked via the registry-free
+  ASI prompt) still show only a one-line summary — a full popup needs registry
+  access threaded into `ChoicePromptRenderer`.
 
 Spending a use without a roll already works: tap the next resource pip (a
 max-1 resource is a single tappable pip), so no separate "use it" button is
