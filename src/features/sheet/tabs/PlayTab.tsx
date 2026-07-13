@@ -186,6 +186,28 @@ export function Component() {
       turn[kind] = true;
       d.play.turn = turn;
     });
+  /**
+   * Trigger an action: mark its slice of the turn used AND spend one pip of its
+   * linked resource (if any), in a single update so the sheet stays honest.
+   */
+  const triggerAction = (
+    economy: 'action' | 'bonus' | 'reaction',
+    resourceKey?: string,
+    max?: number,
+  ) =>
+    update((d) => {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[economy] = true;
+      d.play.turn = turn;
+      if (resourceKey !== undefined && max !== undefined) {
+        const entry = d.play.resources.find((r) => r.key === resourceKey);
+        const used = entry?.used ?? 0;
+        if (used < max) {
+          if (entry !== undefined) entry.used = used + 1;
+          else d.play.resources.push({ key: resourceKey, used: 1 });
+        }
+      }
+    });
   /** Cast an innate/granted spell: no slot, just concentration + economy. */
   const castGranted = (name: string, source: string) =>
     update((d) => {
@@ -943,27 +965,33 @@ export function Component() {
       {sheet.actions.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Actions</h2>
-          <p className="text-xs text-ink-muted">Tap a name for the full rules text.</p>
-          {limitWarning("Can't take actions or reactions", limits.noActions)}
+          <p className="text-xs text-ink-muted">
+            Tap a name for rules; tap Use / roll to spend it.
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
-              // Limited-use actions share a name with their resource — rolling
+              // Limited-use actions share a name with their resource — triggering
               // one spends a use so the pips stay honest.
               const linkedResource = sheet.resources.find(
                 (r) => r.label.toLowerCase() === a.label.toLowerCase(),
               );
-              const spendLinked =
-                linkedResource !== undefined
-                  ? () => {
-                      const used = usedOf(linkedResource.key);
-                      if (used < linkedResource.max) setUsed(linkedResource.key, used + 1);
-                    }
-                  : undefined;
               const remaining =
                 linkedResource !== undefined
                   ? linkedResource.max - usedOf(linkedResource.key)
                   : undefined;
+              // Using it marks the right slice of the turn and spends a pip.
+              const trigger = () =>
+                triggerAction(a.economy, linkedResource?.key, linkedResource?.max);
+              const depleted = remaining === 0;
+              // Incapacitating conditions stop actions/bonus actions/reactions.
+              const blocked = limits.noActions;
+              const economyLabel =
+                a.economy === 'bonus'
+                  ? 'bonus action'
+                  : a.economy === 'reaction'
+                    ? 'reaction'
+                    : 'action';
               const mechanics = [
                 a.note,
                 a.save !== undefined
@@ -1004,13 +1032,36 @@ export function Component() {
                 >
                   <span className="flex items-center gap-1.5">
                     {name}
-                    {a.roll !== undefined && (
-                      <RollChip
-                        expr={a.roll}
-                        label={a.label}
-                        variant="damage"
-                        onRolled={spendLinked}
-                      />
+                    {blocked.length > 0 && (
+                      <span
+                        className="text-amber-300"
+                        title={`${blocked.join(', ')}: you normally can't take ${
+                          a.economy === 'action' ? 'an' : 'a'
+                        } ${economyLabel}`}
+                      >
+                        <AlertTriangle size={11} />
+                      </span>
+                    )}
+                    {a.roll !== undefined ? (
+                      <RollChip expr={a.roll} label={a.label} variant="damage" onRolled={trigger} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={trigger}
+                        disabled={depleted}
+                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
+                        title={
+                          depleted
+                            ? 'No uses left'
+                            : `Use — marks your ${economyLabel}${
+                                linkedResource !== undefined
+                                  ? ` and spends a ${linkedResource.label} use`
+                                  : ''
+                              }`
+                        }
+                      >
+                        Use
+                      </button>
                     )}
                   </span>
                   {mechanics !== '' && (
