@@ -624,6 +624,40 @@ describe('deriveSheet — dragonborn ancestry linkage', () => {
   });
 });
 
+describe('deriveSheet — FTD Dragonborn (prose-scanned; ancestry table must not clobber)', () => {
+  function ftdDoc(name: string, levels = 1): CharacterDoc {
+    const doc = newCharacterDoc('f1', 'Kaida', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name, source: 'FTST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('keeps the chromatic LINE + DEX save even though the table lists green as a cone', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Chromatic; Green)'), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.note).toBe('poison · 30-foot line');
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 }); // NOT con/cone
+    expect(bw?.roll).toBe('1d10');
+  });
+
+  it('types a gem breath weapon (psychic cone) with no curated ancestry entry', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Gem; Emerald)'), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.note).toBe('psychic · 15-foot cone');
+    expect(bw?.save?.targetAbility).toBe('dex');
+  });
+
+  it('scales the FTD breath weapon dice with total level', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Chromatic; Green)', 11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('3d10'); // level 11 step
+  });
+});
+
 describe('deriveSheet — 2024 versioned Dragonborn (color in race name)', () => {
   function xDragonbornDoc(levels: number): CharacterDoc {
     const doc = newCharacterDoc('x1', 'Vex', 'test-tag');

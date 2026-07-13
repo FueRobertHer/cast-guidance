@@ -71,6 +71,43 @@ const race: DataEntity[] = [
     ],
   },
   {
+    // FTD Chromatic Green: the breath weapon states a 30-foot LINE and a DEX
+    // save inline. The curated ancestry table lists "green" as a 15-ft cone with
+    // a CON save — the linkage must NOT clobber the (authoritative) prose.
+    name: 'Dragonborn (Chromatic; Green)',
+    source: 'FTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['poison'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in a 30-foot line that is 5 feet wide. Each creature in that area must make a Dexterity saving throw (DC = 8 + your Constitution modifier + your proficiency bonus). On a failed save, the creature takes 1d10 poison damage. This damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10). You can use your Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
+    // FTD Gem Emerald: a 15-ft cone dealing psychic — a colour/type absent from
+    // the curated table, so the prose scanner must type it with no curated help.
+    name: 'Dragonborn (Gem; Emerald)',
+    source: 'FTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['psychic'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in a 15-foot cone. Each creature in that area must make a Dexterity saving throw (DC = 8 + your Constitution modifier + your proficiency bonus). On a failed save, the creature takes 1d10 psychic damage. This damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10). You can use your Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
     // Exercises the generic prose scanner (no curated entries match these).
     name: 'Prosefolk',
     source: 'TST',

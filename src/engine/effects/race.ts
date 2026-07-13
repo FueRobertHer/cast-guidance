@@ -116,10 +116,13 @@ function collectFrom(
 }
 
 /**
- * PHB Draconic Ancestry table (curated): the subrace color fixes the breath
- * weapon's damage type, area, and save. The subrace data carries the resist
- * but its `_versions` mods can't rebuild the trait prose, so the typed action
- * comes from here and out-ranks the base race's generic one in dedupe.
+ * PHB Draconic Ancestry table (curated): the ancestry color fixes the breath
+ * weapon's damage type, area, and save. This is a *fallback* for printings
+ * whose prose can't be scanned (base PHB Dragonborn names its type via a table;
+ * the 2024 XPHB race states a save but not a concrete damage type). Printings
+ * that DO state everything inline — every Fizban's (FTD) Chromatic/Metallic/Gem
+ * variant, whose `_versions` substitute the real damage type — are left to the
+ * prose scanner, so this table must never clobber a value it already produced.
  */
 const DRACONIC_ANCESTRY: Record<string, { type: string; area: string; targetAbility: Ability }> = {
   black: { type: 'acid', area: '5 by 30 ft line', targetAbility: 'dex' },
@@ -152,8 +155,11 @@ function linkDraconicAncestry(col: Collector): void {
   const targetAbility = is2024 ? ('dex' as const) : ancestry.targetAbility;
   for (const e of col.effects) {
     if (e.kind === 'action' && e.label.toLowerCase() === 'breath weapon') {
-      e.note = note;
-      e.save = { targetAbility, dcAbility: 'con' };
+      // Fill only gaps: a prose-scanned FTD variant already carries the correct
+      // (often different — e.g. a chromatic LINE where this table says cone)
+      // damage type, area, and save, and must not be overwritten.
+      if (e.note === undefined) e.note = note;
+      if (e.save === undefined) e.save = { targetAbility, dcAbility: 'con' };
     }
   }
 }

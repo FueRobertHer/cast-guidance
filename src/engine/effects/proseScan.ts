@@ -115,7 +115,8 @@ export function proseScanFeature(
     for (const m of text.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
       if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
     }
-    for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th)? \((\d+d\d+)\)/g)) {
+    // Two paren forms: 2024 "levels 5 (2d10)" and FTD "5th level (2d10)".
+    for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
       if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
     }
     steps.sort((a, b) => a[0] - b[0]);

@@ -13,9 +13,15 @@ ancestry are fully linked in `src/engine/effects/race.ts` — the ancestry
 the breath weapon with a computed DC. The scanner's save-DC matcher now
 accepts both rules editions' wording. Still needed:
 
-- **FTD Chromatic/Metallic/Gem Dragonborn** — different breath mechanics
-  (Metallic gets a second breath, Gem gets telepathy; areas differ). Extend
-  the `DRACONIC_ANCESTRY` table + `linkDraconicAncestry` branch.
+- **FTD Chromatic/Metallic/Gem Dragonborn** — *done* (breath weapon). Their
+  `_versions` substitute the real damage type into the breath-weapon prose, so
+  the scanner types them directly (chromatic = 30-ft line, gem/metallic = 15-ft
+  cone, all DEX saves) — no curated entries needed. The fix was making
+  `linkDraconicAncestry` *gap-filling* instead of clobbering: the PHB-based
+  table listed e.g. green as a cone/CON save, which was overwriting the correct
+  chromatic line/DEX. The scanner also learned the FTD "5th level (2d10)"
+  scaling phrasing. Still not surfaced as distinct chips: Metallic's second
+  breath option (enervating/repulsion) and Gem's flight/telepathy utility.
 - **Warlock invocations** — *partially done*: every optional-feature pick
   (invocations, metamagic, maneuvers, fighting styles) now shows its
   prerequisite text (level, Pact Boon, patron, known spell) in the option
