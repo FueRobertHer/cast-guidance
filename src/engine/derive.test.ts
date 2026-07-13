@@ -679,6 +679,41 @@ describe('deriveSheet — dragonborn ancestry linkage', () => {
   });
 });
 
+describe('deriveSheet — natural armor + 2024 Magic action (prose scan)', () => {
+  function turtleDoc(): CharacterDoc {
+    const doc = newCharacterDoc('t1', 'Shelly', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 12, dex: 16, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Turtlefolk', source: 'TST' };
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    return doc;
+  }
+
+  it('applies natural armor base AC (17), ignoring a high Dex', () => {
+    const sheet = deriveSheet(turtleDoc(), ctx);
+    expect(sheet.ac.value).toBe(17); // not 10 + DEX 3 = 13
+    expect(sheet.acFormulaLabel).toBe('Natural Armor');
+  });
+
+  it('reads a 2024 "Magic action" trait as an action + long-rest resource', () => {
+    const sheet = deriveSheet(turtleDoc(), ctx);
+    expect(sheet.actions.some((a) => a.label === 'Healing Touch' && a.economy === 'action')).toBe(
+      true,
+    );
+    expect(sheet.resources.some((r) => r.label === 'Healing Touch' && r.resetOn === 'long')).toBe(
+      true,
+    );
+  });
+
+  it('adds the ability modifier for "13 + Dexterity modifier" natural armor', () => {
+    const doc = turtleDoc();
+    doc.race = { name: 'Scalefolk', source: 'TST' };
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.ac.value).toBe(16); // 13 + DEX 3, not a flat 13
+    expect(sheet.acFormulaLabel).toBe('Natural Armor');
+  });
+});
+
 describe('deriveSheet — FTD Dragonborn (prose-scanned; ancestry table must not clobber)', () => {
   function ftdDoc(name: string, levels = 1): CharacterDoc {
     const doc = newCharacterDoc('f1', 'Kaida', 'test-tag');

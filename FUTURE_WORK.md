@@ -21,8 +21,15 @@ text. Still open:
 - **FTD Metallic 2nd breath / Gem flight & telepathy** — the breath weapons work;
   Metallic's second breath option (enervating / repulsion) and Gem's flight and
   telepathy utility aren't surfaced as their own chips.
-- **Aasimar revelations, Genasi, Tortle shell** — verify prose-scanner output and
-  curate where the text defeats it.
+- **Natural armor** — *done*: the prose scanner now extracts a base AC from
+  "base AC of 17", "13 + [your] Dexterity modifier", and "+N bonus to Armor
+  Class" (gated to the trait name). Verified against every natural-armor race in
+  the data — Tortle 17, Lizardfolk/Locathah 13/12 + Dex, Loxodon 12 + Con, DMG
+  Lizardfolk/Troglodyte as flat bonuses. Aasimar's 2024 "Magic action" trait
+  (Healing Hands) is now scanned as an action too. **Still open:** Aasimar
+  Celestial Revelation transformation forms (Necrotic Shroud / Radiant
+  Consumption / Radiant Soul) and Genasi subrace elemental utilities aren't
+  surfaced as their own chips.
 
 ## Creation / build
 

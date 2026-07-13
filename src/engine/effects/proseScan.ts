@@ -163,8 +163,9 @@ export function proseScanFeature(
     col.add({ kind: 'action', economy: 'reaction', label: name, roll, note, save, origin });
   } else if (
     uses !== undefined &&
-    // "replace one of your attacks" is the 2024 phrasing for Attack-action riders.
-    /as an action|use your action|replace one of your attacks/.test(text)
+    // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
+    // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
+    /as an action|use your action|replace one of your attacks|as a magic action/.test(text)
   ) {
     col.add({ kind: 'action', economy: 'action', label: name, roll, note, save, origin });
   }
@@ -174,5 +175,32 @@ export function proseScanFeature(
   );
   if (hp?.[1] !== undefined) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
+  }
+
+  // Natural armor: a fixed base AC stated in prose ("base AC of 17";
+  // "13 + [your] Dexterity modifier") or a flat "+3 bonus to Armor Class".
+  // Gated to the trait name so unrelated AC mentions don't trigger it;
+  // generalizes across Tortle, Lizardfolk, Loxodon, Locathah, Warforged…
+  if (/natural armor/.test(name.toLowerCase())) {
+    const withMod = text.match(
+      /(\d+) \+ (?:your )?(strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+    );
+    const flat =
+      text.match(/base ac (?:of|is|equals|,) (\d+)/) ?? text.match(/ac (?:of|is) (\d+)\b/);
+    const bonus = text.match(/\+\s*(\d+) bonus to (?:your )?armor class/);
+    if (withMod?.[1] !== undefined && withMod[2] !== undefined) {
+      const ability = ABILITY_WORDS[withMod[2]];
+      col.add({
+        kind: 'acFormula',
+        label: name,
+        base: Number(withMod[1]),
+        addAbilities: ability !== undefined ? [ability] : [],
+        origin,
+      });
+    } else if (flat?.[1] !== undefined) {
+      col.add({ kind: 'acFormula', label: name, base: Number(flat[1]), addAbilities: [], origin });
+    } else if (bonus?.[1] !== undefined) {
+      col.add({ kind: 'acBonus', amount: Number(bonus[1]), origin });
+    }
   }
 }

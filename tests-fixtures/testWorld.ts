@@ -141,6 +141,42 @@ const race: DataEntity[] = [
       },
     ],
   },
+  {
+    // Natural Armor (flat base 17, no Dex) + a 2024 "Magic action" trait —
+    // exercises the prose scanner's AC extraction and Magic-action economy.
+    name: 'Turtlefolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Natural Armor',
+        type: 'entries',
+        entries: [
+          "Your shell provides you a base AC of 17 (your Dexterity modifier doesn't affect this number). You can't wear armor, but you can use a shield.",
+        ],
+      },
+      {
+        name: 'Healing Touch',
+        type: 'entries',
+        entries: [
+          "As a Magic action, you touch a creature and it regains hit points equal to your level. Once you use this trait, you can't use it again until you finish a long rest.",
+        ],
+      },
+    ],
+  },
+  {
+    // Natural Armor stated as "13 + Dexterity modifier" (no "your", MPMM style).
+    name: 'Scalefolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Natural Armor',
+        type: 'entries',
+        entries: ["When you aren't wearing armor, your base AC is 13 + Dexterity modifier."],
+      },
+    ],
+  },
 ];
 
 const spell: DataEntity[] = [
