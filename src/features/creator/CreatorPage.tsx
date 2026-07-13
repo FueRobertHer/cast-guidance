@@ -1,49 +1,53 @@
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
-import { DATA_TAG } from '@/data5e/config';
-import type { Entity } from '@/data5e/copyMod';
-import { engineContextFor } from '@/data5e/engineAdapter';
-import { useRegistry } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
-import { filterByRulesVersion } from '@/data5e/rulesVersion';
-import { characterRepo } from '@/db/characterRepo';
-import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
-import { deriveSheet } from '@/engine/derive';
-import { ABILITIES, type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { SpellManager } from '@/features/sheet/SpellManager';
-import { EntityCardList } from '@/ui/EntityCardList';
-import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { DATA_TAG } from "@/data5e/config";
+import type { Entity } from "@/data5e/copyMod";
+import { engineContextFor } from "@/data5e/engineAdapter";
+import { useRegistry } from "@/data5e/hooks";
+import { ensureTypePacks } from "@/data5e/loader";
+import { filterByRulesVersion } from "@/data5e/rulesVersion";
+import { characterRepo } from "@/db/characterRepo";
+import {
+  POINT_BUY_BUDGET,
+  pointBuyCost,
+  STANDARD_ARRAY,
+} from "@/engine/calc/abilities";
+import { deriveSheet } from "@/engine/derive";
+import { ABILITIES, type CharacterDoc, newCharacterDoc } from "@/engine/types";
+import { SpellManager } from "@/features/sheet/SpellManager";
+import { EntityCardList } from "@/ui/EntityCardList";
+import { ChoicePromptRenderer } from "./ChoicePromptRenderer";
 import {
   bundleToEquipment,
   defaultStrings,
   type EquipmentBundle,
   parseStartingEquipment,
-} from './startingEquipment';
+} from "./startingEquipment";
 
 const STEPS = [
-  'basics',
-  'class',
-  'species',
-  'abilities',
-  'background',
-  'equipment',
-  'spells',
-  'choices',
-  'review',
+  "basics",
+  "class",
+  "species",
+  "abilities",
+  "background",
+  "equipment",
+  "spells",
+  "choices",
+  "review",
 ] as const;
 type Step = (typeof STEPS)[number];
 
-const nameOf = (e: Entity) => String(e.name ?? '?');
-const sourceOf = (e: Entity) => String(e.source ?? '?');
+const nameOf = (e: Entity) => String(e.name ?? "?");
+const sourceOf = (e: Entity) => String(e.source ?? "?");
 
-const DRAFT_KEY = 'dnd-sheet:creator-draft';
+const DRAFT_KEY = "cast-guidance:creator-draft";
 
 export function Component() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const step = (params.get('step') ?? 'basics') as Step;
-  const registry = useRegistry(['essentials']);
+  const step = (params.get("step") ?? "basics") as Step;
+  const registry = useRegistry(["essentials"]);
   // The in-progress draft survives reloads via sessionStorage.
   const [doc, setDoc] = useState<CharacterDoc>(() => {
     try {
@@ -52,16 +56,21 @@ export function Component() {
     } catch {
       // corrupted draft — start fresh
     }
-    return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
+    return newCharacterDoc(crypto.randomUUID(), "", DATA_TAG);
   });
-  const [bundleChoices, setBundleChoices] = useState<Record<string, string>>({});
+  const [bundleChoices, setBundleChoices] = useState<Record<string, string>>(
+    {},
+  );
 
   useEffect(() => {
-    void ensureTypePacks('class');
+    void ensureTypePacks("class");
   }, []);
 
   const ctx = registry !== null ? engineContextFor(registry) : null;
-  const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
+  const sheet = useMemo(
+    () => (ctx !== null ? deriveSheet(doc, ctx) : null),
+    [doc, ctx],
+  );
 
   const update = (recipe: (d: CharacterDoc) => void) => {
     setDoc((d) => {
@@ -80,43 +89,60 @@ export function Component() {
   const stepIdx = STEPS.indexOf(step);
 
   if (registry === null) {
-    return <main className="p-4 text-sm text-ink-muted">Loading game data…</main>;
+    return (
+      <main className="p-4 text-sm text-ink-muted">Loading game data…</main>
+    );
   }
 
-  const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
+  const classes = filterByRulesVersion(
+    [...registry.byType("class")],
+    doc.rulesVersion,
+  );
   const classEntity =
     doc.classes[0] !== undefined
-      ? registry.get('class', doc.classes[0].ref.name, doc.classes[0].ref.source)
+      ? registry.get(
+          "class",
+          doc.classes[0].ref.name,
+          doc.classes[0].ref.source,
+        )
       : undefined;
   const subclasses =
     doc.classes[0] !== undefined
       ? filterByRulesVersion(
           registry
-            .byType('subclass')
+            .byType("subclass")
             .filter(
               (s) =>
-                String(s.className).toLowerCase() === doc.classes[0]?.ref.name.toLowerCase() &&
-                String(s.classSource).toLowerCase() === doc.classes[0]?.ref.source.toLowerCase(),
+                String(s.className).toLowerCase() ===
+                  doc.classes[0]?.ref.name.toLowerCase() &&
+                String(s.classSource).toLowerCase() ===
+                  doc.classes[0]?.ref.source.toLowerCase(),
             ),
           doc.rulesVersion,
         )
       : [];
-  const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
+  const races = filterByRulesVersion(
+    [...registry.byType("race")],
+    doc.rulesVersion,
+  );
   const subraces =
     doc.race !== undefined
       ? registry
-          .byType('subrace')
+          .byType("subrace")
           .filter(
             (s) =>
-              String(s.raceName ?? '').toLowerCase() === doc.race?.name.toLowerCase() &&
-              typeof s.name === 'string',
+              String(s.raceName ?? "").toLowerCase() ===
+                doc.race?.name.toLowerCase() && typeof s.name === "string",
           )
       : [];
-  const backgrounds = filterByRulesVersion([...registry.byType('background')], doc.rulesVersion);
+  const backgrounds = filterByRulesVersion(
+    [...registry.byType("background")],
+    doc.rulesVersion,
+  );
 
   const stepBody = () => {
     switch (step) {
-      case 'basics':
+      case "basics":
         return (
           <div className="flex flex-col gap-4">
             <label className="flex flex-col gap-1">
@@ -132,8 +158,8 @@ export function Component() {
               <span className="text-sm font-semibold">Rules version</span>
               {(
                 [
-                  ['2014', 'Classic (2014 Player’s Handbook and expansions)'],
-                  ['2024', 'Revised (2024 Player’s Handbook)'],
+                  ["2014", "Classic (2014 Player’s Handbook and expansions)"],
+                  ["2024", "Revised (2024 Player’s Handbook)"],
                 ] as const
               ).map(([v, label]) => (
                 <button
@@ -151,8 +177,8 @@ export function Component() {
                   }
                   className={`rounded-lg border px-3 py-2.5 text-left text-sm ${
                     doc.rulesVersion === v
-                      ? 'border-accent bg-accent-deep/40 font-semibold'
-                      : 'border-surface-2 bg-surface'
+                      ? "border-accent bg-accent-deep/40 font-semibold"
+                      : "border-surface-2 bg-surface"
                   }`}
                 >
                   {label}
@@ -162,7 +188,7 @@ export function Component() {
           </div>
         );
 
-      case 'class': {
+      case "class": {
         const entry = doc.classes[0];
         return (
           <div className="flex flex-col gap-4">
@@ -180,7 +206,7 @@ export function Component() {
                     {
                       ref: { name: nameOf(e), source: sourceOf(e) },
                       levels: d.classes[0]?.levels ?? 1,
-                      hp: d.classes[0]?.hp ?? ['avg'],
+                      hp: d.classes[0]?.hp ?? ["avg"],
                     },
                   ];
                   d.choices = {};
@@ -206,7 +232,9 @@ export function Component() {
                     >
                       −
                     </button>
-                    <span className="w-8 text-center text-lg font-bold">{entry.levels}</span>
+                    <span className="w-8 text-center text-lg font-bold">
+                      {entry.levels}
+                    </span>
                     <button
                       type="button"
                       onClick={() =>
@@ -214,7 +242,7 @@ export function Component() {
                           const c = d.classes[0];
                           if (c === undefined || c.levels >= 20) return;
                           c.levels += 1;
-                          c.hp = [...c.hp, 'avg'];
+                          c.hp = [...c.hp, "avg"];
                         })
                       }
                       className="h-9 w-9 rounded-full bg-surface-2 text-lg"
@@ -237,7 +265,10 @@ export function Component() {
                         update((d) => {
                           const c = d.classes[0];
                           if (c !== undefined)
-                            c.subclass = { name: nameOf(e), source: sourceOf(e) };
+                            c.subclass = {
+                              name: nameOf(e),
+                              source: sourceOf(e),
+                            };
                         })
                       }
                       onDeselect={() =>
@@ -255,7 +286,7 @@ export function Component() {
         );
       }
 
-      case 'species':
+      case "species":
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
@@ -284,7 +315,13 @@ export function Component() {
                       : undefined
                   }
                   onSelect={(e) =>
-                    update((d) => void (d.subrace = { name: nameOf(e), source: sourceOf(e) }))
+                    update(
+                      (d) =>
+                        void (d.subrace = {
+                          name: nameOf(e),
+                          source: sourceOf(e),
+                        }),
+                    )
                   }
                   onDeselect={() => update((d) => void (d.subrace = undefined))}
                 />
@@ -293,43 +330,54 @@ export function Component() {
           </div>
         );
 
-      case 'abilities': {
+      case "abilities": {
         const cost = pointBuyCost(doc.abilities.base);
         return (
           <div className="flex flex-col gap-4">
             <div className="flex gap-1.5">
-              {(['standard', 'pointbuy', 'manual'] as const).map((m) => (
+              {(["standard", "pointbuy", "manual"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() =>
                     update((d) => {
                       d.abilities.method = m;
-                      if (m === 'pointbuy')
-                        d.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+                      if (m === "pointbuy")
+                        d.abilities.base = {
+                          str: 8,
+                          dex: 8,
+                          con: 8,
+                          int: 8,
+                          wis: 8,
+                          cha: 8,
+                        };
                     })
                   }
                   className={`rounded-full border px-3 py-1.5 text-sm ${
                     doc.abilities.method === m
-                      ? 'border-accent bg-accent-deep/40 font-semibold'
-                      : 'border-surface-2 text-ink-muted'
+                      ? "border-accent bg-accent-deep/40 font-semibold"
+                      : "border-surface-2 text-ink-muted"
                   }`}
                 >
-                  {m === 'standard' ? 'Standard array' : m === 'pointbuy' ? 'Point buy' : 'Manual'}
+                  {m === "standard"
+                    ? "Standard array"
+                    : m === "pointbuy"
+                      ? "Point buy"
+                      : "Manual"}
                 </button>
               ))}
             </div>
-            {doc.abilities.method === 'pointbuy' && (
+            {doc.abilities.method === "pointbuy" && (
               <p
-                className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? 'text-accent' : 'text-ink-muted'}`}
+                className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? "text-accent" : "text-ink-muted"}`}
               >
-                Points: {cost ?? '—'} / {POINT_BUY_BUDGET}
-                {cost === undefined && ' (scores must stay 8–15)'}
+                Points: {cost ?? "—"} / {POINT_BUY_BUDGET}
+                {cost === undefined && " (scores must stay 8–15)"}
               </p>
             )}
-            {doc.abilities.method === 'standard' && (
+            {doc.abilities.method === "standard" && (
               <p className="text-sm text-ink-muted">
-                Assign {STANDARD_ARRAY.join(' / ')} across your abilities.
+                Assign {STANDARD_ARRAY.join(" / ")} across your abilities.
               </p>
             )}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -340,14 +388,19 @@ export function Component() {
                     key={a}
                     className="flex flex-col items-center gap-1 rounded-lg bg-surface p-3"
                   >
-                    <span className="text-xs font-semibold uppercase text-ink-muted">{a}</span>
+                    <span className="text-xs font-semibold uppercase text-ink-muted">
+                      {a}
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() =>
                           update(
                             (d) =>
-                              void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
+                              void (d.abilities.base[a] = Math.max(
+                                3,
+                                d.abilities.base[a] - 1,
+                              )),
                           )
                         }
                         className="h-8 w-8 rounded-full bg-surface-2"
@@ -362,7 +415,10 @@ export function Component() {
                         onClick={() =>
                           update(
                             (d) =>
-                              void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
+                              void (d.abilities.base[a] = Math.min(
+                                18,
+                                d.abilities.base[a] + 1,
+                              )),
                           )
                         }
                         className="h-8 w-8 rounded-full bg-surface-2"
@@ -370,18 +426,20 @@ export function Component() {
                         +
                       </button>
                     </div>
-                    {final !== undefined && final.value !== doc.abilities.base[a] && (
-                      <span className="text-xs text-emerald-300">
-                        → {final.value} ({final.mod >= 0 ? '+' : ''}
-                        {final.mod})
-                      </span>
-                    )}
-                    {final !== undefined && final.value === doc.abilities.base[a] && (
-                      <span className="text-xs text-ink-muted">
-                        mod {final.mod >= 0 ? '+' : ''}
-                        {final.mod}
-                      </span>
-                    )}
+                    {final !== undefined &&
+                      final.value !== doc.abilities.base[a] && (
+                        <span className="text-xs text-emerald-300">
+                          → {final.value} ({final.mod >= 0 ? "+" : ""}
+                          {final.mod})
+                        </span>
+                      )}
+                    {final !== undefined &&
+                      final.value === doc.abilities.base[a] && (
+                        <span className="text-xs text-ink-muted">
+                          mod {final.mod >= 0 ? "+" : ""}
+                          {final.mod}
+                        </span>
+                      )}
                   </div>
                 );
               })}
@@ -390,7 +448,7 @@ export function Component() {
         );
       }
 
-      case 'background':
+      case "background":
         return (
           <EntityCardList
             dedupe
@@ -401,22 +459,44 @@ export function Component() {
                 : undefined
             }
             onSelect={(e) =>
-              update((d) => void (d.background = { name: nameOf(e), source: sourceOf(e) }))
+              update(
+                (d) =>
+                  void (d.background = {
+                    name: nameOf(e),
+                    source: sourceOf(e),
+                  }),
+              )
             }
           />
         );
 
-      case 'equipment': {
+      case "equipment": {
         const groups = parseStartingEquipment(classEntity);
         const bgEntity =
           doc.background !== undefined
-            ? registry.get('background', doc.background.name, doc.background.source)
+            ? registry.get(
+                "background",
+                doc.background.name,
+                doc.background.source,
+              )
             : undefined;
         const bgGroups = parseStartingEquipment(bgEntity);
         const fallback = groups.length === 0 ? defaultStrings(classEntity) : [];
-        const allGroups: Array<{ source: string; groupIdx: number; bundles: EquipmentBundle[] }> = [
-          ...groups.map((bundles, groupIdx) => ({ source: 'class', groupIdx, bundles })),
-          ...bgGroups.map((bundles, groupIdx) => ({ source: 'bg', groupIdx, bundles })),
+        const allGroups: Array<{
+          source: string;
+          groupIdx: number;
+          bundles: EquipmentBundle[];
+        }> = [
+          ...groups.map((bundles, groupIdx) => ({
+            source: "class",
+            groupIdx,
+            bundles,
+          })),
+          ...bgGroups.map((bundles, groupIdx) => ({
+            source: "bg",
+            groupIdx,
+            bundles,
+          })),
         ];
         const apply = () => {
           update((d) => {
@@ -432,15 +512,23 @@ export function Component() {
             for (const item of d.equipment) {
               if (item.ref === undefined) continue;
               const e =
-                registry.get('item', item.ref.name, item.ref.source || undefined) ??
-                registry.get('baseitem', item.ref.name, item.ref.source || undefined);
+                registry.get(
+                  "item",
+                  item.ref.name,
+                  item.ref.source || undefined,
+                ) ??
+                registry.get(
+                  "baseitem",
+                  item.ref.name,
+                  item.ref.source || undefined,
+                );
               if (e === undefined) continue;
-              const type = String(e.type ?? '').split('|')[0];
+              const type = String(e.type ?? "").split("|")[0];
               if (
-                type === 'LA' ||
-                type === 'MA' ||
-                type === 'HA' ||
-                type === 'S' ||
+                type === "LA" ||
+                type === "MA" ||
+                type === "HA" ||
+                type === "S" ||
                 e.weaponCategory !== undefined
               ) {
                 item.equipped = true;
@@ -454,18 +542,27 @@ export function Component() {
               const key = `${g.source}:${g.groupIdx}`;
               const current = bundleChoices[key] ?? g.bundles[0]?.key;
               return (
-                <fieldset key={key} className="flex flex-col gap-1.5 rounded-lg bg-surface p-3">
+                <fieldset
+                  key={key}
+                  className="flex flex-col gap-1.5 rounded-lg bg-surface p-3"
+                >
                   <legend className="sr-only">Equipment option</legend>
                   <span className="text-xs font-semibold uppercase text-ink-muted">
-                    {g.source === 'class' ? 'Class equipment' : 'Background equipment'}
+                    {g.source === "class"
+                      ? "Class equipment"
+                      : "Background equipment"}
                   </span>
                   {g.bundles.map((b) => (
                     <button
                       key={b.key}
                       type="button"
-                      onClick={() => setBundleChoices((c) => ({ ...c, [key]: b.key }))}
+                      onClick={() =>
+                        setBundleChoices((c) => ({ ...c, [key]: b.key }))
+                      }
                       className={`rounded-lg border px-3 py-2 text-left text-sm ${
-                        current === b.key ? 'border-accent bg-accent-deep/30' : 'border-surface-2'
+                        current === b.key
+                          ? "border-accent bg-accent-deep/30"
+                          : "border-surface-2"
                       }`}
                     >
                       {b.label}
@@ -497,12 +594,17 @@ export function Component() {
         );
       }
 
-      case 'spells':
+      case "spells":
         return sheet !== null ? (
-          <SpellManager doc={doc} sheet={sheet} update={update} allowCasting={false} />
+          <SpellManager
+            doc={doc}
+            sheet={sheet}
+            update={update}
+            allowCasting={false}
+          />
         ) : null;
 
-      case 'choices':
+      case "choices":
         return (
           <div className="flex flex-col gap-3">
             {sheet !== null && sheet.pending.length === 0 && (
@@ -521,10 +623,10 @@ export function Component() {
           </div>
         );
 
-      case 'review': {
+      case "review": {
         const create = async () => {
           const final = structuredClone(doc);
-          if (final.name.trim() === '') final.name = 'Unnamed hero';
+          if (final.name.trim() === "") final.name = "Unnamed hero";
           final.play.currentHp = sheet?.maxHp.value ?? 0;
           await characterRepo.put(final);
           sessionStorage.removeItem(DRAFT_KEY);
@@ -536,15 +638,15 @@ export function Component() {
               <div className="grid grid-cols-3 gap-2 text-center">
                 {(
                   [
-                    ['HP', sheet.maxHp.value],
-                    ['AC', sheet.ac.value],
+                    ["HP", sheet.maxHp.value],
+                    ["AC", sheet.ac.value],
                     [
-                      'Initiative',
-                      `${sheet.initiative.value >= 0 ? '+' : ''}${sheet.initiative.value}`,
+                      "Initiative",
+                      `${sheet.initiative.value >= 0 ? "+" : ""}${sheet.initiative.value}`,
                     ],
-                    ['Prof', `+${sheet.profBonus.value}`],
-                    ['Speed', `${sheet.speedWalk.value} ft`],
-                    ['Passive Per.', sheet.passivePerception.value],
+                    ["Prof", `+${sheet.profBonus.value}`],
+                    ["Speed", `${sheet.speedWalk.value} ft`],
+                    ["Passive Per.", sheet.passivePerception.value],
                   ] as const
                 ).map(([label, v]) => (
                   <div key={label} className="rounded-lg bg-surface p-3">
@@ -557,17 +659,19 @@ export function Component() {
             {sheet !== null && sheet.pending.length > 0 && (
               <button
                 type="button"
-                onClick={() => goto('choices')}
+                onClick={() => goto("choices")}
                 className="rounded-lg border border-amber-300/40 bg-surface p-3 text-left text-sm text-amber-300"
               >
-                {sheet.pending.length} choice{sheet.pending.length > 1 ? 's' : ''} still pending —
-                tap to resolve
+                {sheet.pending.length} choice
+                {sheet.pending.length > 1 ? "s" : ""} still pending — tap to
+                resolve
               </button>
             )}
             {sheet !== null && sheet.warnings.length > 0 && (
               <details className="rounded-lg bg-surface p-3 text-xs text-ink-muted">
                 <summary className="cursor-pointer text-sm">
-                  {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
+                  {sheet.warnings.length} note
+                  {sheet.warnings.length > 1 ? "s" : ""}
                 </summary>
                 {sheet.warnings.map((w) => (
                   <p key={w} className="mt-1">
@@ -596,7 +700,7 @@ export function Component() {
           <ArrowLeft size={20} />
         </Link>
         <h1 className="text-xl font-bold capitalize">
-          {step === 'species' ? 'Species / Race' : step}
+          {step === "species" ? "Species / Race" : step}
         </h1>
         <span className="text-sm text-ink-muted">
           {stepIdx + 1}/{STEPS.length}
@@ -613,14 +717,16 @@ export function Component() {
             AC <strong className="text-ink">{sheet.ac.value}</strong>
           </span>
           <span>
-            Init{' '}
+            Init{" "}
             <strong className="text-ink">
-              {sheet.initiative.value >= 0 ? '+' : ''}
+              {sheet.initiative.value >= 0 ? "+" : ""}
               {sheet.initiative.value}
             </strong>
           </span>
           {sheet.pending.length > 0 && (
-            <span className="text-amber-300">{sheet.pending.length} pending</span>
+            <span className="text-amber-300">
+              {sheet.pending.length} pending
+            </span>
           )}
         </div>
       )}
