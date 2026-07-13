@@ -26,11 +26,6 @@ text. Still open:
 
 ## Creation / build
 
-- **Rules-version filter for the ASI feat list** — race/class/background/spell
-  lists are `filterByRulesVersion`-filtered, but the ASI feat options come from
-  `ctx.byType('feat')` unfiltered, so a 2014 character sees XPHB/UA feats mixed
-  in. The feat *descriptions* are already edition-correct (they use the option's
-  own source); only the list needs filtering.
 - **Equipment gold alternative** — 2024's "gold instead of gear" isn't offered;
   the wizard grants gear bundles (gold entries become note items).
 - **Background equipment slots** — class `equipmentType` slots get concrete

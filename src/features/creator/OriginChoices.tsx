@@ -1,8 +1,51 @@
 import { Info, RefreshCcw } from 'lucide-react';
+import type { Entity } from '@/data5e/copyMod';
 import type { EntityRegistry } from '@/data5e/normalize';
-import type { CharacterDoc, ChoiceOption, DerivedSheet, EffectOrigin } from '@/engine/types';
+import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import type {
+  CharacterDoc,
+  ChoiceOption,
+  ChoicePrompt,
+  DerivedSheet,
+  EffectOrigin,
+} from '@/engine/types';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+
+/**
+ * Hide feat options that don't belong to the character's rules version (the
+ * engine builds the ASI feat list from every edition). Keeps any already-chosen
+ * or unresolvable option so a picked feat never vanishes.
+ */
+function filterFeatPrompt(
+  prompt: ChoicePrompt,
+  registry: EntityRegistry,
+  version: RulesVersion,
+  value: string[] | string | number | undefined,
+): ChoicePrompt {
+  const selected = new Set(
+    Array.isArray(value) ? value.map(String) : value !== undefined ? [String(value)] : [],
+  );
+  const feats: Entity[] = [];
+  const resolvedIds = new Set<string>();
+  for (const o of prompt.options) {
+    const [name, source] = o.id.split('|');
+    const feat = name !== undefined ? registry.get('feat', name, source) : undefined;
+    if (feat !== undefined) {
+      feats.push(feat);
+      resolvedIds.add(o.id);
+    }
+  }
+  const kept = new Set(
+    filterByRulesVersion(feats, version).map((f) =>
+      `${String(f.name)}|${String(f.source)}`.toLowerCase(),
+    ),
+  );
+  const options = prompt.options.filter(
+    (o) => selected.has(o.id) || !resolvedIds.has(o.id) || kept.has(o.id),
+  );
+  return { ...prompt, options };
+}
 
 /** ⓘ full-description drawer for a feat option (id is `name|source`). */
 function featOptionInfo(registry: EntityRegistry) {
@@ -62,16 +105,22 @@ export function OriginChoices({
 
   return (
     <div className="mt-2 flex flex-col gap-2 border-t border-surface-2/40 pt-2">
-      {pending.map((prompt) => (
-        <div key={prompt.id} data-pending-choice="">
-          <ChoicePromptRenderer
-            prompt={prompt}
-            value={doc.choices[prompt.id]}
-            onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
-            renderOptionInfo={prompt.kind === 'feat' ? featInfo : undefined}
-          />
-        </div>
-      ))}
+      {pending.map((prompt) => {
+        const shown =
+          prompt.kind === 'feat' && registry != null
+            ? filterFeatPrompt(prompt, registry, doc.rulesVersion, doc.choices[prompt.id])
+            : prompt;
+        return (
+          <div key={prompt.id} data-pending-choice="">
+            <ChoicePromptRenderer
+              prompt={shown}
+              value={doc.choices[prompt.id]}
+              onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
+              renderOptionInfo={prompt.kind === 'feat' ? featInfo : undefined}
+            />
+          </div>
+        );
+      })}
       {resolved.map(({ prompt, selected }) => (
         <div
           key={prompt.id}
