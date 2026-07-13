@@ -21,6 +21,7 @@ import {
   classAbilityHint,
   classBlurb,
   makeSubclassBlurb,
+  makeSubclassEntries,
   pointBuyFocusFor,
   raceBlurb,
   standardArrayFor,
@@ -269,6 +270,7 @@ export function Component() {
             <EntityCardList
               dedupe
               describe={classBlurb}
+              infoType="class"
               entities={classes}
               selectedUid={
                 entry !== undefined
@@ -335,6 +337,8 @@ export function Component() {
                     <EntityCardList
                       entities={subclasses}
                       describe={makeSubclassBlurb(registry)}
+                      infoType="subclass"
+                      infoEntries={makeSubclassEntries(registry)}
                       selectedUid={
                         entry.subclass !== undefined
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
@@ -382,6 +386,7 @@ export function Component() {
             <EntityCardList
               dedupe
               describe={raceBlurb}
+              infoType="race"
               entities={races}
               selectedUid={
                 doc.race !== undefined
@@ -402,6 +407,8 @@ export function Component() {
                 <span className="text-sm font-semibold">Subrace</span>
                 <EntityCardList
                   entities={subraces}
+                  describe={raceBlurb}
+                  infoType="subrace"
                   selectedUid={
                     doc.subrace !== undefined
                       ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
@@ -576,6 +583,7 @@ export function Component() {
             <EntityCardList
               dedupe
               describe={backgroundBlurb}
+              infoType="background"
               entities={backgrounds}
               selectedUid={
                 doc.background !== undefined

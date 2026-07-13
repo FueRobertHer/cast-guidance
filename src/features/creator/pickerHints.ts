@@ -13,6 +13,23 @@ interface RegistryLike {
   byType(type: string): readonly Entity[];
 }
 
+/** The lowest-level (identity) feature of a subclass, or undefined. */
+function subclassIdentityFeature(registry: RegistryLike, sub: Entity): Entity | undefined {
+  const shortName = String(sub.shortName ?? '').toLowerCase();
+  const className = String(sub.className ?? '').toLowerCase();
+  const source = String(sub.source ?? '').toLowerCase();
+  if (shortName === '') return undefined;
+  return registry
+    .byType('subclassFeature')
+    .filter(
+      (f) =>
+        String(f.subclassShortName ?? '').toLowerCase() === shortName &&
+        String(f.className ?? '').toLowerCase() === className &&
+        String(f.subclassSource ?? '').toLowerCase() === source,
+    )
+    .sort((a, b) => (Number(a.level) || 0) - (Number(b.level) || 0))[0];
+}
+
 /**
  * Describe a subclass by summarizing its lowest-level (identity) feature, so a
  * picker can answer "what makes this subclass different" without curating the
@@ -20,22 +37,14 @@ interface RegistryLike {
  */
 export function makeSubclassBlurb(registry: RegistryLike): (sub: Entity) => string | undefined {
   return (sub) => {
-    const shortName = String(sub.shortName ?? '').toLowerCase();
-    const className = String(sub.className ?? '').toLowerCase();
-    const source = String(sub.source ?? '').toLowerCase();
-    if (shortName === '') return undefined;
-    const feats = registry
-      .byType('subclassFeature')
-      .filter(
-        (f) =>
-          String(f.subclassShortName ?? '').toLowerCase() === shortName &&
-          String(f.className ?? '').toLowerCase() === className &&
-          String(f.subclassSource ?? '').toLowerCase() === source,
-      )
-      .sort((a, b) => (Number(a.level) || 0) - (Number(b.level) || 0));
-    const summary = summarizeEntries(feats[0]?.entries);
+    const summary = summarizeEntries(subclassIdentityFeature(registry, sub)?.entries);
     return summary !== '' ? summary : undefined;
   };
+}
+
+/** Full entries of a subclass's identity feature — for the info drawer. */
+export function makeSubclassEntries(registry: RegistryLike): (sub: Entity) => unknown {
+  return (sub) => subclassIdentityFeature(registry, sub)?.entries;
 }
 
 // --- Classes ---------------------------------------------------------------

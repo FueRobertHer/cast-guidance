@@ -1,5 +1,7 @@
+import { Info } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
+import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { SourceBadge } from '@/ui/SourceBadge';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -45,6 +47,8 @@ export function EntityCardList({
   onDeselect,
   dedupe = false,
   describe,
+  infoType,
+  infoEntries,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
@@ -59,6 +63,13 @@ export function EntityCardList({
   dedupe?: boolean;
   /** One-line summary rendered under the name — decision support. */
   describe?: (e: Entity) => string | undefined;
+  /**
+   * Entity type (e.g. 'race', 'feat') — when set, each card gets an ⓘ button
+   * opening the full description in a drawer, like attacks/spells on the sheet.
+   */
+  infoType?: string;
+  /** Optional entries override for the info drawer (subclasses store text in features). */
+  infoEntries?: (e: Entity) => unknown;
 }) {
   const [filter, setFilter] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -106,39 +117,58 @@ export function EntityCardList({
       <div className="grid max-h-96 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
         {list.map((e) => {
           const blurb = describe?.(e);
+          const selected = selectedUid === uidOf(e);
           return (
-            <button
+            <div
               key={uidOf(e)}
-              type="button"
-              aria-label={nameOf(e)}
-              onClick={() => {
-                if (selectedUid === uidOf(e) && onDeselect !== undefined) onDeselect();
-                else onSelect(e);
-              }}
-              title={
-                selectedUid === uidOf(e) && onDeselect !== undefined
-                  ? 'Tap again to unselect'
-                  : undefined
-              }
-              className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 text-left text-sm ${
-                selectedUid === uidOf(e)
+              className={`flex items-start rounded-lg border text-sm ${
+                selected
                   ? 'border-accent bg-accent-deep/40'
                   : 'border-surface-2 bg-surface hover:bg-surface-2'
               }`}
             >
-              <span className="flex w-full items-center justify-between gap-2">
-                <span className={`truncate ${selectedUid === uidOf(e) ? 'font-semibold' : ''}`}>
+              <button
+                type="button"
+                aria-label={nameOf(e)}
+                onClick={() => {
+                  if (selected && onDeselect !== undefined) onDeselect();
+                  else onSelect(e);
+                }}
+                title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
+                className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
+              >
+                <span className={`truncate ${selected ? 'font-semibold' : ''}`}>
                   {nameOf(e)}
-                  {selectedUid === uidOf(e) && onDeselect !== undefined && (
+                  {selected && onDeselect !== undefined && (
                     <span className="ml-1.5 text-xs font-normal text-ink-muted">✕ unselect</span>
                   )}
                 </span>
+                {blurb !== undefined && (
+                  <span className="text-xs leading-snug text-ink-muted">{blurb}</span>
+                )}
+              </button>
+              <div className="flex shrink-0 items-center gap-1 py-2.5 pr-2">
                 <SourceBadge source={sourceOf(e)} />
-              </span>
-              {blurb !== undefined && (
-                <span className="text-xs leading-snug text-ink-muted">{blurb}</span>
-              )}
-            </button>
+                {infoType !== undefined && (
+                  <EntityInfoSheet
+                    type={infoType}
+                    entity={e}
+                    entriesOverride={infoEntries?.(e)}
+                    subtitle={`${nameOf(e)} · ${sourceOf(e)}`}
+                    trigger={
+                      <button
+                        type="button"
+                        aria-label={`${nameOf(e)} details`}
+                        title="Full description"
+                        className="rounded-full p-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+                      >
+                        <Info size={16} />
+                      </button>
+                    }
+                  />
+                )}
+              </div>
+            </div>
           );
         })}
       </div>

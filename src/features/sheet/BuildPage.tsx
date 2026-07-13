@@ -17,6 +17,7 @@ import {
   backgroundBlurb,
   classBlurb,
   makeSubclassBlurb,
+  makeSubclassEntries,
   raceBlurb,
 } from '@/features/creator/pickerHints';
 import { pruneChoicesFor } from '@/lib/pruneChoices';
@@ -162,6 +163,7 @@ export function Component() {
       doc.rulesVersion,
     );
   const subclassBlurb = makeSubclassBlurb(registry);
+  const subclassEntries = makeSubclassEntries(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
     doc.race !== undefined
@@ -437,6 +439,8 @@ export function Component() {
                     <EntityCardList
                       entities={subclasses}
                       describe={subclassBlurb}
+                      infoType="subclass"
+                      infoEntries={subclassEntries}
                       selectedUid={
                         entry.subclass !== undefined
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
@@ -487,6 +491,7 @@ export function Component() {
             <EntityCardList
               dedupe
               describe={classBlurb}
+              infoType="class"
               entities={classes.filter(
                 (e) =>
                   !doc.classes.some(
@@ -513,6 +518,7 @@ export function Component() {
         <EntityCardList
           dedupe
           describe={raceBlurb}
+          infoType="race"
           entities={races}
           selectedUid={
             doc.race !== undefined ? `${doc.race.name}|${doc.race.source}`.toLowerCase() : undefined
@@ -531,6 +537,8 @@ export function Component() {
             <span className="text-xs text-ink-muted">Subrace</span>
             <EntityCardList
               entities={subraces}
+              describe={raceBlurb}
+              infoType="subrace"
               selectedUid={
                 doc.subrace !== undefined
                   ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
@@ -687,6 +695,7 @@ export function Component() {
         <EntityCardList
           dedupe
           describe={backgroundBlurb}
+          infoType="background"
           entities={backgrounds}
           selectedUid={
             doc.background !== undefined
