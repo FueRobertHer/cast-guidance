@@ -1,5 +1,5 @@
 import { Minus, Moon, Plus, Sun } from 'lucide-react';
-import { Link, useOutletContext } from 'react-router';
+import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
@@ -10,6 +10,7 @@ import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
+import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { weaponInfoEntries } from '../weaponInfo';
@@ -941,7 +942,12 @@ export function Component() {
             const preparedUids = new Set(
               state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()),
             );
-            const registrySpells = [...state.known].sort((a, b) => a.name.localeCompare(b.name));
+            // Sorted by level (cantrips first), then name — not alphabetically.
+            const registrySpells = [...state.known].sort(
+              (a, b) =>
+                spellLevelOf(a.name, a.source) - spellLevelOf(b.name, b.source) ||
+                a.name.localeCompare(b.name),
+            );
             return (
               <div className="mt-2 flex flex-col gap-1 border-t border-surface-2/40 pt-2">
                 {registrySpells.map((ref) => {
@@ -953,15 +959,24 @@ export function Component() {
                       <span className="w-6 shrink-0 text-xs text-ink-muted">
                         {level === 0 ? 'c' : `L${level}`}
                       </span>
-                      <Link
-                        to={`/library/spell/${encodeURIComponent(uid)}`}
-                        className={`min-w-0 flex-1 truncate ${prepared ? '' : 'text-ink-muted'}`}
-                      >
-                        {ref.name}
-                        {prepared && (
-                          <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
-                        )}
-                      </Link>
+                      <SpellInfoSheet
+                        name={ref.name}
+                        source={ref.source}
+                        subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                        trigger={
+                          <button
+                            type="button"
+                            className={`min-w-0 flex-1 truncate text-left underline decoration-surface-2 decoration-dashed underline-offset-2 ${
+                              prepared ? '' : 'text-ink-muted'
+                            }`}
+                          >
+                            {ref.name}
+                            {prepared && (
+                              <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
+                            )}
+                          </button>
+                        }
+                      />
                       {(level > 0 || spellConcentrationOf(ref.name, ref.source)) && (
                         <button
                           type="button"
@@ -1001,24 +1016,33 @@ export function Component() {
           <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => (
-              <Link
+              <SpellInfoSheet
                 key={`${g.name}|${g.source}`}
-                to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                className="flex items-center justify-between gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
-              >
-                <span className="flex items-center gap-1.5">
-                  <span className="capitalize">{g.name}</span>
-                  {g.usage === 'prepared' && (
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                      Always prepared
+                name={g.name}
+                source={g.source}
+                subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                trigger={
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 border-b border-surface-2/40 py-1.5 text-left last:border-b-0"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
+                        {g.name}
+                      </span>
+                      {g.usage === 'prepared' && (
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                          Always prepared
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-                <span className="shrink-0 text-xs text-ink-muted">
-                  {g.origin}
-                  {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
-                </span>
-              </Link>
+                    <span className="shrink-0 text-xs text-ink-muted">
+                      {g.origin}
+                      {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                    </span>
+                  </button>
+                }
+              />
             ))}
           </div>
         </section>
