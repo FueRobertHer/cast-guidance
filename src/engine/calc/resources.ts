@@ -8,11 +8,8 @@ export function calcResources(
   profBonus: number,
 ): DerivedResource[] {
   const out: DerivedResource[] = [];
-  const seen = new Set<string>();
+  const idxByKey = new Map<string, number>();
   for (const e of effectsOf(effects, 'resource')) {
-    // First wins: curated entries emit before prose-scanned duplicates.
-    if (seen.has(e.key)) continue;
-    seen.add(e.key);
     let max: number;
     if (typeof e.max === 'number') {
       max = e.max;
@@ -29,7 +26,16 @@ export function calcResources(
       max = 0;
     }
     if (max <= 0) continue;
-    out.push({ key: e.key, label: e.label, max, resetOn: e.resetOn, origin: e.origin.label });
+    const existingIdx = idxByKey.get(e.key);
+    if (existingIdx === undefined) {
+      idxByKey.set(e.key, out.length);
+      out.push({ key: e.key, label: e.label, max, resetOn: e.resetOn, origin: e.origin.label });
+    } else if (e.stack === true) {
+      // Stackable sources add to the shared pool (superiority dice, etc.).
+      const row = out[existingIdx];
+      if (row !== undefined) row.max += max;
+    }
+    // Otherwise first wins: curated entries emit before prose-scanned duplicates.
   }
   return out;
 }

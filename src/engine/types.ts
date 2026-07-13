@@ -163,6 +163,12 @@ export type EffectInput = { origin: EffectOrigin } & (
       label: string;
       max: number | 'profBonus' | `abilityMod:${Ability}` | `level:${string}`;
       resetOn: 'short' | 'long';
+      /**
+       * When true, same-key resources from other sources add to the pool
+       * (superiority dice from Battle Master + Martial Adept + Superior
+       * Technique stack). Default is first-wins (curated beats prose-scan dup).
+       */
+      stack?: boolean;
     }
   | {
       kind: 'action';

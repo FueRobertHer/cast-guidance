@@ -330,6 +330,61 @@ describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {
   });
 });
 
+describe('deriveSheet — stackable resources (superiority dice)', () => {
+  it('sums same-key resources flagged stack; keeps first-wins otherwise', () => {
+    const doc = warriorDoc();
+    const origin = (label: string) => ({
+      label,
+      uid: label.toLowerCase(),
+      type: 'custom' as const,
+    });
+    doc.customEffects = [
+      // Battle Master pool + a Martial-Adept-style d6 that stacks into it.
+      {
+        kind: 'resource',
+        key: 'superiority-dice',
+        label: 'Superiority Dice (d8)',
+        max: 4,
+        resetOn: 'short',
+        stack: true,
+        origin: origin('BM'),
+      },
+      {
+        kind: 'resource',
+        key: 'superiority-dice',
+        label: 'Superiority Dice (d6)',
+        max: 1,
+        resetOn: 'short',
+        stack: true,
+        origin: origin('MA'),
+      },
+      // Non-stack duplicate (curated vs prose) still collapses to the first.
+      {
+        kind: 'resource',
+        key: 'rage',
+        label: 'Rage',
+        max: 3,
+        resetOn: 'long',
+        origin: origin('C'),
+      },
+      {
+        kind: 'resource',
+        key: 'rage',
+        label: 'Rage',
+        max: 99,
+        resetOn: 'long',
+        origin: origin('D'),
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    const sup = sheet.resources.find((r) => r.key === 'superiority-dice');
+    expect(sup?.max).toBe(5); // 4 + 1 stacked
+    expect(sup?.label).toBe('Superiority Dice (d8)'); // first source's label wins
+    const rage = sheet.resources.find((r) => r.key === 'rage');
+    expect(rage?.max).toBe(3); // first wins, NOT summed to 102
+  });
+});
+
 describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {
   function sneakDoc(): CharacterDoc {
     const doc = newCharacterDoc('sn1', 'Sly', 'test-tag');
