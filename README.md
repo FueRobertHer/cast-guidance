@@ -1,4 +1,4 @@
-# DnD Sheet
+# Cast Guidance
 
 Mobile-first D&D 5e character creator and play sheet. Local-first PWA: pick race, class,
 background, feats, and equipment, and the sheet derives everything — proficiencies, AC, HP,
