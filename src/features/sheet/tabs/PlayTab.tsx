@@ -116,6 +116,14 @@ function longRest(play: PlayState, sheet: DerivedSheet): string[] {
   if (play.resources.some((r) => r.used > 0)) restored.push('resources');
   if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
 
+  // A long rest removes one level of exhaustion (both editions).
+  const exh = play.conditions.find((c) => c.id === 'Exhaustion');
+  if (exh?.level !== undefined && exh.level > 0) {
+    if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
+    else exh.level -= 1;
+    restored.push('1 exhaustion level');
+  }
+
   play.currentHp = sheet.maxHp.value;
   play.tempHp = 0;
   play.slotsSpent = play.slotsSpent.map(() => 0);
