@@ -26,10 +26,11 @@ text. Still open:
 
 ## Creation / build
 
-- **Feat full-description popup** — race / subrace / background / class / subclass
-  cards have an ⓘ drawer (`EntityInfoSheet`); feats, picked through the
-  deliberately registry-free `ChoicePromptRenderer`, still show only a one-line
-  summary. A full popup needs registry access threaded into the prompt renderer.
+- **Rules-version filter for the ASI feat list** — race/class/background/spell
+  lists are `filterByRulesVersion`-filtered, but the ASI feat options come from
+  `ctx.byType('feat')` unfiltered, so a 2014 character sees XPHB/UA feats mixed
+  in. The feat *descriptions* are already edition-correct (they use the option's
+  own source); only the list needs filtering.
 - **Equipment gold alternative** — 2024's "gold instead of gear" isn't offered;
   the wizard grants gear bundles (gold entries become note items).
 - **Background equipment slots** — class `equipmentType` slots get concrete
@@ -44,11 +45,10 @@ text. Still open:
 ## Sheet & play
 
 - **Exhaustion — HP-max & disadvantage stay advisory.** The stepper applies the
-  speed reduction, lists every level's effects, and death is a manual button. But
-  the 2014 level-4 "HP maximum halved" and the disadvantage / 2024 −2-per-level
-  d20 penalties are shown as summary lines, not auto-applied to the HP cap or to
-  rolls. Also: **long rest doesn't reduce exhaustion** yet (2014: −1 level with
-  food and water; 2024: −1 per long rest).
+  speed reduction, lists every level's effects, death is a manual button, and a
+  long rest now removes one level. Still advisory (shown as summary lines, not
+  auto-applied to the HP cap or rolls): the 2014 level-4 "HP maximum halved" and
+  the disadvantage / 2024 −2-per-level d20 penalties.
 - **Spell-slot tap-to-cast polish** — casting from the slot pips vs. the spell
   row could be unified.
 
