@@ -4,6 +4,7 @@ import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
+import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
 
 /**
@@ -16,11 +17,14 @@ import { headerFacts } from '@/features/library/fmt';
 export function SpellInfoSheet({
   name,
   source,
+  version,
   subtitle,
   trigger,
 }: {
   name: string;
   source?: string;
+  /** Character's rules version — picks the right printing when source misses. */
+  version?: RulesVersion;
   subtitle?: string;
   trigger: ReactNode;
 }) {
@@ -43,8 +47,13 @@ export function SpellInfoSheet({
     if (registry === null) return undefined;
     const bySource =
       source !== undefined && source !== '' ? registry.get('spell', name, source) : undefined;
-    return bySource ?? registry.get('spell', name);
-  }, [registry, name, source]);
+    if (bySource !== undefined) return bySource;
+    // Blank/wrong source — pick the printing for the character's rules version.
+    const cands = registry
+      .byType('spell')
+      .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
+    return version !== undefined ? pickForVersion(cands, version) : cands[0];
+  }, [registry, name, source, version]);
 
   const facts = spell !== undefined ? headerFacts('spell', spell) : [];
   const higher = spell?.entriesHigherLevel;

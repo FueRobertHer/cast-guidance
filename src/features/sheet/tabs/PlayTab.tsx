@@ -1,6 +1,7 @@
 import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
 import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
+import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
@@ -138,18 +139,30 @@ export function Component() {
   const registry = useRegistry();
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
+  // Look a spell up by its stored printing; when that misses (blank/wrong source
+  // on a granted spell) fall back to the printing matching the character's rules
+  // version, so a 2024 sheet shows 2024 text.
+  const spellEntity = (name: string, source: string) => {
+    if (registry === null) return undefined;
+    const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
+    if (bySource !== undefined) return bySource;
+    const cands = registry
+      .byType('spell')
+      .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
+    return pickForVersion(cands, doc.rulesVersion);
+  };
   const spellLevelOf = (name: string, source: string): number => {
-    const e = registry?.get('spell', name, source);
+    const e = spellEntity(name, source);
     return typeof e?.level === 'number' ? e.level : 1;
   };
   const spellConcentrationOf = (name: string, source: string): boolean =>
-    spellNeedsConcentration(registry?.get('spell', name, source));
+    spellNeedsConcentration(spellEntity(name, source));
   /** Which slice of the turn a spell's casting time uses (undefined for rituals). */
   const spellCastEconomy = (
     name: string,
     source: string,
   ): 'action' | 'bonus' | 'reaction' | undefined => {
-    const e = registry?.get('spell', name, source) ?? registry?.get('spell', name);
+    const e = spellEntity(name, source);
     const unit = Array.isArray(e?.time)
       ? String((e.time[0] as { unit?: unknown })?.unit ?? '')
       : '';
@@ -180,8 +193,17 @@ export function Component() {
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
   const spellHasVerbal = (name: string, source: string): boolean => {
-    const e = registry?.get('spell', name, source) ?? registry?.get('spell', name);
+    const e = spellEntity(name, source);
     return (e?.components as { v?: boolean } | undefined)?.v === true;
+  };
+  // Condition/status rules text for the character's edition — Exhaustion in
+  // particular reads very differently between 2014 and 2024.
+  const conditionEntry = (id: string) => {
+    if (registry === null) return undefined;
+    const cands = [...registry.byType('condition'), ...registry.byType('status')].filter(
+      (e) => String(e.name).toLowerCase() === id.toLowerCase(),
+    );
+    return pickForVersion(cands, doc.rulesVersion);
   };
   /** Amber "you normally can't do this" line for a condition limit. */
   const limitWarning = (text: string, reasons: readonly string[]) =>
@@ -724,7 +746,7 @@ export function Component() {
               What these do
             </span>
             {play.conditions.map((c) => {
-              const e = registry?.get('condition', c.id) ?? registry?.get('status', c.id);
+              const e = conditionEntry(c.id);
               if (e?.entries === undefined) return null;
               return (
                 <FeatureInfoSheet
@@ -858,7 +880,12 @@ export function Component() {
               >
                 <div className="min-w-0">
                   {(() => {
-                    const info = weaponInfoEntries(registry, a.label, a.properties);
+                    const info = weaponInfoEntries(
+                      registry,
+                      a.label,
+                      a.properties,
+                      doc.rulesVersion,
+                    );
                     return info !== undefined ? (
                       <FeatureInfoSheet
                         title={a.label}
@@ -1124,6 +1151,7 @@ export function Component() {
                       <SpellInfoSheet
                         name={ref.name}
                         source={ref.source}
+                        version={doc.rulesVersion}
                         subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
                         trigger={
                           <button
@@ -1188,6 +1216,7 @@ export function Component() {
                 <SpellInfoSheet
                   name={g.name}
                   source={g.source}
+                  version={doc.rulesVersion}
                   subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
                   trigger={
                     <button

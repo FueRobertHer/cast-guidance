@@ -1,4 +1,5 @@
 import type { EntityRegistry } from '@/data5e/normalize';
+import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 
 /** Plain-English weapon property meanings, keyed by the lowercase display name. */
 const PROPERTY_GLOSSARY: Record<string, string> = {
@@ -25,8 +26,16 @@ export function weaponInfoEntries(
   registry: EntityRegistry | null,
   name: string,
   properties: readonly string[],
+  version?: RulesVersion,
 ): unknown[] | undefined {
-  const item = registry?.get('item', name) ?? registry?.get('baseitem', name) ?? undefined;
+  const byName = (type: 'item' | 'baseitem') => {
+    if (registry === null) return undefined;
+    const cands = registry
+      .byType(type)
+      .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
+    return version !== undefined ? pickForVersion(cands, version) : cands[0];
+  };
+  const item = byName('item') ?? byName('baseitem');
   const itemEntries = Array.isArray(item?.entries) ? item.entries : [];
   const propEntries = properties
     .map((p) => {
