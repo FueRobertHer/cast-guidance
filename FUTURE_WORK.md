@@ -73,6 +73,13 @@ where a printing's mechanics can't be extracted from its own text (the
   Build page handles multiclassing. Revisit if new players ask for it.
 - **Spell picking guidance** — the Spells step lists everything castable;
   "recommended starter spells" per class would complete the decision support.
+- **Choices placed at their origin** — *done*: skill/language/fighting-style/ASI
+  picks now render under the section that generates them (race under
+  Species/Race, class/subclass under the class card, background under
+  Background) via a shared `OriginChoices`, instead of one flat list. Both the
+  Build editor and wizard use it, so they stay in parity; feat/other-origin
+  picks fall back to a "Feat & other choices" section / the wizard's choices
+  step.
 
 ## Sheet & play — mostly done
 
@@ -86,6 +93,18 @@ where a printing's mechanics can't be extracted from its own text (the
 - ~~Conditions explainers~~ — *done*: active conditions get a "what these do"
   strip that opens the rules text.
 - ~~Death saves UI~~ — already present (nat-1/nat-20 handling, Durable feat).
+- ~~Spell tap-to-explain~~ — *done*: known and innate/granted spells open an
+  in-place rules popup (`SpellInfoSheet`) like weapons/actions instead of a
+  library link, with a source-tolerant lookup that fixes broken links (e.g.
+  Dancing Lights with a blank source).
+- ~~Known spells sorted by level~~ — *done*: the Play-tab list is level-ordered
+  (cantrips first) then alphabetical, not purely alphabetical.
+- ~~Passive combat options~~ — *done*: a "Combat options" strip surfaces
+  always-on capabilities (Extra Attack, Cunning Action, …) from the character's
+  features (`combatCapabilities.ts`), deduped against the action chips.
+- ~~Special resources (superiority dice)~~ — *done*: Battle Master Combat
+  Superiority (scaling count + die), Superior Technique, and Martial Adept share
+  one stacking `superiority-dice` pool (new `stack` flag on resource effects).
 
 Spending a use without a roll already works: tap the next resource pip (a
 max-1 resource is a single tappable pip), so no separate "use it" button is
