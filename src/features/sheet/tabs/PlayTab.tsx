@@ -10,6 +10,7 @@ import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
+import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -868,6 +869,49 @@ export function Component() {
           </div>
         </section>
       )}
+
+      {/* Passive combat options — things you can always do (Extra Attack, …)
+          that aren't already a limited-use action chip above. */}
+      {(() => {
+        const actionNames = new Set(sheet.actions.map((a) => capabilityKey(a.label)));
+        const seen = new Set<string>();
+        const caps = sheet.features
+          .map((f) => ({ f, key: capabilityKey(f.name) }))
+          .filter(({ key }) => {
+            if (COMBAT_CAPABILITIES[key] === undefined || actionNames.has(key)) return false;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        if (caps.length === 0) return null;
+        return (
+          <section className="flex flex-col gap-1.5">
+            <h2 className="text-sm font-semibold text-ink-muted">Combat options</h2>
+            <p className="text-xs text-ink-muted">Things you can always do. Tap for full rules.</p>
+            <div className="flex flex-col gap-1">
+              {caps.map(({ f, key }) => (
+                <FeatureInfoSheet
+                  key={key}
+                  title={f.name}
+                  subtitle={f.origin.label}
+                  entries={f.entries}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex flex-col rounded-lg bg-surface px-3 py-2 text-left text-sm"
+                    >
+                      <span className="font-medium underline decoration-surface-2 decoration-dashed underline-offset-2">
+                        {f.name}
+                      </span>
+                      <span className="text-xs text-ink-muted">{COMBAT_CAPABILITIES[key]}</span>
+                    </button>
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Spell slots (spend/restore) — the leveled pool is character-wide,
           so render its pips only on the first casting class. */}
