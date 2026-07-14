@@ -14,6 +14,7 @@ import { RollChip } from '@/ui/RollChip';
 import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
+import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, nextCastResource, spellNeedsConcentration } from '../SpellManager';
 import { spellRollActions } from '../spellRolls';
@@ -180,6 +181,10 @@ export function Component() {
 
   const play = doc.play;
 
+  // After a build change lowers a limit, stored play state can hold values above
+  // the new maxima — surface them and offer a non-destructive clamp (GAME-007).
+  const overages = detectPlayStateOverages(play, sheet);
+
   /** Mark a slice of the action economy used (attacks, casting). */
   const markUsed = (kind: 'action' | 'bonus' | 'reaction') =>
     update((d) => {
@@ -324,6 +329,32 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-4">
+      {overages.length > 0 && (
+        <section className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3" role="alert">
+          <p className="text-sm font-semibold text-amber-200">
+            Some tracked values are above their new limits
+          </p>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            A build change lowered these. You can keep them as-is (house rule) or bring them back
+            within range.
+          </p>
+          <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+            {overages.map((o) => (
+              <li key={`${o.kind}:${o.label}`}>
+                {o.label}: <span className="font-mono">{o.current}</span> → max{' '}
+                <span className="font-mono">{o.max}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => update((d) => clampPlayStateToMax(d.play, sheet))}
+            className="mt-2 rounded bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/30"
+          >
+            Bring within limits
+          </button>
+        </section>
+      )}
       {/* HP */}
       <section className="rounded-lg bg-surface p-4">
         <div className="flex items-center justify-between">
