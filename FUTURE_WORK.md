@@ -138,7 +138,7 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | A11Y-001 | Establish a consistent high-contrast `:focus-visible` style. Many inputs still use `outline-none`; several icon-only controls rely on `title`; toggles/pips need semantic checked/pressed/value states. | Every route is operable and understandable with keyboard and accessibility APIs. |
-| A11Y-002 | Increase undersized touch targets; ensure state is not color-only; add restrained live regions and real progress semantics for saves, data, imports, resources, HP, search, and updates. | Target-size, contrast, and announcement audits pass without over-announcing. |
+| A11Y-002 | Progress/announcement semantics started: the game-data download banner is now a real `role="progressbar"` with `aria-valuemin/max/now` + `aria-valuetext` ("N of M files"), and its failure state is `role="alert"` (save-status already uses an `aria-live` region). Browser-verified via the accessibility tree. Remaining: increase undersized touch targets, ensure state is not color-only, and extend restrained live regions / progress semantics to imports, resources, HP, search, and updates. | Target-size, contrast, and announcement audits pass without over-announcing. |
 | A11Y-003 | Run axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, large-text, landscape, safe-area, external-keyboard, and reduced-motion testing. | Results and fixes are recorded for every main flow. |
 
 ### Creator and navigation
