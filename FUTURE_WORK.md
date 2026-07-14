@@ -235,8 +235,12 @@ plus the broader rules-audit work:
 
 ### Maintainability and diagnostics
 
-- Put runtime schemas at every owned `unknown` boundary and enforce repository
-  access plus the React-free engine boundary with architecture checks.
+- The React-free engine boundary is now enforced by an architecture test
+  (`src/engine/architecture.test.ts`): engine production sources may not import
+  the UI framework, storage, or widget packages, nor the `features`/`db`/`ui`/
+  `app`/`stores`/`workers` layers. Remaining: runtime schemas at every owned
+  `unknown` boundary and a matching check that features reach persistence only
+  through the repositories.
 - Split the largest feature modules around domain commands/state machines;
   consolidate repeated form, drawer, download, entity-label, toggle, and status
   primitives without hiding game behavior.
