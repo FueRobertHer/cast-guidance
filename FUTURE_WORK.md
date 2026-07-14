@@ -49,7 +49,7 @@ protection, and visible save/load recovery.
 | Unit tests | Pass — 18 files, 229 tests |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Run — 48 files; 936 spells; 53,360 roll variants; 40 version `replaceArr` warnings |
-| Browser, E2E, and automated accessibility tests | No harness exists yet |
+| Browser, E2E, and automated accessibility tests | Unit + IndexedDB (`fake-indexeddb`) harnesses exist; browser E2E / axe still pending |
 
 Priority meanings:
 
@@ -82,10 +82,11 @@ transaction (`characterRepo.importExport`), with the write decision extracted to
 a pure, unit-tested `planCharacterImport`. Malformed, future-version, oversized,
 and adversarial imports throw before the transaction opens.
 
-Remaining: deep per-field runtime schemas for refs/choices/play/effects (folded
-into the P2 "runtime schemas at every owned `unknown` boundary" work) and an
-IndexedDB-backed test that a forced mid-transaction failure rolls the import back
-(tracked in TEST-002 — no IndexedDB test harness exists yet).
+The forced mid-transaction rollback is now covered by an IndexedDB-backed test
+(`characterRepo.indexeddb.test.ts`): a mocked character-write failure leaves both
+the character and the embedded homebrew unwritten. Remaining: deep per-field
+runtime schemas for refs/choices/play/effects (folded into the P2 "runtime
+schemas at every owned `unknown` boundary" work).
 
 ## P1 — release quality
 
@@ -94,7 +95,7 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | REL-003 | Started: character-list mutations (create, rename, duplicate, delete, export) were fire-and-forget `void` calls that swallowed failures — they now catch and surface a `warn` notice (`notifyFailure`) so a failed write is visible, not silent. Browser-verified: a forced duplicate failure pushed a "Duplicate failed" notice. Remaining: builder saves, data-tag updates, and download failures; and a retry affordance on the notice for the recoverable ones. | Every mutation has honest pending/success/error UI and a retry path. |
-| REL-004 | Dexie transactions now wrap character + history deletion (`characterRepo.delete`) and character + embedded-homebrew import (`characterRepo.importExport`). Remaining: an IndexedDB-backed test proving a forced failure rolls back every related write (TEST-002). | Forced failure rolls back every related write. |
+| REL-004 | Done: Dexie transactions wrap character + history deletion (`characterRepo.delete`) and character + embedded-homebrew import (`characterRepo.importExport`), and an IndexedDB-backed test (`fake-indexeddb`) now proves a forced write failure rolls back every related write, and that delete removes character + history together. | Forced failure rolls back every related write. |
 | REL-005 | Done: a `RouteError` recovery element is wired as `errorElement` at the root, section, and sheet route levels, so a render/loader throw (e.g. a malformed character whose derivation throws) is contained to that subtree with reload/back actions — the app shell and other routes keep working. `classSummary` is also hardened so one corrupt class ref cannot crash the whole character list. Browser-verified: a character with a missing class ref showed recovery UI on its sheet and rendered as "Unknown class" in the list while Settings/nav stayed fully functional. Remaining: dedicated decode-error boundaries around the search worker and homebrew JSON editors. | One bad record cannot take down the app. |
 | REL-006 | Done: the character list live query now goes through `characterRepo.listSafe`, which crosses every stored record through the migration boundary via the pure, unit-tested `partitionCharacterRows`; one unreadable record is surfaced (list banner) instead of crashing the page. Remaining: apply the same repo-routed read to any future live queries (library/homebrew currently read their own registries). | Stored records cross one tested read boundary. |
 | REL-007 | Done (conflict guidance): opening a character sheet joins a per-character BroadcastChannel heartbeat (`useOpenElsewhere`); when the same character is open in another tab both show a non-blocking "open in another tab — edits can overwrite" banner. Presence uses last-seen timestamps + a staleness window (pure, unit-tested `applyPeerEvent`/`activePeerCount`), so a closed/crashed tab ages out even if its `bye` is lost. Browser-verified with two tabs: banner appears when both open and clears after one closes. Remaining (optional): a hard per-character lock or optimistic revision check on save if guidance proves insufficient. | Two tabs cannot silently lose an edit. |
@@ -159,7 +160,7 @@ review:
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | TEST-001 | Done: `.github/workflows/ci.yml` runs frozen install, lint, typecheck, unit tests, and the production/PWA build on every push/PR (Bun pinned to 1.3.14), uploads the `dist` artifact, and writes a bundle-size table to the run summary. Remaining: add coverage thresholds and bundle-budget gating (TEST-002/coverage work). | Every PR runs the current local green baseline. |
-| TEST-002 | Extend the new character-session race/write-failure tests with IndexedDB-backed coverage for transactions, migrations, quota behavior, history, lifecycle events, and multiple tabs. | Persistence risks are reproducible without manual timing. |
+| TEST-002 | Harness landed: `fake-indexeddb` + `characterRepo.indexeddb.test.ts` give real IndexedDB coverage for the import transaction (commit, content-hashed identity, forged-id defense, id-collision rename, malformed/future rejection), transactional rollback on write failure, and character+history delete. Remaining: quota-exhaustion behavior, history/lifecycle events, and multi-tab races (the last now has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
 | TEST-003 | Add component/integration tests for creator review, choices, rules switching, routing, inventory, casting, rests, imports, homebrew edits, and error states. | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
 | TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule. | Core entities, parser warnings, copy/mod behavior, and tag coverage have budgets. |
