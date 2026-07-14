@@ -89,6 +89,15 @@ export const homebrewRepo = {
   },
 
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
-    await db.homebrewFiles.update(id, { json, counts: homebrewEntityCounts(json) });
+    // Bump rev so the registry/search signature notices the content change even
+    // though the file id stays the same across edits.
+    await db.homebrewFiles
+      .where('id')
+      .equals(id)
+      .modify((row) => {
+        row.json = json;
+        row.counts = homebrewEntityCounts(json);
+        row.rev = (row.rev ?? 0) + 1;
+      });
   },
 };
