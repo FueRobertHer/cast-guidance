@@ -22,13 +22,29 @@ async function cachedFilesMap(): Promise<Map<string, unknown>> {
   return map;
 }
 
+/**
+ * Fingerprint of the data behind a registry: the cached file paths plus each
+ * enabled homebrew file's id AND content revision. Including `rev` is what makes
+ * an editable-homebrew edit (same id, new content) change the signature, so the
+ * registry rebuilds and the search index (keyed off this) is not served stale.
+ * Pure so it can be unit-tested.
+ */
+export function computeRegistrySignature(
+  filePaths: Iterable<string>,
+  brews: ReadonlyArray<{ id: string; rev?: number }>,
+): string {
+  const files = [...filePaths].sort().join(',');
+  const hb = brews
+    .map((b) => `${b.id}@${b.rev ?? 0}`)
+    .sort()
+    .join(',');
+  return `${files}|hb:${hb}`;
+}
+
 /** Current registry over all cached files + enabled homebrew. */
 export async function getRegistry(): Promise<EntityRegistry> {
   const [files, brews] = await Promise.all([cachedFilesMap(), homebrewRepo.enabled()]);
-  const signature = `${[...files.keys()].sort().join(',')}|hb:${brews
-    .map((b) => b.id)
-    .sort()
-    .join(',')}`;
+  const signature = computeRegistrySignature(files.keys(), brews);
   if (current === null || signature !== currentSignature) {
     const reg = normalizeDataset(files);
     const brewMap = new Map<string, Record<string, unknown>>();

@@ -32,6 +32,12 @@ export interface HomebrewFileRow {
   sourceIds: string[];
   counts: Record<string, number>;
   addedAt: number;
+  /**
+   * Content revision, bumped on every editable-file save. Editable files keep a
+   * stable `id` across edits, so `rev` is what lets the registry/search
+   * signature notice their content changed. Optional; absent means 0.
+   */
+  rev?: number;
 }
 
 export interface SearchIndexRow {
