@@ -251,9 +251,11 @@ plus the broader rules-audit work:
   schemas, persistence, loader, search protocol, and gameplay commands. Add
   property/fuzz coverage for dice, choices, entry rendering, copy/mod,
   migrations, and hostile imports, plus golden 2014/2024 characters.
-- Remove or narrowly scope `passWithNoTests: true`; include `tests-fixtures` in
-  lint; add repeatable `check`, `data:audit`, coverage, E2E, and bundle-analysis
-  scripts.
+- Done: `passWithNoTests` is removed (a zero-match run now fails loudly),
+  `tests-fixtures` is linted, and `bun run check` (lint + typecheck + test) and
+  `bun run data:audit` are wired as repeatable scripts. Remaining: coverage,
+  E2E, and bundle-analysis scripts (coverage needs a `@vitest/coverage-*`
+  dependency; E2E needs a browser harness — see TEST-002).
 - Pin supported Bun/Node versions and document architecture, data/export
   formats, persistence/migrations, automation limits, homebrew, troubleshooting,
   deployment headers/fallback/cache policy, and rollback.

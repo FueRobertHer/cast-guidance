@@ -35,6 +35,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    passWithNoTests: true,
+    // No `passWithNoTests`: the suite has real tests, so a run that matches
+    // zero files means test discovery broke and should fail loudly.
   },
 });
