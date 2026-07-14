@@ -10,8 +10,18 @@ import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { notify } from '@/stores/notices';
 import { askConfirm, askText } from '@/ui/dialogs';
 import { homebrewForExport } from './homebrewExport';
+
+/** Report a failed character mutation without losing the user's place. */
+function notifyFailure(action: string, err: unknown): void {
+  notify({
+    title: `${action} failed`,
+    detail: err instanceof Error ? err.message : String(err),
+    tone: 'warn',
+  });
+}
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // Embed only the homebrew this character depends on, as a minimal public DTO
@@ -84,14 +94,23 @@ export function Component() {
   // New characters open straight in the Build page (the primary editor).
   const createBlank = async () => {
     const doc = newCharacterDoc(crypto.randomUUID(), 'New hero', DATA_TAG);
-    await characterRepo.put(doc);
+    try {
+      await characterRepo.put(doc);
+    } catch (err) {
+      notifyFailure('Create', err);
+      return;
+    }
     void navigate(`/c/${doc.id}/build`);
   };
 
   const rename = async (c: CharacterDoc) => {
     const name = await askText({ title: 'Rename hero', initial: c.name });
     if (name === null || name.trim() === '') return;
-    void characterRepo.put({ ...c, name: name.trim(), updatedAt: new Date().toISOString() });
+    try {
+      await characterRepo.put({ ...c, name: name.trim(), updatedAt: new Date().toISOString() });
+    } catch (err) {
+      notifyFailure('Rename', err);
+    }
   };
 
   return (
@@ -154,7 +173,9 @@ export function Component() {
             <button
               type="button"
               title="Export"
-              onClick={() => void exportCharacter(c)}
+              onClick={() => {
+                exportCharacter(c).catch((err: unknown) => notifyFailure('Export', err));
+              }}
               className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
             >
               <Download size={16} />
@@ -162,7 +183,11 @@ export function Component() {
             <button
               type="button"
               title="Duplicate"
-              onClick={() => void characterRepo.duplicate(c.id)}
+              onClick={() => {
+                characterRepo
+                  .duplicate(c.id)
+                  .catch((err: unknown) => notifyFailure('Duplicate', err));
+              }}
               className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
             >
               <Copy size={16} />
@@ -177,7 +202,9 @@ export function Component() {
                   confirmLabel: 'Delete',
                   danger: true,
                 });
-                if (ok) void characterRepo.delete(c.id);
+                if (ok) {
+                  characterRepo.delete(c.id).catch((err: unknown) => notifyFailure('Delete', err));
+                }
               }}
               className="rounded p-2 text-ink-muted hover:bg-accent-deep hover:text-ink"
             >
