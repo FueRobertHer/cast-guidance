@@ -16,8 +16,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
       manifest: {
-        name: 'D&D Character Sheet',
-        short_name: 'DnD Sheet',
+        name: 'Cast Guidance',
+        short_name: 'Cast Guidance',
         description: 'Mobile-first D&D 5e character creator and play sheet',
         theme_color: '#18181b',
         background_color: '#18181b',

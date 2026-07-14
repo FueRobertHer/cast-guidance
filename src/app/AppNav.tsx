@@ -23,7 +23,7 @@ export function AppNavLayout() {
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-10 flex border-t border-surface-2 bg-surface pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:right-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4"
       >
-        <span className="hidden px-3 pb-3 text-sm font-bold lg:block">DnD Sheet</span>
+        <span className="hidden px-3 pb-3 text-sm font-bold lg:block">Cast Guidance</span>
         {items.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

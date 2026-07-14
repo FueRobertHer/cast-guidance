@@ -13,14 +13,23 @@ Vite · React 19 · TypeScript (strict) · Tailwind CSS 4 · react-router · Zus
 
 ## Development
 
+Requires Bun (pinned via `.bun-version` / `packageManager`).
+
 ```bash
 bun install
-bun run dev        # dev server
-bun run test       # unit tests (engine, dice, data layer)
-bun run lint       # biome check
-bun run typecheck  # tsc -b
-bun run build      # production build
+bun run dev            # dev server
+bun run test           # unit + integration tests (engine, dice, data, repos, components)
+bun run test:coverage  # tests with a V8 coverage report
+bun run lint           # biome check (src, scripts, tests-fixtures)
+bun run typecheck      # tsc -b
+bun run build          # production / PWA build
+bun run check          # lint + typecheck + test (the full offline gate)
+bun run data:audit     # download the pinned dataset and audit normalization (network-gated)
 ```
+
+Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
+`@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the
+frozen install, lint, typecheck, tests, and build on every push and PR.
 
 ## Game data & copyright
 
@@ -40,3 +49,9 @@ that only mimic the JSON schema. Homebrew files use the standard 5etools homebre
 
 Characters store **choices + play state, never derived results**; every derived number is
 recomputed on read and individually overridable.
+
+## Docs
+
+- [`docs/export-format.md`](docs/export-format.md) — the character export envelope, homebrew DTO, and import/migration guarantees.
+- [`docs/security-headers.md`](docs/security-headers.md) — deployment security headers and the report-only → enforced CSP path.
+- [`FUTURE_WORK.md`](FUTURE_WORK.md) — the open product and engineering backlog.

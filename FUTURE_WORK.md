@@ -1,18 +1,15 @@
 # Cast Guidance — future work
 
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-14 (`a128202`)
 
-Reviewed revision: `a58f00b` (`origin/main`, merged into this branch)
+The single planning document for open product and engineering work. It tracks
+what **remains**; completed work lives in git history, not here. Each item keeps
+its stable id and an acceptance signal, and notes in parentheses what already
+shipped so the remaining scope is clear.
 
-This is the single planning document for open product and engineering work. It
-consolidates the former `FUTURE_WORK.md` mechanics list and the app-review
-backlog. Completed work belongs in git history, not in this file.
-
-The review covered the current repository, automated checks, and code paths for
-creation, play, persistence, imports, game-data loading, homebrew, search, PWA
-behavior, accessibility, and release operations. Browser/device behavior still
-needs hands-on validation. The pinned-data audit now covers 48 files and all 936
-spells; its 40 existing version `replaceArr` warnings remain tracked below.
+Browser and device behavior still needs hands-on validation. The pinned-data
+audit covers 48 files and all 936 spells; its 40 versioned-subrace `replaceArr`
+warnings are tracked under P2.
 
 ## Product principle: guidance, not gatekeeping
 
@@ -32,24 +29,25 @@ without preventing house rules or intentional overrides.
 
 ## Current baseline
 
-The current app already has a pure derivation engine, local-first IndexedDB
-storage, route-level code splitting, defensive third-party-data parsing,
-cryptographic dice rolls, virtualized lists, worker-based search, history,
-self-contained character exports, PWA update prompting, inline build choices,
-class-aware ability-score suggestions, review-step warnings, edition-correct
-descriptions, persistent mobile/desktop navigation, character-scoped serialized
-save queues, lifecycle flushing, route-scoped loading, stale-response
-protection, and visible save/load recovery.
+The app has a pure derivation engine, local-first IndexedDB storage behind repo
+interfaces, route-level code splitting with per-subtree error recovery,
+defensive third-party-data parsing, cryptographic dice rolls, virtualized lists,
+worker-based search, history, self-contained scoped character exports, PWA
+update prompting, transactional imports with validation, class-aware creation
+guidance, edition-correct descriptions, persistent navigation, serialized save
+queues with visible recovery, and unit + IndexedDB + component test harnesses in
+CI.
 
 | Check | Current result |
 |---|---|
-| Frozen dependency install | Pass — 423 packages |
-| Lint/format | Pass — 124 files |
+| Frozen dependency install | Pass — 555 packages |
+| Lint/format | Pass — 189 files |
 | TypeScript | Pass |
-| Unit tests | Pass — 18 files, 229 tests |
+| Unit + integration tests | Pass — 69 files, 472 tests |
+| Coverage report | `bun run test:coverage` — ~46% statements (engine/guards high, UI low) |
 | Production/PWA build | Pass |
-| Real pinned-dataset audit | Run — 48 files; 936 spells; 53,360 roll variants; 40 version `replaceArr` warnings |
-| Browser, E2E, and automated accessibility tests | Unit + IndexedDB (`fake-indexeddb`) harnesses exist; browser E2E / axe still pending |
+| Real pinned-dataset audit | Run — 48 files; 936 spells; 40 versioned `replaceArr` warnings |
+| Browser E2E and automated accessibility (axe) | No harness yet |
 
 Priority meanings:
 
@@ -60,9 +58,9 @@ Priority meanings:
 
 ## Recommended delivery order
 
-1. Make imports and the remaining persistence boundaries safe and recoverable.
+1. Make the remaining persistence boundaries safe and recoverable.
 2. Make spellcasting, choices, rules compatibility, errors, and accessibility
-   transparent; add CI and browser-level regression coverage.
+   transparent; add browser-level regression coverage.
 3. Deepen rules automation, creator/level-up guidance, offline recovery,
    backup/restore, source policy, and homebrew integrity.
 4. Measure and improve scale, maintainability, release operations, and optional
@@ -70,23 +68,10 @@ Priority meanings:
 
 ## P0 — user data and trust boundaries
 
-### IMP-001 — validate and transact character imports
-
-Landed: the import boundary now enforces size/node/depth/string limits
-(`assertJsonWithinLimits`) and a structural character-doc shape check
-(`assertCharacterDoc`) before anything is trusted; embedded homebrew identity
-and metadata are recomputed from content through the shared repository path
-(`buildHomebrewRow`), so a file cannot forge an id to overwrite unrelated local
-homebrew; and the character plus its homebrew commit through one Dexie
-transaction (`characterRepo.importExport`), with the write decision extracted to
-a pure, unit-tested `planCharacterImport`. Malformed, future-version, oversized,
-and adversarial imports throw before the transaction opens.
-
-The forced mid-transaction rollback is now covered by an IndexedDB-backed test
-(`characterRepo.indexeddb.test.ts`): a mocked character-write failure leaves both
-the character and the embedded homebrew unwritten. Remaining: deep per-field
-runtime schemas for refs/choices/play/effects (folded into the P2 "runtime
-schemas at every owned `unknown` boundary" work).
+No open items. Import validation and transactional commit (IMP-001) shipped —
+size/node/depth/string limits, structural shape checks, recomputed homebrew
+identity, a single Dexie transaction, and an IndexedDB-backed rollback test. The
+residual per-field runtime schemas are tracked under P2 (maintainability).
 
 ## P1 — release quality
 
@@ -94,74 +79,76 @@ schemas at every owned `unknown` boundary" work).
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| REL-003 | Started: character-list mutations (create, rename, duplicate, delete, export) were fire-and-forget `void` calls that swallowed failures — they now catch and surface a `warn` notice (`notifyFailure`) so a failed write is visible, not silent. Browser-verified: a forced duplicate failure pushed a "Duplicate failed" notice. Remaining: builder saves, data-tag updates, and download failures; and a retry affordance on the notice for the recoverable ones. | Every mutation has honest pending/success/error UI and a retry path. |
-| REL-004 | Done: Dexie transactions wrap character + history deletion (`characterRepo.delete`) and character + embedded-homebrew import (`characterRepo.importExport`), and an IndexedDB-backed test (`fake-indexeddb`) now proves a forced write failure rolls back every related write, and that delete removes character + history together. | Forced failure rolls back every related write. |
-| REL-005 | Done: a `RouteError` recovery element is wired as `errorElement` at the root, section, and sheet route levels, so a render/loader throw (e.g. a malformed character whose derivation throws) is contained to that subtree with reload/back actions — the app shell and other routes keep working. `classSummary` is also hardened so one corrupt class ref cannot crash the whole character list. Browser-verified: a character with a missing class ref showed recovery UI on its sheet and rendered as "Unknown class" in the list while Settings/nav stayed fully functional. Remaining: dedicated decode-error boundaries around the search worker and homebrew JSON editors. | One bad record cannot take down the app. |
-| REL-006 | Done: the character list live query now goes through `characterRepo.listSafe`, which crosses every stored record through the migration boundary via the pure, unit-tested `partitionCharacterRows`; one unreadable record is surfaced (list banner) instead of crashing the page. Remaining: apply the same repo-routed read to any future live queries (library/homebrew currently read their own registries). | Stored records cross one tested read boundary. |
-| REL-007 | Done (conflict guidance): opening a character sheet joins a per-character BroadcastChannel heartbeat (`useOpenElsewhere`); when the same character is open in another tab both show a non-blocking "open in another tab — edits can overwrite" banner. Presence uses last-seen timestamps + a staleness window (pure, unit-tested `applyPeerEvent`/`activePeerCount`), so a closed/crashed tab ages out even if its `bye` is lost. Browser-verified with two tabs: banner appears when both open and clears after one closes. Remaining (optional): a hard per-character lock or optimistic revision check on save if guidance proves insufficient. | Two tabs cannot silently lose an edit. |
-| ERR-001 | Core defect fixed: `useRegistryState`/`useSearchState` now capture failures as an explicit `status: 'error'` with a `retry` instead of `.catch(() => undefined)` swallowing them into permanent loading (`useRegistry`/`useSearchReady` kept as thin wrappers, so existing callers are unchanged). Library global search now distinguishes preparing / ready / empty ("No matches") / error-with-retry. Browser-verified: search ready, results, and empty states render correctly. `ensureSearchIndex` now rejects on worker error/timeout, so `useSearchState` shows its error + retry for a failed index build too (not just registry failures). Remaining: extend explicit error/missing states to the entity-detail view and other live-query pages. | Retry, offline, missing-id, and cache-repair states are testable. |
+| REL-003 | Extend honest failure UI + a retry affordance to builder saves, data-tag updates, and downloads (character-list mutations already surface failure notices). | Every mutation has honest pending/success/error UI and a retry path. |
+| REL-005 | Add dedicated decode-error boundaries around the search worker and homebrew JSON editors (route-level `errorElement` recovery + hardened `classSummary` already shipped). | One bad record cannot take down the app. |
+| REL-006 | Route the remaining live queries (library/homebrew registries) through the tested repo read boundary (`listSafe`/`partitionCharacterRows` already cover the character list). | Stored records cross one tested read boundary. |
+| REL-007 | Optional: a hard per-character lock or optimistic revision check on save, if the multi-tab guidance banner proves insufficient. | Two tabs cannot silently lose an edit. |
+| ERR-001 | Extend explicit error/missing states to the entity-detail view and other live-query pages (registry/search `status: 'error'` + retry and worker-failure handling already shipped). | Retry, offline, missing-id, and cache-repair states are testable. |
 
 ### Rules guidance and play state
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | GAME-001 | Replace automatic lowest-slot/pact-first casting with an explicit slot/pool/upcast choice. Apply slot spend, concentration, and action economy as one decision. | Exhausted-resource and intentional no-slot casts stay possible but cannot masquerade as normal casts or leave partial side effects. |
-| GAME-002 | Groundwork done: `classSpellcastingMode` classifies a class as known / prepared / spellbook / pact / none from its 5etools data (pure, unit-tested; verified against the real dataset — wizard→spellbook, cleric/druid/paladin→prepared, sorcerer/bard/ranger→known, warlock→pact). The derived `SpellcastingBlock.mode` is surfaced as an accessible badge + tooltip in the spell manager, and prepared/cantrip counts over the limit are flagged in amber with a non-blocking `role="status"` note ("N over your prepared limit … the extra picks are kept"). Remaining: always-prepared (domain/oath/circle) and granted/innate modes as distinct states, and marking individual unprepared spells. | Normal, unprepared, granted, and over-limit spells are visibly and accessibly distinct without blocking overrides. |
+| GAME-002 | Model always-prepared (domain/oath/circle) and granted/innate spell modes as distinct states, and mark individual unprepared spells (casting-mode classification, an accessible mode badge, and over-limit cues already shipped). | Normal, unprepared, granted, and over-limit spells are visibly and accessibly distinct without blocking overrides. |
 | GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
-| GAME-005 | Extend current feat/version filtering with source policy and prerequisite guidance. Optional features only enforce numeric level today. | Feats and invocations show unmet requirements without turning table-approved selections into dead ends. |
+| GAME-005 | Extend feat/version filtering with source policy and prerequisite guidance. Optional features only enforce numeric level today. | Feats and invocations show unmet requirements without turning table-approved selections into dead ends. |
 | GAME-006 | Verify edition-specific short/long-rest behavior with rules fixtures or expert review. | Recovery of hit dice, resources, exhaustion, concentration, and other state matches the selected edition or is clearly manual. |
-| GAME-007 | Done for play resources: `detectPlayStateOverages`/`clampPlayStateToMax` (pure, unit-tested) find current HP, leveled + pact slots, hit dice, and resource uses above their newly derived maxima; the Play tab shows an explanatory banner and a non-destructive "Bring within limits" action that clamps only the over-limit values. Browser-verified end-to-end. Remaining: spell counts above known/prepared maxima (needs the GAME-002 casting-mode model). | The app explains the mismatch and offers non-destructive normalization. |
+| GAME-007 | Flag spell counts above known/prepared maxima (needs the GAME-002 casting-mode model); play-resource overage detection + non-destructive clamping already shipped. | The app explains the mismatch and offers non-destructive normalization. |
 
 ### Data loading, updates, and search
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| DATA-001 | Done: every network fetch now passes through one global `Semaphore(FETCH_CONCURRENCY)` in `getFile` (no more per-pack worker pools), and `getFile`/`ensurePack` de-dupe concurrent callers via `singleFlight`, so the same pack cannot double-count `addTotal`/`fileDone`. Both primitives are unit-tested; browser-verified end-to-end: 17 spell packs fanned out at once held peak concurrency at 4 (== limit) with progress at 17/17. Remaining: apply the same gate to the `updateToTag` download path (currently sequential; folds into DATA-002). | Measured concurrency stays within the limit and progress never exceeds 100%. |
-| DATA-002 | Stage data-tag installs, validate every required index/pack, support resume/cleanup, activate atomically, and retain a rollback tag until successful boot. | Interruption at any phase leaves the old version usable. |
+| DATA-002 | Stage data-tag installs, validate every required index/pack, support resume/cleanup, activate atomically, and retain a rollback tag until successful boot; apply the global fetch gate to the `updateToTag` download path. | Interruption at any phase leaves the old version usable. |
 | DATA-003 | Batch registry hydration and search indexing instead of rebuilding after every downloaded file. | Background download causes bounded rebuilds with accurate readiness. |
-| DATA-004 | Done: `isCompatibleTag`/`parseTagVersion` (pure, unit-tested) gate data versions to the app's schema major. `listAvailableTags` filters incompatible tags out of the offered list (Settings shows a "no compatible versions" note when all are filtered), and `updateToTag` hard-rejects an incompatible/malformed tag before any download. Browser-verified: `updateToTag('v3.0.0')`/`'nightly'` throw with the active tag untouched. Remaining: richer post-download index/pack validation folds into DATA-002. | An incompatible tag cannot be activated. |
-| SEARCH-001 | Editable-homebrew content revisions feed the registry/search signature (`HomebrewFileRow.rev` + `computeRegistrySignature` `id@rev`), so an edit to a same-id file rebuilds the index (browser-verified: rename drops the stale name, surfaces the new one). And `ensureSearchIndex` now **rejects** on a worker `error` or a build timeout and clears its cached signature so a retry re-attempts; `searchAll` returns `[]` rather than throwing on a failed build. Queries carry request ids and **supersede** in-flight ones (older queries settle empty) with a 5s timeout, so a slower stale response can't overwrite a newer query and no resolver dangles. Done. | Homebrew edits update results without reload and stale worker responses cannot win. |
-| PWA-001 | Test cold/offline launch for every route with essential, partial, and full caches. | “Not downloaded,” “not found,” offline, and corrupted-cache states have distinct recovery actions. |
+| PWA-001 | Test cold/offline launch for every route with essential, partial, and full caches. | "Not downloaded," "not found," offline, and corrupted-cache states have distinct recovery actions. |
 | PWA-002 | Validate install/update behavior on iOS and Android; add tested 192/512 and maskable assets rather than relying only on SVG icons. | Install, offline reload, deferred update, failed update, and recovery pass on target devices. |
+
+(Concurrency-limited fetching + de-dup (DATA-001), incompatible-tag rejection
+(DATA-004), and homebrew-revision-aware search with query supersession
+(SEARCH-001) have shipped.)
 
 ### Security, privacy, and imports
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| SEC-001 | Done. Content-driven `{@link}` URLs: `safeExternalHref` allow-lists http(s) only and strips control/zero-width obfuscation, rendering unsafe targets as inert text (`renderEntries`). Deployment headers now ship via `public/_headers` (→ `dist/_headers` for Cloudflare Pages/Netlify): enforced `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, plus a scoped CSP (connect-src limited to the pinned data mirror + tag API) shipped **report-only** so it can't break the app pre-verification. `docs/security-headers.md` documents the rationale, the report-only→enforce path, and per-host (Vercel/nginx) application. | `javascript:`, `data:`, malformed, and control-character URLs cannot execute or navigate. |
-| SEC-002 | Stored payload bounds landed: `assertJsonWithinLimits` (nodes/depth/string) now gates all homebrew ingestion (`buildHomebrewRow` — file, URL, and embedded) and character imports, plus a max embedded-file count and export text-size cap. Remaining: bound the raw remote-response byte stream before parse, and cap regex work and worker processing. | Adversarial payload tests fail safely before storage/indexing. |
-| IMP-002 | Done for export scoping/DTO: `homebrewForExport` (pure, unit-tested) walks the character's refs to include only the homebrew files it depends on, mapped to a minimal `{ fileName, json }` public DTO — no more shipping all enabled homebrew or local-only fields (`enabled`/`editable`/`addedAt`/`rev`). Browser-verified: a character using 1 of 2 enabled files exported only that one. Remaining: an import *preview* UI that explains dependencies, duplicates, winner policy, and source/entity collisions before commit. | Import preview explains dependencies, duplicates, winner policy, and conflicts before commit. |
-| PRIV-001 | Done: Settings now has a "Your data & privacy" section explaining that everything is local-first/on-device with no accounts or server, how to back up (per-character Export), and the eviction risk. A "Reset app data" control (behind a danger confirm) deletes the whole IndexedDB database plus Cache Storage via `resetAppData`, then reloads. Storage-used and offline-readiness are already surfaced above. Browser-verified: section renders; reset shows a "Delete everything" confirm and cancel leaves data intact. Remaining: a one-click full-backup/export-all (overlaps the P2 backup work) beyond per-character export. | Users can see what is stored/requested, back it up, and delete IndexedDB plus app caches deliberately. |
-| LEGAL-001 | Obtain content/licensing review and add license, third-party notices, mirror attribution/terms, and trademark disclaimer. | Release documentation records the approved content and attribution policy. |
+| SEC-001 | Promote the shipped CSP (`public/_headers`) from report-only to enforced once production reports show no violations. | The CSP blocks disallowed connect/script sources in production. |
+| SEC-002 | Bound the raw remote-response byte stream before parse, and cap regex work and worker processing (node/depth/string limits + embedded-file-count and export-size caps already gate stored payloads). | Adversarial payload tests fail safely before storage/indexing. |
+| IMP-002 | Add an import *preview* UI that explains dependencies, duplicates, winner policy, and source/entity collisions before commit (dependency-scoped export DTO already shipped). | Import preview explains dependencies, duplicates, winner policy, and conflicts before commit. |
+| LEGAL-001 | Obtain content/licensing review and add a license, third-party notices, mirror attribution/terms, and trademark disclaimer. *(License choice is a product/owner decision.)* | Release documentation records the approved content and attribution policy. |
+
+(`{@link}` sanitization + report-only deployment headers (SEC-001) and the
+local-data/privacy explanation + "Reset app data" control (PRIV-001) have
+shipped; a one-click full backup is tracked under P2 product experience.)
 
 ### Accessibility and inclusive design
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| A11Y-001 | Focus visibility done: one unlayered global `:focus-visible` rule in `app.css` gives every interactive element a high-contrast 2px `--color-ink` outline on keyboard/programmatic focus, overriding the ~20 `outline-none` utilities without editing each call site. Browser-verified: tabbing to the (`outline-none`) search input shows the ring (`matchesFocusVisible`, near-white outline). Remaining: give icon-only controls real accessible names (not just `title`) and semantic checked/pressed/value states to toggles/pips. | Every route is operable and understandable with keyboard and accessibility APIs. |
+| A11Y-001 | Give icon-only controls real accessible names (not just `title`) and semantic checked/pressed/value states to toggles and pips (a global high-contrast `:focus-visible` ring already shipped). | Every route is operable and understandable with keyboard and accessibility APIs. |
 | A11Y-002 | Increase undersized touch targets; ensure state is not color-only; add restrained live regions and real progress semantics for saves, data, imports, resources, HP, search, and updates. | Target-size, contrast, and announcement audits pass without over-announcing. |
 | A11Y-003 | Run axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, large-text, landscape, safe-area, external-keyboard, and reduced-motion testing. | Results and fixes are recorded for every main flow. |
 
 ### Creator and navigation
 
-The creator now has class-aware standard-array auto-assignment, point-buy cost
+The creator has class-aware standard-array auto-assignment, point-buy cost
 feedback, unresolved-choice warnings, a final review, inline origin choices, and
-a “create anyway” path. The remaining work is narrower than the original
-review:
+a "create anyway" path. Remaining:
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| UX-001 | Invalid `?step=` deep links now recover: the step list + a pure, unit-tested `normalizeStep` guard coerce unknown/empty values to the first step instead of rendering a broken wizard (out-of-range index). Remaining: make “standard array” a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; add explicit resume/restart/discard for the sessionStorage draft. | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
+| UX-001 | Make "standard array" a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; add explicit resume/restart/discard for the sessionStorage draft (invalid `?step=` deep links already recover). | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
 | UX-002 | Explain local-first storage, initial/background downloads, eviction risk, backup, offline readiness, and edition choice during onboarding. | A first-time user knows when the app is safe to use offline and how to protect data. |
-| UX-003 | Add page titles, focused-flow escape/back behavior, and a useful 404. Persistent top-level navigation is already shipped. | Routes expose useful context to browsers, assistive tech, and users arriving via deep link. |
+| UX-003 | Add page titles, focused-flow escape/back behavior, and a useful 404 (persistent top-level navigation already shipped). | Routes expose useful context to browsers, assistive tech, and users arriving via deep link. |
 
 ### Quality gates
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| TEST-001 | Done: `.github/workflows/ci.yml` runs frozen install, lint, typecheck, unit tests, and the production/PWA build on every push/PR (Bun pinned to 1.3.14), uploads the `dist` artifact, and writes a bundle-size table to the run summary. Remaining: add coverage thresholds and bundle-budget gating (TEST-002/coverage work). | Every PR runs the current local green baseline. |
-| TEST-002 | Harness landed: `fake-indexeddb` + `characterRepo.indexeddb.test.ts` give real IndexedDB coverage for the import transaction (commit, content-hashed identity, forged-id defense, id-collision rename, malformed/future rejection), transactional rollback on write failure, and character+history delete. Remaining: quota-exhaustion behavior, history/lifecycle events, and multi-tab races (the last now has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
-| TEST-003 | Harness landed: `@testing-library/react` + jsdom (per-file `@vitest-environment jsdom`). First integration tests cover routing **error states** (the REL-005 `RouteError` boundary rendering recovery UI when a route throws) and entry rendering (the SEC-001 `{@link}` sanitizer producing an anchor for https and inert text for `javascript:`/`data:`). Remaining: creator review/choices, rules switching, inventory, casting, rests, import flows, and homebrew edits. | UI state transitions have regression coverage. |
+| TEST-001 | Add coverage thresholds and bundle-budget gating to CI (frozen install, lint, typecheck, tests, and the PWA build already run on every push/PR with a bundle-size summary). | Every PR runs the current local green baseline. |
+| TEST-002 | Extend IndexedDB coverage to quota-exhaustion behavior, history/lifecycle events, and multi-tab races (import transaction, rollback, and character+history delete already covered via `fake-indexeddb`; multi-tab has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
+| TEST-003 | Extend component/integration coverage to creator review/choices, rules switching, inventory, casting, rests, import flows, and homebrew edits (`@testing-library/react` + jsdom harness in place; routing error states and entry rendering covered). | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
 | TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule. | Core entities, parser warnings, copy/mod behavior, and tag coverage have budgets. |
 
@@ -169,8 +156,8 @@ review:
 
 ### Rules and content automation
 
-These are the remaining mechanics from the former focused future-work list,
-plus the broader rules-audit work:
+Remaining mechanics from the former focused list, plus the broader rules-audit
+work:
 
 | Area | Remaining work | Acceptance signal |
 |---|---|---|
@@ -184,13 +171,13 @@ plus the broader rules-audit work:
 | Equipment and combat audit | Verify attunement, armor requirements, shields/hands, ammunition, weapon properties/mastery, critical damage, riders, improvised attacks, and encumbrance. | Edition-specific golden characters cover each automated rule. |
 | Class/rest audit | Verify subclass lists, replacements, Magical Secrets-style picks, feature gating/replacement, multiclass rounding/proficiencies, and edition rest policies. | Representative 2014/2024 single- and multiclass fixtures pass expert-reviewed expectations. |
 | Prose automation | Audit curated/prose-scanned actions and resources against the pinned dataset; retain confidence/provenance and allow correction. | False-positive/negative budgets are measured on every data-tag change. |
-| Versioned subraces | Apply subrace `_versions` `_mod` operations against merged race+subrace entries where targets live only on the base race. | `removeArr`/`replaceArr` substitutions produce the intended versioned prose without curated fallback. |
+| Versioned subraces | Apply subrace `_versions` `_mod` operations against merged race+subrace entries where targets live only on the base race (source of the 40 tracked `replaceArr` warnings). | `removeArr`/`replaceArr` substitutions produce the intended versioned prose without curated fallback. |
 
 ### Product experience
 
 | Area | Remaining work |
 |---|---|
-| Backup and recovery | Full-app backup/restore, reminder, import preview, trash/archive/undo, and recovery documentation. |
+| Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, import preview, trash/archive/undo, and recovery documentation. |
 | Guided level-up | Preview HP, subclass timing, choices, spell gains/replacements, and resource changes before commit. Multiclassing remains in the free-form Build page unless product scope changes. |
 | Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff. |
 | Sheet and casting polish | Unify spell-row and slot-pip casting, add upcast effects/material/ritual reminders and cast history, and support critical/rider rolls. |
@@ -228,55 +215,42 @@ plus the broader rules-audit work:
 - Add raw JSON validation/editing and schema-specific editors while preserving
   unsupported fields; preview counts, duplicates, `_copy` warnings, size, and
   affected characters before import.
-- The export format, forward/backward compatibility, and migration policy are
-  now documented in `docs/export-format.md` (envelope `cast-guidance/character@1`,
-  minimal homebrew DTO, import guarantees). Remaining: regression fixtures that
-  exercise the documented compatibility matrix.
+- Add regression fixtures that exercise the documented export-format
+  compatibility matrix (the format itself is documented in
+  `docs/export-format.md`).
 
 ### Maintainability and diagnostics
 
-- The React-free engine boundary is now enforced by an architecture test
-  (`src/engine/architecture.test.ts`): engine production sources may not import
-  the UI framework, storage, or widget packages, nor the `features`/`db`/`ui`/
-  `app`/`stores`/`workers` layers. Remaining: runtime schemas at every owned
-  `unknown` boundary and a matching check that features reach persistence only
-  through the repositories.
+- Add runtime schemas at every owned `unknown` boundary, and a check that
+  features reach persistence only through the repositories (the React-free
+  engine boundary is already enforced by `src/engine/architecture.test.ts`).
 - Split the largest feature modules around domain commands/state machines;
   consolidate repeated form, drawer, download, entity-label, toggle, and status
   primitives without hiding game behavior.
 - Replace lifecycle-sensitive module singletons with resettable/testable
   services. Add typed commands/results for damage, rest, casting, leveling,
   choices, and imports, plus document revisions and meaningful history reasons.
-- Queue or explicitly cancel overlapping dialogs; use collision-proof roll ids;
-  improve history comparison/storage. (Done: character + homebrew exports now
-  share one cross-browser `downloadJson` helper in `src/lib/download.ts` —
-  appends the anchor before clicking and revokes the URL next tick; the
-  filename normalizer is unit-tested.)
+- Queue or explicitly cancel overlapping dialogs; improve history
+  comparison/storage (a shared cross-browser `downloadJson` helper and
+  collision-proof roll ids already shipped).
 - Add privacy-preserving diagnostics for app/data version, storage, warnings,
   errors, and performance without character content unless explicitly opted in.
 
 ### Testing, documentation, and release operations
 
-- Coverage reporting is now wired: `bun run test:coverage` (V8 provider,
-  text/html/lcov) reports per-file coverage without enforced thresholds. The
-  current baseline is ~36% statements overall — high on the engine and owned
-  import guards, near zero on UI components (component tests are only starting).
-  Remaining: risk-based thresholds for the engine, owned import schemas,
-  persistence, loader, search protocol, and gameplay commands; property/fuzz
-  coverage for dice, choices, entry rendering, copy/mod, migrations, and hostile
-  imports; and golden 2014/2024 characters.
-- Done: `passWithNoTests` is removed (a zero-match run now fails loudly),
-  `tests-fixtures` is linted, and `bun run check` (lint + typecheck + test) and
-  `bun run data:audit` are wired as repeatable scripts. Remaining: coverage,
-  E2E, and bundle-analysis scripts (coverage needs a `@vitest/coverage-*`
-  dependency; E2E needs a browser harness — see TEST-002).
-- Pin supported Bun/Node versions and document architecture, data/export
-  formats, persistence/migrations, automation limits, homebrew, troubleshooting,
-  deployment headers/fallback/cache policy, and rollback.
-- Issue and PR templates now exist (`.github/PULL_REQUEST_TEMPLATE.md`,
-  `.github/ISSUE_TEMPLATE/`). Remaining: define semantic app/data/export
-  versions, a changelog and support policy, a release/rollback checklist, and
-  smoke tests for iOS, Android, Chromium, Firefox, and Safari.
+- Add risk-based coverage thresholds (engine, owned import schemas, persistence,
+  loader, search protocol, gameplay commands), property/fuzz coverage (dice,
+  choices, entry rendering, copy/mod, migrations, hostile imports), and golden
+  2014/2024 characters. Coverage reporting (`bun run test:coverage`) is wired.
+- Add E2E and bundle-analysis scripts (repeatable `bun run check` /
+  `bun run data:audit` and coverage reporting are already wired; `tests-fixtures`
+  is linted; `passWithNoTests` is off).
+- Document architecture, persistence/migrations, automation limits, homebrew,
+  troubleshooting, and the deployment fallback/cache policy (Bun/Node versions
+  are pinned; the export format and security headers are documented).
+- Define semantic app/data/export versions, a changelog and support policy, a
+  release/rollback checklist, and cross-browser smoke tests for iOS, Android,
+  Chromium, Firefox, and Safari (issue/PR templates exist).
 - Add dependency vulnerability/license scanning and automated update triage;
   document mirror/release provenance, checksums where available, emergency pin,
   security reporting, supported versions, and patch expectations.
@@ -310,8 +284,7 @@ Before calling the app broadly release-ready, record evidence for:
   safe-area, and reduced-motion accessibility results;
 - measured performance/bundle budgets on representative low-end hardware; and
 - CI, release notes, version policy, deployment/rollback runbooks, supported
-  browser smoke tests, backup/recovery guidance, and a consistent `Cast Guidance`
-  product name across the app, manifest, exports, and documentation.
+  browser smoke tests, and backup/recovery guidance.
 
 An item is complete only when the behavior or product decision is documented,
 appropriate regression coverage exists, failure/accessibility states are
