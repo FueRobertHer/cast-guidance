@@ -1,30 +1,52 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
 import { deriveSheet } from '@/engine/derive';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
-import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
+import {
+  type CharacterLoadStatus,
+  type CharacterSaveStatus,
+  characterSessionStore,
+  useCharacterSession,
+} from '@/stores/characterSession';
 
 export interface CharacterSheetState {
   doc: CharacterDoc | null;
   sheet: DerivedSheet | null;
+  loadStatus: CharacterLoadStatus;
   missing: boolean;
+  error: string | null;
+  saveStatus: CharacterSaveStatus;
   update: (recipe: (doc: CharacterDoc) => void) => void;
+  retryLoad: () => void;
 }
 
 /** Load the character for a route id and derive its sheet reactively. */
 export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   const registry = useRegistry(['essentials']);
-  const doc = useCharacterSession((s) => s.doc);
+  const sessionDoc = useCharacterSession((s) => s.doc);
   const rev = useCharacterSession((s) => s.rev);
-  const [missing, setMissing] = useState(false);
+  const requestedId = useCharacterSession((s) => s.requestedId);
+  const loadStatus = useCharacterSession((s) => s.loadStatus);
+  const error = useCharacterSession((s) => s.loadError);
+  const saveStatus = useCharacterSession((s) => s.saveStatus);
+  const saveCharacterId = useCharacterSession((s) => s.saveCharacterId);
+  const routeLoadStatus = id !== undefined && requestedId === id ? loadStatus : 'loading';
+
+  const doc =
+    id !== undefined && requestedId === id && routeLoadStatus === 'ready' && sessionDoc?.id === id
+      ? sessionDoc
+      : null;
 
   useEffect(() => {
     if (id === undefined) return;
-    void characterSessionStore
-      .getState()
-      .load(id)
-      .then((ok) => setMissing(!ok));
+    void characterSessionStore.getState().load(id);
+    return () => {
+      void characterSessionStore
+        .getState()
+        .flush(id)
+        .catch(() => undefined);
+    };
   }, [id]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
@@ -49,7 +71,13 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   return {
     doc,
     sheet,
-    missing,
+    loadStatus: routeLoadStatus,
+    missing: routeLoadStatus === 'missing',
+    error: requestedId === id ? error : null,
+    saveStatus: saveCharacterId === id ? saveStatus : 'idle',
     update: characterSessionStore.getState().update,
+    retryLoad: () => {
+      if (id !== undefined) void characterSessionStore.getState().load(id);
+    },
   };
 }
