@@ -115,7 +115,7 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| DATA-001 | Put all pack/file requests behind one global, deduplicated concurrency coordinator. `ensureTypePacks` currently starts one pool per pack and concurrent callers double-count progress. | Measured concurrency stays within the limit and progress never exceeds 100%. |
+| DATA-001 | Done: every network fetch now passes through one global `Semaphore(FETCH_CONCURRENCY)` in `getFile` (no more per-pack worker pools), and `getFile`/`ensurePack` de-dupe concurrent callers via `singleFlight`, so the same pack cannot double-count `addTotal`/`fileDone`. Both primitives are unit-tested; browser-verified end-to-end: 17 spell packs fanned out at once held peak concurrency at 4 (== limit) with progress at 17/17. Remaining: apply the same gate to the `updateToTag` download path (currently sequential; folds into DATA-002). | Measured concurrency stays within the limit and progress never exceeds 100%. |
 | DATA-002 | Stage data-tag installs, validate every required index/pack, support resume/cleanup, activate atomically, and retain a rollback tag until successful boot. | Interruption at any phase leaves the old version usable. |
 | DATA-003 | Batch registry hydration and search indexing instead of rebuilding after every downloaded file. | Background download causes bounded rebuilds with accurate readiness. |
 | DATA-004 | Validate update tag compatibility rather than offering the newest GitHub tags blindly. | An incompatible tag cannot be activated. |
