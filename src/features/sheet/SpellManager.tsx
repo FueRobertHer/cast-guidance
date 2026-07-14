@@ -209,6 +209,13 @@ function ClassSpells({
     return (byLevel.get(0) ?? []).some((s) => uidOf(s) === uid);
   }).length;
 
+  // Over-limit is allowed (house rules, features that add preparations) — flag
+  // it, never block it (GAME-002 / guidance-not-gatekeeping).
+  const prepMax = block.preparedMax;
+  const cantripMax = block.cantripsKnown;
+  const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
+  const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
+
   return (
     <section className="flex flex-col gap-2">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
@@ -225,12 +232,33 @@ function ClassSpells({
         </h2>
         <span className="text-xs text-ink-muted">
           DC {block.saveDc.value} · Atk +{block.attackMod.value}
-          {block.cantripsKnown !== undefined &&
-            ` · cantrips ${cantripsKnown}/${block.cantripsKnown}`}
-          {block.preparedMax !== undefined &&
-            ` · prepared ${state.prepared.length}/${block.preparedMax}`}
+          {cantripMax !== undefined && (
+            <>
+              {' · cantrips '}
+              <span className={overCantrips ? 'font-semibold text-amber-300' : undefined}>
+                {cantripsKnown}/{cantripMax}
+              </span>
+            </>
+          )}
+          {prepMax !== undefined && (
+            <>
+              {' · prepared '}
+              <span className={overPrepared ? 'font-semibold text-amber-300' : undefined}>
+                {state.prepared.length}/{prepMax}
+              </span>
+            </>
+          )}
         </span>
       </header>
+      {(overPrepared || overCantrips) && (
+        <p role="status" className="text-xs text-amber-300">
+          {overPrepared
+            ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
+            : ''}
+          {overCantrips ? `${cantripsKnown - (cantripMax ?? 0)} over your cantrip limit. ` : ''}
+          That&rsquo;s allowed — the extra picks are kept, just flagging it.
+        </p>
+      )}
       {(() => {
         const rec = recommendedStarters(block.className);
         if (rec === undefined) return null;
