@@ -34,19 +34,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-
-const STEPS = [
-  'basics',
-  'class',
-  'species',
-  'abilities',
-  'background',
-  'equipment',
-  'spells',
-  'choices',
-  'review',
-] as const;
-type Step = (typeof STEPS)[number];
+import { normalizeStep, STEPS, type Step } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -56,7 +44,7 @@ const DRAFT_KEY = 'cast-guidance:creator-draft';
 export function Component() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const step = (params.get('step') ?? 'basics') as Step;
+  const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
   // The in-progress draft survives reloads via sessionStorage.
   const [doc, setDoc] = useState<CharacterDoc>(() => {
