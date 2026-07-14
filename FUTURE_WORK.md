@@ -241,7 +241,10 @@ plus the broader rules-audit work:
   services. Add typed commands/results for damage, rest, casting, leveling,
   choices, and imports, plus document revisions and meaningful history reasons.
 - Queue or explicitly cancel overlapping dialogs; use collision-proof roll ids;
-  share a cross-browser download helper; improve history comparison/storage.
+  improve history comparison/storage. (Done: character + homebrew exports now
+  share one cross-browser `downloadJson` helper in `src/lib/download.ts` —
+  appends the anchor before clicking and revokes the URL next tick; the
+  filename normalizer is unit-tested.)
 - Add privacy-preserving diagnostics for app/data version, storage, warnings,
   errors, and performance without character content unless explicitly opted in.
 
