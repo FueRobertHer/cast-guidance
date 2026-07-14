@@ -15,6 +15,7 @@ import { DiceTray } from '@/features/dice/DiceTray';
 import { AdvToggle } from '@/ui/AdvToggle';
 import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
+import { useOpenElsewhere } from './useOpenElsewhere';
 
 const tabs = [
   { to: '.', label: 'Play', icon: Swords, end: true },
@@ -28,6 +29,7 @@ const tabs = [
 export function Component() {
   const { id } = useParams();
   const state = useCharacterSheet(id);
+  const openElsewhere = useOpenElsewhere(id);
 
   if (state.loadStatus === 'loading' || state.loadStatus === 'idle') {
     return (
@@ -107,6 +109,11 @@ export function Component() {
         </span>
         {id !== undefined && <HistoryDrawer charId={id} />}
       </header>
+      {openElsewhere && (
+        <div className="bg-amber-400/10 px-4 py-1.5 text-xs text-amber-200 lg:pl-40" role="status">
+          This character is open in another tab — edits in one can overwrite the other.
+        </div>
+      )}
       <main className="flex-1 px-4 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4 lg:pl-40">
         <Outlet context={state} />
       </main>
