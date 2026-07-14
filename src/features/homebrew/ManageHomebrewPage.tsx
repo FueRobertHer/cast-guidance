@@ -5,17 +5,8 @@ import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { downloadJson } from '@/lib/download';
 import { askConfirm, askText } from '@/ui/dialogs';
-
-function downloadJson(name: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name.endsWith('.json') ? name : `${name}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function Component() {
   const navigate = useNavigate();

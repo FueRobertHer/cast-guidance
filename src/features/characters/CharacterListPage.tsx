@@ -9,6 +9,7 @@ import { characterRepo, type ImportSummary } from '@/db/characterRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import { notify } from '@/stores/notices';
 import { askConfirm, askText } from '@/ui/dialogs';
@@ -29,13 +30,7 @@ async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // of the user's unrelated homebrew.
   const homebrew = homebrewForExport(doc, await homebrewRepo.enabled());
   const payload = { $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${doc.name.replaceAll(/[^\w-]+/g, '_') || 'character'}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadJson(doc.name.replaceAll(/[^\w-]+/g, '_') || 'character', payload);
 }
 
 function importSummaryMessage(s: ImportSummary): string {
