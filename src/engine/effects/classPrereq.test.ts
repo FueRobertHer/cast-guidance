@@ -9,7 +9,9 @@ describe('summarizePrerequisite', () => {
   it('reads warlock invocation gates: pact, patron, spell, spellcasting, level', () => {
     expect(summarizePrerequisite([{ pact: 'Blade' }])).toBe('Pact of the Blade');
     expect(summarizePrerequisite([{ patron: 'The Fiend|PHB' }])).toBe('The Fiend patron');
-    expect(summarizePrerequisite([{ spell: ['eldritch blast#c|phb'] }])).toBe('knows eldritch blast');
+    expect(summarizePrerequisite([{ spell: ['eldritch blast#c|phb'] }])).toBe(
+      'knows eldritch blast',
+    );
     expect(summarizePrerequisite([{ spellcasting: true }])).toBe('spellcasting');
     expect(summarizePrerequisite([{ level: 5 }])).toBe('level 5');
     expect(summarizePrerequisite([{ level: { level: 7 } }])).toBe('level 7');
