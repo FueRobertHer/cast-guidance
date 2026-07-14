@@ -35,10 +35,14 @@ function importSummaryMessage(s: ImportSummary): string {
 
 function classSummary(doc: CharacterDoc): string {
   if (doc.classes.length === 0) return 'No class yet';
+  // Defensive: a corrupted class entry (missing ref) must not throw while
+  // rendering the list — one bad record cannot take down the page (REL-005).
   return doc.classes
-    .map(
-      (c) => `${c.ref.name} ${c.levels}${c.subclass !== undefined ? ` · ${c.subclass.name}` : ''}`,
-    )
+    .map((c) => {
+      const name = c.ref?.name ?? 'Unknown class';
+      const sub = c.subclass?.name !== undefined ? ` · ${c.subclass.name}` : '';
+      return `${name} ${c.levels}${sub}`;
+    })
     .join(' / ');
 }
 
