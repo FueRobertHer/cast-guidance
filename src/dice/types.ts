@@ -19,6 +19,8 @@ export type TermAst = DiceTermAst | ModTermAst;
 export interface DiceAst {
   expr: string;
   terms: TermAst[];
+  /** Optional factor applied to the sum, e.g. `1d4×10` or `1d10×1d10`. */
+  multiplier?: TermAst;
 }
 
 export interface DiceRollDetail {
@@ -34,6 +36,12 @@ export interface ModDetail {
   value: number;
 }
 
+export interface MultiplierDetail {
+  kind: 'multiplier';
+  value: number;
+  detail: DiceRollDetail | ModDetail;
+}
+
 export interface RollResult {
   expr: string;
   label?: string;
@@ -41,7 +49,7 @@ export interface RollResult {
   total: number;
   /** Epoch ms. */
   at: number;
-  terms: Array<DiceRollDetail | ModDetail>;
+  terms: Array<DiceRollDetail | ModDetail | MultiplierDetail>;
   meta?: {
     advantage?: 'adv' | 'dis';
     critical?: boolean;

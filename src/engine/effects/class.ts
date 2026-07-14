@@ -156,6 +156,7 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
             kind: 'ability',
             label: `Level ${level}: +1 to two abilities (pick the same twice for +2)`,
             count: 2,
+            allowRepeat: true,
             options: ABILITIES.map((a) => ({ id: a, label: a.toUpperCase() })),
           },
           (picked) => {

@@ -41,8 +41,8 @@ export class Collector {
 
   /**
    * Resolve a choice from doc.choices or surface the prompt. When resolved,
-   * `apply` receives the selected option ids (repeats allowed for weighted
-   * ability picks).
+   * `apply` receives only canonical option ids. Unknown/corrupt ids never grant
+   * effects; disabled picks remain usable as an explicitly warned override.
    */
   choice(prompt: ChoicePrompt, apply: (selected: string[]) => void): void {
     const stored = this.doc.choices[prompt.id];
@@ -50,11 +50,47 @@ export class Collector {
       this.pending.push(prompt);
       return;
     }
-    const selected = Array.isArray(stored) ? stored.map(String) : [String(stored)];
+    const rawSelected = Array.isArray(stored) ? stored.map(String) : [String(stored)];
+    const byId = new Map(prompt.options.map((o) => [o.id.toLowerCase(), o]));
+    const selected: string[] = [];
+    const seen = new Set<string>();
+    let invalid = false;
+    for (const raw of rawSelected) {
+      const option = byId.get(raw.toLowerCase());
+      if (option === undefined) {
+        invalid = true;
+        this.warn(
+          `${prompt.origin.label}: saved ${prompt.label.toLowerCase()} choice “${raw}” is no longer available; choose again.`,
+        );
+        continue;
+      }
+      const key = option.id.toLowerCase();
+      if (prompt.allowRepeat !== true && seen.has(key)) {
+        invalid = true;
+        this.warn(
+          `${prompt.origin.label}: ${option.label} was selected more than once for ${prompt.label.toLowerCase()}; choose distinct options.`,
+        );
+        continue;
+      }
+      if (selected.length >= prompt.count) {
+        invalid = true;
+        this.warn(
+          `${prompt.origin.label}: ${prompt.label} has more than ${prompt.count} saved pick${prompt.count === 1 ? '' : 's'}; extra choices were ignored.`,
+        );
+        break;
+      }
+      seen.add(key);
+      selected.push(option.id);
+      if (option.disabled !== undefined) {
+        this.warn(
+          `${prompt.origin.label}: ${option.label} is an unusual ${prompt.label.toLowerCase()} choice — ${option.disabled.reason}.`,
+        );
+      }
+    }
     // Apply what's chosen so far, but a multi-pick that isn't full yet stays
     // pending so the UI keeps showing it (fixes "closes after one" on Rogue).
     apply(selected);
-    if (selected.length < prompt.count) {
+    if (invalid || selected.length < prompt.count) {
       this.pending.push(prompt);
     } else {
       this.resolved.push({ prompt, selected });

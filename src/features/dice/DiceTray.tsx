@@ -161,9 +161,11 @@ export function DiceTray() {
                         .map((t) =>
                           t.kind === 'dice'
                             ? `[${t.rolls.map((x) => (x.kept ? x.v : `(${x.v})`)).join(',')}]`
-                            : t.value >= 0
-                              ? `+${t.value}`
-                              : `${t.value}`,
+                            : t.kind === 'multiplier'
+                              ? `×${t.detail.kind === 'dice' ? `[${t.detail.rolls.map((x) => x.v).join(',')}]` : t.value}`
+                              : t.value >= 0
+                                ? `+${t.value}`
+                                : `${t.value}`,
                         )
                         .join(' ')}
                     </div>

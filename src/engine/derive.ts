@@ -137,10 +137,24 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     resources,
     features: col.features,
     grantedSpells: dedupeGrantedSpells(effects),
-    warnings: col.warnings,
+    warnings: dedupeWarnings(col.warnings),
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/** Collapse repeated collector notes while preserving the first useful wording. */
+function dedupeWarnings(warnings: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const warning of warnings) {
+    const clean = warning.replace(/\s+/g, ' ').trim();
+    const key = clean.toLocaleLowerCase().replace(/[.!]+$/, '');
+    if (clean === '' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
 }
 
 /** How much mechanical detail an action effect carries (for dedupe). */
