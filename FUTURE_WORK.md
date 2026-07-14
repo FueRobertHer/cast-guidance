@@ -150,7 +150,7 @@ review:
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| UX-001 | Make “standard array” a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; normalize invalid `?step=` values; add explicit resume/restart/discard for the saved draft. | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
+| UX-001 | Invalid `?step=` deep links now recover: the step list + a pure, unit-tested `normalizeStep` guard coerce unknown/empty values to the first step instead of rendering a broken wizard (out-of-range index). Remaining: make “standard array” a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; add explicit resume/restart/discard for the sessionStorage draft. | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
 | UX-002 | Explain local-first storage, initial/background downloads, eviction risk, backup, offline readiness, and edition choice during onboarding. | A first-time user knows when the app is safe to use offline and how to protect data. |
 | UX-003 | Add page titles, focused-flow escape/back behavior, and a useful 404. Persistent top-level navigation is already shipped. | Routes expose useful context to browsers, assistive tech, and users arriving via deep link. |
 
