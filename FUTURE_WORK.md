@@ -109,7 +109,7 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 | GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
 | GAME-005 | Extend current feat/version filtering with source policy and prerequisite guidance. Optional features only enforce numeric level today. | Feats and invocations show unmet requirements without turning table-approved selections into dead ends. |
 | GAME-006 | Verify edition-specific short/long-rest behavior with rules fixtures or expert review. | Recovery of hit dice, resources, exhaustion, concentration, and other state matches the selected edition or is clearly manual. |
-| GAME-007 | Detect spent slots, pact slots, hit dice, resources, and spell counts above newly derived maxima after build changes. | The app explains the mismatch and offers non-destructive normalization. |
+| GAME-007 | Done for play resources: `detectPlayStateOverages`/`clampPlayStateToMax` (pure, unit-tested) find current HP, leveled + pact slots, hit dice, and resource uses above their newly derived maxima; the Play tab shows an explanatory banner and a non-destructive "Bring within limits" action that clamps only the over-limit values. Browser-verified end-to-end. Remaining: spell counts above known/prepared maxima (needs the GAME-002 casting-mode model). | The app explains the mismatch and offers non-destructive normalization. |
 
 ### Data loading, updates, and search
 
