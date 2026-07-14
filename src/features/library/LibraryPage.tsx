@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
-import { useRegistry, useSearchReady } from '@/data5e/hooks';
+import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import type { EntityRegistry, EntityType } from '@/data5e/normalize';
 import { searchAll } from '@/data5e/search/client';
@@ -58,19 +58,21 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
 // ---------------------------------------------------------------------------
 
 function GlobalSearch() {
-  const registry = useRegistry();
-  const ready = useSearchReady(registry);
+  const { registry, status: regStatus, error: regError, retry: retryRegistry } = useRegistryState();
+  const { status: searchStatus, retry: retrySearch } = useSearchState(registry);
+  const ready = searchStatus === 'ready';
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<SearchDoc[]>([]);
+  const trimmed = q.trim();
 
   useEffect(() => {
-    if (!ready || q.trim().length < 2) {
+    if (!ready || trimmed.length < 2) {
       setHits([]);
       return;
     }
     let alive = true;
     const t = setTimeout(() => {
-      void searchAll(q.trim()).then((res) => {
+      void searchAll(trimmed).then((res) => {
         if (alive) setHits(res);
       });
     }, 150);
@@ -78,7 +80,15 @@ function GlobalSearch() {
       alive = false;
       clearTimeout(t);
     };
-  }, [q, ready]);
+  }, [trimmed, ready]);
+
+  // Distinguish error / preparing / ready so a failure isn't an endless spinner.
+  const failed = regStatus === 'error' || searchStatus === 'error';
+  const placeholder = failed
+    ? 'Search unavailable'
+    : ready
+      ? 'Search everything…'
+      : 'Preparing search…';
 
   return (
     <div className="flex flex-col gap-2">
@@ -87,10 +97,34 @@ function GlobalSearch() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={ready ? 'Search everything…' : 'Preparing search…'}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
+          placeholder={placeholder}
+          disabled={failed}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:opacity-60"
         />
       </label>
+      {failed && (
+        <div
+          className="flex items-center justify-between gap-2 rounded-lg bg-accent-deep/30 px-3 py-2 text-xs"
+          role="alert"
+        >
+          <span className="truncate">
+            Couldn&rsquo;t prepare search{regError !== null ? `: ${regError}` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (regStatus === 'error') retryRegistry();
+              else retrySearch();
+            }}
+            className="shrink-0 rounded bg-accent px-2 py-0.5 font-semibold"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {ready && trimmed.length >= 2 && hits.length === 0 && (
+        <p className="px-1 text-xs text-ink-muted">No matches for “{trimmed}”.</p>
+      )}
       {hits.length > 0 && (
         <div className="flex flex-col rounded-lg bg-surface">
           {hits.map((h) => (
