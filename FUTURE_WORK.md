@@ -137,7 +137,7 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| A11Y-001 | Establish a consistent high-contrast `:focus-visible` style. Many inputs still use `outline-none`; several icon-only controls rely on `title`; toggles/pips need semantic checked/pressed/value states. | Every route is operable and understandable with keyboard and accessibility APIs. |
+| A11Y-001 | Focus visibility done: one unlayered global `:focus-visible` rule in `app.css` gives every interactive element a high-contrast 2px `--color-ink` outline on keyboard/programmatic focus, overriding the ~20 `outline-none` utilities without editing each call site. Browser-verified: tabbing to the (`outline-none`) search input shows the ring (`matchesFocusVisible`, near-white outline). Remaining: give icon-only controls real accessible names (not just `title`) and semantic checked/pressed/value states to toggles/pips. | Every route is operable and understandable with keyboard and accessibility APIs. |
 | A11Y-002 | Increase undersized touch targets; ensure state is not color-only; add restrained live regions and real progress semantics for saves, data, imports, resources, HP, search, and updates. | Target-size, contrast, and announcement audits pass without over-announcing. |
 | A11Y-003 | Run axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, large-text, landscape, safe-area, external-keyboard, and reduced-motion testing. | Results and fixes are recorded for every main flow. |
 
