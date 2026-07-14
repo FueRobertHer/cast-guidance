@@ -51,7 +51,7 @@ type Step = (typeof STEPS)[number];
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
-const DRAFT_KEY = 'dnd-sheet:creator-draft';
+const DRAFT_KEY = 'cast-guidance:creator-draft';
 
 export function Component() {
   const navigate = useNavigate();
@@ -359,7 +359,10 @@ export function Component() {
                         update((d) => {
                           const c = d.classes[0];
                           if (c !== undefined)
-                            c.subclass = { name: nameOf(e), source: sourceOf(e) };
+                            c.subclass = {
+                              name: nameOf(e),
+                              source: sourceOf(e),
+                            };
                         })
                       }
                       onDeselect={() =>
@@ -491,7 +494,14 @@ export function Component() {
                     update((d) => {
                       d.abilities.method = m;
                       if (m === 'pointbuy')
-                        d.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+                        d.abilities.base = {
+                          str: 8,
+                          dex: 8,
+                          con: 8,
+                          int: 8,
+                          wis: 8,
+                          cha: 8,
+                        };
                     })
                   }
                   className={`rounded-full border px-3 py-1.5 text-sm ${
@@ -904,7 +914,8 @@ export function Component() {
             {sheet !== null && sheet.warnings.length > 0 && (
               <details className="rounded-lg bg-surface p-3 text-xs text-ink-muted">
                 <summary className="cursor-pointer text-sm">
-                  {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
+                  {sheet.warnings.length} note
+                  {sheet.warnings.length > 1 ? 's' : ''}
                 </summary>
                 {sheet.warnings.map((w) => (
                   <p key={w} className="mt-1">

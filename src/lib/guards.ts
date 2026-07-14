@@ -78,7 +78,7 @@ export function homebrewEntityCounts(json: Record<string, unknown>): Record<stri
 // Character export format
 // ---------------------------------------------------------------------------
 
-export const CHARACTER_EXPORT_FORMAT = 'dnd-sheet/character@1';
+export const CHARACTER_EXPORT_FORMAT = 'cast-guidance/character@1';
 
 export interface CharacterExport {
   $format: typeof CHARACTER_EXPORT_FORMAT;
@@ -100,7 +100,11 @@ export function assertCharacterExport(raw: unknown): CharacterExport {
     throw new ValidationError('export is missing the character document');
   }
   const homebrew = Array.isArray(obj.homebrew) ? (obj.homebrew as HomebrewFileRow[]) : [];
-  return { $format: CHARACTER_EXPORT_FORMAT, character: obj.character, homebrew };
+  return {
+    $format: CHARACTER_EXPORT_FORMAT,
+    character: obj.character,
+    homebrew,
+  };
 }
 
 export async function sha256Hex(text: string): Promise<string> {

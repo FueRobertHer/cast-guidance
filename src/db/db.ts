@@ -61,7 +61,7 @@ export interface CharacterHistoryRow {
   doc: CharacterDoc;
 }
 
-export const db = new Dexie('dnd-sheet') as Dexie & {
+export const db = new Dexie('cast-guidance') as Dexie & {
   dataFiles: EntityTable<DataFileRow, 'key'>;
   dataMeta: EntityTable<DataMetaRow, 'id'>;
   characters: EntityTable<CharacterDoc, 'id'>;
