@@ -9,6 +9,7 @@ function block(overrides: Partial<SpellcastingBlock> = {}): SpellcastingBlock {
     classUid: 'mage|tst',
     className: 'Mage',
     ability: 'int',
+    mode: 'known',
     saveDc: value,
     attackMod: value,
     slots: [4, 3, 2],

@@ -251,10 +251,22 @@ export interface FeatureCard {
   entries: unknown;
 }
 
+/**
+ * How a class relates to its spells (GAME-002):
+ * - `known`: a fixed set of chosen spells (sorcerer, bard, ranger);
+ * - `prepared`: prepares a changeable subset of the whole class list (cleric,
+ *   druid, paladin, artificer);
+ * - `spellbook`: learns spells into a book, then prepares a subset (wizard);
+ * - `pact`: Pact Magic — known spells cast with pact slots (warlock);
+ * - `none`: not a spellcaster.
+ */
+export type SpellcastingMode = 'known' | 'prepared' | 'spellbook' | 'pact' | 'none';
+
 export interface SpellcastingBlock {
   classUid: string;
   className: string;
   ability: Ability;
+  mode: SpellcastingMode;
   saveDc: DerivedValue;
   attackMod: DerivedValue;
   /** index 0 = level-1 slots */

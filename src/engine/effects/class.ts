@@ -8,7 +8,7 @@ import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
 
 /** "str 13" / "int 13 or wis 13" from a feat/entity prerequisite array. */
-function summarizePrerequisite(raw: unknown): string {
+export function summarizePrerequisite(raw: unknown): string {
   if (!Array.isArray(raw)) return '';
   const parts: string[] = [];
   for (const req of raw) {
@@ -43,7 +43,7 @@ function summarizePrerequisite(raw: unknown): string {
 }
 
 /** Highest numeric level prerequisite (used to gate optional-feature picks). */
-function requiredLevel(raw: unknown): number | undefined {
+export function requiredLevel(raw: unknown): number | undefined {
   if (!Array.isArray(raw)) return undefined;
   let need: number | undefined;
   for (const req of raw) {

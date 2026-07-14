@@ -3,10 +3,31 @@ import { num, str } from '../effects/base';
 import {
   type Ability,
   type CharacterDoc,
+  type DataEntity,
   type DerivedAbility,
   refUid,
   type SpellcastingBlock,
+  type SpellcastingMode,
 } from '../types';
+
+/**
+ * Classify how a class relates to its spells from its 5etools data (GAME-002).
+ * Signals, in order: Pact Magic wins; `preparedSpells` + a fixed known-spell
+ * progression is a spellbook (wizard); `preparedSpells` alone is a prepared
+ * caster (cleric/druid/paladin); a known-spell progression is a known caster
+ * (sorcerer/bard/ranger). Anything without a caster progression is `none`.
+ */
+export function classSpellcastingMode(cls: DataEntity | undefined): SpellcastingMode {
+  if (cls === undefined) return 'none';
+  const progression = str(cls.casterProgression);
+  if (progression === undefined) return 'none';
+  if (progression === 'pact') return 'pact';
+  const prepared = cls.preparedSpells !== undefined || Array.isArray(cls.preparedSpellsProgression);
+  const knowsFixed = Array.isArray(cls.spellsKnownProgressionFixed);
+  if (prepared) return knowsFixed ? 'spellbook' : 'prepared';
+  if (Array.isArray(cls.spellsKnownProgression) || knowsFixed) return 'known';
+  return 'none';
+}
 
 /** Standard full-caster slot table; row = caster level 1-20, cols = slot levels 1-9. */
 // prettier-ignore
@@ -139,6 +160,7 @@ export function calcSpellcasting(
       classUid: refUid(entry.ref),
       className: str(cls.name) ?? entry.ref.name,
       ability: abilityKey,
+      mode: classSpellcastingMode(cls),
       saveDc: {
         value: dcParts.reduce((s, p) => s + p.amount, 0),
         base: dcParts.reduce((s, p) => s + p.amount, 0),

@@ -76,52 +76,89 @@ function hashString(s: string): string {
   return (h >>> 0).toString(36);
 }
 
+/** A build/load that produces no ready/error within this window is failed. */
+const BUILD_TIMEOUT_MS = 30_000;
+
 /** Build (or rehydrate) the index for the given registry + cache signature. */
-export async function ensureSearchIndex(
-  registry: EntityRegistry,
-  signature: string,
-): Promise<void> {
+export function ensureSearchIndex(registry: EntityRegistry, signature: string): Promise<void> {
   if (signature === indexedSignature && readyPromise !== null) return readyPromise;
   indexedSignature = signature;
   const key = `${getActiveTag()}|official|${hashString(signature)}`;
 
-  readyPromise = (async () => {
+  const attempt = (async () => {
     const w = getWorker();
     const cached = await db.searchIndexes.get(key);
-    const done = new Promise<string | undefined>((resolve) => {
+    // Reject on worker error or timeout so callers (useSearchState) can show an
+    // error + retry instead of an index that silently never becomes ready.
+    const serialized = await new Promise<string | undefined>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        w.removeEventListener('message', onReady);
+        reject(new Error('search index build timed out'));
+      }, BUILD_TIMEOUT_MS);
       const onReady = (ev: MessageEvent<SearchWorkerResponse>) => {
         if (ev.data.kind === 'ready') {
+          clearTimeout(timer);
           w.removeEventListener('message', onReady);
           resolve(ev.data.serialized);
         } else if (ev.data.kind === 'error') {
+          clearTimeout(timer);
           w.removeEventListener('message', onReady);
-          resolve(undefined);
+          reject(new Error(ev.data.message || 'search worker failed'));
         }
       };
       w.addEventListener('message', onReady);
+      send(
+        cached
+          ? { kind: 'load', serialized: cached.json }
+          : { kind: 'build', docs: docsFrom(registry) },
+      );
     });
-    if (cached) {
-      send({ kind: 'load', serialized: cached.json });
-      await done;
-    } else {
-      send({ kind: 'build', docs: docsFrom(registry) });
-      const serialized = await done;
-      if (serialized !== undefined) {
-        // Keep only the latest index for this tag.
-        await db.searchIndexes.where('key').startsWith(`${getActiveTag()}|official|`).delete();
-        await db.searchIndexes.put({ key, json: serialized });
-      }
+    if (!cached && serialized !== undefined) {
+      // Keep only the latest index for this tag.
+      await db.searchIndexes.where('key').startsWith(`${getActiveTag()}|official|`).delete();
+      await db.searchIndexes.put({ key, json: serialized });
     }
   })();
-  return readyPromise;
+
+  readyPromise = attempt;
+  // On failure, clear state so a retry with the same signature re-attempts
+  // instead of returning the already-rejected promise.
+  attempt.catch(() => {
+    if (readyPromise === attempt) {
+      readyPromise = null;
+      indexedSignature = '';
+    }
+  });
+  return attempt;
 }
+
+/** A query with no worker response within this window resolves empty. */
+const QUERY_TIMEOUT_MS = 5000;
 
 export async function searchAll(q: string, limit = 30): Promise<SearchDoc[]> {
   if (readyPromise === null) return [];
-  await readyPromise;
+  // A failed index build shouldn't turn a query into an unhandled rejection.
+  try {
+    await readyPromise;
+  } catch {
+    return [];
+  }
+  const id = ++queryId;
+  // Supersede any in-flight queries: settle them empty so a slower, older
+  // response can't win, and no resolver is left dangling.
+  for (const [oldId, resolve] of pending) {
+    resolve([]);
+    pending.delete(oldId);
+  }
   return new Promise((resolve) => {
-    const id = ++queryId;
-    pending.set(id, resolve);
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      resolve([]);
+    }, QUERY_TIMEOUT_MS);
+    pending.set(id, (hits) => {
+      clearTimeout(timer);
+      resolve(hits);
+    });
     send({ kind: 'query', id, q, limit });
   });
 }

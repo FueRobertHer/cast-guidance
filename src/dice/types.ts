@@ -47,6 +47,11 @@ export interface RollResult {
   label?: string;
   origin?: string;
   total: number;
+  /**
+   * Collision-proof id, assigned when the roll enters the log. Two rolls in the
+   * same millisecond would share `at`, so identity/removal key off this instead.
+   */
+  id?: string;
   /** Epoch ms. */
   at: number;
   terms: Array<DiceRollDetail | ModDetail | MultiplierDetail>;

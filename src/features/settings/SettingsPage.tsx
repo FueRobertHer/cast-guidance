@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getActiveTag, listAvailableTags, updateToTag, verifyFullOffline } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
+import { resetAppData } from '@/db/reset';
 import { useDataStatus } from '@/stores/dataStatus';
 import { askConfirm } from '@/ui/dialogs';
 
@@ -25,7 +26,29 @@ export function Component() {
   const [tags, setTags] = useState<string[] | null>(null);
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState<string>();
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string>();
   const estimate = useStorageEstimate();
+
+  const resetAll = async () => {
+    const ok = await askConfirm({
+      title: 'Reset all app data?',
+      detail:
+        'Deletes every character, homebrew file, and cached download on this device, then reloads. This cannot be undone.',
+      confirmLabel: 'Delete everything',
+      danger: true,
+    });
+    if (!ok) return;
+    setResetting(true);
+    setResetMsg(undefined);
+    try {
+      await resetAppData();
+      window.location.reload();
+    } catch (err) {
+      setResetting(false);
+      setResetMsg(`Reset failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   useEffect(() => {
     void verifyFullOffline()
@@ -134,6 +157,34 @@ export function Component() {
           Game data is downloaded from the 5etools mirror and cached on this device. Nothing ships
           with the app itself. Characters store name references, so they survive data updates.
         </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-semibold">Your data &amp; privacy</h2>
+        <p className="text-xs text-ink-muted">
+          Everything — your characters, homebrew, dice history, and the downloaded compendium —
+          lives only in this browser on this device. Nothing is sent to a server and there are no
+          accounts. Back a character up any time with its Export button; that file is the only copy
+          that leaves the device.
+        </p>
+        <p className="text-xs text-ink-muted">
+          Because it&rsquo;s browser storage, clearing site data or heavy storage pressure can evict
+          it. Export characters you care about, and use “Make available offline” above so the
+          compendium is cached.
+        </p>
+        <button
+          type="button"
+          disabled={resetting}
+          onClick={() => void resetAll()}
+          className="w-fit rounded-lg border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:opacity-40"
+        >
+          {resetting ? 'Resetting…' : 'Reset app data'}
+        </button>
+        <p className="text-xs text-ink-muted">
+          Permanently deletes all characters, homebrew, and cached data on this device, then
+          reloads. This cannot be undone — export anything you want to keep first.
+        </p>
+        {resetMsg !== undefined && <p className="text-xs text-amber-300">{resetMsg}</p>}
       </section>
     </main>
   );
