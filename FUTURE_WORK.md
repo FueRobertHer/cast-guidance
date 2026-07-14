@@ -158,7 +158,7 @@ review:
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| TEST-001 | Add CI for frozen install, lint, typecheck, unit tests, production/PWA build, and artifact/bundle reporting. | Every PR runs the current local green baseline. |
+| TEST-001 | Done: `.github/workflows/ci.yml` runs frozen install, lint, typecheck, unit tests, and the production/PWA build on every push/PR (Bun pinned to 1.3.14), uploads the `dist` artifact, and writes a bundle-size table to the run summary. Remaining: add coverage thresholds and bundle-budget gating (TEST-002/coverage work). | Every PR runs the current local green baseline. |
 | TEST-002 | Extend the new character-session race/write-failure tests with IndexedDB-backed coverage for transactions, migrations, quota behavior, history, lifecycle events, and multiple tabs. | Persistence risks are reproducible without manual timing. |
 | TEST-003 | Add component/integration tests for creator review, choices, rules switching, routing, inventory, casting, rests, imports, homebrew edits, and error states. | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
