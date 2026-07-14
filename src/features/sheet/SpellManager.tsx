@@ -10,13 +10,35 @@ import {
   classSpellUidsFromEntities,
   getSpellClassLookup,
 } from '@/data5e/spellLookup';
-import type { CharacterDoc, DerivedSheet, PlayState, SpellcastingBlock } from '@/engine/types';
+import type {
+  CharacterDoc,
+  DerivedSheet,
+  PlayState,
+  SpellcastingBlock,
+  SpellcastingMode,
+} from '@/engine/types';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 const uidOf = (e: Entity) => `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
+
+/** Short badge + tooltip describing how the class relates to its spells (GAME-002). */
+const MODE_LABEL: Record<SpellcastingMode, string | undefined> = {
+  known: 'Known',
+  prepared: 'Prepared',
+  spellbook: 'Spellbook',
+  pact: 'Pact Magic',
+  none: undefined,
+};
+const MODE_HINT: Record<SpellcastingMode, string> = {
+  known: 'You know a fixed set of chosen spells.',
+  prepared: 'You prepare a changeable subset of the whole class list.',
+  spellbook: 'You learn spells into a spellbook, then prepare a subset.',
+  pact: 'Pact Magic: known spells cast with pact slots.',
+  none: '',
+};
 
 function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
@@ -190,7 +212,17 @@ function ClassSpells({
   return (
     <section className="flex flex-col gap-2">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">{block.className} spells</h2>
+        <h2 className="flex items-baseline gap-2 text-sm font-semibold">
+          {block.className} spells
+          {MODE_LABEL[block.mode] !== undefined && (
+            <span
+              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted"
+              title={MODE_HINT[block.mode]}
+            >
+              {MODE_LABEL[block.mode]}
+            </span>
+          )}
+        </h2>
         <span className="text-xs text-ink-muted">
           DC {block.saveDc.value} · Atk +{block.attackMod.value}
           {block.cantripsKnown !== undefined &&
