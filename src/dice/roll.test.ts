@@ -34,6 +34,22 @@ describe('roll', () => {
     expect(r.total).toBe(7);
   });
 
+  it('multiplies by constant and dice factors', () => {
+    expect(roll('1d4×10', { rng: seq(3) }).total).toBe(30);
+    const result = roll('1d10×1d10', { rng: seq(3, 4) });
+    expect(result.total).toBe(12);
+    expect(result.terms.at(-1)).toEqual({
+      kind: 'multiplier',
+      value: 4,
+      detail: {
+        kind: 'dice',
+        sign: 1,
+        sides: 10,
+        rolls: [{ v: 4, kept: true }],
+      },
+    });
+  });
+
   it('keeps highest with kh', () => {
     const r = roll('2d20kh1', { rng: seq(7, 18) });
     expect(r.total).toBe(18);

@@ -24,11 +24,19 @@ export function ChoicePromptRenderer({
   onChange,
   renderOptionInfo,
 }: ChoicePromptRendererProps) {
-  const selected = Array.isArray(value)
+  const rawSelected = Array.isArray(value)
     ? value.map(String)
     : value !== undefined
       ? [String(value)]
       : [];
+  const optionIds = new Map(prompt.options.map((o) => [o.id.toLowerCase(), o.id]));
+  const selected = rawSelected
+    .flatMap((id) => {
+      const canonical = optionIds.get(id.toLowerCase());
+      return canonical !== undefined ? [canonical] : [];
+    })
+    .filter((id, index, all) => prompt.allowRepeat === true || all.indexOf(id) === index)
+    .slice(0, prompt.count);
   const [filter, setFilter] = useState('');
   const searchable = prompt.options.length > 12;
 
@@ -54,8 +62,8 @@ export function ChoicePromptRenderer({
     onChange(next);
   };
 
-  // ASI-style ability picks allow stacking on one ability (+2), so they use
-  // steppers rather than toggles.
+  // ASI-style ability picks can explicitly allow stacking on one ability (+2),
+  // so only those prompts use steppers. Race/background boosts stay distinct.
   const addOne = (id: string) => {
     if (selected.length < prompt.count) onChange([...selected, id]);
   };
@@ -72,7 +80,7 @@ export function ChoicePromptRenderer({
     : prompt.options;
   // Options with descriptions (feats) render as a readable list, not chips.
   const detailed = prompt.options.some((o) => o.description !== undefined && o.description !== '');
-  const stepper = prompt.kind === 'ability' && prompt.count > 1;
+  const stepper = prompt.allowRepeat === true && prompt.count > 1;
 
   return (
     <fieldset className="flex flex-col gap-2 rounded-lg bg-surface p-3">

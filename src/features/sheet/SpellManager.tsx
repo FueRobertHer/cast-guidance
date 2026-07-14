@@ -10,7 +10,7 @@ import {
   classSpellUidsFromEntities,
   getSpellClassLookup,
 } from '@/data5e/spellLookup';
-import type { CharacterDoc, DerivedSheet, SpellcastingBlock } from '@/engine/types';
+import type { CharacterDoc, DerivedSheet, PlayState, SpellcastingBlock } from '@/engine/types';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
@@ -39,6 +39,34 @@ export interface CastSpellInfo {
   economy?: 'action' | 'bonus' | 'reaction';
 }
 
+export type CastResource =
+  | { kind: 'cantrip'; level: 0 }
+  | { kind: 'pact'; level: number }
+  | { kind: 'slot'; level: number }
+  | { kind: 'none'; level: number };
+
+/** Preview the resource the current automatic cast path will consume. */
+export function nextCastResource(
+  block: SpellcastingBlock,
+  play: PlayState,
+  spellLevel: number,
+): CastResource {
+  if (spellLevel === 0) return { kind: 'cantrip', level: 0 };
+  if (
+    block.pactSlots !== undefined &&
+    block.pactSlots.level >= spellLevel &&
+    play.pactSlotsSpent < block.pactSlots.count
+  ) {
+    return { kind: 'pact', level: block.pactSlots.level };
+  }
+  for (let level = spellLevel; level <= 9; level++) {
+    const total = block.slots[level - 1] ?? 0;
+    const spent = play.slotsSpent[level - 1] ?? 0;
+    if (total > 0 && spent < total) return { kind: 'slot', level };
+  }
+  return { kind: 'none', level: spellLevel };
+}
+
 /**
  * Cast a spell: spend the lowest available slot ≥ `level` (pact-aware). Marks
  * the action economy the casting time uses and, when the spell concentrates, it
@@ -59,26 +87,14 @@ export function castSpell(
       turn[spell.economy] = true;
       d.play.turn = turn;
     }
-    // Cantrips cost no slot — casting only matters for concentration + economy.
-    if (level === 0) return;
-    // Pact slots first when this class has them and the spell fits…
-    if (
-      block.pactSlots !== undefined &&
-      block.pactSlots.level >= level &&
-      d.play.pactSlotsSpent < block.pactSlots.count
-    ) {
+    const resource = nextCastResource(block, d.play, level);
+    if (resource.kind === 'cantrip' || resource.kind === 'none') return;
+    if (resource.kind === 'pact') {
       d.play.pactSlotsSpent += 1;
       return;
     }
-    // …otherwise the shared leveled pool (multiclass warlocks can use both).
-    for (let lvl = level; lvl <= 9; lvl++) {
-      const total = block.slots[lvl - 1] ?? 0;
-      const spent = d.play.slotsSpent[lvl - 1] ?? 0;
-      if (total > 0 && spent < total) {
-        d.play.slotsSpent[lvl - 1] = spent + 1;
-        return;
-      }
-    }
+    const spent = d.play.slotsSpent[resource.level - 1] ?? 0;
+    d.play.slotsSpent[resource.level - 1] = spent + 1;
   });
 }
 

@@ -10,8 +10,9 @@ backlog. Completed work belongs in git history, not in this file.
 
 The review covered the current repository, automated checks, and code paths for
 creation, play, persistence, imports, game-data loading, homebrew, search, PWA
-behavior, accessibility, and release operations. Browser/device behavior and
-the real pinned dataset still need hands-on validation.
+behavior, accessibility, and release operations. Browser/device behavior still
+needs hands-on validation. The pinned-data audit now covers 48 files and all 936
+spells; its 40 existing version `replaceArr` warnings remain tracked below.
 
 ## Product principle: guidance, not gatekeeping
 
@@ -43,11 +44,11 @@ protection, and visible save/load recovery.
 | Check | Current result |
 |---|---|
 | Frozen dependency install | Pass — 423 packages |
-| Lint/format | Pass — 120 files |
+| Lint/format | Pass — 124 files |
 | TypeScript | Pass |
-| Unit tests | Pass — 13 files, 180 tests |
+| Unit tests | Pass — 16 files, 204 tests |
 | Production/PWA build | Pass |
-| Real pinned-dataset audit | Not run in this review |
+| Real pinned-dataset audit | Run — 48 files; 936 spells; 53,360 roll variants; 40 version `replaceArr` warnings |
 | Browser, E2E, and automated accessibility tests | No harness exists yet |
 
 Priority meanings:
@@ -104,7 +105,6 @@ embedded file cannot overwrite unrelated local homebrew by supplying its id.
 | GAME-001 | Replace automatic lowest-slot/pact-first casting with an explicit slot/pool/upcast choice. Apply slot spend, concentration, and action economy as one decision. | Exhausted-resource and intentional no-slot casts stay possible but cannot masquerade as normal casts or leave partial side effects. |
 | GAME-002 | Model known, prepared-from-list, spellbook, pact, always-prepared, and granted spell modes. | Normal, unprepared, granted, and over-limit spells are visibly and accessibly distinct without blocking overrides. |
 | GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
-| GAME-004 | Validate stored choices against prompt options, disabled state, count, uniqueness, and repeat rules. | Deliberate deviations are marked; stale/unknown/corrupt values do not silently grant effects. |
 | GAME-005 | Extend current feat/version filtering with source policy and prerequisite guidance. Optional features only enforce numeric level today. | Feats and invocations show unmet requirements without turning table-approved selections into dead ends. |
 | GAME-006 | Verify edition-specific short/long-rest behavior with rules fixtures or expert review. | Recovery of hit dice, resources, exhaustion, concentration, and other state matches the selected edition or is clearly manual. |
 | GAME-007 | Detect spent slots, pact slots, hit dice, resources, and spell counts above newly derived maxima after build changes. | The app explains the mismatch and offers non-destructive normalization. |

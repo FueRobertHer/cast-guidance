@@ -67,6 +67,20 @@ describe('parseDice', () => {
     expect(parseDice('5').terms).toEqual([{ kind: 'mod', sign: 1, value: 5 }]);
   });
 
+  it('parses constant and dice multiplication factors', () => {
+    expect(parseDice('1d4×10')).toEqual({
+      expr: '1d4×10',
+      terms: [{ kind: 'dice', sign: 1, count: 1, sides: 4 }],
+      multiplier: { kind: 'mod', sign: 1, value: 10 },
+    });
+    expect(parseDice('1d10 * 1d10').multiplier).toEqual({
+      kind: 'dice',
+      sign: 1,
+      count: 1,
+      sides: 10,
+    });
+  });
+
   const bad: Array<[string, string]> = [
     ['', 'empty'],
     ['   ', 'empty'],
@@ -84,6 +98,8 @@ describe('parseDice', () => {
     ['2d6k3', 'expected kh or kl'],
     ['foo', 'expected a number or die'],
     ['1d20+bar', 'expected a number or die'],
+    ['1d6×', 'ends after multiplier'],
+    ['1d6×2+1', 'unexpected.*after multiplier'],
   ];
   for (const [expr, msg] of bad) {
     it(`rejects "${expr}"`, () => {

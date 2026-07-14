@@ -213,6 +213,8 @@ export interface ChoicePrompt {
     | 'generic';
   label: string;
   count: number;
+  /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
+  allowRepeat?: boolean;
   options: ChoiceOption[];
 }
 

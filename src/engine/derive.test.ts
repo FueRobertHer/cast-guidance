@@ -5,6 +5,15 @@ import { type CharacterDoc, newCharacterDoc } from './types';
 
 const ctx = makeTestContext();
 
+it('deduplicates repeated builder notes', () => {
+  const doc = newCharacterDoc('notes', 'Notes', 'test-tag');
+  doc.classes = [
+    { ref: { name: 'Missing', source: 'TST' }, levels: 1, hp: ['avg'] },
+    { ref: { name: 'Missing', source: 'TST' }, levels: 1, hp: ['avg'] },
+  ];
+  expect(deriveSheet(doc, ctx).warnings).toEqual(['Class not found: missing|tst']);
+});
+
 /** Level-5 warrior: Testfolk race, Scholar background, sword & board. */
 function warriorDoc(): CharacterDoc {
   const doc = newCharacterDoc('w1', 'Grog', 'test-tag');

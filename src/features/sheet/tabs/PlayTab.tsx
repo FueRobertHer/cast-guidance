@@ -15,7 +15,8 @@ import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
 import { SpellInfoSheet } from '../SpellInfoSheet';
-import { castSpell, spellNeedsConcentration } from '../SpellManager';
+import { castSpell, nextCastResource, spellNeedsConcentration } from '../SpellManager';
+import { spellRollActions } from '../spellRolls';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { weaponInfoEntries } from '../weaponInfo';
 
@@ -1202,6 +1203,22 @@ export function Component() {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
                   const prepared = preparedUids.has(uid);
                   const level = spellLevelOf(ref.name, ref.source);
+                  const entity = spellEntity(ref.name, ref.source);
+                  const resource = nextCastResource(sc, play, level);
+                  const rolls = spellRollActions(entity, {
+                    characterLevel: sheet.totalLevel,
+                    slotLevel: resource.level,
+                    abilityModifier: sheet.abilities[sc.ability].mod,
+                  });
+                  const hasAttack =
+                    Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
+                  const cast = () =>
+                    castSpell(update, sc, level, {
+                      name: ref.name,
+                      source: ref.source,
+                      concentration: spellConcentrationOf(ref.name, ref.source),
+                      economy: spellCastEconomy(ref.name, ref.source),
+                    });
                   return (
                     <div key={uid} className="flex items-center gap-2 text-sm">
                       <span className="w-6 shrink-0 text-xs text-ink-muted">
@@ -1234,25 +1251,40 @@ export function Component() {
                           <AlertTriangle size={12} />
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          castSpell(update, sc, level, {
-                            name: ref.name,
-                            source: ref.source,
-                            concentration: spellConcentrationOf(ref.name, ref.source),
-                            economy: spellCastEconomy(ref.name, ref.source),
-                          })
-                        }
-                        className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                        title={
-                          level === 0
-                            ? 'Cast cantrip (marks your action/bonus action)'
-                            : `Cast (spends the lowest available slot ≥ L${level})`
-                        }
-                      >
-                        Cast
-                      </button>
+                      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                        {hasAttack && (
+                          <RollChip
+                            expr={`1d20${fmt(sc.attackMod.value)}`}
+                            display={`Atk ${fmt(sc.attackMod.value)}`}
+                            label={`${ref.name} spell attack`}
+                            variant="d20"
+                            onRolled={cast}
+                          />
+                        )}
+                        {rolls.map((action, index) => (
+                          <RollChip
+                            key={`${action.expr}:${action.label}`}
+                            expr={action.expr}
+                            label={action.label}
+                            variant={action.variant}
+                            onRolled={!hasAttack && index === 0 ? cast : undefined}
+                          />
+                        ))}
+                        {!hasAttack && rolls.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={cast}
+                            className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                            title={
+                              level === 0
+                                ? 'Cast cantrip (marks your action/bonus action)'
+                                : `Cast (spends the lowest available slot ≥ L${level})`
+                            }
+                          >
+                            Cast
+                          </button>
+                        )}
+                      </span>
                     </div>
                   );
                 })}
@@ -1267,53 +1299,111 @@ export function Component() {
         <section className="rounded-lg bg-surface p-3 text-sm">
           <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
-            {sheet.grantedSpells.map((g) => (
-              <div
-                key={`${g.name}|${g.source}`}
-                className="flex items-center gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
-              >
-                <SpellInfoSheet
-                  name={g.name}
-                  source={g.source}
-                  version={doc.rulesVersion}
-                  subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
-                  trigger={
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                    >
-                      <span className="truncate capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
-                        {g.name}
-                      </span>
-                      {g.usage === 'prepared' && (
-                        <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                          Always prepared
-                        </span>
-                      )}
-                    </button>
-                  }
-                />
-                <span className="shrink-0 text-xs text-ink-muted">
-                  {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
-                </span>
-                {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
-                  <span
-                    className="shrink-0 text-amber-300"
-                    title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
-                  >
-                    <AlertTriangle size={12} />
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => castGranted(g.name, g.source)}
-                  className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                  title="Cast (marks your action/bonus action; starts concentration if needed)"
+            {sheet.grantedSpells.map((g) => {
+              const entity = spellEntity(g.name, g.source);
+              const level = spellLevelOf(g.name, g.source);
+              const block =
+                sheet.spellcasting.find((sc) => sc.ability === g.ability) ??
+                (g.usage === 'prepared' ? sheet.spellcasting[0] : undefined);
+              const abilityModifier =
+                g.ability !== undefined ? sheet.abilities[g.ability].mod : undefined;
+              const attackModifier =
+                abilityModifier !== undefined ? sheet.profBonus.value + abilityModifier : undefined;
+              const resource =
+                g.usage === 'prepared' && block !== undefined
+                  ? nextCastResource(block, play, level)
+                  : undefined;
+              const rolls = spellRollActions(entity, {
+                characterLevel: sheet.totalLevel,
+                slotLevel: resource?.level,
+                abilityModifier,
+              });
+              const hasAttack =
+                attackModifier !== undefined &&
+                Array.isArray(entity?.spellAttack) &&
+                entity.spellAttack.length > 0;
+              const cast = () => {
+                if (g.usage === 'prepared' && block !== undefined) {
+                  castSpell(update, block, level, {
+                    name: g.name,
+                    source: g.source,
+                    concentration: spellConcentrationOf(g.name, g.source),
+                    economy: spellCastEconomy(g.name, g.source),
+                  });
+                } else {
+                  castGranted(g.name, g.source);
+                }
+              };
+              return (
+                <div
+                  key={`${g.name}|${g.source}`}
+                  className="flex items-center gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
                 >
-                  Cast
-                </button>
-              </div>
-            ))}
+                  <SpellInfoSheet
+                    name={g.name}
+                    source={g.source}
+                    version={doc.rulesVersion}
+                    subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                    trigger={
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      >
+                        <span className="truncate capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
+                          {g.name}
+                        </span>
+                        {g.usage === 'prepared' && (
+                          <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                            Always prepared
+                          </span>
+                        )}
+                      </button>
+                    }
+                  />
+                  <span className="shrink-0 text-xs text-ink-muted">
+                    {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
+                  </span>
+                  {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
+                    <span
+                      className="shrink-0 text-amber-300"
+                      title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                    >
+                      <AlertTriangle size={12} />
+                    </span>
+                  )}
+                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                    {hasAttack && (
+                      <RollChip
+                        expr={`1d20${fmt(attackModifier)}`}
+                        display={`Atk ${fmt(attackModifier)}`}
+                        label={`${g.name} spell attack`}
+                        variant="d20"
+                        onRolled={cast}
+                      />
+                    )}
+                    {rolls.map((action, index) => (
+                      <RollChip
+                        key={`${action.expr}:${action.label}`}
+                        expr={action.expr}
+                        label={action.label}
+                        variant={action.variant}
+                        onRolled={!hasAttack && index === 0 ? cast : undefined}
+                      />
+                    ))}
+                    {!hasAttack && rolls.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={cast}
+                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                        title="Cast (marks action economy and spends the applicable resource)"
+                      >
+                        Cast
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

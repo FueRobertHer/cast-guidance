@@ -86,6 +86,14 @@ const TOOL_USES: Record<string, string> = {
   "brewer's supplies": 'brew drinks; know purified water',
   "mason's tools": 'work stone',
   "painter's supplies": 'create art, spot forgeries',
+  "calligrapher's supplies": 'create fine writing, examine scripts',
+  "cobbler's tools": 'make and repair footwear',
+  "glassblower's tools": 'shape and repair glass',
+  "jeweler's tools": 'cut gems, appraise jewelry',
+  "leatherworker's tools": 'make and repair leather goods',
+  "potter's tools": 'shape and fire clay goods',
+  "weaver's tools": 'make and repair cloth',
+  "woodcarver's tools": 'carve and repair wooden objects',
 };
 const TOOL_CATEGORY: Array<[RegExp, string]> = [
   [/ tools$| supplies$| kit$| utensils$/, "artisan's tools"],
@@ -94,13 +102,85 @@ const TOOL_CATEGORY: Array<[RegExp, string]> = [
   [/instrument|lute|flute|drum|horn|pipes|viol|lyre|harp/, 'musical instrument'],
 ];
 
-/** Tool proficiency options with a short use hint (falls back to category). */
+// The pinned dataset uses category tokens as both object keys and members of a
+// `choose.from` list. Keep the PHB baseline here so choices also work while only
+// essentials are cached; unusual fixed tools (air/space vehicles, etc.) still
+// pass through verbatim when a source grants them.
+export const ARTISANS_TOOLS = [
+  "alchemist's supplies",
+  "brewer's supplies",
+  "calligrapher's supplies",
+  "carpenter's tools",
+  "cartographer's tools",
+  "cobbler's tools",
+  "cook's utensils",
+  "glassblower's tools",
+  "jeweler's tools",
+  "leatherworker's tools",
+  "mason's tools",
+  "painter's supplies",
+  "potter's tools",
+  "smith's tools",
+  "tinker's tools",
+  "weaver's tools",
+  "woodcarver's tools",
+] as const;
+
+export const MUSICAL_INSTRUMENTS = [
+  'bagpipes',
+  'drum',
+  'dulcimer',
+  'flute',
+  'horn',
+  'lute',
+  'lyre',
+  'pan flute',
+  'shawm',
+  'viol',
+] as const;
+
+export const GAMING_SETS = [
+  'dice set',
+  'dragonchess set',
+  'playing card set',
+  'three-dragon ante set',
+] as const;
+
+const OTHER_TOOLS = [
+  'disguise kit',
+  'forgery kit',
+  'herbalism kit',
+  "navigator's tools",
+  "poisoner's kit",
+  "thieves' tools",
+  'vehicles (land)',
+  'vehicles (water)',
+] as const;
+
+const TOOL_GROUPS: Record<string, readonly string[]> = {
+  anyartisanstool: ARTISANS_TOOLS,
+  "artisan's tools": ARTISANS_TOOLS,
+  anymusicalinstrument: MUSICAL_INSTRUMENTS,
+  'musical instrument': MUSICAL_INSTRUMENTS,
+  anygamingset: GAMING_SETS,
+  'gaming set': GAMING_SETS,
+};
+
+const ALL_TOOLS = [...ARTISANS_TOOLS, ...MUSICAL_INSTRUMENTS, ...GAMING_SETS, ...OTHER_TOOLS];
+
+/** Tool proficiency options, expanding every category shape in the pinned data. */
 export function toolOptions(from?: readonly unknown[]): ChoiceOption[] {
-  return (from ?? []).map((f) => {
-    const raw = String(f);
+  const rawOptions = (from === undefined || from.length === 0 ? ALL_TOOLS : from).flatMap((f) => {
+    const raw = String(f).trim();
+    return TOOL_GROUPS[raw.toLowerCase()] ?? [raw];
+  });
+  const seen = new Set<string>();
+  return rawOptions.flatMap((raw) => {
     const lower = raw.toLowerCase();
+    if (seen.has(lower)) return [];
+    seen.add(lower);
     const use = TOOL_USES[lower] ?? TOOL_CATEGORY.find(([re]) => re.test(lower))?.[1];
-    return { id: raw, label: titleCase(raw), description: use };
+    return [{ id: raw, label: titleCase(raw), description: use }];
   });
 }
 
@@ -182,17 +262,35 @@ export function readProficiencyList(
             for (const s of selected) grant(s);
           },
         );
-      } else if (key === 'any' || key === 'anyStandard' || key === 'anyLanguage') {
+      } else if (
+        key === 'any' ||
+        key === 'anyStandard' ||
+        key === 'anyLanguage' ||
+        key.startsWith('any')
+      ) {
         const count = num(value) ?? 1;
         const id = `${promptIdBase}:${chooseIdx++}`;
+        const category =
+          key === 'any' || key === 'anyStandard' || key === 'anyLanguage' ? undefined : [key];
         col.choice(
-          { id, origin, kind, label, count, options: withDupesDisabled(optionsFor(undefined)) },
+          { id, origin, kind, label, count, options: withDupesDisabled(optionsFor(category)) },
           (selected) => {
             for (const s of selected) grant(s);
           },
         );
       } else if (value === true) {
-        grant(titleCase(key));
+        // A generic "gaming set"/"musical instrument" grant still requires a
+        // concrete choice. `toolOptions` expands those category tokens; fixed
+        // named proficiencies remain a one-item grant.
+        const expanded = kind === 'tool' ? optionsFor([key]) : [];
+        if (expanded.length > 1) {
+          const id = `${promptIdBase}:${chooseIdx++}`;
+          col.choice({ id, origin, kind, label, count: 1, options: expanded }, (selected) => {
+            for (const s of selected) grant(s);
+          });
+        } else {
+          grant(titleCase(key));
+        }
       } else if (typeof value === 'number' && key !== 'count') {
         // e.g. tool proficiencies with counts — treat as a grant
         grant(titleCase(key));

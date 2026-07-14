@@ -1,5 +1,13 @@
 import { parseDice } from './parse';
-import type { DiceAst, DiceRollDetail, DiceTermAst, RollOptions, RollResult } from './types';
+import type {
+  DiceAst,
+  DiceRollDetail,
+  DiceTermAst,
+  ModDetail,
+  RollOptions,
+  RollResult,
+  TermAst,
+} from './types';
 
 /** Unbiased die roll via rejection sampling (no modulo bias). */
 export function cryptoRng(sides: number): number {
@@ -55,6 +63,32 @@ function keptFlags(values: number[], term: DiceTermAst): boolean[] {
   return kept;
 }
 
+function evaluateTerm(
+  term: TermAst,
+  rng: (sides: number) => number,
+  critical: boolean,
+): { value: number; detail: DiceRollDetail | ModDetail } {
+  if (term.kind === 'mod') {
+    const value = term.sign * term.value;
+    return { value, detail: { kind: 'mod', value } };
+  }
+  const count = critical ? term.count * 2 : term.count;
+  const values: number[] = [];
+  for (let i = 0; i < count; i++) values.push(rng(term.sides));
+  const kept = keptFlags(values, { ...term, count });
+  const detail: DiceRollDetail = {
+    kind: 'dice',
+    sign: term.sign,
+    sides: term.sides,
+    rolls: values.map((v, idx) => ({ v, kept: kept[idx] ?? true })),
+  };
+  let sum = 0;
+  for (let idx = 0; idx < values.length; idx++) {
+    if (kept[idx]) sum += values[idx] as number;
+  }
+  return { value: term.sign * sum, detail };
+}
+
 export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResult {
   let ast = typeof input === 'string' ? parseDice(input) : input;
   if (opts.advantage) ast = applyAdvantage(ast, opts.advantage);
@@ -65,32 +99,26 @@ export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResul
   let d20Natural: number | undefined;
 
   for (const term of ast.terms) {
-    if (term.kind === 'mod') {
-      const value = term.sign * term.value;
-      total += value;
-      terms.push({ kind: 'mod', value });
-      continue;
-    }
-    const count = opts.critical ? term.count * 2 : term.count;
-    const values: number[] = [];
-    for (let i = 0; i < count; i++) values.push(rng(term.sides));
-    const kept = keptFlags(values, { ...term, count });
-    const detail: DiceRollDetail = {
-      kind: 'dice',
-      sign: term.sign,
-      sides: term.sides,
-      rolls: values.map((v, idx) => ({ v, kept: kept[idx] ?? true })),
-    };
-    let sum = 0;
-    for (let idx = 0; idx < values.length; idx++) {
-      if (kept[idx]) sum += values[idx] as number;
-    }
-    total += term.sign * sum;
+    const evaluated = evaluateTerm(term, rng, opts.critical === true);
+    total += evaluated.value;
+    const detail = evaluated.detail;
     terms.push(detail);
-    if (d20Natural === undefined && term.sides === 20 && term === ast.terms[0]) {
+    if (
+      detail.kind === 'dice' &&
+      d20Natural === undefined &&
+      term.kind === 'dice' &&
+      term.sides === 20 &&
+      term === ast.terms[0]
+    ) {
       const keptRoll = detail.rolls.find((r) => r.kept);
       if (keptRoll) d20Natural = keptRoll.v;
     }
+  }
+
+  if (ast.multiplier !== undefined) {
+    const factor = evaluateTerm(ast.multiplier, rng, opts.critical === true);
+    total *= factor.value;
+    terms.push({ kind: 'multiplier', value: factor.value, detail: factor.detail });
   }
 
   const meta: RollResult['meta'] =

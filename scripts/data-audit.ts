@@ -10,6 +10,8 @@
 import { DATA_TAG } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { GithubTagSource } from '../src/data5e/source';
+import { parseDice } from '../src/dice/parse';
+import { spellRollActions } from '../src/features/sheet/spellRolls';
 
 const source = new GithubTagSource(DATA_TAG);
 
@@ -78,6 +80,54 @@ for (const w of reg.warnings) {
 for (const [message, entities] of grouped) {
   console.log(`- [${entities.length}x] ${message}`);
   console.log(`    e.g. ${entities.slice(0, 4).join(', ')}`);
+}
+
+// Every spell roll action generated at every character level and valid slot
+// level must remain valid input for the dice engine. This intentionally checks
+// nonstandard/homebrew scaling thresholds as well as the usual 5/11/17 steps.
+const invalidSpellRolls: string[] = [];
+let spellsWithRolls = 0;
+let generatedRolls = 0;
+for (const spell of reg.byType('spell')) {
+  let spellHasRoll = false;
+  const baseLevel = typeof spell.level === 'number' ? spell.level : 0;
+  const characterLevels = Array.from({ length: 20 }, (_, index) => index + 1);
+  const slotLevels =
+    baseLevel === 0
+      ? [0]
+      : Array.from({ length: Math.max(0, 10 - baseLevel) }, (_, index) => baseLevel + index);
+  for (const characterLevel of characterLevels) {
+    for (const slotLevel of slotLevels) {
+      const actions = spellRollActions(spell, {
+        characterLevel,
+        slotLevel,
+        abilityModifier: 5,
+      });
+      generatedRolls += actions.length;
+      spellHasRoll ||= actions.length > 0;
+      for (const action of actions) {
+        try {
+          parseDice(action.expr);
+        } catch (error) {
+          invalidSpellRolls.push(
+            `${String(spell.name)}|${String(spell.source)} character L${characterLevel}, slot L${slotLevel}: ${action.expr} (${String(error)})`,
+          );
+        }
+      }
+    }
+  }
+  if (spellHasRoll) spellsWithRolls++;
+}
+console.log(`\n## spell roll actions`);
+console.log(
+  `${spellsWithRolls}/${reg.byType('spell').length} spells expose dice; checked ${generatedRolls} generated rolls`,
+);
+if (invalidSpellRolls.length > 0) {
+  console.log(`invalid expressions (${invalidSpellRolls.length})`);
+  for (const invalid of invalidSpellRolls.slice(0, 40)) console.log(`- ${invalid}`);
+  process.exitCode = 1;
+} else {
+  console.log('all generated expressions parse');
 }
 
 // {@tag} histogram across every string in the dataset — feeds renderer coverage.

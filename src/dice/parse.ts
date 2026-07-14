@@ -6,8 +6,9 @@ const MAX_SIDES = 10_000;
 
 /**
  * Parse a dice expression: terms joined by +/-, each `NdM` (with optional
- * kh/kl/dh/dl keep-drop suffix) or a flat number. Examples:
- * "1d20+5", "2d6 + 3 + 1d4", "4d6dl1", "2d20kh1", "d8", "-1d4+2".
+ * kh/kl/dh/dl keep-drop suffix) or a flat number, optionally followed by one
+ * multiplication factor. Examples: "1d20+5", "4d6dl1", "1d4×10",
+ * "1d10×1d10", "d8", "-1d4+2".
  */
 export function parseDice(expr: string): DiceAst {
   const s = expr;
@@ -81,6 +82,7 @@ export function parseDice(expr: string): DiceAst {
   };
 
   const terms: TermAst[] = [];
+  let multiplier: TermAst | undefined;
   skipWs();
   if (i >= s.length) fail('empty dice expression');
 
@@ -97,6 +99,15 @@ export function parseDice(expr: string): DiceAst {
     skipWs();
     if (i >= s.length) break;
     const op = peek();
+    if (op === '×' || op === '*' || op?.toLowerCase() === 'x') {
+      i++;
+      skipWs();
+      if (i >= s.length) fail('expression ends after multiplier');
+      multiplier = readTerm(1);
+      skipWs();
+      if (i < s.length) fail(`unexpected "${peek()}" after multiplier`);
+      break;
+    }
     if (op !== '+' && op !== '-') fail(`unexpected "${op}"`);
     sign = op === '-' ? -1 : 1;
     i++;
@@ -104,5 +115,5 @@ export function parseDice(expr: string): DiceAst {
     if (i >= s.length) fail('expression ends after operator');
   }
 
-  return { expr, terms };
+  return { expr, terms, ...(multiplier !== undefined ? { multiplier } : {}) };
 }
