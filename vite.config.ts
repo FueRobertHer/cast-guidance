@@ -36,5 +36,13 @@ export default defineConfig({
   test: {
     environment: 'node',
     passWithNoTests: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{ts,tsx}'],
+      // Bootstrap, ambient types, and test files aren't meaningful to cover.
+      exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/**/*.d.ts', 'src/**/*.test.{ts,tsx}'],
+    },
   },
 });

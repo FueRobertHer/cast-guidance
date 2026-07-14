@@ -247,10 +247,14 @@ plus the broader rules-audit work:
 
 ### Testing, documentation, and release operations
 
-- Add coverage reporting and risk-based thresholds for the engine, owned import
-  schemas, persistence, loader, search protocol, and gameplay commands. Add
-  property/fuzz coverage for dice, choices, entry rendering, copy/mod,
-  migrations, and hostile imports, plus golden 2014/2024 characters.
+- Coverage reporting is now wired: `bun run test:coverage` (V8 provider,
+  text/html/lcov) reports per-file coverage without enforced thresholds. The
+  current baseline is ~36% statements overall — high on the engine and owned
+  import guards, near zero on UI components (component tests are only starting).
+  Remaining: risk-based thresholds for the engine, owned import schemas,
+  persistence, loader, search protocol, and gameplay commands; property/fuzz
+  coverage for dice, choices, entry rendering, copy/mod, migrations, and hostile
+  imports; and golden 2014/2024 characters.
 - Remove or narrowly scope `passWithNoTests: true`; include `tests-fixtures` in
   lint; add repeatable `check`, `data:audit`, coverage, E2E, and bundle-analysis
   scripts.
