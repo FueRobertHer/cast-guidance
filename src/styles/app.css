@@ -28,3 +28,28 @@ button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
+
+/*
+ * One consistent, high-contrast keyboard-focus indicator app-wide (A11Y-001).
+ * `:focus-visible` only fires for keyboard/programmatic focus, so pointer users
+ * never see it. This rule is unlayered, so it beats Tailwind's layered
+ * `outline-none` utility that ~20 inputs use — without touching each call site.
+ * `:where(...)` keeps specificity at 0 so components can still opt into a
+ * stronger custom ring later.
+ */
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"]),
+  [role="button"],
+  [role="link"],
+  [role="tab"],
+  [role="menuitem"]
+):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
