@@ -104,6 +104,11 @@ export function Component() {
           >
             Check for data updates
           </button>
+        ) : tags.length === 0 ? (
+          <p className="text-sm text-ink-muted">
+            No compatible data versions available. Newer releases with a different schema are not
+            shown because this app build cannot read them safely.
+          </p>
         ) : (
           <div className="flex flex-col gap-1 rounded-lg bg-surface p-2">
             {tags.map((t) => (
