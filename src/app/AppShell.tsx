@@ -20,7 +20,10 @@ function DataBanner() {
 
   if (phase === 'error') {
     return (
-      <div className="flex items-center justify-between gap-2 bg-accent-deep px-3 py-1.5 text-xs">
+      <div
+        className="flex items-center justify-between gap-2 bg-accent-deep px-3 py-1.5 text-xs"
+        role="alert"
+      >
         <span className="truncate">Game data download failed: {error}</span>
         <button
           type="button"
@@ -33,8 +36,17 @@ function DataBanner() {
     );
   }
   if (phase === 'working' && total > 0 && done < total) {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     return (
-      <div className="bg-surface px-3 py-1.5 text-xs text-ink-muted">
+      <div
+        className="bg-surface px-3 py-1.5 text-xs text-ink-muted"
+        role="progressbar"
+        aria-label="Downloading game data"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+        aria-valuetext={`${done} of ${total} files`}
+      >
         <div className="flex items-center justify-between">
           <span>Downloading game data…</span>
           <span>
@@ -42,10 +54,7 @@ function DataBanner() {
           </span>
         </div>
         <div className="mt-1 h-0.5 overflow-hidden rounded bg-surface-2">
-          <div
-            className="h-full bg-accent transition-all"
-            style={{ width: `${total > 0 ? Math.round((done / total) * 100) : 0}%` }}
-          />
+          <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
         </div>
       </div>
     );
