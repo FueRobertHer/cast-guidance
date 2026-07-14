@@ -1,0 +1,74 @@
+name: CI
+
+# Runs the local green baseline on every push and PR: frozen install, lint,
+# typecheck, unit tests, and a production/PWA build, then reports bundle sizes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned for reproducibility; bump alongside the local toolchain.
+          bun-version: 1.3.14
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Lint / format
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Production / PWA build
+        run: bun run build
+
+      - name: Report bundle sizes
+        if: always()
+        run: |
+          {
+            echo "### Bundle sizes (\`dist/assets\`)"
+            echo ""
+            echo "| File | Size |"
+            echo "| --- | ---: |"
+            if [ -d dist/assets ]; then
+              for f in $(ls -1 dist/assets/*.js dist/assets/*.css 2>/dev/null | sort); do
+                size=$(du -h "$f" | cut -f1)
+                echo "| \`$(basename "$f")\` | $size |"
+              done
+              total=$(du -sh dist | cut -f1)
+              echo ""
+              echo "**Total \`dist/\`:** $total"
+            else
+              echo "| _no build output_ | — |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+          if-no-files-found: warn

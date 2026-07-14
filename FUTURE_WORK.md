@@ -115,11 +115,11 @@ IndexedDB-backed test that a forced mid-transaction failure rolls the import bac
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| DATA-001 | Put all pack/file requests behind one global, deduplicated concurrency coordinator. `ensureTypePacks` currently starts one pool per pack and concurrent callers double-count progress. | Measured concurrency stays within the limit and progress never exceeds 100%. |
+| DATA-001 | Done: every network fetch now passes through one global `Semaphore(FETCH_CONCURRENCY)` in `getFile` (no more per-pack worker pools), and `getFile`/`ensurePack` de-dupe concurrent callers via `singleFlight`, so the same pack cannot double-count `addTotal`/`fileDone`. Both primitives are unit-tested; browser-verified end-to-end: 17 spell packs fanned out at once held peak concurrency at 4 (== limit) with progress at 17/17. Remaining: apply the same gate to the `updateToTag` download path (currently sequential; folds into DATA-002). | Measured concurrency stays within the limit and progress never exceeds 100%. |
 | DATA-002 | Stage data-tag installs, validate every required index/pack, support resume/cleanup, activate atomically, and retain a rollback tag until successful boot. | Interruption at any phase leaves the old version usable. |
 | DATA-003 | Batch registry hydration and search indexing instead of rebuilding after every downloaded file. | Background download causes bounded rebuilds with accurate readiness. |
 | DATA-004 | Validate update tag compatibility rather than offering the newest GitHub tags blindly. | An incompatible tag cannot be activated. |
-| SEARCH-001 | Include editable homebrew content revisions in registry/search signatures; use request ids, supersession, worker errors, and timeouts. | Homebrew edits update results without reload and stale worker responses cannot win. |
+| SEARCH-001 | Editable-homebrew content revisions now feed the registry/search signature: `HomebrewFileRow.rev` bumps on every `saveEditable`, and the pure `computeRegistrySignature` includes `id@rev`, so an edit to a same-id file changes the search-index cache key and rebuilds. Browser-verified: renaming a homebrew spell drops the old name from search and surfaces the new one without reload. Remaining: search worker request ids/supersession, worker-error surfacing, and query timeouts. | Homebrew edits update results without reload and stale worker responses cannot win. |
 | PWA-001 | Test cold/offline launch for every route with essential, partial, and full caches. | “Not downloaded,” “not found,” offline, and corrupted-cache states have distinct recovery actions. |
 | PWA-002 | Validate install/update behavior on iOS and Android; add tested 192/512 and maskable assets rather than relying only on SVG icons. | Install, offline reload, deferred update, failed update, and recovery pass on target devices. |
 
@@ -158,7 +158,7 @@ review:
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| TEST-001 | Add CI for frozen install, lint, typecheck, unit tests, production/PWA build, and artifact/bundle reporting. | Every PR runs the current local green baseline. |
+| TEST-001 | Done: `.github/workflows/ci.yml` runs frozen install, lint, typecheck, unit tests, and the production/PWA build on every push/PR (Bun pinned to 1.3.14), uploads the `dist` artifact, and writes a bundle-size table to the run summary. Remaining: add coverage thresholds and bundle-budget gating (TEST-002/coverage work). | Every PR runs the current local green baseline. |
 | TEST-002 | Extend the new character-session race/write-failure tests with IndexedDB-backed coverage for transactions, migrations, quota behavior, history, lifecycle events, and multiple tabs. | Persistence risks are reproducible without manual timing. |
 | TEST-003 | Add component/integration tests for creator review, choices, rules switching, routing, inventory, casting, rests, imports, homebrew edits, and error states. | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |

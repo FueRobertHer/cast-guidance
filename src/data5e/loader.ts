@@ -1,6 +1,8 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { runWhenIdle } from '@/lib/idle';
+import { Semaphore } from '@/lib/semaphore';
+import { singleFlight } from '@/lib/singleFlight';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DATA_TAG, FETCH_CONCURRENCY } from './config';
 import {
@@ -30,24 +32,30 @@ async function restoreActiveTag(): Promise<void> {
   }
 }
 
+/**
+ * One global gate for every network fetch (indexes, pack files, on-demand
+ * reads) so total wire concurrency stays within the limit no matter how many
+ * packs are being ensured in parallel. Keyed to the active tag so a
+ * `getFile`/`ensurePack` batch and a background drain share the same budget.
+ */
+const fetchGate = new Semaphore(FETCH_CONCURRENCY);
+
 /** In-flight de-dupe so concurrent callers share one fetch per file. */
 const inflight = new Map<string, Promise<unknown>>();
 
 /**
  * Get one parsed data file: IndexedDB first, network on miss (then cached).
  * This is the single entry point every other data5e module reads through.
+ * The cache hit path is unmetered; only real network fetches take a permit.
  */
 export async function getFile(path: string): Promise<unknown> {
   const cached = await dataCacheRepo.getFile(activeTag, path);
   if (cached) return cached.json;
 
-  const existing = inflight.get(path);
-  if (existing) return existing;
-
-  const promise = (async () => {
-    const status = dataStatusStore.getState();
-    status.fileStarted(path);
-    try {
+  return singleFlight(inflight, path, () =>
+    fetchGate.run(async () => {
+      const status = dataStatusStore.getState();
+      status.fileStarted(path);
       const json = await source.fetchFile(path);
       await dataCacheRepo.putFile({
         key: dataCacheRepo.key(activeTag, path),
@@ -59,12 +67,8 @@ export async function getFile(path: string): Promise<unknown> {
         fetchedAt: Date.now(),
       });
       return json;
-    } finally {
-      inflight.delete(path);
-    }
-  })();
-  inflight.set(path, promise);
-  return promise;
+    }),
+  );
 }
 
 function packOfPath(path: string): string {
@@ -105,34 +109,38 @@ export async function filesForPack(pack: PackId): Promise<string[]> {
 }
 
 async function fetchAll(paths: string[]): Promise<void> {
-  const queue = [...paths];
-  const workers = Array.from({ length: Math.min(FETCH_CONCURRENCY, queue.length) }, async () => {
-    for (;;) {
-      const path = queue.shift();
-      if (path === undefined) return;
+  // No local worker pool: `getFile` takes a global permit, so launching every
+  // fetch at once still keeps wire concurrency within FETCH_CONCURRENCY across
+  // all packs being ensured in parallel.
+  await Promise.all(
+    paths.map(async (path) => {
       await getFile(path);
       dataStatusStore.getState().fileDone();
-    }
-  });
-  await Promise.all(workers);
+    }),
+  );
 }
 
+/** De-dupe concurrent `ensurePack(samePack)` so progress is counted once. */
+const packInflight = new Map<PackId, Promise<void>>();
+
 /** Download every missing file of a pack; marks it complete in dataMeta. */
-export async function ensurePack(pack: PackId): Promise<void> {
-  const status = dataStatusStore.getState();
-  const all = await filesForPack(pack);
-  const cached = await dataCacheRepo.cachedPaths(activeTag);
-  const missing = all.filter((p) => !cached.has(p));
-  if (missing.length === 0) {
+export function ensurePack(pack: PackId): Promise<void> {
+  return singleFlight(packInflight, pack, async () => {
+    const status = dataStatusStore.getState();
+    const all = await filesForPack(pack);
+    const cached = await dataCacheRepo.cachedPaths(activeTag);
+    const missing = all.filter((p) => !cached.has(p));
+    if (missing.length === 0) {
+      await dataCacheRepo.markPackComplete(activeTag, pack);
+      status.setPack(pack, 'ready');
+      return;
+    }
+    status.setPack(pack, 'downloading');
+    status.addTotal(missing.length);
+    await fetchAll(missing);
     await dataCacheRepo.markPackComplete(activeTag, pack);
     status.setPack(pack, 'ready');
-    return;
-  }
-  status.setPack(pack, 'downloading');
-  status.addTotal(missing.length);
-  await fetchAll(missing);
-  await dataCacheRepo.markPackComplete(activeTag, pack);
-  status.setPack(pack, 'ready');
+  });
 }
 
 /** All dynamic pack ids, resolvable once essentials (the two indexes) exist. */
