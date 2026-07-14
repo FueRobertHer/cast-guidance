@@ -141,7 +141,7 @@ export function DiceTray() {
               });
               return (
                 <div
-                  key={r.at + r.expr + String(r.total)}
+                  key={r.id ?? r.at}
                   className="group flex items-center justify-between gap-2 border-b border-surface-2/40 py-2 text-sm last:border-b-0"
                 >
                   <div className="min-w-0">
@@ -181,7 +181,7 @@ export function DiceTray() {
                     <button
                       type="button"
                       title="Remove roll (accidental click?)"
-                      onClick={() => rollLogStore.getState().remove(r.at)}
+                      onClick={() => r.id !== undefined && rollLogStore.getState().remove(r.id)}
                       className="rounded px-1 text-ink-muted/60 hover:text-accent"
                     >
                       ✕

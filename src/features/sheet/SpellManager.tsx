@@ -10,13 +10,35 @@ import {
   classSpellUidsFromEntities,
   getSpellClassLookup,
 } from '@/data5e/spellLookup';
-import type { CharacterDoc, DerivedSheet, PlayState, SpellcastingBlock } from '@/engine/types';
+import type {
+  CharacterDoc,
+  DerivedSheet,
+  PlayState,
+  SpellcastingBlock,
+  SpellcastingMode,
+} from '@/engine/types';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 const uidOf = (e: Entity) => `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
+
+/** Short badge + tooltip describing how the class relates to its spells (GAME-002). */
+const MODE_LABEL: Record<SpellcastingMode, string | undefined> = {
+  known: 'Known',
+  prepared: 'Prepared',
+  spellbook: 'Spellbook',
+  pact: 'Pact Magic',
+  none: undefined,
+};
+const MODE_HINT: Record<SpellcastingMode, string> = {
+  known: 'You know a fixed set of chosen spells.',
+  prepared: 'You prepare a changeable subset of the whole class list.',
+  spellbook: 'You learn spells into a spellbook, then prepare a subset.',
+  pact: 'Pact Magic: known spells cast with pact slots.',
+  none: '',
+};
 
 function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
@@ -187,18 +209,56 @@ function ClassSpells({
     return (byLevel.get(0) ?? []).some((s) => uidOf(s) === uid);
   }).length;
 
+  // Over-limit is allowed (house rules, features that add preparations) — flag
+  // it, never block it (GAME-002 / guidance-not-gatekeeping).
+  const prepMax = block.preparedMax;
+  const cantripMax = block.cantripsKnown;
+  const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
+  const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
+
   return (
     <section className="flex flex-col gap-2">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">{block.className} spells</h2>
+        <h2 className="flex items-baseline gap-2 text-sm font-semibold">
+          {block.className} spells
+          {MODE_LABEL[block.mode] !== undefined && (
+            <span
+              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted"
+              title={MODE_HINT[block.mode]}
+            >
+              {MODE_LABEL[block.mode]}
+            </span>
+          )}
+        </h2>
         <span className="text-xs text-ink-muted">
           DC {block.saveDc.value} · Atk +{block.attackMod.value}
-          {block.cantripsKnown !== undefined &&
-            ` · cantrips ${cantripsKnown}/${block.cantripsKnown}`}
-          {block.preparedMax !== undefined &&
-            ` · prepared ${state.prepared.length}/${block.preparedMax}`}
+          {cantripMax !== undefined && (
+            <>
+              {' · cantrips '}
+              <span className={overCantrips ? 'font-semibold text-amber-300' : undefined}>
+                {cantripsKnown}/{cantripMax}
+              </span>
+            </>
+          )}
+          {prepMax !== undefined && (
+            <>
+              {' · prepared '}
+              <span className={overPrepared ? 'font-semibold text-amber-300' : undefined}>
+                {state.prepared.length}/{prepMax}
+              </span>
+            </>
+          )}
         </span>
       </header>
+      {(overPrepared || overCantrips) && (
+        <p role="status" className="text-xs text-amber-300">
+          {overPrepared
+            ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
+            : ''}
+          {overCantrips ? `${cantripsKnown - (cantripMax ?? 0)} over your cantrip limit. ` : ''}
+          That&rsquo;s allowed — the extra picks are kept, just flagging it.
+        </p>
+      )}
       {(() => {
         const rec = recommendedStarters(block.className);
         if (rec === undefined) return null;

@@ -1,0 +1,9 @@
+# Security headers for static hosts that read a `_headers` file (Cloudflare
+# Pages, Netlify). Vite copies public/ to dist/, so this ships with the build.
+# See docs/security-headers.md for the rationale and the enforce-CSP path.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; manifest-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://raw.githubusercontent.com https://api.github.com
