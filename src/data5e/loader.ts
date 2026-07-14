@@ -4,7 +4,7 @@ import { runWhenIdle } from '@/lib/idle';
 import { Semaphore } from '@/lib/semaphore';
 import { singleFlight } from '@/lib/singleFlight';
 import { dataStatusStore } from '@/stores/dataStatus';
-import { DATA_TAG, FETCH_CONCURRENCY } from './config';
+import { DATA_TAG, FETCH_CONCURRENCY, isCompatibleTag } from './config';
 import {
   classPackId,
   ESSENTIALS_FILES,
@@ -220,7 +220,11 @@ export async function ensureTypePacks(type: string): Promise<void> {
   }
 }
 
-/** Tags available on the mirror (newest first, top 15). */
+/**
+ * Compatible tags available on the mirror (newest first, top 15). Tags of a
+ * different schema major — which this build cannot parse safely — are filtered
+ * out rather than offered blindly.
+ */
 export async function listAvailableTags(): Promise<string[]> {
   const res = await fetch('https://api.github.com/repos/5etools-mirror-3/5etools-src/tags', {
     signal: AbortSignal.timeout(15000),
@@ -230,6 +234,7 @@ export async function listAvailableTags(): Promise<string[]> {
   return tags
     .map((t) => t.name)
     .filter((n): n is string => typeof n === 'string')
+    .filter((n) => isCompatibleTag(n))
     .slice(0, 15);
 }
 
@@ -239,6 +244,13 @@ export async function listAvailableTags(): Promise<string[]> {
  */
 export async function updateToTag(newTag: string): Promise<void> {
   if (newTag === activeTag) return;
+  // Hard gate: never activate a tag this build cannot represent, even if a
+  // caller passes one directly (defense in depth beyond the filtered list).
+  if (!isCompatibleTag(newTag)) {
+    throw new Error(
+      `data version ${newTag} is not compatible with this app (expected ${DATA_TAG.replace(/\.\d+\.\d+$/, '.x')})`,
+    );
+  }
   const oldTag = activeTag;
   const newSource = new GithubTagSource(newTag);
   const status = dataStatusStore.getState();
