@@ -227,8 +227,10 @@ plus the broader rules-audit work:
 - Add raw JSON validation/editing and schema-specific editors while preserving
   unsupported fields; preview counts, duplicates, `_copy` warnings, size, and
   affected characters before import.
-- Document the export format, forward/backward compatibility, and migration
-  policy with fixtures.
+- The export format, forward/backward compatibility, and migration policy are
+  now documented in `docs/export-format.md` (envelope `cast-guidance/character@1`,
+  minimal homebrew DTO, import guarantees). Remaining: regression fixtures that
+  exercise the documented compatibility matrix.
 
 ### Maintainability and diagnostics
 
@@ -254,12 +256,16 @@ plus the broader rules-audit work:
 - Remove or narrowly scope `passWithNoTests: true`; include `tests-fixtures` in
   lint; add repeatable `check`, `data:audit`, coverage, E2E, and bundle-analysis
   scripts.
-- Pin supported Bun/Node versions and document architecture, data/export
-  formats, persistence/migrations, automation limits, homebrew, troubleshooting,
-  deployment headers/fallback/cache policy, and rollback.
-- Define semantic app/data/export versions, changelog and support policy,
-  release/rollback checklist, issue/PR templates, and smoke tests for iOS,
-  Android, Chromium, Firefox, and Safari.
+- Supported Bun/Node versions are now pinned (`package.json` `engines` +
+  `packageManager` `bun@1.3.14`, `.bun-version`, matching CI); the export format
+  is documented (`docs/export-format.md`). Remaining: document architecture,
+  persistence/migrations, automation limits, homebrew, troubleshooting, and the
+  deployment headers/fallback/cache policy (deployment headers themselves are
+  covered by SEC-001 / `docs/security-headers.md`).
+- Issue and PR templates now exist (`.github/PULL_REQUEST_TEMPLATE.md`,
+  `.github/ISSUE_TEMPLATE/`). Remaining: define semantic app/data/export
+  versions, a changelog and support policy, a release/rollback checklist, and
+  smoke tests for iOS, Android, Chromium, Firefox, and Safari.
 - Add dependency vulnerability/license scanning and automated update triage;
   document mirror/release provenance, checksums where available, emergency pin,
   security reporting, supported versions, and patch expectations.
