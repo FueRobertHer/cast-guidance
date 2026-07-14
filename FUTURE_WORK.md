@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-07-13
 
-Reviewed revision: `2f790ed` (`origin/main`)
+Reviewed revision: `e858bbf` (`origin/main`, merged into this branch)
 
 This is the single planning document for open product and engineering work. It
 consolidates the former `FUTURE_WORK.md` mechanics list and the app-review
@@ -36,14 +36,16 @@ storage, route-level code splitting, defensive third-party-data parsing,
 cryptographic dice rolls, virtualized lists, worker-based search, history,
 self-contained character exports, PWA update prompting, inline build choices,
 class-aware ability-score suggestions, review-step warnings, edition-correct
-descriptions, and persistent mobile/desktop navigation.
+descriptions, persistent mobile/desktop navigation, character-scoped serialized
+save queues, lifecycle flushing, route-scoped loading, stale-response
+protection, and visible save/load recovery.
 
 | Check | Current result |
 |---|---|
 | Frozen dependency install | Pass — 423 packages |
-| Lint/format | Pass — 119 files |
+| Lint/format | Pass — 120 files |
 | TypeScript | Pass |
-| Unit tests | Pass — 12 files, 175 tests |
+| Unit tests | Pass — 13 files, 180 tests |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Not run in this review |
 | Browser, E2E, and automated accessibility tests | No harness exists yet |
@@ -57,7 +59,7 @@ Priority meanings:
 
 ## Recommended delivery order
 
-1. Make character saves, route loading, and imports safe and recoverable.
+1. Make imports and the remaining persistence boundaries safe and recoverable.
 2. Make spellcasting, choices, rules compatibility, errors, and accessibility
    transparent; add CI and browser-level regression coverage.
 3. Deepen rules automation, creator/level-up guidance, offline recovery,
@@ -66,33 +68,6 @@ Priority meanings:
    product capabilities.
 
 ## P0 — user data and trust boundaries
-
-### REL-001 — durable, character-scoped autosave
-
-`characterSession.ts` still uses one module-level debounce timer, does not flush
-before loading another character or leaving the page, updates its history
-baseline before writes succeed, and ignores persistence failures.
-
-Build a serialized coordinator keyed by character id. Flush before a session is
-replaced and on `pagehide`/visibility changes where feasible; order character
-and history writes; expose saving, saved, and retryable error states; prevent an
-older write from winning.
-
-Done when an edit-A, immediately-open-B, edit-B, reload test preserves both
-characters and forced IndexedDB failures are visible and recoverable.
-
-### REL-002 — route-scoped character loading
-
-While `load(id)` awaits IndexedDB, the session still exposes the previous
-document and `useCharacterSheet` does not reset `missing`. Late requests can
-also supersede newer navigation.
-
-Model `idle/loading/ready/missing/error` with the requested id, hide stale data
-as soon as the route changes, ignore superseded reads, and disable edits unless
-the loaded document id matches the route.
-
-Done when delayed A → B → C navigation never displays or edits the wrong
-character, including missing ids.
 
 ### IMP-001 — validate and transact character imports
 
@@ -115,7 +90,7 @@ embedded file cannot overwrite unrelated local homebrew by supplying its id.
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| REL-003 | Stop swallowing failures from rename, duplicate, delete, builder save, restore, updates, downloads, and history writes. | Every mutation has honest pending/success/error UI and a retry path. |
+| REL-003 | Extend the new session save/load recovery pattern to rename, duplicate, delete, builder saves, data updates, and downloads. | Every mutation has honest pending/success/error UI and a retry path. |
 | REL-004 | Use Dexie transactions for character + history deletion and character + embedded-homebrew import. | Forced failure rolls back every related write. |
 | REL-005 | Add router/component error boundaries and recovery UI for malformed characters, entities, and decode errors. | One bad record cannot take down the app. |
 | REL-006 | Route live queries through repositories; the character list currently bypasses migration/validation with direct `db.characters` reads. | Stored records cross one tested read boundary. |
@@ -182,7 +157,7 @@ review:
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | TEST-001 | Add CI for frozen install, lint, typecheck, unit tests, production/PWA build, and artifact/bundle reporting. | Every PR runs the current local green baseline. |
-| TEST-002 | Add IndexedDB/session tests for autosave races, transactions, migrations, quota/write failure, history, and multi-tab behavior. | Persistence risks are reproducible without manual timing. |
+| TEST-002 | Extend the new character-session race/write-failure tests with IndexedDB-backed coverage for transactions, migrations, quota behavior, history, lifecycle events, and multiple tabs. | Persistence risks are reproducible without manual timing. |
 | TEST-003 | Add component/integration tests for creator review, choices, rules switching, routing, inventory, casting, rests, imports, homebrew edits, and error states. | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
 | TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule. | Core entities, parser warnings, copy/mod behavior, and tag coverage have budgets. |
