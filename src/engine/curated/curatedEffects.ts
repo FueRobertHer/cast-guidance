@@ -16,6 +16,24 @@ function classLevel(col: Collector, className: string): number {
   return entry?.levels ?? 0;
 }
 
+/** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
+const superiorTechnique: CuratedFn = (col, origin) => {
+  col.add({
+    kind: 'resource',
+    key: 'superiority-dice',
+    label: 'Superiority Dice (d6)',
+    max: 1,
+    resetOn: 'short',
+    stack: true,
+    origin,
+  });
+  col.add({
+    kind: 'note',
+    text: 'Superior Technique: learn one maneuver and gain one d6 superiority die.',
+    origin,
+  });
+};
+
 function rageUses(level: number): number {
   if (level >= 20) return 99;
   if (level >= 17) return 6;
@@ -75,12 +93,15 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   'martial adept|phb': (col, origin) => {
+    // Shares the 'superiority-dice' pool so it stacks with Battle Master and
+    // Superior Technique instead of showing a separate tracker.
     col.add({
       kind: 'resource',
-      key: 'superiority-die',
-      label: 'Superiority Die',
+      key: 'superiority-dice',
+      label: 'Superiority Dice (d6)',
       max: 1,
       resetOn: 'short',
+      stack: true,
       origin,
     });
     col.add({
@@ -89,6 +110,23 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // Battle Master's superiority dice: 4/5/6 by fighter level, growing d8→d10→d12.
+  'combat superiority|battle master': (col, origin) => {
+    const lvl = classLevel(col, 'Fighter');
+    const count = lvl >= 15 ? 6 : lvl >= 7 ? 5 : 4;
+    const die = lvl >= 18 ? 'd12' : lvl >= 10 ? 'd10' : 'd8';
+    col.add({
+      kind: 'resource',
+      key: 'superiority-dice',
+      label: `Superiority Dice (${die})`,
+      max: count,
+      resetOn: 'short',
+      stack: true,
+      origin,
+    });
+  },
+  // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
+  'superior technique|tce': superiorTechnique,
   'healer|phb': (col, origin) => {
     col.add({ kind: 'action', economy: 'action', label: 'Healer (kit)', roll: '1d6+4', origin });
   },
@@ -154,11 +192,11 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Fighting styles (2014 optional features; 2024 feats share names) ----
   'defense|phb': (col, origin) => {
     col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: 'Defense: +1 AC applies only while wearing armor.', origin });
+    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
   },
   'defense|xphb': (col, origin) => {
     col.add({ kind: 'acBonus', amount: 1, origin });
-    col.add({ kind: 'note', text: 'Defense: +1 AC applies only while wearing armor.', origin });
+    col.add({ kind: 'note', text: '+1 AC applies only while wearing armor.', origin });
   },
   'archery|phb': (col, origin) => {
     col.add({ kind: 'attackBonus', scope: 'ranged', amount: 2, origin });
@@ -170,7 +208,7 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'damageBonus', scope: 'melee', amount: 2, origin });
     col.add({
       kind: 'note',
-      text: 'Dueling: +2 damage applies while wielding a single one-handed weapon.',
+      text: '+2 damage applies while wielding a single one-handed weapon.',
       origin,
     });
   },
@@ -255,6 +293,19 @@ export const CURATED: Record<string, CuratedFn> = {
       label: 'Focus',
       max: classLevel(col, 'Monk'),
       resetOn: 'short',
+      origin,
+    });
+  },
+  // Stunning Strike states its effect but leaves the DC to the "ki save DC"
+  // defined in the Ki/Monk's Focus feature — the prose scanner can't resolve a
+  // cross-feature DC, so pin it here: Con save vs 8 + prof + Wis mod.
+  'stunning strike|monk': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'action',
+      label: 'Stunning Strike',
+      note: 'spend 1 focus/ki · stunned until your next turn on a failed save',
+      save: { targetAbility: 'con', dcAbility: 'wis' },
       origin,
     });
   },

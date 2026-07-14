@@ -6,8 +6,19 @@
  * the matching effects. The curated table stays the precision override: call
  * this only when no curated entry handled the feature.
  */
-import type { EffectOrigin } from '../types';
+import type { Ability, EffectOrigin } from '../types';
 import type { Collector } from './base';
+
+const DAMAGE_TYPES =
+  'acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder';
+const ABILITY_WORDS: Record<string, Ability> = {
+  strength: 'str',
+  dexterity: 'dex',
+  constitution: 'con',
+  intelligence: 'int',
+  wisdom: 'wis',
+  charisma: 'cha',
+};
 
 /** Recursively flatten an entries tree to plain lowercase text. */
 export function flattenEntries(entries: unknown): string {
@@ -93,14 +104,70 @@ export function proseScanFeature(
   // only when limited-use (otherwise every prose "as an action" is noise).
   // Limited-use features also get their first dice expression as a roll chip.
   const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
-  const roll =
-    dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+  let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+
+  // Level-scaled dice — use the biggest step the character's total level has
+  // reached. Two phrasings: 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10),
+  // 11 (3d10)". Both give absolute dice for a level threshold.
+  if (roll !== undefined) {
+    const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+    const steps: Array<[number, string]> = [];
+    for (const m of text.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
+      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
+    }
+    // Two paren forms: 2024 "levels 5 (2d10)" and FTD "5th level (2d10)".
+    for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
+      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
+    }
+    steps.sort((a, b) => a[0] - b[0]);
+    for (const [stepLevel, stepDice] of steps) {
+      if (totalLevel >= stepLevel) roll = stepDice.replaceAll(' ', '');
+    }
+  }
+
+  // Mechanics the prose states outright: damage type, area, and save.
+  const dmgType = text.match(
+    new RegExp(`\\d+d\\d+(?: ?[+-] ?\\d+)? (${DAMAGE_TYPES}) damage`),
+  )?.[1];
+  const area = text.match(
+    /in a (\d+-foot-wide, \d+-foot-long line|\d+-foot(?:-radius)? (?:cone|line|sphere|cube|radius))/,
+  )?.[1];
+  const note = [dmgType, area].filter((s) => s !== undefined).join(' · ') || undefined;
+  const targetAbility =
+    ABILITY_WORDS[
+      text.match(
+        /must (?:then )?(?:each )?make an? (strength|dexterity|constitution|intelligence|wisdom|charisma) saving throw/,
+      )?.[1] ?? ''
+    ];
+  // DC phrasing varies: 2014 "equals 8 + your X modifier + your proficiency
+  // bonus"; 2024 "(8 plus your X modifier and proficiency bonus)". Accept both
+  // orders of ability/proficiency too.
+  const dcAbility =
+    ABILITY_WORDS[
+      text.match(
+        /8 (?:\+|plus) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier (?:\+|and) (?:your )?proficiency bonus/,
+      )?.[1] ??
+        text.match(
+          /8 (?:\+|plus) your proficiency bonus (?:\+|and) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+        )?.[1] ??
+        ''
+    ];
+  const save =
+    targetAbility !== undefined && dcAbility !== undefined
+      ? { targetAbility, dcAbility }
+      : undefined;
+
   if (/as a bonus action/.test(text)) {
-    col.add({ kind: 'action', economy: 'bonus', label: name, roll, origin });
+    col.add({ kind: 'action', economy: 'bonus', label: name, roll, note, save, origin });
   } else if (/as a reaction|use your reaction/.test(text)) {
-    col.add({ kind: 'action', economy: 'reaction', label: name, roll, origin });
-  } else if (uses !== undefined && /as an action|use your action/.test(text)) {
-    col.add({ kind: 'action', economy: 'action', label: name, roll, origin });
+    col.add({ kind: 'action', economy: 'reaction', label: name, roll, note, save, origin });
+  } else if (
+    uses !== undefined &&
+    // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
+    // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
+    /as an action|use your action|replace one of your attacks|as a magic action/.test(text)
+  ) {
+    col.add({ kind: 'action', economy: 'action', label: name, roll, note, save, origin });
   }
 
   const hp = text.match(
@@ -108,5 +175,32 @@ export function proseScanFeature(
   );
   if (hp?.[1] !== undefined) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
+  }
+
+  // Natural armor: a fixed base AC stated in prose ("base AC of 17";
+  // "13 + [your] Dexterity modifier") or a flat "+3 bonus to Armor Class".
+  // Gated to the trait name so unrelated AC mentions don't trigger it;
+  // generalizes across Tortle, Lizardfolk, Loxodon, Locathah, Warforged…
+  if (/natural armor/.test(name.toLowerCase())) {
+    const withMod = text.match(
+      /(\d+) \+ (?:your )?(strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+    );
+    const flat =
+      text.match(/base ac (?:of|is|equals|,) (\d+)/) ?? text.match(/ac (?:of|is) (\d+)\b/);
+    const bonus = text.match(/\+\s*(\d+) bonus to (?:your )?armor class/);
+    if (withMod?.[1] !== undefined && withMod[2] !== undefined) {
+      const ability = ABILITY_WORDS[withMod[2]];
+      col.add({
+        kind: 'acFormula',
+        label: name,
+        base: Number(withMod[1]),
+        addAbilities: ability !== undefined ? [ability] : [],
+        origin,
+      });
+    } else if (flat?.[1] !== undefined) {
+      col.add({ kind: 'acFormula', label: name, base: Number(flat[1]), addAbilities: [], origin });
+    } else if (bonus?.[1] !== undefined) {
+      col.add({ kind: 'acBonus', amount: Number(bonus[1]), origin });
+    }
   }
 }

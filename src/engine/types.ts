@@ -163,8 +163,23 @@ export type EffectInput = { origin: EffectOrigin } & (
       label: string;
       max: number | 'profBonus' | `abilityMod:${Ability}` | `level:${string}`;
       resetOn: 'short' | 'long';
+      /**
+       * When true, same-key resources from other sources add to the pool
+       * (superiority dice from Battle Master + Martial Adept + Superior
+       * Technique stack). Default is first-wins (curated beats prose-scan dup).
+       */
+      stack?: boolean;
     }
-  | { kind: 'action'; economy: 'action' | 'bonus' | 'reaction'; label: string; roll?: string }
+  | {
+      kind: 'action';
+      economy: 'action' | 'bonus' | 'reaction';
+      label: string;
+      roll?: string;
+      /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
+      note?: string;
+      /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
+      save?: { targetAbility: Ability; dcAbility: Ability };
+    }
   | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
   | { kind: 'note'; text: string }
 );
@@ -283,11 +298,22 @@ export interface DerivedSheet {
     label: string;
     roll?: string;
     origin: string;
+    /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
+    note?: string;
+    /** Computed save DC + the ability the target saves with. */
+    save?: { targetAbility: Ability; dc: number };
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];
-  /** Innate / granted spells (racial, feat). Cast without preparation. */
-  grantedSpells: Array<{ name: string; source: string; ability?: Ability; origin: string }>;
+  /** Innate / granted spells (racial, feat, domain). Cast without preparation. */
+  grantedSpells: Array<{
+    name: string;
+    source: string;
+    ability?: Ability;
+    /** 'prepared' = always-prepared (domain/oath/circle), cast with class slots. */
+    usage?: string;
+    origin: string;
+  }>;
   warnings: string[];
   pending: ChoicePrompt[];
   /** Choices already made — powers "change this pick" in the build editor. */

@@ -32,6 +32,82 @@ const race: DataEntity[] = [
     ],
   },
   {
+    // PHB-shaped Dragonborn: the racial resistance is a `choose` the subrace
+    // pre-answers, and the Breath Weapon mechanics live in prose (the typed
+    // damage/area/save comes from the curated ancestry table in race.ts).
+    name: 'Dragonborn',
+    source: 'TST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: [{ choose: { from: ['acid', 'cold', 'fire', 'lightning', 'poison'] } }],
+    languageProficiencies: [{ common: true, draconic: true }],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'You can use your action to exhale destructive energy. Each creature in the area of the exhalation must make a saving throw. The DC for this saving throw equals 8 + your Constitution modifier + your proficiency bonus. A creature takes 2d6 damage on a failed save. The damage increases to 3d6 at 6th level, 4d6 at 11th level, and 5d6 at 16th level. After you use your breath weapon, you can’t use it again until you complete a short or long rest.',
+        ],
+      },
+    ],
+  },
+  {
+    // 2024-style versioned Dragonborn: the ancestry color is baked into the
+    // race NAME (no subrace), the breath weapon "replaces an attack", scales in
+    // "levels 5 (2d10)" form, and states the DC as "8 plus … and …".
+    name: 'Dragonborn (Blue)',
+    source: 'XTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['lightning'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in either a 15-foot cone or a 30-foot line that is 5 feet wide. Each creature in that area must make a Dexterity saving throw (8 plus your Constitution modifier and proficiency bonus). On a failed save, a creature takes 1d10 damage. This damage increases by 1d10 when you reach character levels 5 (2d10), 11 (3d10), and 17 (4d10). You can use this Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
+    // FTD Chromatic Green: the breath weapon states a 30-foot LINE and a DEX
+    // save inline. The curated ancestry table lists "green" as a 15-ft cone with
+    // a CON save — the linkage must NOT clobber the (authoritative) prose.
+    name: 'Dragonborn (Chromatic; Green)',
+    source: 'FTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['poison'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in a 30-foot line that is 5 feet wide. Each creature in that area must make a Dexterity saving throw (DC = 8 + your Constitution modifier + your proficiency bonus). On a failed save, the creature takes 1d10 poison damage. This damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10). You can use your Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
+    // FTD Gem Emerald: a 15-ft cone dealing psychic — a colour/type absent from
+    // the curated table, so the prose scanner must type it with no curated help.
+    name: 'Dragonborn (Gem; Emerald)',
+    source: 'FTST',
+    ability: [{ str: 2, cha: 1 }],
+    speed: 30,
+    resist: ['psychic'],
+    entries: [
+      {
+        name: 'Breath Weapon',
+        type: 'entries',
+        entries: [
+          'When you take the Attack action on your turn, you can replace one of your attacks with an exhalation of magical energy in a 15-foot cone. Each creature in that area must make a Dexterity saving throw (DC = 8 + your Constitution modifier + your proficiency bonus). On a failed save, the creature takes 1d10 psychic damage. This damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10). You can use your Breath Weapon a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ],
+      },
+    ],
+  },
+  {
     // Exercises the generic prose scanner (no curated entries match these).
     name: 'Prosefolk',
     source: 'TST',
@@ -65,6 +141,42 @@ const race: DataEntity[] = [
       },
     ],
   },
+  {
+    // Natural Armor (flat base 17, no Dex) + a 2024 "Magic action" trait —
+    // exercises the prose scanner's AC extraction and Magic-action economy.
+    name: 'Turtlefolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Natural Armor',
+        type: 'entries',
+        entries: [
+          "Your shell provides you a base AC of 17 (your Dexterity modifier doesn't affect this number). You can't wear armor, but you can use a shield.",
+        ],
+      },
+      {
+        name: 'Healing Touch',
+        type: 'entries',
+        entries: [
+          "As a Magic action, you touch a creature and it regains hit points equal to your level. Once you use this trait, you can't use it again until you finish a long rest.",
+        ],
+      },
+    ],
+  },
+  {
+    // Natural Armor stated as "13 + Dexterity modifier" (no "your", MPMM style).
+    name: 'Scalefolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Natural Armor',
+        type: 'entries',
+        entries: ["When you aren't wearing armor, your base AC is 13 + Dexterity modifier."],
+      },
+    ],
+  },
 ];
 
 const spell: DataEntity[] = [
@@ -79,6 +191,13 @@ const background: DataEntity[] = [
     source: 'TST',
     skillProficiencies: [{ choose: { from: ['arcana', 'history'], count: 2 } }],
     entries: ['You studied.'],
+  },
+  {
+    // Open language picks — exercises the "already known" dedup.
+    name: 'Linguist',
+    source: 'TST',
+    languageProficiencies: [{ anyStandard: 2 }],
+    entries: ['You collect tongues.'],
   },
   {
     name: 'Modern Scholar',
@@ -172,6 +291,18 @@ const cls: DataEntity[] = [
     classFeatures: ['Expertise|Sneak|TST|1'],
   },
   {
+    name: 'Monk',
+    source: 'TST',
+    hd: { number: 1, faces: 8 },
+    proficiency: ['str', 'dex'],
+    startingProficiencies: {
+      weapons: ['simple'],
+      skills: [{ choose: { from: ['acrobatics', 'athletics'], count: 1 } }],
+    },
+    // Ki resource + Stunning Strike are curated (see curatedEffects.ts).
+    classFeatures: ['Ki|Monk|TST|2', 'Stunning Strike|Monk|TST|5'],
+  },
+  {
     name: 'Mage',
     source: 'TST',
     hd: { number: 1, faces: 6 },
@@ -238,6 +369,22 @@ const classFeature: DataEntity[] = [
     level: 1,
     entries: ['You cast spells.'],
   },
+  {
+    name: 'Ki',
+    source: 'TST',
+    className: 'Monk',
+    classSource: 'TST',
+    level: 2,
+    entries: ['Your ki save DC = 8 + your proficiency bonus + your Wisdom modifier.'],
+  },
+  {
+    name: 'Stunning Strike',
+    source: 'TST',
+    className: 'Monk',
+    classSource: 'TST',
+    level: 5,
+    entries: ['Spend 1 ki; the target must make a Constitution saving throw or be stunned.'],
+  },
 ];
 
 const subclass: DataEntity[] = [
@@ -248,6 +395,14 @@ const subclass: DataEntity[] = [
     className: 'Warrior',
     classSource: 'TST',
     subclassFeatures: ['Path of Tests|Warrior|TST|Tests|TST|3'],
+    // Domain-style always-prepared spells + a warlock-style expanded list. Both
+    // live on the subclass entity itself, not its features.
+    additionalSpells: [
+      {
+        prepared: { '1': ['bless|tst'], '3': ['cure wounds|tst'], '9': ['flame strike|tst'] },
+        expanded: { '1': ['shield|tst'] },
+      },
+    ],
   },
 ];
 
@@ -275,7 +430,18 @@ const optionalfeature: DataEntity[] = [
     name: 'Archery',
     source: 'PHB',
     featureType: ['FS:T'],
+    // Synthetic pact gate: prereq text is shown but not enforced (depends on
+    // other picks the collector doesn't resolve).
+    prerequisite: [{ pact: 'Blade' }],
     entries: ['+2 ranged attack (prose).'],
+  },
+  {
+    name: 'Precision',
+    source: 'PHB',
+    featureType: ['FS:T'],
+    // Level gate: deterministic from the class entry, so it's enforced.
+    prerequisite: [{ level: 10 }],
+    entries: ['+2 to a weapon attack (prose).'],
   },
 ];
 
@@ -331,7 +497,15 @@ const item: DataEntity[] = [
 
 const WORLD: Record<string, DataEntity[]> = {
   race,
-  subrace: [],
+  subrace: [
+    {
+      name: 'Dragonborn (Blue)',
+      source: 'TST',
+      raceName: 'Dragonborn',
+      raceSource: 'TST',
+      resist: ['lightning'],
+    },
+  ],
   background,
   feat,
   class: cls,

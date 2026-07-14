@@ -1,17 +1,29 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
-import type { ChoicePrompt } from '@/engine/types';
+import type { ChoiceOption, ChoicePrompt } from '@/engine/types';
 
 export interface ChoicePromptRendererProps {
   prompt: ChoicePrompt;
   value: string[] | string | number | undefined;
   onChange: (value: string[] | string) => void;
+  /**
+   * Optional ⓘ affordance per option (e.g. a feat's full description). The
+   * caller owns the registry lookup and returns a rendered node so this stays
+   * rules-content-free. Returns undefined for options with no info.
+   */
+  renderOptionInfo?: (option: ChoiceOption) => ReactNode;
 }
 
 /**
  * Generic renderer for engine ChoicePrompts — the wizard AND level-up flow
  * are both just lists of these. Never hardcodes rules content.
  */
-export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRendererProps) {
+export function ChoicePromptRenderer({
+  prompt,
+  value,
+  onChange,
+  renderOptionInfo,
+}: ChoicePromptRendererProps) {
   const selected = Array.isArray(value)
     ? value.map(String)
     : value !== undefined
@@ -120,24 +132,30 @@ export function ChoicePromptRenderer({ prompt, value, onChange }: ChoicePromptRe
         <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {options.map((o) => {
             const active = selected.includes(o.id);
+            const info = renderOptionInfo?.(o);
             return (
-              <button
+              <div
                 key={o.id}
-                type="button"
-                disabled={o.disabled !== undefined}
-                title={o.disabled?.reason}
-                onClick={() => toggle(o.id)}
-                className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors ${
+                className={`flex items-start rounded-lg border transition-colors ${
                   active
                     ? 'border-accent bg-accent-deep/40'
                     : 'border-surface-2 bg-surface-2/40 hover:bg-surface-2'
                 } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
               >
-                <span className="text-sm font-semibold">{o.label}</span>
-                {o.description !== undefined && o.description !== '' && (
-                  <span className="text-xs text-ink-muted">{o.description}</span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  disabled={o.disabled !== undefined}
+                  title={o.disabled?.reason}
+                  onClick={() => toggle(o.id)}
+                  className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 text-left"
+                >
+                  <span className="text-sm font-semibold">{o.label}</span>
+                  {o.description !== undefined && o.description !== '' && (
+                    <span className="text-xs text-ink-muted">{o.description}</span>
+                  )}
+                </button>
+                {info != null && <div className="shrink-0 p-2">{info}</div>}
+              </div>
             );
           })}
         </div>

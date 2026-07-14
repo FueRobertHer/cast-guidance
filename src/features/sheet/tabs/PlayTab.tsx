@@ -1,6 +1,7 @@
-import { Minus, Moon, Plus, Sun } from 'lucide-react';
-import { Link, useOutletContext } from 'react-router';
+import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
+import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
+import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
@@ -8,17 +9,23 @@ import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
+import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
+import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
+import { conditionLimits } from '../conditionEffects';
+import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
+import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, spellNeedsConcentration } from '../SpellManager';
 import type { CharacterSheetState } from '../useCharacterSheet';
+import { weaponInfoEntries } from '../weaponInfo';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
+// Exhaustion is leveled, so it gets its own stepper below — not a plain chip.
 const CONDITIONS = [
   'Blinded',
   'Charmed',
   'Deafened',
-  'Exhaustion',
   'Frightened',
   'Grappled',
   'Incapacitated',
@@ -109,6 +116,14 @@ function longRest(play: PlayState, sheet: DerivedSheet): string[] {
   if (play.resources.some((r) => r.used > 0)) restored.push('resources');
   if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
 
+  // A long rest removes one level of exhaustion (both editions).
+  const exh = play.conditions.find((c) => c.id === 'Exhaustion');
+  if (exh?.level !== undefined && exh.level > 0) {
+    if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
+    else exh.level -= 1;
+    restored.push('1 exhaustion level');
+  }
+
   play.currentHp = sheet.maxHp.value;
   play.tempHp = 0;
   play.slotsSpent = play.slotsSpent.map(() => 0);
@@ -132,14 +147,119 @@ export function Component() {
   const registry = useRegistry();
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
+  // Look a spell up by its stored printing; when that misses (blank/wrong source
+  // on a granted spell) fall back to the printing matching the character's rules
+  // version, so a 2024 sheet shows 2024 text.
+  const spellEntity = (name: string, source: string) => {
+    if (registry === null) return undefined;
+    const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
+    if (bySource !== undefined) return bySource;
+    const cands = registry
+      .byType('spell')
+      .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
+    return pickForVersion(cands, doc.rulesVersion);
+  };
   const spellLevelOf = (name: string, source: string): number => {
-    const e = registry?.get('spell', name, source);
+    const e = spellEntity(name, source);
     return typeof e?.level === 'number' ? e.level : 1;
   };
   const spellConcentrationOf = (name: string, source: string): boolean =>
-    spellNeedsConcentration(registry?.get('spell', name, source));
+    spellNeedsConcentration(spellEntity(name, source));
+  /** Which slice of the turn a spell's casting time uses (undefined for rituals). */
+  const spellCastEconomy = (
+    name: string,
+    source: string,
+  ): 'action' | 'bonus' | 'reaction' | undefined => {
+    const e = spellEntity(name, source);
+    const unit = Array.isArray(e?.time)
+      ? String((e.time[0] as { unit?: unknown })?.unit ?? '')
+      : '';
+    return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
+  };
 
   const play = doc.play;
+
+  /** Mark a slice of the action economy used (attacks, casting). */
+  const markUsed = (kind: 'action' | 'bonus' | 'reaction') =>
+    update((d) => {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[kind] = true;
+      d.play.turn = turn;
+    });
+  /**
+   * Trigger an action: mark its slice of the turn used AND spend one pip of its
+   * linked resource (if any), in a single update so the sheet stays honest.
+   */
+  const triggerAction = (
+    economy: 'action' | 'bonus' | 'reaction',
+    resourceKey?: string,
+    max?: number,
+  ) =>
+    update((d) => {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[economy] = true;
+      d.play.turn = turn;
+      if (resourceKey !== undefined && max !== undefined) {
+        const entry = d.play.resources.find((r) => r.key === resourceKey);
+        const used = entry?.used ?? 0;
+        if (used < max) {
+          if (entry !== undefined) entry.used = used + 1;
+          else d.play.resources.push({ key: resourceKey, used: 1 });
+        }
+      }
+    });
+  /** Cast an innate/granted spell: no slot, just concentration + economy. */
+  const castGranted = (name: string, source: string) =>
+    update((d) => {
+      if (spellConcentrationOf(name, source)) d.play.concentratingOn = { label: name };
+      const eco = spellCastEconomy(name, source);
+      if (eco !== undefined) {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn[eco] = true;
+        d.play.turn = turn;
+      }
+    });
+
+  // What the active conditions stop you doing — shown as warnings, never blocks.
+  const limits = conditionLimits(play.conditions);
+  const spellHasVerbal = (name: string, source: string): boolean => {
+    const e = spellEntity(name, source);
+    return (e?.components as { v?: boolean } | undefined)?.v === true;
+  };
+  // Condition/status rules text for the character's edition — Exhaustion in
+  // particular reads very differently between 2014 and 2024.
+  const conditionEntry = (id: string) => {
+    if (registry === null) return undefined;
+    const cands = [...registry.byType('condition'), ...registry.byType('status')].filter(
+      (e) => String(e.name).toLowerCase() === id.toLowerCase(),
+    );
+    return pickForVersion(cands, doc.rulesVersion);
+  };
+  /** Amber "you normally can't do this" line for a condition limit. */
+  const limitWarning = (text: string, reasons: readonly string[]) =>
+    reasons.length > 0 ? (
+      <span className="flex items-center gap-1 text-xs text-amber-300">
+        <AlertTriangle size={12} className="shrink-0" /> {text} ({reasons.join(', ')})
+      </span>
+    ) : null;
+
+  // Exhaustion: leveled effects (speed, disadvantage, death) with a real stepper.
+  const exLevel = exhaustionLevel(play.conditions);
+  const exInfo = exhaustionInfo(exLevel, doc.rulesVersion);
+  const displaySpeed = exInfo.speedAfter(sheet.speedWalk.value);
+  const setExhaustion = (level: number) =>
+    update((d) => {
+      const idx = d.play.conditions.findIndex((x) => x.id === 'Exhaustion');
+      const lvl = Math.max(0, Math.min(6, level));
+      if (lvl === 0) {
+        if (idx >= 0) d.play.conditions.splice(idx, 1);
+      } else if (idx >= 0) {
+        const e = d.play.conditions[idx];
+        if (e !== undefined) e.level = lvl;
+      } else {
+        d.play.conditions.push({ id: 'Exhaustion', level: lvl });
+      }
+    });
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
@@ -447,8 +567,17 @@ export function Component() {
           <div className="text-xs text-ink-muted">Initiative 🎲</div>
         </button>
         <div className="rounded-lg bg-surface p-3">
-          <div className="text-2xl font-bold">{sheet.speedWalk.value}</div>
-          <div className="text-xs text-ink-muted">Speed (ft)</div>
+          <div className="text-2xl font-bold">
+            {displaySpeed}
+            {displaySpeed !== sheet.speedWalk.value && (
+              <span className="ml-1.5 align-middle text-sm font-normal text-ink-muted line-through">
+                {sheet.speedWalk.value}
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-ink-muted">
+            Speed (ft){displaySpeed !== sheet.speedWalk.value ? ' · exhausted' : ''}
+          </div>
         </div>
       </section>
 
@@ -566,24 +695,14 @@ export function Component() {
         <div className="flex flex-wrap gap-1.5 border-t border-surface-2/40 p-3">
           {CONDITIONS.map((c) => {
             const active = play.conditions.find((x) => x.id === c);
-            const isExhaustion = c === 'Exhaustion';
             return (
               <button
                 key={c}
                 type="button"
-                title={isExhaustion ? 'Tap to add a level (past 6 clears it)' : undefined}
                 onClick={() =>
                   update((d) => {
                     const idx = d.play.conditions.findIndex((x) => x.id === c);
-                    if (isExhaustion) {
-                      if (idx === -1) d.play.conditions.push({ id: c, level: 1 });
-                      else {
-                        const entry = d.play.conditions[idx];
-                        const lvl = (entry?.level ?? 1) + 1;
-                        if (lvl > 6) d.play.conditions.splice(idx, 1);
-                        else if (entry !== undefined) entry.level = lvl;
-                      }
-                    } else if (idx === -1) d.play.conditions.push({ id: c });
+                    if (idx === -1) d.play.conditions.push({ id: c });
                     else d.play.conditions.splice(idx, 1);
                   })
                 }
@@ -594,11 +713,89 @@ export function Component() {
                 }`}
               >
                 {c}
-                {active?.level !== undefined ? ` ${active.level}` : ''}
               </button>
             );
           })}
         </div>
+        {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
+        <div className="flex flex-col gap-2 border-t border-surface-2/40 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold">Exhaustion</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Decrease exhaustion"
+                onClick={() => setExhaustion(exLevel - 1)}
+                disabled={exLevel === 0}
+                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+              >
+                −
+              </button>
+              <span className="w-10 text-center text-sm font-bold">{exLevel} / 6</span>
+              <button
+                type="button"
+                aria-label="Increase exhaustion"
+                onClick={() => setExhaustion(exLevel + 1)}
+                disabled={exLevel >= 6}
+                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+              >
+                +
+              </button>
+            </div>
+          </div>
+          {exInfo.lines.length > 0 && (
+            <ul className="flex flex-col gap-0.5 text-xs text-amber-300">
+              {exInfo.lines.map((l) => (
+                <li key={l} className="flex items-center gap-1">
+                  <AlertTriangle size={11} className="shrink-0" /> {l}
+                </li>
+              ))}
+            </ul>
+          )}
+          {exInfo.dead && (
+            <button
+              type="button"
+              onClick={() =>
+                update((d) => {
+                  d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
+                  d.play.currentHp = 0;
+                  d.play.tempHp = 0;
+                  d.play.concentratingOn = undefined;
+                })
+              }
+              className="self-start rounded-lg border border-accent/60 px-3 py-1.5 text-xs font-semibold text-accent"
+            >
+              Apply death — drop to 0 HP
+            </button>
+          )}
+        </div>
+        {/* Rules text for whatever's currently active — no rulebook needed. */}
+        {play.conditions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-surface-2/40 p-3">
+            <span className="w-full text-[10px] font-semibold uppercase text-ink-muted">
+              What these do
+            </span>
+            {play.conditions.map((c) => {
+              const e = conditionEntry(c.id);
+              if (e?.entries === undefined) return null;
+              return (
+                <FeatureInfoSheet
+                  key={c.id}
+                  title={c.id}
+                  entries={e.entries}
+                  trigger={
+                    <button
+                      type="button"
+                      className="rounded-full border border-surface-2 px-2.5 py-1 text-xs text-ink-muted underline decoration-dashed underline-offset-2"
+                    >
+                      {c.id}
+                    </button>
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
       </details>
 
       {/* Rests */}
@@ -649,10 +846,28 @@ export function Component() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {sheet.resources.map((r) => {
               const used = usedOf(r.key);
+              const info = findFeatureInfo(sheet.features, r.label, r.origin);
               return (
                 <div key={r.key} className="rounded-lg bg-surface p-3">
                   <div className="mb-1.5 flex items-baseline justify-between text-sm">
-                    <span className="font-semibold">{r.label}</span>
+                    {info !== undefined ? (
+                      <FeatureInfoSheet
+                        title={info.title}
+                        subtitle={r.origin}
+                        entries={info.entries}
+                        trigger={
+                          <button
+                            type="button"
+                            className="font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            title="What does this do?"
+                          >
+                            {r.label}
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <span className="font-semibold">{r.label}</span>
+                    )}
                     <span className="text-xs text-ink-muted">{r.resetOn} rest</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -685,6 +900,8 @@ export function Component() {
       {sheet.attacks.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Attacks</h2>
+          {limitWarning("Can't take actions", limits.noActions)}
+          {limitWarning('Disadvantage on attack rolls', limits.attackDisadvantage)}
           <div className="flex flex-col rounded-lg bg-surface">
             {sheet.attacks.map((a) => (
               <div
@@ -692,7 +909,30 @@ export function Component() {
                 className="flex items-center justify-between gap-2 border-b border-surface-2/40 px-3 py-2.5 text-sm last:border-b-0"
               >
                 <div className="min-w-0">
-                  <div className="truncate font-semibold">{a.label}</div>
+                  {(() => {
+                    const info = weaponInfoEntries(
+                      registry,
+                      a.label,
+                      a.properties,
+                      doc.rulesVersion,
+                    );
+                    return info !== undefined ? (
+                      <FeatureInfoSheet
+                        title={a.label}
+                        entries={info}
+                        trigger={
+                          <button
+                            type="button"
+                            className="truncate text-left font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                          >
+                            {a.label}
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <div className="truncate font-semibold">{a.label}</div>
+                    );
+                  })()}
                   <div className="truncate text-xs text-ink-muted">
                     {a.properties.join(', ')}
                     {a.range !== undefined ? ` · ${a.range}` : ''}
@@ -704,6 +944,7 @@ export function Component() {
                     display={fmt(a.toHit.value)}
                     label={`${a.label} attack`}
                     variant="d20"
+                    onRolled={() => markUsed('action')}
                   />
                   <RollChip expr={a.damage} label={`${a.label} damage`} variant="damage" />
                   {a.versatileDamage !== undefined && (
@@ -724,27 +965,157 @@ export function Component() {
       {sheet.actions.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-ink-muted">Actions</h2>
+          <p className="text-xs text-ink-muted">
+            Tap a name for rules; tap Use / roll to spend it.
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            {sheet.actions.map((a) => (
-              <span
-                key={`${a.origin}:${a.label}`}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
-                  a.economy === 'bonus'
-                    ? 'border-emerald-300/40 text-emerald-300'
-                    : a.economy === 'reaction'
-                      ? 'border-sky-300/40 text-sky-300'
-                      : 'border-surface-2'
-                }`}
-              >
-                {a.label}
-                {a.roll !== undefined && (
-                  <RollChip expr={a.roll} label={a.label} variant="damage" />
-                )}
-              </span>
-            ))}
+            {sheet.actions.map((a) => {
+              const info = findFeatureInfo(sheet.features, a.label, a.origin);
+              // Limited-use actions share a name with their resource — triggering
+              // one spends a use so the pips stay honest.
+              const linkedResource = sheet.resources.find(
+                (r) => r.label.toLowerCase() === a.label.toLowerCase(),
+              );
+              const remaining =
+                linkedResource !== undefined
+                  ? linkedResource.max - usedOf(linkedResource.key)
+                  : undefined;
+              // Using it marks the right slice of the turn and spends a pip.
+              const trigger = () =>
+                triggerAction(a.economy, linkedResource?.key, linkedResource?.max);
+              const depleted = remaining === 0;
+              // Incapacitating conditions stop actions/bonus actions/reactions.
+              const blocked = limits.noActions;
+              const economyLabel =
+                a.economy === 'bonus'
+                  ? 'bonus action'
+                  : a.economy === 'reaction'
+                    ? 'reaction'
+                    : 'action';
+              const mechanics = [
+                a.note,
+                a.save !== undefined
+                  ? `DC ${a.save.dc} ${a.save.targetAbility.toUpperCase()} save`
+                  : undefined,
+                remaining !== undefined ? `${remaining}/${linkedResource?.max} left` : undefined,
+              ]
+                .filter((s) => s !== undefined)
+                .join(' · ');
+              const name =
+                info !== undefined ? (
+                  <FeatureInfoSheet
+                    title={info.title}
+                    subtitle={[a.origin, mechanics].filter((s) => s !== '').join(' · ')}
+                    entries={info.entries}
+                    trigger={
+                      <button
+                        type="button"
+                        className="underline decoration-surface-2 decoration-dashed underline-offset-4"
+                      >
+                        {a.label}
+                      </button>
+                    }
+                  />
+                ) : (
+                  a.label
+                );
+              return (
+                <span
+                  key={`${a.origin}:${a.label}`}
+                  className={`flex flex-col rounded-2xl border px-3 py-1.5 text-sm ${
+                    a.economy === 'bonus'
+                      ? 'border-emerald-300/40 text-emerald-300'
+                      : a.economy === 'reaction'
+                        ? 'border-sky-300/40 text-sky-300'
+                        : 'border-surface-2'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {name}
+                    {blocked.length > 0 && (
+                      <span
+                        className="text-amber-300"
+                        title={`${blocked.join(', ')}: you normally can't take ${
+                          a.economy === 'action' ? 'an' : 'a'
+                        } ${economyLabel}`}
+                      >
+                        <AlertTriangle size={11} />
+                      </span>
+                    )}
+                    {a.roll !== undefined ? (
+                      <RollChip expr={a.roll} label={a.label} variant="damage" onRolled={trigger} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={trigger}
+                        disabled={depleted}
+                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
+                        title={
+                          depleted
+                            ? 'No uses left'
+                            : `Use — marks your ${economyLabel}${
+                                linkedResource !== undefined
+                                  ? ` and spends a ${linkedResource.label} use`
+                                  : ''
+                              }`
+                        }
+                      >
+                        Use
+                      </button>
+                    )}
+                  </span>
+                  {mechanics !== '' && (
+                    <span className="text-[11px] leading-tight text-ink-muted">{mechanics}</span>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </section>
       )}
+
+      {/* Passive combat options — things you can always do (Extra Attack, …)
+          that aren't already a limited-use action chip above. */}
+      {(() => {
+        const actionNames = new Set(sheet.actions.map((a) => capabilityKey(a.label)));
+        const seen = new Set<string>();
+        const caps = sheet.features
+          .map((f) => ({ f, key: capabilityKey(f.name) }))
+          .filter(({ key }) => {
+            if (COMBAT_CAPABILITIES[key] === undefined || actionNames.has(key)) return false;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        if (caps.length === 0) return null;
+        return (
+          <section className="flex flex-col gap-1.5">
+            <h2 className="text-sm font-semibold text-ink-muted">Combat options</h2>
+            <p className="text-xs text-ink-muted">Things you can always do. Tap for full rules.</p>
+            <div className="flex flex-col gap-1">
+              {caps.map(({ f, key }) => (
+                <FeatureInfoSheet
+                  key={key}
+                  title={f.name}
+                  subtitle={f.origin.label}
+                  entries={f.entries}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex flex-col rounded-lg bg-surface px-3 py-2 text-left text-sm"
+                    >
+                      <span className="font-medium underline decoration-surface-2 decoration-dashed underline-offset-2">
+                        {f.name}
+                      </span>
+                      <span className="text-xs text-ink-muted">{COMBAT_CAPABILITIES[key]}</span>
+                    </button>
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Spell slots (spend/restore) — the leveled pool is character-wide,
           so render its pips only on the first casting class. */}
@@ -819,7 +1190,12 @@ export function Component() {
             const preparedUids = new Set(
               state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()),
             );
-            const registrySpells = [...state.known].sort((a, b) => a.name.localeCompare(b.name));
+            // Sorted by level (cantrips first), then name — not alphabetically.
+            const registrySpells = [...state.known].sort(
+              (a, b) =>
+                spellLevelOf(a.name, a.source) - spellLevelOf(b.name, b.source) ||
+                a.name.localeCompare(b.name),
+            );
             return (
               <div className="mt-2 flex flex-col gap-1 border-t border-surface-2/40 pt-2">
                 {registrySpells.map((ref) => {
@@ -831,39 +1207,52 @@ export function Component() {
                       <span className="w-6 shrink-0 text-xs text-ink-muted">
                         {level === 0 ? 'c' : `L${level}`}
                       </span>
-                      <Link
-                        to={`/library/spell/${encodeURIComponent(uid)}`}
-                        className={`min-w-0 flex-1 truncate ${prepared ? '' : 'text-ink-muted'}`}
-                      >
-                        {ref.name}
-                        {prepared && (
-                          <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
-                        )}
-                      </Link>
-                      {(level > 0 || spellConcentrationOf(ref.name, ref.source)) && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            castSpell(update, sc, level, {
-                              name: ref.name,
-                              source: ref.source,
-                              concentration: spellConcentrationOf(ref.name, ref.source),
-                            })
-                          }
-                          className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                          title={
-                            level === 0
-                              ? 'Cast cantrip (starts concentration)'
-                              : `Cast (spends the lowest available slot ≥ L${level}${
-                                  spellConcentrationOf(ref.name, ref.source)
-                                    ? ', starts concentration'
-                                    : ''
-                                })`
-                          }
+                      <SpellInfoSheet
+                        name={ref.name}
+                        source={ref.source}
+                        version={doc.rulesVersion}
+                        subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                        trigger={
+                          <button
+                            type="button"
+                            className={`min-w-0 flex-1 truncate text-left underline decoration-surface-2 decoration-dashed underline-offset-2 ${
+                              prepared ? '' : 'text-ink-muted'
+                            }`}
+                          >
+                            {ref.name}
+                            {prepared && (
+                              <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
+                            )}
+                          </button>
+                        }
+                      />
+                      {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
+                        <span
+                          className="shrink-0 text-amber-300"
+                          title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
                         >
-                          Cast
-                        </button>
+                          <AlertTriangle size={12} />
+                        </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          castSpell(update, sc, level, {
+                            name: ref.name,
+                            source: ref.source,
+                            concentration: spellConcentrationOf(ref.name, ref.source),
+                            economy: spellCastEconomy(ref.name, ref.source),
+                          })
+                        }
+                        className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                        title={
+                          level === 0
+                            ? 'Cast cantrip (marks your action/bonus action)'
+                            : `Cast (spends the lowest available slot ≥ L${level})`
+                        }
+                      >
+                        Cast
+                      </button>
                     </div>
                   );
                 })}
@@ -876,20 +1265,54 @@ export function Component() {
       {/* Innate / granted spells — cast per their own rules (no slots) */}
       {sheet.grantedSpells.length > 0 && (
         <section className="rounded-lg bg-surface p-3 text-sm">
-          <div className="mb-1.5 font-semibold">Innate & granted spells</div>
+          <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => (
-              <Link
+              <div
                 key={`${g.name}|${g.source}`}
-                to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                className="flex items-center justify-between border-b border-surface-2/40 py-1.5 last:border-b-0"
+                className="flex items-center gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
               >
-                <span className="capitalize">{g.name}</span>
-                <span className="text-xs text-ink-muted">
-                  {g.origin}
-                  {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                <SpellInfoSheet
+                  name={g.name}
+                  source={g.source}
+                  version={doc.rulesVersion}
+                  subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
+                      <span className="truncate capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
+                        {g.name}
+                      </span>
+                      {g.usage === 'prepared' && (
+                        <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                          Always prepared
+                        </span>
+                      )}
+                    </button>
+                  }
+                />
+                <span className="shrink-0 text-xs text-ink-muted">
+                  {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
                 </span>
-              </Link>
+                {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
+                  <span
+                    className="shrink-0 text-amber-300"
+                    title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                  >
+                    <AlertTriangle size={12} />
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => castGranted(g.name, g.source)}
+                  className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                  title="Cast (marks your action/bonus action; starts concentration if needed)"
+                >
+                  Cast
+                </button>
+              </div>
             ))}
           </div>
         </section>

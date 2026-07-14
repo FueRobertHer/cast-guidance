@@ -1,3 +1,4 @@
+import { useScrollHidden } from '@/lib/useScrollHidden';
 import { type AdvMode, useAdvMode } from '@/stores/advMode';
 
 const MODES: Array<[AdvMode, string, string]> = [
@@ -13,10 +14,13 @@ const MODES: Array<[AdvMode, string, string]> = [
 export function AdvToggle() {
   const mode = useAdvMode((s) => s.mode);
   const set = useAdvMode((s) => s.set);
+  const hidden = useScrollHidden();
 
   return (
     <div
-      className={`fixed right-4 bottom-[7.5rem] z-20 flex overflow-hidden rounded-full border bg-surface shadow-lg lg:bottom-20 ${
+      className={`fixed right-4 bottom-[calc(8.25rem+env(safe-area-inset-bottom))] z-20 flex overflow-hidden rounded-full border bg-surface shadow-lg transition-all duration-200 lg:bottom-20 ${
+        hidden ? 'pointer-events-none translate-x-32 opacity-0' : ''
+      } ${
         mode === 'adv'
           ? 'border-emerald-300/60'
           : mode === 'dis'

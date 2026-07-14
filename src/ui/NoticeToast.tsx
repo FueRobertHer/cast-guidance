@@ -31,7 +31,7 @@ export function NoticeToast() {
 
   return (
     <output
-      className={`fixed inset-x-4 bottom-28 z-30 flex items-start gap-3 rounded-lg border ${TONE[visible.tone]} bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80`}
+      className={`fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex items-start gap-3 rounded-lg border ${TONE[visible.tone]} bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80`}
       aria-live="polite"
     >
       <span className="shrink-0 text-lg leading-6 text-ink-muted">{ICON[visible.tone]}</span>

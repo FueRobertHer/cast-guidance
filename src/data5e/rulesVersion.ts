@@ -9,11 +9,24 @@ export function sourceEdition(source: string | undefined): RulesVersion {
   return source !== undefined && SOURCES_2024.has(source) ? '2024' : '2014';
 }
 
-function editionOf(e: Entity): RulesVersion {
+export function editionOf(e: Entity): RulesVersion {
   const edition = e.edition;
   if (edition === 'one') return '2024';
   if (edition === 'classic') return '2014';
   return sourceEdition(typeof e.source === 'string' ? e.source : undefined);
+}
+
+/**
+ * From several printings of the same thing (looked up by name across editions),
+ * pick the one matching the character's rules version — so a 2024 character sees
+ * the 2024 Exhaustion / spell / condition text, not whichever printing loaded
+ * first. Falls back to any printing when the exact edition isn't present.
+ */
+export function pickForVersion<T extends Entity>(
+  candidates: readonly T[],
+  version: RulesVersion,
+): T | undefined {
+  return candidates.find((e) => editionOf(e) === version) ?? candidates[0];
 }
 
 /**

@@ -1,11 +1,15 @@
 /**
- * 5etools `additionalSpells` — innate / always-known spells granted by races,
- * feats, and subraces. Format (simplified):
+ * 5etools `additionalSpells` — innate / always-known / always-prepared spells
+ * granted by races, feats, subraces, and subclasses. Format (simplified):
  *   [{ ability: "cha" | { choose: [...] },
- *      known:  { "1": ["thaumaturgy"], "_": [...] },
- *      innate: { "3": { daily: { "1": ["hellish rebuke"] } } } }]
- * Level keys gate by character level. `{ choose: "..." }` filter grants need a
- * picker we don't build yet — those surface as a note.
+ *      known:    { "1": ["thaumaturgy"], "_": [...] },
+ *      innate:   { "3": { daily: { "1": ["hellish rebuke"] } } },
+ *      prepared: { "1": ["bless", "cure wounds"] },   // domain/oath/circle
+ *      expanded: { "1": ["armor of agathys"] } }]     // warlock patron
+ * Level keys gate by character level. `prepared` spells are always prepared and
+ * cast with the class's own slots; `expanded` merely widens what you can learn,
+ * so (lacking a picker) it surfaces as a note. `{ choose: "..." }` filter grants
+ * likewise surface as a note.
  */
 import { ABILITIES, type Ability, type EffectOrigin } from '../types';
 import { asEntityArray, type Collector } from './base';
@@ -44,13 +48,18 @@ function gatherByLevel(map: unknown, totalLevel: number, out: string[], sawChoos
   }
 }
 
-export function collectAdditionalSpells(col: Collector, raw: unknown, origin: EffectOrigin): void {
+export function collectAdditionalSpells(
+  col: Collector,
+  raw: unknown,
+  origin: EffectOrigin,
+  defaultAbility?: Ability,
+): void {
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
   const totalLevel = totalLevelOf(col);
 
   for (const entry of entries) {
-    let ability: Ability | undefined;
+    let ability: Ability | undefined = defaultAbility;
     const ab = entry.ability;
     if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
       ability = ab as Ability;
@@ -60,18 +69,43 @@ export function collectAdditionalSpells(col: Collector, raw: unknown, origin: Ef
       Array.isArray((ab as { choose?: unknown[] }).choose)
     ) {
       const opts = (ab as { choose: unknown[] }).choose.map(String);
-      ability = opts[0] as Ability | undefined; // reasonable default; note the rest
+      ability = (opts[0] as Ability | undefined) ?? defaultAbility; // default; note the rest
       col.warn(`${origin.label}: spellcasting ability is your choice of ${opts.join('/')}.`);
     }
 
-    const names: string[] = [];
     const sawChoose = { v: false };
-    gatherByLevel(entry.known, totalLevel, names, sawChoose);
-    gatherByLevel(entry.innate, totalLevel, names, sawChoose);
 
-    for (const name of new Set(names)) {
+    // Innate / always-known: cast per their own rules or added to spells known.
+    const innate: string[] = [];
+    gatherByLevel(entry.known, totalLevel, innate, sawChoose);
+    gatherByLevel(entry.innate, totalLevel, innate, sawChoose);
+    for (const name of new Set(innate)) {
       col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, origin });
     }
+
+    // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
+    // class's own slots and never counted against the prepared limit.
+    const prepared: string[] = [];
+    gatherByLevel(entry.prepared, totalLevel, prepared, sawChoose);
+    for (const name of new Set(prepared)) {
+      col.add({
+        kind: 'grantSpell',
+        spell: parseSpellRef(name),
+        ability,
+        usage: 'prepared',
+        origin,
+      });
+    }
+
+    // Expanded spell list (Warlock patron): widens what you can learn rather than
+    // granting anything. Without a picker we surface it so the option is visible.
+    const expanded: string[] = [];
+    gatherByLevel(entry.expanded, totalLevel, expanded, { v: false });
+    const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
+    if (expandedNames.length > 0) {
+      col.warn(`${origin.label}: expands your spell options — ${expandedNames.join(', ')}.`);
+    }
+
     if (sawChoose.v) {
       col.warn(`${origin.label}: also lets you choose a spell — see the trait text.`);
     }

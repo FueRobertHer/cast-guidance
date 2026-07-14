@@ -101,17 +101,6 @@ export function Component() {
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Characters</h1>
-        <nav className="flex gap-3 text-sm text-ink-muted">
-          <Link to="/library" className="hover:text-ink">
-            Library
-          </Link>
-          <Link to="/homebrew" className="hover:text-ink">
-            Homebrew
-          </Link>
-          <Link to="/settings" className="hover:text-ink">
-            Settings
-          </Link>
-        </nav>
       </header>
 
       {characters.length === 0 && rows !== undefined && (

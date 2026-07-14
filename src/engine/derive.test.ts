@@ -272,6 +272,117 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
     expect(names).not.toContain('flame strike'); // gate 9 > 5
     expect(sheet.grantedSpells.find((g) => g.name === 'aid')?.ability).toBe('wis');
   });
+
+  it('grants subclass always-prepared spells and surfaces expanded ones', () => {
+    const sheet = deriveSheet(warriorDoc(), ctx); // Warrior 5 / Path of Tests
+    expect(sheet.grantedSpells.find((g) => g.name === 'bless')?.usage).toBe('prepared');
+    expect(sheet.grantedSpells.find((g) => g.name === 'cure wounds')?.usage).toBe('prepared');
+    // Level-gated: flame strike is a "9" entry, character is level 5.
+    expect(sheet.grantedSpells.some((g) => g.name === 'flame strike')).toBe(false);
+    // Expanded lists can't be auto-granted without a picker — surfaced as a note.
+    expect(
+      sheet.warnings.some(
+        (w) => w.toLowerCase().includes('expands your spell options') && w.includes('shield'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('deriveSheet — optional-feature prerequisites', () => {
+  it('level-gates optional feature options and labels their prerequisites', () => {
+    const doc = warriorDoc(); // Warrior 5
+    delete doc.choices['class:warrior|tst:optfeature:FS:T'];
+    const sheet = deriveSheet(doc, ctx);
+    const prompt = sheet.pending.find((p) => p.id === 'class:warrior|tst:optfeature:FS:T');
+    expect(prompt).toBeDefined();
+    // Precision needs level 10; the character is level 5 -> disabled with reason.
+    const precision = prompt?.options.find((o) => o.id === 'precision|phb');
+    expect(precision?.disabled?.reason).toContain('level 10');
+    expect(precision?.description).toContain('Prereq: level 10');
+    // Pact prereqs are informational only (depend on other picks) — not disabled.
+    const archery = prompt?.options.find((o) => o.id === 'archery|phb');
+    expect(archery?.description).toContain('Pact of the Blade');
+    expect(archery?.disabled).toBeUndefined();
+    // Defense has no prereq — plain description, selectable.
+    const defense = prompt?.options.find((o) => o.id === 'defense|phb');
+    expect(defense?.disabled).toBeUndefined();
+    expect(defense?.description).not.toContain('Prereq');
+  });
+});
+
+describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {
+  it('surfaces Stunning Strike as a Con save at the ki DC (8 + prof + Wis)', () => {
+    const doc = newCharacterDoc('m1', 'Kwai', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 12, dex: 16, con: 14, int: 10, wis: 16, cha: 8 };
+    doc.classes = [
+      {
+        ref: { name: 'Monk', source: 'TST' },
+        levels: 5,
+        hp: ['avg', 'avg', 'avg', 'avg', 'avg'],
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    const ss = sheet.actions.find((a) => a.label === 'Stunning Strike');
+    expect(ss?.save?.targetAbility).toBe('con');
+    // WIS 16 -> +3, level 5 prof +3, DC = 8 + 3 + 3 = 14.
+    expect(ss?.save?.dc).toBe(14);
+  });
+});
+
+describe('deriveSheet — stackable resources (superiority dice)', () => {
+  it('sums same-key resources flagged stack; keeps first-wins otherwise', () => {
+    const doc = warriorDoc();
+    const origin = (label: string) => ({
+      label,
+      uid: label.toLowerCase(),
+      type: 'custom' as const,
+    });
+    doc.customEffects = [
+      // Battle Master pool + a Martial-Adept-style d6 that stacks into it.
+      {
+        kind: 'resource',
+        key: 'superiority-dice',
+        label: 'Superiority Dice (d8)',
+        max: 4,
+        resetOn: 'short',
+        stack: true,
+        origin: origin('BM'),
+      },
+      {
+        kind: 'resource',
+        key: 'superiority-dice',
+        label: 'Superiority Dice (d6)',
+        max: 1,
+        resetOn: 'short',
+        stack: true,
+        origin: origin('MA'),
+      },
+      // Non-stack duplicate (curated vs prose) still collapses to the first.
+      {
+        kind: 'resource',
+        key: 'rage',
+        label: 'Rage',
+        max: 3,
+        resetOn: 'long',
+        origin: origin('C'),
+      },
+      {
+        kind: 'resource',
+        key: 'rage',
+        label: 'Rage',
+        max: 99,
+        resetOn: 'long',
+        origin: origin('D'),
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    const sup = sheet.resources.find((r) => r.key === 'superiority-dice');
+    expect(sup?.max).toBe(5); // 4 + 1 stacked
+    expect(sup?.label).toBe('Superiority Dice (d8)'); // first source's label wins
+    const rage = sheet.resources.find((r) => r.key === 'rage');
+    expect(rage?.max).toBe(3); // first wins, NOT summed to 102
+  });
 });
 
 describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {
@@ -513,5 +624,161 @@ describe('deriveSheet — generic prose scan (Prosefolk)', () => {
   it('curated traits are not double-emitted by the prose scan', () => {
     const s2 = deriveSheet(warriorDoc(), ctx);
     expect(s2.resources.filter((r) => r.key === 'relentless-endurance')).toHaveLength(1);
+  });
+});
+
+describe('deriveSheet — dragonborn ancestry linkage', () => {
+  function dragonbornDoc(withSubrace: boolean, levels = 1): CharacterDoc {
+    const doc = newCharacterDoc('d1', 'Rina', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Dragonborn', source: 'TST' };
+    if (withSubrace) doc.subrace = { name: 'Dragonborn (Blue)', source: 'TST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('subrace ancestry pre-answers the racial resistance choice', () => {
+    const sheet = deriveSheet(dragonbornDoc(true), ctx);
+    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(false);
+    expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');
+  });
+
+  it('keeps the resistance prompt when no subrace fixes it', () => {
+    const sheet = deriveSheet(dragonbornDoc(false), ctx);
+    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(true);
+  });
+
+  it('types the breath weapon from the ancestry (damage, area, save DC)', () => {
+    const sheet = deriveSheet(dragonbornDoc(true), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('2d6');
+    expect(bw?.note).toBe('lightning · 5 by 30 ft line');
+    // DC = 8 + CON mod (+2) + proficiency (+2)
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 });
+  });
+
+  it('scales breath weapon dice with total level', () => {
+    const sheet = deriveSheet(dragonbornDoc(true, 11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('4d6');
+  });
+
+  it('disables already-known languages in language prompts', () => {
+    const doc = dragonbornDoc(true);
+    doc.background = { name: 'Linguist', source: 'TST' };
+    const sheet = deriveSheet(doc, ctx);
+    const lang = sheet.pending.find((p) => p.kind === 'language');
+    expect(lang).toBeDefined();
+    // Dragonborn already speak Common and Draconic; open picks can't re-buy them.
+    expect(lang?.options.find((o) => o.id === 'Common')?.disabled).toBeDefined();
+    expect(lang?.options.find((o) => o.id === 'Draconic')?.disabled).toBeDefined();
+    expect(lang?.options.find((o) => o.id === 'Elvish')?.disabled).toBeUndefined();
+  });
+});
+
+describe('deriveSheet — natural armor + 2024 Magic action (prose scan)', () => {
+  function turtleDoc(): CharacterDoc {
+    const doc = newCharacterDoc('t1', 'Shelly', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 12, dex: 16, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Turtlefolk', source: 'TST' };
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    return doc;
+  }
+
+  it('applies natural armor base AC (17), ignoring a high Dex', () => {
+    const sheet = deriveSheet(turtleDoc(), ctx);
+    expect(sheet.ac.value).toBe(17); // not 10 + DEX 3 = 13
+    expect(sheet.acFormulaLabel).toBe('Natural Armor');
+  });
+
+  it('reads a 2024 "Magic action" trait as an action + long-rest resource', () => {
+    const sheet = deriveSheet(turtleDoc(), ctx);
+    expect(sheet.actions.some((a) => a.label === 'Healing Touch' && a.economy === 'action')).toBe(
+      true,
+    );
+    expect(sheet.resources.some((r) => r.label === 'Healing Touch' && r.resetOn === 'long')).toBe(
+      true,
+    );
+  });
+
+  it('adds the ability modifier for "13 + Dexterity modifier" natural armor', () => {
+    const doc = turtleDoc();
+    doc.race = { name: 'Scalefolk', source: 'TST' };
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.ac.value).toBe(16); // 13 + DEX 3, not a flat 13
+    expect(sheet.acFormulaLabel).toBe('Natural Armor');
+  });
+});
+
+describe('deriveSheet — FTD Dragonborn (prose-scanned; ancestry table must not clobber)', () => {
+  function ftdDoc(name: string, levels = 1): CharacterDoc {
+    const doc = newCharacterDoc('f1', 'Kaida', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name, source: 'FTST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('keeps the chromatic LINE + DEX save even though the table lists green as a cone', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Chromatic; Green)'), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.note).toBe('poison · 30-foot line');
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 }); // NOT con/cone
+    expect(bw?.roll).toBe('1d10');
+  });
+
+  it('types a gem breath weapon (psychic cone) with no curated ancestry entry', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Gem; Emerald)'), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.note).toBe('psychic · 15-foot cone');
+    expect(bw?.save?.targetAbility).toBe('dex');
+  });
+
+  it('scales the FTD breath weapon dice with total level', () => {
+    const sheet = deriveSheet(ftdDoc('Dragonborn (Chromatic; Green)', 11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('3d10'); // level 11 step
+  });
+});
+
+describe('deriveSheet — 2024 versioned Dragonborn (color in race name)', () => {
+  function xDragonbornDoc(levels: number): CharacterDoc {
+    const doc = newCharacterDoc('x1', 'Vex', 'test-tag');
+    doc.rulesVersion = '2024';
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 15, dex: 13, con: 14, int: 8, wis: 12, cha: 10 };
+    doc.race = { name: 'Dragonborn (Blue)', source: 'XTST' };
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    return doc;
+  }
+
+  it('types the breath weapon (DEX save, flexible area, computed DC) from the race name', () => {
+    const sheet = deriveSheet(xDragonbornDoc(1), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw).toBeDefined();
+    expect(bw?.note).toBe('lightning · 15 ft cone or 30 ft line');
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 }); // 8 + CON 2 + prof 2
+    expect(bw?.roll).toBe('1d10');
+  });
+
+  it('scales breath-weapon dice with the 2024 "levels 5 (2d10)" phrasing', () => {
+    const sheet = deriveSheet(xDragonbornDoc(11), ctx);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.roll).toBe('3d10'); // level 11 step
+  });
+
+  it('grants the resistance and a proficiency-bonus-limited resource', () => {
+    const sheet = deriveSheet(xDragonbornDoc(1), ctx);
+    expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');
+    expect(sheet.resources.some((r) => r.label === 'Breath Weapon')).toBe(true);
   });
 });

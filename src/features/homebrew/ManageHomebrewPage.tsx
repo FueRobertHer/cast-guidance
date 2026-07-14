@@ -70,9 +70,6 @@ export function Component() {
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Homebrew</h1>
-        <Link to="/" className="text-sm text-ink-muted hover:text-ink">
-          Characters
-        </Link>
       </header>
 
       <p className="text-sm text-ink-muted">

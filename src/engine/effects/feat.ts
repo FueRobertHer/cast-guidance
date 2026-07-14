@@ -11,6 +11,7 @@ import {
   readProficiencyList,
   readResistList,
   skillOptions,
+  toolOptions,
 } from './readers';
 
 /** Collect one feat entity. `instanceId` keeps repeatable feats' choices apart. */
@@ -42,7 +43,7 @@ export function collectFeatEntity(
     'tool',
     'Tool proficiency',
     (name) => col.add({ kind: 'toolProf', name, origin }),
-    genericOptions,
+    toolOptions,
   );
   readProficiencyList(
     col,
