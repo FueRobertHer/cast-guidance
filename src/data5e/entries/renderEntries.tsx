@@ -6,6 +6,7 @@
 /** biome-ignore-all lint/suspicious/noArrayIndexKey: entries are static data, index keys are stable */
 import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
 
@@ -139,17 +140,16 @@ function TagView({ tag, args }: { tag: string; args: string[] }): ReactNode {
         </span>
       );
     }
-    case 'link':
+    case 'link': {
+      // Content-driven URL — allow only plain http(s); render inert text otherwise.
+      const href = safeExternalHref(args[1] ?? body);
+      if (href === undefined) return <InlineText text={body} />;
       return (
-        <a
-          href={args[1] ?? body}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sky-300 underline"
-        >
+        <a href={href} target="_blank" rel="noreferrer noopener" className="text-sky-300 underline">
           {body}
         </a>
       );
+    }
     default: {
       const routeType = LINKED_TYPES[tag];
       if (routeType !== undefined) {
