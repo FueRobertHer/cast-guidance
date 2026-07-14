@@ -5,14 +5,11 @@ import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
-import { invalidateRegistry } from '@/data5e/registry';
-import { characterRepo } from '@/db/characterRepo';
-import { db } from '@/db/db';
+import { characterRepo, type ImportSummary } from '@/db/characterRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
-import { migrateCharacter } from '@/engine/migrate';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { assertCharacterExport, CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import { askConfirm, askText } from '@/ui/dialogs';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
@@ -28,20 +25,12 @@ async function exportCharacter(doc: CharacterDoc): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function importCharacter(file: File): Promise<string> {
-  const parsed = assertCharacterExport(JSON.parse(await file.text()));
-  const doc = migrateCharacter(parsed.character);
-  for (const brew of parsed.homebrew) {
-    const existing = await homebrewRepo.get(brew.id);
-    if (existing === undefined) {
-      await db.homebrewFiles.put({ ...brew, addedAt: Date.now() });
-    }
-  }
-  if (parsed.homebrew.length > 0) invalidateRegistry();
-  const existing = await characterRepo.get(doc.id);
-  const finalDoc = existing !== undefined ? { ...doc, id: crypto.randomUUID() } : doc;
-  await characterRepo.put(finalDoc);
-  return finalDoc.name;
+function importSummaryMessage(s: ImportSummary): string {
+  const parts = [`Imported ${s.name}`];
+  if (s.renamed) parts.push('(renamed — id already existed)');
+  if (s.homebrewAdded > 0) parts.push(`· ${s.homebrewAdded} homebrew file(s) added`);
+  if (s.homebrewSkipped > 0) parts.push(`· ${s.homebrewSkipped} already present`);
+  return parts.join(' ');
 }
 
 function classSummary(doc: CharacterDoc): string {
@@ -62,8 +51,9 @@ interface Vitals {
 export function Component() {
   const navigate = useNavigate();
   const registry = useRegistry(['essentials']);
-  const rows = useLiveQuery(async () => db.characters.orderBy('updatedAt').reverse().toArray(), []);
-  const characters = (rows ?? []) as unknown as CharacterDoc[];
+  const result = useLiveQuery(() => characterRepo.listSafe(), []);
+  const characters = result?.characters ?? [];
+  const readErrors = result?.errors ?? [];
   const importInput = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
 
@@ -103,8 +93,15 @@ export function Component() {
         <h1 className="text-xl font-bold">Characters</h1>
       </header>
 
-      {characters.length === 0 && rows !== undefined && (
+      {characters.length === 0 && result !== undefined && readErrors.length === 0 && (
         <p className="text-sm text-ink-muted">No characters yet — create your first hero.</p>
+      )}
+
+      {readErrors.length > 0 && (
+        <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">
+          {readErrors.length} character{readErrors.length > 1 ? 's' : ''} could not be read and{' '}
+          {readErrors.length > 1 ? 'are' : 'is'} hidden. The rest are safe to use.
+        </p>
       )}
 
       <div className="flex flex-col gap-2">
@@ -220,8 +217,9 @@ export function Component() {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f !== undefined) {
-            importCharacter(f)
-              .then((name) => setImportStatus(`Imported ${name}`))
+            f.text()
+              .then((text) => characterRepo.importFromText(text))
+              .then((summary) => setImportStatus(importSummaryMessage(summary)))
               .catch((err: unknown) =>
                 setImportStatus(
                   `Import failed: ${err instanceof Error ? err.message : String(err)}`,

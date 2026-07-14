@@ -1,5 +1,39 @@
-import { assertHomebrewFile, homebrewEntityCounts, sha256Hex } from '@/lib/guards';
+import {
+  assertHomebrewFile,
+  assertJsonWithinLimits,
+  homebrewEntityCounts,
+  sha256Hex,
+} from '@/lib/guards';
 import { db, type HomebrewFileRow } from './db';
+
+/**
+ * Build a content-hashed homebrew row from a raw 5etools homebrew file object.
+ * Identity (`id`) and all metadata (`sourceIds`, `counts`) are recomputed from
+ * the content, never taken from a caller — so an importer cannot forge an id
+ * to collide with unrelated local content or misrepresent what a file holds.
+ * Imported files are never `editable` (that flag belongs to in-app originals).
+ */
+export async function buildHomebrewRow(
+  rawFile: unknown,
+  fileName: string,
+  url?: string,
+): Promise<HomebrewFileRow> {
+  // Bound adversarial/corrupted payloads before hashing, indexing, or storing.
+  assertJsonWithinLimits(rawFile);
+  const { meta, json } = assertHomebrewFile(rawFile);
+  const id = await sha256Hex(JSON.stringify(rawFile));
+  return {
+    id,
+    fileName,
+    url,
+    json,
+    enabled: true,
+    editable: false,
+    sourceIds: meta.sources.map((s) => s.json),
+    counts: homebrewEntityCounts(json),
+    addedAt: Date.now(),
+  };
+}
 
 export const homebrewRepo = {
   async list(): Promise<HomebrewFileRow[]> {
@@ -12,22 +46,9 @@ export const homebrewRepo = {
 
   /** Validate + store a homebrew JSON file; content-hash keyed (idempotent). */
   async importJson(raw: unknown, fileName: string, url?: string): Promise<HomebrewFileRow> {
-    const { meta, json } = assertHomebrewFile(raw);
-    const text = JSON.stringify(raw);
-    const id = await sha256Hex(text);
-    const existing = await db.homebrewFiles.get(id);
+    const row = await buildHomebrewRow(raw, fileName, url);
+    const existing = await db.homebrewFiles.get(row.id);
     if (existing !== undefined) return existing;
-    const row: HomebrewFileRow = {
-      id,
-      fileName,
-      url,
-      json,
-      enabled: true,
-      editable: false,
-      sourceIds: meta.sources.map((s) => s.json),
-      counts: homebrewEntityCounts(json),
-      addedAt: Date.now(),
-    };
     await db.homebrewFiles.put(row);
     return row;
   },

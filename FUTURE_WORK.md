@@ -1,8 +1,8 @@
 # Cast Guidance — future work
 
-Last reviewed: 2026-07-13
+Last reviewed: 2026-07-14
 
-Reviewed revision: `e858bbf` (`origin/main`, merged into this branch)
+Reviewed revision: `a58f00b` (`origin/main`, merged into this branch)
 
 This is the single planning document for open product and engineering work. It
 consolidates the former `FUTURE_WORK.md` mechanics list and the app-review
@@ -46,7 +46,7 @@ protection, and visible save/load recovery.
 | Frozen dependency install | Pass — 423 packages |
 | Lint/format | Pass — 124 files |
 | TypeScript | Pass |
-| Unit tests | Pass — 16 files, 204 tests |
+| Unit tests | Pass — 18 files, 229 tests |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Run — 48 files; 936 spells; 53,360 roll variants; 40 version `replaceArr` warnings |
 | Browser, E2E, and automated accessibility tests | No harness exists yet |
@@ -72,18 +72,20 @@ Priority meanings:
 
 ### IMP-001 — validate and transact character imports
 
-The export guard still checks little beyond the top-level format. Migration
-casts broad objects to `CharacterDoc`, and embedded homebrew rows are written
-directly to IndexedDB with caller-supplied ids and metadata.
+Landed: the import boundary now enforces size/node/depth/string limits
+(`assertJsonWithinLimits`) and a structural character-doc shape check
+(`assertCharacterDoc`) before anything is trusted; embedded homebrew identity
+and metadata are recomputed from content through the shared repository path
+(`buildHomebrewRow`), so a file cannot forge an id to overwrite unrelated local
+homebrew; and the character plus its homebrew commit through one Dexie
+transaction (`characterRepo.importExport`), with the write decision extracted to
+a pure, unit-tested `planCharacterImport`. Malformed, future-version, oversized,
+and adversarial imports throw before the transaction opens.
 
-Define versioned runtime schemas and size/count/depth limits for the export DTO,
-character, refs, choices, play state, effects, and embedded homebrew. Recompute
-homebrew identity and metadata through the repository import path, preview
-conflicts, and commit the entire import transactionally.
-
-Done when malformed, future-version, oversized, adversarial, and partial
-imports leave the database untouched; valid older exports migrate; and an
-embedded file cannot overwrite unrelated local homebrew by supplying its id.
+Remaining: deep per-field runtime schemas for refs/choices/play/effects (folded
+into the P2 "runtime schemas at every owned `unknown` boundary" work) and an
+IndexedDB-backed test that a forced mid-transaction failure rolls the import back
+(tracked in TEST-002 — no IndexedDB test harness exists yet).
 
 ## P1 — release quality
 
@@ -92,9 +94,9 @@ embedded file cannot overwrite unrelated local homebrew by supplying its id.
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
 | REL-003 | Extend the new session save/load recovery pattern to rename, duplicate, delete, builder saves, data updates, and downloads. | Every mutation has honest pending/success/error UI and a retry path. |
-| REL-004 | Use Dexie transactions for character + history deletion and character + embedded-homebrew import. | Forced failure rolls back every related write. |
+| REL-004 | Dexie transactions now wrap character + history deletion (`characterRepo.delete`) and character + embedded-homebrew import (`characterRepo.importExport`). Remaining: an IndexedDB-backed test proving a forced failure rolls back every related write (TEST-002). | Forced failure rolls back every related write. |
 | REL-005 | Add router/component error boundaries and recovery UI for malformed characters, entities, and decode errors. | One bad record cannot take down the app. |
-| REL-006 | Route live queries through repositories; the character list currently bypasses migration/validation with direct `db.characters` reads. | Stored records cross one tested read boundary. |
+| REL-006 | Done: the character list live query now goes through `characterRepo.listSafe`, which crosses every stored record through the migration boundary via the pure, unit-tested `partitionCharacterRows`; one unreadable record is surfaced (list banner) instead of crashing the page. Remaining: apply the same repo-routed read to any future live queries (library/homebrew currently read their own registries). | Stored records cross one tested read boundary. |
 | REL-007 | Add optimistic revisions/conflict guidance or a per-character tab lock. | Two tabs cannot silently lose an edit. |
 | ERR-001 | Stop `useRegistry`/search hooks from converting failures into permanent loading. Distinguish loading, empty, missing, and error on live-query pages. | Retry, offline, missing-id, and cache-repair states are testable. |
 
@@ -125,8 +127,8 @@ embedded file cannot overwrite unrelated local homebrew by supplying its id.
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| SEC-001 | Allow-list protocols for content-driven `{@link}` URLs and add CSP, Referrer-Policy, X-Content-Type-Options, and Permissions-Policy in deployment. | `javascript:`, `data:`, malformed, and control-character URLs cannot execute or navigate. |
-| SEC-002 | Bound remote/homebrew file size, entity count, nesting, string size, regex work, and worker processing. | Adversarial payload tests fail safely before storage/indexing. |
+| SEC-001 | Done for content-driven `{@link}` URLs: `safeExternalHref` allow-lists http(s) only and strips control/zero-width obfuscation, rendering unsafe targets as inert text (`renderEntries`). Remaining: add CSP, Referrer-Policy, X-Content-Type-Options, and Permissions-Policy in deployment (no deployment config lives in the repo yet). | `javascript:`, `data:`, malformed, and control-character URLs cannot execute or navigate. |
+| SEC-002 | Stored payload bounds landed: `assertJsonWithinLimits` (nodes/depth/string) now gates all homebrew ingestion (`buildHomebrewRow` — file, URL, and embedded) and character imports, plus a max embedded-file count and export text-size cap. Remaining: bound the raw remote-response byte stream before parse, and cap regex work and worker processing. | Adversarial payload tests fail safely before storage/indexing. |
 | IMP-002 | Separate the public homebrew export DTO from local `HomebrewFileRow` fields; export only exact dependencies and detect source/entity collisions. | Import preview explains dependencies, duplicates, winner policy, and conflicts before commit. |
 | PRIV-001 | Add an in-app local-data/privacy explanation and full reset/export controls. | Users can see what is stored/requested, back it up, and delete IndexedDB plus app caches deliberately. |
 | LEGAL-001 | Obtain content/licensing review and add license, third-party notices, mirror attribution/terms, and trademark disclaimer. | Release documentation records the approved content and attribution policy. |

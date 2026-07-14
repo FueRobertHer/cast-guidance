@@ -75,6 +75,61 @@ export function homebrewEntityCounts(json: Record<string, unknown>): Record<stri
 }
 
 // ---------------------------------------------------------------------------
+// Structural limits (adversarial-payload defense for anything we import)
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounds applied to every import before it is trusted. A hostile or corrupted
+ * file that exceeds any of these is rejected before it can be migrated,
+ * hashed, indexed, or written. Generous enough for real characters with a few
+ * embedded homebrew files.
+ */
+export const IMPORT_LIMITS = {
+  /** Serialized export text (UTF-16 length, a cheap proxy for byte size). */
+  maxTextLength: 4_000_000,
+  /** Total JSON values (objects, arrays, primitives) anywhere in the tree. */
+  maxNodes: 200_000,
+  /** Object/array nesting depth. */
+  maxDepth: 64,
+  /** Any single string value. */
+  maxStringLength: 200_000,
+  /** Embedded homebrew files per export. */
+  maxHomebrewFiles: 64,
+} as const;
+
+/**
+ * Walk a parsed JSON value enforcing {@link IMPORT_LIMITS}. Throws on the first
+ * breach. Recursion is bounded by `maxDepth`, so it cannot itself overflow the
+ * stack on adversarial input.
+ */
+export function assertJsonWithinLimits(raw: unknown, limits = IMPORT_LIMITS): void {
+  let nodes = 0;
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > limits.maxDepth) {
+      throw new ValidationError(`import nests deeper than ${limits.maxDepth} levels`);
+    }
+    nodes += 1;
+    if (nodes > limits.maxNodes) {
+      throw new ValidationError(`import has more than ${limits.maxNodes} values`);
+    }
+    if (typeof value === 'string') {
+      if (value.length > limits.maxStringLength) {
+        throw new ValidationError(`import has a string longer than ${limits.maxStringLength}`);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (value !== null && typeof value === 'object') {
+      for (const val of Object.values(value)) walk(val, depth + 1);
+    }
+  };
+  walk(raw, 0);
+}
+
+// ---------------------------------------------------------------------------
 // Character export format
 // ---------------------------------------------------------------------------
 
@@ -86,8 +141,55 @@ export interface CharacterExport {
   homebrew: HomebrewFileRow[];
 }
 
+/**
+ * Structural shape check for a character document at the import boundary.
+ * Deliberately shallow: it enforces the *types* of the known top-level fields
+ * (so `classes: "drop table"` or a giant nested `choices` cannot slip through)
+ * without re-validating every game field, which the tolerant engine handles.
+ * Version handling stays in `migrateCharacter`.
+ */
+export function assertCharacterDoc(raw: unknown): void {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ValidationError('character must be an object');
+  }
+  const c = raw as Record<string, unknown>;
+  if (typeof c.id !== 'string' || c.id.trim() === '') {
+    throw new ValidationError('character is missing a valid id');
+  }
+  if (
+    c.schemaVersion !== undefined &&
+    (typeof c.schemaVersion !== 'number' || !Number.isFinite(c.schemaVersion))
+  ) {
+    throw new ValidationError('character schemaVersion must be a finite number');
+  }
+  for (const f of ['name', 'rulesVersion', 'dataTag', 'createdAt', 'updatedAt', 'notes'] as const) {
+    if (c[f] !== undefined && typeof c[f] !== 'string') {
+      throw new ValidationError(`character ${f} must be a string`);
+    }
+  }
+  for (const f of [
+    'classes',
+    'feats',
+    'equipment',
+    'customEffects',
+    'allowedSources',
+    'homebrewDeps',
+  ] as const) {
+    if (c[f] !== undefined && !Array.isArray(c[f])) {
+      throw new ValidationError(`character ${f} must be an array`);
+    }
+  }
+  for (const f of ['abilities', 'choices', 'spellcasting', 'overrides', 'play'] as const) {
+    const v = c[f];
+    if (v !== undefined && (v === null || typeof v !== 'object' || Array.isArray(v))) {
+      throw new ValidationError(`character ${f} must be an object`);
+    }
+  }
+}
+
 export function assertCharacterExport(raw: unknown): CharacterExport {
-  if (raw === null || typeof raw !== 'object') {
+  assertJsonWithinLimits(raw);
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new ValidationError('not a character export file');
   }
   const obj = raw as Record<string, unknown>;
@@ -96,10 +198,22 @@ export function assertCharacterExport(raw: unknown): CharacterExport {
       `unsupported format "${String(obj.$format)}" (expected ${CHARACTER_EXPORT_FORMAT})`,
     );
   }
-  if (obj.character === null || typeof obj.character !== 'object') {
+  if (obj.character === null || typeof obj.character !== 'object' || Array.isArray(obj.character)) {
     throw new ValidationError('export is missing the character document');
   }
-  const homebrew = Array.isArray(obj.homebrew) ? (obj.homebrew as HomebrewFileRow[]) : [];
+  assertCharacterDoc(obj.character);
+  let homebrew: HomebrewFileRow[] = [];
+  if (obj.homebrew !== undefined) {
+    if (!Array.isArray(obj.homebrew)) {
+      throw new ValidationError('homebrew must be an array');
+    }
+    if (obj.homebrew.length > IMPORT_LIMITS.maxHomebrewFiles) {
+      throw new ValidationError(
+        `export embeds more than ${IMPORT_LIMITS.maxHomebrewFiles} homebrew files`,
+      );
+    }
+    homebrew = obj.homebrew as HomebrewFileRow[];
+  }
   return {
     $format: CHARACTER_EXPORT_FORMAT,
     character: obj.character,
