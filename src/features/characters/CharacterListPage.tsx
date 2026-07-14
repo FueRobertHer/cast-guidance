@@ -11,10 +11,13 @@ import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import { askConfirm, askText } from '@/ui/dialogs';
+import { homebrewForExport } from './homebrewExport';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
-  // Embed all enabled homebrew — files are small and this keeps exports self-contained.
-  const homebrew = await homebrewRepo.enabled();
+  // Embed only the homebrew this character depends on, as a minimal public DTO
+  // (no local-only fields) — keeps exports self-contained without shipping all
+  // of the user's unrelated homebrew.
+  const homebrew = homebrewForExport(doc, await homebrewRepo.enabled());
   const payload = { $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
