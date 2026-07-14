@@ -261,15 +261,14 @@ plus the broader rules-audit work:
   schemas, persistence, loader, search protocol, and gameplay commands. Add
   property/fuzz coverage for dice, choices, entry rendering, copy/mod,
   migrations, and hostile imports, plus golden 2014/2024 characters.
-- Remove or narrowly scope `passWithNoTests: true`; include `tests-fixtures` in
-  lint; add repeatable `check`, `data:audit`, coverage, E2E, and bundle-analysis
-  scripts.
-- Supported Bun/Node versions are now pinned (`package.json` `engines` +
-  `packageManager` `bun@1.3.14`, `.bun-version`, matching CI); the export format
-  is documented (`docs/export-format.md`). Remaining: document architecture,
-  persistence/migrations, automation limits, homebrew, troubleshooting, and the
-  deployment headers/fallback/cache policy (deployment headers themselves are
-  covered by SEC-001 / `docs/security-headers.md`).
+- Done: `passWithNoTests` is removed (a zero-match run now fails loudly),
+  `tests-fixtures` is linted, and `bun run check` (lint + typecheck + test) and
+  `bun run data:audit` are wired as repeatable scripts. Remaining: coverage,
+  E2E, and bundle-analysis scripts (coverage needs a `@vitest/coverage-*`
+  dependency; E2E needs a browser harness — see TEST-002).
+- Pin supported Bun/Node versions and document architecture, data/export
+  formats, persistence/migrations, automation limits, homebrew, troubleshooting,
+  deployment headers/fallback/cache policy, and rollback.
 - Issue and PR templates now exist (`.github/PULL_REQUEST_TEMPLATE.md`,
   `.github/ISSUE_TEMPLATE/`). Remaining: define semantic app/data/export
   versions, a changelog and support policy, a release/rollback checklist, and
