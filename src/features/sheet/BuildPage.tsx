@@ -1,4 +1,4 @@
-import { ChevronUp, Dices, RefreshCcw } from 'lucide-react';
+import { ChevronUp, Dices } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -6,12 +6,26 @@ import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
-import { meetsMulticlassRequirements, multiclassRequirementText } from '@/engine/multiclass';
-import { ABILITIES, type DerivedSheet, SKILLS } from '@/engine/types';
-import { ChoicePromptRenderer } from '@/features/creator/ChoicePromptRenderer';
+import {
+  meetsMulticlassRequirements,
+  multiclassRequirementText,
+  subclassUnlockLevel,
+} from '@/engine/multiclass';
+import { ABILITIES, type DerivedSheet, type EffectOrigin, SKILLS } from '@/engine/types';
+import { OriginChoices } from '@/features/creator/OriginChoices';
+import {
+  backgroundBlurb,
+  classBlurb,
+  makeSubclassBlurb,
+  makeSubclassEntries,
+  raceBlurb,
+} from '@/features/creator/pickerHints';
+import { pruneChoicesFor } from '@/lib/pruneChoices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { ProfDot } from '@/ui/ProfDot';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -148,6 +162,8 @@ export function Component() {
         ),
       doc.rulesVersion,
     );
+  const subclassBlurb = makeSubclassBlurb(registry);
+  const subclassEntries = makeSubclassEntries(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
     doc.race !== undefined
@@ -167,23 +183,8 @@ export function Component() {
     return typeof faces === 'number' ? faces : 8;
   };
 
-  /** Class level at which the subclass is chosen (from gainSubclassFeature refs). */
-  const subclassLevelOf = (ref: { name: string; source: string }): number => {
-    const cls = registry.get('class', ref.name, ref.source);
-    const feats = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
-    for (const f of feats) {
-      if (
-        typeof f === 'object' &&
-        f !== null &&
-        (f as { gainSubclassFeature?: boolean }).gainSubclassFeature === true
-      ) {
-        const raw = String((f as { classFeature?: unknown }).classFeature ?? '');
-        const lvl = Number.parseInt(raw.split('|')[3] ?? '', 10);
-        if (!Number.isNaN(lvl)) return lvl;
-      }
-    }
-    return 1;
-  };
+  const subclassLevelOf = (ref: { name: string; source: string }): number =>
+    subclassUnlockLevel(registry.get('class', ref.name, ref.source));
   const hpMethod = doc.hpMethod ?? 'average';
   const totalLevels = doc.classes.reduce((s, c) => s + c.levels, 0);
   const finalScores = Object.fromEntries(
@@ -209,9 +210,17 @@ export function Component() {
   };
 
   const openChoices = () => {
-    const el = document.getElementById('build-choices');
-    if (el instanceof HTMLDetailsElement) el.open = true;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Choices live inline under their origin now — jump to the first unmade one,
+    // expanding whatever collapsed sections/details contain it.
+    const el = document.querySelector('[data-pending-choice]');
+    for (
+      let node = el?.parentElement;
+      node !== null && node !== undefined;
+      node = node.parentElement
+    ) {
+      if (node instanceof HTMLDetailsElement) node.open = true;
+    }
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   return (
@@ -314,24 +323,33 @@ export function Component() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={async () => {
+                      // Removing the only level-1 class = swapping class; ask,
+                      // then clear it so the "Pick a class" list reopens.
+                      if (entry.levels <= 1 && doc.classes.length === 1) {
+                        const ok = await askConfirm({
+                          title: `Remove ${entry.ref.name}?`,
+                          detail:
+                            'Class-linked choices (skills, fighting styles…) reset. Pick a new class right after.',
+                          confirmLabel: 'Remove class',
+                          danger: true,
+                        });
+                        if (!ok) return;
+                      }
                       update((d) => {
                         const c = d.classes[idx];
                         if (c === undefined) return;
                         if (c.levels <= 1) {
-                          if (d.classes.length > 1) d.classes.splice(idx, 1);
+                          d.classes.splice(idx, 1);
+                          pruneChoicesFor(d, 'class', c.ref);
                           return;
                         }
                         c.levels -= 1;
                         c.hp = c.hp.slice(0, c.levels);
-                      })
-                    }
+                      });
+                    }}
                     className="h-8 w-8 rounded-full bg-surface-2 text-lg"
-                    title={
-                      entry.levels <= 1 && doc.classes.length > 1
-                        ? 'Remove this class'
-                        : 'Remove a level'
-                    }
+                    title={entry.levels <= 1 ? 'Remove this class' : 'Remove a level'}
                   >
                     −
                   </button>
@@ -420,6 +438,9 @@ export function Component() {
                   <div className="pt-2">
                     <EntityCardList
                       entities={subclasses}
+                      describe={subclassBlurb}
+                      infoType="subclass"
+                      infoEntries={subclassEntries}
                       selectedUid={
                         entry.subclass !== undefined
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
@@ -442,6 +463,19 @@ export function Component() {
                   </div>
                 </details>
               ) : null}
+              <OriginChoices
+                sheet={sheet}
+                doc={doc}
+                update={update}
+                registry={registry}
+                match={(o) =>
+                  (o.type === 'class' &&
+                    o.uid === `${entry.ref.name}|${entry.ref.source}`.toLowerCase()) ||
+                  (o.type === 'subclass' &&
+                    entry.subclass !== undefined &&
+                    o.uid === `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase())
+                }
+              />
             </div>
           );
         })}
@@ -457,6 +491,8 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               dedupe
+              describe={classBlurb}
+              infoType="class"
               entities={classes.filter(
                 (e) =>
                   !doc.classes.some(
@@ -482,12 +518,16 @@ export function Component() {
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
         <EntityCardList
           dedupe
+          describe={raceBlurb}
+          infoType="race"
           entities={races}
           selectedUid={
             doc.race !== undefined ? `${doc.race.name}|${doc.race.source}`.toLowerCase() : undefined
           }
           onSelect={(e) =>
             update((d) => {
+              if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
+              if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
               d.race = { name: nameOf(e), source: sourceOf(e) };
               d.subrace = undefined;
             })
@@ -498,18 +538,35 @@ export function Component() {
             <span className="text-xs text-ink-muted">Subrace</span>
             <EntityCardList
               entities={subraces}
+              describe={raceBlurb}
+              infoType="subrace"
               selectedUid={
                 doc.subrace !== undefined
                   ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
                   : undefined
               }
               onSelect={(e) =>
-                update((d) => void (d.subrace = { name: nameOf(e), source: sourceOf(e) }))
+                update((d) => {
+                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                  d.subrace = { name: nameOf(e), source: sourceOf(e) };
+                })
               }
-              onDeselect={() => update((d) => void (d.subrace = undefined))}
+              onDeselect={() =>
+                update((d) => {
+                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                  d.subrace = undefined;
+                })
+              }
             />
           </>
         )}
+        <OriginChoices
+          sheet={sheet}
+          doc={doc}
+          update={update}
+          registry={registry}
+          match={(o) => o.type === 'race'}
+        />
       </Section>
 
       <Section title="Abilities" summary={ABILITIES.map((a) => doc.abilities.base[a]).join('/')}>
@@ -644,6 +701,8 @@ export function Component() {
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
         <EntityCardList
           dedupe
+          describe={backgroundBlurb}
+          infoType="background"
           entities={backgrounds}
           selectedUid={
             doc.background !== undefined
@@ -651,74 +710,55 @@ export function Component() {
               : undefined
           }
           onSelect={(e) =>
-            update((d) => void (d.background = { name: nameOf(e), source: sourceOf(e) }))
+            update((d) => {
+              if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
+              d.background = { name: nameOf(e), source: sourceOf(e) };
+            })
           }
+        />
+        <OriginChoices
+          sheet={sheet}
+          doc={doc}
+          update={update}
+          registry={registry}
+          match={(o) => o.type === 'background'}
         />
       </Section>
 
-      <Section
-        id="build-choices"
-        title="Choices"
-        summary={
-          sheet.pending.length > 0
-            ? `${sheet.pending.length} pending`
-            : `${sheet.resolvedChoices.length} made`
-        }
-        defaultOpen={sheet.pending.length > 0}
-      >
-        {sheet.pending.map((prompt) =>
-          // Subclass is chosen in the Classes section above; point there.
-          prompt.kind === 'generic' && prompt.options.length === 0 ? (
-            <p
-              key={prompt.id}
-              className="rounded-lg bg-surface-2/60 px-3 py-2 text-sm text-amber-200"
-            >
-              {prompt.label} — choose it in the Classes section above.
-            </p>
-          ) : (
-            <ChoicePromptRenderer
-              key={prompt.id}
-              prompt={prompt}
-              value={doc.choices[prompt.id]}
-              onChange={(v) => update((d) => void (d.choices[prompt.id] = v))}
+      {(() => {
+        // Choices now render inline under their origin (Classes / Race /
+        // Background above). This catches anything without a visible home —
+        // feat, item, or custom-origin picks, plus orphaned class/subclass ones.
+        const classUids = new Set(
+          doc.classes.map((c) => `${c.ref.name}|${c.ref.source}`.toLowerCase()),
+        );
+        const subclassUids = new Set(
+          doc.classes
+            .filter((c) => c.subclass !== undefined)
+            .map((c) => `${c.subclass?.name}|${c.subclass?.source}`.toLowerCase()),
+        );
+        const isOther = (o: EffectOrigin) =>
+          o.type !== 'race' &&
+          o.type !== 'background' &&
+          !(o.type === 'class' && classUids.has(o.uid)) &&
+          !(o.type === 'subclass' && subclassUids.has(o.uid));
+        const hasOther =
+          sheet.pending.some(
+            (p) => isOther(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
+          ) || sheet.resolvedChoices.some((r) => isOther(r.prompt.origin));
+        if (!hasOther) return null;
+        return (
+          <Section id="build-choices" title="Feat & other choices" defaultOpen>
+            <OriginChoices
+              sheet={sheet}
+              doc={doc}
+              update={update}
+              registry={registry}
+              match={isOther}
             />
-          ),
-        )}
-        {sheet.resolvedChoices.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase text-ink-muted">Made choices</span>
-            {sheet.resolvedChoices.map(({ prompt, selected }) => (
-              <div
-                key={prompt.id}
-                className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/60 px-3 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <div className="truncate">{prompt.label}</div>
-                  <div className="truncate text-xs text-ink-muted">
-                    {prompt.origin.label} · {selected.join(', ')}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  title="Change this pick"
-                  onClick={() =>
-                    update((d) => {
-                      delete d.choices[prompt.id];
-                      // dependent follow-up choices (asi feat picks etc.) reset too
-                      for (const key of Object.keys(d.choices)) {
-                        if (key.startsWith(`${prompt.id}:`)) delete d.choices[key];
-                      }
-                    })
-                  }
-                  className="flex shrink-0 items-center gap-1 rounded border border-surface-2 px-2 py-1 text-xs text-ink-muted hover:text-ink"
-                >
-                  <RefreshCcw size={12} /> change
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+          </Section>
+        );
+      })()}
 
       <Section
         title="Derived stats & skills"
@@ -793,15 +833,7 @@ export function Component() {
                       className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-left text-sm last:border-b-0"
                     >
                       <span className="flex items-center gap-2">
-                        <span
-                          className={`inline-block h-2 w-2 rounded-full ${
-                            s.prof === 2
-                              ? 'bg-amber-300'
-                              : s.prof === 1
-                                ? 'bg-accent'
-                                : 'bg-surface-2'
-                          }`}
-                        />
+                        <ProfDot level={s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
                       </span>

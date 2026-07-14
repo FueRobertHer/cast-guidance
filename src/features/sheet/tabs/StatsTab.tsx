@@ -4,6 +4,7 @@ import { ABILITIES } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { ProfDot } from '@/ui/ProfDot';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 function rollCheck(label: string, modifier: number) {
@@ -86,11 +87,7 @@ export function Component() {
               className="flex items-center justify-between border-b border-surface-2/40 px-3 py-2 text-sm last:border-b-0 hover:bg-surface-2/50"
             >
               <span className="flex items-center gap-2">
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${
-                    s.prof === 2 ? 'bg-amber-300' : s.prof === 1 ? 'bg-accent' : 'bg-surface-2'
-                  }`}
-                />
+                <ProfDot level={s.prof} />
                 {name}
                 <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
               </span>

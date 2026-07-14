@@ -15,6 +15,29 @@ import {
 import { asEntityArray, type Collector, num } from './base';
 
 const SKILL_BY_LOWER = new Map(SKILLS.map((s) => [s.name.toLowerCase(), s.name]));
+const SKILL_ABILITY = new Map(SKILLS.map((s) => [s.name, s.ability]));
+
+/** One-line "what is this for" per skill — decision support for new players. */
+const SKILL_USES: Record<string, string> = {
+  Acrobatics: 'balance, tumble, slip free',
+  'Animal Handling': 'calm or direct animals',
+  Arcana: 'recall magic, spells, planes',
+  Athletics: 'climb, jump, swim, grapple',
+  Deception: 'lie convincingly',
+  History: 'recall lore and past events',
+  Insight: 'read intentions, spot lies',
+  Intimidation: 'threaten, coerce',
+  Investigation: 'search for clues, deduce',
+  Medicine: 'stabilize the dying, diagnose',
+  Nature: 'recall terrain, plants, beasts',
+  Perception: 'spot, hear, notice (most-rolled skill)',
+  Performance: 'entertain a crowd',
+  Persuasion: 'influence with tact',
+  Religion: 'recall deities and rites',
+  'Sleight of Hand': 'pick pockets, palm objects',
+  Stealth: 'sneak, hide',
+  Survival: 'track, forage, navigate',
+};
 
 function titleCase(s: string): string {
   // Word starts only after whitespace/start — keeps "smith's tools" from
@@ -27,12 +50,58 @@ export function skillOptions(from?: readonly unknown[]): ChoiceOption[] {
     from !== undefined && from.length > 0
       ? from.map((f) => SKILL_BY_LOWER.get(String(f).toLowerCase()) ?? titleCase(String(f)))
       : SKILLS.map((s) => s.name);
-  return names.map((n) => ({ id: n, label: n }));
+  return names.map((n) => {
+    const ability = SKILL_ABILITY.get(n);
+    const uses = SKILL_USES[n];
+    return {
+      id: n,
+      label: n,
+      description:
+        ability !== undefined
+          ? `${ability.toUpperCase()}${uses !== undefined ? ` — ${uses}` : ''}`
+          : undefined,
+    };
+  });
 }
 
 /** Options straight from the data's `from` list (tools, weapons, damage types…). */
 export function genericOptions(from?: readonly unknown[]): ChoiceOption[] {
   return (from ?? []).map((f) => ({ id: String(f), label: titleCase(String(f)) }));
+}
+
+/** One-line "what is it" per tool the choice lists commonly offer. */
+const TOOL_USES: Record<string, string> = {
+  "thieves' tools": 'pick locks, disarm traps',
+  "smith's tools": 'forge and repair metal gear',
+  "carpenter's tools": 'build and repair wood',
+  "alchemist's supplies": 'craft acids, fire, reagents',
+  'herbalism kit': 'make potions of healing, antitoxin',
+  "poisoner's kit": 'craft and apply poisons',
+  'disguise kit': 'alter your appearance',
+  'forgery kit': 'fake documents and seals',
+  "navigator's tools": 'chart courses, avoid getting lost',
+  "cartographer's tools": 'draw and read maps',
+  "cook's utensils": 'prepare food on a rest',
+  "tinker's tools": 'repair and improvise devices',
+  "brewer's supplies": 'brew drinks; know purified water',
+  "mason's tools": 'work stone',
+  "painter's supplies": 'create art, spot forgeries',
+};
+const TOOL_CATEGORY: Array<[RegExp, string]> = [
+  [/ tools$| supplies$| kit$| utensils$/, "artisan's tools"],
+  [/ set$/, 'gaming set'],
+  [/^dice set$/, 'gaming set'],
+  [/instrument|lute|flute|drum|horn|pipes|viol|lyre|harp/, 'musical instrument'],
+];
+
+/** Tool proficiency options with a short use hint (falls back to category). */
+export function toolOptions(from?: readonly unknown[]): ChoiceOption[] {
+  return (from ?? []).map((f) => {
+    const raw = String(f);
+    const lower = raw.toLowerCase();
+    const use = TOOL_USES[lower] ?? TOOL_CATEGORY.find(([re]) => re.test(lower))?.[1];
+    return { id: raw, label: titleCase(raw), description: use };
+  });
 }
 
 /** Standard + common exotic languages — the fallback for `any`/`anyStandard`. */
@@ -82,6 +151,19 @@ export function readProficiencyList(
 ): void {
   const entries = asEntityArray(raw);
   let chooseIdx = 0;
+  // Languages you already speak shouldn't be spent again — disable, don't hide,
+  // so the list stays recognizable (Dragonborn + Acolyte can't re-pick Common).
+  const withDupesDisabled = (options: ChoiceOption[]): ChoiceOption[] => {
+    if (kind !== 'language') return options;
+    const known = new Set(
+      col.effects.filter((e) => e.kind === 'language').map((e) => e.name.toLowerCase()),
+    );
+    return options.map((o) =>
+      known.has(o.id.toLowerCase())
+        ? { ...o, disabled: { reason: `You already speak ${o.label}` } }
+        : o,
+    );
+  };
   for (const entry of entries) {
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {
@@ -94,7 +176,7 @@ export function readProficiencyList(
             kind,
             label,
             count: c.count ?? 1,
-            options: optionsFor(c.from),
+            options: withDupesDisabled(optionsFor(c.from)),
           },
           (selected) => {
             for (const s of selected) grant(s);
@@ -104,7 +186,7 @@ export function readProficiencyList(
         const count = num(value) ?? 1;
         const id = `${promptIdBase}:${chooseIdx++}`;
         col.choice(
-          { id, origin, kind, label, count, options: optionsFor(undefined) },
+          { id, origin, kind, label, count, options: withDupesDisabled(optionsFor(undefined)) },
           (selected) => {
             for (const s of selected) grant(s);
           },
@@ -230,12 +312,18 @@ export function readAbilityBlock(
   }
 }
 
-/** `resist: ['fire', { choose: { from: [...] } }]` and similar damage lists. */
+/**
+ * `resist: ['fire', { choose: { from: [...] } }]` and similar damage lists.
+ * `predetermined` are resistances another part of the build already fixes
+ * (e.g. a Dragonborn subrace's ancestry): a choose prompt whose options cover
+ * one of them is already answered, so no prompt is emitted.
+ */
 export function readResistList(
   col: Collector,
   raw: unknown,
   origin: EffectOrigin,
   promptIdBase: string,
+  predetermined: readonly string[] = [],
 ): void {
   if (!Array.isArray(raw)) return;
   let chooseIdx = 0;
@@ -247,6 +335,8 @@ export function readResistList(
         from?: unknown[];
         count?: number;
       };
+      const from = (c.from ?? []).map(String);
+      if (predetermined.some((p) => from.includes(p.toLowerCase()))) continue;
       const id = `${promptIdBase}:r${chooseIdx++}`;
       col.choice(
         {
@@ -255,7 +345,7 @@ export function readResistList(
           kind: 'generic',
           label: 'Damage resistance',
           count: c.count ?? 1,
-          options: (c.from ?? []).map((f) => ({ id: String(f), label: titleCase(String(f)) })),
+          options: from.map((f) => ({ id: f, label: titleCase(f) })),
         },
         (selected) => {
           for (const s of selected) col.add({ kind: 'resist', damageType: s, origin });
