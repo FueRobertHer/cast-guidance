@@ -1,4 +1,5 @@
 import { type EffectOrigin, refUid } from '../types';
+import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import {
@@ -54,6 +55,11 @@ export function collectBackground(col: Collector): void {
     (name) => col.add({ kind: 'toolProf', name, origin }),
     toolOptions,
   );
+
+  // Some backgrounds grant innate/always-prepared spells or widen a spell list
+  // (e.g. Strixhaven student backgrounds' spell-level-keyed `expanded` lists);
+  // without this those grants and notes were silently dropped.
+  collectAdditionalSpells(col, e.additionalSpells, origin);
 
   // XPHB (2024) backgrounds: weighted ability bonuses + an origin feat.
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);

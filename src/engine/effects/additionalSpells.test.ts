@@ -58,13 +58,20 @@ describe('collectAdditionalSpells', () => {
 
   it('surfaces spell-level-keyed expanded lists (sN) instead of dropping them', () => {
     // Witherbloom/Lorehold Student backgrounds key `expanded` by spell level
-    // (s1…s5), which used to parse to NaN and vanish. They are not gated by
-    // character level, so they surface even at level 1.
-    const col = collect([{ expanded: { s1: ['armor of agathys'], s5: ['cone of cold'] } }], 1);
+    // (s1…s5, case-insensitive), which used to parse to NaN and vanish. They are
+    // not gated by character level, so they surface even at level 1.
+    const col = collect([{ expanded: { s1: ['armor of agathys'], S5: ['cone of cold'] } }], 1);
     expect(granted(col.effects)).toHaveLength(0);
     const warning = col.warnings.find((w) => /expands your spell options/.test(w));
     expect(warning).toBeDefined();
     expect(warning).toContain('armor of agathys');
     expect(warning).toContain('cone of cold');
+  });
+
+  it('does NOT treat sN keys as ungated for grant maps (known/prepared)', () => {
+    // The sN carve-out is scoped to `expanded`; a stray sN key on a grant map
+    // must not silently grant an ungated spell.
+    const col = collect([{ known: { s1: ['fireball'] } }], 1);
+    expect(granted(col.effects)).toHaveLength(0);
   });
 });

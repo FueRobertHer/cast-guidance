@@ -59,4 +59,27 @@ describe('collectBackground', () => {
     const col = collect({ name: 'Custom', entries: ['Background flavor.'] });
     expect(col.features.some((f) => f.name === 'Custom')).toBe(true);
   });
+
+  it('grants a background additionalSpells known spell (previously dropped)', () => {
+    const col = collect({
+      name: 'Custom',
+      additionalSpells: [{ ability: 'int', known: { _: ['guidance|tst'] } }],
+      entries: ['x'],
+    });
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'grantSpell', spell: { name: 'guidance', source: 'tst' } }),
+    );
+  });
+
+  it('surfaces a background expanded list keyed by spell level (Strixhaven student)', () => {
+    const col = collect({
+      name: 'Custom',
+      additionalSpells: [{ expanded: { s1: ['shield|tst'], s5: ['flame strike|tst'] } }],
+      entries: ['x'],
+    });
+    const warning = col.warnings.find((w) => /expands your spell options/.test(w));
+    expect(warning).toBeDefined();
+    expect(warning).toContain('shield');
+    expect(warning).toContain('flame strike');
+  });
 });

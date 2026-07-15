@@ -40,15 +40,21 @@ function collectStrings(val: unknown, out: string[], sawChoose: { v: boolean }):
   }
 }
 
-function gatherByLevel(map: unknown, totalLevel: number, out: string[], sawChoose: { v: boolean }) {
+function gatherByLevel(
+  map: unknown,
+  totalLevel: number,
+  out: string[],
+  sawChoose: { v: boolean },
+  includeSpellLevels = false,
+) {
   if (map === null || typeof map !== 'object') return;
   for (const [key, val] of Object.entries(map)) {
-    // "_" and spell-level buckets ("s1"…"s5", used by `expanded` lists that
-    // organize additions by spell level rather than character level) are
-    // ungated; numeric keys gate by character level. Without the sN case an
+    // "_" is always ungated. Spell-level buckets ("s1", "s2", … — any `sN`)
+    // appear only on `expanded` lists that organize additions by spell level
+    // rather than character level, so include them there; without this an
     // entire expanded list (e.g. Witherbloom/Lorehold Student) parses to NaN
-    // and silently vanishes.
-    const ungated = key === '_' || /^s\d+$/i.test(key);
+    // and silently vanishes. Numeric keys gate by character level.
+    const ungated = key === '_' || (includeSpellLevels && /^s\d+$/i.test(key));
     const gate = ungated ? 0 : Number.parseInt(key, 10);
     if (!Number.isNaN(gate) && gate <= totalLevel) collectStrings(val, out, sawChoose);
   }
@@ -106,7 +112,7 @@ export function collectAdditionalSpells(
     // Expanded spell list (Warlock patron): widens what you can learn rather than
     // granting anything. Without a picker we surface it so the option is visible.
     const expanded: string[] = [];
-    gatherByLevel(entry.expanded, totalLevel, expanded, { v: false });
+    gatherByLevel(entry.expanded, totalLevel, expanded, { v: false }, true);
     const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
     if (expandedNames.length > 0) {
       col.warn(`${origin.label}: expands your spell options — ${expandedNames.join(', ')}.`);
