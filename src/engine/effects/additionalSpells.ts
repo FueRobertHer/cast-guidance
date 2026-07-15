@@ -11,8 +11,8 @@
  * so (lacking a picker) it surfaces as a note. `{ choose: "..." }` filter grants
  * likewise surface as a note.
  */
-import { ABILITIES, type Ability, type EffectOrigin } from '../types';
-import { asEntityArray, type Collector } from './base';
+import { ABILITIES, type Ability, type DataEntity, type EffectOrigin } from '../types';
+import { asEntityArray, type Collector, str } from './base';
 
 function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
@@ -60,66 +60,127 @@ function gatherByLevel(
   }
 }
 
+/** Apply one additionalSpells entry: known/innate/prepared grants + expanded/choose notes. */
+function processSpellEntry(
+  col: Collector,
+  entry: DataEntity,
+  origin: EffectOrigin,
+  totalLevel: number,
+  defaultAbility?: Ability,
+): void {
+  let ability: Ability | undefined = defaultAbility;
+  const ab = entry.ability;
+  if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
+    ability = ab as Ability;
+  } else if (
+    ab !== null &&
+    typeof ab === 'object' &&
+    Array.isArray((ab as { choose?: unknown[] }).choose)
+  ) {
+    const opts = (ab as { choose: unknown[] }).choose.map(String);
+    ability = (opts[0] as Ability | undefined) ?? defaultAbility; // default; note the rest
+    col.warn(`${origin.label}: spellcasting ability is your choice of ${opts.join('/')}.`);
+  }
+
+  const sawChoose = { v: false };
+
+  // Innate / always-known: cast per their own rules or added to spells known.
+  const innate: string[] = [];
+  gatherByLevel(entry.known, totalLevel, innate, sawChoose);
+  gatherByLevel(entry.innate, totalLevel, innate, sawChoose);
+  for (const name of new Set(innate)) {
+    col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, origin });
+  }
+
+  // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
+  // class's own slots and never counted against the prepared limit.
+  const prepared: string[] = [];
+  gatherByLevel(entry.prepared, totalLevel, prepared, sawChoose);
+  for (const name of new Set(prepared)) {
+    col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, usage: 'prepared', origin });
+  }
+
+  // Expanded spell list (Warlock patron): widens what you can learn rather than
+  // granting anything. Without a picker we surface it so the option is visible.
+  const expanded: string[] = [];
+  gatherByLevel(entry.expanded, totalLevel, expanded, { v: false }, true);
+  const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
+  if (expandedNames.length > 0) {
+    col.warn(`${origin.label}: expands your spell options — ${expandedNames.join(', ')}.`);
+  }
+
+  if (sawChoose.v) {
+    col.warn(`${origin.label}: also lets you choose a spell — see the trait text.`);
+  }
+}
+
+/**
+ * @param idBase namespace for the branch choice's stable id (defaults to the
+ *   origin uid). Callers with a per-instance base (repeatable feats) pass it so
+ *   two instances keep separate branch picks.
+ */
 export function collectAdditionalSpells(
   col: Collector,
   raw: unknown,
   origin: EffectOrigin,
   defaultAbility?: Ability,
+  idBase?: string,
 ): void {
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
   const totalLevel = totalLevelOf(col);
 
+  // Entries carrying a distinct `name` are mutually-exclusive branches (the
+  // 5etools convention) — e.g. Strixhaven Initiate's colleges. The character
+  // picks ONE; granting every branch at once is wrong (Strixhaven Initiate
+  // would grant ~a dozen cantrips instead of two). Unnamed entries always apply.
+  const branches = new Map<string, DataEntity[]>();
+  const order: string[] = [];
+  const unnamed: DataEntity[] = [];
   for (const entry of entries) {
-    let ability: Ability | undefined = defaultAbility;
-    const ab = entry.ability;
-    if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
-      ability = ab as Ability;
-    } else if (
-      ab !== null &&
-      typeof ab === 'object' &&
-      Array.isArray((ab as { choose?: unknown[] }).choose)
-    ) {
-      const opts = (ab as { choose: unknown[] }).choose.map(String);
-      ability = (opts[0] as Ability | undefined) ?? defaultAbility; // default; note the rest
-      col.warn(`${origin.label}: spellcasting ability is your choice of ${opts.join('/')}.`);
+    const name = str(entry.name);
+    if (name === undefined || name === '') {
+      unnamed.push(entry);
+      continue;
     }
-
-    const sawChoose = { v: false };
-
-    // Innate / always-known: cast per their own rules or added to spells known.
-    const innate: string[] = [];
-    gatherByLevel(entry.known, totalLevel, innate, sawChoose);
-    gatherByLevel(entry.innate, totalLevel, innate, sawChoose);
-    for (const name of new Set(innate)) {
-      col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, origin });
-    }
-
-    // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
-    // class's own slots and never counted against the prepared limit.
-    const prepared: string[] = [];
-    gatherByLevel(entry.prepared, totalLevel, prepared, sawChoose);
-    for (const name of new Set(prepared)) {
-      col.add({
-        kind: 'grantSpell',
-        spell: parseSpellRef(name),
-        ability,
-        usage: 'prepared',
-        origin,
-      });
-    }
-
-    // Expanded spell list (Warlock patron): widens what you can learn rather than
-    // granting anything. Without a picker we surface it so the option is visible.
-    const expanded: string[] = [];
-    gatherByLevel(entry.expanded, totalLevel, expanded, { v: false }, true);
-    const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
-    if (expandedNames.length > 0) {
-      col.warn(`${origin.label}: expands your spell options — ${expandedNames.join(', ')}.`);
-    }
-
-    if (sawChoose.v) {
-      col.warn(`${origin.label}: also lets you choose a spell — see the trait text.`);
+    const group = branches.get(name);
+    if (group === undefined) {
+      branches.set(name, [entry]);
+      order.push(name);
+    } else {
+      group.push(entry);
     }
   }
+
+  for (const entry of unnamed) processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+
+  if (branches.size <= 1) {
+    // No real choice — collect the lone (or zero) named group as before.
+    for (const name of order) {
+      for (const entry of branches.get(name) ?? []) {
+        processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+      }
+    }
+    return;
+  }
+
+  const base = idBase ?? `spells:${origin.uid}`;
+  col.choice(
+    {
+      id: `${base}:branch`,
+      origin,
+      kind: 'generic',
+      label: `${origin.label}: choose a spell option`,
+      count: 1,
+      options: order.map((name) => ({ id: name.toLowerCase(), label: name })),
+    },
+    (selected) => {
+      const pick = selected[0];
+      const name = pick !== undefined ? order.find((n) => n.toLowerCase() === pick) : undefined;
+      if (name === undefined) return;
+      for (const entry of branches.get(name) ?? []) {
+        processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+      }
+    },
+  );
 }

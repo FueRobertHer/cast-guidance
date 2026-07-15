@@ -122,7 +122,7 @@ export function collectFeatEntity(
     }
   }
 
-  collectAdditionalSpells(col, e.additionalSpells, origin);
+  collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
   if (!emitCuratedEffects(col, uid, origin)) {

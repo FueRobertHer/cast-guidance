@@ -102,7 +102,7 @@ function collectFrom(
     genericOptions,
   );
   readResistList(col, e.resist, origin, `${idBase}:resist`, predeterminedResists);
-  collectAdditionalSpells(col, e.additionalSpells, origin);
+  collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
   // only in prose — curated table first, generic prose scan for the long tail.

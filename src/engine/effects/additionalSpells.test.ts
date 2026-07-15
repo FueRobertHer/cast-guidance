@@ -75,3 +75,37 @@ describe('collectAdditionalSpells', () => {
     expect(granted(col.effects)).toHaveLength(0);
   });
 });
+
+describe('collectAdditionalSpells — mutually-exclusive branches (FIX-001)', () => {
+  const branchRaw = [
+    { name: 'Lorehold', ability: 'int', known: { _: ['light'] } },
+    { name: 'Witherbloom', ability: 'wis', known: { _: ['spare the dying'] } },
+  ];
+
+  it('surfaces a pick-one choice and grants nothing until a branch is chosen', () => {
+    // Strixhaven Initiate style: five colleges, pick one — do not grant all.
+    const col = collect(branchRaw);
+    expect(granted(col.effects)).toHaveLength(0);
+    const prompt = col.pending.find((p) => p.id === 'spells:race|tiefling:branch');
+    expect(prompt).toBeDefined();
+    expect(prompt?.options.map((o) => o.label)).toEqual(['Lorehold', 'Witherbloom']);
+  });
+
+  it('grants only the chosen branch', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Warlock', source: 'PHB' }, levels: 1, hp: [] }];
+    doc.choices['spells:race|tiefling:branch'] = ['witherbloom'];
+    const col = new Collector(doc, makeTestContext());
+    collectAdditionalSpells(col, branchRaw, origin, 'cha');
+    expect(granted(col.effects).map((e) => e.spell.name)).toEqual(['spare the dying']);
+  });
+
+  it('still grants every entry when none carry a name (back-compat)', () => {
+    const col = collect([{ known: { _: ['light'] } }, { known: { _: ['guidance'] } }]);
+    expect(
+      granted(col.effects)
+        .map((e) => e.spell.name)
+        .sort(),
+    ).toEqual(['guidance', 'light']);
+  });
+});
