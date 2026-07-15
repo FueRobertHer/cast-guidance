@@ -236,6 +236,9 @@ export function Component() {
                   type="button"
                   onClick={() =>
                     update((d) => {
+                      // Re-selecting the current version must be a no-op — otherwise
+                      // an accidental tap wipes the whole in-progress build.
+                      if (d.rulesVersion === v) return;
                       d.rulesVersion = v;
                       d.classes = [];
                       d.race = undefined;

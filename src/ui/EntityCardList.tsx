@@ -131,7 +131,11 @@ export function EntityCardList({
                 type="button"
                 aria-label={nameOf(e)}
                 onClick={() => {
-                  if (selected && onDeselect !== undefined) onDeselect();
+                  // Re-tapping the current pick must never re-fire onSelect: for
+                  // race/class/background that re-runs pruneChoicesFor and
+                  // silently wipes that origin's skill/feat/spell picks. Deselect
+                  // when that's offered, otherwise do nothing.
+                  if (selected) onDeselect?.();
                   else onSelect(e);
                 }}
                 title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
