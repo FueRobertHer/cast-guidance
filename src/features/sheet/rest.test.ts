@@ -125,4 +125,18 @@ describe('longRest', () => {
     expect(p.hitDiceSpent.d10).toBe(0);
     expect(p.hitDiceSpent.d6).toBe(0);
   });
+
+  it('spills leftover budget from the largest die to the next-smaller one', () => {
+    // Total 8 -> budget 4. d10 has only 1 spent (regain 1), remaining 3 fills d6.
+    const p = play({ hitDiceSpent: { d10: 1, d6: 5 } });
+    longRest(p, sheet({ hitDice: { d10: 2, d6: 6 } }));
+    expect(p.hitDiceSpent.d10).toBe(0); // 1 - 1
+    expect(p.hitDiceSpent.d6).toBe(2); // 5 - 3
+  });
+
+  it('still regains an unparseable die key (sorted last, not dropped)', () => {
+    const p = play({ hitDiceSpent: { dX: 4 } });
+    longRest(p, sheet({ hitDice: { dX: 4 } })); // total 4 -> budget 2
+    expect(p.hitDiceSpent.dX).toBe(2);
+  });
 });
