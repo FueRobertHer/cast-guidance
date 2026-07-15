@@ -22,6 +22,31 @@ describe('summarizePrerequisite', () => {
     expect(summarizePrerequisite(undefined)).toBe('');
     expect(summarizePrerequisite([])).toBe('');
   });
+
+  it('reads race, feat, background, and proficiency requirements (previously dropped)', () => {
+    expect(summarizePrerequisite([{ race: [{ name: 'elf' }, { name: 'half-elf' }] }])).toBe(
+      'race elf/half-elf',
+    );
+    expect(summarizePrerequisite([{ feat: ['strixhaven initiate|scc'] }])).toBe(
+      'strixhaven initiate feat',
+    );
+    expect(summarizePrerequisite([{ background: ['acolyte|xphb'] }])).toBe('acolyte background');
+    expect(summarizePrerequisite([{ proficiency: [{ armor: 'heavy' }] }])).toBe('heavy armor');
+    // A subrace qualifier is preserved.
+    expect(summarizePrerequisite([{ race: [{ name: 'elf', subrace: 'high' }] }])).toBe(
+      'race high elf',
+    );
+  });
+
+  it('renders alternative requirement sets with "or" instead of flattening to "and"', () => {
+    // XPHB Ritual Caster: (level 4 AND INT 13) OR (level 4 AND WIS 13).
+    expect(
+      summarizePrerequisite([
+        { level: 4, ability: [{ int: 13 }] },
+        { level: 4, ability: [{ wis: 13 }] },
+      ]),
+    ).toBe('INT 13, level 4 or WIS 13, level 4');
+  });
 });
 
 describe('requiredLevel', () => {

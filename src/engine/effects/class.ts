@@ -7,39 +7,89 @@ import { collectFeatEntity } from './feat';
 import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
 
-/** "str 13" / "int 13 or wis 13" from a feat/entity prerequisite array. */
-export function summarizePrerequisite(raw: unknown): string {
-  if (!Array.isArray(raw)) return '';
+/** Name of a race/feat/background prerequisite entry (string `name|source` or object). */
+function prereqRefName(x: unknown): string | undefined {
+  if (typeof x === 'string') {
+    const name = (x.split('#')[0] ?? x).split('|')[0]?.trim();
+    return name !== undefined && name !== '' ? name : undefined;
+  }
+  if (x !== null && typeof x === 'object') {
+    const o = x as { name?: unknown; subrace?: unknown; displayEntry?: unknown };
+    if (typeof o.displayEntry === 'string' && o.displayEntry !== '') return o.displayEntry;
+    if (typeof o.name === 'string' && o.name !== '') {
+      // Keep the subrace qualifier so a race gate reads "high elf", not "elf".
+      return typeof o.subrace === 'string' && o.subrace !== '' ? `${o.subrace} ${o.name}` : o.name;
+    }
+  }
+  return undefined;
+}
+
+/** AND-joined summary of one requirement set (one element of a prerequisite array). */
+function summarizeReqSet(r: Record<string, unknown>): string {
   const parts: string[] = [];
-  for (const req of raw) {
-    if (req === null || typeof req !== 'object') continue;
-    const r = req as Record<string, unknown>;
-    const ability = r.ability;
-    if (Array.isArray(ability)) {
-      for (const a of ability) {
-        if (a !== null && typeof a === 'object') {
-          for (const [k, v] of Object.entries(a)) parts.push(`${k.toUpperCase()} ${v}`);
+  const ability = r.ability;
+  if (Array.isArray(ability)) {
+    for (const a of ability) {
+      if (a !== null && typeof a === 'object') {
+        for (const [k, v] of Object.entries(a)) parts.push(`${k.toUpperCase()} ${v}`);
+      }
+    }
+  }
+  if (typeof r.level === 'number') parts.push(`level ${r.level}`);
+  else if (r.level !== null && typeof r.level === 'object') {
+    const lv = (r.level as { level?: number }).level;
+    if (typeof lv === 'number') parts.push(`level ${lv}`);
+  }
+  // Warlock invocation gates: Pact Boon, patron, and known-spell prerequisites.
+  if (typeof r.pact === 'string') parts.push(`Pact of the ${r.pact}`);
+  if (typeof r.patron === 'string') parts.push(`${r.patron.split('|')[0]} patron`);
+  if (Array.isArray(r.spell)) {
+    const spells = r.spell
+      .map((s) => (typeof s === 'string' ? (s.split('#')[0] ?? s).split('|')[0] : undefined))
+      .filter((s): s is string => s !== undefined);
+    if (spells.length > 0) parts.push(`knows ${spells.join(' or ')}`);
+  }
+  // Requirement kinds that were previously dropped entirely (e.g. Prodigy's
+  // race gate, Strixhaven Mascot's feat gate).
+  if (Array.isArray(r.race)) {
+    const names = r.race.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0) parts.push(`race ${names.join('/')}`);
+  }
+  if (Array.isArray(r.feat)) {
+    const names = r.feat.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0) parts.push(`${names.join('/')} feat`);
+  }
+  if (Array.isArray(r.background)) {
+    const names = r.background.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0) parts.push(`${names.join('/')} background`);
+  }
+  if (Array.isArray(r.proficiency)) {
+    for (const p of r.proficiency) {
+      if (p !== null && typeof p === 'object') {
+        for (const [k, v] of Object.entries(p)) {
+          if (typeof v === 'string') parts.push(`${v} ${k}`);
         }
       }
     }
-    if (typeof r.level === 'number') parts.push(`level ${r.level}`);
-    else if (r.level !== null && typeof r.level === 'object') {
-      const lv = (r.level as { level?: number }).level;
-      if (typeof lv === 'number') parts.push(`level ${lv}`);
-    }
-    // Warlock invocation gates: Pact Boon, patron, and known-spell prerequisites.
-    if (typeof r.pact === 'string') parts.push(`Pact of the ${r.pact}`);
-    if (typeof r.patron === 'string') parts.push(`${r.patron.split('|')[0]} patron`);
-    if (Array.isArray(r.spell)) {
-      const spells = r.spell
-        .map((s) => (typeof s === 'string' ? (s.split('#')[0] ?? s).split('|')[0] : undefined))
-        .filter((s): s is string => s !== undefined);
-      if (spells.length > 0) parts.push(`knows ${spells.join(' or ')}`);
-    }
-    if (typeof r.other === 'string') parts.push(r.other);
-    if (Array.isArray(r.spellcasting2020) || r.spellcasting === true) parts.push('spellcasting');
   }
+  if (typeof r.other === 'string') parts.push(r.other);
+  if (Array.isArray(r.spellcasting2020) || r.spellcasting === true) parts.push('spellcasting');
   return parts.join(', ');
+}
+
+/**
+ * "STR 13" / "INT 13, level 4 or WIS 13, level 4" from a feat/entity prerequisite
+ * array. Each array element is an alternative requirement SET (OR); fields within
+ * a set are all required (AND). Alternatives are joined with " or " rather than
+ * flattened into one misleading AND list.
+ */
+export function summarizePrerequisite(raw: unknown): string {
+  if (!Array.isArray(raw)) return '';
+  return raw
+    .filter((req): req is Record<string, unknown> => req !== null && typeof req === 'object')
+    .map(summarizeReqSet)
+    .filter((s) => s !== '')
+    .join(' or ');
 }
 
 /** Highest numeric level prerequisite (used to gate optional-feature picks). */
