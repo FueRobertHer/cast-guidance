@@ -60,28 +60,14 @@ function gatherByLevel(
   }
 }
 
-/** Apply one additionalSpells entry: known/innate/prepared grants + expanded/choose notes. */
-function processSpellEntry(
+/** Grant an entry's known/innate/prepared spells + surface expanded/choose notes. */
+function grantSpellEntry(
   col: Collector,
   entry: DataEntity,
   origin: EffectOrigin,
   totalLevel: number,
-  defaultAbility?: Ability,
+  ability: Ability | undefined,
 ): void {
-  let ability: Ability | undefined = defaultAbility;
-  const ab = entry.ability;
-  if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
-    ability = ab as Ability;
-  } else if (
-    ab !== null &&
-    typeof ab === 'object' &&
-    Array.isArray((ab as { choose?: unknown[] }).choose)
-  ) {
-    const opts = (ab as { choose: unknown[] }).choose.map(String);
-    ability = (opts[0] as Ability | undefined) ?? defaultAbility; // default; note the rest
-    col.warn(`${origin.label}: spellcasting ability is your choice of ${opts.join('/')}.`);
-  }
-
   const sawChoose = { v: false };
 
   // Innate / always-known: cast per their own rules or added to spells known.
@@ -115,6 +101,67 @@ function processSpellEntry(
 }
 
 /**
+ * Apply one additionalSpells entry. When its `ability` is a `{choose}` list the
+ * spellcasting ability is the player's pick, so surface an ability picker and
+ * grant with the chosen ability rather than silently defaulting to the first
+ * option. As with the branch choice, the grant waits on the pick — a pending
+ * choice applies no effects — so nothing is granted with a guessed ability.
+ */
+function processSpellEntry(
+  col: Collector,
+  entry: DataEntity,
+  origin: EffectOrigin,
+  totalLevel: number,
+  defaultAbility: Ability | undefined,
+  abilityChoiceId: string,
+): void {
+  const ab = entry.ability;
+  if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
+    grantSpellEntry(col, entry, origin, totalLevel, ab as Ability);
+    return;
+  }
+  if (
+    ab !== null &&
+    typeof ab === 'object' &&
+    Array.isArray((ab as { choose?: unknown[] }).choose)
+  ) {
+    const opts = (ab as { choose: unknown[] }).choose
+      .map(String)
+      .filter((o): o is Ability => (ABILITIES as readonly string[]).includes(o));
+    if (opts.length === 1) {
+      // A single valid option is not a real choice — treat it like a fixed
+      // ability and grant immediately, matching the plain-string path.
+      grantSpellEntry(col, entry, origin, totalLevel, opts[0]);
+      return;
+    }
+    if (opts.length > 1) {
+      col.choice(
+        {
+          id: abilityChoiceId,
+          origin,
+          kind: 'ability',
+          label: `${origin.label}: spellcasting ability`,
+          count: 1,
+          options: opts.map((a) => ({ id: a, label: a.toUpperCase() })),
+        },
+        (selected) => {
+          const picked = selected[0];
+          // Only grant once a valid ability is picked — an unanswered or
+          // invalid/stale pick grants nothing (as the branch choice does),
+          // rather than granting with no ability while re-prompting.
+          if (picked === undefined || !(ABILITIES as readonly string[]).includes(picked)) return;
+          grantSpellEntry(col, entry, origin, totalLevel, picked as Ability);
+        },
+      );
+      return;
+    }
+    // Malformed choose (no valid abilities) — fall back and explain.
+    col.warn(`${origin.label}: spellcasting ability is your choice — see the trait text.`);
+  }
+  grantSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+}
+
+/**
  * @param idBase namespace for the branch choice's stable id (defaults to the
  *   origin uid). Callers with a per-instance base (repeatable feats) pass it so
  *   two instances keep separate branch picks.
@@ -129,6 +176,7 @@ export function collectAdditionalSpells(
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
   const totalLevel = totalLevelOf(col);
+  const base = idBase ?? `spells:${origin.uid}`;
 
   // Entries carrying a distinct `name` are mutually-exclusive branches (the
   // 5etools convention) — e.g. Strixhaven Initiate's colleges. The character
@@ -152,19 +200,29 @@ export function collectAdditionalSpells(
     }
   }
 
-  for (const entry of unnamed) processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+  // Each entry's choose-ability picker (if any) needs a stable, collision-free
+  // id; `prefix` namespaces it by group and the index keeps sibling entries apart.
+  const applyEntries = (group: DataEntity[], prefix: string) => {
+    for (let i = 0; i < group.length; i++) {
+      const entry = group[i];
+      if (entry !== undefined) {
+        processSpellEntry(col, entry, origin, totalLevel, defaultAbility, `${prefix}:${i}`);
+      }
+    }
+  };
+
+  // `u`/`b` prefixes keep the unnamed and branch namespaces disjoint, so an
+  // (only theoretically possible) branch literally named "u" can't collide.
+  applyEntries(unnamed, `${base}:ability:u`);
 
   if (branches.size <= 1) {
     // No real choice — collect the lone (or zero) named group as before.
     for (const name of order) {
-      for (const entry of branches.get(name) ?? []) {
-        processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
-      }
+      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
     }
     return;
   }
 
-  const base = idBase ?? `spells:${origin.uid}`;
   col.choice(
     {
       id: `${base}:branch`,
@@ -178,9 +236,7 @@ export function collectAdditionalSpells(
       const pick = selected[0];
       const name = pick !== undefined ? order.find((n) => n.toLowerCase() === pick) : undefined;
       if (name === undefined) return;
-      for (const entry of branches.get(name) ?? []) {
-        processSpellEntry(col, entry, origin, totalLevel, defaultAbility);
-      }
+      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
     },
   );
 }
