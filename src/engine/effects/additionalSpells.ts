@@ -43,7 +43,13 @@ function collectStrings(val: unknown, out: string[], sawChoose: { v: boolean }):
 function gatherByLevel(map: unknown, totalLevel: number, out: string[], sawChoose: { v: boolean }) {
   if (map === null || typeof map !== 'object') return;
   for (const [key, val] of Object.entries(map)) {
-    const gate = key === '_' ? 0 : Number.parseInt(key, 10);
+    // "_" and spell-level buckets ("s1"…"s5", used by `expanded` lists that
+    // organize additions by spell level rather than character level) are
+    // ungated; numeric keys gate by character level. Without the sN case an
+    // entire expanded list (e.g. Witherbloom/Lorehold Student) parses to NaN
+    // and silently vanishes.
+    const ungated = key === '_' || /^s\d+$/i.test(key);
+    const gate = ungated ? 0 : Number.parseInt(key, 10);
     if (!Number.isNaN(gate) && gate <= totalLevel) collectStrings(val, out, sawChoose);
   }
 }

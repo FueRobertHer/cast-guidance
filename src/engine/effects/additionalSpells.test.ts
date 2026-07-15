@@ -55,4 +55,16 @@ describe('collectAdditionalSpells', () => {
     expect(col.warnings.some((w) => /expands your spell options/.test(w))).toBe(true);
     expect(col.warnings.some((w) => /choose a spell/.test(w))).toBe(true);
   });
+
+  it('surfaces spell-level-keyed expanded lists (sN) instead of dropping them', () => {
+    // Witherbloom/Lorehold Student backgrounds key `expanded` by spell level
+    // (s1…s5), which used to parse to NaN and vanish. They are not gated by
+    // character level, so they surface even at level 1.
+    const col = collect([{ expanded: { s1: ['armor of agathys'], s5: ['cone of cold'] } }], 1);
+    expect(granted(col.effects)).toHaveLength(0);
+    const warning = col.warnings.find((w) => /expands your spell options/.test(w));
+    expect(warning).toBeDefined();
+    expect(warning).toContain('armor of agathys');
+    expect(warning).toContain('cone of cold');
+  });
 });
