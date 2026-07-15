@@ -70,6 +70,38 @@ describe('historyLabel', () => {
     expect(historyLabel(poisoned, base())).toBe('Poisoned removed');
   });
 
+  it('names a condition level change (Exhaustion 2 → 3)', () => {
+    const two = base();
+    two.play.conditions = [{ id: 'Exhaustion', level: 2 }];
+    const three = base();
+    three.play.conditions = [{ id: 'Exhaustion', level: 3 }];
+    expect(historyLabel(two, three)).toBe('Exhaustion → 3');
+  });
+
+  it('names an equipment swap and a learned spell', () => {
+    const withDagger = base();
+    withDagger.equipment = [
+      { id: 'e1', ref: { name: 'Dagger', source: 'PHB' }, qty: 1, equipped: true, attuned: false },
+    ];
+    const withSword = base();
+    withSword.equipment = [
+      {
+        id: 'e1',
+        ref: { name: 'Longsword', source: 'PHB' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    expect(historyLabel(withDagger, withSword)).toBe('Gear: +Longsword −Dagger');
+
+    const learned = base();
+    learned.spellcasting = {
+      Wizard: { known: [{ name: 'Fireball', source: 'PHB' }], prepared: [] },
+    };
+    expect(historyLabel(base(), learned)).toBe('Learned Fireball');
+  });
+
   it('falls back to Edited when nothing recognizable changed', () => {
     // structuredClone-equal docs → no labels
     const prev = base();

@@ -17,7 +17,7 @@ function nameDiff(prev: string[], next: string[]): { added: string[]; removed: s
   return { added, removed };
 }
 
-/** "bless +2 more" style summary for a list of changed names. */
+/** "Bless +2 more" style summary for a list of changed names. */
 function firstWithMore(names: string[]): string {
   const first = names[0] ?? '';
   return names.length > 1 ? `${first} +${names.length - 1} more` : first;
@@ -62,6 +62,13 @@ function conditionsLabel(prev: CharacterDoc, next: CharacterDoc): string | undef
   const { added, removed } = nameDiff(ids(prev), ids(next));
   if (added.length > 0) return `${firstWithMore(added)} added`;
   if (removed.length > 0) return `${firstWithMore(removed)} removed`;
+  // Same set of conditions — a level changed (e.g. Exhaustion 2 → 3). Without
+  // this, a level bump is invisible (ids match here, and `otherPlayChanged`
+  // strips conditions), so it would mislabel as "Edited".
+  const prevLevel = new Map(prev.play.conditions.map((c) => [c.id, c.level]));
+  for (const c of next.play.conditions) {
+    if (c.level !== prevLevel.get(c.id)) return `${c.id} → ${c.level ?? 0}`;
+  }
   return undefined;
 }
 
