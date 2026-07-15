@@ -64,6 +64,9 @@ export function collectBackground(col: Collector): void {
 
   // XPHB (2024) backgrounds: weighted ability bonuses + an origin feat.
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
+  // Each free-feat grant gets its own indexed picker id so multiple grants (or a
+  // grant beside a named feat) never share a doc.choices slot.
+  let freeFeatIdx = 0;
   for (const featEntry of asEntityArray(e.feats)) {
     for (const [key, value] of Object.entries(featEntry)) {
       if (value === true && key.includes('|')) {
@@ -72,7 +75,8 @@ export function collectBackground(col: Collector): void {
           collectGrantedFeat(col, name, source, origin);
         }
       } else if (key === 'any' || key === 'anyFromCategory') {
-        collectFreeFeatChoice(col, origin, `${idBase}:feat`, key, value);
+        collectFreeFeatChoice(col, origin, `${idBase}:feat:${freeFeatIdx}`, key, value);
+        freeFeatIdx += 1;
       }
     }
   }
@@ -96,18 +100,31 @@ function collectFreeFeatChoice(
   value: unknown,
 ): void {
   let category: string | undefined;
-  let count = 1;
+  let rawCount = 1;
   if (key === 'anyFromCategory') {
     if (typeof value === 'string') {
       category = value;
     } else if (value !== null && typeof value === 'object') {
       category = str((value as { category?: unknown }).category);
-      count = num((value as { count?: unknown }).count) ?? 1;
+      rawCount = num((value as { count?: unknown }).count) ?? 1;
     }
   } else if (typeof value === 'number') {
-    count = value; // "any": N
+    rawCount = value; // "any": N
   }
-  if (count < 1) count = 1;
+  const count = Math.max(1, Math.floor(rawCount));
+
+  // A non-repeatable feat already taken anywhere — via a race/background grant
+  // (collectedFeats) or another feat picker (doc.choices `:feat` slots) — is
+  // disabled here, mirroring the ASI picker so both stay in sync regardless of
+  // collection order (background is collected before classes).
+  const takenElsewhere = new Set<string>();
+  for (const uid of col.collectedFeats) takenElsewhere.add(uid);
+  for (const [k, v] of Object.entries(col.doc.choices)) {
+    if (k === choiceId || !k.endsWith(':feat')) continue;
+    for (const picked of Array.isArray(v) ? v : [v]) {
+      if (typeof picked === 'string') takenElsewhere.add(picked.toLowerCase());
+    }
+  }
 
   const prereqCtx = buildPrereqContext(col);
   const feats = col.ctx.byType('feat').filter((f) => {
@@ -129,7 +146,7 @@ function collectFreeFeatChoice(
       count,
       options: feats.map((f) => {
         const uid = `${str(f.name)}|${str(f.source)}`.toLowerCase();
-        const alreadyTaken = f.repeatable !== true && col.collectedFeats.has(uid);
+        const alreadyTaken = f.repeatable !== true && takenElsewhere.has(uid);
         return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
       }),
     },
