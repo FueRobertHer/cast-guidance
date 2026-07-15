@@ -39,6 +39,37 @@ describe('historyLabel', () => {
     expect(historyLabel(prev, next)).toBe('HP 8→3');
   });
 
+  it('names equipment added and removed', () => {
+    const withSword = base();
+    withSword.equipment = [
+      {
+        id: 'e1',
+        ref: { name: 'Longsword', source: 'PHB' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    expect(historyLabel(base(), withSword)).toBe('Added Longsword');
+    expect(historyLabel(withSword, base())).toBe('Removed Longsword');
+  });
+
+  it('names a prepared spell change', () => {
+    const prepared = base();
+    prepared.spellcasting = {
+      Wizard: { known: [], prepared: [{ name: 'Bless', source: 'PHB' }] },
+    };
+    expect(historyLabel(base(), prepared)).toBe('Prepared Bless');
+    expect(historyLabel(prepared, base())).toBe('Unprepared Bless');
+  });
+
+  it('names a condition added or removed', () => {
+    const poisoned = base();
+    poisoned.play.conditions = [{ id: 'Poisoned' }];
+    expect(historyLabel(base(), poisoned)).toBe('Poisoned added');
+    expect(historyLabel(poisoned, base())).toBe('Poisoned removed');
+  });
+
   it('falls back to Edited when nothing recognizable changed', () => {
     // structuredClone-equal docs → no labels
     const prev = base();
