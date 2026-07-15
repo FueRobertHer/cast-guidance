@@ -168,6 +168,16 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
           },
         );
       } else if (selected[0] === 'feat') {
+        // Feats picked at other ASI levels — a non-repeatable feat shouldn't be
+        // offered again (it would be deduped on collection anyway). The current
+        // prompt's own pick is excluded so it still reads as selected.
+        const takenElsewhere = new Set<string>();
+        for (const [key, val] of Object.entries(col.doc.choices)) {
+          if (key === `${baseId}:feat` || !key.endsWith(':feat')) continue;
+          for (const v of Array.isArray(val) ? val : [val]) {
+            if (typeof v === 'string') takenElsewhere.add(v.toLowerCase());
+          }
+        }
         col.choice(
           {
             id: `${baseId}:feat`,
@@ -181,10 +191,15 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
               .map((f) => {
                 const prereq = summarizePrerequisite(f.prerequisite);
                 const summary = summarizeEntries(f.entries);
+                const optId = `${str(f.name)}|${str(f.source)}`.toLowerCase();
+                const alreadyTaken = f.repeatable !== true && takenElsewhere.has(optId);
                 return {
-                  id: `${str(f.name)}|${str(f.source)}`.toLowerCase(),
+                  id: optId,
                   label: `${str(f.name)} (${str(f.source)})`,
                   description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
+                  ...(alreadyTaken
+                    ? { disabled: { reason: 'Already taken (not repeatable)' } }
+                    : {}),
                 };
               }),
           },

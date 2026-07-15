@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { type DataEntity, newCharacterDoc } from '../types';
 import { Collector } from './base';
+import { collectClasses } from './class';
 import { collectFeatEntity, collectFeats } from './feat';
 
 function collect(feat: DataEntity) {
@@ -38,5 +39,44 @@ describe('collectFeats', () => {
     const col = new Collector(doc, makeTestContext());
     collectFeats(col);
     expect(col.warnings).toContainEqual(expect.stringMatching(/Feat not found: nonexistent\|tst/i));
+  });
+});
+
+describe('non-repeatable feat dedup (FIX-004)', () => {
+  const darksight: DataEntity = { name: 'Darksight', senses: [{ darkvision: 60 }] };
+
+  it('applies a non-repeatable feat once even when collected twice', () => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    // Same feat granted (background) and chosen (ASI), or picked at two levels.
+    collectFeatEntity(col, darksight, 'darksight|tst', 'background');
+    collectFeatEntity(col, darksight, 'darksight|tst', 'asi8');
+    const senses = col.effects.filter((e) => e.kind === 'sense' && e.sense === 'darkvision');
+    expect(senses).toHaveLength(1);
+    expect(col.warnings).toContainEqual(expect.stringMatching(/not a repeatable feat/i));
+  });
+
+  it('keeps independent instances of a repeatable feat', () => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    const boon: DataEntity = { name: 'Boon', repeatable: true, senses: [{ darkvision: 60 }] };
+    collectFeatEntity(col, boon, 'boon|tst', 'asi4');
+    collectFeatEntity(col, boon, 'boon|tst', 'asi8');
+    const senses = col.effects.filter((e) => e.kind === 'sense' && e.sense === 'darkvision');
+    expect(senses).toHaveLength(2);
+    expect(col.warnings).not.toContainEqual(expect.stringMatching(/not a repeatable feat/i));
+  });
+
+  it('disables an already-taken non-repeatable feat in the ASI picker', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: ['avg', 'avg', 'avg', 'avg'] },
+    ];
+    doc.choices['class:warrior|tst:asi:4'] = 'feat'; // resolve ASI-or-feat to Feat
+    doc.choices['class:warrior|tst:asi:8:feat'] = ['alert|phb']; // Alert taken elsewhere
+    const col = new Collector(doc, makeTestContext());
+    collectClasses(col);
+    const prompt = col.pending.find((p) => p.id === 'class:warrior|tst:asi:4:feat');
+    expect(prompt).toBeDefined();
+    const alert = prompt?.options.find((o) => o.id === 'alert|phb');
+    expect(alert?.disabled?.reason).toMatch(/already taken/i);
   });
 });
