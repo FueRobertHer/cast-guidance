@@ -128,7 +128,13 @@ function processSpellEntry(
     const opts = (ab as { choose: unknown[] }).choose
       .map(String)
       .filter((o): o is Ability => (ABILITIES as readonly string[]).includes(o));
-    if (opts.length > 0) {
+    if (opts.length === 1) {
+      // A single valid option is not a real choice — treat it like a fixed
+      // ability and grant immediately, matching the plain-string path.
+      grantSpellEntry(col, entry, origin, totalLevel, opts[0]);
+      return;
+    }
+    if (opts.length > 1) {
       col.choice(
         {
           id: abilityChoiceId,
@@ -140,11 +146,11 @@ function processSpellEntry(
         },
         (selected) => {
           const picked = selected[0];
-          const ability =
-            picked !== undefined && (ABILITIES as readonly string[]).includes(picked)
-              ? (picked as Ability)
-              : undefined;
-          grantSpellEntry(col, entry, origin, totalLevel, ability);
+          // Only grant once a valid ability is picked — an unanswered or
+          // invalid/stale pick grants nothing (as the branch choice does),
+          // rather than granting with no ability while re-prompting.
+          if (picked === undefined || !(ABILITIES as readonly string[]).includes(picked)) return;
+          grantSpellEntry(col, entry, origin, totalLevel, picked as Ability);
         },
       );
       return;
@@ -205,12 +211,14 @@ export function collectAdditionalSpells(
     }
   };
 
+  // `u`/`b` prefixes keep the unnamed and branch namespaces disjoint, so an
+  // (only theoretically possible) branch literally named "u" can't collide.
   applyEntries(unnamed, `${base}:ability:u`);
 
   if (branches.size <= 1) {
     // No real choice — collect the lone (or zero) named group as before.
     for (const name of order) {
-      applyEntries(branches.get(name) ?? [], `${base}:ability:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
     }
     return;
   }
@@ -228,7 +236,7 @@ export function collectAdditionalSpells(
       const pick = selected[0];
       const name = pick !== undefined ? order.find((n) => n.toLowerCase() === pick) : undefined;
       if (name === undefined) return;
-      applyEntries(branches.get(name) ?? [], `${base}:ability:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
     },
   );
 }

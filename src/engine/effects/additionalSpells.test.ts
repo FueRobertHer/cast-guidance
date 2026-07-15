@@ -155,6 +155,32 @@ describe('collectAdditionalSpells — choose-ability picker (FIX-001)', () => {
     expect(col.pending.some((p) => p.kind === 'ability')).toBe(false);
   });
 
+  it('grants immediately (no picker) when only one valid ability is offered', () => {
+    // A single option — or a mixed list that filters to one — is not a real
+    // choice, so grant it like a fixed ability instead of prompting.
+    for (const choose of [['int'], ['int', '???']]) {
+      const col = collect([{ ability: { choose }, known: { '1': ['guidance'] } }]);
+      expect(granted(col.effects)[0]).toMatchObject({
+        spell: { name: 'guidance' },
+        ability: 'int',
+      });
+      expect(col.pending.some((p) => p.kind === 'ability')).toBe(false);
+      expect(col.warnings.some((w) => /your choice/.test(w))).toBe(false);
+    }
+  });
+
+  it('grants nothing for an invalid/stale stored pick and keeps prompting', () => {
+    // A saved ability no longer offered (e.g. a data update narrowed the list)
+    // must not grant with an empty ability; it re-prompts, like the branch choice.
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Warlock', source: 'PHB' }, levels: 1, hp: [] }];
+    doc.choices['spells:race|tiefling:ability:u:0'] = ['str']; // not among int/wis/cha
+    const col = new Collector(doc, makeTestContext());
+    collectAdditionalSpells(col, chooseAbilityRaw, origin, 'cha');
+    expect(granted(col.effects)).toHaveLength(0);
+    expect(col.pending.some((p) => p.id === 'spells:race|tiefling:ability:u:0')).toBe(true);
+  });
+
   it('namespaces the ability picker per chosen branch', () => {
     const branchAbilityRaw = [
       { name: 'Lorehold', ability: { choose: ['int', 'wis'] }, known: { _: ['light'] } },
@@ -170,14 +196,14 @@ describe('collectAdditionalSpells — choose-ability picker (FIX-001)', () => {
     };
     // Choosing the branch surfaces the branch's own choose-ability picker.
     const chosen = build({ 'spells:race|tiefling:branch': ['lorehold'] });
-    expect(chosen.pending.some((p) => p.id === 'spells:race|tiefling:ability:lorehold:0')).toBe(
+    expect(chosen.pending.some((p) => p.id === 'spells:race|tiefling:ability:b:lorehold:0')).toBe(
       true,
     );
     expect(granted(chosen.effects)).toHaveLength(0);
     // Answering both prompts grants the branch's spell with the chosen ability.
     const both = build({
       'spells:race|tiefling:branch': ['lorehold'],
-      'spells:race|tiefling:ability:lorehold:0': ['int'],
+      'spells:race|tiefling:ability:b:lorehold:0': ['int'],
     });
     expect(granted(both.effects)).toEqual([
       expect.objectContaining({ spell: { name: 'light', source: '' }, ability: 'int' }),
