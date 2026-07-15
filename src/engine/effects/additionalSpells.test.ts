@@ -108,4 +108,12 @@ describe('collectAdditionalSpells — mutually-exclusive branches (FIX-001)', ()
         .sort(),
     ).toEqual(['guidance', 'light']);
   });
+
+  it('grants a single named block normally without emitting a choice', () => {
+    // A lone named group (e.g. one subclass "always prepared" block) is not a
+    // real choice — it must grant its spells and create no branch prompt.
+    const col = collect([{ name: 'Domain', prepared: { _: ['bless'] } }]);
+    expect(granted(col.effects).map((e) => e.spell.name)).toEqual(['bless']);
+    expect(col.pending.some((p) => p.id.endsWith(':branch'))).toBe(false);
+  });
 });
