@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
-import type { DerivedSheet, PlayState } from '@/engine/types';
+import type { PlayState } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -15,6 +15,7 @@ import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
+import { longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, nextCastResource, spellNeedsConcentration } from '../SpellManager';
 import { spellRollActions } from '../spellRolls';
@@ -86,62 +87,6 @@ function rollConcentration(
     detail: `${label} · rolled ${r.total} vs DC ${dc}`,
     tone: held ? 'good' : 'warn',
   };
-}
-
-/** Reset short-rest state and return a human summary of what was restored. */
-function shortRest(play: PlayState, sheet: DerivedSheet): string[] {
-  const restored: string[] = [];
-  for (const r of sheet.resources) {
-    if (r.resetOn === 'short' && play.resources.some((x) => x.key === r.key && x.used > 0)) {
-      restored.push(r.label);
-    }
-  }
-  for (const r of sheet.resources) {
-    if (r.resetOn === 'short') {
-      play.resources = play.resources.filter((x) => x.key !== r.key);
-    }
-  }
-  if (play.pactSlotsSpent > 0) {
-    restored.push('pact slots');
-    play.pactSlotsSpent = 0;
-  }
-  return restored;
-}
-
-/** Reset long-rest state and return a human summary of what was restored. */
-function longRest(play: PlayState, sheet: DerivedSheet): string[] {
-  const restored: string[] = [];
-  const hpHealed = sheet.maxHp.value - play.currentHp;
-  if (hpHealed > 0) restored.push(`+${hpHealed} HP`);
-  if (play.slotsSpent.some((n) => n > 0)) restored.push('spell slots');
-  if (play.pactSlotsSpent > 0) restored.push('pact slots');
-  if (play.resources.some((r) => r.used > 0)) restored.push('resources');
-  if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
-
-  // A long rest removes one level of exhaustion (both editions).
-  const exh = play.conditions.find((c) => c.id === 'Exhaustion');
-  if (exh?.level !== undefined && exh.level > 0) {
-    if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
-    else exh.level -= 1;
-    restored.push('1 exhaustion level');
-  }
-
-  play.currentHp = sheet.maxHp.value;
-  play.tempHp = 0;
-  play.slotsSpent = play.slotsSpent.map(() => 0);
-  play.pactSlotsSpent = 0;
-  play.resources = [];
-  play.deathSaves = { success: 0, fail: 0 };
-  // Regain half your total hit dice (minimum 1)
-  let hitDiceBack = 0;
-  for (const [die, total] of Object.entries(sheet.hitDice)) {
-    const spent = play.hitDiceSpent[die] ?? 0;
-    const back = Math.min(spent, Math.max(1, Math.floor(total / 2)));
-    hitDiceBack += back;
-    play.hitDiceSpent[die] = spent - back;
-  }
-  if (hitDiceBack > 0) restored.push(`${hitDiceBack} hit ${hitDiceBack === 1 ? 'die' : 'dice'}`);
-  return restored;
 }
 
 export function Component() {
