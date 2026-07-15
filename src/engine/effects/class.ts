@@ -1,3 +1,5 @@
+import { calcAbilities } from '../calc/abilities';
+import { classSpellcastingMode } from '../calc/slots';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
@@ -108,6 +110,170 @@ export function requiredLevel(raw: unknown): number | undefined {
     if (typeof lv === 'number') need = need === undefined ? lv : Math.max(need, lv);
   }
   return need;
+}
+
+// ---------------------------------------------------------------------------
+// Prerequisite evaluation (advisory — GAME-005)
+//
+// Whether a feat/optional-feature prerequisite is *likely* met by the character
+// so far. This drives an advisory cue, never a block: "guidance, not
+// gatekeeping" means a table-approved pick must stay selectable. So the
+// evaluator is deliberately conservative — it only flags a requirement it can
+// affirmatively judge as unmet, and treats anything it can't evaluate (pact,
+// patron, known-spell, free-text `other`) as satisfied to avoid false flags.
+// Scores come from effects collected up to this point (race/background/earlier
+// levels), which is exact for the common case; a later ASI is not yet folded in.
+// ---------------------------------------------------------------------------
+
+export interface PrereqContext {
+  abilityScores: Record<Ability, number>;
+  totalLevel: number;
+  /** Combined, lowercased race + subrace name (empty when no race chosen). */
+  raceName: string;
+  /** Lowercased feat names the character already has (granted, chosen, declared). */
+  featNames: Set<string>;
+  backgroundName?: string;
+  /** Lowercased skill/tool/armor/weapon proficiency names collected so far. */
+  proficiencies: Set<string>;
+  hasSpellcasting: boolean;
+}
+
+function nameTokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** Lenient two-way token-subset match, biased toward "matches" to avoid false flags. */
+function nameMatches(prereqName: string, candidate: string): boolean {
+  const p = nameTokens(prereqName);
+  const c = nameTokens(candidate);
+  if (p.length === 0 || c.length === 0) return true;
+  return p.every((t) => c.includes(t)) || c.every((t) => p.includes(t));
+}
+
+export function buildPrereqContext(col: Collector): PrereqContext {
+  const doc = col.doc;
+  const abilities = calcAbilities(doc, col.effects);
+  const abilityScores = {} as Record<Ability, number>;
+  for (const a of ABILITIES) abilityScores[a] = abilities[a].value;
+
+  const featNames = new Set<string>();
+  const addFeatName = (uidOrName: string) => {
+    const name = uidOrName.split('|')[0]?.trim().toLowerCase();
+    if (name !== undefined && name !== '') featNames.add(name);
+  };
+  for (const f of doc.feats) addFeatName(f.ref.name);
+  for (const uid of col.collectedFeats) addFeatName(uid);
+  for (const [key, val] of Object.entries(doc.choices)) {
+    if (!key.endsWith(':feat')) continue; // ASI-chosen feats picked at any level
+    for (const v of Array.isArray(val) ? val : [val]) {
+      if (typeof v === 'string') addFeatName(v);
+    }
+  }
+
+  const proficiencies = new Set<string>();
+  for (const e of col.effects) {
+    if (e.kind === 'skillProf') proficiencies.add(e.skill.toLowerCase());
+    else if (e.kind === 'toolProf' || e.kind === 'armorProf' || e.kind === 'weaponProf') {
+      proficiencies.add(e.name.toLowerCase());
+    }
+  }
+
+  // Spellcasting can come from the base class (full/half/pact) OR the subclass
+  // (Eldritch Knight, Arcane Trickster) — check both so a subclass caster is not
+  // falsely flagged as unable to take a spellcasting-gated feat.
+  const hasSpellcasting = doc.classes.some((c) => {
+    if (classSpellcastingMode(col.ctx.get('class', c.ref.name, c.ref.source)) !== 'none') {
+      return true;
+    }
+    const sub = c.subclass;
+    return (
+      sub !== undefined &&
+      classSpellcastingMode(col.ctx.get('subclass', sub.name, sub.source)) !== 'none'
+    );
+  });
+
+  return {
+    abilityScores,
+    totalLevel: doc.classes.reduce((s, c) => s + c.levels, 0),
+    raceName: `${doc.race?.name ?? ''} ${doc.subrace?.name ?? ''}`.trim(),
+    featNames,
+    backgroundName: doc.background?.name.toLowerCase(),
+    proficiencies,
+    hasSpellcasting,
+  };
+}
+
+function hasProficiency(value: string, ctx: PrereqContext): boolean {
+  const v = value.toLowerCase();
+  for (const p of ctx.proficiencies) {
+    if (p === v || p.includes(v) || v.includes(p)) return true;
+  }
+  return false;
+}
+
+/** One requirement set (AND of its fields). Unevaluable fields count as met. */
+function meetsReqSet(r: Record<string, unknown>, ctx: PrereqContext): boolean {
+  if (Array.isArray(r.ability)) {
+    for (const obj of r.ability) {
+      if (obj !== null && typeof obj === 'object') {
+        for (const [k, v] of Object.entries(obj)) {
+          const a = k.toLowerCase();
+          if ((ABILITIES as readonly string[]).includes(a) && typeof v === 'number') {
+            if ((ctx.abilityScores[a as Ability] ?? 0) < v) return false;
+          }
+        }
+      }
+    }
+  }
+  const lvl =
+    typeof r.level === 'number'
+      ? r.level
+      : r.level !== null && typeof r.level === 'object'
+        ? (r.level as { level?: number }).level
+        : undefined;
+  if (typeof lvl === 'number' && ctx.totalLevel < lvl) return false;
+
+  if ((r.spellcasting === true || Array.isArray(r.spellcasting2020)) && !ctx.hasSpellcasting) {
+    return false;
+  }
+
+  // race/feat/background lists are satisfied by ANY match (OR within the list).
+  if (Array.isArray(r.race) && ctx.raceName !== '') {
+    const names = r.race.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0 && !names.some((n) => nameMatches(n, ctx.raceName))) return false;
+  }
+  if (Array.isArray(r.feat)) {
+    const names = r.feat.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0 && !names.some((n) => ctx.featNames.has(n.toLowerCase()))) return false;
+  }
+  if (Array.isArray(r.background) && ctx.backgroundName !== undefined) {
+    const names = r.background.map(prereqRefName).filter((s): s is string => s !== undefined);
+    if (names.length > 0 && !names.some((n) => nameMatches(n, ctx.backgroundName ?? ''))) {
+      return false;
+    }
+  }
+  if (Array.isArray(r.proficiency)) {
+    for (const p of r.proficiency) {
+      if (p !== null && typeof p === 'object') {
+        for (const v of Object.values(p)) {
+          if (typeof v === 'string' && v !== '' && !hasProficiency(v, ctx)) return false;
+        }
+      }
+    }
+  }
+  // pact / patron / spell / other are intentionally not evaluated (treated as met).
+  return true;
+}
+
+/** True if the character likely satisfies the prerequisite (OR across sets). */
+export function meetsPrerequisite(raw: unknown, ctx: PrereqContext): boolean {
+  if (!Array.isArray(raw)) return true;
+  const sets = raw.filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object');
+  if (sets.length === 0) return true;
+  return sets.some((set) => meetsReqSet(set, ctx));
 }
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
@@ -228,6 +394,7 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
             if (typeof v === 'string') takenElsewhere.add(v.toLowerCase());
           }
         }
+        const prereqCtx = buildPrereqContext(col);
         col.choice(
           {
             id: `${baseId}:feat`,
@@ -243,13 +410,18 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
                 const summary = summarizeEntries(f.entries);
                 const optId = `${str(f.name)}|${str(f.source)}`.toLowerCase();
                 const alreadyTaken = f.repeatable !== true && takenElsewhere.has(optId);
+                // Advisory (never a block): flag an unmet prerequisite so the
+                // player notices, but keep the feat selectable for table rulings.
+                const unmet = prereq !== '' && !meetsPrerequisite(f.prerequisite, prereqCtx);
                 return {
                   id: optId,
                   label: `${str(f.name)} (${str(f.source)})`,
                   description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
                   ...(alreadyTaken
                     ? { disabled: { reason: 'Already taken (not repeatable)' } }
-                    : {}),
+                    : unmet
+                      ? { advisory: 'You may not meet this prerequisite.' }
+                      : {}),
                 };
               }),
           },
@@ -298,6 +470,7 @@ function handleOptionalFeatureProgression(
     }
     if (count === 0) continue;
 
+    const prereqCtx = buildPrereqContext(col);
     const options = col.ctx
       .byType('optionalfeature')
       .filter((of) => {
@@ -308,18 +481,24 @@ function handleOptionalFeatureProgression(
         const prereq = summarizePrerequisite(of.prerequisite);
         const summary = summarizeEntries(of.entries);
         // Level is deterministic from this class entry, so disable options the
-        // character can't take yet. Pact/patron/spell gates depend on other
-        // picks we don't resolve here — shown as text, not enforced.
+        // character can't take yet. Other gates (ability/race/feat/proficiency/
+        // spellcasting) are advisory: flag them but keep the option selectable.
         const need = requiredLevel(of.prerequisite);
         const disabled =
           need !== undefined && classLevel < need
             ? { reason: `Requires level ${need}` }
             : undefined;
+        const unmet =
+          disabled === undefined && prereq !== '' && !meetsPrerequisite(of.prerequisite, prereqCtx);
         return {
           id: `${str(of.name)}|${str(of.source)}`.toLowerCase(),
           label: `${str(of.name)} (${str(of.source)})`,
           description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
-          ...(disabled !== undefined ? { disabled } : {}),
+          ...(disabled !== undefined
+            ? { disabled }
+            : unmet
+              ? { advisory: 'You may not meet this prerequisite.' }
+              : {}),
         };
       });
 

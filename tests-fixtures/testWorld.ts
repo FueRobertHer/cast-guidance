@@ -243,6 +243,20 @@ const feat: DataEntity[] = [
     source: 'PHB',
     entries: ['3 luck points (prose only in real data).'],
   },
+  {
+    // Prereq feats for the advisory cue (GAME-005): a caster-only feat and an
+    // ability-gated feat. Names chosen to avoid curated-table hooks.
+    name: 'Elemental Adept',
+    source: 'TST',
+    prerequisite: [{ spellcasting: true }],
+    entries: ['Your spells ignore resistance to a chosen damage type.'],
+  },
+  {
+    name: 'Grappler',
+    source: 'TST',
+    prerequisite: [{ ability: [{ str: 13 }] }],
+    entries: ['Advantage against a creature you have grappled.'],
+  },
 ];
 
 const cls: DataEntity[] = [
@@ -403,6 +417,21 @@ const subclass: DataEntity[] = [
         expanded: { '1': ['shield|tst'] },
       },
     ],
+  },
+  {
+    // Eldritch-Knight-style third caster: spellcasting comes from the SUBCLASS,
+    // so the base Warrior is martial but the character still "has spellcasting".
+    name: 'Spell Knight',
+    shortName: 'SpellKnight',
+    source: 'TST',
+    className: 'Warrior',
+    classSource: 'TST',
+    casterProgression: '1/3',
+    spellcastingAbility: 'int',
+    spellsKnownProgressionFixed: [
+      0, 0, 3, 4, 4, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13,
+    ],
+    subclassFeatures: [],
   },
 ];
 

@@ -161,6 +161,11 @@ export function ChoicePromptRenderer({
                   {o.description !== undefined && o.description !== '' && (
                     <span className="text-xs text-ink-muted">{o.description}</span>
                   )}
+                  {o.advisory !== undefined && (
+                    // Selectable, not disabled — a color-independent (icon + word)
+                    // "guidance, not gatekeeping" cue.
+                    <span className="text-xs font-medium text-amber-300">⚠ {o.advisory}</span>
+                  )}
                 </button>
                 {info != null && <div className="shrink-0 p-2">{info}</div>}
               </div>
