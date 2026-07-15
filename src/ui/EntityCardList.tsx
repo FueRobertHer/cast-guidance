@@ -131,10 +131,10 @@ export function EntityCardList({
                 type="button"
                 aria-label={nameOf(e)}
                 onClick={() => {
-                  // Re-tapping the current pick must never re-fire onSelect: for
-                  // race/class/background that re-runs pruneChoicesFor and
-                  // silently wipes that origin's skill/feat/spell picks. Deselect
-                  // when that's offered, otherwise do nothing.
+                  // Re-tapping the current pick must never re-fire onSelect:
+                  // race/background re-run pruneChoicesFor and the class picker
+                  // clears every choice, silently discarding picks. Deselect when
+                  // that's offered, otherwise do nothing.
                   if (selected) onDeselect?.();
                   else onSelect(e);
                 }}

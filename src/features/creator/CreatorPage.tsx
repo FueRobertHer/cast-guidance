@@ -483,6 +483,9 @@ export function Component() {
                   type="button"
                   onClick={() =>
                     update((d) => {
+                      // Re-selecting the current method is a no-op — otherwise
+                      // re-tapping "Point buy" re-zeroes allocated scores.
+                      if (d.abilities.method === m) return;
                       d.abilities.method = m;
                       if (m === 'pointbuy')
                         d.abilities.base = {

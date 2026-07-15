@@ -44,4 +44,12 @@ describe('EntityCardList selection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Human' }));
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('still selects a different card while one is selected', () => {
+    const onSelect = vi.fn();
+    render(<EntityCardList entities={entities} selectedUid="human|phb" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Elf' }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]).toMatchObject({ name: 'Elf' });
+  });
 });
