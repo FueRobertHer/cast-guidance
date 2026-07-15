@@ -494,6 +494,7 @@ export function collectClasses(col: Collector): void {
           subAbility !== undefined && (ABILITIES as readonly string[]).includes(subAbility)
             ? (subAbility as Ability)
             : undefined,
+          `subclass:${subOrigin.uid}`,
         );
         const subRefs = Array.isArray(sub.subclassFeatures) ? sub.subclassFeatures : [];
         for (const rawRef of subRefs) {

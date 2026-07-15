@@ -65,6 +65,21 @@ describe('non-repeatable feat dedup (FIX-004)', () => {
     expect(col.warnings).not.toContainEqual(expect.stringMatching(/not a repeatable feat/i));
   });
 
+  it('scopes a feat spell-branch choice to the feat instance (FIX-001 wiring)', () => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    const feat: DataEntity = {
+      name: 'Branchy',
+      additionalSpells: [
+        { name: 'Fire', known: { _: ['fire bolt'] } },
+        { name: 'Frost', known: { _: ['ray of frost'] } },
+      ],
+    };
+    collectFeatEntity(col, feat, 'branchy|tst', 'asi4');
+    const prompt = col.pending.find((p) => p.id === 'feat:branchy|tst:asi4:branch');
+    expect(prompt).toBeDefined();
+    expect(prompt?.options.map((o) => o.label)).toEqual(['Fire', 'Frost']);
+  });
+
   it('disables an already-taken non-repeatable feat in the ASI picker', () => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.classes = [
