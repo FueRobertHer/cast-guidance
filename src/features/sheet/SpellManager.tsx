@@ -20,6 +20,7 @@ import type {
 import { askChoice } from '@/ui/dialogs';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
+import { spellRollActions } from './spellRolls';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -144,6 +145,23 @@ export function castResourceId(resource: CastResource): string {
 }
 
 /**
+ * A one-line preview of a damage spell's primary dice when cast at `slotLevel`,
+ * so the upcast chooser can show e.g. "8d6" at level 3 vs "9d6" at level 4.
+ * Undefined for spells with no rolled damage (the chooser then shows only the
+ * slots-left hint). Ability modifiers are left out — the scaling is the point.
+ */
+export function upcastEffectSummary(
+  entity: Entity | undefined,
+  characterLevel: number,
+  slotLevel: number,
+): string | undefined {
+  const damage = spellRollActions(entity, { characterLevel, slotLevel }).find(
+    (a) => a.variant === 'damage',
+  );
+  return damage?.expr;
+}
+
+/**
  * Cast a spell, spending `resource` when given (an explicit slot/upcast choice)
  * or else the lowest available slot ≥ `level` (pact-aware). Marks the action
  * economy the casting time uses and, when the spell concentrates, it becomes the
@@ -181,11 +199,13 @@ function ClassSpells({
   doc,
   update,
   allowCasting,
+  characterLevel,
 }: {
   block: SpellcastingBlock;
   doc: CharacterDoc;
   update: (recipe: (d: CharacterDoc) => void) => void;
   allowCasting: boolean;
+  characterLevel: number;
 }) {
   const registry = useRegistry();
   const [classUids, setClassUids] = useState<Set<string> | null>(null);
@@ -273,19 +293,20 @@ function ClassSpells({
       detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
       options: options.map((o) => {
         const upcast = o.level > level ? ' (upcast)' : '';
-        if (o.kind === 'pact') {
-          const left = (block.pactSlots?.count ?? 0) - doc.play.pactSlotsSpent;
-          return {
-            id: castResourceId(o),
-            label: `Pact slot · level ${o.level}${upcast}`,
-            hint: `${left} left`,
-          };
-        }
-        const left = (block.slots[o.level - 1] ?? 0) - (doc.play.slotsSpent[o.level - 1] ?? 0);
+        // Preview the spell's dice at this slot level (e.g. 8d6 vs 9d6 upcast).
+        const effect = upcastEffectSummary(spell, characterLevel, o.level);
+        const left =
+          o.kind === 'pact'
+            ? (block.pactSlots?.count ?? 0) - doc.play.pactSlotsSpent
+            : (block.slots[o.level - 1] ?? 0) - (doc.play.slotsSpent[o.level - 1] ?? 0);
+        const label =
+          o.kind === 'pact'
+            ? `Pact slot · level ${o.level}${upcast}`
+            : `Level ${o.level} slot${upcast}`;
         return {
           id: castResourceId(o),
-          label: `Level ${o.level} slot${upcast}`,
-          hint: `${left} left`,
+          label,
+          hint: effect !== undefined ? `${effect} · ${left} left` : `${left} left`,
         };
       }),
     });
@@ -506,6 +527,7 @@ export function SpellManager({
           doc={doc}
           update={update}
           allowCasting={allowCasting}
+          characterLevel={sheet.totalLevel}
         />
       ))}
     </div>

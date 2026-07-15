@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Entity } from '@/data5e/copyMod';
 import { type CharacterDoc, emptyPlayState, type SpellcastingBlock } from '@/engine/types';
 import {
   availableCastResources,
@@ -6,6 +7,7 @@ import {
   castSpell,
   classifyKnown,
   nextCastResource,
+  upcastEffectSummary,
 } from './SpellManager';
 
 const value = { value: 0, base: 0, overridden: false, parts: [] };
@@ -129,6 +131,31 @@ describe('castSpell resource override (GAME-001)', () => {
   it('falls back to the lowest slot when no override is given', () => {
     const play = runCast(block({ slots: [4, 3, 2] }), 1);
     expect(play.slotsSpent[0]).toBe(1); // lowest (level 1)
+  });
+});
+
+describe('upcastEffectSummary (GAME-001 preview)', () => {
+  // Fireball-shaped: 8d6 at level 3, +1d6 per slot above.
+  const fireball = {
+    name: 'Fireball',
+    source: 'phb',
+    level: 3,
+    entries: ['A creature takes {@damage 8d6} fire damage on a failed save.'],
+    entriesHigherLevel: [
+      { entries: ['The damage increases by {@scaledamage 8d6|3-9|1d6} for each slot above 3rd.'] },
+    ],
+  } as unknown as Entity;
+
+  it('shows the spell dice scaled to the chosen slot level', () => {
+    expect(upcastEffectSummary(fireball, 5, 3)).toBe('8d6'); // base
+    expect(upcastEffectSummary(fireball, 5, 4)).toBe('9d6'); // upcast +1d6
+    expect(upcastEffectSummary(fireball, 5, 6)).toBe('11d6'); // +3d6
+  });
+
+  it('is undefined for a spell with no rolled damage', () => {
+    const shield = { name: 'Shield', source: 'phb', level: 1, entries: ['+5 AC.'] } as Entity;
+    expect(upcastEffectSummary(shield, 5, 1)).toBeUndefined();
+    expect(upcastEffectSummary(undefined, 5, 1)).toBeUndefined();
   });
 });
 
