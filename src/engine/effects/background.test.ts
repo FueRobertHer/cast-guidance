@@ -55,6 +55,27 @@ describe('collectBackground', () => {
     );
   });
 
+  it('resolves an origin feat with a "; option" sub-selector (Acolyte/Sage/Guide)', () => {
+    // "magic initiate; cleric|xphb" style key — the base feat (Alert here, a
+    // curated +5 initiative feat in the fixture) must resolve and apply.
+    const col = collect({ name: 'Custom', feats: [{ 'alert; cleric|phb': true }], entries: ['x'] });
+    expect(col.warnings).not.toContainEqual(expect.stringMatching(/Origin feat not found/i));
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'initiativeBonus', amount: 5 }),
+    );
+    // The locked sub-choice is surfaced as a note.
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'note', text: expect.stringMatching(/locked to .*cleric/i) }),
+    );
+  });
+
+  it('still warns (with the base name) when a "; option" feat is missing', () => {
+    const col = collect({ name: 'Custom', feats: [{ 'ghostfeat; wizard|zzz': true }] });
+    expect(col.warnings).toContainEqual(
+      expect.stringMatching(/Origin feat not found: ghostfeat\|zzz/i),
+    );
+  });
+
   it('pushes a feature card for the background', () => {
     const col = collect({ name: 'Custom', entries: ['Background flavor.'] });
     expect(col.features.some((f) => f.name === 'Custom')).toBe(true);
