@@ -243,6 +243,20 @@ const feat: DataEntity[] = [
     source: 'PHB',
     entries: ['3 luck points (prose only in real data).'],
   },
+  {
+    // Prereq feats for the advisory cue (GAME-005): a caster-only feat and an
+    // ability-gated feat. Names chosen to avoid curated-table hooks.
+    name: 'Elemental Adept',
+    source: 'TST',
+    prerequisite: [{ spellcasting: true }],
+    entries: ['Your spells ignore resistance to a chosen damage type.'],
+  },
+  {
+    name: 'Grappler',
+    source: 'TST',
+    prerequisite: [{ ability: [{ str: 13 }] }],
+    entries: ['Advantage against a creature you have grappled.'],
+  },
 ];
 
 const cls: DataEntity[] = [

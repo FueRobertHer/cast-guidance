@@ -194,6 +194,12 @@ export interface ChoiceOption {
   /** One-line summary shown under the label (e.g. what a feat does). */
   description?: string;
   disabled?: { reason: string };
+  /**
+   * Non-blocking, accessible cue that the option looks inadvisable (e.g. an
+   * unmet feat prerequisite). Unlike `disabled`, the option stays selectable —
+   * "guidance, not gatekeeping".
+   */
+  advisory?: string;
 }
 
 export interface ChoicePrompt {
