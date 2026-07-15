@@ -17,6 +17,7 @@ import type {
   SpellcastingBlock,
   SpellcastingMode,
 } from '@/engine/types';
+import { askChoice } from '@/ui/dialogs';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
@@ -110,15 +111,50 @@ export function nextCastResource(
 }
 
 /**
- * Cast a spell: spend the lowest available slot ≥ `level` (pact-aware). Marks
- * the action economy the casting time uses and, when the spell concentrates, it
- * becomes the active concentration (dropping any prior one — one at a time).
+ * Every slot/pact resource the character could spend on a spell of `spellLevel`
+ * — the whole upcast ladder, not just the lowest — so the UI can offer an
+ * explicit choice (GAME-001). Slot levels ascending, then the pact pool. Empty
+ * for a cantrip or when nothing castable remains.
+ */
+export function availableCastResources(
+  block: SpellcastingBlock,
+  play: PlayState,
+  spellLevel: number,
+): CastResource[] {
+  if (spellLevel === 0) return [];
+  const out: CastResource[] = [];
+  for (let level = spellLevel; level <= 9; level++) {
+    const total = block.slots[level - 1] ?? 0;
+    const spent = play.slotsSpent[level - 1] ?? 0;
+    if (total > 0 && spent < total) out.push({ kind: 'slot', level });
+  }
+  if (
+    block.pactSlots !== undefined &&
+    block.pactSlots.level >= spellLevel &&
+    play.pactSlotsSpent < block.pactSlots.count
+  ) {
+    out.push({ kind: 'pact', level: block.pactSlots.level });
+  }
+  return out;
+}
+
+/** Stable option id for the cast chooser; must round-trip through askChoice. */
+export function castResourceId(resource: CastResource): string {
+  return resource.kind === 'pact' ? 'pact' : `${resource.kind}-${resource.level}`;
+}
+
+/**
+ * Cast a spell, spending `resource` when given (an explicit slot/upcast choice)
+ * or else the lowest available slot ≥ `level` (pact-aware). Marks the action
+ * economy the casting time uses and, when the spell concentrates, it becomes the
+ * active concentration (dropping any prior one — one at a time).
  */
 export function castSpell(
   update: (recipe: (d: CharacterDoc) => void) => void,
   block: SpellcastingBlock,
   level: number,
   spell?: CastSpellInfo,
+  resource?: CastResource,
 ): void {
   update((d) => {
     if (spell?.concentration === true) {
@@ -129,14 +165,14 @@ export function castSpell(
       turn[spell.economy] = true;
       d.play.turn = turn;
     }
-    const resource = nextCastResource(block, d.play, level);
-    if (resource.kind === 'cantrip' || resource.kind === 'none') return;
-    if (resource.kind === 'pact') {
+    const spend = resource ?? nextCastResource(block, d.play, level);
+    if (spend.kind === 'cantrip' || spend.kind === 'none') return;
+    if (spend.kind === 'pact') {
       d.play.pactSlotsSpent += 1;
       return;
     }
-    const spent = d.play.slotsSpent[resource.level - 1] ?? 0;
-    d.play.slotsSpent[resource.level - 1] = spent + 1;
+    const spent = d.play.slotsSpent[spend.level - 1] ?? 0;
+    d.play.slotsSpent[spend.level - 1] = spent + 1;
   });
 }
 
@@ -217,12 +253,46 @@ function ClassSpells({
     });
   };
 
-  const cast = (level: number, spell: Entity) =>
-    castSpell(update, block, level, {
+  const cast = async (level: number, spell: Entity) => {
+    const info = {
       name: nameOf(spell),
       source: sourceOf(spell),
       concentration: spellNeedsConcentration(spell),
+    };
+    const options = availableCastResources(block, doc.play, level);
+    // Nothing to choose (exhausted, or a single option) — cast directly: the
+    // lowest available slot, or an intentional no-slot cast when tapped out.
+    if (options.length <= 1) {
+      castSpell(update, block, level, info);
+      return;
+    }
+    // Multiple slot levels (and/or pact) available — let the player pick which
+    // to spend instead of always the lowest (GAME-001 upcast choice).
+    const picked = await askChoice({
+      title: `Cast ${nameOf(spell)}`,
+      detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
+      options: options.map((o) => {
+        const upcast = o.level > level ? ' (upcast)' : '';
+        if (o.kind === 'pact') {
+          const left = (block.pactSlots?.count ?? 0) - doc.play.pactSlotsSpent;
+          return {
+            id: castResourceId(o),
+            label: `Pact slot · level ${o.level}${upcast}`,
+            hint: `${left} left`,
+          };
+        }
+        const left = (block.slots[o.level - 1] ?? 0) - (doc.play.slotsSpent[o.level - 1] ?? 0);
+        return {
+          id: castResourceId(o),
+          label: `Level ${o.level} slot${upcast}`,
+          hint: `${left} left`,
+        };
+      }),
     });
+    if (picked === null) return;
+    const chosen = options.find((o) => castResourceId(o) === picked);
+    castSpell(update, block, level, info, chosen);
+  };
 
   // Classify known spells by their real level via the registry (NOT the
   // search-filtered `byLevel`, which would shrink the counts mid-search and
@@ -386,7 +456,9 @@ function ClassSpells({
                         (lvl > 0 || spellNeedsConcentration(s)) && (
                           <button
                             type="button"
-                            onClick={() => cast(lvl, s)}
+                            onClick={() => {
+                              void cast(lvl, s);
+                            }}
                             className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
                             title={
                               lvl === 0
