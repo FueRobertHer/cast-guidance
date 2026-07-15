@@ -44,6 +44,26 @@ function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
 }
 
+/**
+ * Split a caster's known-spell list into cantrip vs leveled counts using a
+ * caller-supplied level lookup. Kept pure and independent of the on-screen
+ * search filter so the header counts and over-limit cues don't shift while the
+ * user is searching. A spell whose level can't be resolved counts as neither.
+ */
+export function classifyKnown(
+  known: ReadonlyArray<{ name: string; source: string }>,
+  levelOf: (ref: { name: string; source: string }) => number | undefined,
+): { cantrips: number; leveled: number } {
+  let cantrips = 0;
+  let leveled = 0;
+  for (const ref of known) {
+    const lvl = levelOf(ref);
+    if (lvl === 0) cantrips += 1;
+    else if (lvl !== undefined && lvl > 0) leveled += 1;
+  }
+  return { cantrips, leveled };
+}
+
 /** Does the spell require concentration (from its `duration` block)? */
 export function spellNeedsConcentration(e: Entity | undefined): boolean {
   const d = e?.duration;
@@ -204,10 +224,13 @@ function ClassSpells({
       concentration: spellNeedsConcentration(spell),
     });
 
-  const cantripsKnown = state.known.filter((r) => {
-    const uid = `${r.name}|${r.source}`.toLowerCase();
-    return (byLevel.get(0) ?? []).some((s) => uidOf(s) === uid);
-  }).length;
+  // Classify known spells by their real level via the registry (NOT the
+  // search-filtered `byLevel`, which would shrink the counts mid-search and
+  // fire a spurious over-limit cue).
+  const { cantrips: cantripsKnown, leveled: knownLeveled } = classifyKnown(state.known, (ref) => {
+    const e = registry?.get('spell', ref.name, ref.source);
+    return typeof e?.level === 'number' ? e.level : undefined;
+  });
 
   // Over-limit is allowed (house rules, features that add preparations) — flag
   // it, never block it (GAME-002/007 / guidance-not-gatekeeping).
@@ -217,7 +240,6 @@ function ClassSpells({
   // casters don't count "known" this way, so the cue only applies to those modes.
   const knownGated = block.mode === 'known' || block.mode === 'pact';
   const knownMax = knownGated ? block.spellsKnownMax : undefined;
-  const knownLeveled = Math.max(0, state.known.length - cantripsKnown);
   const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
   const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
   const overKnown = knownMax !== undefined && knownLeveled > knownMax;

@@ -280,7 +280,11 @@ export interface SpellcastingBlock {
   pactSlots?: { count: number; level: number };
   cantripsKnown?: number;
   preparedMax?: number;
-  /** Max leveled spells known (known/pact casters); undefined when not gated this way. */
+  /**
+   * Leveled spells known at this level from the class's spells-known progression,
+   * when it has one (undefined otherwise). Only meaningful as a cap for known/pact
+   * casters — the UI surfaces the over-limit cue for those modes only.
+   */
   spellsKnownMax?: number;
 }
 
