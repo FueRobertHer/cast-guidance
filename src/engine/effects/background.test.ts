@@ -38,14 +38,70 @@ describe('collectBackground', () => {
     );
   });
 
-  it('notes a free-choice origin feat (any)', () => {
+  it('surfaces a real feat picker for a free origin feat (any) — no dead-end note', () => {
     const col = collect({ name: 'Custom', feats: [{ any: true }], entries: ['x'] });
-    expect(col.effects).toContainEqual(
-      expect.objectContaining({
-        kind: 'note',
-        text: expect.stringMatching(/origin feat of your choice/),
-      }),
+    // No note pointing at a nonexistent "Feats step".
+    expect(col.effects.some((e) => e.kind === 'note')).toBe(false);
+    const prompt = col.pending.find((p) => p.kind === 'feat');
+    expect(prompt).toBeDefined();
+    expect(prompt?.id).toBe('background:custom|tst:feat');
+    expect(prompt?.count).toBe(1);
+    // Every fixture feat is offered (no category filter).
+    expect(prompt?.options.some((o) => o.label.startsWith('Alert'))).toBe(true);
+  });
+
+  it('collects the chosen free origin feat once the pick is stored', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.background = { name: 'Custom', source: 'TST' };
+    doc.choices['background:custom|tst:feat'] = ['alert|phb'];
+    const col = new Collector(
+      doc,
+      ctxWith({ name: 'Custom', feats: [{ any: true }], entries: ['x'] }),
     );
+    collectBackground(col);
+    // Alert is a curated +5 initiative feat in the fixture — it actually applies.
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'initiativeBonus', amount: 5 }),
+    );
+    expect(col.pending.some((p) => p.kind === 'feat')).toBe(false);
+  });
+
+  it('narrows anyFromCategory to a feat category and reads the count', () => {
+    const feats: DataEntity[] = [
+      { name: 'Origin One', source: 'TST', category: 'O', entries: ['o'] },
+      { name: 'General One', source: 'TST', category: 'G', entries: ['g'] },
+    ];
+    const base = makeTestContext();
+    const bg: DataEntity = {
+      name: 'Custom',
+      feats: [{ anyFromCategory: { category: 'O', count: 1 } }],
+      entries: ['x'],
+    };
+    const ctx: EngineContext = {
+      byType: (t) => (t === 'feat' ? feats : base.byType(t)),
+      get: (type, name, source) =>
+        type === 'background' && name === 'Custom'
+          ? bg
+          : type === 'feat'
+            ? feats.find((f) => String(f.name).toLowerCase() === name.toLowerCase())
+            : base.get(type, name, source),
+    };
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.background = { name: 'Custom', source: 'TST' };
+    const col = new Collector(doc, ctx);
+    collectBackground(col);
+    const prompt = col.pending.find((p) => p.kind === 'feat');
+    expect(prompt?.options.map((o) => o.id)).toEqual(['origin one|tst']); // only category O
+  });
+
+  it('warns instead of prompting when a category matches no feats', () => {
+    const col = collect({
+      name: 'Custom',
+      feats: [{ anyFromCategory: 'ZZZ' }],
+      entries: ['x'],
+    });
+    expect(col.pending.some((p) => p.kind === 'feat')).toBe(false);
+    expect(col.warnings).toContainEqual(expect.stringMatching(/no matching feats/i));
   });
 
   it('warns when a named origin feat is missing from the registry', () => {

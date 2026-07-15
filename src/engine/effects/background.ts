@@ -1,6 +1,7 @@
 import { type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
-import { asEntityArray, type Collector, str } from './base';
+import { asEntityArray, type Collector, num, str } from './base';
+import { buildPrereqContext, featChoiceOption } from './class';
 import { collectFeatEntity } from './feat';
 import {
   languageOptions,
@@ -71,16 +72,79 @@ export function collectBackground(col: Collector): void {
           collectGrantedFeat(col, name, source, origin);
         }
       } else if (key === 'any' || key === 'anyFromCategory') {
-        col.add({
-          kind: 'note',
-          text: 'Grants an origin feat of your choice — pick it in the Feats step.',
-          origin,
-        });
+        collectFreeFeatChoice(col, origin, `${idBase}:feat`, key, value);
       }
     }
   }
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
+}
+
+/**
+ * A background that grants a *free* origin feat ("any" / "anyFromCategory")
+ * surfaces a real feat picker that persists to `doc.choices` and collects the
+ * chosen feat — rather than a note pointing at a nonexistent "Feats step".
+ * `anyFromCategory` narrows the list to a feat category (e.g. Origin feats);
+ * `any` offers every feat. The pick's own prerequisites/sub-choices then follow
+ * the feat's own rules, exactly like an ASI-chosen feat.
+ */
+function collectFreeFeatChoice(
+  col: Collector,
+  origin: EffectOrigin,
+  choiceId: string,
+  key: string,
+  value: unknown,
+): void {
+  let category: string | undefined;
+  let count = 1;
+  if (key === 'anyFromCategory') {
+    if (typeof value === 'string') {
+      category = value;
+    } else if (value !== null && typeof value === 'object') {
+      category = str((value as { category?: unknown }).category);
+      count = num((value as { count?: unknown }).count) ?? 1;
+    }
+  } else if (typeof value === 'number') {
+    count = value; // "any": N
+  }
+  if (count < 1) count = 1;
+
+  const prereqCtx = buildPrereqContext(col);
+  const feats = col.ctx.byType('feat').filter((f) => {
+    if (str(f.name) === undefined) return false;
+    if (category === undefined) return true;
+    return str(f.category)?.toLowerCase() === category.toLowerCase();
+  });
+  if (feats.length === 0) {
+    col.warn(`${origin.label}: grants a free feat, but no matching feats are available.`);
+    return;
+  }
+
+  col.choice(
+    {
+      id: choiceId,
+      origin,
+      kind: 'feat',
+      label: `${origin.label}: choose a free feat`,
+      count,
+      options: feats.map((f) => {
+        const uid = `${str(f.name)}|${str(f.source)}`.toLowerCase();
+        const alreadyTaken = f.repeatable !== true && col.collectedFeats.has(uid);
+        return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
+      }),
+    },
+    (picked) => {
+      for (const uid of picked) {
+        const [name, source] = uid.split('|');
+        const feat = name !== undefined ? col.ctx.get('feat', name, source) : undefined;
+        if (feat === undefined) {
+          col.warn(`Chosen feat not found: ${uid}`);
+          continue;
+        }
+        collectFeatEntity(col, feat, uid, origin.uid);
+      }
+    },
+  );
 }
 
 /** Feats granted by name (background origin feats) — collected inline. */

@@ -2,7 +2,14 @@ import { calcAbilities } from '../calc/abilities';
 import { classSpellcastingMode } from '../calc/slots';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { summarizeEntries } from '../summarize';
-import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
+import {
+  ABILITIES,
+  type Ability,
+  type ChoiceOption,
+  type DataEntity,
+  type EffectOrigin,
+  refUid,
+} from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
@@ -276,6 +283,31 @@ export function meetsPrerequisite(raw: unknown, ctx: PrereqContext): boolean {
   return sets.some((set) => meetsReqSet(set, ctx));
 }
 
+/**
+ * One feat picker option: label, prereq + effect summary, and either a
+ * hard `disabled` (already taken, non-repeatable) or a non-blocking `advisory`
+ * when the prerequisite looks unmet. Shared by every feat picker (ASI, origin).
+ */
+export function featChoiceOption(
+  f: DataEntity,
+  prereqCtx: PrereqContext,
+  opts: { taken?: boolean } = {},
+): ChoiceOption {
+  const prereq = summarizePrerequisite(f.prerequisite);
+  const summary = summarizeEntries(f.entries);
+  const unmet = prereq !== '' && !meetsPrerequisite(f.prerequisite, prereqCtx);
+  return {
+    id: `${str(f.name)}|${str(f.source)}`.toLowerCase(),
+    label: `${str(f.name)} (${str(f.source)})`,
+    description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
+    ...(opts.taken === true
+      ? { disabled: { reason: 'Already taken (not repeatable)' } }
+      : unmet
+        ? { advisory: 'You may not meet this prerequisite.' }
+        : {}),
+  };
+}
+
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
 export interface ClassFeatureRef {
   name: string;
@@ -406,23 +438,9 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
               .byType('feat')
               .filter((f) => str(f.name) !== undefined)
               .map((f) => {
-                const prereq = summarizePrerequisite(f.prerequisite);
-                const summary = summarizeEntries(f.entries);
                 const optId = `${str(f.name)}|${str(f.source)}`.toLowerCase();
                 const alreadyTaken = f.repeatable !== true && takenElsewhere.has(optId);
-                // Advisory (never a block): flag an unmet prerequisite so the
-                // player notices, but keep the feat selectable for table rulings.
-                const unmet = prereq !== '' && !meetsPrerequisite(f.prerequisite, prereqCtx);
-                return {
-                  id: optId,
-                  label: `${str(f.name)} (${str(f.source)})`,
-                  description: prereq !== '' ? `Prereq: ${prereq}. ${summary}` : summary,
-                  ...(alreadyTaken
-                    ? { disabled: { reason: 'Already taken (not repeatable)' } }
-                    : unmet
-                      ? { advisory: 'You may not meet this prerequisite.' }
-                      : {}),
-                };
+                return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
               }),
           },
           (picked) => {
