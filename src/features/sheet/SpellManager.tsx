@@ -138,6 +138,11 @@ export function availableCastResources(
   return out;
 }
 
+/** Stable option id for the cast chooser; must round-trip through askChoice. */
+export function castResourceId(resource: CastResource): string {
+  return resource.kind === 'pact' ? 'pact' : `${resource.kind}-${resource.level}`;
+}
+
 /**
  * Cast a spell, spending `resource` when given (an explicit slot/upcast choice)
  * or else the lowest available slot ≥ `level` (pact-aware). Marks the action
@@ -265,22 +270,27 @@ function ClassSpells({
     // to spend instead of always the lowest (GAME-001 upcast choice).
     const picked = await askChoice({
       title: `Cast ${nameOf(spell)}`,
-      detail: 'Choose which slot to spend — a higher level upcasts the spell.',
+      detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
       options: options.map((o) => {
+        const upcast = o.level > level ? ' (upcast)' : '';
         if (o.kind === 'pact') {
           const left = (block.pactSlots?.count ?? 0) - doc.play.pactSlotsSpent;
-          return { id: 'pact', label: `Pact slot · level ${o.level}`, hint: `${left} left` };
+          return {
+            id: castResourceId(o),
+            label: `Pact slot · level ${o.level}${upcast}`,
+            hint: `${left} left`,
+          };
         }
         const left = (block.slots[o.level - 1] ?? 0) - (doc.play.slotsSpent[o.level - 1] ?? 0);
         return {
-          id: `slot-${o.level}`,
-          label: `Level ${o.level} slot${o.level > level ? ' (upcast)' : ''}`,
+          id: castResourceId(o),
+          label: `Level ${o.level} slot${upcast}`,
           hint: `${left} left`,
         };
       }),
     });
     if (picked === null) return;
-    const chosen = options.find((o) => (o.kind === 'pact' ? 'pact' : `slot-${o.level}`) === picked);
+    const chosen = options.find((o) => castResourceId(o) === picked);
     castSpell(update, block, level, info, chosen);
   };
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { type CharacterDoc, emptyPlayState, type SpellcastingBlock } from '@/engine/types';
-import { availableCastResources, castSpell, classifyKnown, nextCastResource } from './SpellManager';
+import {
+  availableCastResources,
+  castResourceId,
+  castSpell,
+  classifyKnown,
+  nextCastResource,
+} from './SpellManager';
 
 const value = { value: 0, base: 0, overridden: false, parts: [] };
 
@@ -65,6 +71,19 @@ describe('availableCastResources (GAME-001 upcast options)', () => {
     play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
     expect(availableCastResources(block(), play, 1)).toEqual([]);
   });
+
+  it('castResourceId round-trips each option uniquely', () => {
+    const play = emptyPlayState();
+    const caster = block({ slots: [4, 3, 2], pactSlots: { count: 2, level: 3 } });
+    const options = availableCastResources(caster, play, 1);
+    const ids = options.map(castResourceId);
+    expect(ids).toEqual(['slot-1', 'slot-2', 'slot-3', 'pact']);
+    expect(new Set(ids).size).toBe(ids.length); // unique
+    // Every id maps back to exactly its option (the cast handler's find).
+    for (const o of options) {
+      expect(options.find((x) => castResourceId(x) === castResourceId(o))).toBe(o);
+    }
+  });
 });
 
 describe('castSpell resource override (GAME-001)', () => {
@@ -82,6 +101,20 @@ describe('castSpell resource override (GAME-001)', () => {
     const play = runCast(block({ slots: [4, 3, 2] }), 1, { kind: 'slot', level: 3 });
     expect(play.slotsSpent[2]).toBe(1); // level 3 spent
     expect(play.slotsSpent[0]).toBe(0); // level 1 untouched
+  });
+
+  it('still applies concentration/economy when a resource is chosen', () => {
+    const doc = { play: emptyPlayState() } as CharacterDoc;
+    castSpell(
+      (recipe) => recipe(doc),
+      block({ slots: [4, 3, 2] }),
+      1,
+      { name: 'Bless', source: 'phb', concentration: true, economy: 'action' },
+      { kind: 'slot', level: 2 },
+    );
+    expect(doc.play.slotsSpent[1]).toBe(1);
+    expect(doc.play.concentratingOn).toEqual({ label: 'Bless' });
+    expect(doc.play.turn?.action).toBe(true);
   });
 
   it('spends the pact pool when the pact resource is chosen', () => {
