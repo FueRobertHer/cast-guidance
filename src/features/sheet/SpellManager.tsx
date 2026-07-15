@@ -145,20 +145,30 @@ export function castResourceId(resource: CastResource): string {
 }
 
 /**
- * A one-line preview of a damage spell's primary dice when cast at `slotLevel`,
- * so the upcast chooser can show e.g. "8d6" at level 3 vs "9d6" at level 4.
- * Undefined for spells with no rolled damage (the chooser then shows only the
- * slots-left hint). Ability modifiers are left out — the scaling is the point.
+ * A one-line preview of a spell's rolled dice when cast at `slotLevel`, so the
+ * upcast chooser can show e.g. Fireball "8d6" at level 3 vs "9d6" at level 4, or
+ * Ice Knife "1d10 / 3d6" (the cold die scales). Ability modifiers are left out —
+ * the dice are the point. Returns undefined when there's nothing rolled, and —
+ * crucially — also for an upcast whose dice are unchanged from the base level
+ * (e.g. Magic Missile / Scorching Ray add darts/rays, not dice), so the preview
+ * never implies a bigger die that upcasting doesn't actually grant.
  */
 export function upcastEffectSummary(
   entity: Entity | undefined,
   characterLevel: number,
   slotLevel: number,
 ): string | undefined {
-  const damage = spellRollActions(entity, { characterLevel, slotLevel }).find(
-    (a) => a.variant === 'damage',
-  );
-  return damage?.expr;
+  const rollExprs = (level: number) =>
+    spellRollActions(entity, { characterLevel, slotLevel: level })
+      .filter((a) => a.variant === 'damage' || a.variant === 'dice')
+      .map((a) => a.expr);
+  const atSlot = rollExprs(slotLevel);
+  if (atSlot.length === 0) return undefined;
+  const baseLevel = typeof entity?.level === 'number' ? entity.level : slotLevel;
+  if (slotLevel > baseLevel && atSlot.join('+') === rollExprs(baseLevel).join('+')) {
+    return undefined; // upcast changes targets/instances, not dice — show no dice
+  }
+  return atSlot.join(' / ');
 }
 
 /**

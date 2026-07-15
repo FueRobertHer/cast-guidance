@@ -152,7 +152,51 @@ describe('upcastEffectSummary (GAME-001 preview)', () => {
     expect(upcastEffectSummary(fireball, 5, 6)).toBe('11d6'); // +3d6
   });
 
-  it('is undefined for a spell with no rolled damage', () => {
+  it('shows the scaling die of a multi-damage spell, not just the first roll', () => {
+    // Ice Knife: piercing 1d10 (fixed) + cold 2d6 (scales +1d6/slot).
+    const iceKnife = {
+      name: 'Ice Knife',
+      source: 'phb',
+      level: 1,
+      entries: [
+        'On a hit, the target takes {@damage 1d10} piercing damage. Then cold explodes: {@damage 2d6} cold damage.',
+      ],
+      entriesHigherLevel: [
+        {
+          entries: ['The cold damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'],
+        },
+      ],
+    } as unknown as Entity;
+    expect(upcastEffectSummary(iceKnife, 5, 1)).toBe('1d10 / 2d6'); // base
+    expect(upcastEffectSummary(iceKnife, 5, 3)).toBe('1d10 / 4d6'); // cold scales, piercing fixed
+  });
+
+  it('shows no dice for an upcast that adds instances rather than dice', () => {
+    // Magic Missile: 1d4+1 per dart, upcast adds a dart (no {@scaledamage}).
+    const magicMissile = {
+      name: 'Magic Missile',
+      source: 'phb',
+      level: 1,
+      entries: ['Each dart deals {@damage 1d4+1} force damage.'],
+      entriesHigherLevel: [{ entries: ['One more dart for each slot above 1st.'] }],
+    } as unknown as Entity;
+    expect(upcastEffectSummary(magicMissile, 5, 1)).toBe('1d4+1'); // base shows its dice
+    expect(upcastEffectSummary(magicMissile, 5, 3)).toBeUndefined(); // upcast: no misleading die
+  });
+
+  it('previews scaling healing dice too', () => {
+    const cureWounds = {
+      name: 'Cure Wounds',
+      source: 'phb',
+      level: 1,
+      entries: ['A creature regains {@dice 1d8} + your spellcasting ability modifier hit points.'],
+      entriesHigherLevel: [{ entries: ['+{@scaledice 1d8|1-9|1d8} per slot above 1st.'] }],
+    } as unknown as Entity;
+    expect(upcastEffectSummary(cureWounds, 5, 1)).toBe('1d8');
+    expect(upcastEffectSummary(cureWounds, 5, 2)).toBe('2d8');
+  });
+
+  it('is undefined for a spell with no rolled dice', () => {
     const shield = { name: 'Shield', source: 'phb', level: 1, entries: ['+5 AC.'] } as Entity;
     expect(upcastEffectSummary(shield, 5, 1)).toBeUndefined();
     expect(upcastEffectSummary(undefined, 5, 1)).toBeUndefined();
