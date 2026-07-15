@@ -465,7 +465,7 @@ export function Component() {
             );
           })()}
         <p className="mt-1.5 text-center text-[10px] text-ink-muted">
-          tap ±1 · double-tap ±5 · tap the number to type it
+          tap ±1 or ±5 · tap the number to type an exact value
         </p>
         <div className="mt-3 flex items-center justify-between text-xs">
           <button
