@@ -9,10 +9,17 @@ import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
 
 /** Name of a race/feat/background prerequisite entry (string `name|source` or object). */
 function prereqRefName(x: unknown): string | undefined {
-  if (typeof x === 'string') return (x.split('#')[0] ?? x).split('|')[0]?.trim();
+  if (typeof x === 'string') {
+    const name = (x.split('#')[0] ?? x).split('|')[0]?.trim();
+    return name !== undefined && name !== '' ? name : undefined;
+  }
   if (x !== null && typeof x === 'object') {
-    const name = (x as { name?: unknown }).name;
-    if (typeof name === 'string') return name;
+    const o = x as { name?: unknown; subrace?: unknown; displayEntry?: unknown };
+    if (typeof o.displayEntry === 'string' && o.displayEntry !== '') return o.displayEntry;
+    if (typeof o.name === 'string' && o.name !== '') {
+      // Keep the subrace qualifier so a race gate reads "high elf", not "elf".
+      return typeof o.subrace === 'string' && o.subrace !== '' ? `${o.subrace} ${o.name}` : o.name;
+    }
   }
   return undefined;
 }

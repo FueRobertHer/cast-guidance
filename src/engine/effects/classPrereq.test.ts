@@ -32,6 +32,10 @@ describe('summarizePrerequisite', () => {
     );
     expect(summarizePrerequisite([{ background: ['acolyte|xphb'] }])).toBe('acolyte background');
     expect(summarizePrerequisite([{ proficiency: [{ armor: 'heavy' }] }])).toBe('heavy armor');
+    // A subrace qualifier is preserved.
+    expect(summarizePrerequisite([{ race: [{ name: 'elf', subrace: 'high' }] }])).toBe(
+      'race high elf',
+    );
   });
 
   it('renders alternative requirement sets with "or" instead of flattening to "and"', () => {
