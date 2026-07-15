@@ -165,6 +165,27 @@ describe('deriveSheet — pending choices and prompts', () => {
     const sheet = deriveSheet(doc, ctx);
     expect(sheet.pending.some((p) => p.id === 'class:warrior|tst:subclass')).toBe(true);
   });
+
+  // FIX-004: a non-repeatable feat granted by a background AND chosen via an ASI
+  // must apply once, not twice (the ticket's cited "Alert = +10 initiative" bug).
+  it('applies a feat granted by both a background and an ASI only once', () => {
+    const doc = newCharacterDoc('w2', 'Dup', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 10, dex: 14, con: 12, int: 10, wis: 10, cha: 10 };
+    doc.race = { name: 'Testfolk', source: 'TST' }; // dex +2 -> 16 (mod +3)
+    doc.background = { name: 'Modern Scholar', source: 'TS2' }; // grants alert|phb
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: ['avg', 'avg', 'avg', 'avg'] },
+    ];
+    doc.choices = {
+      'class:warrior|tst:asi:4': 'feat',
+      'class:warrior|tst:asi:4:feat': 'alert|phb',
+    };
+    const sheet = deriveSheet(doc, ctx);
+    // Alert (+5 initiative) applies once: dex mod 3 + 5 = 8, not 13.
+    expect(sheet.initiative.value).toBe(8);
+    expect(sheet.warnings).toContainEqual(expect.stringMatching(/not a repeatable feat/i));
+  });
 });
 
 describe('deriveSheet — full caster (Mage 3)', () => {
