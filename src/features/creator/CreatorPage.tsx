@@ -236,6 +236,9 @@ export function Component() {
                   type="button"
                   onClick={() =>
                     update((d) => {
+                      // Re-selecting the current version must be a no-op — otherwise
+                      // an accidental tap wipes the whole in-progress build.
+                      if (d.rulesVersion === v) return;
                       d.rulesVersion = v;
                       d.classes = [];
                       d.race = undefined;
@@ -480,6 +483,9 @@ export function Component() {
                   type="button"
                   onClick={() =>
                     update((d) => {
+                      // Re-selecting the current method is a no-op — otherwise
+                      // re-tapping "Point buy" re-zeroes allocated scores.
+                      if (d.abilities.method === m) return;
                       d.abilities.method = m;
                       if (m === 'pointbuy')
                         d.abilities.base = {

@@ -131,7 +131,11 @@ export function EntityCardList({
                 type="button"
                 aria-label={nameOf(e)}
                 onClick={() => {
-                  if (selected && onDeselect !== undefined) onDeselect();
+                  // Re-tapping the current pick must never re-fire onSelect:
+                  // race/background re-run pruneChoicesFor and the class picker
+                  // clears every choice, silently discarding picks. Deselect when
+                  // that's offered, otherwise do nothing.
+                  if (selected) onDeselect?.();
                   else onSelect(e);
                 }}
                 title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
