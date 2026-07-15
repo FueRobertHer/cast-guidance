@@ -111,6 +111,17 @@ describe('meetsPrerequisite (GAME-005)', () => {
     );
   });
 
+  it('ANDs multiple ability minimums in one set', () => {
+    const req = [{ ability: [{ str: 13 }, { dex: 13 }] }];
+    expect(
+      meetsPrerequisite(req, prereqCtx({ abilityScores: { ...ABILITY_10, str: 13, dex: 13 } })),
+    ).toBe(true);
+    // Meets STR but not DEX -> the set is not satisfied.
+    expect(meetsPrerequisite(req, prereqCtx({ abilityScores: { ...ABILITY_10, str: 13 } }))).toBe(
+      false,
+    );
+  });
+
   it('checks level', () => {
     expect(meetsPrerequisite([{ level: 4 }], prereqCtx({ totalLevel: 4 }))).toBe(true);
     expect(meetsPrerequisite([{ level: 4 }], prereqCtx({ totalLevel: 3 }))).toBe(false);
@@ -214,6 +225,20 @@ describe('buildPrereqContext (GAME-005)', () => {
     const ctx = buildPrereqContext(new Collector(doc, makeTestContext()));
     expect(ctx.hasSpellcasting).toBe(false);
   });
+
+  it('detects spellcasting granted by a subclass (Eldritch-Knight-style)', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        levels: 4,
+        subclass: { name: 'Spell Knight', source: 'TST' },
+        hp: [],
+      },
+    ];
+    const ctx = buildPrereqContext(new Collector(doc, makeTestContext()));
+    expect(ctx.hasSpellcasting).toBe(true);
+  });
 });
 
 describe('feat/optional-feature picker advisory (GAME-005)', () => {
@@ -253,6 +278,22 @@ describe('feat/optional-feature picker advisory (GAME-005)', () => {
         { name: 'Mage', levels: 1 },
       ])?.options ?? [];
     expect(opts.find((o) => o.id === 'elemental adept|tst')?.advisory).toBeUndefined();
+  });
+
+  it('does not flag a caster feat for a subclass caster (Warrior + Spell Knight)', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        levels: 4,
+        subclass: { name: 'Spell Knight', source: 'TST' },
+        hp: [],
+      },
+    ];
+    const asi = deriveSheet(doc, ctx).pending.find((p) => p.kind === 'asiOrFeat');
+    if (asi !== undefined) doc.choices[asi.id] = 'feat';
+    const prompt = deriveSheet(doc, ctx).pending.find((p) => p.kind === 'feat');
+    expect(prompt?.options.find((o) => o.id === 'elemental adept|tst')?.advisory).toBeUndefined();
   });
 
   it('flags an invocation whose non-level prerequisite is unmet', () => {

@@ -181,9 +181,19 @@ export function buildPrereqContext(col: Collector): PrereqContext {
     }
   }
 
-  const hasSpellcasting = doc.classes.some(
-    (c) => classSpellcastingMode(col.ctx.get('class', c.ref.name, c.ref.source)) !== 'none',
-  );
+  // Spellcasting can come from the base class (full/half/pact) OR the subclass
+  // (Eldritch Knight, Arcane Trickster) — check both so a subclass caster is not
+  // falsely flagged as unable to take a spellcasting-gated feat.
+  const hasSpellcasting = doc.classes.some((c) => {
+    if (classSpellcastingMode(col.ctx.get('class', c.ref.name, c.ref.source)) !== 'none') {
+      return true;
+    }
+    const sub = c.subclass;
+    return (
+      sub !== undefined &&
+      classSpellcastingMode(col.ctx.get('subclass', sub.name, sub.source)) !== 'none'
+    );
+  });
 
   return {
     abilityScores,

@@ -418,6 +418,21 @@ const subclass: DataEntity[] = [
       },
     ],
   },
+  {
+    // Eldritch-Knight-style third caster: spellcasting comes from the SUBCLASS,
+    // so the base Warrior is martial but the character still "has spellcasting".
+    name: 'Spell Knight',
+    shortName: 'SpellKnight',
+    source: 'TST',
+    className: 'Warrior',
+    classSource: 'TST',
+    casterProgression: '1/3',
+    spellcastingAbility: 'int',
+    spellsKnownProgressionFixed: [
+      0, 0, 3, 4, 4, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13,
+    ],
+    subclassFeatures: [],
+  },
 ];
 
 const subclassFeature: DataEntity[] = [
