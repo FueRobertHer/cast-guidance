@@ -21,6 +21,17 @@ export function collectFeatEntity(
   uid: string,
   instanceId: string,
 ): void {
+  // A non-repeatable feat applies at most once, even if it is both granted (by a
+  // background) and chosen (via an ASI), or chosen at two different ASI levels.
+  // Repeatable feats keep independent instances — their choices are namespaced
+  // by instanceId — so they are never deduped.
+  if (e.repeatable !== true) {
+    if (col.collectedFeats.has(uid)) {
+      col.warn(`${str(e.name) ?? uid}: not a repeatable feat — the extra selection was ignored.`);
+      return;
+    }
+    col.collectedFeats.add(uid);
+  }
   const origin: EffectOrigin = { label: str(e.name) ?? uid, uid, type: 'feat' };
   const idBase = `feat:${uid}:${instanceId}`;
 

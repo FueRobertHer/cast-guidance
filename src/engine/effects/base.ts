@@ -16,6 +16,8 @@ export class Collector {
   readonly resolved: Array<{ prompt: ChoicePrompt; selected: string[] }> = [];
   readonly features: FeatureCard[] = [];
   readonly warnings: string[] = [];
+  /** uids of non-repeatable feats already collected, to prevent double-apply. */
+  readonly collectedFeats = new Set<string>();
 
   constructor(doc: CharacterDoc, ctx: EngineContext) {
     this.doc = doc;
