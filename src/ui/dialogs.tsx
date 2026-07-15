@@ -34,6 +34,13 @@ type DialogRequest =
       confirmLabel?: string;
       danger?: boolean;
       resolve: (v: boolean) => void;
+    }
+  | {
+      kind: 'choice';
+      title: string;
+      detail?: string;
+      options: Array<{ id: string; label: string; hint?: string }>;
+      resolve: (v: string | null) => void;
     };
 
 const dialogStore = createStore<{ req: DialogRequest | null }>(() => ({ req: null }));
@@ -66,6 +73,15 @@ export function askConfirm(opts: {
   danger?: boolean;
 }): Promise<boolean> {
   return new Promise((resolve) => open({ kind: 'confirm', ...opts, resolve }));
+}
+
+/** Pick one of several options (or null on dismiss). Used for the cast-slot chooser. */
+export function askChoice(opts: {
+  title: string;
+  detail?: string;
+  options: Array<{ id: string; label: string; hint?: string }>;
+}): Promise<string | null> {
+  return new Promise((resolve) => open({ kind: 'choice', ...opts, resolve }));
 }
 
 function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'number' }> }) {
@@ -166,6 +182,28 @@ export function DialogHost() {
                 >
                   {req.confirmLabel ?? 'Confirm'}
                 </button>
+              </div>
+            </div>
+          ) : req.kind === 'choice' ? (
+            <div className="flex flex-col gap-2">
+              {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
+              <div className="flex flex-col gap-1.5">
+                {req.options.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => {
+                      req.resolve(o.id);
+                      close();
+                    }}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold hover:bg-surface-2/70"
+                  >
+                    <span>{o.label}</span>
+                    {o.hint !== undefined && (
+                      <span className="shrink-0 text-xs font-normal text-ink-muted">{o.hint}</span>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
