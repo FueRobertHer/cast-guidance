@@ -103,19 +103,21 @@ residual per-field runtime schemas are tracked under P2 (maintainability).
 
 ### Mechanics correctness (defects found in the 2026-07-14 review)
 
-These produce a wrong derived sheet or wrong play behavior today. Stored choices
-stay intact, so each is a derivation/interaction fix rather than a data-loss
-risk — but the character is silently incorrect until it lands.
+All FIX-00x derivation/interaction defects from the 2026-07-14 review have
+shipped; the details live in git history. The most recent:
 
-| ID | Remaining work | Acceptance signal |
-|---|---|---|
-| FIX-006 | Background "any origin feat" grants tell the user to "pick it in the Feats step," but no Feats step exists and nothing writes `doc.feats`; a standalone feat can only enter the character via an ASI pick. Give free/standalone feats a real picker that persists to `doc.feats`, or replace the message. | A background granting a free origin feat lets the user choose and persist one, and no UI points at a missing step. |
-
-(FIX-001 shipped: named `additionalSpells` branches surface a pick-one choice
-and a `{choose}` spellcasting ability now prompts an ability picker — like the
-branch choice, the grant waits on the pick rather than defaulting to the first
-option. The only residual is verifying the "distinct `name` = mutually-exclusive
-branch" heuristic against the real pinned dataset, which is folded into TEST-005.)
+- **FIX-001** — named `additionalSpells` branches surface a pick-one choice, and
+  a `{choose}` spellcasting ability now prompts an ability picker (the grant
+  waits on the pick rather than defaulting to the first option). Residual: verify
+  the "distinct `name` = mutually-exclusive branch" heuristic against the real
+  pinned dataset — folded into TEST-005.
+- **FIX-006** — a background that grants a *free* origin feat ("any" /
+  "anyFromCategory") now surfaces a real feat picker that persists to
+  `doc.choices` and collects the chosen feat (category-filtered when the data
+  names one), instead of a note pointing at a nonexistent "Feats step." No UI
+  references a missing step. A dedicated standalone-feat editor on the sheet
+  (writing `doc.feats` directly, outside a background/ASI grant) remains future
+  product scope.
 
 ### Data loading, updates, and search
 
