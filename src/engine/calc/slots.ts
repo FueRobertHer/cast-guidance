@@ -156,6 +156,17 @@ export function calcSpellcasting(
       preparedMax = Math.max(1, entry.levels + mod);
     }
 
+    // Known casters (sorcerer/bard/ranger/warlock) cap the leveled spells they
+    // know via a level-indexed progression. Read it for the over-limit cue; the
+    // UI only enforces it advisorily for known/pact modes.
+    const knownRow = Array.isArray(cls.spellsKnownProgression)
+      ? cls.spellsKnownProgression
+      : Array.isArray(cls.spellsKnownProgressionFixed)
+        ? cls.spellsKnownProgressionFixed
+        : undefined;
+    const spellsKnownMax =
+      knownRow !== undefined ? num(knownRow[Math.min(entry.levels, 20) - 1]) : undefined;
+
     blocks.push({
       classUid: refUid(entry.ref),
       className: str(cls.name) ?? entry.ref.name,
@@ -177,6 +188,7 @@ export function calcSpellcasting(
       pactSlots,
       cantripsKnown: cantrips,
       preparedMax,
+      spellsKnownMax,
     });
   }
   return blocks;
