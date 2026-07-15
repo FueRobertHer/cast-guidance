@@ -117,3 +117,70 @@ describe('collectAdditionalSpells — mutually-exclusive branches (FIX-001)', ()
     expect(col.pending.some((p) => p.id.endsWith(':branch'))).toBe(false);
   });
 });
+
+describe('collectAdditionalSpells — choose-ability picker (FIX-001)', () => {
+  const chooseAbilityRaw = [
+    { ability: { choose: ['int', 'wis', 'cha'] }, known: { '1': ['guidance'] } },
+  ];
+
+  it('surfaces an ability picker instead of silently defaulting to the first option', () => {
+    const col = collect(chooseAbilityRaw);
+    const prompt = col.pending.find((p) => p.id === 'spells:race|tiefling:ability:u:0');
+    expect(prompt).toBeDefined();
+    expect(prompt?.kind).toBe('ability');
+    expect(prompt?.count).toBe(1);
+    expect(prompt?.options.map((o) => o.id)).toEqual(['int', 'wis', 'cha']);
+    // Like the branch choice, the grant waits on the pick — nothing is granted
+    // with a guessed ability (the old behavior defaulted to the first option).
+    expect(granted(col.effects)).toHaveLength(0);
+    // No stale "your choice of…" warning — the picker replaces the note.
+    expect(col.warnings.some((w) => /your choice/.test(w))).toBe(false);
+  });
+
+  it('grants with the chosen ability once the pick is stored', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Warlock', source: 'PHB' }, levels: 1, hp: [] }];
+    doc.choices['spells:race|tiefling:ability:u:0'] = ['wis'];
+    const col = new Collector(doc, makeTestContext());
+    collectAdditionalSpells(col, chooseAbilityRaw, origin, 'cha');
+    const g = granted(col.effects);
+    expect(g[0]).toMatchObject({ spell: { name: 'guidance' }, ability: 'wis' });
+    expect(col.pending.some((p) => p.id.endsWith(':ability:u:0'))).toBe(false);
+  });
+
+  it('falls back to the default ability and warns when choose has no valid options', () => {
+    const col = collect([{ ability: { choose: ['???'] }, known: { '1': ['guidance'] } }]);
+    expect(granted(col.effects)[0]).toMatchObject({ spell: { name: 'guidance' }, ability: 'cha' });
+    expect(col.warnings.some((w) => /your choice/.test(w))).toBe(true);
+    expect(col.pending.some((p) => p.kind === 'ability')).toBe(false);
+  });
+
+  it('namespaces the ability picker per chosen branch', () => {
+    const branchAbilityRaw = [
+      { name: 'Lorehold', ability: { choose: ['int', 'wis'] }, known: { _: ['light'] } },
+      { name: 'Witherbloom', ability: 'wis', known: { _: ['spare the dying'] } },
+    ];
+    const build = (choices: Record<string, string[]>) => {
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.classes = [{ ref: { name: 'Warlock', source: 'PHB' }, levels: 1, hp: [] }];
+      doc.choices = choices;
+      const col = new Collector(doc, makeTestContext());
+      collectAdditionalSpells(col, branchAbilityRaw, origin, 'cha');
+      return col;
+    };
+    // Choosing the branch surfaces the branch's own choose-ability picker.
+    const chosen = build({ 'spells:race|tiefling:branch': ['lorehold'] });
+    expect(chosen.pending.some((p) => p.id === 'spells:race|tiefling:ability:lorehold:0')).toBe(
+      true,
+    );
+    expect(granted(chosen.effects)).toHaveLength(0);
+    // Answering both prompts grants the branch's spell with the chosen ability.
+    const both = build({
+      'spells:race|tiefling:branch': ['lorehold'],
+      'spells:race|tiefling:ability:lorehold:0': ['int'],
+    });
+    expect(granted(both.effects)).toEqual([
+      expect.objectContaining({ spell: { name: 'light', source: '' }, ability: 'int' }),
+    ]);
+  });
+});

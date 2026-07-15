@@ -109,8 +109,13 @@ risk — but the character is silently incorrect until it lands.
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| FIX-001 | Named, mutually-exclusive `additionalSpells` branches now surface a pick-one choice, so Strixhaven Initiate grants one college's spells instead of all (~a dozen cantrips). Remaining: a granted-spell entry whose `ability` is a `{choose}` still defaults to the first option with a note rather than prompting — add the ability picker (shared with the branch choice). Also verify the "distinct `name` = mutually-exclusive branch" heuristic against the real dataset (no data pack is vendored) — a named block meant to grant-all would be mis-read as a choice. | A granted-spell entry with a choose-ability prompts for the spellcasting ability instead of defaulting. |
 | FIX-006 | Background "any origin feat" grants tell the user to "pick it in the Feats step," but no Feats step exists and nothing writes `doc.feats`; a standalone feat can only enter the character via an ASI pick. Give free/standalone feats a real picker that persists to `doc.feats`, or replace the message. | A background granting a free origin feat lets the user choose and persist one, and no UI points at a missing step. |
+
+(FIX-001 shipped: named `additionalSpells` branches surface a pick-one choice
+and a `{choose}` spellcasting ability now prompts an ability picker — like the
+branch choice, the grant waits on the pick rather than defaulting to the first
+option. The only residual is verifying the "distinct `name` = mutually-exclusive
+branch" heuristic against the real pinned dataset, which is folded into TEST-005.)
 
 ### Data loading, updates, and search
 
@@ -168,7 +173,7 @@ a "create anyway" path. Remaining:
 | TEST-002 | Extend IndexedDB coverage to quota-exhaustion behavior, history/lifecycle events, and multi-tab races (import transaction, rollback, and character+history delete already covered via `fake-indexeddb`; multi-tab has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
 | TEST-003 | Extend component/integration coverage to creator review/choices, rules switching, inventory, casting, rests, import flows, and homebrew edits (`@testing-library/react` + jsdom harness in place; routing error states and entry rendering covered). | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
-| TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule. | Core entities, parser warnings, copy/mod behavior, and tag coverage have budgets. |
+| TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule; include a check that no `additionalSpells` block relies on the "distinct `name` = mutually-exclusive branch" heuristic in a grant-all context (FIX-001's residual). | Core entities, parser warnings, copy/mod behavior, tag coverage, and the branch-heuristic assumption have budgets. |
 
 ## P2 — product and engineering depth
 
