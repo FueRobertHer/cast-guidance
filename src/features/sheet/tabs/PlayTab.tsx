@@ -357,16 +357,31 @@ export function Component() {
       )}
       {/* HP */}
       <section className="rounded-lg bg-surface p-4">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => void hpDelta(-1)}
-            onDoubleClick={() => void hpDelta(-4)}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-deep text-xl"
-            title="Damage (double-tap −5 total)"
-          >
-            <Minus size={22} />
-          </button>
+        <div className="flex items-center justify-between gap-2">
+          {/* Explicit amounts — a reliable single click each. (The old single/
+              double-tap combo double-fired: a "double-tap −5" applied −6 and
+              rolled up to three concentration saves.) Tap the total for an
+              exact value. */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label="Damage 5 hit points"
+              onClick={() => void hpDelta(-5)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-deep/70 text-sm font-semibold"
+              title="Damage 5"
+            >
+              −5
+            </button>
+            <button
+              type="button"
+              aria-label="Damage 1 hit point"
+              onClick={() => void hpDelta(-1)}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-deep text-xl"
+              title="Damage 1"
+            >
+              <Minus size={22} />
+            </button>
+          </div>
           <button
             type="button"
             className="text-center"
@@ -408,15 +423,26 @@ export function Component() {
               {sheet.maxHp.overridden ? ' •' : ''}
             </div>
           </button>
-          <button
-            type="button"
-            onClick={() => void hpDelta(1)}
-            onDoubleClick={() => void hpDelta(4)}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/70 text-xl"
-            title="Heal (double-tap +5 total)"
-          >
-            <Plus size={22} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-label="Heal 1 hit point"
+              onClick={() => void hpDelta(1)}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/70 text-xl"
+              title="Heal 1"
+            >
+              <Plus size={22} />
+            </button>
+            <button
+              type="button"
+              aria-label="Heal 5 hit points"
+              onClick={() => void hpDelta(5)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900/50 text-sm font-semibold"
+              title="Heal 5"
+            >
+              +5
+            </button>
+          </div>
         </div>
         {/* HP bar: green → amber → red as it drops; temp HP shows as a cyan cap */}
         {sheet.maxHp.value > 0 &&
@@ -439,7 +465,7 @@ export function Component() {
             );
           })()}
         <p className="mt-1.5 text-center text-[10px] text-ink-muted">
-          tap ±1 · double-tap ±5 · tap the number to type it
+          tap ±1 or ±5 · tap the number to type an exact value
         </p>
         <div className="mt-3 flex items-center justify-between text-xs">
           <button
