@@ -280,6 +280,8 @@ export interface SpellcastingBlock {
   pactSlots?: { count: number; level: number };
   cantripsKnown?: number;
   preparedMax?: number;
+  /** Max leveled spells known (known/pact casters); undefined when not gated this way. */
+  spellsKnownMax?: number;
 }
 
 export interface DerivedResource {

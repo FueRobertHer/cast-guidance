@@ -210,11 +210,17 @@ function ClassSpells({
   }).length;
 
   // Over-limit is allowed (house rules, features that add preparations) — flag
-  // it, never block it (GAME-002 / guidance-not-gatekeeping).
+  // it, never block it (GAME-002/007 / guidance-not-gatekeeping).
   const prepMax = block.preparedMax;
   const cantripMax = block.cantripsKnown;
+  // Known/pact casters cap the leveled spells they know; prepared/spellbook
+  // casters don't count "known" this way, so the cue only applies to those modes.
+  const knownGated = block.mode === 'known' || block.mode === 'pact';
+  const knownMax = knownGated ? block.spellsKnownMax : undefined;
+  const knownLeveled = Math.max(0, state.known.length - cantripsKnown);
   const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
   const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
+  const overKnown = knownMax !== undefined && knownLeveled > knownMax;
 
   return (
     <section className="flex flex-col gap-2">
@@ -248,14 +254,23 @@ function ClassSpells({
               </span>
             </>
           )}
+          {knownMax !== undefined && (
+            <>
+              {' · known '}
+              <span className={overKnown ? 'font-semibold text-amber-300' : undefined}>
+                {knownLeveled}/{knownMax}
+              </span>
+            </>
+          )}
         </span>
       </header>
-      {(overPrepared || overCantrips) && (
+      {(overPrepared || overCantrips || overKnown) && (
         <p role="status" className="text-xs text-amber-300">
           {overPrepared
             ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
             : ''}
           {overCantrips ? `${cantripsKnown - (cantripMax ?? 0)} over your cantrip limit. ` : ''}
+          {overKnown ? `${knownLeveled - (knownMax ?? 0)} over your spells-known limit. ` : ''}
           That&rsquo;s allowed — the extra picks are kept, just flagging it.
         </p>
       )}

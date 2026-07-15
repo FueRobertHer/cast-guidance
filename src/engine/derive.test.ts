@@ -221,6 +221,25 @@ describe('deriveSheet — full caster (Mage 3)', () => {
   it('mage HP: 6 + 2×4 + 2×3', () => {
     expect(sheet.maxHp.value).toBe(20);
   });
+
+  it('a prepared caster is not gated by a spells-known maximum', () => {
+    expect(sheet.spellcasting[0]?.spellsKnownMax).toBeUndefined();
+  });
+});
+
+describe('deriveSheet — spells-known max (GAME-007)', () => {
+  it('reads a known/pact caster spells-known maximum from its progression', () => {
+    const doc = newCharacterDoc('p1', 'Warlocke', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 8, dex: 14, con: 14, int: 10, wis: 12, cha: 16 };
+    doc.classes = [
+      { ref: { name: 'Pactcaster', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    // Pactcaster spellsKnownProgression[level 3 - 1] = 4.
+    expect(sheet.spellcasting[0]?.spellsKnownMax).toBe(4);
+    expect(sheet.spellcasting[0]?.mode).toBe('pact');
+  });
 });
 
 describe('deriveSheet — HP gain methods', () => {

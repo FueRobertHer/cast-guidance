@@ -287,6 +287,10 @@ const cls: DataEntity[] = [
     proficiency: ['wis', 'cha'],
     casterProgression: 'pact',
     spellcastingAbility: 'cha',
+    // Warlock-style: knows a fixed number of leveled spells by class level.
+    spellsKnownProgression: [
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15,
+    ],
     multiclassing: {
       requirements: { cha: 13 },
       proficienciesGained: { armor: ['light'], weapons: ['simple'] },
