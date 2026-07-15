@@ -1,6 +1,6 @@
 # Cast Guidance — future work
 
-Last reviewed: 2026-07-14 (`a128202`)
+Last reviewed: 2026-07-15 (`cdd134c`)
 
 The single planning document for open product and engineering work. It tracks
 what **remains**; completed work lives in git history, not here. Each item keeps
@@ -10,11 +10,6 @@ shipped so the remaining scope is clear.
 Browser and device behavior still needs hands-on validation. The pinned-data
 audit covers 48 files and all 936 spells; its 40 versioned-subrace `replaceArr`
 warnings are tracked under P2.
-
-A 2026-07-14 game-mechanics and UX review added the FIX-00x derivation/play
-correctness defects (P1), the reversible-choice and history-clarity items
-(UX-004/UX-005), and new rules-automation rows under P2 (feat sub-choices, 2014
-draconic ancestry, condition effects, and the downed/death sequence).
 
 ## Product principle: guidance, not gatekeeping
 
@@ -48,7 +43,7 @@ CI.
 | Frozen dependency install | Pass — 555 packages |
 | Lint/format | Pass — 189 files |
 | TypeScript | Pass |
-| Unit + integration tests | Pass — 73 files, 545 tests |
+| Unit + integration tests | Pass — 73 files, 558 tests |
 | Coverage report | `bun run test:coverage` — ~46% statements (engine/guards high, UI low) |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Run — 48 files; 936 spells; 40 versioned `replaceArr` warnings |
@@ -94,30 +89,15 @@ residual per-field runtime schemas are tracked under P2 (maintainability).
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| GAME-001 | The SpellManager Cast button opens an explicit slot/upcast chooser (`availableCastResources` enumerates the ladder; `castSpell` takes the chosen resource; concentration/economy applied in the same call) instead of always spending the lowest, and each option previews the spell's dice scaled to that slot (`upcastEffectSummary`, e.g. 8d6 → 9d6). Exhausted/single-option casts still fire directly (a no-slot cast stays possible). Remaining: the Play-tab granted/innate casts are **roll-triggered** (the RollChip rolls and spends together), so offering a pre-cast chooser there needs a choose-then-roll flow redesign, not a bounded slice; and non-slot resource pools (e.g. sorcery-point → slot conversion) aren't yet first-class cast sources. | The Play-tab cast flow offers the slot/upcast choice, and non-slot pools are selectable cast sources. |
-| GAME-002 | Effectively satisfied: the mode badge (Known/Prepared/Spellbook/Pact), the per-spell prepare/prepared toggle (the unprepared distinction), the separate "Innate & granted spells" section with an "Always prepared" badge for domain/oath/circle grants, and the over-limit cues (cantrips/prepared/known) make normal, unprepared, granted, and over-limit spells visibly and accessibly distinct without blocking overrides. Residual (low): add UI regression coverage for these distinctions and any deeper per-spell mode nuance. | The four spell states have UI regression coverage. |
+| GAME-001 | The SpellManager Cast button offers an explicit slot/upcast chooser with a per-option scaled-effect preview (`availableCastResources`, `castSpell` resource override, `upcastEffectSummary` all shipped). Remaining: the Play-tab casts are **roll-triggered** (the RollChip rolls and spends together), so a slot choice there needs a choose-then-roll flow redesign, not a bounded add; and non-slot resource pools (e.g. sorcery-point → slot conversion) aren't yet first-class cast sources. | The Play-tab cast flow offers the slot/upcast choice, and non-slot pools are selectable cast sources. |
 | GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
-| GAME-005 | Feat and optional-feature (invocation) pickers now flag unmet prerequisites with a non-blocking `advisory` cue: `meetsPrerequisite` evaluates ability/level/race/feat/background/proficiency/spellcasting and OR-of-requirement sets against the character built so far, and the option stays selectable (a spell-less Fighter still *sees* Elemental Adept flagged, not disabled). Remaining: make source policy (`allowedSources`) meaningful in filtering, and revisit `requiredLevel` (still the max level across sets) so an optional feature gated by an OR of alternative sets disables on the satisfiable *minimum* rather than over-disabling. | Source policy filters pick options, and OR-set level gates disable on the satisfiable minimum. |
-| GAME-006 | Short/long-rest recovery is now a pure, unit-tested module (`src/features/sheet/rest.ts`) with golden fixtures for HP, spell/pact slots, per-rest resources, death saves, exhaustion (−1/long rest, both editions), and hit dice — and the long-rest hit-dice math is fixed to regain half your *total* Hit Dice (was halving per die type, wrong for multiclass; auto-regains largest die first, a per-die picker being future scope). Remaining: expert-reviewed audit of the deeper edition nuances (2024 exhaustion d20 penalty is tracked under P2 Exhaustion; concentration is unaffected by rest) and golden 2014/2024 rest characters (P2 Class/rest audit). | Deeper edition rest nuances are expert-reviewed against golden characters. |
-| GAME-007 | Over-limit spell counts are now flagged for all three maxima — cantrips, prepared, and (new) leveled spells known for known/pact casters (`spellsKnownMax` from `spellsKnownProgression`), each a non-blocking amber cue since exceeding a limit is allowed. Play-resource overage detection + non-destructive clamping already shipped. Remaining (optional): an explicit "trim to limit" affordance for spell lists — deliberately not automatic, since over-limit is a valid house-rule/feature state. | An explicit, opt-in normalization action trims an over-limit spell list without surprising the player. |
+| GAME-005 | Feat/invocation pickers flag unmet prerequisites with a non-blocking advisory cue (`meetsPrerequisite`, shipped). Remaining: make source policy (`allowedSources`) meaningful in filtering, and fix `requiredLevel` (still the max across OR-sets) so an optional feature gated by alternative sets disables on the satisfiable *minimum*. | Source policy filters pick options, and OR-set level gates disable on the satisfiable minimum. |
+| GAME-007 | Over-limit spell counts (cantrips, prepared, and leveled-known for known/pact casters) are flagged with non-blocking cues; play-resource overage + clamping shipped. Remaining (optional): an explicit, opt-in "trim to limit" action for spell lists — deliberately not automatic, since over-limit is a valid state. | An explicit, opt-in normalization action trims an over-limit spell list. |
 
-### Mechanics correctness (defects found in the 2026-07-14 review)
-
-All FIX-00x derivation/interaction defects from the 2026-07-14 review have
-shipped; the details live in git history. The most recent:
-
-- **FIX-001** — named `additionalSpells` branches surface a pick-one choice, and
-  a `{choose}` spellcasting ability now prompts an ability picker (the grant
-  waits on the pick rather than defaulting to the first option). Residual: verify
-  the "distinct `name` = mutually-exclusive branch" heuristic against the real
-  pinned dataset — folded into TEST-005.
-- **FIX-006** — a background that grants a *free* origin feat ("any" /
-  "anyFromCategory") now surfaces a real feat picker that persists to
-  `doc.choices` and collects the chosen feat (category-filtered when the data
-  names one), instead of a note pointing at a nonexistent "Feats step." No UI
-  references a missing step. A dedicated standalone-feat editor on the sheet
-  (writing `doc.feats` directly, outside a background/ASI grant) remains future
-  product scope.
+(All FIX-00x derivation/play defects from the 2026-07-14 review have shipped;
+see git history. Two residuals live elsewhere: FIX-001's branch-heuristic check
+is folded into TEST-005, and a standalone-feat editor is under P2 product
+experience.)
 
 ### Data loading, updates, and search
 
@@ -173,7 +153,7 @@ a "create anyway" path. Remaining:
 |---|---|---|
 | TEST-001 | Add coverage thresholds and bundle-budget gating to CI (frozen install, lint, typecheck, tests, and the PWA build already run on every push/PR with a bundle-size summary). | Every PR runs the current local green baseline. |
 | TEST-002 | Extend IndexedDB coverage to quota-exhaustion behavior, history/lifecycle events, and multi-tab races (import transaction, rollback, and character+history delete already covered via `fake-indexeddb`; multi-tab has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
-| TEST-003 | Extend component/integration coverage to creator review/choices, rules switching, inventory, casting, rests, import flows, and homebrew edits (`@testing-library/react` + jsdom harness in place; routing error states and entry rendering covered). | UI state transitions have regression coverage. |
+| TEST-003 | Extend component/integration coverage to creator review/choices, rules switching, inventory, casting, rests, import flows, homebrew edits, and the spell-state cues (mode/prepared/granted/over-limit badges — the GAME-002 residual) (`@testing-library/react` + jsdom harness in place; routing error states and entry rendering covered). | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
 | TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule; include a check that no `additionalSpells` block relies on the "distinct `name` = mutually-exclusive branch" heuristic in a grant-all context (FIX-001's residual). | Core entities, parser warnings, copy/mod behavior, tag coverage, and the branch-heuristic assumption have budgets. |
 
@@ -198,7 +178,7 @@ work:
 | Spell guidance | Extend current cantrip/level-1 starter tips into level-up and replacement guidance. | Each casting model gets useful, non-prescriptive guidance beyond level 1. |
 | Granted/innate spells | Add casting/use tracking for per-rest innate and granted spells, not only detail links. | Charges, slot use, concentration, and no-slot cases are represented correctly. |
 | Equipment and combat audit | Verify attunement, armor requirements, shields/hands, ammunition, weapon properties/mastery, critical damage, riders, improvised attacks, and encumbrance. | Edition-specific golden characters cover each automated rule. |
-| Class/rest audit | Verify subclass lists, replacements, Magical Secrets-style picks, feature gating/replacement, multiclass rounding/proficiencies, and edition rest policies. | Representative 2014/2024 single- and multiclass fixtures pass expert-reviewed expectations. |
+| Class/rest audit | Verify subclass lists, replacements, Magical Secrets-style picks, feature gating/replacement, multiclass rounding/proficiencies, and edition rest policies. Short/long-rest recovery is now a tested module (`src/features/sheet/rest.ts`); this audit covers the deeper edition nuances (GAME-006 residual). | Representative 2014/2024 single- and multiclass fixtures pass expert-reviewed expectations. |
 | Prose automation | Audit curated/prose-scanned actions and resources against the pinned dataset; retain confidence/provenance and allow correction. | False-positive/negative budgets are measured on every data-tag change. |
 | Versioned subraces | Apply subrace `_versions` `_mod` operations against merged race+subrace entries where targets live only on the base race (source of the 40 tracked `replaceArr` warnings). | `removeArr`/`replaceArr` substitutions produce the intended versioned prose without curated fallback. |
 
@@ -209,7 +189,8 @@ work:
 | Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, import preview, trash/archive/undo, and recovery documentation. |
 | Guided level-up | Preview HP, subclass timing, choices, spell gains/replacements, and resource changes before commit. Multiclassing remains in the free-form Build page unless product scope changes. |
 | Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff. |
-| Sheet and casting polish | Unify spell-row and slot-pip casting, add upcast effects/material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling — no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character (it is in-memory and shared across all characters today, lost on reload) and give resource pools above the pip cap (>12, e.g. high-level sorcery points) real increment/decrement controls instead of read-only text. |
+| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling — no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character (it is in-memory and shared across all characters today, lost on reload) and give resource pools above the pip cap (>12, e.g. high-level sorcery points) real increment/decrement controls instead of read-only text. |
+| Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
 | Source policy | Make `allowedSources`, `dataTag`, and `homebrewDeps` meaningful in filtering, provenance, exports, and warnings. |
