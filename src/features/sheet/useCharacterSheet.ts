@@ -7,6 +7,7 @@ import {
   type CharacterLoadStatus,
   type CharacterSaveStatus,
   characterSessionStore,
+  type DocUpdater,
   useCharacterSession,
 } from '@/stores/characterSession';
 
@@ -17,7 +18,7 @@ export interface CharacterSheetState {
   missing: boolean;
   error: string | null;
   saveStatus: CharacterSaveStatus;
-  update: (recipe: (doc: CharacterDoc) => void) => void;
+  update: DocUpdater;
   retryLoad: () => void;
 }
 

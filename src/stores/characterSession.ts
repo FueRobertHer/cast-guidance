@@ -8,6 +8,20 @@ import { historyLabel } from '@/lib/historyLabel';
 export type CharacterLoadStatus = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 export type CharacterSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
+/**
+ * Applies a change to the loaded character. Pass `label` when the change is a
+ * named action ("Long rest", "Attacked with Longsword") that the resulting
+ * document diff cannot describe on its own; without it history infers a label
+ * from the diff. See {@link historyLabel}.
+ *
+ * A function label is resolved against the already-updated doc, for actions
+ * whose name depends on what they turned out to do (which slot a spell took).
+ */
+export type DocUpdater = (
+  recipe: (doc: CharacterDoc) => void,
+  label?: string | ((doc: CharacterDoc) => string),
+) => void;
+
 export interface CharacterSessionState {
   doc: CharacterDoc | null;
   /** Bumps on every mutation — memo key for derivation. */
@@ -21,7 +35,7 @@ export interface CharacterSessionState {
   saveErrors: Record<string, string>;
   load(id: string): Promise<boolean>;
   /** Mutate the doc via a recipe; persists (debounced) and bumps rev. */
-  update(recipe: (doc: CharacterDoc) => void): void;
+  update: DocUpdater;
   /** Replace the doc with a history snapshot (records its own entry). */
   restore(snapshot: CharacterDoc): void;
   flush(characterId?: string): Promise<void>;
@@ -39,6 +53,12 @@ interface SessionDependencies {
 interface PendingSave {
   doc: CharacterDoc;
   label?: string;
+  /**
+   * Set once a write for this snapshot has been tried and failed. Such a
+   * snapshot is retained for Retry with no time bound, so its label must not be
+   * inherited by whatever edit happens to arrive next.
+   */
+  attempted?: boolean;
 }
 
 interface SaveSlot {
@@ -106,7 +126,7 @@ export function createCharacterSessionStore({
         } catch (error) {
           // A newer edit supersedes a failed older snapshot. Otherwise retain the
           // failed snapshot so Retry can persist it without reconstructing state.
-          slot.pending ??= pending;
+          slot.pending ??= { ...pending, attempted: true };
           publishSave('error', characterId, error);
           throw error;
         }
@@ -121,7 +141,13 @@ export function createCharacterSessionStore({
 
   const scheduleSave = (doc: CharacterDoc, label?: string, immediate = false): void => {
     const slot = slotFor(doc.id);
-    slot.pending = { doc: structuredClone(doc), label };
+    // Edits inside the debounce window coalesce into one snapshot. A named
+    // action outranks the incidental edits that land with it, so an existing
+    // label survives an unlabelled follow-up; a newer named action replaces it.
+    // A label from a snapshot whose write already failed is not inherited: that
+    // one waits for Retry indefinitely, so the next edit may be unrelated.
+    const carried = slot.pending?.attempted === true ? undefined : slot.pending?.label;
+    slot.pending = { doc: structuredClone(doc), label: label ?? carried };
     clearTimeout(slot.timer);
     publishSave('pending', doc.id);
     if (immediate) {
@@ -208,7 +234,7 @@ export function createCharacterSessionStore({
       }
     },
 
-    update(recipe) {
+    update(recipe, label) {
       const state = get();
       const doc = state.doc;
       if (
@@ -222,7 +248,7 @@ export function createCharacterSessionStore({
       const draft = structuredClone(doc);
       recipe(draft);
       set((current) => ({ doc: draft, rev: current.rev + 1 }));
-      scheduleSave(draft);
+      scheduleSave(draft, typeof label === 'function' ? label(draft) : label);
     },
 
     restore(snapshot) {

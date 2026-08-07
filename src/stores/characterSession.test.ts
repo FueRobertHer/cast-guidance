@@ -180,3 +180,146 @@ describe('character session persistence', () => {
     });
   });
 });
+
+describe('history labels for named actions', () => {
+  /** A session whose only observable output is the label handed to history. */
+  const labelSession = () => {
+    const record = vi.fn(async (_doc: CharacterDoc, _label: string) => undefined);
+    const session = createCharacterSessionStore({
+      characters: {
+        get: vi.fn(async (id: string) => character(id)),
+        put: vi.fn(async () => undefined),
+      },
+      history: { record },
+      debounceMs: 10_000,
+    });
+    const labels = () => record.mock.calls.map(([, label]) => label);
+    return { session, record, labels };
+  };
+
+  it('records the action label instead of a diff-inferred one', async () => {
+    const { session, labels } = labelSession();
+    await session.getState().load('a');
+
+    session.getState().update((doc) => {
+      doc.play.turn = { action: true, bonus: false, reaction: false };
+    }, 'Attacked with Longsword');
+    await session.getState().flush();
+
+    expect(labels()[0]).toBe('Attacked with Longsword');
+  });
+
+  it('resolves a function label against the updated doc', async () => {
+    const { session, labels } = labelSession();
+    await session.getState().load('a');
+
+    session.getState().update(
+      (doc) => {
+        doc.play.slotsSpent[2] = 1;
+      },
+      (doc) => `Cast Fireball (L${doc.play.slotsSpent.findIndex((n) => n > 0) + 1})`,
+    );
+    await session.getState().flush();
+
+    expect(labels()[0]).toBe('Cast Fireball (L3)');
+  });
+
+  it('keeps the action label when an unlabelled edit coalesces with it', async () => {
+    const { session, record, labels } = labelSession();
+    await session.getState().load('a');
+
+    // Both land inside the debounce window, so they become one snapshot. The
+    // named action is what the reader did; the HP tweak rode along with it.
+    session.getState().update((doc) => {
+      doc.play.currentHp = 12;
+    }, 'Long rest');
+    session.getState().update((doc) => {
+      doc.play.tempHp = 5;
+    });
+    await session.getState().flush();
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(labels()[0]).toBe('Long rest');
+  });
+
+  it('lets a newer named action replace an older one', async () => {
+    const { session, labels } = labelSession();
+    await session.getState().load('a');
+
+    session.getState().update((doc) => {
+      doc.play.tempHp = 1;
+    }, 'Short rest');
+    session.getState().update((doc) => {
+      doc.play.tempHp = 2;
+    }, 'Long rest');
+    await session.getState().flush();
+
+    expect(labels()[0]).toBe('Long rest');
+  });
+
+  it('still infers a label when the caller names nothing', async () => {
+    const { session, labels } = labelSession();
+    await session.getState().load('a');
+
+    session.getState().update((doc) => {
+      doc.play.inspiration = true;
+    });
+    await session.getState().flush();
+
+    expect(labels()[0]).toBe('Inspiration gained');
+  });
+});
+
+describe('history labels across a failed save', () => {
+  it('does not lend a failed action label to a later unrelated edit', async () => {
+    const record = vi.fn(async (_doc: CharacterDoc, _label: string) => undefined);
+    const put = vi
+      .fn<(doc: CharacterDoc) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('quota exceeded'))
+      .mockResolvedValue(undefined);
+    const session = createCharacterSessionStore({
+      characters: { get: vi.fn(async () => character('a')), put },
+      history: { record },
+      debounceMs: 10_000,
+    });
+
+    await session.getState().load('a');
+    session.getState().update((doc) => {
+      doc.play.currentHp = 4;
+    }, 'Long rest');
+    await expect(session.getState().flush()).rejects.toThrow('quota exceeded');
+
+    // The failed snapshot waits for Retry with no time bound, so an edit
+    // arriving arbitrarily later is not part of that rest.
+    session.getState().update((doc) => {
+      doc.notes = 'much later';
+    });
+    await session.getState().flush();
+
+    // The inferred label names both changes; inheriting "Long rest" would have
+    // named one of them wrongly and hidden the other.
+    expect(record.mock.calls.map(([, label]) => label)).toEqual(['Notes · HP 0→4']);
+  });
+
+  it('still retries a failed labelled save under its own label', async () => {
+    const record = vi.fn(async (_doc: CharacterDoc, _label: string) => undefined);
+    const put = vi
+      .fn<(doc: CharacterDoc) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValue(undefined);
+    const session = createCharacterSessionStore({
+      characters: { get: vi.fn(async () => character('a')), put },
+      history: { record },
+      debounceMs: 10_000,
+    });
+
+    await session.getState().load('a');
+    session.getState().update((doc) => {
+      doc.play.currentHp = 4;
+    }, 'Long rest');
+    await expect(session.getState().flush()).rejects.toThrow('disk full');
+    await session.getState().retryFailedSaves();
+
+    expect(record.mock.calls.map(([, label]) => label)).toEqual(['Long rest']);
+  });
+});

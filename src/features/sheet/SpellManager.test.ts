@@ -3,6 +3,7 @@ import type { Entity } from '@/data5e/copyMod';
 import { type CharacterDoc, emptyPlayState, type SpellcastingBlock } from '@/engine/types';
 import {
   availableCastResources,
+  castCost,
   castResourceId,
   castSpell,
   classifyKnown,
@@ -227,5 +228,21 @@ describe('classifyKnown (GAME-007 over-limit counting)', () => {
     // The lookup, not a filtered on-screen list, decides the count: passing only
     // the cantrips yields leveled 0 regardless of what a search box shows.
     expect(classifyKnown(known.slice(0, 2), levelOf)).toEqual({ cantrips: 2, leveled: 0 });
+  });
+});
+
+describe('castCost', () => {
+  it('says nothing when the spell paid its own level', () => {
+    expect(castCost({ kind: 'slot', level: 3 }, 3)).toBe('');
+    expect(castCost({ kind: 'cantrip', level: 0 }, 0)).toBe('');
+    expect(castCost(undefined, 1)).toBe('');
+  });
+
+  it('names an upcast, a pact slot, and a cast with nothing left to spend', () => {
+    expect(castCost({ kind: 'slot', level: 4 }, 3)).toBe(' (L4)');
+    expect(castCost({ kind: 'pact', level: 3 }, 1)).toBe(' (pact slot)');
+    // Must not read like a paid cast: the explicit label replaces the diff that
+    // would otherwise reveal no slot moved.
+    expect(castCost({ kind: 'none', level: 2 }, 2)).toBe(' (no slot)');
   });
 });
