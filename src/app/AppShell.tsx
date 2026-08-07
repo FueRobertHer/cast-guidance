@@ -7,6 +7,7 @@ import {
   useCharacterSession,
 } from '@/stores/characterSession';
 import { useDataStatus } from '@/stores/dataStatus';
+import { DataUpdateToast } from '@/ui/DataUpdateToast';
 import { DialogHost } from '@/ui/dialogs';
 import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
@@ -21,7 +22,7 @@ function DataBanner() {
   if (phase === 'error') {
     return (
       <div
-        className="flex items-center justify-between gap-2 bg-accent-deep px-3 py-1.5 text-xs"
+        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-96"
         role="alert"
       >
         <span className="truncate">Game data download failed: {error}</span>
@@ -35,11 +36,11 @@ function DataBanner() {
       </div>
     );
   }
-  if (phase === 'working' && total > 0 && done < total) {
+  if (phase === 'working') {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     return (
       <div
-        className="bg-surface px-3 py-1.5 text-xs text-ink-muted"
+        className="fixed inset-x-4 top-3 z-40 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs text-ink-muted shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-96"
         role="progressbar"
         aria-label="Downloading game data"
         aria-valuemin={0}
@@ -102,6 +103,7 @@ export function AppShell() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
       <DataBanner />
+      <DataUpdateToast />
       <SaveErrorBanner />
       <Outlet />
       <DialogHost />

@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { CharacterDoc } from '@/engine/types';
+import { jsonByteSize } from '@/lib/byteSize';
 
 export interface DataFileRow {
   /** `${tag}:${path}` */
@@ -91,3 +92,20 @@ db.version(1).stores({
 db.version(2).stores({
   characterHistory: 'id, charId, at',
 });
+
+/**
+ * Index `bytes` so the settings screen can total cached-data size by walking
+ * index keys alone. Summing it from the rows themselves would deserialize
+ * every `json` blob (megabytes) just to render one number. Rows written before
+ * this version stored a placeholder 0, so backfill them once here.
+ */
+db.version(3)
+  .stores({ dataFiles: 'key, tag, pack, bytes' })
+  .upgrade(async (tx) => {
+    await tx
+      .table<DataFileRow>('dataFiles')
+      .toCollection()
+      .modify((row) => {
+        row.bytes = jsonByteSize(row.json);
+      });
+  });

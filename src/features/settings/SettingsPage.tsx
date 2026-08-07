@@ -1,19 +1,39 @@
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getActiveTag, listAvailableTags, updateToTag, verifyFullOffline } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
+import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
 import { useDataStatus } from '@/stores/dataStatus';
 import { askConfirm } from '@/ui/dialogs';
 
-function useStorageEstimate() {
+/**
+ * Measured cached-data size alongside the browser's own figure. They differ,
+ * and the difference is not a bug: `estimate()` reports the on-disk footprint,
+ * which carries index overhead and space freed by deletes that the storage
+ * engine has not compacted yet, so it reads high after a reset or a version
+ * swap and settles later. `cachedBytes` is the actual content total.
+ *
+ * Re-measured whenever the download queue changes phase, so the numbers are
+ * not a stale snapshot from first mount.
+ */
+function useStorageUsage(phase: string) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number }>();
+  const [cachedBytes, setCachedBytes] = useState<number>();
   useEffect(() => {
+    // Nothing has been fetched yet before the queue starts, so there is no
+    // point measuring; every later phase change is worth a re-read.
+    if (phase === 'idle') return;
     void navigator.storage
       ?.estimate?.()
       .then(setEstimate)
       .catch(() => undefined);
-  }, []);
-  return estimate;
+    void dataCacheRepo
+      .totalBytes()
+      .then(setCachedBytes)
+      .catch(() => undefined);
+  }, [phase]);
+  return { estimate, cachedBytes };
 }
 
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -28,7 +48,7 @@ export function Component() {
   const [updateMsg, setUpdateMsg] = useState<string>();
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string>();
-  const estimate = useStorageEstimate();
+  const { estimate, cachedBytes } = useStorageUsage(phase);
 
   const resetAll = async () => {
     const ok = await askConfirm({
@@ -104,7 +124,9 @@ export function Component() {
                 ? 'ready ✓'
                 : `${offline.cached}/${offline.total} files`}
           </dd>
-          <dt className="text-ink-muted">Storage used</dt>
+          <dt className="text-ink-muted">Game data size</dt>
+          <dd>{mb(cachedBytes)}</dd>
+          <dt className="text-ink-muted">Browser storage</dt>
           <dd>
             {mb(estimate?.usage)} of {mb(estimate?.quota)}
           </dd>
@@ -133,23 +155,40 @@ export function Component() {
             shown because this app build cannot read them safely.
           </p>
         ) : (
-          <div className="flex flex-col gap-1 rounded-lg bg-surface p-2">
-            {tags.map((t) => (
-              <button
-                key={t}
-                type="button"
-                disabled={updating || t === getActiveTag()}
-                onClick={() => void runUpdate(t)}
-                className={`rounded px-3 py-1.5 text-left text-sm ${
-                  t === getActiveTag()
-                    ? 'bg-accent-deep/40 font-semibold'
-                    : 'hover:bg-surface-2 disabled:opacity-40'
-                }`}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <label htmlFor="data-tag" className="text-sm text-ink-muted">
+              Switch version
+            </label>
+            {/*
+             * `appearance-none` + our own chevron: the native control paints a
+             * light system dropdown that reads as a foreign element on this
+             * dark surface. Options still use OS chrome in the popup, so they
+             * carry explicit colors too.
+             */}
+            <div className="relative">
+              <select
+                id="data-tag"
+                value={getActiveTag()}
+                disabled={updating}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  if (t !== getActiveTag()) void runUpdate(t);
+                }}
+                className="w-full appearance-none rounded-lg bg-surface-2 py-2 pr-9 pl-3 text-sm outline-none disabled:opacity-40"
               >
-                {t}
-                {t === getActiveTag() ? ' (installed)' : ''}
-              </button>
-            ))}
+                {(tags.includes(getActiveTag()) ? tags : [getActiveTag(), ...tags]).map((t) => (
+                  <option key={t} value={t} className="bg-surface-2 text-ink">
+                    {t}
+                    {t === getActiveTag() ? ' (installed)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-muted"
+              />
+            </div>
+            {updating && <span className="text-xs text-ink-muted">Installing…</span>}
           </div>
         )}
         {updateMsg !== undefined && <p className="text-xs text-amber-300">{updateMsg}</p>}
