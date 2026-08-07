@@ -17,6 +17,7 @@ import type {
   SpellcastingBlock,
   SpellcastingMode,
 } from '@/engine/types';
+import type { DocUpdater } from '@/stores/characterSession';
 import { askChoice } from '@/ui/dialogs';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
@@ -178,30 +179,49 @@ export function upcastEffectSummary(
  * active concentration (dropping any prior one — one at a time).
  */
 export function castSpell(
-  update: (recipe: (d: CharacterDoc) => void) => void,
+  update: DocUpdater,
   block: SpellcastingBlock,
   level: number,
   spell?: CastSpellInfo,
   resource?: CastResource,
 ): void {
-  update((d) => {
-    if (spell?.concentration === true) {
-      d.play.concentratingOn = { label: spell.name };
-    }
-    if (spell?.economy !== undefined) {
-      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-      turn[spell.economy] = true;
-      d.play.turn = turn;
-    }
-    const spend = resource ?? nextCastResource(block, d.play, level);
-    if (spend.kind === 'cantrip' || spend.kind === 'none') return;
-    if (spend.kind === 'pact') {
-      d.play.pactSlotsSpent += 1;
-      return;
-    }
-    const spent = d.play.slotsSpent[spend.level - 1] ?? 0;
-    d.play.slotsSpent[spend.level - 1] = spent + 1;
-  });
+  // Which resource actually paid for it is only known inside the recipe, so the
+  // history label is resolved afterwards (see DocUpdater).
+  let spent: CastResource | undefined;
+  update(
+    (d) => {
+      if (spell?.concentration === true) {
+        d.play.concentratingOn = { label: spell.name };
+      }
+      if (spell?.economy !== undefined) {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn[spell.economy] = true;
+        d.play.turn = turn;
+      }
+      const spend = resource ?? nextCastResource(block, d.play, level);
+      spent = spend;
+      if (spend.kind === 'cantrip' || spend.kind === 'none') return;
+      if (spend.kind === 'pact') {
+        d.play.pactSlotsSpent += 1;
+        return;
+      }
+      const at = d.play.slotsSpent[spend.level - 1] ?? 0;
+      d.play.slotsSpent[spend.level - 1] = at + 1;
+    },
+    spell === undefined ? undefined : () => `Cast ${spell.name}${castCost(spent, level)}`,
+  );
+}
+
+/** " (L3)" / " (pact slot)" / " (no slot)" / "", when it isn't the obvious cost. */
+export function castCost(spent: CastResource | undefined, level: number): string {
+  if (spent === undefined) return '';
+  if (spent.kind === 'pact') return ' (pact slot)';
+  // Casting with nothing left to spend is deliberate but must not read the same
+  // as a paid cast, since the explicit label replaces the diff that would show it.
+  if (spent.kind === 'none') return ' (no slot)';
+  // An upcast is news; paying the spell's own level is not.
+  if (spent.kind === 'slot' && spent.level !== level) return ` (L${spent.level})`;
+  return '';
 }
 
 function ClassSpells({
@@ -213,7 +233,7 @@ function ClassSpells({
 }: {
   block: SpellcastingBlock;
   doc: CharacterDoc;
-  update: (recipe: (d: CharacterDoc) => void) => void;
+  update: DocUpdater;
   allowCasting: boolean;
   characterLevel: number;
 }) {
@@ -522,7 +542,7 @@ export function SpellManager({
 }: {
   doc: CharacterDoc;
   sheet: DerivedSheet;
-  update: (recipe: (d: CharacterDoc) => void) => void;
+  update: DocUpdater;
   allowCasting?: boolean;
 }) {
   if (sheet.spellcasting.length === 0) {

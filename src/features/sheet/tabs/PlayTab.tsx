@@ -130,13 +130,17 @@ export function Component() {
   // the new maxima — surface them and offer a non-destructive clamp (GAME-007).
   const overages = detectPlayStateOverages(play, sheet);
 
-  /** Mark a slice of the action economy used (attacks, casting). */
-  const markUsed = (kind: 'action' | 'bonus' | 'reaction') =>
+  /**
+   * Mark a slice of the action economy used (attacks, casting). `label` names
+   * the deed for history: the diff only shows "action spent", which can't tell
+   * a Longsword swing from a Dodge.
+   */
+  const markUsed = (kind: 'action' | 'bonus' | 'reaction', label?: string) =>
     update((d) => {
       const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
       turn[kind] = true;
       d.play.turn = turn;
-    });
+    }, label);
   /**
    * Trigger an action: mark its slice of the turn used AND spend one pip of its
    * linked resource (if any), in a single update so the sheet stays honest.
@@ -145,20 +149,24 @@ export function Component() {
     economy: 'action' | 'bonus' | 'reaction',
     resourceKey?: string,
     max?: number,
+    label?: string,
   ) =>
-    update((d) => {
-      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-      turn[economy] = true;
-      d.play.turn = turn;
-      if (resourceKey !== undefined && max !== undefined) {
-        const entry = d.play.resources.find((r) => r.key === resourceKey);
-        const used = entry?.used ?? 0;
-        if (used < max) {
-          if (entry !== undefined) entry.used = used + 1;
-          else d.play.resources.push({ key: resourceKey, used: 1 });
+    update(
+      (d) => {
+        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+        turn[economy] = true;
+        d.play.turn = turn;
+        if (resourceKey !== undefined && max !== undefined) {
+          const entry = d.play.resources.find((r) => r.key === resourceKey);
+          const used = entry?.used ?? 0;
+          if (used < max) {
+            if (entry !== undefined) entry.used = used + 1;
+            else d.play.resources.push({ key: resourceKey, used: 1 });
+          }
         }
-      }
-    });
+      },
+      label !== undefined ? `Used ${label}` : undefined,
+    );
   /** Cast an innate/granted spell: no slot, just concentration + economy. */
   const castGranted = (name: string, source: string) =>
     update((d) => {
@@ -169,7 +177,7 @@ export function Component() {
         turn[eco] = true;
         d.play.turn = turn;
       }
-    });
+    }, `Cast ${name}`);
 
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
@@ -671,7 +679,7 @@ export function Component() {
           onClick={() =>
             update((d) => {
               d.play.turn = { action: false, bonus: false, reaction: false };
-            })
+            }, 'Turn ended')
           }
           className="shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-xs font-semibold"
           title="Reset action, bonus action, and reaction"
@@ -807,7 +815,7 @@ export function Component() {
           type="button"
           onClick={() => {
             let restored: string[] = [];
-            update((d) => void (restored = shortRest(d.play, sheet)));
+            update((d) => void (restored = shortRest(d.play, sheet)), 'Short rest');
             notify({
               title: 'Short rest',
               detail:
@@ -829,7 +837,7 @@ export function Component() {
             });
             if (!ok) return;
             let restored: string[] = [];
-            update((d) => void (restored = longRest(d.play, sheet)));
+            update((d) => void (restored = longRest(d.play, sheet)), 'Long rest');
             notify({
               title: 'Long rest complete',
               detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
@@ -947,7 +955,7 @@ export function Component() {
                     display={fmt(a.toHit.value)}
                     label={`${a.label} attack`}
                     variant="d20"
-                    onRolled={() => markUsed('action')}
+                    onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                   />
                   <RollChip expr={a.damage} label={`${a.label} damage`} variant="damage" />
                   {a.versatileDamage !== undefined && (
@@ -985,7 +993,7 @@ export function Component() {
                   : undefined;
               // Using it marks the right slice of the turn and spends a pip.
               const trigger = () =>
-                triggerAction(a.economy, linkedResource?.key, linkedResource?.max);
+                triggerAction(a.economy, linkedResource?.key, linkedResource?.max, a.label);
               const depleted = remaining === 0;
               // Incapacitating conditions stop actions/bonus actions/reactions.
               const blocked = limits.noActions;
