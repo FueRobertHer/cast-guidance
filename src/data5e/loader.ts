@@ -1,5 +1,6 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
+import { jsonByteSize } from '@/lib/byteSize';
 import { runWhenIdle } from '@/lib/idle';
 import { Semaphore } from '@/lib/semaphore';
 import { singleFlight } from '@/lib/singleFlight';
@@ -26,10 +27,41 @@ export function getActiveTag(): string {
 
 async function restoreActiveTag(): Promise<void> {
   const row = await db.settings.get('dataTag');
-  if (typeof row?.value === 'string' && row.value !== activeTag) {
-    activeTag = row.value;
-    source = new GithubTagSource(activeTag);
+  if (typeof row?.value === 'string') {
+    if (row.value !== activeTag) {
+      activeTag = row.value;
+      source = new GithubTagSource(activeTag);
+    }
+    return;
   }
+  // No tag pinned yet (a fresh install), so grab the latest compatible
+  // release instead of the build's pinned DATA_TAG. Best-effort: if the
+  // mirror's tag list can't be reached (offline), fall back to the pin.
+  try {
+    const tags = await listAvailableTags();
+    const latest = tags[0];
+    if (latest !== undefined && latest !== activeTag) {
+      activeTag = latest;
+      source = new GithubTagSource(activeTag);
+    }
+  } catch {
+    return;
+  }
+  await db.settings.put({ key: 'dataTag', value: activeTag });
+}
+
+/**
+ * Gate every read behind tag resolution. Without this, anything that calls
+ * `getFile` during boot races `restoreActiveTag` (which now makes a network
+ * round-trip on a fresh install) and caches rows under the build's pinned
+ * `DATA_TAG` before the real tag is known. Those rows are then dead weight:
+ * the app re-downloads the whole compendium under the resolved tag.
+ */
+let tagReady: Promise<void> | undefined;
+
+function ensureTagReady(): Promise<void> {
+  tagReady ??= restoreActiveTag();
+  return tagReady;
 }
 
 /**
@@ -49,6 +81,7 @@ const inflight = new Map<string, Promise<unknown>>();
  * The cache hit path is unmetered; only real network fetches take a permit.
  */
 export async function getFile(path: string): Promise<unknown> {
+  await ensureTagReady();
   const cached = await dataCacheRepo.getFile(activeTag, path);
   if (cached) return cached.json;
 
@@ -63,7 +96,7 @@ export async function getFile(path: string): Promise<unknown> {
         path,
         pack: packOfPath(path),
         json,
-        bytes: 0,
+        bytes: jsonByteSize(json),
         fetchedAt: Date.now(),
       });
       return json;
@@ -126,6 +159,7 @@ const packInflight = new Map<PackId, Promise<void>>();
 /** Download every missing file of a pack; marks it complete in dataMeta. */
 export function ensurePack(pack: PackId): Promise<void> {
   return singleFlight(packInflight, pack, async () => {
+    await ensureTagReady();
     const status = dataStatusStore.getState();
     const all = await filesForPack(pack);
     const cached = await dataCacheRepo.cachedPaths(activeTag);
@@ -159,6 +193,28 @@ export async function allPackIds(): Promise<PackId[]> {
 let backgroundStarted = false;
 
 /**
+ * True while `updateToTag` is staging a new tag's files. Rows under that tag
+ * are live work-in-progress even though it isn't `activeTag` yet, so the
+ * stale-tag sweep must stand down until the swap completes.
+ */
+let installingTag: string | undefined;
+
+/**
+ * Drop cached files belonging to any tag that isn't the active one. Only
+ * `updateToTag` used to clean up after itself, so rows stranded by an
+ * interrupted update, or by a boot that resolved to a different tag than it
+ * started with, sat in IndexedDB forever, roughly doubling storage use.
+ */
+async function pruneStaleTags(): Promise<void> {
+  if (installingTag !== undefined) return;
+  try {
+    await dataCacheRepo.deleteOtherTags(activeTag);
+  } catch {
+    // Best-effort housekeeping; a failure just means we retry next boot.
+  }
+}
+
+/**
  * Boot entry: make essentials available, then drain every remaining pack in
  * idle time so the app becomes fully offline-capable (~2.3 MB total wire).
  */
@@ -168,7 +224,7 @@ export async function initDataLayer(): Promise<void> {
   const status = dataStatusStore.getState();
   status.setPhase('working');
   try {
-    await restoreActiveTag();
+    await ensureTagReady();
     await ensurePack('essentials');
     const packs = (await allPackIds()).filter((p) => p !== 'essentials');
     const drainNext = () => {
@@ -176,6 +232,8 @@ export async function initDataLayer(): Promise<void> {
       if (!next) {
         dataStatusStore.getState().setPhase('done');
         void navigator.storage?.persist?.().catch(() => undefined);
+        void pruneStaleTags();
+        runWhenIdle(() => void checkForDataUpdate());
         return;
       }
       void ensurePack(next)
@@ -239,6 +297,23 @@ export async function listAvailableTags(): Promise<string[]> {
 }
 
 /**
+ * Boot-time check: flag the store if a newer compatible release exists so
+ * the UI can prompt the user to install it. Best-effort: offline or a
+ * flaky mirror just means no prompt this session, not an error.
+ */
+export async function checkForDataUpdate(): Promise<void> {
+  try {
+    const tags = await listAvailableTags();
+    const latest = tags[0];
+    if (latest !== undefined && latest !== activeTag) {
+      dataStatusStore.getState().setUpdateAvailableTag(latest);
+    }
+  } catch {
+    // ignore: retried next boot
+  }
+}
+
+/**
  * Install a different data tag: download everything under the new keyspace
  * (old data stays live until the swap), sanity-check, flip, delete old rows.
  */
@@ -255,6 +330,7 @@ export async function updateToTag(newTag: string): Promise<void> {
   const newSource = new GithubTagSource(newTag);
   const status = dataStatusStore.getState();
   status.setPhase('working');
+  installingTag = newTag;
 
   const fetchNew = async (path: string): Promise<unknown> => {
     const cached = await dataCacheRepo.getFile(newTag, path);
@@ -267,46 +343,53 @@ export async function updateToTag(newTag: string): Promise<void> {
       path,
       pack: packOfPath(path),
       json,
-      bytes: 0,
+      bytes: jsonByteSize(json),
       fetchedAt: Date.now(),
     });
     status.fileDone();
     return json;
   };
 
-  // Static packs + indexes, then everything the indexes list.
-  const staticFiles = [...ESSENTIALS_FILES, ...ITEMS_FULL_FILES, ...LIBRARY_EXTRAS_FILES];
-  status.addTotal(staticFiles.length);
-  for (const path of staticFiles) await fetchNew(path);
-  const classIndex = (await fetchNew('class/index.json')) as Record<string, unknown>;
-  const spellsIndex = (await fetchNew('spells/index.json')) as Record<string, unknown>;
-  const dynamic = [
-    ...Object.values(classIndex ?? {}).map((f) => `class/${String(f)}`),
-    ...Object.values(spellsIndex ?? {}).map((f) => `spells/${String(f)}`),
-  ].filter((p) => p.endsWith('.json'));
-  status.addTotal(dynamic.length);
-  for (const path of dynamic) await fetchNew(path);
+  try {
+    // Static packs + indexes, then everything the indexes list.
+    const staticFiles = [...ESSENTIALS_FILES, ...ITEMS_FULL_FILES, ...LIBRARY_EXTRAS_FILES];
+    status.addTotal(staticFiles.length);
+    for (const path of staticFiles) await fetchNew(path);
+    const classIndex = (await fetchNew('class/index.json')) as Record<string, unknown>;
+    const spellsIndex = (await fetchNew('spells/index.json')) as Record<string, unknown>;
+    const dynamic = [
+      ...Object.values(classIndex ?? {}).map((f) => `class/${String(f)}`),
+      ...Object.values(spellsIndex ?? {}).map((f) => `spells/${String(f)}`),
+    ].filter((p) => p.endsWith('.json'));
+    status.addTotal(dynamic.length);
+    for (const path of dynamic) await fetchNew(path);
 
-  // Sanity: essentials must parse into non-empty entity arrays.
-  const races = (await dataCacheRepo.getFile(newTag, 'races.json'))?.json as
-    | { race?: unknown[] }
-    | undefined;
-  if (!Array.isArray(races?.race) || races.race.length === 0) {
-    throw new Error(`tag ${newTag} failed sanity check (races.json empty) — keeping ${oldTag}`);
+    // Sanity: essentials must parse into non-empty entity arrays.
+    const races = (await dataCacheRepo.getFile(newTag, 'races.json'))?.json as
+      | { race?: unknown[] }
+      | undefined;
+    if (!Array.isArray(races?.race) || races.race.length === 0) {
+      throw new Error(`tag ${newTag} failed sanity check (races.json empty) — keeping ${oldTag}`);
+    }
+
+    // Atomic-enough swap: settings first, then in-memory, then cleanup.
+    await db.settings.put({ key: 'dataTag', value: newTag });
+    await dataCacheRepo.setMeta({
+      id: 'installed',
+      tag: newTag,
+      completedPacks: [],
+      installedAt: Date.now(),
+    });
+    activeTag = newTag;
+    source = newSource;
+    status.setPhase('done');
+  } finally {
+    // Whether we swapped or bailed, `activeTag` is now the one to keep, so
+    // this drops the old rows on success and the half-downloaded new ones on
+    // failure, instead of leaving either stranded.
+    installingTag = undefined;
+    await pruneStaleTags();
   }
-
-  // Atomic-enough swap: settings first, then in-memory, then cleanup.
-  await db.settings.put({ key: 'dataTag', value: newTag });
-  await dataCacheRepo.setMeta({
-    id: 'installed',
-    tag: newTag,
-    completedPacks: [],
-    installedAt: Date.now(),
-  });
-  activeTag = newTag;
-  source = newSource;
-  await dataCacheRepo.deleteTag(oldTag);
-  status.setPhase('done');
 }
 
 /** Sanity/UI helper: full-file inventory of what a complete install looks like. */

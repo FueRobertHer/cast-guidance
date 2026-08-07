@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { dataCacheRepo } from './dataCacheRepo';
 import { type DataFileRow, db } from './db';
 
-function fileRow(tag: string, path: string, pack = 'essentials'): DataFileRow {
+function fileRow(tag: string, path: string, pack = 'essentials', bytes = 0): DataFileRow {
   return {
     key: dataCacheRepo.key(tag, path),
     tag,
     path,
     pack,
     json: { path },
-    bytes: 0,
+    bytes,
     fetchedAt: 1,
   };
 }
@@ -41,6 +41,32 @@ describe('dataCacheRepo files', () => {
     await dataCacheRepo.deleteTag('v1');
     expect(await dataCacheRepo.filesByTag('v1')).toHaveLength(0);
     expect(await dataCacheRepo.filesByTag('v2')).toHaveLength(1);
+  });
+
+  it('deleteOtherTags keeps only the active tag', async () => {
+    await dataCacheRepo.putFile(fileRow('v1', 'a.json'));
+    await dataCacheRepo.putFile(fileRow('v2', 'a.json'));
+    await dataCacheRepo.putFile(fileRow('v3', 'a.json'));
+    await dataCacheRepo.deleteOtherTags('v2');
+    expect(await dataCacheRepo.filesByTag('v1')).toHaveLength(0);
+    expect(await dataCacheRepo.filesByTag('v3')).toHaveLength(0);
+    expect(await dataCacheRepo.filesByTag('v2')).toHaveLength(1);
+  });
+
+  it('totalBytes sums every cached row, including duplicate sizes', async () => {
+    expect(await dataCacheRepo.totalBytes()).toBe(0);
+    await dataCacheRepo.putFile(fileRow('v1', 'a.json', 'essentials', 100));
+    await dataCacheRepo.putFile(fileRow('v1', 'b.json', 'essentials', 250));
+    // Same size as another row: index keys are not unique, so both must count.
+    await dataCacheRepo.putFile(fileRow('v2', 'c.json', 'essentials', 100));
+    expect(await dataCacheRepo.totalBytes()).toBe(450);
+  });
+
+  it('totalBytes drops as stale tags are swept', async () => {
+    await dataCacheRepo.putFile(fileRow('v1', 'a.json', 'essentials', 300));
+    await dataCacheRepo.putFile(fileRow('v2', 'a.json', 'essentials', 200));
+    await dataCacheRepo.deleteOtherTags('v2');
+    expect(await dataCacheRepo.totalBytes()).toBe(200);
   });
 });
 

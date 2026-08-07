@@ -54,4 +54,18 @@ export const dataCacheRepo = {
   async deleteTag(tag: string): Promise<void> {
     await db.dataFiles.where('tag').equals(tag).delete();
   },
+
+  /** Drop every cached file that doesn't belong to `tag` (stale-tag sweep). */
+  async deleteOtherTags(tag: string): Promise<number> {
+    return db.dataFiles.where('tag').notEqual(tag).delete();
+  },
+
+  /**
+   * Total content size of every cached data file. Walks the `bytes` index, so
+   * it never loads the `json` blobs it is measuring.
+   */
+  async totalBytes(): Promise<number> {
+    const sizes = (await db.dataFiles.orderBy('bytes').keys()) as number[];
+    return sizes.reduce((sum, n) => sum + (typeof n === 'number' ? n : 0), 0);
+  },
 };
