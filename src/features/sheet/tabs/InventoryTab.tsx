@@ -11,22 +11,41 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
-function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => void }) {
+export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => void }) {
   const registry = useRegistry();
   const [q, setQ] = useState('');
   const [customName, setCustomName] = useState('');
+  const [load, setLoad] = useState<'pending' | 'done' | 'failed'>('pending');
 
-  const results = useMemo(() => {
-    if (registry === null || q.trim().length < 2) return [];
-    const needle = q.trim().toLowerCase();
+  const { results, poolSize } = useMemo(() => {
+    if (registry === null) return { results: [], poolSize: 0 };
     const pool = [...registry.byType('baseitem'), ...registry.byType('item')];
-    return pool.filter((e) => nameOf(e).toLowerCase().includes(needle)).slice(0, 30);
+    const needle = q.trim().toLowerCase();
+    if (needle.length < 2) return { results: [], poolSize: pool.length };
+    return {
+      results: pool.filter((e) => nameOf(e).toLowerCase().includes(needle)).slice(0, 30),
+      poolSize: pool.length,
+    };
   }, [registry, q]);
+
+  // Mundane gear ships in the essentials pack, but magic items come from
+  // `items-full`, which the background drain fetches later. On a slow phone this
+  // can open before those arrive. An empty pool is the honest signal: it means
+  // nothing is queryable yet, whatever the download plumbing believes.
+  const ready = poolSize > 0;
+
+  const loadItems = () => {
+    setLoad('pending');
+    ensureTypePacks('item').then(
+      () => setLoad('done'),
+      () => setLoad('failed'),
+    );
+  };
 
   return (
     <Drawer.Root
       onOpenChange={(open) => {
-        if (open) void ensureTypePacks('item');
+        if (open) loadItems();
       }}
     >
       <Drawer.Trigger asChild>
@@ -51,6 +70,38 @@ function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => void }) {
               className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
             />
           </label>
+          {/* role=status so the shift from "downloading" to a result count, and
+              from a count to "no match", is announced rather than silent. */}
+          <div role="status" className="px-1 text-sm text-ink-muted empty:hidden">
+            {!ready && (
+              <div className="flex flex-col items-start gap-1 py-3">
+                <p>
+                  {load === 'failed'
+                    ? 'Could not download the item compendium.'
+                    : load === 'done'
+                      ? 'The item compendium loaded, but it contains no items.'
+                      : 'Downloading the item compendium…'}
+                </p>
+                {load === 'pending' ? (
+                  <p>You can still add a custom item below.</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={loadItems}
+                    className="-mx-2 rounded px-2 py-2 font-semibold text-ink underline"
+                  >
+                    Try again
+                  </button>
+                )}
+              </div>
+            )}
+            {ready && q.trim().length < 2 && (
+              <p className="py-3">Type at least two letters to search {poolSize} items.</p>
+            )}
+            {ready && q.trim().length >= 2 && results.length === 0 && (
+              <p className="py-3">No items match “{q.trim()}”.</p>
+            )}
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {results.map((e) => (
               <Drawer.Close asChild key={`${nameOf(e)}|${sourceOf(e)}`}>
