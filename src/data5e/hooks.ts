@@ -29,8 +29,11 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   const filesDone = useDataStatus((s) => s.filesDone);
   const key = packs.join(',');
 
-  // filesDone/phase retrigger a (signature-cached, cheap) registry check; nonce
-  // is the manual retry trigger.
+  // filesDone/phase retrigger a registry check; nonce is the manual retry
+  // trigger. Deliberately NOT triggered on pack readiness: files only reach
+  // IndexedDB via a fetch that already ticks filesDone, so a pack flipping to
+  // 'ready' adds nothing to read, while every extra run costs a full
+  // filesByTag() deserialization of the whole cached compendium.
   // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
