@@ -323,7 +323,17 @@ export interface DerivedSheet {
   abilities: Record<Ability, DerivedAbility>;
   profBonus: DerivedValue;
   saves: Record<Ability, { total: DerivedValue; prof: boolean }>;
-  skills: Record<string, { total: DerivedValue; prof: ProfLevel; ability: Ability }>;
+  skills: Record<
+    string,
+    {
+      total: DerivedValue;
+      /** Effective level, after any manual override. */
+      prof: ProfLevel;
+      /** What the build itself grants, which is what clearing an override restores. */
+      profBase: ProfLevel;
+      ability: Ability;
+    }
+  >;
   passivePerception: DerivedValue;
   ac: DerivedValue;
   acFormulaLabel: string;

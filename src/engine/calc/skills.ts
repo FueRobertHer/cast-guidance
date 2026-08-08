@@ -48,20 +48,28 @@ export function calcSkills(
   const out: DerivedSheet['skills'] = {};
   for (const { name, ability } of SKILLS) {
     const key = name.toLowerCase();
-    let prof: ProfLevel = skillProfs.get(key)?.level ?? 0;
+    const profBase: ProfLevel = skillProfs.get(key)?.level ?? 0;
+    let prof: ProfLevel = profBase;
     const profOverride = doc.overrides[`skill.${name}.prof`];
     if (profOverride !== undefined)
       prof = Math.max(0, Math.min(2, profOverride.value)) as ProfLevel;
 
     const parts = [{ label: `${ability.toUpperCase()} modifier`, amount: abilities[ability].mod }];
-    if (prof === 1) parts.push({ label: 'Proficiency', amount: profBonus });
-    if (prof === 2) parts.push({ label: 'Expertise', amount: profBonus * 2 });
+    // Name the source when the build grants it, so the breakdown says why.
+    const grantedBy = prof === profBase ? skillProfs.get(key)?.label : 'Set manually';
+    if (prof === 1) parts.push({ label: grantedBy ?? 'Proficiency', amount: profBonus });
+    if (prof === 2) {
+      parts.push({
+        label: grantedBy !== undefined ? `${grantedBy} (expertise)` : 'Expertise',
+        amount: profBonus * 2,
+      });
+    }
     const base = parts.reduce((s, p) => s + p.amount, 0);
     const total = withOverride(
       { value: base, base, overridden: false, parts },
       doc.overrides[`skill.${name}.bonus`],
     );
-    out[name] = { total, prof, ability };
+    out[name] = { total, prof, profBase, ability };
   }
   return out;
 }
