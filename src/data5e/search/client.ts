@@ -1,7 +1,12 @@
 import { db } from '@/db/db';
 import { getActiveTag } from '../loader';
 import type { EntityRegistry, EntityType } from '../normalize';
-import type { SearchDoc, SearchWorkerRequest, SearchWorkerResponse } from './protocol';
+import type {
+  SearchDoc,
+  SearchSourceFilter,
+  SearchWorkerRequest,
+  SearchWorkerResponse,
+} from './protocol';
 
 /** Types worth surfacing in global search. */
 const SEARCHABLE: EntityType[] = [
@@ -30,7 +35,7 @@ let worker: Worker | null = null;
 let readyPromise: Promise<void> | null = null;
 let indexedSignature = '';
 let queryId = 0;
-const pending = new Map<number, (hits: SearchDoc[]) => void>();
+const pending = new Map<number, (result: SearchResult) => void>();
 
 function getWorker(): Worker {
   if (worker === null) {
@@ -40,7 +45,7 @@ function getWorker(): Worker {
     worker.onmessage = (ev: MessageEvent<SearchWorkerResponse>) => {
       const msg = ev.data;
       if (msg.kind === 'results') {
-        pending.get(msg.id)?.(msg.hits);
+        pending.get(msg.id)?.({ hits: msg.hits, hiddenCount: msg.hiddenCount });
         pending.delete(msg.id);
       }
     };
@@ -135,30 +140,41 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
 /** A query with no worker response within this window resolves empty. */
 const QUERY_TIMEOUT_MS = 5000;
 
-export async function searchAll(q: string, limit = 30): Promise<SearchDoc[]> {
-  if (readyPromise === null) return [];
+export interface SearchResult {
+  hits: SearchDoc[];
+  /** Matches the source filter dropped, so callers can offer to show them. */
+  hiddenCount: number;
+}
+
+const EMPTY_RESULT: SearchResult = { hits: [], hiddenCount: 0 };
+
+export async function searchAll(
+  q: string,
+  opts: { limit?: number; sources?: SearchSourceFilter } = {},
+): Promise<SearchResult> {
+  if (readyPromise === null) return EMPTY_RESULT;
   // A failed index build shouldn't turn a query into an unhandled rejection.
   try {
     await readyPromise;
   } catch {
-    return [];
+    return EMPTY_RESULT;
   }
   const id = ++queryId;
   // Supersede any in-flight queries: settle them empty so a slower, older
   // response can't win, and no resolver is left dangling.
   for (const [oldId, resolve] of pending) {
-    resolve([]);
+    resolve(EMPTY_RESULT);
     pending.delete(oldId);
   }
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      resolve([]);
+      resolve(EMPTY_RESULT);
     }, QUERY_TIMEOUT_MS);
-    pending.set(id, (hits) => {
+    pending.set(id, (result) => {
       clearTimeout(timer);
-      resolve(hits);
+      resolve(result);
     });
-    send({ kind: 'query', id, q, limit });
+    send({ kind: 'query', id, q, limit: opts.limit ?? 30, sources: opts.sources });
   });
 }

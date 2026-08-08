@@ -39,6 +39,36 @@ export type EntityType =
   | 'subclassFeature'
   | 'spell';
 
+/**
+ * Types a player actually browses or picks; see {@link EntityRegistry.sourceCounts}.
+ *
+ * Must stay a superset of what the UI source-filters, or a book can be hidden
+ * without ever appearing in settings as something to un-hide. The 2024 Monster
+ * Manual is the live example: the app loads no bestiary, so XMM's only entries
+ * are languages, and leaving `language` out here made XMM unlistable even
+ * though a preset names it.
+ */
+const COUNTED_TYPES = new Set<EntityType>([
+  'race',
+  'subrace',
+  'background',
+  'feat',
+  'optionalfeature',
+  'item',
+  'baseitem',
+  'magicvariant',
+  'spell',
+  'class',
+  'subclass',
+  'condition',
+  'disease',
+  'action',
+  'variantrule',
+  'skill',
+  'language',
+  'sense',
+]);
+
 export class EntityRegistry {
   private readonly types = new Map<EntityType, Entity[]>();
   private readonly index = new Map<EntityType, Map<string, Entity>>();
@@ -74,6 +104,28 @@ export class EntityRegistry {
   counts(): Record<string, number> {
     const out: Record<string, number> = {};
     for (const [type, list] of this.types) out[type] = list.length;
+    return out;
+  }
+
+  /**
+   * Every source code present, with how many entries carry it. Drives the
+   * source list in settings, which shows only books the player can actually
+   * run into: the registry holds what has downloaded, not the whole catalog.
+   *
+   * Counts only things a player browses or picks. Class and subclass features
+   * come with their class rather than being chosen, and they outnumber
+   * everything else several times over, so counting them would turn the number
+   * into noise.
+   */
+  sourceCounts(): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const [type, list] of this.types) {
+      if (!COUNTED_TYPES.has(type)) continue;
+      for (const e of list) {
+        if (typeof e.source !== 'string') continue;
+        out.set(e.source, (out.get(e.source) ?? 0) + 1);
+      }
+    }
     return out;
   }
 }

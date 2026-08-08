@@ -1,4 +1,4 @@
-import { ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -6,8 +6,9 @@ import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import type { EntityRegistry, EntityType } from '@/data5e/normalize';
-import { searchAll } from '@/data5e/search/client';
-import type { SearchDoc } from '@/data5e/search/protocol';
+import { type SearchResult, searchAll } from '@/data5e/search/client';
+import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
+import { sourceName } from '@/data5e/sourceNames';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
 import { headerFacts } from './fmt';
@@ -62,25 +63,41 @@ function GlobalSearch() {
   const { status: searchStatus, retry: retrySearch } = useSearchState(registry);
   const ready = searchStatus === 'ready';
   const [q, setQ] = useState('');
-  const [hits, setHits] = useState<SearchDoc[]>([]);
+  const [result, setResult] = useState<SearchResult>({ hits: [], hiddenCount: 0 });
+  const [showHidden, setShowHidden] = useState(false);
+  const policy = useSourcePolicy();
   const trimmed = q.trim();
 
+  // The filter goes to the worker, which applies it before truncating to a
+  // page. Filtering the returned page here instead would make search emptier
+  // the more books you hide: the top 30 overall can be entirely hidden while
+  // good matches sit at rank 31.
+  const sources = showHidden ? undefined : policyForSearch(policy);
+  const sourcesKey = sources === undefined ? '' : JSON.stringify(sources);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object
   useEffect(() => {
     if (!ready || trimmed.length < 2) {
-      setHits([]);
+      setResult({ hits: [], hiddenCount: 0 });
       return;
     }
     let alive = true;
     const t = setTimeout(() => {
-      void searchAll(trimmed).then((res) => {
-        if (alive) setHits(res);
+      void searchAll(trimmed, { sources }).then((res) => {
+        if (alive) setResult(res);
       });
     }, 150);
     return () => {
       alive = false;
       clearTimeout(t);
     };
-  }, [trimmed, ready]);
+  }, [trimmed, ready, sourcesKey]);
+
+  // A new query starts back inside the player's chosen sources.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting on query change is the point
+  useEffect(() => {
+    setShowHidden(false);
+  }, [trimmed]);
 
   // Distinguish error / preparing / ready so a failure isn't an endless spinner.
   const failed = regStatus === 'error' || searchStatus === 'error';
@@ -122,12 +139,22 @@ function GlobalSearch() {
           </button>
         </div>
       )}
-      {ready && trimmed.length >= 2 && hits.length === 0 && (
+      {ready && trimmed.length >= 2 && result.hits.length === 0 && result.hiddenCount === 0 && (
         <p className="px-1 text-xs text-ink-muted">No matches for “{trimmed}”.</p>
       )}
-      {hits.length > 0 && (
+      {result.hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowHidden(true)}
+          className="px-1 text-left text-xs text-ink-muted underline hover:text-ink"
+        >
+          {result.hiddenCount === 30 ? '30+' : result.hiddenCount} more in sources you&rsquo;ve
+          hidden. Show them
+        </button>
+      )}
+      {result.hits.length > 0 && (
         <div className="flex flex-col rounded-lg bg-surface">
-          {hits.map((h) => (
+          {result.hits.map((h) => (
             <Link
               key={h.id}
               to={`/library/${h.type}/${encodeURIComponent(h.uid)}`}
@@ -171,19 +198,55 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
   );
 }
 
+/** Sentinel values for the source dropdown, which is otherwise source codes. */
+const MY_SOURCES = '';
+const EVERY_SOURCE = '*';
+
 function TypeList({ type, registry }: { type: EntityType; registry: EntityRegistry | null }) {
   const [filter, setFilter] = useState('');
+  const [pickedSource, setPickedSource] = useState<string>(MY_SOURCES);
+  const policy = useSourcePolicy();
 
   useEffect(() => {
     void ensureTypePacks(type);
   }, [type]);
 
-  const items = useMemo(() => {
-    const list = [...(registry?.byType(type) ?? [])];
-    list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  const { items, sources, hiddenBySettings, selected } = useMemo(() => {
+    const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
+      nameOf(a).localeCompare(nameOf(b)),
+    );
+    const mine = applySourcePolicy(all, policy, sourceOf);
+
+    // The dropdown offers the books this type actually has, so it never lists a
+    // source that would come back empty. Built from `mine` so the settings stay
+    // the default frame; "everything" is a deliberate step outside it.
+    const counts = new Map<string, number>();
+    for (const e of mine) counts.set(sourceOf(e), (counts.get(sourceOf(e)) ?? 0) + 1);
+    const sources = [...counts.entries()].sort((a, b) =>
+      sourceName(a[0]).localeCompare(sourceName(b[0])),
+    );
+
+    // Resolve first: a source can stop being offered when data updates or the
+    // policy changes, and filtering on the raw state would leave the dropdown
+    // reading "My sources" over a list scoped to a source it no longer lists.
+    const picked =
+      pickedSource === MY_SOURCES || pickedSource === EVERY_SOURCE || counts.has(pickedSource)
+        ? pickedSource
+        : MY_SOURCES;
+    const scoped =
+      picked === MY_SOURCES
+        ? mine
+        : picked === EVERY_SOURCE
+          ? all
+          : all.filter((e) => sourceOf(e) === picked);
     const f = filter.trim().toLowerCase();
-    return f === '' ? list : list.filter((e) => nameOf(e).toLowerCase().includes(f));
-  }, [registry, type, filter]);
+    return {
+      items: f === '' ? scoped : scoped.filter((e) => nameOf(e).toLowerCase().includes(f)),
+      sources,
+      hiddenBySettings: all.length - mine.length,
+      selected: picked,
+    };
+  }, [registry, type, filter, policy, pickedSource]);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
@@ -203,6 +266,32 @@ function TypeList({ type, registry }: { type: EntityType; registry: EntityRegist
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
         />
       </label>
+      <div className="relative">
+        <select
+          aria-label="Source"
+          value={selected}
+          onChange={(e) => setPickedSource(e.target.value)}
+          className="w-full appearance-none rounded-lg bg-surface py-2 pr-9 pl-3 text-sm outline-none"
+        >
+          <option value={MY_SOURCES} className="bg-surface-2 text-ink">
+            {hiddenBySettings > 0 ? 'My sources' : 'All sources'}
+          </option>
+          {sources.map(([s, n]) => (
+            <option key={s} value={s} className="bg-surface-2 text-ink">
+              {sourceName(s)} ({n})
+            </option>
+          ))}
+          {hiddenBySettings > 0 && (
+            <option value={EVERY_SOURCE} className="bg-surface-2 text-ink">
+              Everything, including {hiddenBySettings} hidden in settings
+            </option>
+          )}
+        </select>
+        <ChevronDown
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-muted"
+        />
+      </div>
       <VirtualList
         items={items}
         className="min-h-0 flex-1"
@@ -325,12 +414,16 @@ function EntityDetail({
       >
         <ArrowLeft size={16} /> Back
       </button>
-      <header className="flex items-start justify-between gap-2">
-        <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
-        <span className="flex items-center gap-1.5 pt-1 text-xs text-ink-muted">
-          <SourceBadge source={sourceOf(entity)} />
-          {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
-        </span>
+      <header className="flex flex-col gap-1">
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
+          <span className="flex items-center gap-1.5 pt-1 text-xs text-ink-muted">
+            <SourceBadge source={sourceOf(entity)} />
+            {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
+          </span>
+        </div>
+        {/* Spelled out here because a tooltip is a desktop-only affordance. */}
+        <p className="text-xs text-ink-muted">{sourceName(sourceOf(entity))}</p>
       </header>
       {facts.length > 0 && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-surface p-3 text-sm">

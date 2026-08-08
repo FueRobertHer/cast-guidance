@@ -5,6 +5,7 @@ import { Drawer } from 'vaul';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
+import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
 import type { EquipmentEntry } from '@/engine/types';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -16,17 +17,26 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
   const [q, setQ] = useState('');
   const [customName, setCustomName] = useState('');
   const [load, setLoad] = useState<'pending' | 'done' | 'failed'>('pending');
+  const [showHiddenSources, setShowHiddenSources] = useState(false);
+  const policy = useSourcePolicy();
 
-  const { results, poolSize } = useMemo(() => {
-    if (registry === null) return { results: [], poolSize: 0 };
-    const pool = [...registry.byType('baseitem'), ...registry.byType('item')];
+  const { results, poolSize, sourceHiddenCount } = useMemo(() => {
+    if (registry === null) return { results: [], poolSize: 0, sourceHiddenCount: 0 };
+    const all = [...registry.byType('baseitem'), ...registry.byType('item')];
+    // `poolSize` stays the unfiltered total: it exists to tell "still
+    // downloading" apart from "nothing matched", and hidden books are neither.
+    const pool = showHiddenSources ? all : applySourcePolicy(all, policy, sourceOf);
     const needle = q.trim().toLowerCase();
-    if (needle.length < 2) return { results: [], poolSize: pool.length };
+    if (needle.length < 2) return { results: [], poolSize: all.length, sourceHiddenCount: 0 };
+    const matches = (e: Entity) => nameOf(e).toLowerCase().includes(needle);
     return {
-      results: pool.filter((e) => nameOf(e).toLowerCase().includes(needle)).slice(0, 30),
-      poolSize: pool.length,
+      results: pool.filter(matches).slice(0, 30),
+      poolSize: all.length,
+      sourceHiddenCount: showHiddenSources
+        ? 0
+        : all.filter((e) => matches(e) && !policyAllows(policy, sourceOf(e))).length,
     };
-  }, [registry, q]);
+  }, [registry, q, policy, showHiddenSources]);
 
   // Mundane gear ships in the essentials pack, but magic items come from
   // `items-full`, which the background drain fetches later. On a slow phone this
@@ -102,6 +112,24 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
               <p className="py-3">No items match “{q.trim()}”.</p>
             )}
           </div>
+          {sourceHiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHiddenSources(true)}
+              className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
+            >
+              {sourceHiddenCount} hidden by your source settings. Show them anyway
+            </button>
+          )}
+          {showHiddenSources && (
+            <button
+              type="button"
+              onClick={() => setShowHiddenSources(false)}
+              className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
+            >
+              Back to your chosen sources
+            </button>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {results.map((e) => (
               <Drawer.Close asChild key={`${nameOf(e)}|${sourceOf(e)}`}>
