@@ -350,6 +350,42 @@ export function parseSubclassFeatureRef(
   };
 }
 
+/**
+ * Feature refs nested inside a feature's entries tree. Real data routes core
+ * mechanics through these: the 2014 paladin's once-per-rest Channel Divinity
+ * is a `refClassFeature` inside Sacred Oath, and each oath's Channel Divinity
+ * options are `refSubclassFeature`s inside the oath feature. A collector that
+ * only reads the class's top-level list never sees them.
+ *
+ * Refs under a `type: 'options'` node are deliberately skipped: those are
+ * pick-one lists (Hunter's Prey, Totem Spirit, an artificer's armor model),
+ * and granting every branch would put abilities on the sheet that the
+ * character never chose. They belong to the choice system, not here.
+ */
+function nestedFeatureRefs(entries: unknown): Array<{ kind: 'class' | 'subclass'; raw: string }> {
+  const out: Array<{ kind: 'class' | 'subclass'; raw: string }> = [];
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    if (v === null || typeof v !== 'object') return;
+    const o = v as Record<string, unknown>;
+    if (o.type === 'options') return;
+    if (o.type === 'refClassFeature' || o.type === 'refSubclassFeature') {
+      const kind = o.type === 'refClassFeature' ? ('class' as const) : ('subclass' as const);
+      const raw = kind === 'class' ? o.classFeature : o.subclassFeature;
+      if (typeof raw === 'string') out.push({ kind, raw });
+      return;
+    }
+    walk(o.entries);
+    walk(o.items);
+    walk(o.entry);
+  };
+  walk(entries);
+  return out;
+}
+
 function findClassFeature(col: Collector, ref: ClassFeatureRef): DataEntity | undefined {
   return col.ctx
     .byType('classFeature')
@@ -362,6 +398,87 @@ function findClassFeature(col: Collector, ref: ClassFeatureRef): DataEntity | un
         (ref.featureSource === undefined ||
           str(f.source)?.toLowerCase() === ref.featureSource.toLowerCase()),
     );
+}
+
+/** Identity keys so a feature reachable both by list and by nested ref collects once. */
+const classFeatureKey = (r: ClassFeatureRef) =>
+  `c:${r.name}|${r.className}|${r.classSource}|${r.level}`.toLowerCase();
+const subclassFeatureKey = (r: ClassFeatureRef & { shortName: string; shortSource: string }) =>
+  `s:${r.name}|${r.className}|${r.classSource}|${r.shortName}|${r.shortSource}|${r.level}`.toLowerCase();
+
+/**
+ * Which features a class entry has already dealt with. `claimed` is pre-seeded
+ * with the top-level feature lists so a nested ref never steals a feature the
+ * list will collect itself (with its ASI/Expertise handling); `collected` is
+ * what actually got collected, which is what stops a second visit.
+ */
+interface FeatureLedger {
+  claimed: Set<string>;
+  collected: Set<string>;
+}
+
+/**
+ * Collect one class/subclass feature (card, curated effects or prose scan),
+ * then follow the feature refs nested in its entries, recursively.
+ */
+function collectFeatureWithNested(
+  col: Collector,
+  feature: DataEntity,
+  name: string,
+  level: number,
+  cardOrigin: EffectOrigin,
+  curatedLabel: string,
+  classLevel: number,
+  ledger: FeatureLedger,
+  key: string,
+): void {
+  if (ledger.collected.has(key)) return;
+  ledger.collected.add(key);
+  col.features.push({ name, level, origin: cardOrigin, entries: feature.entries });
+  const featureOrigin: EffectOrigin = { ...cardOrigin, label: name };
+  if (!emitCurated(col, `${name}|${curatedLabel}`.toLowerCase(), featureOrigin)) {
+    proseScanFeature(col, name, feature.entries, featureOrigin);
+  }
+  for (const nested of nestedFeatureRefs(feature.entries)) {
+    let found: { entity: DataEntity | undefined; name: string; level: number; key: string };
+    if (nested.kind === 'class') {
+      const ref = parseClassFeatureRef(nested.raw);
+      if (ref === undefined || ref.level > classLevel) continue;
+      const nestedKey = classFeatureKey(ref);
+      if (ledger.claimed.has(nestedKey) || ledger.collected.has(nestedKey)) continue;
+      found = {
+        entity: findClassFeature(col, ref),
+        name: ref.name,
+        level: ref.level,
+        key: nestedKey,
+      };
+    } else {
+      const ref = parseSubclassFeatureRef(nested.raw);
+      if (ref === undefined || ref.level > classLevel) continue;
+      const nestedKey = subclassFeatureKey(ref);
+      if (ledger.claimed.has(nestedKey) || ledger.collected.has(nestedKey)) continue;
+      found = {
+        entity: findSubclassFeature(col, ref),
+        name: ref.name,
+        level: ref.level,
+        key: nestedKey,
+      };
+    }
+    // Unresolvable nested refs are skipped silently: they can point at
+    // printings outside the character's packs.
+    if (found.entity === undefined) continue;
+    collectFeatureWithNested(
+      col,
+      found.entity,
+      found.name,
+      found.level,
+      cardOrigin,
+      curatedLabel,
+      classLevel,
+      ledger,
+      found.key,
+    );
+  }
 }
 
 function findSubclassFeature(
@@ -614,8 +731,15 @@ export function collectClasses(col: Collector): void {
       );
     }
 
-    // Class features up to the current level
+    // Class features up to the current level. Every listed ref is claimed up
+    // front so a nested ref can't collect a feature this loop will handle.
     const featureRefs = Array.isArray(cls.classFeatures) ? cls.classFeatures : [];
+    const ledger: FeatureLedger = { claimed: new Set(), collected: new Set() };
+    for (const rawRef of featureRefs) {
+      const refStr = typeof rawRef === 'string' ? rawRef : str((rawRef as DataEntity).classFeature);
+      const ref = refStr !== undefined ? parseClassFeatureRef(refStr) : undefined;
+      if (ref !== undefined && ref.level <= classLevel) ledger.claimed.add(classFeatureKey(ref));
+    }
     for (const rawRef of featureRefs) {
       const isGainSubclass =
         typeof rawRef === 'object' && rawRef !== null && 'gainSubclassFeature' in rawRef;
@@ -640,7 +764,6 @@ export function collectClasses(col: Collector): void {
         col.warn(`Class feature not found: ${refStr}`);
         continue;
       }
-      col.features.push({ name: ref.name, level: ref.level, origin, entries: feature.entries });
 
       if (ref.name.startsWith('Ability Score Improvement')) {
         handleAsi(col, origin, classUid, ref.level);
@@ -664,10 +787,17 @@ export function collectClasses(col: Collector): void {
           },
         );
       }
-      const featureOrigin: EffectOrigin = { ...origin, label: ref.name };
-      if (!emitCurated(col, `${ref.name}|${origin.label}`.toLowerCase(), featureOrigin)) {
-        proseScanFeature(col, ref.name, feature.entries, featureOrigin);
-      }
+      collectFeatureWithNested(
+        col,
+        feature,
+        ref.name,
+        ref.level,
+        origin,
+        origin.label,
+        classLevel,
+        ledger,
+        classFeatureKey(ref),
+      );
     }
 
     // Subclass features
@@ -697,22 +827,30 @@ export function collectClasses(col: Collector): void {
         for (const rawRef of subRefs) {
           if (typeof rawRef !== 'string') continue;
           const ref = parseSubclassFeatureRef(rawRef);
+          if (ref !== undefined && ref.level <= classLevel) {
+            ledger.claimed.add(subclassFeatureKey(ref));
+          }
+        }
+        for (const rawRef of subRefs) {
+          if (typeof rawRef !== 'string') continue;
+          const ref = parseSubclassFeatureRef(rawRef);
           if (ref === undefined || ref.level > classLevel) continue;
           const feature = findSubclassFeature(col, ref);
           if (feature === undefined) {
             col.warn(`Subclass feature not found: ${rawRef}`);
             continue;
           }
-          col.features.push({
-            name: ref.name,
-            level: ref.level,
-            origin: subOrigin,
-            entries: feature.entries,
-          });
-          const subFeatureOrigin: EffectOrigin = { ...subOrigin, label: ref.name };
-          if (!emitCurated(col, `${ref.name}|${subOrigin.label}`.toLowerCase(), subFeatureOrigin)) {
-            proseScanFeature(col, ref.name, feature.entries, subFeatureOrigin);
-          }
+          collectFeatureWithNested(
+            col,
+            feature,
+            ref.name,
+            ref.level,
+            subOrigin,
+            subOrigin.label,
+            classLevel,
+            ledger,
+            subclassFeatureKey(ref),
+          );
         }
       }
     }

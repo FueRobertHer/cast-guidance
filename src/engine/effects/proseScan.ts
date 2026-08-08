@@ -20,26 +20,38 @@ const ABILITY_WORDS: Record<string, Ability> = {
   charisma: 'cha',
 };
 
-/** Recursively flatten an entries tree to plain lowercase text. */
-export function flattenEntries(entries: unknown): string {
+/**
+ * Recursively flatten an entries tree to plain lowercase text.
+ *
+ * `skipNamedOptions` drops named items nested in a list or options node. Those
+ * are the alternatives a player picks between (a Shifter's Longtooth bite, a
+ * Totem Warrior's animal), so a scan that wants only what the trait itself
+ * always grants must not read them.
+ */
+export function flattenEntries(
+  entries: unknown,
+  opts: { skipNamedOptions?: boolean } = {},
+): string {
   const parts: string[] = [];
-  const walk = (v: unknown): void => {
+  const walk = (v: unknown, inChoiceList: boolean): void => {
     if (typeof v === 'string') {
       parts.push(v);
       return;
     }
     if (Array.isArray(v)) {
-      for (const x of v) walk(x);
+      for (const x of v) walk(x, inChoiceList);
       return;
     }
     if (typeof v === 'object' && v !== null) {
       const o = v as Record<string, unknown>;
-      walk(o.entries);
-      walk(o.entry);
-      walk(o.items);
+      if (opts.skipNamedOptions === true && inChoiceList && typeof o.name === 'string') return;
+      const nested = inChoiceList || o.type === 'list' || o.type === 'options';
+      walk(o.entries, nested);
+      walk(o.entry, nested);
+      walk(o.items, nested);
     }
   };
-  walk(entries);
+  walk(entries, false);
   // {@dice 1d12}, {@spell bless|phb} … → keep the display text
   return parts
     .join(' ')
@@ -59,8 +71,21 @@ const slug = (s: string) =>
  * mentioned, the SMALLEST wins: higher counts are level-scaling text
  * ("at 18th level, three times") that doesn't apply at the base level.
  */
-function detectUses(text: string): number | 'profBonus' | undefined {
+function detectUses(
+  text: string,
+): number | 'profBonus' | `abilityMod:${Ability}` | `abilityModPlus1:${Ability}` | undefined {
   if (/number of times equal to your proficiency bonus/.test(text)) return 'profBonus';
+  // "a number of times equal to [1 +] your Charisma modifier [(a minimum of
+  // once)]": Divine Sense, Cleansing Touch, and a long tail of race traits.
+  const abilityUses = text.match(
+    /number of times equal to (1 \+ )?your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+  );
+  if (abilityUses?.[2] !== undefined) {
+    const ability = ABILITY_WORDS[abilityUses[2]];
+    if (ability !== undefined) {
+      return abilityUses[1] !== undefined ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
+    }
+  }
   const counts: number[] = [];
   if (
     /once per (?:short|long) rest/.test(text) ||
@@ -175,6 +200,43 @@ export function proseScanFeature(
   );
   if (hp?.[1] !== undefined) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
+  }
+
+  // Natural weapons (Ram, Cat's Claws, Bite, …): an unarmed strike with its own
+  // damage die and type, stated in one of two phrasings: "you deal bludgeoning
+  // damage equal to 1d4 + your Strength modifier" (MOT/VGM) or "deals 1d6 +
+  // your Strength modifier bludgeoning damage" (MPMM). Gated on "unarmed
+  // strike" so a class feature mentioning dice never becomes a weapon.
+  //
+  // Read from the trait's own prose, excluding named sub-options: a Shifter's
+  // bite belongs to the Longtooth option nested inside Shifting, so scanning
+  // the whole subtree would arm every Beasthide and Swiftstride too.
+  const ownText = flattenEntries(entries, { skipNamedOptions: true });
+  if (/unarmed strike/.test(ownText)) {
+    const ability = `(${Object.keys(ABILITY_WORDS).join('|')})`;
+    // The modifier is captured from the damage phrase itself, not anywhere in
+    // the trait: a Dhampir's bite adds CON while the same trait's save DC also
+    // names CON, and Dragon Hide states a DEX-based AC beside a STR bite.
+    const typeFirst = ownText.match(
+      new RegExp(
+        `deal(?:s|ing)? (${DAMAGE_TYPES}) damage equal to (\\d+d\\d+)(?: (?:\\+|plus) your ${ability} modifier)?`,
+      ),
+    );
+    const diceFirst = ownText.match(
+      new RegExp(`deals? (\\d+d\\d+) \\+ your ${ability} modifier (${DAMAGE_TYPES}) damage`),
+    );
+    const dmgDice = typeFirst?.[2] ?? diceFirst?.[1];
+    const weaponType = typeFirst?.[1] ?? diceFirst?.[3];
+    if (dmgDice !== undefined && weaponType !== undefined) {
+      col.add({
+        kind: 'naturalWeapon',
+        label: name,
+        dice: dmgDice,
+        damageType: weaponType,
+        ability: ABILITY_WORDS[typeFirst?.[3] ?? diceFirst?.[2] ?? ''] ?? 'str',
+        origin,
+      });
+    }
   }
 
   // Natural armor: a fixed base AC stated in prose ("base AC of 17";

@@ -184,6 +184,26 @@ export function calcAttacks(
     );
   }
 
+  // Natural weapons from race traits (Ram, Cat's Claws, Bite, …) are unarmed
+  // strikes with their own die and damage type, so proficiency always applies.
+  for (const nw of effectsOf(effects, 'naturalWeapon')) {
+    rows.push(
+      buildRow(
+        nw.label,
+        nw.ability,
+        true,
+        0,
+        false,
+        nw.dice,
+        nw.damageType,
+        undefined,
+        ['natural weapon'],
+        undefined,
+        nw.origin.label,
+      ),
+    );
+  }
+
   // Unarmed strike is always available.
   rows.push(
     buildRow(

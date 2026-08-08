@@ -18,6 +18,11 @@ export function calcResources(
     } else if (e.max.startsWith('abilityMod:')) {
       const ability = e.max.slice('abilityMod:'.length) as Ability;
       max = Math.max(1, abilities[ability]?.mod ?? 1);
+    } else if (e.max.startsWith('abilityModPlus1:')) {
+      // "1 + your Charisma modifier" (Divine Sense). No stated minimum, so a
+      // negative modifier can zero it out, which drops the resource below.
+      const ability = e.max.slice('abilityModPlus1:'.length) as Ability;
+      max = 1 + (abilities[ability]?.mod ?? 0);
     } else if (e.max.startsWith('level:')) {
       const className = e.max.slice('level:'.length);
       max =

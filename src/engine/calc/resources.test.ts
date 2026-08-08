@@ -44,6 +44,12 @@ describe('calcResources max resolution', () => {
     expect(calcResources(doc, [res('abilityMod:cha')], abilities(3), 2)[0]?.max).toBe(3);
   });
 
+  it('resolves "1 + modifier" maxima, dropping the resource at zero', () => {
+    expect(calcResources(doc, [res('abilityModPlus1:cha')], abilities(3), 2)[0]?.max).toBe(4);
+    // 1 + (-1) = 0 uses: rules-accurate for Divine Sense with CHA 8.
+    expect(calcResources(doc, [res('abilityModPlus1:cha')], abilities(-1), 2)).toHaveLength(0);
+  });
+
   it('resolves a class level max', () => {
     expect(calcResources(doc, [res('level:Barbarian')], abilities(), 2)[0]?.max).toBe(5);
     expect(calcResources(doc, [res('level:Wizard')], abilities(), 2)).toHaveLength(0); // 0 → dropped

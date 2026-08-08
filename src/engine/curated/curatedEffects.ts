@@ -344,6 +344,57 @@ export const CURATED: Record<string, CuratedFn> = {
     });
     col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin });
   },
+  // Lay on Hands is a POOL of hit points (5 x paladin level), not a use count,
+  // so the prose scanner's "times per rest" patterns can never see it.
+  'lay on hands|paladin': (col, origin) => {
+    const is2024 = col.doc.rulesVersion === '2024';
+    col.add({
+      kind: 'resource',
+      key: 'lay-on-hands',
+      label: 'Lay on Hands (HP pool)',
+      max: classLevel(col, 'Paladin') * 5,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: is2024 ? 'bonus' : 'action',
+      label: 'Lay on Hands',
+      note: is2024
+        ? 'heal from the pool · 5 points removes Poisoned'
+        : 'heal from the pool · 5 points cures a disease or poison',
+      origin,
+    });
+  },
+  'channel divinity|paladin': (col, origin) => {
+    // 2024 scales with paladin level (2, 3 at 11); 2014 is once per rest.
+    // Keyed per class, not shared with the cleric's pool: the 2024 text says
+    // "each time you use THIS CLASS'S Channel Divinity", and the 2014 pools are
+    // separate features with separate uses. A shared key would also make the
+    // max depend on which class the player happened to add first.
+    const uses = col.doc.rulesVersion === '2024' ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
+    col.add({
+      kind: 'resource',
+      key: 'channel-divinity-paladin',
+      label: 'Channel Divinity (Paladin)',
+      max: uses,
+      resetOn: 'short',
+      origin,
+    });
+  },
+  'arcane recovery|wizard': (col, origin) => {
+    // Recovered ON a short rest but usable once per DAY. The prose scanner
+    // reads the 2024 "when you finish a Short Rest" as a short-rest reset,
+    // which hands it back every rest; pin the daily limit here instead.
+    col.add({
+      kind: 'resource',
+      key: 'arcane-recovery',
+      label: 'Arcane Recovery',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+  },
   'sneak attack|rogue': (col, origin) => {
     const dice = Math.ceil(classLevel(col, 'Rogue') / 2);
     col.add({
