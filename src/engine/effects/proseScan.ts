@@ -227,15 +227,28 @@ export function proseScanFeature(
     );
     const dmgDice = typeFirst?.[2] ?? diceFirst?.[1];
     const weaponType = typeFirst?.[1] ?? diceFirst?.[3];
+    const weaponAbility = ABILITY_WORDS[typeFirst?.[3] ?? diceFirst?.[2] ?? ''] ?? 'str';
     if (dmgDice !== undefined && weaponType !== undefined) {
-      col.add({
-        kind: 'naturalWeapon',
-        label: name,
-        dice: dmgDice,
-        damageType: weaponType,
-        ability: ABILITY_WORDS[typeFirst?.[3] ?? diceFirst?.[2] ?? ''] ?? 'str',
-        origin,
-      });
+      // Two shapes share this wording. A trait that names a body part or calls
+      // it a natural weapon (Ram, Claws, Horns) is a distinct attack, and so is
+      // one that changes what you deal or what you add, like a Dhampir's bite
+      // (piercing, CON). What is left only enlarges the die of an ordinary
+      // punch, so it belongs on the Unarmed Strike row rather than beside it as
+      // a strictly better copy: Unarmed Fighting and Tavern Brawler.
+      const grantsWeapon = /natural weapons?|to make (?:an |your )?unarmed strikes?/.test(ownText);
+      const isPlainPunch = weaponType === 'bludgeoning' && weaponAbility === 'str';
+      if (!grantsWeapon && isPlainPunch) {
+        col.add({ kind: 'unarmedDamage', label: name, dice: dmgDice, origin });
+      } else {
+        col.add({
+          kind: 'naturalWeapon',
+          label: name,
+          dice: dmgDice,
+          damageType: weaponType,
+          ability: weaponAbility,
+          origin,
+        });
+      }
     }
   }
 
