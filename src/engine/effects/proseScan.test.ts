@@ -160,3 +160,44 @@ describe('proseScanFeature natural weapons', () => {
     ).toBeUndefined();
   });
 });
+
+describe('proseScanFeature unarmed strike upgrades', () => {
+  const weapon = (effects: EffectInput[]) =>
+    effects.find(
+      (e): e is Extract<EffectInput, { kind: 'naturalWeapon' }> => e.kind === 'naturalWeapon',
+    );
+  const punch = (effects: EffectInput[]) =>
+    effects.find(
+      (e): e is Extract<EffectInput, { kind: 'unarmedDamage' }> => e.kind === 'unarmedDamage',
+    );
+
+  it('treats a bigger die on an ordinary punch as an upgrade, not a weapon', () => {
+    // Unarmed Fighting deals the same damage type off the same ability as the
+    // built-in unarmed strike, so its own row would be a strictly better copy.
+    const effects = scan('Unarmed Fighting', [
+      'When you hit with your unarmed strike and deal damage, you can deal bludgeoning damage equal to {@damage 1d6} plus your Strength modifier instead of the normal damage of an unarmed strike.',
+    ]);
+    expect(punch(effects)).toMatchObject({ label: 'Unarmed Fighting', dice: '1d6' });
+    expect(weapon(effects)).toBeUndefined();
+  });
+
+  it('keeps a weapon row when the trait names a body part', () => {
+    // Same "instead of the normal damage" wording as the feats above, but a
+    // Ram is a distinct thing to attack with.
+    const effects = scan('Ram', [
+      'You can use your head and horns to make unarmed strikes. When you hit with them, the strike deals {@damage 1d6} + your Strength modifier bludgeoning damage, instead of the bludgeoning damage normal for an unarmed strike.',
+    ]);
+    expect(weapon(effects)).toMatchObject({ label: 'Ram' });
+    expect(punch(effects)).toBeUndefined();
+  });
+
+  it('keeps a weapon row when the damage or ability differs from a punch', () => {
+    // A Dhampir's bite names no natural weapon, but piercing off CON is a real
+    // choice against a bludgeoning STR punch, not a replacement for it.
+    const effects = scan('Vampiric Bite', [
+      'When you use your unarmed strike and deal damage, you can choose to bite with your fangs. You deal piercing damage equal to {@damage 1d4} plus your Constitution modifier instead of the normal damage of an unarmed strike.',
+    ]);
+    expect(weapon(effects)).toMatchObject({ ability: 'con', damageType: 'piercing' });
+    expect(punch(effects)).toBeUndefined();
+  });
+});

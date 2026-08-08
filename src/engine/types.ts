@@ -187,13 +187,21 @@ export type EffectInput = { origin: EffectOrigin } & (
     }
   | {
       /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
-       * with its own damage die and type. Rendered as an attack row. */
+       * with its own damage die and type. Rendered as its own attack row. */
       kind: 'naturalWeapon';
       label: string;
       dice: string;
       damageType: string;
       /** Usually STR, but some bites add CON (Dhampir) rather than STR. */
       ability: Ability;
+    }
+  | {
+      /** A feature that only enlarges the ordinary punch (Unarmed Fighting,
+       * Tavern Brawler). Folded into the built-in Unarmed Strike row, since a
+       * row of its own would sit next to that one as a strictly better copy. */
+      kind: 'unarmedDamage';
+      label: string;
+      dice: string;
     }
   | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
   | { kind: 'note'; text: string }

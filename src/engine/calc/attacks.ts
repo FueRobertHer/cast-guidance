@@ -204,7 +204,19 @@ export function calcAttacks(
     );
   }
 
-  // Unarmed strike is always available.
+  // Unarmed strike is always available. Features that only enlarge its die
+  // (Unarmed Fighting, Tavern Brawler) replace the flat damage here instead of
+  // adding a row; the biggest die wins when a character has more than one, and
+  // it is named in the properties so the number is traceable.
+  const bestPunch = effectsOf(effects, 'unarmedDamage').reduce<
+    { dice: string; label: string } | undefined
+  >(
+    (best, u) =>
+      averageDice(u.dice) > (best === undefined ? 0 : averageDice(best.dice))
+        ? { dice: u.dice, label: u.label }
+        : best,
+    undefined,
+  );
   rows.push(
     buildRow(
       'Unarmed Strike',
@@ -212,13 +224,20 @@ export function calcAttacks(
       true,
       0,
       false,
-      undefined,
+      bestPunch?.dice,
       'bludgeoning',
       undefined,
-      [],
+      bestPunch === undefined ? [] : [bestPunch.label.toLowerCase()],
       undefined,
       'unarmed',
     ),
   );
   return rows;
+}
+
+/** Average of an `NdM` expression, for picking the biggest unarmed die. */
+function averageDice(expr: string): number {
+  const m = /^(\d+)d(\d+)$/.exec(expr);
+  if (m?.[1] === undefined || m[2] === undefined) return 0;
+  return (Number(m[1]) * (Number(m[2]) + 1)) / 2;
 }

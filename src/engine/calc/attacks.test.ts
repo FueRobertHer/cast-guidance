@@ -154,6 +154,39 @@ describe('calcAttacks', () => {
     expect(r?.damage).toBe('1d4+4');
   });
 
+  it('folds an unarmed upgrade into the unarmed strike instead of adding a row', () => {
+    const effects: EffectInput[] = [
+      {
+        origin: { label: 'Unarmed Fighting', uid: 'unarmed fighting|xphb', type: 'feat' },
+        kind: 'unarmedDamage',
+        label: 'Unarmed Fighting',
+        dice: '1d6',
+      },
+    ];
+    const rows = attacks(newCharacterDoc('c', 'H', 't'), abilities(3, 0), 2, [], effects);
+    expect(rows.filter((r) => r.label === 'Unarmed Fighting')).toHaveLength(0);
+    const unarmed = row(rows, 'Unarmed Strike');
+    expect(unarmed?.damage).toBe('1d6+3'); // not the flat 4 it would be alone
+    expect(unarmed?.properties).toContain('unarmed fighting');
+  });
+
+  it('keeps the biggest die when several features enlarge the punch', () => {
+    const mk = (label: string, dice: string): EffectInput => ({
+      origin: { label, uid: label.toLowerCase(), type: 'feat' },
+      kind: 'unarmedDamage',
+      label,
+      dice,
+    });
+    const rows = attacks(
+      newCharacterDoc('c', 'H', 't'),
+      abilities(3, 0),
+      2,
+      [],
+      [mk('Tavern Brawler', '1d4'), mk('Unarmed Fighting', '1d6')],
+    );
+    expect(row(rows, 'Unarmed Strike')?.damage).toBe('1d6+3');
+  });
+
   it('surfaces a custom-item attack verbatim', () => {
     const d = newCharacterDoc('c', 'H', 't');
     d.equipment = [
