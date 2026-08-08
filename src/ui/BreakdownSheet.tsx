@@ -8,12 +8,15 @@ export function BreakdownSheet({
   value,
   trigger,
   onOverride,
+  children,
 }: {
   title: string;
   value: DerivedValue;
   trigger: ReactNode;
   /** When provided, shows the manual-override editor. null clears. */
   onOverride?: (value: number | null) => void;
+  /** Extra controls for this value, shown under the breakdown. */
+  children?: ReactNode;
 }) {
   const [draft, setDraft] = useState('');
 
@@ -45,6 +48,9 @@ export function BreakdownSheet({
               </div>
             )}
           </dl>
+          {children !== undefined && (
+            <div className="mt-3 border-t border-surface-2 pt-3">{children}</div>
+          )}
           {onOverride !== undefined && (
             <form
               className="mt-3 flex gap-1.5 border-t border-surface-2 pt-3"

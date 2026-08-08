@@ -26,6 +26,7 @@ import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { ProfDot } from '@/ui/ProfDot';
+import { ProfPicker } from '@/ui/ProfPicker';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -818,10 +819,14 @@ export function Component() {
 
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold uppercase text-ink-muted">Skills</span>
+          <p className="text-xs text-ink-muted">
+            Tap a skill to see its math and to set proficiency by hand.
+          </p>
           <div className="flex flex-col rounded-lg bg-surface-2/40">
             {SKILLS.map(({ name }) => {
               const s = sheet.skills[name];
               if (s === undefined) return null;
+              const pinned = doc.overrides[`skill.${name}.prof`] !== undefined;
               return (
                 <BreakdownSheet
                   key={name}
@@ -836,6 +841,9 @@ export function Component() {
                         <ProfDot level={s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
+                        {pinned && (
+                          <span className="text-[10px] uppercase text-amber-300">set</span>
+                        )}
                       </span>
                       <span className="font-mono font-semibold">
                         {s.total.value >= 0 ? '+' : ''}
@@ -843,7 +851,22 @@ export function Component() {
                       </span>
                     </button>
                   }
-                />
+                >
+                  <ProfPicker
+                    value={s.prof}
+                    base={s.profBase}
+                    overridden={pinned}
+                    onChange={(level) =>
+                      update(
+                        (d) => {
+                          if (level === null) delete d.overrides[`skill.${name}.prof`];
+                          else d.overrides[`skill.${name}.prof`] = { value: level };
+                        },
+                        `${level === null ? 'Cleared' : 'Set'} ${name} proficiency`,
+                      )
+                    }
+                  />
+                </BreakdownSheet>
               );
             })}
           </div>

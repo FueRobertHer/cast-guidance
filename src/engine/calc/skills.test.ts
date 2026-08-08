@@ -67,6 +67,43 @@ describe('calcSkills', () => {
     expect(skills.Athletics?.total.value).toBe(8); // str 2 + expertise 6
   });
 
+  it('honors a manual proficiency override and reports what it replaced', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.overrides = { 'skill.Stealth.prof': { value: 2 } };
+    const effects: EffectInput[] = [{ origin, kind: 'skillProf', skill: 'Stealth', level: 1 }];
+    const skills = calcSkills(doc, effects, abilities({ dex: 3 }), 2);
+    expect(skills.Stealth?.prof).toBe(2);
+    expect(skills.Stealth?.profBase).toBe(1); // what clearing the override restores
+    expect(skills.Stealth?.total.value).toBe(7); // dex 3 + expertise 4
+  });
+
+  it('can override a skill down to no proficiency', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.overrides = { 'skill.Stealth.prof': { value: 0 } };
+    const effects: EffectInput[] = [{ origin, kind: 'skillProf', skill: 'Stealth', level: 1 }];
+    const skills = calcSkills(doc, effects, abilities({ dex: 3 }), 2);
+    expect(skills.Stealth?.prof).toBe(0);
+    expect(skills.Stealth?.profBase).toBe(1);
+    expect(skills.Stealth?.total.value).toBe(3); // dex only
+  });
+
+  it('clamps an out-of-range proficiency override', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.overrides = { 'skill.Arcana.prof': { value: 9 } };
+    expect(calcSkills(doc, [], abilities({}), 2).Arcana?.prof).toBe(2);
+  });
+
+  it('names the granting feature in the breakdown, and says so when set by hand', () => {
+    const effects: EffectInput[] = [{ origin, kind: 'skillProf', skill: 'Stealth', level: 1 }];
+    const granted = calcSkills(newCharacterDoc('c', 'H', 't'), effects, abilities({}), 2);
+    expect(granted.Stealth?.total.parts.map((p) => p.label)).toContain('Class');
+
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.overrides = { 'skill.Stealth.prof': { value: 1 } };
+    const manual = calcSkills(doc, [], abilities({}), 2);
+    expect(manual.Stealth?.total.parts.map((p) => p.label)).toContain('Set manually');
+  });
+
   it('honors a flat skill-bonus override', () => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.overrides = { 'skill.Insight.bonus': { value: 12 } };
