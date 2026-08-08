@@ -6,6 +6,7 @@ import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
 import { useDataStatus } from '@/stores/dataStatus';
 import { askConfirm } from '@/ui/dialogs';
+import { SourcesSection } from './SourcesSection';
 
 /**
  * Measured cached-data size alongside the browser's own figure. They differ,
@@ -197,6 +198,8 @@ export function Component() {
           with the app itself. Characters store name references, so they survive data updates.
         </p>
       </section>
+
+      <SourcesSection />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold">Your data &amp; privacy</h2>

@@ -3,6 +3,8 @@ import { useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import { applySourcePolicy, type SourcePolicy, useSourcePolicy } from '@/data5e/sourceFilter';
+import { sourceName } from '@/data5e/sourceNames';
 import type {
   CharacterDoc,
   ChoiceOption,
@@ -14,34 +16,44 @@ import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 
 /**
- * Hide feat options that don't belong to the character's rules version (the
- * engine builds the ASI feat list from every edition). Keeps any already-chosen
- * or unresolvable option so a picked feat never vanishes.
+ * Narrow an entity-backed prompt to what the player should be choosing from:
+ * their rules version (the engine builds the ASI feat list from every edition)
+ * and their source settings. Keeps any already-chosen or unresolvable option so
+ * a pick never vanishes.
+ *
+ * These prompts have no "show hidden anyway" affordance, and some of them are
+ * mandatory, so the source narrowing is skipped outright when it would leave
+ * nothing to pick. A shorter list is the goal; a dead end is not.
  */
-function filterFeatPrompt(
+export function filterEntityPrompt(
   prompt: ChoicePrompt,
   registry: EntityRegistry,
   version: RulesVersion,
+  policy: SourcePolicy,
   value: string[] | string | number | undefined,
 ): ChoicePrompt {
+  const type = prompt.kind === 'feat' ? 'feat' : 'optionalfeature';
   const selected = new Set(
     Array.isArray(value) ? value.map(String) : value !== undefined ? [String(value)] : [],
   );
-  const feats: Entity[] = [];
+  const entities: Entity[] = [];
   const resolvedIds = new Set<string>();
   for (const o of prompt.options) {
     const [name, source] = o.id.split('|');
-    const feat = name !== undefined ? registry.get('feat', name, source) : undefined;
-    if (feat !== undefined) {
-      feats.push(feat);
+    const found = name !== undefined ? registry.get(type, name, source) : undefined;
+    if (found !== undefined) {
+      entities.push(found);
       resolvedIds.add(o.id);
     }
   }
-  const kept = new Set(
-    filterByRulesVersion(feats, version).map((f) =>
-      `${String(f.name)}|${String(f.source)}`.toLowerCase(),
-    ),
-  );
+  const uidsOf = (list: readonly Entity[]) =>
+    new Set(list.map((e) => `${String(e.name)}|${String(e.source)}`.toLowerCase()));
+
+  // Feats span editions; optional features already come from the chosen class.
+  const byVersion = prompt.kind === 'feat' ? filterByRulesVersion(entities, version) : entities;
+  const bySource = applySourcePolicy(byVersion, policy, (e) => String(e.source));
+  const kept = uidsOf(bySource.length > 0 ? bySource : byVersion);
+
   const options = prompt.options.filter(
     (o) => selected.has(o.id) || !resolvedIds.has(o.id) || kept.has(o.id),
   );
@@ -58,7 +70,7 @@ function featOptionInfo(registry: EntityRegistry) {
       <EntityInfoSheet
         type="feat"
         entity={feat}
-        subtitle={`${String(feat.name)} · ${String(feat.source)}`}
+        subtitle={`${String(feat.name)} · ${sourceName(String(feat.source))}`}
         trigger={
           <button
             type="button"
@@ -105,6 +117,7 @@ export function OriginChoices({
   /** Enables ⓘ full-description drawers on feat options when provided. */
   registry?: EntityRegistry | null;
 }) {
+  const policy = useSourcePolicy();
   const pending = sheet.pending.filter(
     (p) => match(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
   );
@@ -120,10 +133,11 @@ export function OriginChoices({
 
   const featInfo = registry != null ? featOptionInfo(registry) : undefined;
 
-  // Feat lists are edition-filtered; every other kind renders as the engine built it.
+  // Feat and optional-feature lists are narrowed to the player's edition and
+  // source settings; every other kind renders as the engine built it.
   const shownPrompt = (prompt: ChoicePrompt) =>
-    prompt.kind === 'feat' && registry != null
-      ? filterFeatPrompt(prompt, registry, doc.rulesVersion, doc.choices[prompt.id])
+    (prompt.kind === 'feat' || prompt.kind === 'optionalfeature') && registry != null
+      ? filterEntityPrompt(prompt, registry, doc.rulesVersion, policy, doc.choices[prompt.id])
       : prompt;
 
   const commit = (id: string, value: string[] | string) => {

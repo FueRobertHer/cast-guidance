@@ -5,6 +5,7 @@ import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
+import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
 import {
   classSpellUids,
   classSpellUidsFromEntities,
@@ -240,6 +241,8 @@ function ClassSpells({
   const registry = useRegistry();
   const [classUids, setClassUids] = useState<Set<string> | null>(null);
   const [filter, setFilter] = useState('');
+  const [showHiddenSources, setShowHiddenSources] = useState(false);
+  const policy = useSourcePolicy();
 
   useEffect(() => {
     void ensureTypePacks('spell');
@@ -261,23 +264,55 @@ function ClassSpells({
   const knownUids = new Set(state.known.map((r) => `${r.name}|${r.source}`.toLowerCase()));
   const preparedUids = new Set(state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()));
 
-  const byLevel = useMemo(() => {
-    if (registry === null || classUids === null) return new Map<number, Entity[]>();
+  /**
+   * Spells already on the sheet, as a primitive so it can be a memo dependency.
+   * The character store `structuredClone`s the doc on every write, so depending
+   * on `doc.spellcasting` itself would rebuild the whole spell list on an HP
+   * tick or a condition toggle. Only these uids actually affect the result.
+   */
+  const onSheetKey = [...knownUids, ...preparedUids].sort().join(',');
+
+  const { byLevel, sourceHiddenCount } = useMemo(() => {
+    const empty = { byLevel: new Map<number, Entity[]>(), sourceHiddenCount: 0 };
+    if (registry === null || classUids === null) return empty;
     const spells = filterByRulesVersion([...registry.byType('spell')], doc.rulesVersion).filter(
       (s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)),
     );
+    // Hidden sources drop out of the list to learn from, but a spell this
+    // character already knows or prepares stays put, or the sheet would
+    // show a count it can't account for.
+    const onSheet = new Set(onSheetKey === '' ? [] : onSheetKey.split(','));
+    const isOnSheet = (s: Entity) => onSheet.has(uidOf(s));
+    const allowed = showHiddenSources
+      ? spells
+      : applySourcePolicy(spells, policy, sourceOf, isOnSheet);
     const f = filter.trim().toLowerCase();
-    const filtered = f === '' ? spells : spells.filter((s) => nameOf(s).toLowerCase().includes(f));
+    const matchesText = (s: Entity) => f === '' || nameOf(s).toLowerCase().includes(f);
+    // Counted after the text filter so the offer never promises matches that
+    // revealing hidden books would not produce.
+    const sourceHiddenCount = showHiddenSources
+      ? 0
+      : spells.filter((s) => matchesText(s) && !policyAllows(policy, sourceOf(s)) && !isOnSheet(s))
+          .length;
     const map = new Map<number, Entity[]>();
-    for (const s of filtered) {
+    for (const s of allowed.filter(matchesText)) {
       const lvl = typeof s.level === 'number' ? s.level : 0;
       const list = map.get(lvl) ?? [];
       list.push(s);
       map.set(lvl, list);
     }
     for (const list of map.values()) list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-    return map;
-  }, [registry, classUids, homebrewUids, doc.rulesVersion, filter]);
+    return { byLevel: map, sourceHiddenCount };
+  }, [
+    registry,
+    classUids,
+    homebrewUids,
+    doc.rulesVersion,
+    onSheetKey,
+    policy,
+    showHiddenSources,
+    filter,
+  ]);
 
   const toggle = (spell: Entity, list: 'known' | 'prepared') => {
     update((d) => {
@@ -420,7 +455,10 @@ function ClassSpells({
       {(() => {
         const rec = recommendedStarters(block.className);
         if (rec === undefined) return null;
-        const picks = [...rec.cantrips, ...rec.level1];
+        // Only suggest what the list below actually offers: a starter pick from
+        // a book the player has hidden would be advice they cannot take.
+        const visible = new Set([...byLevel.values()].flat().map((s) => nameOf(s).toLowerCase()));
+        const picks = [...rec.cantrips, ...rec.level1].filter((p) => visible.has(p.toLowerCase()));
         if (picks.length === 0) return null;
         return (
           <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
@@ -439,6 +477,24 @@ function ClassSpells({
         />
       </label>
       {classUids === null && <p className="text-sm text-ink-muted">Loading spell list…</p>}
+      {sourceHiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowHiddenSources(true)}
+          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
+        >
+          {sourceHiddenCount} spells hidden by your source settings. Show them anyway
+        </button>
+      )}
+      {showHiddenSources && (
+        <button
+          type="button"
+          onClick={() => setShowHiddenSources(false)}
+          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
+        >
+          Back to your chosen sources
+        </button>
+      )}
       {[...byLevel.entries()]
         .sort((a, b) => a[0] - b[0])
         .map(([lvl, spells]) => {

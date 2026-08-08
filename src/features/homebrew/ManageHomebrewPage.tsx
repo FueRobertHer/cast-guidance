@@ -3,6 +3,7 @@ import { Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
+import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
@@ -23,6 +24,9 @@ export function Component() {
       const raw: unknown = JSON.parse(await file.text());
       const row = await homebrewRepo.importJson(raw, file.name);
       invalidateRegistry();
+      // Imported content the player cannot see is worse than useless, and a
+      // preset (allow list) would hide it by default.
+      await ensureSourcesVisible(row.sourceIds);
       setStatus(
         `Imported "${row.fileName}" (${
           Object.entries(row.counts)
@@ -43,6 +47,7 @@ export function Component() {
       const name = url.split('/').pop() ?? 'homebrew.json';
       const row = await homebrewRepo.importJson(raw, decodeURIComponent(name), url);
       invalidateRegistry();
+      await ensureSourcesVisible(row.sourceIds);
       setStatus(`Imported "${row.fileName}"`);
       setUrl('');
     } catch (err) {
@@ -96,6 +101,7 @@ export function Component() {
               })) ?? 'HB';
             const row = await homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB');
             invalidateRegistry();
+            await ensureSourcesVisible(row.sourceIds);
             void navigate(`/homebrew/edit/${row.id}`);
           }}
           className="flex items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"

@@ -1,6 +1,8 @@
 import { Info } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
+import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
+import { sourceName } from '@/data5e/sourceNames';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { SourceBadge } from '@/ui/SourceBadge';
 
@@ -73,21 +75,42 @@ export function EntityCardList({
 }) {
   const [filter, setFilter] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [showHiddenSources, setShowHiddenSources] = useState(false);
+  const policy = useSourcePolicy();
 
-  const { list, hiddenCount } = useMemo(() => {
+  const { list, hiddenCount, sourceHiddenCount } = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    const matchesText = (e: Entity) => f === '' || nameOf(e).toLowerCase().includes(f);
+    const isCurrentPick = (e: Entity) => uidOf(e) === selectedUid;
+
+    // The player's source settings come off the top: everything below here,
+    // including the text filter, works on books they said they wanted. The
+    // current pick is exempt: a character holding it must keep seeing it.
+    const allowed = showHiddenSources
+      ? [...entities]
+      : applySourcePolicy(entities, policy, sourceOf, isCurrentPick);
+
+    // Counted over what the text filter would have shown, not over everything:
+    // offering "190 hidden" next to a search for "elf" promises matches that
+    // revealing them would not produce.
+    const sourceHiddenCount = showHiddenSources
+      ? 0
+      : entities.filter(
+          (e) => matchesText(e) && !policyAllows(policy, sourceOf(e)) && !isCurrentPick(e),
+        ).length;
+
     // Curated view: core books first (PHB before setting books), then A→Z —
     // a new player should see Human before Aarakocra. Full lists stay A→Z.
-    const sorted = [...entities].sort((a, b) =>
+    const sorted = allowed.sort((a, b) =>
       dedupe
         ? rankOf(a) - rankOf(b) || nameOf(a).localeCompare(nameOf(b))
         : nameOf(a).localeCompare(nameOf(b)) || rankOf(a) - rankOf(b),
     );
-    const f = filter.trim().toLowerCase();
     if (f !== '') {
       // Searching means the user wants something specific — search everything.
-      return { list: sorted.filter((e) => nameOf(e).toLowerCase().includes(f)), hiddenCount: 0 };
+      return { list: sorted.filter(matchesText), hiddenCount: 0, sourceHiddenCount };
     }
-    if (!dedupe || showAll) return { list: sorted, hiddenCount: 0 };
+    if (!dedupe || showAll) return { list: sorted, hiddenCount: 0, sourceHiddenCount };
     const bestByName = new Map<string, Entity>();
     for (const e of sorted) {
       if (isNiche(e)) continue;
@@ -101,8 +124,8 @@ export function EntityCardList({
         // never hide the current selection
         uidOf(e) === selectedUid,
     );
-    return { list: primary, hiddenCount: sorted.length - primary.length };
-  }, [entities, filter, dedupe, showAll, selectedUid]);
+    return { list: primary, hiddenCount: sorted.length - primary.length, sourceHiddenCount };
+  }, [entities, filter, dedupe, showAll, selectedUid, policy, showHiddenSources]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -158,7 +181,7 @@ export function EntityCardList({
                     type={infoType}
                     entity={e}
                     entriesOverride={infoEntries?.(e)}
-                    subtitle={`${nameOf(e)} · ${sourceOf(e)}`}
+                    subtitle={`${nameOf(e)} · ${sourceName(sourceOf(e))}`}
                     trigger={
                       <button
                         type="button"
@@ -192,6 +215,24 @@ export function EntityCardList({
           className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-xs text-ink-muted hover:text-ink"
         >
           Show fewer — one printing per name
+        </button>
+      )}
+      {sourceHiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowHiddenSources(true)}
+          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
+        >
+          {sourceHiddenCount} hidden by your source settings. Show them anyway
+        </button>
+      )}
+      {showHiddenSources && (
+        <button
+          type="button"
+          onClick={() => setShowHiddenSources(false)}
+          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
+        >
+          Back to your chosen sources
         </button>
       )}
     </div>

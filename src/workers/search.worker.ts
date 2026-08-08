@@ -4,7 +4,7 @@ import type {
   SearchWorkerRequest,
   SearchWorkerResponse,
 } from '@/data5e/search/protocol';
-import { SEARCH_FIELDS, STORE_FIELDS } from '@/data5e/search/protocol';
+import { pageAllowedHits, SEARCH_FIELDS, STORE_FIELDS } from '@/data5e/search/protocol';
 
 const options = {
   fields: [...SEARCH_FIELDS],
@@ -30,23 +30,13 @@ self.onmessage = (ev: MessageEvent<SearchWorkerRequest>) => {
         post({ kind: 'ready', serialized: JSON.stringify(index) });
         break;
       case 'query': {
-        const hits =
+        const ranked =
           index === null
             ? []
-            : (index.search(msg.q).slice(0, msg.limit ?? 30) as unknown as Array<
-                SearchDoc & { score: number }
-              >);
-        post({
-          kind: 'results',
-          id: msg.id,
-          hits: hits.map((h) => ({
-            id: h.id,
-            type: h.type,
-            uid: h.uid,
-            name: h.name,
-            source: h.source,
-          })),
-        });
+            : (index.search(msg.q) as unknown as Array<SearchDoc & { score: number }>);
+        // Filters the whole ranked list before taking a page; see pageAllowedHits.
+        const { hits, hiddenCount } = pageAllowedHits(ranked, msg.sources, msg.limit ?? 30);
+        post({ kind: 'results', id: msg.id, hits, hiddenCount });
         break;
       }
     }
