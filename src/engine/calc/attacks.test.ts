@@ -116,6 +116,44 @@ describe('calcAttacks', () => {
     expect(r?.damage).toBe('3'); // max(1, 1 + str 2)
   });
 
+  it('renders a natural weapon as a proficient STR attack with its own die', () => {
+    const effects: EffectInput[] = [
+      {
+        origin: { label: 'Satyr', uid: 'satyr|mot', type: 'race' },
+        kind: 'naturalWeapon',
+        label: 'Ram',
+        dice: '1d4',
+        damageType: 'bludgeoning',
+        ability: 'str',
+      },
+    ];
+    const r = row(attacks(newCharacterDoc('c', 'H', 't'), abilities(3, 0), 2, [], effects), 'Ram');
+    expect(r?.toHit.value).toBe(5); // str 3 + prof 2 (unarmed strikes are always proficient)
+    expect(r?.damage).toBe('1d4+3');
+    expect(r?.damageType).toBe('bludgeoning');
+    expect(r?.properties).toContain('natural weapon');
+  });
+
+  it('uses the stated ability for a natural weapon that is not STR-based', () => {
+    // A Dhampir's bite adds CON, not STR.
+    const doc = newCharacterDoc('c', 'H', 't');
+    const abils = abilities(3, 0);
+    abils.con = { ...abils.con, mod: 4 };
+    const effects: EffectInput[] = [
+      {
+        origin: { label: 'Dhampir', uid: 'dhampir|rhw', type: 'race' },
+        kind: 'naturalWeapon',
+        label: 'Vampiric Bite',
+        dice: '1d4',
+        damageType: 'piercing',
+        ability: 'con',
+      },
+    ];
+    const r = row(attacks(doc, abils, 2, [], effects), 'Vampiric Bite');
+    expect(r?.toHit.value).toBe(6); // con 4 + prof 2, NOT str 3
+    expect(r?.damage).toBe('1d4+4');
+  });
+
   it('surfaces a custom-item attack verbatim', () => {
     const d = newCharacterDoc('c', 'H', 't');
     d.equipment = [

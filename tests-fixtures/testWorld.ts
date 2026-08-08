@@ -336,6 +336,16 @@ const cls: DataEntity[] = [
     preparedSpells: '<$level$> + <$int_mod$>',
     classFeatures: ['Spellcasting|Mage|TST|1'],
   },
+  {
+    // Paladin-shaped: the once-per-rest "Vow Power" is NOT in classFeatures.
+    // It's a refClassFeature nested inside Sacred Vow, exactly how the real
+    // 2014 paladin routes Channel Divinity through Sacred Oath.
+    name: 'Oathkeeper',
+    source: 'TST',
+    hd: { number: 1, faces: 10 },
+    proficiency: ['wis', 'cha'],
+    classFeatures: [{ classFeature: 'Sacred Vow|Oathkeeper|TST|3', gainSubclassFeature: true }],
+  },
 ];
 
 const classFeature: DataEntity[] = [
@@ -403,6 +413,63 @@ const classFeature: DataEntity[] = [
     level: 5,
     entries: ['Spend 1 ki; the target must make a Constitution saving throw or be stunned.'],
   },
+  {
+    name: 'Sacred Vow',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    level: 3,
+    entries: [
+      'You swear a sacred vow.',
+      { type: 'refClassFeature', classFeature: 'Vow Power|Oathkeeper|TST|3' },
+      // Above the test character's level 5, so it must not be collected.
+      { type: 'refClassFeature', classFeature: 'Vow Mastery|Oathkeeper|TST|7' },
+      // A pick-one list, the shape 5etools uses for Hunter's Prey and Totem
+      // Spirit. Granting every branch would put unchosen abilities on the sheet.
+      {
+        type: 'options',
+        count: 1,
+        entries: [
+          { type: 'refClassFeature', classFeature: 'Vow Option A|Oathkeeper|TST|3' },
+          { type: 'refClassFeature', classFeature: 'Vow Option B|Oathkeeper|TST|3' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Vow Option A',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    level: 3,
+    entries: ['As a bonus action, you take option A.'],
+  },
+  {
+    name: 'Vow Option B',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    level: 3,
+    entries: ['As a bonus action, you take option B.'],
+  },
+  {
+    name: 'Vow Power',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    level: 3,
+    entries: [
+      'When you use your Vow Power, you choose which option to use. You must then finish a short or long rest to use your Vow Power again.',
+    ],
+  },
+  {
+    name: 'Vow Mastery',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    level: 7,
+    entries: ['Mastery of the vow.'],
+  },
 ];
 
 const subclass: DataEntity[] = [
@@ -437,6 +504,14 @@ const subclass: DataEntity[] = [
     ],
     subclassFeatures: [],
   },
+  {
+    name: 'Vow of Testing',
+    shortName: 'Testing',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    subclassFeatures: ['Vow of Testing|Oathkeeper|TST|Testing|TST|3'],
+  },
 ];
 
 const subclassFeature: DataEntity[] = [
@@ -449,6 +524,35 @@ const subclassFeature: DataEntity[] = [
     subclassSource: 'TST',
     level: 3,
     entries: ['Subclass feature text.'],
+  },
+  {
+    name: 'Vow of Testing',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    subclassShortName: 'Testing',
+    subclassSource: 'TST',
+    level: 3,
+    entries: [
+      'Your vow grants the following Vow Power option.',
+      {
+        type: 'refSubclassFeature',
+        subclassFeature: 'Vow Power: Test Strike|Oathkeeper|TST|Testing|TST|3',
+      },
+      // Points back at the class feature already collected via Sacred Vow;
+      // the seen set must keep it from collecting twice.
+      { type: 'refClassFeature', classFeature: 'Vow Power|Oathkeeper|TST|3' },
+    ],
+  },
+  {
+    name: 'Vow Power: Test Strike',
+    source: 'TST',
+    className: 'Oathkeeper',
+    classSource: 'TST',
+    subclassShortName: 'Testing',
+    subclassSource: 'TST',
+    level: 3,
+    entries: ['As a bonus action, you strike with your vow, using your Vow Power.'],
   },
 ];
 

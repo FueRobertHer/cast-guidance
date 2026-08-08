@@ -57,4 +57,106 @@ describe('proseScanFeature — limited-use detection', () => {
   it('adds nothing when there is no usage wording', () => {
     expect(scan('Flavor', ['You have a keen sense of smell.'])).toEqual([]);
   });
+
+  it('reads an ability-modifier number of uses (Cleansing Touch wording)', () => {
+    const r = resource(
+      scan('Cleansing Touch', [
+        'You can use this feature a number of times equal to your Charisma modifier (a minimum of once). You regain expended uses when you finish a long rest.',
+      ]),
+    );
+    expect(r).toMatchObject({ max: 'abilityMod:cha', resetOn: 'long' });
+  });
+
+  it('reads a "1 + modifier" number of uses (Divine Sense wording)', () => {
+    const r = resource(
+      scan('Divine Sense', [
+        'As an action, you can open your awareness to detect such forces.',
+        'You can use this feature a number of times equal to 1 + your Charisma modifier. When you finish a long rest, you regain all expended uses.',
+      ]),
+    );
+    expect(r).toMatchObject({ max: 'abilityModPlus1:cha', resetOn: 'long' });
+  });
+});
+
+describe('proseScanFeature natural weapons', () => {
+  const weapon = (effects: EffectInput[]) =>
+    effects.find(
+      (e): e is Extract<EffectInput, { kind: 'naturalWeapon' }> => e.kind === 'naturalWeapon',
+    );
+
+  it('reads the type-first phrasing (Satyr Ram, MOT)', () => {
+    const w = weapon(
+      scan('Ram', [
+        'You can use your head and horns to make unarmed strikes. If you hit with them, you deal bludgeoning damage equal to {@damage 1d4} + your Strength modifier.',
+      ]),
+    );
+    expect(w).toMatchObject({
+      label: 'Ram',
+      dice: '1d4',
+      damageType: 'bludgeoning',
+      ability: 'str',
+    });
+  });
+
+  it('reads the dice-first phrasing (Satyr Ram, MPMM)', () => {
+    const w = weapon(
+      scan('Ram', [
+        'You can use your head and horns to make unarmed strikes. When you hit with them, the strike deals {@damage 1d6} + your Strength modifier bludgeoning damage, instead of the bludgeoning damage normal for an unarmed strike.',
+      ]),
+    );
+    expect(w).toMatchObject({
+      label: 'Ram',
+      dice: '1d6',
+      damageType: 'bludgeoning',
+      ability: 'str',
+    });
+  });
+
+  it('takes the ability from the damage phrase, not elsewhere in the trait', () => {
+    // Dhampir: the bite adds CON. A Naga-style trait names CON only in its save
+    // DC, so the modifier has to come from the damage sentence itself.
+    const bite = weapon(
+      scan('Vampiric Bite', [
+        'When you use your unarmed strike and deal damage, you can choose to bite with your fangs. You deal piercing damage equal to {@damage 1d4} plus your Constitution modifier instead of the normal damage of an unarmed strike.',
+      ]),
+    );
+    expect(bite).toMatchObject({ dice: '1d4', damageType: 'piercing', ability: 'con' });
+
+    const maw = weapon(
+      scan('Natural Weapons', [
+        'Your fanged maw is a natural weapon, which you can use to make unarmed strikes. If you hit with your bite, you deal piercing damage equal to {@damage 1d4} + your Strength modifier, and your target must make a Constitution saving throw ({@dc 8} + your proficiency bonus + your Constitution modifier).',
+      ]),
+    );
+    expect(maw?.ability).toBe('str');
+  });
+
+  it('ignores a weapon that belongs to a named sub-option (Shifter Longtooth)', () => {
+    // Only the Longtooth shifter gets the bite, and only while shifted, so the
+    // trait itself must not arm every Beasthide and Swiftstride.
+    const w = weapon(
+      scan('Shifting', [
+        'As a bonus action, you can assume a more bestial appearance.',
+        'Whenever you shift, you gain an additional benefit based on one of the following options:',
+        {
+          type: 'list',
+          items: [
+            {
+              type: 'item',
+              name: 'Longtooth',
+              entry:
+                'You can use your elongated fangs to make an unarmed strike. If you hit with your fangs, you can deal piercing damage equal to {@damage 1d6} + your Strength modifier, instead of the bludgeoning damage normal for an unarmed strike.',
+            },
+            { type: 'item', name: 'Beasthide', entry: 'You gain temporary hit points.' },
+          ],
+        },
+      ]),
+    );
+    expect(w).toBeUndefined();
+  });
+
+  it('does not turn dice mentioned outside unarmed-strike wording into a weapon', () => {
+    expect(
+      weapon(scan('Mirthful Leaps', ['Whenever you make a long or high jump, you can roll a d8.'])),
+    ).toBeUndefined();
+  });
 });

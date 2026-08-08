@@ -11,7 +11,7 @@ import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { RollChip } from '@/ui/RollChip';
-import { COMBAT_CAPABILITIES, capabilityKey } from '../combatCapabilities';
+import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
@@ -881,25 +881,58 @@ export function Component() {
                     )}
                     <span className="text-xs text-ink-muted">{r.resetOn} rest</span>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {Array.from({ length: Math.min(r.max, 12) }, (_, i) => (
-                      <button
-                        key={`${r.key}-${String(i)}`}
-                        type="button"
-                        aria-label={`${r.label} use ${i + 1}`}
-                        onClick={() => setUsed(r.key, used > i ? i : i + 1)}
-                        className={`h-4 w-4 rounded-full border ${
-                          i < used ? 'border-surface-2 bg-surface-2' : 'border-accent bg-accent'
-                        }`}
-                        title={`${r.max - used} of ${r.max} left`}
-                      />
-                    ))}
-                    {r.max > 12 && (
-                      <span className="text-xs text-ink-muted">
-                        {r.max - used}/{r.max}
+                  {r.max > 12 ? (
+                    // Point pools (Lay on Hands, ki, sorcery points) outgrow
+                    // pips fast, and pips can't even reach uses beyond the
+                    // twelfth; a stepper covers the whole range. ±5 as well as
+                    // ±1, because a level 20 paladin heals out of a 100-point
+                    // pool and single taps would not get there.
+                    <div className="flex items-center gap-1.5">
+                      {([5, 1] as const).map((step) => (
+                        <button
+                          key={`spend-${String(step)}`}
+                          type="button"
+                          aria-label={`Spend ${step} ${r.label}`}
+                          onClick={() => setUsed(r.key, Math.min(r.max, used + step))}
+                          disabled={used >= r.max}
+                          className="h-8 min-w-8 rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                        >
+                          −{step}
+                        </button>
+                      ))}
+                      <span className="min-w-16 text-center text-sm font-bold">
+                        {r.max - used}
+                        <span className="font-normal text-ink-muted"> / {r.max}</span>
                       </span>
-                    )}
-                  </div>
+                      {([1, 5] as const).map((step) => (
+                        <button
+                          key={`restore-${String(step)}`}
+                          type="button"
+                          aria-label={`Restore ${step} ${r.label}`}
+                          onClick={() => setUsed(r.key, Math.max(0, used - step))}
+                          disabled={used === 0}
+                          className="h-8 min-w-8 rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                        >
+                          +{step}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {Array.from({ length: r.max }, (_, i) => (
+                        <button
+                          key={`${r.key}-${String(i)}`}
+                          type="button"
+                          aria-label={`${r.label} use ${i + 1}`}
+                          onClick={() => setUsed(r.key, used > i ? i : i + 1)}
+                          className={`h-4 w-4 rounded-full border ${
+                            i < used ? 'border-surface-2 bg-surface-2' : 'border-accent bg-accent'
+                          }`}
+                          title={`${r.max - used} of ${r.max} left`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1085,40 +1118,34 @@ export function Component() {
         </section>
       )}
 
-      {/* Passive combat options — things you can always do (Extra Attack, …)
-          that aren't already a limited-use action chip above. */}
+      {/* Passive combat options: things you can always do (Extra Attack,
+          Magic Resistance, …) that aren't already a limited-use action chip
+          above. Race traits live nested inside the race card, so the collector
+          walks named sub-entries too. */}
       {(() => {
         const actionNames = new Set(sheet.actions.map((a) => capabilityKey(a.label)));
-        const seen = new Set<string>();
-        const caps = sheet.features
-          .map((f) => ({ f, key: capabilityKey(f.name) }))
-          .filter(({ key }) => {
-            if (COMBAT_CAPABILITIES[key] === undefined || actionNames.has(key)) return false;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+        const caps = collectCapabilityCards(sheet.features, actionNames);
         if (caps.length === 0) return null;
         return (
           <section className="flex flex-col gap-1.5">
             <h2 className="text-sm font-semibold text-ink-muted">Combat options</h2>
             <p className="text-xs text-ink-muted">Things you can always do. Tap for full rules.</p>
             <div className="flex flex-col gap-1">
-              {caps.map(({ f, key }) => (
+              {caps.map((cap) => (
                 <FeatureInfoSheet
-                  key={key}
-                  title={f.name}
-                  subtitle={f.origin.label}
-                  entries={f.entries}
+                  key={cap.key}
+                  title={cap.name}
+                  subtitle={cap.origin}
+                  entries={cap.entries}
                   trigger={
                     <button
                       type="button"
                       className="flex flex-col rounded-lg bg-surface px-3 py-2 text-left text-sm"
                     >
                       <span className="font-medium underline decoration-surface-2 decoration-dashed underline-offset-2">
-                        {f.name}
+                        {cap.name}
                       </span>
-                      <span className="text-xs text-ink-muted">{COMBAT_CAPABILITIES[key]}</span>
+                      <span className="text-xs text-ink-muted">{cap.blurb}</span>
                     </button>
                   }
                 />

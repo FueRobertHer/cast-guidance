@@ -831,3 +831,51 @@ describe('deriveSheet — 2024 versioned Dragonborn (color in race name)', () =>
     expect(sheet.resources.some((r) => r.label === 'Breath Weapon')).toBe(true);
   });
 });
+
+describe('deriveSheet with feature refs nested inside features (paladin-shaped)', () => {
+  // The real 2014 paladin routes Channel Divinity through Sacred Oath as a
+  // refClassFeature, and each oath's options through refSubclassFeatures; a
+  // collector that only reads the top-level lists never surfaces any of it.
+  function oathkeeperDoc(withSubclass: boolean): CharacterDoc {
+    const doc = newCharacterDoc('o1', 'Vower', 'test-tag');
+    doc.classes = [
+      {
+        ref: { name: 'Oathkeeper', source: 'TST' },
+        subclass: withSubclass ? { name: 'Vow of Testing', source: 'TST' } : undefined,
+        levels: 5,
+        hp: ['avg', 'avg', 'avg', 'avg', 'avg'],
+      },
+    ];
+    return doc;
+  }
+
+  it('collects a class feature reachable only through a nested ref', () => {
+    const sheet = deriveSheet(oathkeeperDoc(false), ctx);
+    expect(sheet.resources).toContainEqual(
+      expect.objectContaining({ label: 'Vow Power', max: 1, resetOn: 'short' }),
+    );
+    expect(sheet.features.filter((f) => f.name === 'Vow Power')).toHaveLength(1);
+  });
+
+  it('skips nested refs above the class level', () => {
+    const sheet = deriveSheet(oathkeeperDoc(false), ctx);
+    expect(sheet.features.some((f) => f.name === 'Vow Mastery')).toBe(false);
+  });
+
+  it('does not grant every branch of a pick-one options list', () => {
+    // Hunter's Prey and Totem Spirit are shaped this way. Collecting all of
+    // them would show a Hunter abilities they never chose.
+    const sheet = deriveSheet(oathkeeperDoc(false), ctx);
+    expect(sheet.features.some((f) => f.name.startsWith('Vow Option'))).toBe(false);
+    expect(sheet.actions.some((a) => a.label.startsWith('Vow Option'))).toBe(false);
+  });
+
+  it('collects subclass options nested behind the oath feature, without duplicates', () => {
+    const sheet = deriveSheet(oathkeeperDoc(true), ctx);
+    expect(sheet.actions).toContainEqual(
+      expect.objectContaining({ label: 'Vow Power: Test Strike', economy: 'bonus' }),
+    );
+    // Vow Power is referenced from both Sacred Vow and Vow of Testing.
+    expect(sheet.features.filter((f) => f.name === 'Vow Power')).toHaveLength(1);
+  });
+});

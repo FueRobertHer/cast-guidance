@@ -161,7 +161,12 @@ export type EffectInput = { origin: EffectOrigin } & (
       kind: 'resource';
       key: string;
       label: string;
-      max: number | 'profBonus' | `abilityMod:${Ability}` | `level:${string}`;
+      max:
+        | number
+        | 'profBonus'
+        | `abilityMod:${Ability}`
+        | `abilityModPlus1:${Ability}`
+        | `level:${string}`;
       resetOn: 'short' | 'long';
       /**
        * When true, same-key resources from other sources add to the pool
@@ -179,6 +184,16 @@ export type EffectInput = { origin: EffectOrigin } & (
       note?: string;
       /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
       save?: { targetAbility: Ability; dcAbility: Ability };
+    }
+  | {
+      /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
+       * with its own damage die and type. Rendered as an attack row. */
+      kind: 'naturalWeapon';
+      label: string;
+      dice: string;
+      damageType: string;
+      /** Usually STR, but some bites add CON (Dhampir) rather than STR. */
+      ability: Ability;
     }
   | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
   | { kind: 'note'; text: string }

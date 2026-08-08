@@ -27,6 +27,67 @@ describe('emitCuratedEffects', () => {
     );
   });
 
+  it('emits the Lay on Hands pool as 5 x paladin level with an action', () => {
+    const c = col('Paladin', 5);
+    expect(emitCuratedEffects(c, 'lay on hands|paladin', origin)).toBe(true);
+    expect(c.effects).toContainEqual(
+      expect.objectContaining({ kind: 'resource', key: 'lay-on-hands', max: 25, resetOn: 'long' }),
+    );
+    expect(c.effects).toContainEqual(
+      expect.objectContaining({ kind: 'action', economy: 'action', label: 'Lay on Hands' }),
+    );
+  });
+
+  it('makes Lay on Hands a bonus action under 2024 rules', () => {
+    const c = col('Paladin', 3);
+    c.doc.rulesVersion = '2024';
+    emitCuratedEffects(c, 'lay on hands|paladin', origin);
+    expect(c.effects).toContainEqual(
+      expect.objectContaining({ kind: 'action', economy: 'bonus', label: 'Lay on Hands' }),
+    );
+  });
+
+  it('scales paladin Channel Divinity by edition and level', () => {
+    const c2014 = col('Paladin', 12);
+    emitCuratedEffects(c2014, 'channel divinity|paladin', origin);
+    expect(c2014.effects).toContainEqual(
+      expect.objectContaining({ kind: 'resource', key: 'channel-divinity-paladin', max: 1 }),
+    );
+
+    const c2024 = col('Paladin', 12);
+    c2024.doc.rulesVersion = '2024';
+    emitCuratedEffects(c2024, 'channel divinity|paladin', origin);
+    expect(c2024.effects).toContainEqual(
+      expect.objectContaining({ kind: 'resource', key: 'channel-divinity-paladin', max: 3 }),
+    );
+  });
+
+  it('keeps paladin and cleric Channel Divinity in separate pools', () => {
+    // Sharing one key made the max depend on which class was added first, and
+    // the 2024 text is explicit that the uses belong to each class separately.
+    const c = col('Paladin', 5);
+    c.doc.classes.push({ ref: { name: 'Cleric', source: 'PHB' }, levels: 6, hp: [] });
+    emitCuratedEffects(c, 'channel divinity|paladin', origin);
+    emitCuratedEffects(c, 'channel divinity|cleric', origin);
+    const keys = c.effects
+      .filter((e) => e.kind === 'resource')
+      .map((e) => (e as Extract<typeof e, { kind: 'resource' }>).key);
+    expect(new Set(keys)).toEqual(new Set(['channel-divinity-paladin', 'channel-divinity']));
+  });
+
+  it('emits Arcane Recovery once per long rest', () => {
+    const c = col('Wizard', 2);
+    expect(emitCuratedEffects(c, 'arcane recovery|wizard', origin)).toBe(true);
+    expect(c.effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'resource',
+        key: 'arcane-recovery',
+        max: 1,
+        resetOn: 'long',
+      }),
+    );
+  });
+
   it('emits a stacking superiority-dice pool for Battle Master', () => {
     const c = col('Fighter', 5);
     expect(emitCuratedEffects(c, 'combat superiority|battle master', origin)).toBe(true);
