@@ -418,7 +418,7 @@ function EntityDetail({
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
           <span className="flex items-center gap-1.5 pt-1 text-xs text-ink-muted">
-            <SourceBadge source={sourceOf(entity)} />
+            <SourceBadge source={sourceOf(entity)} titleShownNearby />
             {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
           </span>
         </div>

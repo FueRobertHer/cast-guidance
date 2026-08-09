@@ -22,16 +22,33 @@ export function sourceBadgeLabel(source: string): string {
  * text is announced everywhere. Touch users, who have no hover either, get the
  * title as visible text on the library detail page and in every ⓘ drawer.
  */
-export function SourceBadge({ source }: { source: string }) {
+export function SourceBadge({
+  source,
+  /**
+   * Set when the full title is already visible right beside the badge. The
+   * badge then carries no text of its own, so a screen reader reads the book
+   * once instead of twice in a row.
+   */
+  titleShownNearby = false,
+}: {
+  source: string;
+  titleShownNearby?: boolean;
+}) {
   const is2024 = SOURCES_2024.has(source);
   const label = sourceBadgeLabel(source);
+  const className = `inline-block rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+    is2024 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-surface-2 text-ink-muted'
+  }`;
+
+  if (titleShownNearby) {
+    return (
+      <span aria-hidden="true" className={className}>
+        {source}
+      </span>
+    );
+  }
   return (
-    <span
-      title={label}
-      className={`inline-block rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-        is2024 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-surface-2 text-ink-muted'
-      }`}
-    >
+    <span title={label} className={className}>
       <span aria-hidden="true">{source}</span>
       <span className="sr-only">{label}</span>
     </span>

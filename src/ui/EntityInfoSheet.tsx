@@ -55,7 +55,13 @@ export function EntityInfoSheet({
             {hasEntries ? (
               <EntriesView entries={entries} />
             ) : (
-              <p className="text-ink-muted">No description text in the data for this option.</p>
+              // Only worth saying when there is nothing else on screen. Plenty
+              // of entries carry no prose because the facts above are the whole
+              // story (a battleaxe is its damage and weight), and announcing a
+              // missing description over a full stat block reads as a failure.
+              facts.length === 0 && (
+                <p className="text-ink-muted">No description text in the data for this option.</p>
+              )
             )}
           </div>
         </Drawer.Content>
