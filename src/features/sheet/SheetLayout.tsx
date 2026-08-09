@@ -10,7 +10,7 @@ import {
   Swords,
   Wrench,
 } from 'lucide-react';
-import { Link, NavLink, Outlet, useParams } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useParams, useResolvedPath } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { AdvToggle } from '@/ui/AdvToggle';
 import { HistoryDrawer } from './HistoryDrawer';
@@ -26,10 +26,33 @@ const tabs = [
   { to: 'build', label: 'Build', icon: Wrench, end: false },
 ] as const;
 
+/**
+ * Tabs that carry the floating dice cluster (advantage toggle above the tray
+ * button). Play and Stats are where rolls actually start; everywhere else the
+ * pair is two controls covering the content to reach a log of rolls you can't
+ * make from that screen. `''` is the index route, Play.
+ */
+const ROLLING_TABS = new Set(['', 'stats']);
+
+/**
+ * Child segment of the sheet route ('' on Play, 'inventory', 'build', …).
+ * Derived from the layout's own resolved path rather than a segment index, so
+ * it survives the sheet being mounted somewhere other than `/c/:id`.
+ */
+export function sheetTab(basePath: string, pathname: string): string {
+  return pathname.slice(basePath.length).replaceAll(/^\/+|\/+$/g, '');
+}
+
+/** Whether the dice cluster belongs on a tab; see {@link ROLLING_TABS}. */
+export function tabRolls(tab: string): boolean {
+  return ROLLING_TABS.has(tab);
+}
+
 export function Component() {
   const { id } = useParams();
   const state = useCharacterSheet(id);
   const openElsewhere = useOpenElsewhere(id);
+  const rollsHere = tabRolls(sheetTab(useResolvedPath('.').pathname, useLocation().pathname));
 
   if (state.loadStatus === 'loading' || state.loadStatus === 'idle') {
     return (
@@ -137,8 +160,12 @@ export function Component() {
           </NavLink>
         ))}
       </nav>
-      <AdvToggle />
-      <DiceTray />
+      {rollsHere && (
+        <>
+          <AdvToggle />
+          <DiceTray />
+        </>
+      )}
     </div>
   );
 }
