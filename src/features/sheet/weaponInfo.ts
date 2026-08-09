@@ -1,5 +1,6 @@
 import type { EntityRegistry } from '@/data5e/normalize';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import type { DamageRider } from '@/engine/types';
 
 /** Plain-English weapon property meanings, keyed by the lowercase display name. */
 const PROPERTY_GLOSSARY: Record<string, string> = {
@@ -45,6 +46,35 @@ export function weaponInfoEntries(
     .filter((s): s is string => s !== undefined);
   const entries = [...itemEntries, ...propEntries];
   return entries.length > 0 ? entries : undefined;
+}
+
+/**
+ * Roll-log label for one damage component, e.g. `Flame Sword fire damage`. The
+ * type belongs in the label because a rider's chip has room for `+1d4` and
+ * nothing more, and the log is where the player reads back what the 3 was.
+ */
+export function damageLabel(weapon: string, damageType?: string): string {
+  return `${weapon} ${damageType !== undefined ? `${damageType} ` : ''}damage`;
+}
+
+/** `+1d4 fire`: how a damage rider reads beside the weapon it rides on. */
+export function riderLabel(r: DamageRider): string {
+  return `+${r.dice}${r.damageType !== undefined ? ` ${r.damageType}` : ''}`;
+}
+
+/**
+ * The muted line under a weapon's name. Riders lead, because a second damage
+ * type changes how you resolve the hit, while "finesse, light" only changes how
+ * you got there.
+ */
+export function attackSubtitle(a: {
+  extraDamage: readonly DamageRider[];
+  properties: readonly string[];
+  range?: string;
+}): string {
+  return [a.extraDamage.map(riderLabel).join(' '), a.properties.join(', '), a.range ?? '']
+    .filter((s) => s !== '')
+    .join(' · ');
 }
 
 function titleCase(s: string): string {

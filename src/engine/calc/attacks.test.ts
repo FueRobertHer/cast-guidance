@@ -40,6 +40,25 @@ const WEAPONS: Record<string, DataEntity> = {
     dmgType: 'P',
     range: '80/320',
   },
+  'Flame Sword': {
+    name: 'Flame Sword',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d6',
+    dmgType: 'S',
+    bonusWeapon: '+1',
+    extraDamage: [{ dmg: '1d4', dmgType: 'F' }],
+  },
+  // Hand-written homebrew, the two shapes an author reaches for without
+  // reading a schema: no brackets, and the damage type spelled out.
+  'Frost Axe': {
+    name: 'Frost Axe',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d8',
+    dmgType: 'S',
+    extraDamage: { dmg: '1d6', dmgType: 'cold' },
+  },
 };
 
 const ctx: EngineContext = { byType: () => [], get: (_t, name) => WEAPONS[name] };
@@ -80,6 +99,24 @@ describe('calcAttacks', () => {
     expect(r?.versatileDamage).toBe('1d10+3');
     expect(r?.damageType).toBe('slashing');
     expect(r?.properties).toContain('versatile');
+  });
+
+  it('rolls a damage rider apart from the weapon die, with neither the ability modifier nor the magic bonus', () => {
+    const r = row(attacks(docWith('Flame Sword'), abilities(3, 1)), 'Flame Sword');
+    expect(r?.damage).toBe('1d6+4'); // str 3 + magic 1
+    expect(r?.extraDamage).toEqual([{ dice: '1d4', damageType: 'fire' }]);
+  });
+
+  it('accepts a lone rider object and a damage type already spelled out', () => {
+    expect(row(attacks(docWith('Frost Axe'), abilities(3, 1)), 'Frost Axe')?.extraDamage).toEqual([
+      { dice: '1d6', damageType: 'cold' },
+    ]);
+  });
+
+  it('leaves an ordinary weapon with no riders', () => {
+    expect(row(attacks(docWith('Longsword'), abilities(3, 1)), 'Longsword')?.extraDamage).toEqual(
+      [],
+    );
   });
 
   it('a finesse weapon uses the higher of STR/DEX', () => {

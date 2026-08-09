@@ -262,12 +262,25 @@ export interface DerivedAbility extends DerivedValue {
   mod: number;
 }
 
+/**
+ * Damage that rides along on a hit but is rolled apart from the weapon's own
+ * die: a flaming sword's 1d4 fire beside its 1d6 slashing. It stays a separate
+ * expression because the two types take resistance independently (a fire-immune
+ * target eats the slashing and nothing else), and because a rider never picks
+ * up the ability modifier or magic bonus that the weapon die does.
+ */
+export interface DamageRider {
+  dice: string;
+  damageType?: string;
+}
+
 export interface AttackRow {
   label: string;
   toHit: DerivedValue;
   damage: string;
   damageType?: string;
   versatileDamage?: string;
+  extraDamage: DamageRider[];
   properties: string[];
   range?: string;
   origin: string;
