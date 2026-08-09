@@ -17,6 +17,57 @@ export const DMG_TYPES: Record<string, string> = {
   T: 'thunder',
 };
 
+/**
+ * 5etools item-type codes. The names live in `items-base.json`'s `itemType`
+ * list, but this runs without the registry, and "Type: M" tells a player
+ * nothing. Codes are stable across printings; an unknown one falls through to
+ * itself, which is what was shown before.
+ */
+export const ITEM_TYPES: Record<string, string> = {
+  $: 'Treasure',
+  $A: 'Treasure (art object)',
+  $C: 'Treasure (coinage)',
+  $G: 'Treasure (gemstone)',
+  A: 'Ammunition',
+  AF: 'Ammunition (firearm)',
+  AIR: 'Vehicle (air)',
+  AT: "Artisan's tools",
+  EXP: 'Explosive',
+  FD: 'Food and drink',
+  G: 'Adventuring gear',
+  GS: 'Gaming set',
+  GV: 'Generic variant',
+  HA: 'Heavy armor',
+  INS: 'Instrument',
+  LA: 'Light armor',
+  M: 'Melee weapon',
+  MA: 'Medium armor',
+  MNT: 'Mount',
+  OTH: 'Other',
+  P: 'Potion',
+  R: 'Ranged weapon',
+  RD: 'Rod',
+  RG: 'Ring',
+  S: 'Shield',
+  SC: 'Scroll',
+  SCF: 'Spellcasting focus',
+  SHP: 'Vehicle (water)',
+  SPC: 'Vehicle (space)',
+  T: 'Tool',
+  TAH: 'Tack and harness',
+  TB: 'Trade bar',
+  TG: 'Trade good',
+  VEH: 'Vehicle (land)',
+  WD: 'Wand',
+};
+
+/** Expand an item's `type` field ("M|XPHB") to a readable name. */
+export function itemTypeName(type: unknown): string | undefined {
+  if (typeof type !== 'string' || type === '') return undefined;
+  const code = type.split('|')[0] ?? type;
+  return Object.hasOwn(ITEM_TYPES, code) ? ITEM_TYPES[code] : code;
+}
+
 export const SCHOOLS: Record<string, string> = {
   A: 'Abjuration',
   C: 'Conjuration',
@@ -165,7 +216,7 @@ export function headerFacts(type: string, e: Entity): Array<[string, string]> {
     case 'item':
     case 'baseitem':
       push('Rarity', typeof e.rarity === 'string' && e.rarity !== 'none' ? e.rarity : undefined);
-      push('Type', typeof e.type === 'string' ? e.type.split('|')[0] : undefined);
+      push('Type', itemTypeName(e.type));
       push('AC', typeof e.ac === 'number' ? String(e.ac) : undefined);
       push('Damage', itemDamage(e));
       push('Weight', typeof e.weight === 'number' ? `${e.weight} lb.` : undefined);

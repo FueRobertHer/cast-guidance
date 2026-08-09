@@ -4,6 +4,7 @@ import {
   abilitySummary,
   castingTime,
   itemDamage,
+  itemTypeName,
   itemValue,
   speedSummary,
   spellComponents,
@@ -128,5 +129,32 @@ describe('itemDamage', () => {
   });
   it('is undefined without damage dice', () => {
     expect(itemDamage({} as Entity)).toBeUndefined();
+  });
+});
+
+describe('itemTypeName', () => {
+  it('spells out the code a player would otherwise have to memorize', () => {
+    expect(itemTypeName('M')).toBe('Melee weapon');
+    expect(itemTypeName('HA')).toBe('Heavy armor');
+    expect(itemTypeName('SCF')).toBe('Spellcasting focus');
+  });
+
+  it('ignores the source suffix the data carries', () => {
+    expect(itemTypeName('M|XPHB')).toBe('Melee weapon');
+  });
+
+  it('falls back to the code itself when it is not one we know', () => {
+    // No worse than what was shown before the table existed.
+    expect(itemTypeName('ZZZ')).toBe('ZZZ');
+  });
+
+  it('is not fooled by inherited object keys', () => {
+    expect(itemTypeName('constructor')).toBe('constructor');
+  });
+
+  it('is undefined when there is no type', () => {
+    expect(itemTypeName(undefined)).toBeUndefined();
+    expect(itemTypeName('')).toBeUndefined();
+    expect(itemTypeName(7)).toBeUndefined();
   });
 });

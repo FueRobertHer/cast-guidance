@@ -6,7 +6,9 @@ import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
+import { sourceName } from '@/data5e/sourceNames';
 import type { EquipmentEntry } from '@/engine/types';
+import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -193,15 +195,29 @@ export function Component() {
   const registry = useRegistry();
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
+  /**
+   * The compendium entry behind a carried item, if there is one. Custom items
+   * and refs that no longer resolve (a homebrew file was removed, a data
+   * version dropped something) return undefined and stay plain text.
+   */
+  const resolve = (entry: EquipmentEntry): { entity: Entity; type: string } | undefined => {
+    if (entry.custom !== undefined || entry.ref === undefined || registry === null)
+      return undefined;
+    const source = entry.ref.source || undefined;
+    for (const type of ['item', 'baseitem', 'itemGroup'] as const) {
+      const entity = registry.get(type, entry.ref.name, source);
+      // itemGroup has no header-facts case of its own, and reads as an item.
+      if (entity !== undefined) return { entity, type: type === 'itemGroup' ? 'item' : type };
+    }
+    return undefined;
+  };
+
   // Bundle uids arrive lowercased; show the resolved entity's proper name.
   const displayName = (entry: EquipmentEntry): string => {
     if (entry.custom !== undefined) return entry.custom.name;
     if (entry.ref === undefined) return '?';
-    const e =
-      registry?.get('item', entry.ref.name, entry.ref.source || undefined) ??
-      registry?.get('baseitem', entry.ref.name, entry.ref.source || undefined) ??
-      registry?.get('itemGroup', entry.ref.name, entry.ref.source || undefined);
-    return typeof e?.name === 'string' ? e.name : entry.ref.name;
+    const name = resolve(entry)?.entity.name;
+    return typeof name === 'string' ? name : entry.ref.name;
   };
 
   const attunedCount = doc.equipment.filter((e) => e.attuned).length;
@@ -229,10 +245,29 @@ export function Component() {
         {entry.equipped ? 'equipped' : 'equip'}
       </button>
       <div className="min-w-0 flex-1">
-        <div className="truncate">
-          {displayName(entry)}
-          {entry.qty > 1 ? ` ×${entry.qty}` : ''}
-        </div>
+        {(() => {
+          const label = `${displayName(entry)}${entry.qty > 1 ? ` ×${entry.qty}` : ''}`;
+          const found = resolve(entry);
+          // Tapping the name reads the item, the same in-place drawer the
+          // pickers and the Play tab use. Nothing to open for a custom item.
+          if (found === undefined) return <div className="truncate">{label}</div>;
+          return (
+            <EntityInfoSheet
+              type={found.type}
+              entity={found.entity}
+              subtitle={sourceName(sourceOf(found.entity))}
+              trigger={
+                <button
+                  type="button"
+                  title="What does this do?"
+                  className="block w-full truncate text-left underline decoration-surface-2 decoration-dotted underline-offset-4"
+                >
+                  {label}
+                </button>
+              }
+            />
+          );
+        })()}
         {entry.custom?.note !== undefined && (
           <div className="truncate text-xs text-ink-muted">{entry.custom.note}</div>
         )}
