@@ -130,6 +130,24 @@ describe('itemDamage', () => {
   it('is undefined without damage dice', () => {
     expect(itemDamage({} as Entity)).toBeUndefined();
   });
+  it('appends damage riders as their own typed term', () => {
+    expect(
+      itemDamage({
+        dmg1: '1d6',
+        dmgType: 'S',
+        extraDamage: [{ dmg: '1d4', dmgType: 'F' }],
+      } as unknown as Entity),
+    ).toBe('1d6 slashing + 1d4 fire');
+  });
+  it('ignores rider entries with no dice', () => {
+    expect(
+      itemDamage({
+        dmg1: '1d6',
+        dmgType: 'S',
+        extraDamage: [{ dmgType: 'F' }],
+      } as unknown as Entity),
+    ).toBe('1d6 slashing');
+  });
 });
 
 describe('itemTypeName', () => {

@@ -194,8 +194,21 @@ export function itemValue(value: unknown): string | undefined {
 export function itemDamage(e: Entity): string | undefined {
   const dmg1 = e.dmg1;
   if (typeof dmg1 !== 'string') return undefined;
-  const type = typeof e.dmgType === 'string' ? (DMG_TYPES[e.dmgType] ?? e.dmgType) : '';
-  return `${dmg1} ${type}`.trim();
+  const named = (dice: string, code: unknown) =>
+    `${dice} ${typeof code === 'string' ? (DMG_TYPES[code] ?? code) : ''}`.trim();
+  // Riders come along so a flaming sword reads as "1d6 slashing + 1d4 fire"
+  // wherever the item is browsed, not only on the sheet that swings it.
+  const riders = Array.isArray(e.extraDamage) ? e.extraDamage : [];
+  return [
+    named(dmg1, e.dmgType),
+    ...riders.map((r) =>
+      typeof r === 'object' && r !== null && typeof (r as Entity).dmg === 'string'
+        ? named((r as Entity).dmg as string, (r as Entity).dmgType)
+        : '',
+    ),
+  ]
+    .filter((s) => s !== '')
+    .join(' + ');
 }
 
 /** [label, value] fact rows for the detail header, per entity type. */

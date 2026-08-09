@@ -5,6 +5,7 @@ import type {
   Ability,
   AttackRow,
   CharacterDoc,
+  DamageRider,
   DataEntity,
   DerivedAbility,
   EffectInput,
@@ -48,6 +49,37 @@ function propertyCodes(e: DataEntity): string[] {
     .map((p) => (typeof p === 'string' ? p : (str((p as DataEntity).uid) ?? '')))
     .map((p) => p.split('|')[0] ?? '')
     .filter((p) => p !== '');
+}
+
+/**
+ * Damage riders declared on the item, e.g. a flaming sword's
+ *
+ *     "extraDamage": [{ "dmg": "1d4", "dmgType": "F" }]
+ *
+ * 5etools has no field for "and also 1d4 fire on every hit" (published magic
+ * weapons say it in prose only), so this is ours: named after the `dmg1` /
+ * `dmgType` pair it sits beside, and ignored by anything else reading the file.
+ * A lone object is accepted as well as a list: one rider is the common case and
+ * hand-written JSON tends to drop the brackets. The type may be a 5etools code
+ * or already spelled out, since a homebrew author writes whichever they know.
+ */
+function extraDamageOf(e: DataEntity): DamageRider[] {
+  const raw = e.extraDamage;
+  const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+  const out: DamageRider[] = [];
+  for (const r of list) {
+    if (typeof r !== 'object' || r === null) continue;
+    const { dmg, dmgType } = r as Record<string, unknown>;
+    if (typeof dmg !== 'string' || dmg.trim() === '') continue;
+    out.push({
+      dice: dmg.trim(),
+      damageType:
+        typeof dmgType === 'string' && dmgType !== ''
+          ? (DMG_TYPE_LABELS[dmgType] ?? dmgType)
+          : undefined,
+    });
+  }
+  return out;
 }
 
 function isRangedWeapon(e: DataEntity): boolean {
@@ -96,6 +128,7 @@ export function calcAttacks(
     properties: string[],
     range: string | undefined,
     origin: string,
+    extraDamage: DamageRider[] = [],
   ): AttackRow => {
     const mod = abilities[ability].mod;
     const parts = [{ label: `${ability.toUpperCase()} modifier`, amount: mod }];
@@ -119,6 +152,9 @@ export function calcAttacks(
       damage: damageDice !== undefined ? `${damageDice}${dmgSuffix}` : `${Math.max(1, 1 + dmgMod)}`,
       damageType,
       versatileDamage: versatile !== undefined ? `${versatile}${dmgSuffix}` : undefined,
+      // Riders are flat dice: `dmgSuffix` is deliberately not applied. You add
+      // your Strength to the sword, not to the flames.
+      extraDamage,
       properties,
       range,
       origin,
@@ -139,6 +175,7 @@ export function calcAttacks(
         },
         damage: a.damage,
         damageType: a.damageType,
+        extraDamage: [],
         properties: [],
         origin: 'custom',
       });
@@ -180,6 +217,7 @@ export function calcAttacks(
         ],
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',
+        extraDamageOf(e),
       ),
     );
   }

@@ -20,7 +20,7 @@ import { SpellInfoSheet } from '../SpellInfoSheet';
 import { castSpell, nextCastResource, spellNeedsConcentration } from '../SpellManager';
 import { spellRollActions } from '../spellRolls';
 import type { CharacterSheetState } from '../useCharacterSheet';
-import { weaponInfoEntries } from '../weaponInfo';
+import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
@@ -977,12 +977,12 @@ export function Component() {
                       <div className="truncate font-semibold">{a.label}</div>
                     );
                   })()}
-                  <div className="truncate text-xs text-ink-muted">
-                    {a.properties.join(', ')}
-                    {a.range !== undefined ? ` · ${a.range}` : ''}
-                  </div>
+                  <div className="truncate text-xs text-ink-muted">{attackSubtitle(a)}</div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                {/* Wraps rather than squeezing the name: a versatile weapon
+                    with a damage rider carries four chips, which is one more
+                    than a narrow phone fits on a line. */}
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                   <RollChip
                     expr={`1d20${fmt(a.toHit.value)}`}
                     display={fmt(a.toHit.value)}
@@ -990,14 +990,30 @@ export function Component() {
                     variant="d20"
                     onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                   />
-                  <RollChip expr={a.damage} label={`${a.label} damage`} variant="damage" />
+                  <RollChip
+                    expr={a.damage}
+                    label={damageLabel(a.label, a.damageType)}
+                    variant="damage"
+                  />
                   {a.versatileDamage !== undefined && (
                     <RollChip
                       expr={a.versatileDamage}
-                      label={`${a.label} damage (two-handed)`}
+                      label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
                       variant="damage"
                     />
                   )}
+                  {/* Each rider rolls on its own: the totals are resisted
+                      separately, so one combined number would be a lie the
+                      moment the target is immune to fire. */}
+                  {a.extraDamage.map((x) => (
+                    <RollChip
+                      key={`${x.dice}:${x.damageType ?? ''}`}
+                      expr={x.dice}
+                      display={`+${x.dice}`}
+                      label={damageLabel(a.label, x.damageType)}
+                      variant="damage"
+                    />
+                  ))}
                 </div>
               </div>
             ))}

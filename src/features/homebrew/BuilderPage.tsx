@@ -94,6 +94,21 @@ function EntityForm({
       return next;
     });
 
+  /**
+   * The form edits the first damage rider only, which is every weapon anyone
+   * has asked for. A hand-written second one is carried through untouched
+   * rather than silently dropped on the next save.
+   */
+  const riders: Json[] = Array.isArray(extra.extraDamage) ? (extra.extraDamage as Json[]) : [];
+  const setRider = (key: 'dmg' | 'dmgType', value: string) => {
+    const first = { ...riders[0], [key]: value };
+    const rest = riders.slice(1);
+    // No dice means no rider: clearing the box removes it rather than leaving
+    // a `{ dmgType: 'F' }` that renders as nothing but survives export.
+    const next = typeof first.dmg === 'string' && first.dmg.trim() !== '' ? [first, ...rest] : rest;
+    set('extraDamage', next.length > 0 ? next : undefined);
+  };
+
   const spellClasses = Array.isArray(
     (extra.classes as { fromClassList?: unknown[] } | undefined)?.fromClassList,
   )
@@ -173,6 +188,30 @@ function EntityForm({
                   placeholder="+1"
                   className={inputCls}
                 />
+              </Field>
+              {/* Extra damage of a second type, the flaming-sword case. Rolled
+                  apart from the weapon die and without your ability modifier,
+                  so it can't be folded into the damage box above. */}
+              <Field label="Extra damage (e.g. 1d4)">
+                <input
+                  value={String(riders[0]?.dmg ?? '')}
+                  onChange={(e) => setRider('dmg', e.target.value)}
+                  placeholder="1d4"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Extra damage type">
+                <select
+                  value={String(riders[0]?.dmgType ?? 'F')}
+                  onChange={(e) => setRider('dmgType', e.target.value)}
+                  className={inputCls}
+                >
+                  {DMG_TYPES.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </Field>
             </>
           )}
