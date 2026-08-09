@@ -8,6 +8,7 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
+import { DEFAULT_RIDER_TYPE, damagePatch, defaultDamageType, nextRiders } from './itemFields';
 
 type Json = Record<string, unknown>;
 
@@ -135,28 +136,22 @@ function EntityForm({
     return e;
   });
 
-  const set = (key: string, value: unknown) =>
+  /** Applies a patch; `undefined`, `''`, and `false` remove their key. */
+  const setMany = (patch: Json) =>
     setExtra((x) => {
       const next = { ...x };
-      if (value === undefined || value === '' || value === false) delete next[key];
-      else next[key] = value;
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined || value === '' || value === false) delete next[key];
+        else next[key] = value;
+      }
       return next;
     });
 
-  /**
-   * The form edits the first damage rider only, which is every weapon anyone
-   * has asked for. A hand-written second one is carried through untouched
-   * rather than silently dropped on the next save.
-   */
+  const set = (key: string, value: unknown) => setMany({ [key]: value });
+
   const riders: Json[] = Array.isArray(extra.extraDamage) ? (extra.extraDamage as Json[]) : [];
-  const setRider = (key: 'dmg' | 'dmgType', value: string) => {
-    const first = { ...riders[0], [key]: value };
-    const rest = riders.slice(1);
-    // No dice means no rider: clearing the box removes it rather than leaving
-    // a `{ dmgType: 'F' }` that renders as nothing but survives export.
-    const next = typeof first.dmg === 'string' && first.dmg.trim() !== '' ? [first, ...rest] : rest;
-    set('extraDamage', next.length > 0 ? next : undefined);
-  };
+  const setRider = (key: 'dmg' | 'dmgType', value: string) =>
+    set('extraDamage', nextRiders(riders, key, value));
 
   const spellClasses = Array.isArray(
     (extra.classes as { fromClassList?: unknown[] } | undefined)?.fromClassList,
@@ -223,14 +218,14 @@ function EntityForm({
               <Field label="Damage">
                 <input
                   value={String(extra.dmg1 ?? '')}
-                  onChange={(e) => set('dmg1', e.target.value)}
+                  onChange={(e) => setMany(damagePatch(e.target.value, extra.dmgType, extra.type))}
                   placeholder="1d8"
                   className={inputCls}
                 />
               </Field>
               <Field label="Damage type">
                 <DamageTypeSelect
-                  value={String(extra.dmgType ?? 'S')}
+                  value={String(extra.dmgType ?? defaultDamageType(extra.type))}
                   onChange={(v) => set('dmgType', v)}
                 />
               </Field>
@@ -247,7 +242,7 @@ function EntityForm({
               </Field>
               <Field label="Extra damage type">
                 <DamageTypeSelect
-                  value={String(riders[0]?.dmgType ?? 'F')}
+                  value={String(riders[0]?.dmgType ?? DEFAULT_RIDER_TYPE)}
                   onChange={(v) => setRider('dmgType', v)}
                 />
               </Field>
