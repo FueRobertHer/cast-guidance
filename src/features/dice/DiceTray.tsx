@@ -84,13 +84,19 @@ export function DiceTray() {
             ))}
           </div>
 
-          <div className="mb-2 flex flex-wrap gap-1.5">
+          {/*
+           * One column per die so the set stays a single row: wrapping put
+           * d100 alone on a second line, which read as a separate control.
+           * Equal columns mean the label shrinks, not the button, so the
+           * height stays where a thumb expects it.
+           */}
+          <div className="mb-2 grid grid-cols-7 gap-1">
             {QUICK.map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => doRoll(`1d${d}`, `d${d}`)}
-                className="rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm font-semibold"
+                className="rounded-lg bg-surface-2 px-0.5 py-2.5 font-mono text-xs font-semibold"
               >
                 d{d}
               </button>
