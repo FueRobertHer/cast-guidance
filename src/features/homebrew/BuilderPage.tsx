@@ -6,7 +6,7 @@ import { EntriesView } from '@/data5e/entries/renderEntries';
 import { invalidateRegistry } from '@/data5e/registry';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { SCHOOLS } from '@/features/library/fmt';
+import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
 
 type Json = Record<string, unknown>;
@@ -35,7 +35,6 @@ const ITEM_TYPES: Array<[string, string]> = [
 ];
 
 const RARITIES = ['common', 'uncommon', 'rare', 'very rare', 'legendary', 'artifact'];
-const DMG_TYPES = ['B', 'P', 'S', 'A', 'C', 'F', 'O', 'L', 'N', 'I', 'Y', 'R', 'T'];
 const CASTER_CLASSES = [
   'Bard',
   'Cleric',
@@ -58,8 +57,58 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * A checkbox is a 20px square, so stacking it under a label the way a text
+ * field does leaves it stranded in a cell sized for an input. It reads as a
+ * setting only when the words sit beside the box, on a row of its own.
+ */
+function CheckField({
+  label,
+  checked,
+  wide,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  /** Spans both columns. For the last field on a form, where nothing pairs. */
+  wide?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label
+      className={`flex items-center gap-2.5 rounded-lg bg-surface-2 px-3 py-2.5 text-sm ${
+        wide === true ? 'col-span-2' : ''
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-accent"
+      />
+      {label}
+    </label>
+  );
+}
+
 const inputCls =
   'rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted';
+
+/**
+ * The file stores 5etools codes, but a dropdown reading "B / P / S / A / C"
+ * asks the author to have memorized them. Spelled out to pick, code to save.
+ */
+function DamageTypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+      {Object.entries(DMG_TYPES).map(([code, label]) => (
+        <option key={code} value={code}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 /** One form for create-or-edit of a single entity. */
 function EntityForm({
@@ -128,8 +177,15 @@ function EntityForm({
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
       </Field>
 
+      {/*
+       * `items-end` pins every control to the bottom of its row, so a label
+       * that wraps to two lines pushes its own text up rather than shoving its
+       * input out of line with the one beside it. Hints live in placeholders
+       * for the same reason: a label long enough to wrap is what broke the
+       * alignment in the first place.
+       */}
       {type === 'item' && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 items-end gap-2">
           <Field label="Type">
             <select
               value={String(extra.type ?? 'G')}
@@ -161,38 +217,27 @@ function EntityForm({
           </Field>
           {(extra.type === 'M' || extra.type === 'R') && (
             <>
-              <Field label="Damage (e.g. 1d8)">
+              {/* Dice and type pair up on a row, twice: the weapon's own damage,
+                  then the rider it carries. Anything else side by side asks the
+                  reader to work out which box belongs to which. */}
+              <Field label="Damage">
                 <input
                   value={String(extra.dmg1 ?? '')}
                   onChange={(e) => set('dmg1', e.target.value)}
+                  placeholder="1d8"
                   className={inputCls}
                 />
               </Field>
               <Field label="Damage type">
-                <select
+                <DamageTypeSelect
                   value={String(extra.dmgType ?? 'S')}
-                  onChange={(e) => set('dmgType', e.target.value)}
-                  className={inputCls}
-                >
-                  {DMG_TYPES.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Attack/damage bonus (e.g. +1)">
-                <input
-                  value={String(extra.bonusWeapon ?? '')}
-                  onChange={(e) => set('bonusWeapon', e.target.value)}
-                  placeholder="+1"
-                  className={inputCls}
+                  onChange={(v) => set('dmgType', v)}
                 />
               </Field>
               {/* Extra damage of a second type, the flaming-sword case. Rolled
                   apart from the weapon die and without your ability modifier,
                   so it can't be folded into the damage box above. */}
-              <Field label="Extra damage (e.g. 1d4)">
+              <Field label="Extra damage">
                 <input
                   value={String(riders[0]?.dmg ?? '')}
                   onChange={(e) => setRider('dmg', e.target.value)}
@@ -201,17 +246,18 @@ function EntityForm({
                 />
               </Field>
               <Field label="Extra damage type">
-                <select
+                <DamageTypeSelect
                   value={String(riders[0]?.dmgType ?? 'F')}
-                  onChange={(e) => setRider('dmgType', e.target.value)}
+                  onChange={(v) => setRider('dmgType', v)}
+                />
+              </Field>
+              <Field label="Attack/damage bonus">
+                <input
+                  value={String(extra.bonusWeapon ?? '')}
+                  onChange={(e) => set('bonusWeapon', e.target.value)}
+                  placeholder="+1"
                   className={inputCls}
-                >
-                  {DMG_TYPES.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                />
               </Field>
             </>
           )}
@@ -235,29 +281,27 @@ function EntityForm({
             extra.type !== 'MA' &&
             extra.type !== 'HA' &&
             extra.type !== 'S' && (
-              <Field label="AC bonus (rings etc., e.g. +1)">
+              <Field label="AC bonus">
                 <input
                   value={String(extra.bonusAc ?? '')}
                   onChange={(e) => set('bonusAc', e.target.value)}
-                  placeholder="+1"
+                  placeholder="+1 (rings, cloaks)"
                   className={inputCls}
                 />
               </Field>
             )}
-          <Field label="Requires attunement">
-            <input
-              type="checkbox"
-              checked={extra.reqAttune === true}
-              onChange={(e) => set('reqAttune', e.target.checked)}
-              className="h-5 w-5"
-            />
-          </Field>
+          <CheckField
+            label="Requires attunement"
+            wide
+            checked={extra.reqAttune === true}
+            onChange={(v) => set('reqAttune', v)}
+          />
         </div>
       )}
 
       {type === 'feat' && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Ability bonus (optional)">
+        <div className="grid grid-cols-2 items-end gap-2">
+          <Field label="Ability bonus">
             <select
               value={
                 Array.isArray(extra.ability) && extra.ability[0] !== undefined
@@ -277,11 +321,11 @@ function EntityForm({
               ))}
             </select>
           </Field>
-          <Field label="Category (2024: G/O/FS/EB)">
+          <Field label="Category">
             <input
               value={String(extra.category ?? '')}
               onChange={(e) => set('category', e.target.value || undefined)}
-              placeholder="G"
+              placeholder="2024: G/O/FS/EB"
               className={inputCls}
             />
           </Field>
@@ -289,10 +333,11 @@ function EntityForm({
       )}
 
       {type === 'spell' && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Level (0 = cantrip)">
+        <div className="grid grid-cols-2 items-end gap-2">
+          <Field label="Level">
             <input
               inputMode="numeric"
+              placeholder="0 = cantrip"
               value={String(extra.level ?? 0)}
               onChange={(e) => {
                 const n = Number.parseInt(e.target.value, 10);
@@ -314,9 +359,10 @@ function EntityForm({
               ))}
             </select>
           </Field>
-          <Field label="Range (feet, 0 = self/touch)">
+          <Field label="Range">
             <input
               inputMode="numeric"
+              placeholder="feet, 0 = self/touch"
               value={String(
                 (extra.range as { distance?: { amount?: number } } | undefined)?.distance?.amount ??
                   '',
@@ -333,31 +379,27 @@ function EntityForm({
               className={inputCls}
             />
           </Field>
-          <Field label="Concentration">
-            <input
-              type="checkbox"
-              checked={
-                Array.isArray(extra.duration) &&
-                (extra.duration[0] as { concentration?: boolean } | undefined)?.concentration ===
-                  true
-              }
-              onChange={(e) =>
-                set(
-                  'duration',
-                  e.target.checked
-                    ? [
-                        {
-                          type: 'timed',
-                          duration: { type: 'minute', amount: 10 },
-                          concentration: true,
-                        },
-                      ]
-                    : [{ type: 'instant' }],
-                )
-              }
-              className="h-5 w-5"
-            />
-          </Field>
+          <CheckField
+            label="Concentration"
+            checked={
+              Array.isArray(extra.duration) &&
+              (extra.duration[0] as { concentration?: boolean } | undefined)?.concentration === true
+            }
+            onChange={(v) =>
+              set(
+                'duration',
+                v
+                  ? [
+                      {
+                        type: 'timed',
+                        duration: { type: 'minute', amount: 10 },
+                        concentration: true,
+                      },
+                    ]
+                  : [{ type: 'instant' }],
+              )
+            }
+          />
           <div className="col-span-2">
             <Field label="Class lists (who can learn it)">
               <div className="flex flex-wrap gap-1.5">
@@ -394,11 +436,14 @@ function EntityForm({
         </div>
       )}
 
-      <Field label="Description (blank line = new paragraph, lines with '- ' = list, {@dice 1d6} etc. work)">
+      <Field label="Description">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={6}
+          placeholder={
+            "Blank line = new paragraph\nLines starting '- ' = list\n{@dice 1d6} and other tags work"
+          }
           className={inputCls}
         />
       </Field>
@@ -445,7 +490,7 @@ export function Component() {
   if (!row.editable) {
     return (
       <main className="p-4 text-sm text-ink-muted">
-        This file was imported, not built here — only in-app creations are editable.
+        This file was imported, not built here. Only in-app creations are editable.
       </main>
     );
   }
@@ -485,8 +530,8 @@ export function Component() {
             )}
           </h1>
           <p className="text-xs text-ink-muted">
-            source: {sourceId} — everything you build is instantly usable on characters and exports
-            as a standard 5etools file
+            source: {sourceId}. Everything you build is instantly usable on characters, and exports
+            as a standard 5etools file.
           </p>
         </div>
       </header>
@@ -552,7 +597,7 @@ export function Component() {
       })}
 
       <p className="text-xs text-ink-muted">
-        Races, backgrounds, subclasses, and classes: import them as JSON for now — form editors for
+        Races, backgrounds, subclasses, and classes: import them as JSON for now. Form editors for
         those are on the roadmap.
       </p>
     </main>
