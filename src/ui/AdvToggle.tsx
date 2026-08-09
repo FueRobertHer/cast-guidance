@@ -1,11 +1,13 @@
 import { useScrollHidden } from '@/lib/useScrollHidden';
-import { type AdvMode, useAdvMode } from '@/stores/advMode';
+import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 
-const MODES: Array<[AdvMode, string, string]> = [
-  ['dis', 'DIS', 'text-accent border-accent'],
-  ['normal', 'N', 'text-ink border-ink'],
-  ['adv', 'ADV', 'text-emerald-300 border-emerald-300'],
-];
+const LABELS: Record<AdvMode, string> = { dis: 'DIS', normal: 'N', adv: 'ADV' };
+
+const ACTIVE: Record<AdvMode, string> = {
+  dis: 'text-accent border-accent',
+  normal: 'text-ink border-ink',
+  adv: 'text-emerald-300 border-emerald-300',
+};
 
 /**
  * Always-visible advantage toggle, stacked above the dice FAB. Applies to
@@ -29,16 +31,16 @@ export function AdvToggle() {
       }`}
       title="Advantage / disadvantage for every d20 roll"
     >
-      {MODES.map(([m, label, activeCls]) => (
+      {ADV_MODES.map((m) => (
         <button
           key={m}
           type="button"
           onClick={() => set(m)}
           className={`px-2.5 py-1.5 text-[11px] font-bold ${
-            mode === m ? activeCls : 'text-ink-muted'
+            mode === m ? ACTIVE[m] : 'text-ink-muted'
           }`}
         >
-          {label}
+          {LABELS[m]}
         </button>
       ))}
     </div>
