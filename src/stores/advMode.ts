@@ -3,6 +3,13 @@ import { createStore } from 'zustand/vanilla';
 
 export type AdvMode = 'normal' | 'adv' | 'dis';
 
+/**
+ * Display order for every adv/dis control, worst to best, so the floating
+ * toggle and the copy of it inside the dice tray never disagree about which
+ * button sits where. Muscle memory is the whole point of a sticky toggle.
+ */
+export const ADV_MODES: readonly AdvMode[] = ['dis', 'normal', 'adv'];
+
 export interface AdvModeState {
   mode: AdvMode;
   set(mode: AdvMode): void;

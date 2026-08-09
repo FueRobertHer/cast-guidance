@@ -1,13 +1,27 @@
 import { Dices } from 'lucide-react';
 import { useState } from 'react';
 import { Drawer } from 'vaul';
+import { rollDetail } from '@/dice/format';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import { useScrollHidden } from '@/lib/useScrollHidden';
-import { useAdvMode } from '@/stores/advMode';
+import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 
 const QUICK = [4, 6, 8, 10, 12, 20, 100];
+
+/** Spelled out here, where there is room for words rather than DIS/N/ADV. */
+const LABELS: Record<AdvMode, string> = {
+  dis: 'Disadvantage',
+  normal: 'Normal',
+  adv: 'Advantage',
+};
+
+const ACTIVE: Record<AdvMode, string> = {
+  dis: 'border-accent text-accent',
+  normal: 'border-ink text-ink',
+  adv: 'border-emerald-300 text-emerald-300',
+};
 
 export function DiceTray() {
   const rolls = useRollLog((s) => s.rolls);
@@ -52,15 +66,9 @@ export function DiceTray() {
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
           <Drawer.Title className="mb-2 text-base font-semibold">Dice</Drawer.Title>
 
-          {/* Adv/dis toggle for d20 rolls */}
+          {/* Adv/dis toggle for d20 rolls, in the same order as the floating one */}
           <div className="mb-2 flex gap-1.5">
-            {(
-              [
-                ['normal', 'Normal'],
-                ['adv', 'Advantage'],
-                ['dis', 'Disadvantage'],
-              ] as const
-            ).map(([mode, label]) => (
+            {ADV_MODES.map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -68,16 +76,10 @@ export function DiceTray() {
                   setAdvMode(mode);
                 }}
                 className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
-                  advMode === mode
-                    ? mode === 'adv'
-                      ? 'border-emerald-300 text-emerald-300'
-                      : mode === 'dis'
-                        ? 'border-accent text-accent'
-                        : 'border-ink text-ink'
-                    : 'border-surface-2 text-ink-muted'
+                  advMode === mode ? ACTIVE[mode] : 'border-surface-2 text-ink-muted'
                 }`}
               >
-                {label}
+                {LABELS[mode]}
               </button>
             ))}
           </div>
@@ -156,18 +158,7 @@ export function DiceTray() {
                       )}
                     </div>
                     <div className="truncate font-mono text-xs text-ink-muted">
-                      {time} · {r.expr} ·{' '}
-                      {r.terms
-                        .map((t) =>
-                          t.kind === 'dice'
-                            ? `[${t.rolls.map((x) => (x.kept ? x.v : `(${x.v})`)).join(',')}]`
-                            : t.kind === 'multiplier'
-                              ? `×${t.detail.kind === 'dice' ? `[${t.detail.rolls.map((x) => x.v).join(',')}]` : t.value}`
-                              : t.value >= 0
-                                ? `+${t.value}`
-                                : `${t.value}`,
-                        )
-                        .join(' ')}
+                      {time} · {r.expr} · {rollDetail(r)}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
