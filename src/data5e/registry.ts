@@ -8,6 +8,7 @@ import { homebrewRepo } from '@/db/homebrewRepo';
 import { ensurePack, getActiveTag } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
+import { setHomebrewSourceNames } from './sourceNames';
 
 export type { EntityType } from './normalize';
 export { EntityRegistry, normalizeDataset } from './normalize';
@@ -41,11 +42,47 @@ export function computeRegistrySignature(
   return `${files}|hb:${hb}`;
 }
 
+/**
+ * Source code to title for every enabled homebrew file, read from the
+ * `_meta.sources` block a 5etools brew carries. Tolerant on purpose: an entry
+ * with no title, or a `_meta` that got mangled somewhere, simply contributes
+ * nothing and its code renders bare as it did before. A title identical to the
+ * code is skipped too, since `abbreviation` is usually just the code again.
+ */
+export function homebrewSourceNames(
+  brews: ReadonlyArray<{ json: unknown }>,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const brew of brews) {
+    if (typeof brew.json !== 'object' || brew.json === null) continue;
+    const meta = (brew.json as { _meta?: unknown })._meta;
+    if (typeof meta !== 'object' || meta === null) continue;
+    const sources = (meta as { sources?: unknown }).sources;
+    if (!Array.isArray(sources)) continue;
+    for (const entry of sources) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const { json: code, full, abbreviation } = entry as Record<string, unknown>;
+      if (typeof code !== 'string' || code === '') continue;
+      const title =
+        typeof full === 'string' && full !== ''
+          ? full
+          : typeof abbreviation === 'string' && abbreviation !== ''
+            ? abbreviation
+            : undefined;
+      if (title !== undefined && title !== code) out.set(code, title);
+    }
+  }
+  return out;
+}
+
 /** Current registry over all cached files + enabled homebrew. */
 export async function getRegistry(): Promise<EntityRegistry> {
   const [files, brews] = await Promise.all([cachedFilesMap(), homebrewRepo.enabled()]);
   const signature = computeRegistrySignature(files.keys(), brews);
   if (current === null || signature !== currentSignature) {
+    // Before the registry is published, so the first render that can show a
+    // brew's badge already has its title.
+    setHomebrewSourceNames(homebrewSourceNames(brews));
     const reg = normalizeDataset(files);
     const brewMap = new Map<string, Record<string, unknown>>();
     for (const b of brews) brewMap.set(b.id, b.json as Record<string, unknown>);

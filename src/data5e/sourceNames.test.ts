@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   isKnownSource,
   knownSources,
   SOURCE_GROUP_LABELS,
   SOURCE_GROUPS,
+  setHomebrewSourceNames,
   sourceGroup,
   sourceName,
 } from './sourceNames';
@@ -19,6 +20,35 @@ describe('sourceName', () => {
     expect(sourceName('MyTableBrew')).toBe('MyTableBrew');
     expect(isKnownSource('MyTableBrew')).toBe(false);
     expect(isKnownSource('PHB')).toBe(true);
+  });
+});
+
+describe('homebrew titles', () => {
+  afterEach(() => {
+    setHomebrewSourceNames(new Map());
+  });
+
+  it('names a brew once the registry has read its file', () => {
+    expect(sourceName('F')).toBe('F');
+    setHomebrewSourceNames(new Map([['F', 'Flame Sword Homebrew']]));
+    expect(sourceName('F')).toBe('Flame Sword Homebrew');
+  });
+
+  it('forgets a brew that is no longer loaded', () => {
+    setHomebrewSourceNames(new Map([['F', 'Flame Sword Homebrew']]));
+    setHomebrewSourceNames(new Map());
+    expect(sourceName('F')).toBe('F');
+  });
+
+  it('cannot repaint a published book by claiming its code', () => {
+    setHomebrewSourceNames(new Map([['PHB', 'My Better Handbook']]));
+    expect(sourceName('PHB')).toBe("Player's Handbook (2014)");
+  });
+
+  it('stays out of the published table the presets are built from', () => {
+    setHomebrewSourceNames(new Map([['F', 'Flame Sword Homebrew']]));
+    expect(isKnownSource('F')).toBe(false);
+    expect(knownSources()).not.toContain('F');
   });
 });
 

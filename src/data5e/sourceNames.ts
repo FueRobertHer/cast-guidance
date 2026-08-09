@@ -242,15 +242,43 @@ function entryFor(source: string): readonly [name: string, group: SourceGroup] |
 }
 
 /**
- * Full title for a source code, or the code itself when it isn't one we know.
- * Homebrew and any book added after this table was generated fall through to
- * the code, which is no worse than what the badge already showed.
+ * Titles for homebrew sources, learned from the files on this device.
+ *
+ * A brew's code is even more opaque than a published one (a file calling
+ * itself "F"), and its title exists nowhere but the file, so it can't live in
+ * the table above. The registry refills this whenever it rebuilds, which is
+ * also the moment homebrew entities become renderable, so no badge paints
+ * before its title is known. Not React state: the map only ever changes
+ * alongside the registry, and every screen showing a brew's badge re-renders
+ * on that.
  */
-export function sourceName(source: string): string {
-  return entryFor(source)?.[0] ?? source;
+let homebrewNames: ReadonlyMap<string, string> = new Map();
+
+/**
+ * Replace the known homebrew titles. Wholesale, so disabling or deleting a
+ * file drops its title instead of leaving it to haunt a reused code.
+ */
+export function setHomebrewSourceNames(names: ReadonlyMap<string, string>): void {
+  homebrewNames = names;
 }
 
-/** Whether the code has a real title, i.e. whether {@link sourceName} added anything. */
+/**
+ * Full title for a source code, or the code itself when it isn't one we know.
+ * Published books win over homebrew of the same code: a brew declaring itself
+ * "PHB" cannot repaint the Player's Handbook. Anything added to the dataset
+ * after this table was generated falls through to the code, which is no worse
+ * than what the badge already showed.
+ */
+export function sourceName(source: string): string {
+  return entryFor(source)?.[0] ?? homebrewNames.get(source) ?? source;
+}
+
+/**
+ * Whether the code is a published book this table has a title for. Homebrew is
+ * deliberately excluded even once {@link setHomebrewSourceNames} can name it:
+ * this answers "is this one of the books the presets can talk about", and a
+ * preset built on a code that only exists on one device would be meaningless.
+ */
 export function isKnownSource(source: string): boolean {
   return entryFor(source) !== undefined;
 }
