@@ -32,6 +32,19 @@ import type { CharacterSheetState } from './useCharacterSheet';
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
+/**
+ * Identity for a picker, so that answering it closes it.
+ *
+ * The picker is a `<details>` that starts open while the field is empty, the
+ * way the class and subclass ones do. Native `open` is the reader's to change
+ * after that, and React will not take it back, so a picker reopened to swap a
+ * species would stay open over the choices that swap just rewrote. Keying on
+ * the current pick remounts the element when the answer changes, which lets
+ * `open` be read fresh: shut, now that there is an answer.
+ */
+const pickerKey = (ref: { name: string; source: string } | undefined) =>
+  ref === undefined ? 'none' : `${ref.name}|${ref.source}`;
+
 // ---------------------------------------------------------------------------
 // "What changed" diff — the build-explorer feedback loop
 // ---------------------------------------------------------------------------
@@ -517,49 +530,66 @@ export function Component() {
       </Section>
 
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
-        <EntityCardList
-          dedupe
-          describe={raceBlurb}
-          infoType="race"
-          entities={races}
-          selectedUid={
-            doc.race !== undefined ? `${doc.race.name}|${doc.race.source}`.toLowerCase() : undefined
-          }
-          onSelect={(e) =>
-            update((d) => {
-              if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
-              if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-              d.race = { name: nameOf(e), source: sourceOf(e) };
-              d.subrace = undefined;
-            })
-          }
-        />
-        {subraces.length > 0 && (
-          <>
-            <span className="text-xs text-ink-muted">Subrace</span>
+        <details key={pickerKey(doc.race)} open={doc.race === undefined}>
+          <summary
+            className={`cursor-pointer text-xs ${
+              doc.race === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            }`}
+          >
+            {doc.race === undefined ? 'Pick a species to start' : 'Change species'}
+          </summary>
+          <div className="pt-2">
             <EntityCardList
-              entities={subraces}
+              dedupe
               describe={raceBlurb}
-              infoType="subrace"
+              infoType="race"
+              entities={races}
               selectedUid={
-                doc.subrace !== undefined
-                  ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
+                doc.race !== undefined
+                  ? `${doc.race.name}|${doc.race.source}`.toLowerCase()
                   : undefined
               }
               onSelect={(e) =>
                 update((d) => {
+                  if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
                   if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                  d.subrace = { name: nameOf(e), source: sourceOf(e) };
-                })
-              }
-              onDeselect={() =>
-                update((d) => {
-                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                  d.race = { name: nameOf(e), source: sourceOf(e) };
                   d.subrace = undefined;
                 })
               }
             />
-          </>
+          </div>
+        </details>
+        {subraces.length > 0 && (
+          <details key={pickerKey(doc.subrace)} open={doc.subrace === undefined}>
+            <summary className="cursor-pointer text-xs text-ink-muted">
+              Subrace: {doc.subrace?.name ?? 'none picked'}
+            </summary>
+            <div className="pt-2">
+              <EntityCardList
+                entities={subraces}
+                describe={raceBlurb}
+                infoType="subrace"
+                selectedUid={
+                  doc.subrace !== undefined
+                    ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
+                    : undefined
+                }
+                onSelect={(e) =>
+                  update((d) => {
+                    if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                    d.subrace = { name: nameOf(e), source: sourceOf(e) };
+                  })
+                }
+                onDeselect={() =>
+                  update((d) => {
+                    if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
+                    d.subrace = undefined;
+                  })
+                }
+              />
+            </div>
+          </details>
         )}
         <OriginChoices
           sheet={sheet}
@@ -700,23 +730,34 @@ export function Component() {
       </Section>
 
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
-        <EntityCardList
-          dedupe
-          describe={backgroundBlurb}
-          infoType="background"
-          entities={backgrounds}
-          selectedUid={
-            doc.background !== undefined
-              ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
-              : undefined
-          }
-          onSelect={(e) =>
-            update((d) => {
-              if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
-              d.background = { name: nameOf(e), source: sourceOf(e) };
-            })
-          }
-        />
+        <details key={pickerKey(doc.background)} open={doc.background === undefined}>
+          <summary
+            className={`cursor-pointer text-xs ${
+              doc.background === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            }`}
+          >
+            {doc.background === undefined ? 'Pick a background to start' : 'Change background'}
+          </summary>
+          <div className="pt-2">
+            <EntityCardList
+              dedupe
+              describe={backgroundBlurb}
+              infoType="background"
+              entities={backgrounds}
+              selectedUid={
+                doc.background !== undefined
+                  ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
+                  : undefined
+              }
+              onSelect={(e) =>
+                update((d) => {
+                  if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
+                  d.background = { name: nameOf(e), source: sourceOf(e) };
+                })
+              }
+            />
+          </div>
+        </details>
         <OriginChoices
           sheet={sheet}
           doc={doc}
