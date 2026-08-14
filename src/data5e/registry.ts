@@ -75,21 +75,34 @@ export function homebrewSourceNames(
   return out;
 }
 
-/** Current registry over all cached files + enabled homebrew. */
+/**
+ * Current registry over all cached files + enabled homebrew.
+ *
+ * The signature is computed from cached *paths* rather than rows, so answering
+ * "is the registry still current?" costs an index scan. It used to load every
+ * cached file to read one key off each, meaning every mount of a registry hook
+ * deserialized the whole compendium before returning the object it already had
+ * in memory. That was most of the delay before a page could paint.
+ */
 export async function getRegistry(): Promise<EntityRegistry> {
-  const [files, brews] = await Promise.all([cachedFilesMap(), homebrewRepo.enabled()]);
-  const signature = computeRegistrySignature(files.keys(), brews);
-  if (current === null || signature !== currentSignature) {
-    // Before the registry is published, so the first render that can show a
-    // brew's badge already has its title.
-    setHomebrewSourceNames(homebrewSourceNames(brews));
-    const reg = normalizeDataset(files);
-    const brewMap = new Map<string, Record<string, unknown>>();
-    for (const b of brews) brewMap.set(b.id, b.json as Record<string, unknown>);
-    mergeHomebrew(reg, brewMap);
-    current = reg;
-    currentSignature = signature;
-  }
+  const [paths, brews] = await Promise.all([
+    dataCacheRepo.cachedPaths(getActiveTag()),
+    homebrewRepo.enabled(),
+  ]);
+  const signature = computeRegistrySignature(paths, brews);
+  if (current !== null && signature === currentSignature) return current;
+
+  // Only a real rebuild pays for the file bodies.
+  const files = await cachedFilesMap();
+  // Before the registry is published, so the first render that can show a
+  // brew's badge already has its title.
+  setHomebrewSourceNames(homebrewSourceNames(brews));
+  const reg = normalizeDataset(files);
+  const brewMap = new Map<string, Record<string, unknown>>();
+  for (const b of brews) brewMap.set(b.id, b.json as Record<string, unknown>);
+  mergeHomebrew(reg, brewMap);
+  current = reg;
+  currentSignature = signature;
   return current;
 }
 
