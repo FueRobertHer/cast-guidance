@@ -60,6 +60,47 @@ interface Vitals {
   ac: number;
 }
 
+/**
+ * The HP/AC line, at one fixed height whether or not the numbers have arrived.
+ *
+ * They need the whole compendium, which lands a beat after the names do.
+ * Rendering nothing until then made every row grow. Reserving bare space
+ * stopped the growth but left the values popping into an empty strip, which
+ * still reads as a flash. So the line is always the same shape: the same track
+ * element sits there the whole time and the numbers keep their footprint as
+ * muted placeholders, leaving only the bar's fill and two short strings to
+ * arrive, gently.
+ */
+function VitalsLine({ v }: { v?: Vitals }) {
+  const ratio = v === undefined || v.maxHp <= 0 ? 0 : Math.max(0, Math.min(1, v.hp / v.maxHp));
+  const color = ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
+  return (
+    <div className="mt-1 flex h-4 items-center gap-2 text-xs text-ink-muted">
+      <span className="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
+        {v !== undefined && (
+          <span
+            className={`block h-full motion-safe:animate-fade-in ${color}`}
+            style={{ width: `${ratio * 100}%` }}
+          />
+        )}
+      </span>
+      {v === undefined ? (
+        <>
+          <span className="h-2 w-9 rounded-full bg-surface-2" />
+          <span className="h-2 w-7 rounded-full bg-surface-2" />
+        </>
+      ) : (
+        <>
+          <span className="font-mono motion-safe:animate-fade-in">
+            {v.hp}/{v.maxHp}
+          </span>
+          <span className="motion-safe:animate-fade-in">AC {v.ac}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function Component() {
   const navigate = useNavigate();
   const { registry, status: registryStatus } = useRegistryState(['essentials']);
@@ -135,41 +176,12 @@ export function Component() {
                 {c.race !== undefined ? ` · ${c.race.name}` : ''}
                 {` · ${c.rulesVersion}`}
               </div>
-              {(() => {
-                const v = vitals.get(c.id);
-                if (v === undefined) {
-                  /*
-                   * HP and AC need the whole compendium, which lands a beat
-                   * after the names do, and the line they land on is 20px tall.
-                   * Holding that space keeps the list still: without it every
-                   * row grew the moment the registry resolved, which reads as a
-                   * flicker even though nothing was actually replaced. Only for
-                   * rows that will get numbers: a classless character has no
-                   * vitals to wait for, and neither does one whose registry
-                   * never arrives.
-                   */
-                  return registryStatus === 'loading' && c.classes.length > 0 ? (
-                    <div className="mt-1 h-4" aria-hidden />
-                  ) : null;
-                }
-                const ratio = v.maxHp > 0 ? Math.max(0, Math.min(1, v.hp / v.maxHp)) : 0;
-                const color =
-                  ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
-                return (
-                  <div className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-                    <span className="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
-                      <span
-                        className={`block h-full ${color}`}
-                        style={{ width: `${ratio * 100}%` }}
-                      />
-                    </span>
-                    <span className="font-mono">
-                      {v.hp}/{v.maxHp}
-                    </span>
-                    <span>AC {v.ac}</span>
-                  </div>
-                );
-              })()}
+              {/* Nothing to wait for on a classless character, and nothing
+                  coming if the compendium failed to load. */}
+              {(vitals.get(c.id) !== undefined ||
+                (registryStatus === 'loading' && c.classes.length > 0)) && (
+                <VitalsLine v={vitals.get(c.id)} />
+              )}
             </Link>
             <button
               type="button"
