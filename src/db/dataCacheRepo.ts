@@ -14,10 +14,20 @@ export const dataCacheRepo = {
     await db.dataFiles.put(row);
   },
 
-  /** Paths already cached under this tag. */
+  /**
+   * Paths already cached under this tag, read from primary keys alone.
+   *
+   * The key is `${tag}:${path}`, so the answer is entirely in the index and no
+   * row body needs touching. Reading the rows instead deserialized every cached
+   * `json` blob (megabytes) to collect a list of strings, and `ensurePack` asks
+   * this question once per pack: roughly thirty full deserializations of the
+   * whole compendium on a boot that has nothing left to download. Same reason
+   * `bytes` got its own index in schema v3.
+   */
   async cachedPaths(tag: string): Promise<Set<string>> {
-    const rows = await db.dataFiles.where('tag').equals(tag).toArray();
-    return new Set(rows.map((r) => r.path));
+    const prefix = this.key(tag, '');
+    const keys = await db.dataFiles.where('key').startsWith(prefix).primaryKeys();
+    return new Set(keys.map((k) => k.slice(prefix.length)));
   },
 
   /** All cached rows for a tag (registry hydration). */
