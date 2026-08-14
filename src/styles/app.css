@@ -4,6 +4,7 @@
   /* Semantic palette on top of Tailwind's zinc scale */
   --color-surface: #18181b; /* zinc-900 */
   --color-surface-2: #27272a; /* zinc-800 */
+  --color-surface-3: #3f3f46; /* zinc-700, the hover/press step above surface-2 */
   --color-ink: #fafafa;
   --color-ink-muted: #a1a1aa; /* zinc-400 */
   --color-accent: #ef4444; /* red-500 */
@@ -74,6 +75,19 @@ body {
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * A control that acts like a control feels like one under the mouse. Tailwind
+ * v4's preflight dropped v3's `cursor: pointer` on buttons, so a `<button>`
+ * sits at the UA default while a `<Link>` beside it keeps the hand. The
+ * mismatch is plain wherever the two are styled as twins (the pair of ways
+ * into a new character). `:where(...)` keeps specificity at 0, so a call site
+ * can still say otherwise, and a disabled control is left alone: it should not
+ * invite the press it is going to refuse.
+ */
+:where(button, [role="button"], summary):not(:disabled) {
+  cursor: pointer;
 }
 
 /*
