@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Copy, Download, FileUp, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
+import { Copy, Download, FileUp, Pencil, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
@@ -252,6 +252,13 @@ export function Component() {
        * and the buttons are left to say only how they differ. Each still spells
        * it out through `aria-label`, where there is no heading nearby to lean
        * on and "Blank sheet" alone would be a riddle.
+       *
+       * One treatment across the pair, because there is no default here. The
+       * accent on one of them read as a recommendation the app has no basis to
+       * make: which door suits you depends on how you like to work, not on
+       * which is better. They lift off the page together instead, a step
+       * brighter than the roster above and the import row below, which is
+       * where the hierarchy on this page actually lives.
        */}
       <section className="flex flex-col gap-1.5">
         <h2 className="text-sm font-semibold text-ink-muted">New character</h2>
@@ -260,23 +267,19 @@ export function Component() {
             type="button"
             aria-label="New character from a blank sheet"
             onClick={() => void createBlank()}
-            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-accent px-2 py-3 text-white"
+            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3"
           >
-            <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
-              <Plus size={16} aria-hidden /> Blank sheet
-            </span>
+            <span className="text-sm font-semibold whitespace-nowrap">Blank sheet</span>
             {/* Short enough to keep its padding at 320px, which is why the
                 longer sell lives in the heading and the aria-label. */}
-            <span className="text-[11px] whitespace-nowrap text-white/75">change anything</span>
+            <span className="text-[11px] whitespace-nowrap text-ink-muted">change anything</span>
           </button>
           <Link
             to="/create"
             aria-label="New character with the guided wizard"
-            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface px-2 py-3"
+            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3"
           >
-            <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
-              <Wand2 size={16} aria-hidden /> Guided wizard
-            </span>
+            <span className="text-sm font-semibold whitespace-nowrap">Guided wizard</span>
             <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
           </Link>
         </div>
