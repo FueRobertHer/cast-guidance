@@ -3,8 +3,10 @@
 // signature (the search-index cache key) so results can't go stale.
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { getActiveTag } from './loader';
 import { getRegistry, invalidateRegistry, registrySignature } from './registry';
 
 function brewJson(spellName: string) {
@@ -47,5 +49,34 @@ describe('registry rebuild on editable-homebrew edit', () => {
     const first = await getRegistry();
     const second = await getRegistry();
     expect(second).toBe(first); // same instance — no needless rebuild
+  });
+});
+
+describe('registry rebuild as the background drain lands files', () => {
+  const putDataFile = (path: string, json: unknown) =>
+    dataCacheRepo.putFile({
+      key: dataCacheRepo.key(getActiveTag(), path),
+      tag: getActiveTag(),
+      path,
+      pack: 'essentials',
+      json,
+      bytes: 0,
+      fetchedAt: 1,
+    });
+
+  it('picks up a file that arrives after the first build', async () => {
+    // The signature is now read from cached primary keys rather than from the
+    // rows themselves. If those two ever disagreed the registry would go stale
+    // for the whole session, which is the one thing that change could break:
+    // the drain adds files for seconds after the first page paints.
+    await putDataFile('feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] });
+    const first = await getRegistry();
+    expect(first.byType('feat').map((f) => String(f.name))).toEqual(['Alert']);
+
+    await putDataFile('backgrounds.json', { background: [{ name: 'Sage', source: 'PHB' }] });
+    const second = await getRegistry();
+    expect(second).not.toBe(first);
+    expect(second.byType('background').map((b) => String(b.name))).toEqual(['Sage']);
+    expect(second.byType('feat').map((f) => String(f.name))).toEqual(['Alert']);
   });
 });
