@@ -245,28 +245,42 @@ export function Component() {
        * afterthought, while Import shared a row with the wizard as though the
        * two were siblings. Importing is not a third way to make a character, it
        * is bringing in one that already exists, so it sits apart and quieter.
+       *
+       * The heading is what names the outcome. Calling one button "New
+       * character" made the other look like it did something else, when both
+       * make exactly the same thing, so the shared result is said once above
+       * and the buttons are left to say only how they differ. Each still spells
+       * it out through `aria-label`, where there is no heading nearby to lean
+       * on and "Blank sheet" alone would be a riddle.
        */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => void createBlank()}
-          className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-accent px-2 py-3 text-white"
-        >
-          <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
-            <Plus size={16} aria-hidden /> New character
-          </span>
-          <span className="text-[11px] whitespace-nowrap text-white/75">free-form editor</span>
-        </button>
-        <Link
-          to="/create"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface px-2 py-3"
-        >
-          <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
-            <Wand2 size={16} aria-hidden /> Guided wizard
-          </span>
-          <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
-        </Link>
-      </div>
+      <section className="flex flex-col gap-1.5">
+        <h2 className="text-sm font-semibold text-ink-muted">New character</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            aria-label="New character from a blank sheet"
+            onClick={() => void createBlank()}
+            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-accent px-2 py-3 text-white"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
+              <Plus size={16} aria-hidden /> Blank sheet
+            </span>
+            {/* Short enough to keep its padding at 320px, which is why the
+                longer sell lives in the heading and the aria-label. */}
+            <span className="text-[11px] whitespace-nowrap text-white/75">change anything</span>
+          </button>
+          <Link
+            to="/create"
+            aria-label="New character with the guided wizard"
+            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface px-2 py-3"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
+              <Wand2 size={16} aria-hidden /> Guided wizard
+            </span>
+            <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
+          </Link>
+        </div>
+      </section>
       <button
         type="button"
         onClick={() => importInput.current?.click()}
