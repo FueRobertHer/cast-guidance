@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Copy, Download, FileUp, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy, Download, FileUp, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
@@ -75,7 +75,9 @@ function VitalsLine({ v }: { v?: Vitals }) {
   const ratio = v === undefined || v.maxHp <= 0 ? 0 : Math.max(0, Math.min(1, v.hp / v.maxHp));
   const color = ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
   return (
-    <div className="mt-1 flex h-4 items-center gap-2 text-xs text-ink-muted">
+    // Nowrap because the line is a fixed 16px: letting "AC 19" fall to a second
+    // line at the narrowest widths spills it out of the space held for it.
+    <div className="mt-1 flex h-4 items-center gap-2 text-xs whitespace-nowrap text-ink-muted">
       <span className="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
         {v !== undefined && (
           <span
@@ -235,35 +237,43 @@ export function Component() {
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={() => void createBlank()}
-        className="flex flex-col items-center rounded-lg bg-accent px-4 py-3 text-white"
-      >
-        <span className="flex items-center gap-2 font-semibold">
-          <Plus size={18} /> New character
-        </span>
-        <span className="text-xs text-white/75">free-form editor — change anything, anytime</span>
-      </button>
-      <div className="flex gap-2">
-        <Link
-          to="/create"
-          className="flex flex-1 flex-col items-center rounded-lg bg-surface px-4 py-2.5"
-        >
-          <span className="text-sm font-semibold">Guided wizard</span>
-          <span className="text-[10px] text-ink-muted">step-by-step, good first time</span>
-        </Link>
+      {/*
+       * Two ways to make a character, side by side at one size, because they
+       * are the same decision approached differently: pick the door that suits
+       * how you like to work. They used to sit on separate rows at roughly
+       * triple the size difference, which read as one real option and one
+       * afterthought, while Import shared a row with the wizard as though the
+       * two were siblings. Importing is not a third way to make a character, it
+       * is bringing in one that already exists, so it sits apart and quieter.
+       */}
+      <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => importInput.current?.click()}
-          className="flex flex-1 flex-col items-center rounded-lg bg-surface px-4 py-2.5"
+          onClick={() => void createBlank()}
+          className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-accent px-2 py-3 text-white"
         >
-          <span className="flex items-center gap-2 text-sm font-semibold">
-            <FileUp size={16} /> Import
+          <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
+            <Plus size={16} aria-hidden /> New character
           </span>
-          <span className="text-[10px] text-ink-muted">from an exported file</span>
+          <span className="text-[11px] whitespace-nowrap text-white/75">free-form editor</span>
         </button>
+        <Link
+          to="/create"
+          className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface px-2 py-3"
+        >
+          <span className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap">
+            <Wand2 size={16} aria-hidden /> Guided wizard
+          </span>
+          <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
+        </Link>
       </div>
+      <button
+        type="button"
+        onClick={() => importInput.current?.click()}
+        className="flex items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted hover:text-ink"
+      >
+        <FileUp size={15} aria-hidden /> Import from a file
+      </button>
       <input
         ref={importInput}
         type="file"
