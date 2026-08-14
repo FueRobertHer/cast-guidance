@@ -35,6 +35,15 @@ describe('dataCacheRepo files', () => {
     expect(await dataCacheRepo.filesByTag('v2')).toHaveLength(1);
   });
 
+  it('keeps nested paths intact and a prefix-sharing tag out', async () => {
+    // cachedPaths reads `${tag}:${path}` primary keys by prefix rather than
+    // matching the tag column, so a sibling tag whose name starts with this
+    // one must not leak in, and the slice must survive a path with slashes.
+    await dataCacheRepo.putFile(fileRow('v1', 'class/class-bard.json'));
+    await dataCacheRepo.putFile(fileRow('v1.1', 'leaked.json'));
+    expect([...(await dataCacheRepo.cachedPaths('v1'))]).toEqual(['class/class-bard.json']);
+  });
+
   it('deleteTag removes only that tag’s files', async () => {
     await dataCacheRepo.putFile(fileRow('v1', 'a.json'));
     await dataCacheRepo.putFile(fileRow('v2', 'a.json'));
