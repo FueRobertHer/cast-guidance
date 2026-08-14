@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Copy, Download, FileUp, Pencil, Trash2 } from 'lucide-react';
+import { Ellipsis, FileUp } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
@@ -12,7 +12,7 @@ import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import { notify } from '@/stores/notices';
-import { askConfirm, askText } from '@/ui/dialogs';
+import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { homebrewForExport } from './homebrewExport';
 
 /** Report a failed character mutation without losing the user's place. */
@@ -53,6 +53,23 @@ function classSummary(doc: CharacterDoc): string {
     })
     .join(' / ');
 }
+
+/**
+ * The row's one action control. Square and 44px because it is the only thing on
+ * the row a thumb has to hit precisely; the rest of the row is the character.
+ */
+const ROW_ACTION =
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink';
+
+/**
+ * The pair of ways into a new character, as one string shared by a `<button>`
+ * and a `<Link>`. They are meant to read as twins, and twins written out twice
+ * drift apart on the next edit; `text-center` is here because a button centres
+ * its text by default and an anchor does not, which only shows once a label
+ * wraps, exactly the moment nobody is looking.
+ */
+const CREATE_OPTION =
+  'flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3 text-center transition-colors hover:bg-surface-3 active:bg-surface-3';
 
 interface Vitals {
   hp: number;
@@ -151,6 +168,70 @@ export function Component() {
     }
   };
 
+  const remove = async (c: CharacterDoc) => {
+    const ok = await askConfirm({
+      title: `Delete ${c.name}?`,
+      detail: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await characterRepo.delete(c.id);
+    } catch (err) {
+      notifyFailure('Delete', err);
+    }
+  };
+
+  /**
+   * Everything you can do *to* a character, one sheet behind one control.
+   *
+   * These four used to sit in the row as 32px icons: below the size a thumb can
+   * reliably hit, four of them eating 152px of a 343px row, and Delete one
+   * mis-tap away from Duplicate. They are all occasional next to the thing this
+   * row is actually for, which is opening the character, so the row keeps the
+   * name and one full-size control, and the actions get room to be labelled in
+   * words instead of guessed from a glyph.
+   *
+   * The sheet is titled with the character, because by the time it opens the
+   * row that summoned it is behind an overlay.
+   */
+  const rowActions = async (c: CharacterDoc) => {
+    const picked = await askChoice({
+      title: c.name,
+      options: [
+        { id: 'rename', label: 'Rename' },
+        { id: 'duplicate', label: 'Duplicate' },
+        { id: 'export', label: 'Export', hint: 'JSON file' },
+        { id: 'delete', label: 'Delete', danger: true },
+      ],
+    });
+    switch (picked) {
+      case 'rename':
+        await rename(c);
+        break;
+      case 'duplicate':
+        try {
+          await characterRepo.duplicate(c.id);
+        } catch (err) {
+          notifyFailure('Duplicate', err);
+        }
+        break;
+      case 'export':
+        try {
+          await exportCharacter(c);
+        } catch (err) {
+          notifyFailure('Export', err);
+        }
+        break;
+      case 'delete':
+        await remove(c);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
@@ -185,53 +266,18 @@ export function Component() {
                 <VitalsLine v={vitals.get(c.id)} />
               )}
             </Link>
+            {/* `title` for the mouse, `aria-label` for the screen reader: four
+                rows of "More" otherwise announce identically, with nothing to
+                say which character each one belongs to. */}
             <button
               type="button"
-              title="Rename"
-              onClick={() => void rename(c)}
-              className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
+              title="More"
+              aria-label={`Actions for ${c.name}`}
+              aria-haspopup="dialog"
+              onClick={() => void rowActions(c)}
+              className={ROW_ACTION}
             >
-              <Pencil size={16} />
-            </button>
-            <button
-              type="button"
-              title="Export"
-              onClick={() => {
-                exportCharacter(c).catch((err: unknown) => notifyFailure('Export', err));
-              }}
-              className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
-            >
-              <Download size={16} />
-            </button>
-            <button
-              type="button"
-              title="Duplicate"
-              onClick={() => {
-                characterRepo
-                  .duplicate(c.id)
-                  .catch((err: unknown) => notifyFailure('Duplicate', err));
-              }}
-              className="rounded p-2 text-ink-muted hover:bg-surface-2 hover:text-ink"
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              type="button"
-              title="Delete"
-              onClick={async () => {
-                const ok = await askConfirm({
-                  title: `Delete ${c.name}?`,
-                  detail: 'This cannot be undone.',
-                  confirmLabel: 'Delete',
-                  danger: true,
-                });
-                if (ok) {
-                  characterRepo.delete(c.id).catch((err: unknown) => notifyFailure('Delete', err));
-                }
-              }}
-              className="rounded p-2 text-ink-muted hover:bg-accent-deep hover:text-ink"
-            >
-              <Trash2 size={16} />
+              <Ellipsis size={18} />
             </button>
           </div>
         ))}
@@ -267,7 +313,7 @@ export function Component() {
             type="button"
             aria-label="New character from a blank sheet"
             onClick={() => void createBlank()}
-            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3"
+            className={CREATE_OPTION}
           >
             <span className="text-sm font-semibold whitespace-nowrap">Blank sheet</span>
             {/* Short enough to keep its padding at 320px, which is why the
@@ -277,7 +323,7 @@ export function Component() {
           <Link
             to="/create"
             aria-label="New character with the guided wizard"
-            className="flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3"
+            className={CREATE_OPTION}
           >
             <span className="text-sm font-semibold whitespace-nowrap">Guided wizard</span>
             <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
@@ -287,7 +333,7 @@ export function Component() {
       <button
         type="button"
         onClick={() => importInput.current?.click()}
-        className="flex items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted hover:text-ink"
+        className="flex items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
       >
         <FileUp size={15} aria-hidden /> Import from a file
       </button>

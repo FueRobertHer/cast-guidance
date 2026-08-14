@@ -39,7 +39,7 @@ type DialogRequest =
       kind: 'choice';
       title: string;
       detail?: string;
-      options: Array<{ id: string; label: string; hint?: string }>;
+      options: Array<{ id: string; label: string; hint?: string; danger?: boolean }>;
       resolve: (v: string | null) => void;
     };
 
@@ -75,11 +75,16 @@ export function askConfirm(opts: {
   return new Promise((resolve) => open({ kind: 'confirm', ...opts, resolve }));
 }
 
-/** Pick one of several options (or null on dismiss). Used for the cast-slot chooser. */
+/**
+ * Pick one of several options (or null on dismiss). Used for the cast-slot
+ * chooser and for a row's action menu. Mark an option `danger` when choosing it
+ * starts something destructive, so it does not sit in the list looking like the
+ * three harmless choices above it.
+ */
 export function askChoice(opts: {
   title: string;
   detail?: string;
-  options: Array<{ id: string; label: string; hint?: string }>;
+  options: Array<{ id: string; label: string; hint?: string; danger?: boolean }>;
 }): Promise<string | null> {
   return new Promise((resolve) => open({ kind: 'choice', ...opts, resolve }));
 }
@@ -196,7 +201,9 @@ export function DialogHost() {
                       req.resolve(o.id);
                       close();
                     }}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold hover:bg-surface-2/70"
+                    className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
+                      o.danger === true ? 'text-accent' : ''
+                    }`}
                   >
                     <span>{o.label}</span>
                     {o.hint !== undefined && (
