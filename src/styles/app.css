@@ -78,6 +78,38 @@ a {
 }
 
 /*
+ * Double-tap zoom, gone. Safari on iOS treats a second tap inside ~300ms as
+ * "zoom in here", which a sheet made of pips, steppers and roll chips triggers
+ * constantly: spend two ki in quick succession and the page lurches instead.
+ * `manipulation` keeps panning and pinch zoom (the deliberate gestures) and
+ * drops only the double-tap one. Applied to controls rather than the whole
+ * page so a double tap on prose still zooms, which is how a reader zooms text.
+ */
+:where(button, a, label, summary, [role="button"], input, select, textarea) {
+  touch-action: manipulation;
+}
+
+/*
+ * iOS Safari zooms the viewport in whenever a focused control's text is under
+ * 16px, and it never zooms back out: one tap on a search box and the rest of
+ * the session is spent at 1.3x, panning sideways to read the sheet. Android
+ * does not do this, which is why the app felt fine there and awful here.
+ *
+ * The app styles controls at `text-sm` (14px) for density, so this raises them
+ * to the threshold on the platform that has one. `-webkit-touch-callout` is
+ * WebKit-on-iOS only, so desktop Safari and every other browser keep the
+ * 14px design. Unlayered, so it beats Tailwind's layered `text-sm` utility
+ * without touching all 40-odd call sites.
+ */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/*
  * A control that acts like a control feels like one under the mouse. Tailwind
  * v4's preflight dropped v3's `cursor: pointer` on buttons, so a `<button>`
  * sits at the UA default while a `<Link>` beside it keeps the hand. The
