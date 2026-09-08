@@ -6,6 +6,7 @@ import { EntriesView } from '@/data5e/entries/renderEntries';
 import { invalidateRegistry } from '@/data5e/registry';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { ABILITIES, type Ability } from '@/engine/types';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
 import {
@@ -17,6 +18,7 @@ import {
   nextRiders,
   pruneItemFields,
 } from './itemFields';
+import { COMPLEX, readSpellGrant, type SpellGrant, writeSpellGrant } from './spellGrant';
 
 type Json = Record<string, unknown>;
 
@@ -102,6 +104,80 @@ function CheckField({
 
 const inputCls =
   'rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted';
+
+/**
+ * The spell an item grants: a wand's cantrip, a cloak's daily misty step.
+ *
+ * Three boxes for the common case, and only after a spell is named, since a
+ * usage count and a casting ability have nothing to describe until then. A file
+ * that says more than these boxes can is reported rather than edited: the form
+ * would have to throw away the rest of it to write its own answer back.
+ */
+function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unknown) => void }) {
+  const parsed = readSpellGrant(raw);
+  const [grant, setGrant] = useState<SpellGrant>(() =>
+    parsed !== undefined && parsed !== COMPLEX ? parsed : { spell: '' },
+  );
+  if (parsed === COMPLEX) {
+    return (
+      <p className="col-span-2 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-xs text-ink-muted">
+        This item's spells were written by hand, and say more than these boxes can hold (several
+        spells, or a level gate). Edit the file itself to change them.
+      </p>
+    );
+  }
+  const push = (next: SpellGrant) => {
+    setGrant(next);
+    onChange(writeSpellGrant(next));
+  };
+  return (
+    <>
+      <Field label="Grants spell">
+        <input
+          value={grant.spell}
+          onChange={(e) => push({ ...grant, spell: e.target.value })}
+          placeholder="misty step"
+          className={inputCls}
+        />
+      </Field>
+      {grant.spell.trim() !== '' && (
+        <>
+          <Field label="Uses per day">
+            <input
+              inputMode="numeric"
+              value={grant.perDay ?? ''}
+              onChange={(e) => {
+                const n = Number.parseInt(e.target.value, 10);
+                push({ ...grant, perDay: Number.isNaN(n) || n <= 0 ? undefined : n });
+              }}
+              placeholder="blank = at will"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Spell ability">
+            <select
+              value={grant.ability ?? 'none'}
+              onChange={(e) =>
+                push({
+                  ...grant,
+                  ability: e.target.value === 'none' ? undefined : (e.target.value as Ability),
+                })
+              }
+              className={inputCls}
+            >
+              <option value="none">none</option>
+              {ABILITIES.map((a) => (
+                <option key={a} value={a}>
+                  {a.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </>
+      )}
+    </>
+  );
+}
 
 /**
  * The file stores 5etools codes, but a dropdown reading "B / P / S / A / C"
@@ -289,6 +365,10 @@ function EntityForm({
               className={inputCls}
             />
           </Field>
+          <SpellGrantFields
+            raw={extra.additionalSpells}
+            onChange={(v) => set('additionalSpells', v)}
+          />
           <CheckField
             label="Requires attunement"
             wide
@@ -584,6 +664,10 @@ export function Component() {
             </div>
             {editing?.type === type && (
               <EntityForm
+                // Every field seeds its state from `initial` once. Without a key
+                // tying the instance to the entity, editing a second item of the
+                // same type reuses the form and shows the first one's values.
+                key={`${type}:${editing.index ?? 'new'}`}
                 type={type}
                 source={sourceId}
                 initial={editing.index !== null ? (entities[editing.index] as Json) : undefined}

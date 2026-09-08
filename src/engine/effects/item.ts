@@ -1,5 +1,6 @@
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
+import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
@@ -65,5 +66,12 @@ export function collectItems(col: Collector): void {
     if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
       col.add({ kind: 'acBonus', amount: bonusAc, origin });
     }
+
+    // Spells the item grants: a wand's cantrip, a cloak's daily misty step.
+    // Same 5etools shape races and feats use, so an imported magic item and a
+    // homebrew one both arrive here already speaking it. Equipping is what
+    // turns it on: attunement is tracked on the sheet but never enforced, and
+    // gating a granted spell on it would be the one place that did.
+    collectAdditionalSpells(col, e.additionalSpells, origin);
   }
 }

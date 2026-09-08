@@ -168,7 +168,10 @@ function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['gra
   const seen = new Set<string>();
   const out: DerivedSheet['grantedSpells'] = [];
   for (const e of effectsOf(effects, 'grantSpell')) {
-    const key = `${e.spell.name}|${e.spell.source}`.toLowerCase();
+    // Two sources granting the same spell collapse to one row, unless each
+    // brought its own pool of uses: a wand's 3/day fireball beside a race's
+    // 1/day is two rows, or one of the two pools would have nothing to spend it.
+    const key = `${e.spell.name}|${e.spell.source}|${e.resourceKey ?? ''}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
@@ -176,6 +179,7 @@ function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['gra
       source: e.spell.source,
       ability: e.ability,
       usage: e.usage,
+      resourceKey: e.resourceKey,
       origin: e.origin.label,
     });
   }
