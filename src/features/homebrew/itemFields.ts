@@ -51,3 +51,37 @@ export function nextRiders(
   const next = typeof first.dmg === 'string' && first.dmg.trim() !== '' ? [first, ...rest] : rest;
   return next.length > 0 ? next : undefined;
 }
+
+/**
+ * The leading code of a 5etools item type. Imported files write the source
+ * alongside it ("S|XPHB"); the builder writes the bare code. Both mean shield.
+ */
+export function baseTypeCode(type: unknown): string | undefined {
+  return typeof type === 'string' ? type.split('|')[0] : undefined;
+}
+
+const WEAPON_TYPE_CODES = new Set(['M', 'R']);
+const ARMOR_TYPE_CODES = new Set(['LA', 'MA', 'HA', 'S']);
+
+/** Whether a type carries its own damage dice, or its own base AC. */
+export const isWeaponType = (type: unknown) => WEAPON_TYPE_CODES.has(baseTypeCode(type) ?? '');
+export const isArmorType = (type: unknown) => ARMOR_TYPE_CODES.has(baseTypeCode(type) ?? '');
+
+/** Fields whose form control disappears when the type stops using them. */
+const WEAPON_FIELDS = ['dmg1', 'dmgType', 'extraDamage', 'bonusWeapon'];
+const ARMOR_FIELDS = ['ac'];
+
+/**
+ * The entity with the fields its type doesn't use removed.
+ *
+ * The form hides a control the moment the type stops using it, but hiding is
+ * not forgetting: a base AC typed while the item was heavy armor stayed on the
+ * ring it became, invisible in the form and intact in the file, waiting to be
+ * read again by anything that trusts the field. Save what the form showed.
+ */
+export function pruneItemFields(extra: Json): Json {
+  const next = { ...extra };
+  if (!isWeaponType(extra.type)) for (const k of WEAPON_FIELDS) delete next[k];
+  if (!isArmorType(extra.type)) for (const k of ARMOR_FIELDS) delete next[k];
+  return next;
+}
