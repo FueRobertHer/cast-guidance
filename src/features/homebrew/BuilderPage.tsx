@@ -8,7 +8,15 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
-import { DEFAULT_RIDER_TYPE, damagePatch, defaultDamageType, nextRiders } from './itemFields';
+import {
+  DEFAULT_RIDER_TYPE,
+  damagePatch,
+  defaultDamageType,
+  isArmorType,
+  isWeaponType,
+  nextRiders,
+  pruneItemFields,
+} from './itemFields';
 
 type Json = Record<string, unknown>;
 
@@ -163,7 +171,8 @@ function EntityForm({
 
   const save = () => {
     if (name.trim() === '') return;
-    onSave({ name: name.trim(), source, ...extra, entries: textToEntries(text) });
+    const fields = type === 'item' ? pruneItemFields(extra) : extra;
+    onSave({ name: name.trim(), source, ...fields, entries: textToEntries(text) });
   };
 
   return (
@@ -210,7 +219,7 @@ function EntityForm({
               ))}
             </select>
           </Field>
-          {(extra.type === 'M' || extra.type === 'R') && (
+          {isWeaponType(extra.type) && (
             <>
               {/* Dice and type pair up on a row, twice: the weapon's own damage,
                   then the rider it carries. Anything else side by side asks the
@@ -256,10 +265,7 @@ function EntityForm({
               </Field>
             </>
           )}
-          {(extra.type === 'LA' ||
-            extra.type === 'MA' ||
-            extra.type === 'HA' ||
-            extra.type === 'S') && (
+          {isArmorType(extra.type) && (
             <Field label="AC">
               <input
                 inputMode="numeric"
@@ -272,19 +278,17 @@ function EntityForm({
               />
             </Field>
           )}
-          {extra.type !== 'LA' &&
-            extra.type !== 'MA' &&
-            extra.type !== 'HA' &&
-            extra.type !== 'S' && (
-              <Field label="AC bonus">
-                <input
-                  value={String(extra.bonusAc ?? '')}
-                  onChange={(e) => set('bonusAc', e.target.value)}
-                  placeholder="+1 (rings, cloaks)"
-                  className={inputCls}
-                />
-              </Field>
-            )}
+          {/* Magic armor and shields add their bonus on top of the base AC
+              above, so this box belongs to every type: hiding it for armor was
+              what let a stale bonus keep counting from off screen. */}
+          <Field label="AC bonus">
+            <input
+              value={String(extra.bonusAc ?? '')}
+              onChange={(e) => set('bonusAc', e.target.value)}
+              placeholder={isArmorType(extra.type) ? '+1 (magic armor)' : '+1 (rings, cloaks)'}
+              className={inputCls}
+            />
+          </Field>
           <CheckField
             label="Requires attunement"
             wide

@@ -3,7 +3,13 @@
 // saved file disagrees with: a weapon that read "slashing" in the builder and
 // came out untyped, and a rider that read "fire" and burned nothing.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RIDER_TYPE, damagePatch, defaultDamageType, nextRiders } from './itemFields';
+import {
+  DEFAULT_RIDER_TYPE,
+  damagePatch,
+  defaultDamageType,
+  nextRiders,
+  pruneItemFields,
+} from './itemFields';
 
 describe('defaultDamageType', () => {
   it('cuts in melee and punctures at range', () => {
@@ -74,5 +80,53 @@ describe('nextRiders', () => {
         '',
       ),
     ).toEqual([{ dmg: '1d6', dmgType: 'C' }]);
+  });
+});
+
+describe('pruneItemFields', () => {
+  it('drops a base AC the type no longer has a box for', () => {
+    // Heavy armor first, then a ring: the AC field leaves the form, and the 18
+    // it held has to leave with it.
+    expect(pruneItemFields({ type: 'RG', ac: 18, bonusAc: '+1' })).toEqual({
+      type: 'RG',
+      bonusAc: '+1',
+    });
+  });
+
+  it('keeps a base AC on armor and shields, source-suffixed types included', () => {
+    expect(pruneItemFields({ type: 'S', ac: 2 })).toEqual({ type: 'S', ac: 2 });
+    expect(pruneItemFields({ type: 'S|XPHB', ac: 2 })).toEqual({ type: 'S|XPHB', ac: 2 });
+    expect(pruneItemFields({ type: 'HA', ac: 18 })).toEqual({ type: 'HA', ac: 18 });
+  });
+
+  it('drops weapon damage and to-hit from something that stopped being a weapon', () => {
+    expect(
+      pruneItemFields({
+        type: 'W',
+        dmg1: '1d8',
+        dmgType: 'S',
+        extraDamage: [{ dmg: '1d6', dmgType: 'F' }],
+        bonusWeapon: '+1',
+      }),
+    ).toEqual({ type: 'W' });
+  });
+
+  it('keeps the AC bonus whatever the type is', () => {
+    // The shield case: the engine adds `bonusAc` to a shield's own AC, so a +1
+    // shield is 2 and "+1", not a 3 typed into the base box.
+    expect(pruneItemFields({ type: 'S', ac: 2, bonusAc: '+1' })).toEqual({
+      type: 'S',
+      ac: 2,
+      bonusAc: '+1',
+    });
+  });
+
+  it('leaves fields no type gates alone', () => {
+    const gear = { type: 'G', rarity: 'rare', weight: 6, value: 1000, reqAttune: true };
+    expect(pruneItemFields(gear)).toEqual(gear);
+  });
+
+  it('treats an untyped entity as the gear the form shows it as', () => {
+    expect(pruneItemFields({ ac: 18, dmg1: '1d8' })).toEqual({});
   });
 });
