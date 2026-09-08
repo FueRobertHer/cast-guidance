@@ -3,7 +3,7 @@
  * granted by races, feats, subraces, and subclasses. Format (simplified):
  *   [{ ability: "cha" | { choose: [...] },
  *      known:    { "1": ["thaumaturgy"], "_": [...] },
- *      innate:   { "3": { daily: { "1": ["hellish rebuke"] } } },
+ *      innate:   { "3": { daily: { "1": ["hellish rebuke"] } } },  // 1/day
  *      prepared: { "1": ["bless", "cure wounds"] },   // domain/oath/circle
  *      expanded: { "1": ["armor of agathys"] } }]     // warlock patron
  * Level keys gate by character level. `prepared` spells are always prepared and
@@ -18,11 +18,23 @@ function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
 }
 
+const slugName = (s: string) =>
+  s
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/^-|-$/g, '');
+
 function parseSpellRef(s: string): { name: string; source: string } {
   // 5etools appends a cast-level hint like "hellish rebuke#2" or "guidance#c".
   const [namePart, source] = s.split('|');
   const name = (namePart ?? s).split('#')[0]?.trim() ?? s;
   return { name, source: source ?? '' };
+}
+
+/** How many times a granted spell can be cast, and what refills it. */
+interface SpellLimit {
+  uses: number;
+  resetOn: 'short' | 'long';
 }
 
 /** Push plain spell-name strings, skipping `{choose}` filter objects. */
@@ -60,6 +72,82 @@ function gatherByLevel(
   }
 }
 
+/** The spells in one innate bucket, and how their uses are counted. */
+interface InnateGroup {
+  names: string[];
+  limit: SpellLimit | undefined;
+  /** The count covers the bucket as a whole rather than each spell in it. */
+  shared: boolean;
+}
+
+/**
+ * Walk one `innate` value, which is either a bare list or a bucket object:
+ * `{ will: [...], daily: { "1": [...], "1e": [...] }, rest: { "2": [...] } }`.
+ * The bucket key is the count, and the "e" suffix is what "each" is written
+ * with: `daily: { "1": ["a", "b"] }` is one cast a day between the two, and
+ * `"1e"` is one cast of each, so the suffix decides how many pools to open.
+ */
+function walkInnateValue(
+  val: unknown,
+  sawChoose: { v: boolean },
+  emit: (group: InnateGroup) => void,
+): void {
+  const unlimited = (v: unknown) => {
+    const names: string[] = [];
+    collectStrings(v, names, sawChoose);
+    if (names.length > 0) emit({ names, limit: undefined, shared: false });
+  };
+  if (typeof val === 'string' || Array.isArray(val)) {
+    unlimited(val);
+    return;
+  }
+  if (val === null || typeof val !== 'object') return;
+  // A `{choose}` filter can stand where a bucket object would. It names no
+  // spell, so it belongs to `collectStrings`, which turns it into the note the
+  // player reads; walking it as a bucket would grant "level=1" as a spell.
+  if ('choose' in val) {
+    unlimited(val);
+    return;
+  }
+  for (const [bucket, spells] of Object.entries(val)) {
+    if (bucket !== 'daily' && bucket !== 'rest') {
+      // "will" is at-will, and an unknown bucket is better granted without a
+      // limit than dropped: the spell is the part the sheet can't invent.
+      unlimited(spells);
+      continue;
+    }
+    if (spells === null || typeof spells !== 'object') continue;
+    const resetOn: SpellLimit['resetOn'] = bucket === 'daily' ? 'long' : 'short';
+    for (const [countKey, list] of Object.entries(spells)) {
+      const uses = Number.parseInt(countKey, 10);
+      const names: string[] = [];
+      collectStrings(list, names, sawChoose);
+      if (names.length === 0) continue;
+      const limit: SpellLimit | undefined =
+        Number.isNaN(uses) || uses <= 0 ? undefined : { uses, resetOn };
+      emit({ names, limit, shared: limit !== undefined && !/e$/i.test(countKey) });
+    }
+  }
+}
+
+function gatherInnate(
+  map: unknown,
+  totalLevel: number,
+  sawChoose: { v: boolean },
+  emit: (group: InnateGroup) => void,
+): void {
+  if (map === null || typeof map !== 'object') return;
+  for (const [key, val] of Object.entries(map)) {
+    const gate = key === '_' ? 0 : Number.parseInt(key, 10);
+    if (!Number.isNaN(gate) && gate <= totalLevel) walkInnateValue(val, sawChoose, emit);
+  }
+}
+
+/** Title Case for a resource card, since spell refs are written lowercase. */
+function spellTitle(name: string): string {
+  return name.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Grant an entry's known/innate/prepared spells + surface expanded/choose notes. */
 function grantSpellEntry(
   col: Collector,
@@ -70,12 +158,61 @@ function grantSpellEntry(
 ): void {
   const sawChoose = { v: false };
 
-  // Innate / always-known: cast per their own rules or added to spells known.
-  const innate: string[] = [];
-  gatherByLevel(entry.known, totalLevel, innate, sawChoose);
-  gatherByLevel(entry.innate, totalLevel, innate, sawChoose);
-  for (const name of new Set(innate)) {
-    col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, origin });
+  // Innate first, then always-known: a spell listed in both is the same spell,
+  // and the innate listing is the one carrying its limit.
+  const seen = new Set<string>();
+  gatherInnate(entry.innate, totalLevel, sawChoose, (group) => {
+    const spells = group.names.map(parseSpellRef).filter((spell) => {
+      const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
+      if (seen.has(dedupe)) return false;
+      seen.add(dedupe);
+      return true;
+    });
+    if (spells.length === 0) return;
+    if (group.limit === undefined) {
+      for (const spell of spells) col.add({ kind: 'grantSpell', spell, ability, origin });
+      return;
+    }
+    const { uses, resetOn } = group.limit;
+    const per = resetOn === 'long' ? 'day' : 'rest';
+    // A shared count is one pool the whole bucket draws from; "each" opens one
+    // per spell. Either way the origin is in the key, so a wand's misty step
+    // and a cloak's are never the same pool.
+    const pools = group.shared ? [spells] : spells.map((spell) => [spell]);
+    for (const pool of pools) {
+      const key = `spell:${origin.uid}:${pool.map((s) => slugName(s.name)).join('+')}`;
+      col.add({
+        kind: 'resource',
+        key,
+        label: pool.map((s) => spellTitle(s.name)).join(', '),
+        max: uses,
+        resetOn,
+        // Two copies of the same wand are two grants of one use each, not one
+        // grant repeated: the pool they share should hold both.
+        stack: true,
+        origin,
+      });
+      for (const spell of pool) {
+        col.add({
+          kind: 'grantSpell',
+          spell,
+          ability,
+          usage: `${uses}/${per}`,
+          resourceKey: key,
+          origin,
+        });
+      }
+    }
+  });
+
+  const known: string[] = [];
+  gatherByLevel(entry.known, totalLevel, known, sawChoose);
+  for (const name of known) {
+    const spell = parseSpellRef(name);
+    const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    col.add({ kind: 'grantSpell', spell, ability, origin });
   }
 
   // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the

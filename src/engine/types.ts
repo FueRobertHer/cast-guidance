@@ -203,7 +203,14 @@ export type EffectInput = { origin: EffectOrigin } & (
       label: string;
       dice: string;
     }
-  | { kind: 'grantSpell'; spell: EntityRef; ability?: Ability; usage?: string }
+  | {
+      kind: 'grantSpell';
+      spell: EntityRef;
+      ability?: Ability;
+      usage?: string;
+      /** Set when the grant is limited ("1/day"): the resource holding its uses. */
+      resourceKey?: string;
+    }
   | { kind: 'note'; text: string }
 );
 
@@ -382,8 +389,11 @@ export interface DerivedSheet {
     name: string;
     source: string;
     ability?: Ability;
-    /** 'prepared' = always-prepared (domain/oath/circle), cast with class slots. */
+    /** 'prepared' = always-prepared (domain/oath/circle), cast with class slots.
+     * "1/day" / "2/rest" = an innate grant with its own pool of uses. */
     usage?: string;
+    /** The resource holding a limited grant's uses, spent when it is cast. */
+    resourceKey?: string;
     origin: string;
   }>;
   warnings: string[];

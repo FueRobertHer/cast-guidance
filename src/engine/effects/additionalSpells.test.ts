@@ -210,3 +210,74 @@ describe('collectAdditionalSpells — choose-ability picker (FIX-001)', () => {
     ]);
   });
 });
+
+const resources = (effects: EffectInput[]) =>
+  effects.filter((e): e is Extract<EffectInput, { kind: 'resource' }> => e.kind === 'resource');
+
+describe('innate usage buckets', () => {
+  it('turns a daily bucket into a limited grant with its own pool', () => {
+    const col = collect([{ innate: { '1': { daily: { '1': ['hellish rebuke'] } } } }]);
+    const g = granted(col.effects);
+    expect(g[0]).toMatchObject({ spell: { name: 'hellish rebuke' }, usage: '1/day' });
+    const key = g[0]?.resourceKey;
+    expect(key).toBeDefined();
+    expect(resources(col.effects)[0]).toMatchObject({
+      key,
+      label: 'Hellish Rebuke',
+      max: 1,
+      resetOn: 'long',
+    });
+  });
+
+  it('reads a per-rest bucket as a short-rest pool', () => {
+    const col = collect([{ innate: { _: { rest: { '2': ['shield'] } } } }]);
+    expect(granted(col.effects)[0]).toMatchObject({ usage: '2/rest' });
+    expect(resources(col.effects)[0]).toMatchObject({ max: 2, resetOn: 'short' });
+  });
+
+  it('gives each spell its own pool when the count says "each"', () => {
+    const col = collect([{ innate: { _: { daily: { '1e': ['bless', 'bane'] } } } }]);
+    const g = granted(col.effects);
+    expect(g.map((e) => e.usage)).toEqual(['1/day', '1/day']);
+    // Two spells, two pools: spending one leaves the other untouched.
+    const keys = resources(col.effects).map((r) => r.key);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('shares one pool when the count has no "each"', () => {
+    // "1/day" over a two-spell bucket is one cast between them, not one apiece.
+    const col = collect([{ innate: { _: { daily: { '1': ['bless', 'bane'] } } } }]);
+    const pools = resources(col.effects);
+    expect(pools).toHaveLength(1);
+    expect(pools[0]).toMatchObject({ label: 'Bless, Bane', max: 1 });
+    // Both spells spend from it, so casting either empties the other.
+    const keys = granted(col.effects).map((e) => e.resourceKey);
+    expect(new Set(keys)).toEqual(new Set([pools[0]?.key]));
+  });
+
+  it('reads a choose filter standing where a bucket would as a note, not a spell', () => {
+    const col = collect([{ innate: { _: { choose: 'level=1|class=Wizard' } } }]);
+    expect(granted(col.effects)).toHaveLength(0);
+    expect(col.warnings.join(' ')).toContain('lets you choose a spell');
+  });
+
+  it('leaves at-will spells unlimited', () => {
+    const col = collect([{ innate: { _: { will: ['detect magic'] } } }]);
+    expect(granted(col.effects)[0]?.usage).toBeUndefined();
+    expect(resources(col.effects)).toHaveLength(0);
+  });
+
+  it('keeps the limit when the same spell is also listed as known', () => {
+    const col = collect([
+      { known: { _: ['misty step'] }, innate: { _: { daily: { '1': ['misty step'] } } } },
+    ]);
+    const g = granted(col.effects);
+    expect(g).toHaveLength(1);
+    expect(g[0]?.usage).toBe('1/day');
+  });
+
+  it('gates a daily bucket by character level like any other', () => {
+    const col = collect([{ innate: { '5': { daily: { '1': ['fireball'] } } } }], 1);
+    expect(granted(col.effects)).toHaveLength(0);
+  });
+});

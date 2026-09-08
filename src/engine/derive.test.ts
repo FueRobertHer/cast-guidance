@@ -879,3 +879,29 @@ describe('deriveSheet with feature refs nested inside features (paladin-shaped)'
     expect(sheet.features.filter((f) => f.name === 'Vow Power')).toHaveLength(1);
   });
 });
+
+describe('granted spells from two sources', () => {
+  it('keeps a row per pool when two sources grant the same spell', () => {
+    const doc = newCharacterDoc('g1', 'Sparky', 'test-tag');
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 3, hp: ['avg'] }];
+    doc.feats = [{ ref: { name: 'Spark Touched', source: 'TST' }, instanceId: 'f1' }];
+    doc.equipment = [
+      {
+        id: 'w1',
+        ref: { name: 'Wand of Searing', source: 'TST' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    const rows = sheet.grantedSpells.filter((g) => g.name === 'searing bolt');
+    // Two grants, two pools, two rows: collapsing them would leave one pool
+    // showing pips on the Resources card that nothing could ever spend.
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.resourceKey)).size).toBe(2);
+    for (const row of rows) {
+      expect(sheet.resources.some((r) => r.key === row.resourceKey)).toBe(true);
+    }
+  });
+});

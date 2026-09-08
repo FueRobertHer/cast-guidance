@@ -168,7 +168,7 @@ export function Component() {
       label !== undefined ? `Used ${label}` : undefined,
     );
   /** Cast an innate/granted spell: no slot, just concentration + economy. */
-  const castGranted = (name: string, source: string) =>
+  const castGranted = (name: string, source: string, limit?: { key: string; max: number }) =>
     update((d) => {
       if (spellConcentrationOf(name, source)) d.play.concentratingOn = { label: name };
       const eco = spellCastEconomy(name, source);
@@ -176,6 +176,16 @@ export function Component() {
         const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
         turn[eco] = true;
         d.play.turn = turn;
+      }
+      // A grant with its own pool ("1/day" from a wand) spends a use here
+      // rather than leaving the pips for the player to remember.
+      if (limit !== undefined) {
+        const entry = d.play.resources.find((r) => r.key === limit.key);
+        const used = entry?.used ?? 0;
+        if (used < limit.max) {
+          if (entry !== undefined) entry.used = used + 1;
+          else d.play.resources.push({ key: limit.key, used: 1 });
+        }
       }
     }, `Cast ${name}`);
 
@@ -1375,6 +1385,19 @@ export function Component() {
                 attackModifier !== undefined &&
                 Array.isArray(entity?.spellAttack) &&
                 entity.spellAttack.length > 0;
+              // "1/day" grants carry their own pool; casting spends from it.
+              const limited =
+                g.resourceKey !== undefined
+                  ? sheet.resources.find((r) => r.key === g.resourceKey)
+                  : undefined;
+              const remaining =
+                limited !== undefined ? limited.max - usedOf(limited.key) : undefined;
+              // Rolling dice is always allowed, but a spent grant must not go
+              // on marking your action and your concentration: most limited
+              // spells cast through a roll chip rather than the Cast button, so
+              // guarding only the button would leave the limit unenforced for
+              // every one of them.
+              const depleted = remaining !== undefined && remaining <= 0;
               const cast = () => {
                 if (g.usage === 'prepared' && block !== undefined) {
                   castSpell(update, block, level, {
@@ -1384,7 +1407,11 @@ export function Component() {
                     economy: spellCastEconomy(g.name, g.source),
                   });
                 } else {
-                  castGranted(g.name, g.source);
+                  castGranted(
+                    g.name,
+                    g.source,
+                    limited !== undefined ? { key: limited.key, max: limited.max } : undefined,
+                  );
                 }
               };
               return (
@@ -1410,6 +1437,20 @@ export function Component() {
                             Always prepared
                           </span>
                         )}
+                        {remaining !== undefined && limited !== undefined && (
+                          <span
+                            title={
+                              depleted
+                                ? 'No uses left until you rest'
+                                : `${g.usage} from ${g.origin}`
+                            }
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              depleted ? 'bg-surface-2 text-ink-muted' : 'bg-accent-deep text-ink'
+                            }`}
+                          >
+                            {remaining}/{limited.max} per {g.usage?.split('/')[1]}
+                          </span>
+                        )}
                       </button>
                     }
                   />
@@ -1431,7 +1472,7 @@ export function Component() {
                         display={`Atk ${fmt(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
-                        onRolled={cast}
+                        onRolled={depleted ? undefined : cast}
                       />
                     )}
                     {rolls.map((action, index) => (
@@ -1440,15 +1481,20 @@ export function Component() {
                         expr={action.expr}
                         label={action.label}
                         variant={action.variant}
-                        onRolled={!hasAttack && index === 0 ? cast : undefined}
+                        onRolled={!hasAttack && index === 0 && !depleted ? cast : undefined}
                       />
                     ))}
                     {!hasAttack && rolls.length === 0 && (
                       <button
                         type="button"
                         onClick={cast}
-                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                        title="Cast (marks action economy and spends the applicable resource)"
+                        disabled={depleted}
+                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
+                        title={
+                          depleted
+                            ? 'No uses left until you rest'
+                            : 'Cast (marks action economy and spends the applicable resource)'
+                        }
                       >
                         Cast
                       </button>

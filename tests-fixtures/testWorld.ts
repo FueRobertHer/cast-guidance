@@ -183,6 +183,16 @@ const spell: DataEntity[] = [
   { name: 'Guidance', source: 'TST', level: 0, school: 'D', entries: ['+1d4 to a check.'] },
   { name: 'Aid', source: 'TST', level: 2, school: 'A', entries: ['Boost max HP.'] },
   { name: 'Flame Strike', source: 'TST', level: 5, school: 'V', entries: ['Fire from the sky.'] },
+  // Carries a damage tag, so the sheet renders it as a roll chip rather than a
+  // plain Cast button: that is the path a limited grant is usually cast from.
+  {
+    name: 'Searing Bolt',
+    source: 'TST',
+    level: 1,
+    school: 'V',
+    time: [{ number: 1, unit: 'action' }],
+    entries: ['A bolt deals {@damage 2d6} fire damage.'],
+  },
 ];
 
 const background: DataEntity[] = [
@@ -222,6 +232,14 @@ const background: DataEntity[] = [
 // Sources 'PHB' here exist only so uids line up with curated-table keys;
 // the entity content is synthetic.
 const feat: DataEntity[] = [
+  {
+    // Grants the same spell a wand does, on its own daily pool: the two must
+    // not collapse into one row that can only spend one of them.
+    name: 'Spark Touched',
+    source: 'TST',
+    additionalSpells: [{ ability: 'wis', innate: { _: { daily: { '2': ['searing bolt|tst'] } } } }],
+    entries: ['You carry a spark.'],
+  },
   {
     name: 'Alert',
     source: 'PHB',
@@ -623,6 +641,14 @@ const baseitem: DataEntity[] = [
 ];
 
 const item: DataEntity[] = [
+  {
+    name: 'Wand of Searing',
+    source: 'TST',
+    type: 'WD',
+    rarity: 'rare',
+    additionalSpells: [{ ability: 'cha', innate: { _: { daily: { '1': ['searing bolt|tst'] } } } }],
+    entries: ['Casts searing bolt once a day.'],
+  },
   {
     name: 'Ring of Shielding',
     source: 'TST',
