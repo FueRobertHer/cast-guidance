@@ -18,6 +18,8 @@ interface TaggedRoll {
   kind: 'damage' | 'dice';
   source: string;
   after: string;
+  /** Set when the roll came from a scaling block: that block's own label. */
+  scalingLabel?: string;
 }
 
 function stringsIn(value: unknown, out: string[] = []): string[] {
@@ -35,7 +37,8 @@ function taggedRolls(value: unknown): TaggedRoll[] {
     const re = /{@(damage|dice) ([^}|]+)(?:\|[^}]*)?}/gi;
     for (const match of source.matchAll(re)) {
       const kind = match[1]?.toLowerCase();
-      const expr = match[2]?.replaceAll(' ', '');
+      // "d4" and "1d4" are the same roll, and only one of them looks like one.
+      const expr = match[2]?.replaceAll(' ', '').replace(/^d/i, '1d');
       if ((kind !== 'damage' && kind !== 'dice') || expr === undefined) continue;
       const end = (match.index ?? 0) + match[0].length;
       out.push({ expr, kind, source, after: source.slice(end, end + 100) });
@@ -44,27 +47,67 @@ function taggedRolls(value: unknown): TaggedRoll[] {
   return out;
 }
 
-function levelScaledRoll(entity: Entity, characterLevel: number): TaggedRoll | undefined {
-  const block = entity.scalingLevelDice as
-    | { label?: unknown; scaling?: Record<string, unknown> }
-    | undefined;
-  if (block?.scaling === undefined) return undefined;
+interface ScalingBlock {
+  label?: unknown;
+  scaling?: Record<string, unknown>;
+}
+
+/**
+ * The die a scaling block gives at this character level.
+ *
+ * A spell with two outcomes carries two blocks (Toll the Dead rolls d8, or d12
+ * against a wounded target), so this runs per block and the caller keeps one
+ * chip for each.
+ */
+function levelScaledRoll(block: ScalingBlock, characterLevel: number): TaggedRoll | undefined {
+  if (block.scaling === undefined) return undefined;
   let bestLevel = -1;
   let expr: string | undefined;
+  let firstLevel = Number.POSITIVE_INFINITY;
+  let firstExpr: string | undefined;
   for (const [rawLevel, rawExpr] of Object.entries(block.scaling)) {
     const level = Number.parseInt(rawLevel, 10);
-    if (level <= characterLevel && level > bestLevel && typeof rawExpr === 'string') {
+    if (typeof rawExpr !== 'string') continue;
+    if (level <= characterLevel && level > bestLevel) {
       bestLevel = level;
       expr = rawExpr.replaceAll(' ', '');
     }
+    if (level < firstLevel) {
+      firstLevel = level;
+      firstExpr = rawExpr.replaceAll(' ', '');
+    }
   }
+  // Below the block's first tier (a sheet with no class picked yet) the cantrip
+  // still has a die: the first one. Falling through to the prose instead listed
+  // every tier at once, which reads as four different attacks to choose from.
+  expr = expr ?? firstExpr;
   if (expr === undefined) return undefined;
-  return {
-    expr,
-    kind: 'damage',
-    source: typeof block.label === 'string' ? block.label : '',
-    after: '',
-  };
+  const label = typeof block.label === 'string' ? block.label : '';
+  return { expr, kind: 'damage', source: label, after: '', scalingLabel: label };
+}
+
+/** Every scaling block a spell carries, in file order: one on most cantrips,
+ *  and an array on the two-outcome ones. */
+function levelScaledRolls(entity: Entity, characterLevel: number): TaggedRoll[] {
+  const raw = entity.scalingLevelDice as ScalingBlock | ScalingBlock[] | undefined;
+  if (raw === undefined || raw === null) return [];
+  const blocks = Array.isArray(raw) ? raw : [raw];
+  const out: TaggedRoll[] = [];
+  for (const block of blocks) {
+    if (block === null || typeof block !== 'object') continue;
+    const roll = levelScaledRoll(block, characterLevel);
+    if (roll !== undefined) out.push(roll);
+  }
+  return out;
+}
+
+/**
+ * Whether a tagged roll is part of a sentence about how the spell grows rather
+ * than something rolled at the table. Both editions phrase it the same way:
+ * "increases by 1d10 when you reach 5th level" / "when you reach levels 5".
+ */
+function describesScaling(roll: TaggedRoll): boolean {
+  return /when you reach/i.test(roll.after);
 }
 
 function sameDie(expr: string): { count: number; sides: number } | undefined {
@@ -133,15 +176,16 @@ export function spellRollActions(
   const name = typeof entity.name === 'string' ? entity.name : 'Spell';
   const baseLevel = typeof entity.level === 'number' ? entity.level : 0;
   const slotLevel = Math.max(baseLevel, options.slotLevel ?? baseLevel);
-  const scaled = levelScaledRoll(entity, options.characterLevel);
+  const scaled = levelScaledRolls(entity, options.characterLevel);
   const primary = taggedRolls(entity.entries);
+  // A scaling cantrip states its ladder twice: once in the machine-readable
+  // block, and again in prose ("increases by 1d10 when you reach 5th level").
+  // Only the block knows the character's level, so the sentence beside it is
+  // description, not a roll anyone makes, whichever tag it happens to carry.
   const rolls =
-    scaled === undefined ? primary : [scaled, ...primary.filter((roll) => roll.kind !== 'damage')];
-  const scalingLabel =
-    scaled !== undefined &&
-    typeof (entity.scalingLevelDice as { label?: unknown }).label === 'string'
-      ? String((entity.scalingLevelDice as { label: string }).label)
-      : undefined;
+    scaled.length === 0
+      ? primary
+      : [...scaled, ...primary.filter((roll) => roll.kind !== 'damage' && !describesScaling(roll))];
   const seen = new Set<string>();
   const out: SpellRollAction[] = [];
   for (const raw of rolls) {
@@ -149,7 +193,7 @@ export function spellRollActions(
       applySlotScaling(raw, entity, baseLevel, slotLevel),
       options.abilityModifier,
     );
-    const label = rollLabel(name, roll, raw === scaled ? scalingLabel : undefined);
+    const label = rollLabel(name, roll, roll.scalingLabel);
     const key = `${roll.kind}|${roll.expr}|${label}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
