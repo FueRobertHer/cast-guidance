@@ -10,6 +10,7 @@ import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
+import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -929,18 +930,14 @@ export function Component() {
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-1">
-                      {Array.from({ length: r.max }, (_, i) => (
-                        <button
-                          key={`${r.key}-${String(i)}`}
-                          type="button"
-                          aria-label={`${r.label} use ${i + 1}`}
-                          onClick={() => setUsed(r.key, used > i ? i : i + 1)}
-                          className={`h-4 w-4 rounded-full border ${
-                            i < used ? 'border-surface-2 bg-surface-2' : 'border-accent bg-accent'
-                          }`}
-                          title={`${r.max - used} of ${r.max} left`}
-                        />
-                      ))}
+                      <Pips
+                        total={r.max}
+                        spent={used}
+                        onChange={(next) => setUsed(r.key, next)}
+                        label={(use) => `${r.label} use ${use}`}
+                        tone="border-accent bg-accent"
+                        title={`${r.max - used} of ${r.max} left`}
+                      />
                     </div>
                   )}
                 </div>
@@ -1195,23 +1192,17 @@ export function Component() {
           {sc.pactSlots !== undefined && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-ink-muted">Pact (level {sc.pactSlots.level})</span>
-              {Array.from({ length: sc.pactSlots.count }, (_, i) => (
-                <button
-                  key={`pact-${String(i)}`}
-                  type="button"
-                  aria-label={`Pact slot ${i + 1}`}
-                  onClick={() =>
-                    update((d) => {
-                      d.play.pactSlotsSpent = d.play.pactSlotsSpent > i ? i : i + 1;
-                    })
-                  }
-                  className={`h-4 w-4 rounded-full border ${
-                    i < play.pactSlotsSpent
-                      ? 'border-surface-2 bg-surface-2'
-                      : 'border-sky-300 bg-sky-300'
-                  }`}
-                />
-              ))}
+              <Pips
+                total={sc.pactSlots.count}
+                spent={play.pactSlotsSpent}
+                onChange={(next) =>
+                  update((d) => {
+                    d.play.pactSlotsSpent = next;
+                  })
+                }
+                label={(slot) => `Pact slot ${slot}`}
+                tone="border-sky-300 bg-sky-300"
+              />
             </div>
           )}
           {scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0)) && (
@@ -1223,24 +1214,17 @@ export function Component() {
                 count > 0 ? (
                   <div key={`slots-${String(lvlIdx)}`} className="flex items-center gap-1.5">
                     <span className="w-8 text-xs text-ink-muted">L{lvlIdx + 1}</span>
-                    {Array.from({ length: count }, (_, i) => (
-                      <button
-                        key={`s-${String(lvlIdx)}-${String(i)}`}
-                        type="button"
-                        aria-label={`Level ${lvlIdx + 1} slot ${i + 1}`}
-                        onClick={() =>
-                          update((d) => {
-                            const cur = d.play.slotsSpent[lvlIdx] ?? 0;
-                            d.play.slotsSpent[lvlIdx] = cur > i ? i : i + 1;
-                          })
-                        }
-                        className={`h-4 w-4 rounded-full border ${
-                          i < (play.slotsSpent[lvlIdx] ?? 0)
-                            ? 'border-surface-2 bg-surface-2'
-                            : 'border-sky-300 bg-sky-300'
-                        }`}
-                      />
-                    ))}
+                    <Pips
+                      total={count}
+                      spent={play.slotsSpent[lvlIdx] ?? 0}
+                      onChange={(next) =>
+                        update((d) => {
+                          d.play.slotsSpent[lvlIdx] = next;
+                        })
+                      }
+                      label={(slot) => `Level ${lvlIdx + 1} slot ${slot}`}
+                      tone="border-sky-300 bg-sky-300"
+                    />
                   </div>
                 ) : null,
               )}
