@@ -1,6 +1,6 @@
 # Cast Guidance — future work
 
-Last reviewed: 2026-07-15 (`cdd134c`)
+Last reviewed: 2026-09-09 (`b335754`)
 
 The single planning document for open product and engineering work. It tracks
 what **remains**; completed work lives in git history, not here. Each item keeps
@@ -9,7 +9,8 @@ shipped so the remaining scope is clear.
 
 Browser and device behavior still needs hands-on validation. The pinned-data
 audit covers 48 files and all 936 spells; its 40 versioned-subrace `replaceArr`
-warnings are tracked under P2.
+warnings are tracked under P2. The audit is network-gated and has not been
+re-run since 2026-07-15; scheduling it is TEST-005.
 
 ## Product principle: guidance, not gatekeeping
 
@@ -41,12 +42,12 @@ CI.
 | Check | Current result |
 |---|---|
 | Frozen dependency install | Pass — 555 packages |
-| Lint/format | Pass — 189 files |
+| Lint/format | Pass — 220 files |
 | TypeScript | Pass |
-| Unit + integration tests | Pass — 73 files, 558 tests |
-| Coverage report | `bun run test:coverage` — ~46% statements (engine/guards high, UI low) |
+| Unit + integration tests | Pass — 88 files, 786 tests |
+| Coverage report | `bun run test:coverage` — ~59% statements, ~51% branches (engine/guards high, UI improving) |
 | Production/PWA build | Pass |
-| Real pinned-dataset audit | Run — 48 files; 936 spells; 40 versioned `replaceArr` warnings |
+| Real pinned-dataset audit | Last run 2026-07-15: 48 files; 936 spells; 40 versioned `replaceArr` warnings. Not re-run since (network-gated; the mirror CDN is unreachable from CI and from sandboxed sessions). |
 | Browser E2E and automated accessibility (axe) | No harness yet |
 
 Priority meanings:
@@ -83,7 +84,7 @@ residual per-field runtime schemas are tracked under P2 (maintainability).
 | REL-005 | Add dedicated decode-error boundaries around the search worker and homebrew JSON editors (route-level `errorElement` recovery + hardened `classSummary` already shipped). | One bad record cannot take down the app. |
 | REL-006 | Route the remaining live queries (library/homebrew registries) through the tested repo read boundary (`listSafe`/`partitionCharacterRows` already cover the character list). | Stored records cross one tested read boundary. |
 | REL-007 | Optional: a hard per-character lock or optimistic revision check on save, if the multi-tab guidance banner proves insufficient. | Two tabs cannot silently lose an edit. |
-| ERR-001 | Extend explicit error/missing states to the entity-detail view and other live-query pages (registry/search `status: 'error'` + retry and worker-failure handling already shipped). | Retry, offline, missing-id, and cache-repair states are testable. |
+| ERR-001 | Extend explicit error/missing states to the entity-detail view and the remaining live-query pages (registry/search `status: 'error'` + retry, worker-failure handling, and the equipment picker's loading/empty/error states already shipped). | Retry, offline, missing-id, and cache-repair states are testable. |
 
 ### Rules guidance and play state
 
@@ -91,7 +92,7 @@ residual per-field runtime schemas are tracked under P2 (maintainability).
 |---|---|---|
 | GAME-001 | The SpellManager Cast button offers an explicit slot/upcast chooser with a per-option scaled-effect preview (`availableCastResources`, `castSpell` resource override, `upcastEffectSummary` all shipped). Remaining: the Play-tab casts are **roll-triggered** (the RollChip rolls and spends together), so a slot choice there needs a choose-then-roll flow redesign, not a bounded add; and non-slot resource pools (e.g. sorcery-point → slot conversion) aren't yet first-class cast sources. | The Play-tab cast flow offers the slot/upcast choice, and non-slot pools are selectable cast sources. |
 | GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
-| GAME-005 | Feat/invocation pickers flag unmet prerequisites with a non-blocking advisory cue (`meetsPrerequisite`, shipped). Remaining: make source policy (`allowedSources`) meaningful in filtering, and fix `requiredLevel` (still the max across OR-sets) so an optional feature gated by alternative sets disables on the satisfiable *minimum*. | Source policy filters pick options, and OR-set level gates disable on the satisfiable minimum. |
+| GAME-005 | Feat/invocation pickers flag unmet prerequisites with a non-blocking advisory cue (`meetsPrerequisite`, shipped). A device-wide browsing `SourcePolicy` (`src/data5e/sourceFilter.ts`, allow-all-except / only-these, with presets) now narrows the lists players pick *from*. Remaining: the character-scoped `doc.allowedSources` is still declared in `engine/types.ts` and read nowhere, so a character carries no source policy of its own; and `requiredLevel` is still the max across OR-sets, so an optional feature gated by alternative sets should disable on the satisfiable *minimum*. | A character's own source policy filters its pick options, and OR-set level gates disable on the satisfiable minimum. |
 | GAME-007 | Over-limit spell counts (cantrips, prepared, and leveled-known for known/pact casters) are flagged with non-blocking cues; play-resource overage + clamping shipped. Remaining (optional): an explicit, opt-in "trim to limit" action for spell lists — deliberately not automatic, since over-limit is a valid state. | An explicit, opt-in normalization action trims an over-limit spell list. |
 
 (All FIX-00x derivation/play defects from the 2026-07-14 review have shipped;
@@ -103,7 +104,7 @@ experience.)
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| DATA-002 | Stage data-tag installs, validate every required index/pack, support resume/cleanup, activate atomically, and retain a rollback tag until successful boot; apply the global fetch gate to the `updateToTag` download path. | Interruption at any phase leaves the old version usable. |
+| DATA-002 | Staging, resume, and cleanup shipped: `updateToTag` downloads the new tag under its own keyspace while the old one stays live, skips files already cached (so an interrupted update resumes), swaps settings → memory → cleanup, and `pruneStaleTags` now drops rows stranded by an interrupted update or a boot that resolved to a different tag (this was a real cache leak, roughly doubling storage). Remaining: the sanity check is one file (`races.json` non-empty) rather than every required index/pack; no rollback tag is retained past the swap, so a tag that installs cleanly but fails to boot has nothing to fall back to; and `updateToTag`'s fetches still bypass the global `fetchGate`. | Interruption at any phase leaves the old version usable. |
 | DATA-003 | Batch registry hydration and search indexing instead of rebuilding after every downloaded file. | Background download causes bounded rebuilds with accurate readiness. |
 | PWA-001 | Test cold/offline launch for every route with essential, partial, and full caches. | "Not downloaded," "not found," offline, and corrupted-cache states have distinct recovery actions. |
 | PWA-002 | Validate install/update behavior on iOS and Android; add tested 192/512 and maskable assets rather than relying only on SVG icons. | Install, offline reload, deferred update, failed update, and recovery pass on target devices. |
@@ -129,8 +130,8 @@ shipped; a one-click full backup is tracked under P2 product experience.)
 
 | ID | Remaining work | Acceptance signal |
 |---|---|---|
-| A11Y-001 | Give icon-only controls real accessible names (not just `title`) and semantic checked/pressed/value states to toggles and pips (a global high-contrast `:focus-visible` ring already shipped). | Every route is operable and understandable with keyboard and accessibility APIs. |
-| A11Y-002 | Increase undersized touch targets; ensure state is not color-only; add restrained live regions and real progress semantics for saves, data, imports, resources, HP, search, and updates. | Target-size, contrast, and announcement audits pass without over-announcing. |
+| A11Y-001 | Give icon-only controls real accessible names (roughly fifteen buttons across the roster menu, dice tray, homebrew manager/builder, and info sheets still carry only a `title`), and semantic checked/pressed/value states to the remaining toggles (a global high-contrast `:focus-visible` ring shipped, and resource pips now carry per-use `aria-label` + `aria-pressed`). | Every route is operable and understandable with keyboard and accessibility APIs. |
+| A11Y-002 | Increase undersized touch targets (32px icon buttons and 16px pips are still below the 44px guideline); ensure state is not color-only; extend restrained live regions and real progress semantics to saves, data, imports, resources, HP, search, and updates (roll results now announce themselves, and the boot progress bar no longer reports work it isn't doing). | Target-size, contrast, and announcement audits pass without over-announcing. |
 | A11Y-003 | Run axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, large-text, landscape, safe-area, external-keyboard, and reduced-motion testing. | Results and fixes are recorded for every main flow. |
 
 ### Creator and navigation
@@ -144,7 +145,7 @@ a "create anyway" path. Remaining:
 | UX-001 | Make "standard array" a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; add explicit resume/restart/discard for the sessionStorage draft (invalid `?step=` deep links already recover). | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
 | UX-002 | Explain local-first storage, initial/background downloads, eviction risk, backup, offline readiness, and edition choice during onboarding. | A first-time user knows when the app is safe to use offline and how to protect data. |
 | UX-003 | Add page titles, focused-flow escape/back behavior, and a useful 404 (persistent top-level navigation already shipped). | Routes expose useful context to browsers, assistive tech, and users arriving via deep link. |
-| UX-004 | Make identity and choice changes non-destructive and reversible. Re-tapping the current option is now a no-op (`EntityCardList` no longer re-fires `onSelect` for the selected card; the Basics rules-version and ability-score-method toggles guard against re-selecting the current value), so an accidental re-tap no longer wipes picks, re-zeroes allocated scores, or discards the whole in-progress build. Remaining, still destructive with no confirmation and no wizard undo: picking a *different* class clears all choices doc-wide and drops the subclass (should scope to class choices); the "change" control on a resolved pick deletes it and every dependent sub-pick; changing species/subrace/background prunes their choices; removing a level-1 *secondary* multiclass skips the confirm single-class removal has; Standard array / Roll 4d6 overwrite all six scores; and superseded race/class spells/equipment linger in the doc keyed to the old origin (dormant, silently re-applied if you switch back). Confirm or non-destructively re-scope these, and add an undo affordance (the notices store has no action slot yet). | Every destructive change is confirmed, reversible, or scoped to only the affected picks; a mis-tap is recoverable in both the wizard and the sheet. |
+| UX-004 | Choice picks are now non-destructive: `ChoicePromptRenderer` builds a local draft and nothing reaches the document until Confirm, "change" re-opens a prompt with the existing picks still selected alongside a Cancel, dependent follow-ups reset only when the answer they hang off actually changes, and re-confirming an untouched pick writes nothing. Re-tapping the current option is a no-op (`EntityCardList`, plus the Basics rules-version and ability-score-method toggles). Remaining, still destructive with no confirmation and no wizard undo: picking a *different* class clears all choices doc-wide and drops the subclass (should scope to class choices); changing species/subrace/background prunes their choices; removing a level-1 *secondary* multiclass skips the confirm single-class removal has (`BuildPage` gates on `doc.classes.length === 1`); Standard array / Roll 4d6 overwrite all six scores; and superseded race/class spells/equipment linger in the doc keyed to the old origin (dormant, silently re-applied if you switch back). Confirm or non-destructively re-scope these, and add an undo affordance (the notices store has no action slot yet). | Every destructive change is confirmed, reversible, or scoped to only the affected picks; a mis-tap is recoverable in both the wizard and the sheet. |
 | UX-005 | Make restoring a history snapshot predictable — the enabler for UX-004's undo. Entry labels are now specific and verb-led (gear added/removed, spells prepared/learned, conditions added/removed, plus HP/level/subclass/race/background before→after) instead of generic tokens. Remaining: preview the diff between a snapshot and the current state before Restore applies it, and coalesce rapid debounced bursts into meaningful entries. | Restoring previews its differences from the current state before applying, and rapid edits don't bury meaningful snapshots. |
 
 ### Quality gates
@@ -153,7 +154,7 @@ a "create anyway" path. Remaining:
 |---|---|---|
 | TEST-001 | Add coverage thresholds and bundle-budget gating to CI (frozen install, lint, typecheck, tests, and the PWA build already run on every push/PR with a bundle-size summary). | Every PR runs the current local green baseline. |
 | TEST-002 | Extend IndexedDB coverage to quota-exhaustion behavior, history/lifecycle events, and multi-tab races (import transaction, rollback, and character+history delete already covered via `fake-indexeddb`; multi-tab has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
-| TEST-003 | Extend component/integration coverage to creator review/choices, rules switching, inventory, casting, rests, import flows, homebrew edits, and the spell-state cues (mode/prepared/granted/over-limit badges — the GAME-002 residual) (`@testing-library/react` + jsdom harness in place; routing error states and entry rendering covered). | UI state transitions have regression coverage. |
+| TEST-003 | Extend component/integration coverage to rules switching, casting, rests, import flows, homebrew edits, and the spell-state cues (mode/prepared/granted/over-limit badges — the GAME-002 residual). Since the last review the suite grew from 73 files / 558 tests to 88 / 786: creator choices (`ChoicePromptRenderer`, `OriginChoices`), inventory (`InventoryTab`), source filtering/naming, homebrew item fields and spell grants, pips, and the advantage toggle are now covered alongside the existing routing-error and entry-rendering tests. | UI state transitions have regression coverage. |
 | TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
 | TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule; include a check that no `additionalSpells` block relies on the "distinct `name` = mutually-exclusive branch" heuristic in a grant-all context (FIX-001's residual). | Core entities, parser warnings, copy/mod behavior, tag coverage, and the branch-heuristic assumption have budgets. |
 
@@ -171,10 +172,9 @@ work:
 | Dragonborn/Aasimar/Genasi utilities | Surface Metallic secondary breath, Gem flight/telepathy, Aasimar Celestial Revelation forms, and Genasi elemental utilities as useful, edition-correct chips or notes. | Each trait is discoverable without inventing incorrect action economy or resource use. |
 | Draconic ancestry (2014) | 2014 Dragonborn has no color subrace, so the ancestry is never chosen: the breath weapon carries no damage type/area/save and the "choose a resistance" pick floats free of the ancestry (you can pick fire resistance with a cold breath). Offer an ancestry choice — as the 2024 versioned races already do via name — that fixes the breath weapon and pre-answers the matching resistance. | A 2014 Dragonborn picks an ancestry that sets breath-weapon type/area/save and its resistance. |
 | Feat sub-choices | Give real pickers to feats whose embedded choices carry little structured data and today surface only as "see the trait text" warnings: Magic Initiate / Ritual Caster (class + cantrips + spell), Skilled (three skills or tools, prose-only), Elemental Adept (damage type; repeatable), and the chosen spell of Fey/Shadow Touched and Telekinetic/Telepathic. Disable options that duplicate a proficiency the origin already fixes. (Ability/skill/tool/language/expertise sub-choices already produce pickers — e.g. Prodigy, Chef.) | Each feat's embedded skill/tool/spell/class/damage-type choice is selectable, or shows an explicit honest note when unsupported. |
-| Condition effects | Conditions are advisory labels only — they never grant advantage/disadvantage on the affected rolls, change speed (only Exhaustion does) or AC, or apply Paralyzed's melee auto-crit. Wire condition state into attack/save/check advantage and speed as guidance the player can still override. | Applying a condition changes the affected rolls/speed with a visible, overridable cue. |
-| Downed and death state | Dropping to 0 HP never applies Unconscious, overkill and instant death (damage taken ≥ HP max) are discarded, and death saves never reach a stable or dead state (three successes/failures only fill pips). Model the 0-HP → Unconscious → stable/dead transitions and instant death as guidance without blocking manual override. | The downed sequence and instant death are represented and overridable. |
+| Condition effects | Conditions are advisory labels only — they never grant advantage/disadvantage on the affected rolls, change AC, or apply Paralyzed's melee auto-crit. Exhaustion is the one exception and only partly: `exhaustion.ts` computes reduced speed and flags level-6 death for a *user-triggered* drop to 0 HP, but the 2024 −2 d20 penalty and the 2014 disadvantage/half-HP-max effects are advisory lines that no roll reads. Wire condition and exhaustion state into attack/save/check rolls and speed as guidance the player can still override. (Absorbs the former "Exhaustion automation" row: it was the same gap seen from the other side.) | Applying a condition or exhaustion level changes the affected rolls/speed with a visible, overridable cue, and no advisory line contradicts a roll. |
+| Downed and death state | Death saves now roll for real (Durable-aware advantage, nat 1 = two failures, nat 20 = back up on 1 HP) and dropping to 0 breaks concentration. Remaining: 0 HP still never applies Unconscious, overkill and instant death (damage taken ≥ HP max) are discarded, and three successes or failures still only fill pips without reaching a stable or dead state. Model those transitions as guidance without blocking manual override. | The downed sequence and instant death are represented and overridable. |
 | Background equipment slots | Feed background `startingEquipment` through the concrete slot picker now used for classes. | Supported slots create real items; unsupported entries remain honest notes. |
-| Exhaustion automation | Keep the existing speed/death workflow, and either apply or explicitly preserve as advisory the 2014 HP-max/disadvantage effects and 2024 d20 penalty. | Roll/HP behavior and advisory text cannot disagree. |
 | Spell guidance | Extend current cantrip/level-1 starter tips into level-up and replacement guidance. | Each casting model gets useful, non-prescriptive guidance beyond level 1. |
 | Granted/innate spells | Add casting/use tracking for per-rest innate and granted spells, not only detail links. | Charges, slot use, concentration, and no-slot cases are represented correctly. |
 | Equipment and combat audit | Verify attunement, armor requirements, shields/hands, ammunition, weapon properties/mastery, critical damage, riders, improvised attacks, and encumbrance. | Edition-specific golden characters cover each automated rule. |
@@ -186,22 +186,23 @@ work:
 
 | Area | Remaining work |
 |---|---|
-| Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, import preview, trash/archive/undo, and recovery documentation. |
+| Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, trash/archive, and recovery documentation. (Import preview is IMP-002; undo is UX-004/UX-005.) |
 | Guided level-up | Preview HP, subclass timing, choices, spell gains/replacements, and resource changes before commit. Multiclassing remains in the free-form Build page unless product scope changes. |
-| Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff. |
-| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling — no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character (it is in-memory and shared across all characters today, lost on reload) and give resource pools above the pip cap (>12, e.g. high-level sorcery points) real increment/decrement controls instead of read-only text. |
+| Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff (the roster's actions are already grouped behind one row menu, with a loading skeleton for vitals). |
+| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling — no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character: `rollLogStore` is a module-level Zustand store capped at 100 entries, shared across every character and lost on reload. (Pools above the pip cap now get ±1/±5 steppers, and pips spend from the right so what is left stays anchored under the label.) |
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
-| Source policy | Make `allowedSources`, `dataTag`, and `homebrewDeps` meaningful in filtering, provenance, exports, and warnings. |
+| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. Remaining: make the character-scoped `allowedSources`, `dataTag`, and `homebrewDeps` meaningful in provenance, exports, and warnings. |
 | Table rules | Configurable rest recovery, level cap, point-buy budget, attunement, encumbrance, HP method, and source policy. |
 | Usability research | Test create, level-up, damage/rest, prepare/cast, homebrew import, history recovery, and offline use with new and experienced players. |
 
 ### Data, performance, and offline recovery
 
-- Record real cached byte sizes, quota/persistent-storage status, reclaimable
-  space, and cleanup for failed tags, old indexes, orphaned metadata, and old
-  app caches.
+- Cached byte sizes, `navigator.storage.estimate()` usage/quota, a
+  `persist()` request on full download, and cleanup of rows stranded by a
+  failed or superseded tag all ship. Remaining: report reclaimable space, and
+  clean up old indexes, orphaned metadata, and old app caches.
 - Add data-saver, battery, offline, pause/resume, Wi-Fi-only, essentials-only,
   and selected-source download policies without competing with active play.
 - Add stronger data integrity checks: expected indexes/keys, representative
@@ -223,8 +224,9 @@ work:
 - Await builder saves/deletes, prevent double submission, retain edits on
   failure, and make editable content revisions invalidate registry/search.
 - Add raw JSON validation/editing and schema-specific editors while preserving
-  unsupported fields; preview counts, duplicates, `_copy` warnings, size, and
-  affected characters before import.
+  unsupported fields. (The import preview itself, covering counts, duplicates,
+  `_copy` warnings, size, and affected characters, is IMP-002; this row is only
+  the editing surface behind it.)
 - Add regression fixtures that exercise the documented export-format
   compatibility matrix (the format itself is documented in
   `docs/export-format.md`).
@@ -248,13 +250,15 @@ work:
 
 ### Testing, documentation, and release operations
 
-- Add risk-based coverage thresholds (engine, owned import schemas, persistence,
-  loader, search protocol, gameplay commands), property/fuzz coverage (dice,
-  choices, entry rendering, copy/mod, migrations, hostile imports), and golden
-  2014/2024 characters. Coverage reporting (`bun run test:coverage`) is wired.
-- Add E2E and bundle-analysis scripts (repeatable `bun run check` /
-  `bun run data:audit` and coverage reporting are already wired; `tests-fixtures`
-  is linted; `passWithNoTests` is off).
+- Choose the risk-based threshold *targets* per area (engine, owned import
+  schemas, persistence, loader, search protocol, gameplay commands) that
+  TEST-001 then enforces in CI; add property/fuzz coverage (dice, choices,
+  entry rendering, copy/mod, migrations, hostile imports) and golden 2014/2024
+  characters. Coverage reporting (`bun run test:coverage`) is wired.
+- Add a bundle-analysis script to sit behind TEST-001's budget, and the E2E
+  harness TEST-004 needs (repeatable `bun run check` / `bun run data:audit` and
+  coverage reporting are already wired; `tests-fixtures` is linted;
+  `passWithNoTests` is off).
 - Document architecture, persistence/migrations, automation limits, homebrew,
   troubleshooting, and the deployment fallback/cache policy (Bun/Node versions
   are pinned; the export format and security headers are documented).
