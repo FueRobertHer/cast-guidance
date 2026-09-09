@@ -2,15 +2,27 @@
 
 Last reviewed: 2026-09-09 (`b335754`)
 
-The single planning document for open product and engineering work. It tracks
-what **remains**; completed work lives in git history, not here. Each item keeps
-its stable id and an acceptance signal, and notes in parentheses what already
-shipped so the remaining scope is clear.
+The planning document for open product and engineering work. It tracks what
+**remains**; completed work lives in git history, not here.
+
+**Where things live.** Every P1 item is a GitHub issue, labeled `P1` plus an
+area label, and the P1 section below is only an index into them. The reason is
+narrow: an item with a stable id and an acceptance signal can be closed by a PR
+that references it, so its status stops depending on someone remembering to
+edit a file. This document went sixty commits without a review and described a
+dozen fixed behaviors as broken; the parts that drifted were exactly the parts
+that had issue-shaped items.
+
+What stays here is what an issue tracker holds badly: the product principle,
+the measured baseline, the delivery order, the P2 and P3 themes that are
+directions rather than tickets, and the release-readiness evidence. Those are
+read top to bottom, and sharding them into fifty open issues would lose the
+argument they make together.
 
 Browser and device behavior still needs hands-on validation. The pinned-data
 audit covers 48 files and all 936 spells; its 40 versioned-subrace `replaceArr`
 warnings are tracked under P2. The audit is network-gated and has not been
-re-run since 2026-07-15; scheduling it is TEST-005.
+re-run since 2026-07-15; scheduling it is TEST-005 ([#124](https://github.com/FueRobertHer/cast-guidance/issues/124)).
 
 ## Product principle: guidance, not gatekeeping
 
@@ -76,24 +88,29 @@ residual per-field runtime schemas are tracked under P2 (maintainability).
 
 ## P1 — release quality
 
+Every P1 item is a GitHub issue. Each one carries the remaining scope, the
+acceptance signal, and the code pointers that were verified when it was filed,
+so this table is an index and nothing more: status lives in the issue, and a PR
+that says `Closes #N` retires the item without anyone editing this file.
+
 ### Persistence and error recovery
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| REL-003 | Extend honest failure UI + a retry affordance to builder saves, data-tag updates, and downloads (character-list mutations already surface failure notices). | Every mutation has honest pending/success/error UI and a retry path. |
-| REL-005 | Add dedicated decode-error boundaries around the search worker and homebrew JSON editors (route-level `errorElement` recovery + hardened `classSummary` already shipped). | One bad record cannot take down the app. |
-| REL-006 | Route the remaining live queries (library/homebrew registries) through the tested repo read boundary (`listSafe`/`partitionCharacterRows` already cover the character list). | Stored records cross one tested read boundary. |
-| REL-007 | Optional: a hard per-character lock or optimistic revision check on save, if the multi-tab guidance banner proves insufficient. | Two tabs cannot silently lose an edit. |
-| ERR-001 | Extend explicit error/missing states to the entity-detail view and the remaining live-query pages (registry/search `status: 'error'` + retry, worker-failure handling, and the equipment picker's loading/empty/error states already shipped). | Retry, offline, missing-id, and cache-repair states are testable. |
+| REL-003 | [#95](https://github.com/FueRobertHer/cast-guidance/issues/95) | Honest failure UI and a retry path for builder saves, data-tag updates, and downloads. |
+| REL-005 | [#96](https://github.com/FueRobertHer/cast-guidance/issues/96) | Decode-error boundaries around the search worker and homebrew JSON editors. |
+| REL-006 | [#97](https://github.com/FueRobertHer/cast-guidance/issues/97) | Route library and homebrew registry live queries through the tested repo read boundary. |
+| REL-007 | [#98](https://github.com/FueRobertHer/cast-guidance/issues/98) | Optional: per-character save lock or optimistic revision check, if the multi-tab banner proves insufficient. |
+| ERR-001 | [#99](https://github.com/FueRobertHer/cast-guidance/issues/99) | Explicit error and missing states for the entity-detail view and remaining live-query pages. |
 
 ### Rules guidance and play state
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| GAME-001 | The SpellManager Cast button offers an explicit slot/upcast chooser with a per-option scaled-effect preview (`availableCastResources`, `castSpell` resource override, `upcastEffectSummary` all shipped). Remaining: the Play-tab casts are **roll-triggered** (the RollChip rolls and spends together), so a slot choice there needs a choose-then-roll flow redesign, not a bounded add; and non-slot resource pools (e.g. sorcery-point → slot conversion) aren't yet first-class cast sources. | The Play-tab cast flow offers the slot/upcast choice, and non-slot pools are selectable cast sources. |
-| GAME-003 | Move edition compatibility beyond picker filtering. Classify carry-overs, reprints, and likely conflicts; preview rules-version changes. | Mixed-edition characters retain their selections with provenance and useful compatibility cues. |
-| GAME-005 | Feat/invocation pickers flag unmet prerequisites with a non-blocking advisory cue (`meetsPrerequisite`, shipped). A device-wide browsing `SourcePolicy` (`src/data5e/sourceFilter.ts`, allow-all-except / only-these, with presets) now narrows the lists players pick *from*. Remaining: the character-scoped `doc.allowedSources` is still declared in `engine/types.ts` and read nowhere, so a character carries no source policy of its own; and `requiredLevel` is still the max across OR-sets, so an optional feature gated by alternative sets should disable on the satisfiable *minimum*. | A character's own source policy filters its pick options, and OR-set level gates disable on the satisfiable minimum. |
-| GAME-007 | Over-limit spell counts (cantrips, prepared, and leveled-known for known/pact casters) are flagged with non-blocking cues; play-resource overage + clamping shipped. Remaining (optional): an explicit, opt-in "trim to limit" action for spell lists — deliberately not automatic, since over-limit is a valid state. | An explicit, opt-in normalization action trims an over-limit spell list. |
+| GAME-001 | [#100](https://github.com/FueRobertHer/cast-guidance/issues/100) | Play-tab slot/upcast choice (a choose-then-roll redesign), and non-slot pools as cast sources. |
+| GAME-003 | [#101](https://github.com/FueRobertHer/cast-guidance/issues/101) | Edition compatibility beyond picker filtering: carry-overs, reprints, conflicts, change preview. |
+| GAME-005 | [#102](https://github.com/FueRobertHer/cast-guidance/issues/102) | Character-scoped `allowedSources` (still declared and read nowhere), and OR-set level gates on the satisfiable minimum. |
+| GAME-007 | [#103](https://github.com/FueRobertHer/cast-guidance/issues/103) | Optional, opt-in "trim to limit" action for over-limit spell lists. |
 
 (All FIX-00x derivation/play defects from the 2026-07-14 review have shipped;
 see git history. Two residuals live elsewhere: FIX-001's branch-heuristic check
@@ -102,25 +119,21 @@ experience.)
 
 ### Data loading, updates, and search
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| DATA-002 | Staging, resume, and cleanup shipped: `updateToTag` downloads the new tag under its own keyspace while the old one stays live, skips files already cached (so an interrupted update resumes), swaps settings → memory → cleanup, and `pruneStaleTags` now drops rows stranded by an interrupted update or a boot that resolved to a different tag (this was a real cache leak, roughly doubling storage). Remaining: the sanity check is one file (`races.json` non-empty) rather than every required index/pack; no rollback tag is retained past the swap, so a tag that installs cleanly but fails to boot has nothing to fall back to; and `updateToTag`'s fetches still bypass the global `fetchGate`. | Interruption at any phase leaves the old version usable. |
-| DATA-003 | Batch registry hydration and search indexing instead of rebuilding after every downloaded file. | Background download causes bounded rebuilds with accurate readiness. |
-| PWA-001 | Test cold/offline launch for every route with essential, partial, and full caches. | "Not downloaded," "not found," offline, and corrupted-cache states have distinct recovery actions. |
-| PWA-002 | Validate install/update behavior on iOS and Android; add tested 192/512 and maskable assets rather than relying only on SVG icons. | Install, offline reload, deferred update, failed update, and recovery pass on target devices. |
-
-(Concurrency-limited fetching + de-dup (DATA-001), incompatible-tag rejection
-(DATA-004), and homebrew-revision-aware search with query supersession
-(SEARCH-001) have shipped.)
+| DATA-002 | [#104](https://github.com/FueRobertHer/cast-guidance/issues/104) | Validate every required index/pack, retain a rollback tag past the swap, and put `updateToTag` behind the global fetch gate. Staging, resume, and stale-tag cleanup already ship. |
+| DATA-003 | [#105](https://github.com/FueRobertHer/cast-guidance/issues/105) | Batch registry hydration and search indexing instead of rebuilding per downloaded file. |
+| PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | Cold and offline launch for every route across essential, partial, and full caches. |
+| PWA-002 | [#107](https://github.com/FueRobertHer/cast-guidance/issues/107) | Validate install and update on iOS and Android; add raster 192/512 and maskable icons. |
 
 ### Security, privacy, and imports
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| SEC-001 | Promote the shipped CSP (`public/_headers`) from report-only to enforced once production reports show no violations. | The CSP blocks disallowed connect/script sources in production. |
-| SEC-002 | Bound the raw remote-response byte stream before parse, and cap regex work and worker processing (node/depth/string limits + embedded-file-count and export-size caps already gate stored payloads). | Adversarial payload tests fail safely before storage/indexing. |
-| IMP-002 | Add an import *preview* UI that explains dependencies, duplicates, winner policy, and source/entity collisions before commit (dependency-scoped export DTO already shipped). | Import preview explains dependencies, duplicates, winner policy, and conflicts before commit. |
-| LEGAL-001 | Obtain content/licensing review and add a license, third-party notices, mirror attribution/terms, and trademark disclaimer. *(License choice is a product/owner decision.)* | Release documentation records the approved content and attribution policy. |
+| SEC-001 | [#108](https://github.com/FueRobertHer/cast-guidance/issues/108) | Promote the shipped CSP from report-only to enforced. |
+| SEC-002 | [#109](https://github.com/FueRobertHer/cast-guidance/issues/109) | Bound the raw remote-response byte stream before parse; cap regex and worker work. |
+| IMP-002 | [#110](https://github.com/FueRobertHer/cast-guidance/issues/110) | Import preview explaining dependencies, duplicates, winner policy, and collisions before commit. |
+| LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | Content and licensing review, license, third-party notices, mirror attribution, trademark disclaimer. |
 
 (`{@link}` sanitization + report-only deployment headers (SEC-001) and the
 local-data/privacy explanation + "Reset app data" control (PRIV-001) have
@@ -128,35 +141,36 @@ shipped; a one-click full backup is tracked under P2 product experience.)
 
 ### Accessibility and inclusive design
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| A11Y-001 | Give icon-only controls real accessible names (roughly fifteen buttons across the roster menu, dice tray, homebrew manager/builder, and info sheets still carry only a `title`), and semantic checked/pressed/value states to the remaining toggles (a global high-contrast `:focus-visible` ring shipped, and resource pips now carry per-use `aria-label` + `aria-pressed`). | Every route is operable and understandable with keyboard and accessibility APIs. |
-| A11Y-002 | Increase undersized touch targets (32px icon buttons and 16px pips are still below the 44px guideline); ensure state is not color-only; extend restrained live regions and real progress semantics to saves, data, imports, resources, HP, search, and updates (roll results now announce themselves, and the boot progress bar no longer reports work it isn't doing). | Target-size, contrast, and announcement audits pass without over-announcing. |
-| A11Y-003 | Run axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, large-text, landscape, safe-area, external-keyboard, and reduced-motion testing. | Results and fixes are recorded for every main flow. |
+| A11Y-001 | [#112](https://github.com/FueRobertHer/cast-guidance/issues/112) | Accessible names for the ~15 icon-only controls that carry only a `title`; semantic states on the remaining toggles. |
+| A11Y-002 | [#113](https://github.com/FueRobertHer/cast-guidance/issues/113) | Touch targets below 44px, non-color state, restrained live regions, real progress semantics. |
+| A11Y-003 | [#114](https://github.com/FueRobertHer/cast-guidance/issues/114) | Axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, landscape, and reduced-motion passes. |
 
 ### Creator and navigation
 
 The creator has class-aware standard-array auto-assignment, point-buy cost
-feedback, unresolved-choice warnings, a final review, inline origin choices, and
-a "create anyway" path. Remaining:
+feedback, unresolved-choice warnings, a final review, inline origin choices, a
+"create anyway" path, and confirm-gated choice drafts that no longer lose picks
+to a mis-tap. Remaining:
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| UX-001 | Make "standard array" a true assign/swap allocator instead of arbitrary 3–18 steppers; strengthen nonstandard point-buy cues; add explicit resume/restart/discard for the sessionStorage draft (invalid `?step=` deep links already recover). | The normal path is unmistakable, deep links recover, and intentional deviations remain possible. |
-| UX-002 | Explain local-first storage, initial/background downloads, eviction risk, backup, offline readiness, and edition choice during onboarding. | A first-time user knows when the app is safe to use offline and how to protect data. |
-| UX-003 | Add page titles, focused-flow escape/back behavior, and a useful 404 (persistent top-level navigation already shipped). | Routes expose useful context to browsers, assistive tech, and users arriving via deep link. |
-| UX-004 | Choice picks are now non-destructive: `ChoicePromptRenderer` builds a local draft and nothing reaches the document until Confirm, "change" re-opens a prompt with the existing picks still selected alongside a Cancel, dependent follow-ups reset only when the answer they hang off actually changes, and re-confirming an untouched pick writes nothing. Re-tapping the current option is a no-op (`EntityCardList`, plus the Basics rules-version and ability-score-method toggles). Remaining, still destructive with no confirmation and no wizard undo: picking a *different* class clears all choices doc-wide and drops the subclass (should scope to class choices); changing species/subrace/background prunes their choices; removing a level-1 *secondary* multiclass skips the confirm single-class removal has (`BuildPage` gates on `doc.classes.length === 1`); Standard array / Roll 4d6 overwrite all six scores; and superseded race/class spells/equipment linger in the doc keyed to the old origin (dormant, silently re-applied if you switch back). Confirm or non-destructively re-scope these, and add an undo affordance (the notices store has no action slot yet). | Every destructive change is confirmed, reversible, or scoped to only the affected picks; a mis-tap is recoverable in both the wizard and the sheet. |
-| UX-005 | Make restoring a history snapshot predictable — the enabler for UX-004's undo. Entry labels are now specific and verb-led (gear added/removed, spells prepared/learned, conditions added/removed, plus HP/level/subclass/race/background before→after) instead of generic tokens. Remaining: preview the diff between a snapshot and the current state before Restore applies it, and coalesce rapid debounced bursts into meaningful entries. | Restoring previews its differences from the current state before applying, and rapid edits don't bury meaningful snapshots. |
+| UX-001 | [#115](https://github.com/FueRobertHer/cast-guidance/issues/115) | A true standard-array allocator, stronger nonstandard point-buy cues, explicit draft resume/restart/discard. |
+| UX-002 | [#116](https://github.com/FueRobertHer/cast-guidance/issues/116) | Onboarding covering local-first storage, downloads, eviction risk, backup, offline readiness, and edition choice. |
+| UX-003 | [#117](https://github.com/FueRobertHer/cast-guidance/issues/117) | Page titles, focused-flow escape and back behavior, and a useful 404. All three are absent outright. |
+| UX-004 | [#118](https://github.com/FueRobertHer/cast-guidance/issues/118) | The still-destructive identity changes (class, species, background), ability-score overwrites, dormant superseded grants, and an undo affordance. |
+| UX-005 | [#119](https://github.com/FueRobertHer/cast-guidance/issues/119) | Preview a history snapshot's diff before Restore applies it; coalesce rapid debounced bursts. |
 
 ### Quality gates
 
-| ID | Remaining work | Acceptance signal |
+| ID | Issue | Remaining work |
 |---|---|---|
-| TEST-001 | Add coverage thresholds and bundle-budget gating to CI (frozen install, lint, typecheck, tests, and the PWA build already run on every push/PR with a bundle-size summary). | Every PR runs the current local green baseline. |
-| TEST-002 | Extend IndexedDB coverage to quota-exhaustion behavior, history/lifecycle events, and multi-tab races (import transaction, rollback, and character+history delete already covered via `fake-indexeddb`; multi-tab has a pure-tested basis in `multiTab`). | Persistence risks are reproducible without manual timing. |
-| TEST-003 | Extend component/integration coverage to rules switching, casting, rests, import flows, homebrew edits, and the spell-state cues (mode/prepared/granted/over-limit badges — the GAME-002 residual). Since the last review the suite grew from 73 files / 558 tests to 88 / 786: creator choices (`ChoicePromptRenderer`, `OriginChoices`), inventory (`InventoryTab`), source filtering/naming, homebrew item fields and spell grants, pips, and the advantage toggle are now covered alongside the existing routing-error and entry-rendering tests. | UI state transitions have regression coverage. |
-| TEST-004 | Add browser E2E for first load, offline reload, service-worker updates, character lifecycle, import/export, and failed/resumed data installs. | Release-critical flows pass in supported browsers. |
-| TEST-005 | Run `scripts/data-audit.ts` for every data-tag bump and on a schedule; include a check that no `additionalSpells` block relies on the "distinct `name` = mutually-exclusive branch" heuristic in a grant-all context (FIX-001's residual). | Core entities, parser warnings, copy/mod behavior, tag coverage, and the branch-heuristic assumption have budgets. |
+| TEST-001 | [#120](https://github.com/FueRobertHer/cast-guidance/issues/120) | Make CI fail on coverage thresholds and a bundle budget, not just report them. |
+| TEST-002 | [#121](https://github.com/FueRobertHer/cast-guidance/issues/121) | IndexedDB coverage for quota exhaustion, lifecycle events, and multi-tab races. |
+| TEST-003 | [#122](https://github.com/FueRobertHer/cast-guidance/issues/122) | Component coverage for rules switching, casting, rests, imports, homebrew edits, and the spell-state cues. |
+| TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | Browser E2E harness. PWA-001 and PWA-002 are effectively blocked on it. |
+| TEST-005 | [#124](https://github.com/FueRobertHer/cast-guidance/issues/124) | Find an environment that can run the network-gated data audit, schedule it, and add the branch-heuristic check. |
 
 ## P2 — product and engineering depth
 
@@ -304,3 +318,17 @@ An item is complete only when the behavior or product decision is documented,
 appropriate regression coverage exists, failure/accessibility states are
 handled, existing local data is considered, and the relevant automated and
 device checks pass.
+
+## Keeping this document honest
+
+The P1 index needs no maintenance: closing an issue is the update. What does
+drift is everything above and below it.
+
+- Re-run `bun run check` and `bun run test:coverage` and refresh the baseline
+  table whenever it is quoted anywhere that matters. It was two months and
+  thirteen points of coverage stale at the last review.
+- When a P2 or P3 theme grows a stable id and an acceptance signal, it has
+  become an issue. File it and leave a one-line pointer, rather than letting
+  the theme quietly accumulate specifics that no PR can close.
+- Record the reviewed commit at the top so the gap is measurable rather than
+  guessed at.
