@@ -54,7 +54,12 @@ export const homebrewRepo = {
   },
 
   async setEnabled(id: string, enabled: boolean): Promise<void> {
-    await db.homebrewFiles.update(id, { enabled });
+    // `update` resolves with 0 for a row that isn't there rather than throwing,
+    // so a write against a file another tab deleted would otherwise report
+    // success and change nothing.
+    if ((await db.homebrewFiles.update(id, { enabled })) === 0) {
+      throw new Error(`homebrew file ${id} no longer exists`);
+    }
   },
 
   async delete(id: string): Promise<void> {
@@ -91,7 +96,7 @@ export const homebrewRepo = {
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
     // Bump rev so the registry/search signature notices the content change even
     // though the file id stays the same across edits.
-    await db.homebrewFiles
+    const modified = await db.homebrewFiles
       .where('id')
       .equals(id)
       .modify((row) => {
@@ -99,5 +104,9 @@ export const homebrewRepo = {
         row.counts = homebrewEntityCounts(json);
         row.rev = (row.rev ?? 0) + 1;
       });
+    // Matching no rows is not success. The builder reports what this resolves
+    // to, so a save against a file deleted in another tab has to say so rather
+    // than close the form over an edit that reached nothing.
+    if (modified === 0) throw new Error(`homebrew file ${id} no longer exists`);
   },
 };

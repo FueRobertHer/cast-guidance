@@ -9,6 +9,7 @@ import { homebrewRepo } from '@/db/homebrewRepo';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
+import { errorText, notify } from '@/stores/notices';
 import {
   DEFAULT_RIDER_TYPE,
   damagePatch,
@@ -202,13 +203,18 @@ function EntityForm({
   initial,
   onSave,
   onCancel,
+  busy,
 }: {
   type: BuildType;
   source: string;
   initial?: Json;
-  onSave: (entity: Json) => void;
+  /** Resolves when the write has settled; the form stays open until it does. */
+  onSave: (entity: Json) => Promise<void>;
   onCancel: () => void;
+  /** True while the page is writing anything, including a delete elsewhere. */
+  busy: boolean;
 }) {
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState(String(initial?.name ?? ''));
   const [text, setText] = useState(initial !== undefined ? entriesToText(initial.entries) : '');
   const [extra, setExtra] = useState<Json>(() => {
@@ -245,10 +251,18 @@ function EntityForm({
       ) ?? [])
     : [];
 
-  const save = () => {
-    if (name.trim() === '') return;
+  /**
+   * Saving is a database write that can fail, so the form waits for it rather
+   * than assuming it worked: the button says what it is doing and refuses a
+   * second press, and a failure leaves every field exactly where it was
+   * instead of closing over lost edits.
+   */
+  const save = async () => {
+    if (name.trim() === '' || busy) return;
     const fields = type === 'item' ? pruneItemFields(extra) : extra;
-    onSave({ name: name.trim(), source, ...fields, entries: textToEntries(text) });
+    setSaving(true);
+    await onSave({ name: name.trim(), source, ...fields, entries: textToEntries(text) });
+    setSaving(false);
   };
 
   return (
@@ -539,16 +553,17 @@ function EntityForm({
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={save}
-          disabled={name.trim() === ''}
+          onClick={() => void save()}
+          disabled={name.trim() === '' || busy}
           className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
         >
-          Save
+          {saving ? 'Saving…' : 'Save'}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg bg-surface-2 px-4 py-2 text-sm"
+          disabled={busy}
+          className="rounded-lg bg-surface-2 px-4 py-2 text-sm disabled:opacity-40"
         >
           Cancel
         </button>
@@ -557,13 +572,43 @@ function EntityForm({
   );
 }
 
+/**
+ * Where an entity lives now, given where it was and what it was called. The
+ * row list is a live query, so a position captured when a form or a row was
+ * opened can point at a different entity by the time the write happens: the
+ * position is right in the ordinary case and is checked first, the name is
+ * what settles it when the file changed underneath us.
+ */
+function entityIndex(arr: Json[], index: number | undefined, name: string | undefined): number {
+  if (index !== undefined && String(arr[index]?.name) === name) return index;
+  if (name === undefined) return -1;
+  return arr.findIndex((e) => String(e.name) === name);
+}
+
 export function Component() {
   const { fileId } = useParams();
   const row = useLiveQuery(
     async () => (fileId !== undefined ? db.homebrewFiles.get(fileId) : undefined),
     [fileId],
   );
-  const [editing, setEditing] = useState<{ type: BuildType; index: number | null } | null>(null);
+  /** `name` is the entity's name when the form opened, which is what identifies it. */
+  const [editing, setEditing] = useState<{
+    type: BuildType;
+    index: number | null;
+    name?: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  /**
+   * The last write that was refused. `retryDelete` is a description of the
+   * work, not a closure over it: a stored closure would keep writing the
+   * document as it looked when the write failed, so a Retry pressed after the
+   * page moved on would quietly undo whatever happened in between.
+   */
+  const [failure, setFailure] = useState<{
+    text: string;
+    hint: string;
+    retryDelete?: { type: BuildType; name: string };
+  }>();
 
   if (row === undefined) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
   if (!row.editable) {
@@ -576,23 +621,102 @@ export function Component() {
 
   const json = row.json as Json;
   const sourceId = row.sourceIds[0] ?? 'HB';
+  const retryDelete = failure?.retryDelete;
 
-  const saveEntity = (type: BuildType, index: number | null, entity: Json) => {
-    const next = structuredClone(json);
-    const arr = Array.isArray(next[type]) ? (next[type] as Json[]) : [];
-    if (index === null) arr.push(entity);
-    else arr[index] = entity;
-    next[type] = arr;
-    void homebrewRepo.saveEditable(row.id, next).then(() => invalidateRegistry());
-    setEditing(null);
+  /**
+   * Opening or closing the form retires the last failure with it: "your edits
+   * are still here" stops being true the moment the form holding them goes.
+   */
+  const openEditor = (next: { type: BuildType; index: number | null; name?: string } | null) => {
+    setFailure(undefined);
+    setEditing(next);
   };
 
-  const deleteEntity = (type: BuildType, index: number) => {
+  /**
+   * Every edit goes through one write, and the write is awaited.
+   *
+   * Both editors used to fire the save and move on: the form closed, the row
+   * disappeared, and a rejected write took the edit with it in silence. What
+   * makes that worse than a lost keystroke is that the screen still showed the
+   * change, so the only way to find out was to come back later and find the
+   * entity as it was. Now a failure keeps the work on screen, says what went
+   * wrong, and offers the same write again.
+   */
+  const write = async (
+    next: Json,
+    opts: {
+      done: string;
+      failed: string;
+      hint: string;
+      retryDelete?: { type: BuildType; name: string };
+      after?: () => void;
+    },
+  ) => {
+    setBusy(true);
+    setFailure(undefined);
+    try {
+      await homebrewRepo.saveEditable(row.id, next);
+      invalidateRegistry();
+      notify({ title: opts.done, tone: 'good' });
+      opts.after?.();
+    } catch (err) {
+      setFailure({
+        text: `${opts.failed}: ${errorText(err)}`,
+        hint: opts.hint,
+        retryDelete: opts.retryDelete,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveEntity = async (
+    type: BuildType,
+    index: number | null,
+    was: string | undefined,
+    entity: Json,
+  ) => {
     const next = structuredClone(json);
     const arr = Array.isArray(next[type]) ? (next[type] as Json[]) : [];
-    arr.splice(index, 1);
+    // Same identity rule as delete, for the same reason: the position the form
+    // was opened at can point at a different entity by the time it is saved,
+    // and overwriting an innocent entry is worse than adding one. An edit whose
+    // subject has since been removed is kept rather than dropped: the edit in
+    // front of the user is the thing that must not be lost.
+    const at = index === null ? -1 : entityIndex(arr, index, was);
+    if (at === -1) arr.push(entity);
+    else arr[at] = entity;
     next[type] = arr;
-    void homebrewRepo.saveEditable(row.id, next).then(() => invalidateRegistry());
+    await write(next, {
+      done: `Saved ${String(entity.name)}`,
+      failed: `Could not save ${String(entity.name)}`,
+      // No Retry button for a save: the form is still open with the fields in
+      // it, so Save is the retry, and it writes what is on screen now rather
+      // than what was on screen when the write was refused.
+      hint: 'Nothing was changed on this device. Your edits are still here: press Save to try again.',
+      // Only on success: a failed save keeps the form, and the edits in it.
+      after: () => setEditing(null),
+    });
+  };
+
+  const deleteEntity = async (type: BuildType, name: string, index?: number) => {
+    const next = structuredClone(json);
+    const arr = Array.isArray(next[type]) ? (next[type] as Json[]) : [];
+    const at = entityIndex(arr, index, name);
+    if (at === -1) {
+      // Nothing left to delete, so the failure that offered this retry is over.
+      setFailure(undefined);
+      notify({ title: `${name} is already gone`, tone: 'info' });
+      return;
+    }
+    arr.splice(at, 1);
+    next[type] = arr;
+    await write(next, {
+      done: `Deleted ${name}`,
+      failed: `Could not delete ${name}`,
+      hint: 'Nothing was changed on this device.',
+      retryDelete: { type, name },
+    });
   };
 
   return (
@@ -615,6 +739,28 @@ export function Component() {
         </div>
       </header>
 
+      {failure !== undefined && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
+          role="alert"
+        >
+          <p className="min-w-0 flex-1 text-xs">
+            {failure.text}
+            <span className="block text-ink-muted">{failure.hint}</span>
+          </p>
+          {retryDelete !== undefined && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void deleteEntity(retryDelete.type, retryDelete.name)}
+              className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              {busy ? 'Retrying…' : 'Retry'}
+            </button>
+          )}
+        </div>
+      )}
+
       {BUILDABLE.map(([type, label]) => {
         const entities = Array.isArray(json[type]) ? (json[type] as Json[]) : [];
         return (
@@ -626,7 +772,7 @@ export function Component() {
               </h2>
               <button
                 type="button"
-                onClick={() => setEditing({ type, index: null })}
+                onClick={() => openEditor({ type, index: null })}
                 className="flex items-center gap-1 rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold"
               >
                 <Plus size={14} /> New {label.toLowerCase()}
@@ -640,7 +786,7 @@ export function Component() {
                 >
                   <button
                     type="button"
-                    onClick={() => setEditing({ type, index: i })}
+                    onClick={() => openEditor({ type, index: i, name: String(e.name) })}
                     className="min-w-0 flex-1 truncate text-left hover:text-purple-300"
                   >
                     {String(e.name)}
@@ -654,8 +800,9 @@ export function Component() {
                   <button
                     type="button"
                     title="Delete"
-                    onClick={() => deleteEntity(type, i)}
-                    className="shrink-0 text-ink-muted hover:text-accent"
+                    disabled={busy}
+                    onClick={() => void deleteEntity(type, String(e.name), i)}
+                    className="shrink-0 text-ink-muted hover:text-accent disabled:opacity-40"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -671,8 +818,9 @@ export function Component() {
                 type={type}
                 source={sourceId}
                 initial={editing.index !== null ? (entities[editing.index] as Json) : undefined}
-                onSave={(entity) => saveEntity(type, editing.index, entity)}
-                onCancel={() => setEditing(null)}
+                onSave={(entity) => saveEntity(type, editing.index, editing.name, entity)}
+                onCancel={() => openEditor(null)}
+                busy={busy}
               />
             )}
           </section>

@@ -1,10 +1,17 @@
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getActiveTag, listAvailableTags, updateToTag, verifyFullOffline } from '@/data5e/loader';
+import {
+  downloadAllPacks,
+  getActiveTag,
+  listAvailableTags,
+  updateToTag,
+  verifyFullOffline,
+} from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
 import { useDataStatus } from '@/stores/dataStatus';
+import { errorText } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
 import { SourcesSection } from './SourcesSection';
 
@@ -44,9 +51,22 @@ export function Component() {
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
   const [offline, setOffline] = useState<{ cached: number; total: number }>();
+  /** Set when the offline inventory itself could not be read. */
+  const [offlineError, setOfflineError] = useState<string>();
   const [tags, setTags] = useState<string[] | null>(null);
   const [updating, setUpdating] = useState(false);
-  const [updateMsg, setUpdateMsg] = useState<string>();
+  /**
+   * The last thing the data section has to say. `failed` decides whether it is
+   * announced and styled as a failure; `failedTag` additionally means there is
+   * a specific install to retry.
+   */
+  const [updateMsg, setUpdateMsg] = useState<{
+    text: string;
+    failed?: boolean;
+    failedTag?: string;
+  }>();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadFailed, setDownloadFailed] = useState<string>();
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string>();
   const { estimate, cachedBytes } = useStorageUsage(phase);
@@ -71,13 +91,42 @@ export function Component() {
     }
   };
 
-  useEffect(() => {
+  /** Re-read what is cached; the numbers are a claim, so a failure to read them says so. */
+  const measureOffline = () => {
     void verifyFullOffline()
-      .then(setOffline)
-      .catch(() => undefined);
-  }, []);
+      .then((v) => {
+        setOffline(v);
+        setOfflineError(undefined);
+      })
+      .catch((err: unknown) => setOfflineError(errorText(err)));
+  };
+
+  useEffect(measureOffline, []);
 
   const offlineReady = offline !== undefined && offline.cached === offline.total;
+  /** Non-undefined only when the last install attempt failed, and it names it. */
+  const failedInstallTag = updateMsg?.failedTag;
+
+  /**
+   * The install itself, without the confirmation. Retrying is agreeing to the
+   * same thing twice, so the retry path re-enters here rather than asking
+   * again; the failed attempt already left the old version live and intact.
+   */
+  const install = async (tag: string) => {
+    setUpdating(true);
+    setUpdateMsg(undefined);
+    try {
+      await updateToTag(tag);
+      invalidateRegistry();
+      setUpdateMsg({ text: `Now on ${tag}. Characters re-derive automatically.` });
+      setTags(null);
+      measureOffline();
+    } catch (err) {
+      setUpdateMsg({ text: `Update failed: ${errorText(err)}`, failed: true, failedTag: tag });
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const runUpdate = async (tag: string) => {
     const ok = await askConfirm({
@@ -86,18 +135,25 @@ export function Component() {
       confirmLabel: 'Install',
     });
     if (!ok) return;
-    setUpdating(true);
-    setUpdateMsg(undefined);
+    await install(tag);
+  };
+
+  /**
+   * "Everything, now" rather than "everything, eventually": the background
+   * queue drains in idle time and can stop on an error the user never sees,
+   * which is exactly the state the line above reports as "31/48 files". This
+   * button is both the way to finish that download and the way to retry it.
+   */
+  const downloadEverything = async () => {
+    setDownloading(true);
+    setDownloadFailed(undefined);
     try {
-      await updateToTag(tag);
-      invalidateRegistry();
-      setUpdateMsg(`Now on ${tag}. Characters re-derive automatically.`);
-      setTags(null);
-      void verifyFullOffline().then(setOffline);
+      await downloadAllPacks();
     } catch (err) {
-      setUpdateMsg(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+      setDownloadFailed(errorText(err));
     } finally {
-      setUpdating(false);
+      setDownloading(false);
+      measureOffline();
     }
   };
 
@@ -115,15 +171,21 @@ export function Component() {
           <dt className="text-ink-muted">Download queue</dt>
           <dd className="capitalize">
             {phase}
-            {updating && filesTotal > 0 ? ` (${filesDone}/${filesTotal})` : ''}
+            {/* Clamped like the banner's bar: the counters are shared, so a run
+                that starts while another is finishing can pass its own total. */}
+            {(updating || downloading) && filesTotal > 0
+              ? ` (${Math.min(filesDone, filesTotal)}/${filesTotal})`
+              : ''}
           </dd>
           <dt className="text-ink-muted">Offline compendium</dt>
           <dd>
-            {offline === undefined
-              ? '…'
-              : offlineReady
-                ? 'ready ✓'
-                : `${offline.cached}/${offline.total} files`}
+            {offlineError !== undefined
+              ? 'could not be read'
+              : offline === undefined
+                ? '…'
+                : offlineReady
+                  ? 'ready ✓'
+                  : `${offline.cached}/${offline.total} files`}
           </dd>
           <dt className="text-ink-muted">Game data size</dt>
           <dd>{mb(cachedBytes)}</dd>
@@ -141,9 +203,10 @@ export function Component() {
               void listAvailableTags()
                 .then(setTags)
                 .catch((err: unknown) =>
-                  setUpdateMsg(
-                    `Could not list versions: ${err instanceof Error ? err.message : String(err)}`,
-                  ),
+                  setUpdateMsg({
+                    text: `Could not list versions: ${errorText(err)}`,
+                    failed: true,
+                  }),
                 );
             }}
             className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
@@ -170,7 +233,7 @@ export function Component() {
               <select
                 id="data-tag"
                 value={getActiveTag()}
-                disabled={updating}
+                disabled={updating || downloading}
                 onChange={(e) => {
                   const t = e.target.value;
                   if (t !== getActiveTag()) void runUpdate(t);
@@ -192,7 +255,51 @@ export function Component() {
             {updating && <span className="text-xs text-ink-muted">Installing…</span>}
           </div>
         )}
-        {updateMsg !== undefined && <p className="text-xs text-amber-300">{updateMsg}</p>}
+        {updateMsg !== undefined &&
+          (updateMsg.failed !== true ? (
+            <p className="text-xs text-ink-muted">{updateMsg.text}</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2" role="alert">
+              <p className="text-xs text-amber-300">
+                {updateMsg.text}
+                {failedInstallTag !== undefined && ' Your current version is untouched.'}
+              </p>
+              {failedInstallTag !== undefined && (
+                <button
+                  type="button"
+                  disabled={updating}
+                  onClick={() => void install(failedInstallTag)}
+                  className="rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                >
+                  Retry install
+                </button>
+              )}
+            </div>
+          ))}
+
+        {/* Offline readiness is a claim the app makes about itself, so it comes
+            with the control that makes it true and the reason it is not. */}
+        {(offlineError !== undefined || (offline !== undefined && !offlineReady)) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={downloading || updating}
+              onClick={() => void downloadEverything()}
+              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
+            >
+              {downloading
+                ? 'Downloading…'
+                : downloadFailed === undefined
+                  ? 'Make available offline'
+                  : 'Retry download'}
+            </button>
+            {downloadFailed !== undefined && !downloading && (
+              <p className="text-xs text-amber-300" role="alert">
+                Download failed: {downloadFailed}
+              </p>
+            )}
+          </div>
+        )}
         <p className="text-xs text-ink-muted">
           Game data is downloaded from the 5etools mirror and cached on this device. Nothing ships
           with the app itself. Characters store name references, so they survive data updates.

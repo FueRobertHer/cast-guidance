@@ -11,18 +11,9 @@ import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
-import { notify } from '@/stores/notices';
+import { notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { homebrewForExport } from './homebrewExport';
-
-/** Report a failed character mutation without losing the user's place. */
-function notifyFailure(action: string, err: unknown): void {
-  notify({
-    title: `${action} failed`,
-    detail: err instanceof Error ? err.message : String(err),
-    tone: 'warn',
-  });
-}
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // Embed only the homebrew this character depends on, as a minimal public DTO

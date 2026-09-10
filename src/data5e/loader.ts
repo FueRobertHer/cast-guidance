@@ -222,7 +222,7 @@ export async function initDataLayer(): Promise<void> {
   if (backgroundStarted) return;
   backgroundStarted = true;
   const status = dataStatusStore.getState();
-  status.setPhase('working');
+  status.beginRun();
   try {
     await ensureTagReady();
     await ensurePack('essentials');
@@ -254,6 +254,34 @@ export async function initDataLayer(): Promise<void> {
 export function retryDataLayer(): void {
   backgroundStarted = false;
   void initDataLayer();
+}
+
+/**
+ * Download every remaining pack now, awaited, for a user who asked for it
+ * rather than waiting on idle time. The background drain gets there on its
+ * own, but "on its own, eventually, unless it failed" is not something a
+ * settings page can honestly report, so an explicit request gets an explicit
+ * promise: it resolves when the compendium is complete and rejects with the
+ * reason it is not.
+ */
+export async function downloadAllPacks(): Promise<void> {
+  const status = dataStatusStore.getState();
+  // Join a run that is already counting rather than zeroing its totals: the
+  // boot drain keeps calling `fileDone()` either way, and a reset under it
+  // produced "23/8" and a progress bar past its own width.
+  if (dataStatusStore.getState().phase === 'working') status.setPhase('working');
+  else status.beginRun();
+  try {
+    await ensureTagReady();
+    await ensurePack('essentials');
+    for (const pack of (await allPackIds()).filter((p) => p !== 'essentials')) {
+      await ensurePack(pack);
+    }
+    status.setPhase('done');
+  } catch (err) {
+    status.setPhase('error', err instanceof Error ? err.message : String(err));
+    throw err;
+  }
 }
 
 /** Ensure every pack an entity type draws from (e.g. all spell sources). */
@@ -318,19 +346,17 @@ export async function checkForDataUpdate(): Promise<void> {
  * (old data stays live until the swap), sanity-check, flip, delete old rows.
  */
 export async function updateToTag(newTag: string): Promise<void> {
-  if (newTag === activeTag) return;
-  // Hard gate: never activate a tag this build cannot represent, even if a
-  // caller passes one directly (defense in depth beyond the filtered list).
-  if (!isCompatibleTag(newTag)) {
-    throw new Error(
-      `data version ${newTag} is not compatible with this app (expected ${DATA_TAG.replace(/\.\d+\.\d+$/, '.x')})`,
-    );
+  const status = dataStatusStore.getState();
+  if (newTag === activeTag) {
+    // Already installed, by this call or another route, so the recorded
+    // failure for it is over: leaving it up would show an error about a
+    // version that is now the live one, behind a retry that does nothing.
+    if (status.failedTag === newTag) status.setPhase('done');
+    return;
   }
   const oldTag = activeTag;
   const newSource = new GithubTagSource(newTag);
-  const status = dataStatusStore.getState();
-  status.setPhase('working');
-  installingTag = newTag;
+  status.beginRun();
 
   const fetchNew = async (path: string): Promise<unknown> => {
     const cached = await dataCacheRepo.getFile(newTag, path);
@@ -351,6 +377,20 @@ export async function updateToTag(newTag: string): Promise<void> {
   };
 
   try {
+    // Hard gate: never activate a tag this build cannot represent, even if a
+    // caller passes one directly (defense in depth beyond the filtered list).
+    // Inside the try so the refusal reaches the UI the same way a failed
+    // download does, rather than only the caller that happened to await.
+    if (!isCompatibleTag(newTag)) {
+      throw new Error(
+        `data version ${newTag} is not compatible with this app (expected ${DATA_TAG.replace(/\.\d+\.\d+$/, '.x')})`,
+      );
+    }
+    // Claimed only once the tag is one we would really install: an incompatible
+    // one used to take this slot and then release it in the `finally`, which
+    // let the stale-tag sweep run over a concurrent install's staged rows.
+    installingTag = newTag;
+
     // Static packs + indexes, then everything the indexes list.
     const staticFiles = [...ESSENTIALS_FILES, ...ITEMS_FULL_FILES, ...LIBRARY_EXTRAS_FILES];
     status.addTotal(staticFiles.length);
@@ -383,11 +423,23 @@ export async function updateToTag(newTag: string): Promise<void> {
     activeTag = newTag;
     source = newSource;
     status.setPhase('done');
+  } catch (err) {
+    // The old data is still live and still works; what is broken is this
+    // install. Recording which tag failed is what lets the banner offer to
+    // retry the install instead of re-arming the background queue, which
+    // would report success while leaving the update undone. `setPhase` clears
+    // the tag, so it is re-armed after, and only for a tag a retry could
+    // actually install: a version this build cannot read never will.
+    status.setPhase('error', err instanceof Error ? err.message : String(err));
+    if (isCompatibleTag(newTag)) status.setFailedTag(newTag);
+    throw err;
   } finally {
     // Whether we swapped or bailed, `activeTag` is now the one to keep, so
     // this drops the old rows on success and the half-downloaded new ones on
-    // failure, instead of leaving either stranded.
-    installingTag = undefined;
+    // failure, instead of leaving either stranded. Only our own claim is
+    // released; a concurrent install still holding the slot keeps the sweep
+    // off its staged rows.
+    if (installingTag === newTag) installingTag = undefined;
     await pruneStaleTags();
   }
 }

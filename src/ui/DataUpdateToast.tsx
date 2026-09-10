@@ -16,11 +16,9 @@ export function DataUpdateToast() {
     dataStatusStore.getState().setUpdateAvailableTag(undefined);
     void updateToTag(tag)
       .then(() => invalidateRegistry())
-      .catch((err: unknown) => {
-        dataStatusStore
-          .getState()
-          .setPhase('error', err instanceof Error ? err.message : String(err));
-      });
+      // The loader has already recorded the failure and the tag it belongs to,
+      // which is what lets the banner offer to retry this install.
+      .catch(() => undefined);
   };
 
   return (

@@ -56,6 +56,19 @@ describe('homebrewRepo editable files (IndexedDB-backed)', () => {
     expect(saved?.id).toBe(created.id); // identity stable across edits
   });
 
+  it('refuses to report a write against a file that is gone as a save', async () => {
+    // Dexie's `modify`/`update` resolve with 0 rows matched rather than
+    // throwing, so a builder save racing a delete in another tab used to
+    // report success and write nothing at all.
+    const created = await homebrewRepo.createEditable('My Brew', 'MB');
+    await homebrewRepo.delete(created.id);
+
+    await expect(homebrewRepo.saveEditable(created.id, file('MB', ['One']))).rejects.toThrow(
+      'no longer exists',
+    );
+    await expect(homebrewRepo.setEnabled(created.id, false)).rejects.toThrow('no longer exists');
+  });
+
   it('enabled() returns only enabled files', async () => {
     const a = await homebrewRepo.importJson(file('A', ['x']), 'a.json');
     const b = await homebrewRepo.importJson(file('B', ['y']), 'b.json');

@@ -33,6 +33,23 @@ export function notify(notice: Notice): void {
   noticeStore.getState().push(notice);
 }
 
+/**
+ * Report a failed mutation without losing the user's place.
+ *
+ * A write that fails silently is the worst outcome a local-first app can
+ * produce: the screen still shows the change, the database does not have it,
+ * and nothing says so. Every mutation that can reject says so through here,
+ * naming the action so the toast reads as a sentence ("Rename failed").
+ */
+export function notifyFailure(action: string, err: unknown): void {
+  notify({ title: `${action} failed`, detail: errorText(err), tone: 'warn' });
+}
+
+/** The message of anything that can be thrown, including non-Errors. */
+export function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function useNotices<T>(selector: (s: NoticeState) => T): T {
   return useStore(noticeStore, selector);
 }

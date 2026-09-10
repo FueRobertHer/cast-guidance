@@ -3,18 +3,29 @@
 // anything to download, and leaves it there until the whole pack queue drains.
 // On an installed PWA that meant ~1.2s of "Downloading game data… 0/0" for a
 // download that had already happened, so the banner is gated on real work.
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { retryDataLayer, updateToTag } = vi.hoisted(() => ({
+  retryDataLayer: vi.fn(),
+  updateToTag: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('@/data5e/loader', () => ({ retryDataLayer, updateToTag }));
+vi.mock('@/data5e/registry', () => ({ invalidateRegistry: () => undefined }));
+
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DataBanner } from './DataBanner';
 
 afterEach(() => {
   cleanup();
+  retryDataLayer.mockClear();
+  updateToTag.mockClear();
   dataStatusStore.setState({
     phase: 'idle',
     filesDone: 0,
     filesTotal: 0,
     error: undefined,
+    failedTag: undefined,
   });
 });
 
@@ -46,6 +57,18 @@ describe('DataBanner', () => {
     dataStatusStore.setState({ phase: 'error', filesTotal: 0, error: 'offline' });
     render(<DataBanner />);
     expect(screen.getByRole('alert').textContent).toContain('offline');
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retryDataLayer).toHaveBeenCalledOnce();
+  });
+
+  it('retries the version install that failed, not the background queue', () => {
+    // Re-arming the queue here downloads what is missing of the *current*
+    // version and reports success, leaving the update undone.
+    dataStatusStore.setState({ phase: 'error', error: 'HTTP 500', failedTag: 'v2.33.0' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain('Update to v2.33.0 failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(updateToTag).toHaveBeenCalledWith('v2.33.0');
+    expect(retryDataLayer).not.toHaveBeenCalled();
   });
 });
