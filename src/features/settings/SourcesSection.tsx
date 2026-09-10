@@ -21,6 +21,7 @@ import {
   sourceName,
 } from '@/data5e/sourceNames';
 import { db } from '@/db/db';
+import { notifyFailure } from '@/stores/notices';
 
 /** Homebrew gets its own heading rather than falling into "everything else". */
 type Section = SourceGroup | 'homebrew';
@@ -78,7 +79,10 @@ export function SourcesSection() {
   const shown = rows.filter((r) => r.enabled).length;
 
   const setPolicy = (next: SourcePolicy) => {
-    void writeSourcePolicy(next);
+    // The toggles read from the stored policy, so a rejected write leaves them
+    // showing what is actually saved; the toast is what says the tap did not
+    // take, and tapping again is the retry.
+    void writeSourcePolicy(next).catch((err: unknown) => notifyFailure('Save sources', err));
   };
 
   /**
@@ -87,7 +91,7 @@ export function SourcesSection() {
    * stale value and the second would drop the first one's change.
    */
   const editPolicy = (edit: (current: SourcePolicy) => SourcePolicy) => {
-    void updateSourcePolicy(edit);
+    void updateSourcePolicy(edit).catch((err: unknown) => notifyFailure('Save sources', err));
   };
 
   const setGroup = (group: Section, enabled: boolean) => {

@@ -54,9 +54,9 @@ CI.
 | Check | Current result |
 |---|---|
 | Frozen dependency install | Pass: 555 packages |
-| Lint/format | Pass: 220 files |
+| Lint/format | Pass: 223 files |
 | TypeScript | Pass |
-| Unit + integration tests | Pass: 88 files, 786 tests |
+| Unit + integration tests | Pass: 91 files, 813 tests |
 | Coverage report | `bun run test:coverage`: ~59% statements, ~51% branches (engine/guards high, UI improving) |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Last run 2026-07-15: 48 files; 936 spells; 40 versioned `replaceArr` warnings. Not re-run since (network-gated; the mirror CDN is unreachable from CI and from sandboxed sessions). |

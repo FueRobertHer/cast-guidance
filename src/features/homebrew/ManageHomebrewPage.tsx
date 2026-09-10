@@ -7,6 +7,7 @@ import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
+import { errorText, notifyFailure } from '@/stores/notices';
 import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
@@ -99,10 +100,16 @@ export function Component() {
                 title: 'Short source id (shown on badges)',
                 initial: suggested,
               })) ?? 'HB';
-            const row = await homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB');
-            invalidateRegistry();
-            await ensureSourcesVisible(row.sourceIds);
-            void navigate(`/homebrew/edit/${row.id}`);
+            try {
+              const row = await homebrewRepo.createEditable(name.trim(), abbrev.trim() || 'HB');
+              invalidateRegistry();
+              await ensureSourcesVisible(row.sourceIds);
+              void navigate(`/homebrew/edit/${row.id}`);
+            } catch (err) {
+              // Navigating to a collection the database never got would open an
+              // editor onto nothing, so the failure stops here and says so.
+              setStatus(`Could not create the collection: ${errorText(err)}`);
+            }
           }}
           className="flex items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
         >
@@ -145,7 +152,13 @@ export function Component() {
             <button
               type="button"
               onClick={() => {
-                void homebrewRepo.setEnabled(r.id, !r.enabled).then(invalidateRegistry);
+                // The label reads from the row, so a rejected write leaves the
+                // badge saying what is actually stored; the toast is what says
+                // the press did not take. Pressing again is the retry.
+                void homebrewRepo
+                  .setEnabled(r.id, !r.enabled)
+                  .then(invalidateRegistry)
+                  .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
               }}
               className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
                 r.enabled ? 'border-purple-300 text-purple-300' : 'border-surface-2 text-ink-muted'
@@ -169,7 +182,13 @@ export function Component() {
             <button
               type="button"
               title="Download"
-              onClick={() => downloadJson(r.fileName, r.json)}
+              onClick={() => {
+                try {
+                  downloadJson(r.fileName, r.json);
+                } catch (err) {
+                  notifyFailure('Download', err);
+                }
+              }}
               className="shrink-0 rounded p-1.5 text-ink-muted hover:text-ink"
             >
               <Download size={15} />
@@ -184,7 +203,11 @@ export function Component() {
                   confirmLabel: 'Remove',
                   danger: true,
                 });
-                if (ok) void homebrewRepo.delete(r.id).then(invalidateRegistry);
+                if (ok)
+                  void homebrewRepo
+                    .delete(r.id)
+                    .then(invalidateRegistry)
+                    .catch((err: unknown) => notifyFailure('Remove', err));
               }}
               className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
             >

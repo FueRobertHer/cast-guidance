@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { dataStatusStore } from './dataStatus';
 
 beforeEach(() => {
-  dataStatusStore.setState({ phase: 'idle', packs: {}, filesDone: 0, filesTotal: 0 });
+  dataStatusStore.setState({
+    phase: 'idle',
+    packs: {},
+    filesDone: 0,
+    filesTotal: 0,
+    error: undefined,
+    failedTag: undefined,
+  });
 });
 
 describe('dataStatusStore', () => {
@@ -23,6 +30,32 @@ describe('dataStatusStore', () => {
     expect(next.filesTotal).toBe(5);
     expect(next.filesDone).toBe(2);
     expect(next.currentPath).toBe('races.json');
+  });
+
+  it('beginRun clears the previous attempt: counters, error, and failed tag', () => {
+    const s = dataStatusStore.getState();
+    s.addTotal(20);
+    s.fileStarted('races.json');
+    s.fileDone();
+    s.setFailedTag('v2.33.0');
+    s.setPhase('error', 'offline');
+
+    dataStatusStore.getState().beginRun();
+
+    expect(dataStatusStore.getState()).toMatchObject({
+      phase: 'working',
+      filesDone: 0,
+      filesTotal: 0,
+      currentPath: undefined,
+      error: undefined,
+      failedTag: undefined,
+    });
+  });
+
+  it('setPhase drops the failed tag with the failure it belonged to', () => {
+    dataStatusStore.getState().setFailedTag('v2.33.0');
+    dataStatusStore.getState().setPhase('error', 'a different failure');
+    expect(dataStatusStore.getState().failedTag).toBeUndefined();
   });
 
   it('records per-pack state', () => {
