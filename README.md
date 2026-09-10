@@ -1,8 +1,8 @@
 # Cast Guidance
 
 Mobile-first D&D 5e character creator and play sheet. Local-first PWA: pick race, class,
-background, feats, and equipment, and the sheet derives everything — proficiencies, AC, HP,
-initiative, attacks, spell slots — with manual overrides on top. Tracks a live session
+background, feats, and equipment, and the sheet derives everything (proficiencies, AC, HP,
+initiative, attacks, spell slots) with manual overrides on top. Tracks a live session
 (HP, conditions, slots, resources), rolls dice, and supports 5etools-format homebrew
 (import, share, and an in-app builder).
 
@@ -40,21 +40,21 @@ that only mimic the JSON schema. Homebrew files use the standard 5etools homebre
 
 ## Architecture (short version)
 
-- `src/engine/` — pure derivation: `(CharacterDoc, EngineContext) -> DerivedSheet`. No React.
-- `src/data5e/` — data download/cache, `_copy`/`_mod` resolution, entity registry,
+- `src/engine/`: pure derivation, `(CharacterDoc, EngineContext) -> DerivedSheet`. No React.
+- `src/data5e/`: data download/cache, `_copy`/`_mod` resolution, entity registry,
   rules-version (2014/2024) filtering, `{@tag}` entry rendering.
-- `src/dice/` — pure dice expression parser + roller.
-- `src/db/` — Dexie tables behind repo interfaces (cloud sync can slot in later).
-- `src/features/` — UI: character list, creator wizard, sheet tabs, library, homebrew, settings.
+- `src/dice/`: pure dice expression parser + roller.
+- `src/db/`: Dexie tables behind repo interfaces (cloud sync can slot in later).
+- `src/features/`: UI for the character list, creator wizard, sheet tabs, library, homebrew, and settings.
 
 Characters store **choices + play state, never derived results**; every derived number is
 recomputed on read and individually overridable.
 
 ## Docs
 
-- [`docs/export-format.md`](docs/export-format.md) — the character export envelope, homebrew DTO, and import/migration guarantees.
-- [`docs/security-headers.md`](docs/security-headers.md) — deployment security headers and the report-only → enforced CSP path.
-- [`FUTURE_WORK.md`](FUTURE_WORK.md) — the product principle, the measured
+- [`docs/export-format.md`](docs/export-format.md): the character export envelope, homebrew DTO, and import/migration guarantees.
+- [`docs/security-headers.md`](docs/security-headers.md): deployment security headers and the report-only → enforced CSP path.
+- [`FUTURE_WORK.md`](FUTURE_WORK.md): the product principle, the measured
   baseline, the delivery order, and the P2/P3 themes. Release-quality (P1) work
   is tracked as [GitHub issues](https://github.com/FueRobertHer/cast-guidance/issues?q=is%3Aissue+is%3Aopen+label%3AP1);
   the doc indexes them.
