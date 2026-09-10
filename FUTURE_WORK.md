@@ -1,4 +1,4 @@
-# Cast Guidance — future work
+# Cast Guidance: future work
 
 Last reviewed: 2026-09-09 (`b335754`)
 
@@ -53,21 +53,21 @@ CI.
 
 | Check | Current result |
 |---|---|
-| Frozen dependency install | Pass — 555 packages |
-| Lint/format | Pass — 220 files |
+| Frozen dependency install | Pass: 555 packages |
+| Lint/format | Pass: 220 files |
 | TypeScript | Pass |
-| Unit + integration tests | Pass — 88 files, 786 tests |
-| Coverage report | `bun run test:coverage` — ~59% statements, ~51% branches (engine/guards high, UI improving) |
+| Unit + integration tests | Pass: 88 files, 786 tests |
+| Coverage report | `bun run test:coverage`: ~59% statements, ~51% branches (engine/guards high, UI improving) |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Last run 2026-07-15: 48 files; 936 spells; 40 versioned `replaceArr` warnings. Not re-run since (network-gated; the mirror CDN is unreachable from CI and from sandboxed sessions). |
 | Browser E2E and automated accessibility (axe) | No harness yet |
 
 Priority meanings:
 
-- **P0 — protect user data:** fix before broad release.
-- **P1 — release quality:** target the next milestone.
-- **P2 — product and engineering depth:** valuable after release risks.
-- **P3 — polish and scale:** longer-term work.
+- **P0 (protect user data):** fix before broad release.
+- **P1 (release quality):** target the next milestone.
+- **P2 (product and engineering depth):** valuable after release risks.
+- **P3 (polish and scale):** longer-term work.
 
 ## Recommended delivery order
 
@@ -79,14 +79,14 @@ Priority meanings:
 4. Measure and improve scale, maintainability, release operations, and optional
    product capabilities.
 
-## P0 — user data and trust boundaries
+## P0: user data and trust boundaries
 
-No open items. Import validation and transactional commit (IMP-001) shipped —
+No open items. Import validation and transactional commit (IMP-001) shipped:
 size/node/depth/string limits, structural shape checks, recomputed homebrew
 identity, a single Dexie transaction, and an IndexedDB-backed rollback test. The
 residual per-field runtime schemas are tracked under P2 (maintainability).
 
-## P1 — release quality
+## P1: release quality
 
 Every P1 item is a GitHub issue. Each one carries the remaining scope, the
 acceptance signal, and the code pointers that were verified when it was filed,
@@ -172,7 +172,7 @@ to a mis-tap. Remaining:
 | TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | Browser E2E harness. PWA-001 and PWA-002 are effectively blocked on it. |
 | TEST-005 | [#124](https://github.com/FueRobertHer/cast-guidance/issues/124) | Find an environment that can run the network-gated data audit, schedule it, and add the branch-heuristic check. |
 
-## P2 — product and engineering depth
+## P2: product and engineering depth
 
 ### Rules and content automation
 
@@ -184,9 +184,9 @@ work:
 | Warlock invocations | Enforce or clearly warn on Pact Boon, patron, spellcasting, and known-spell prerequisites after resolving the character. Level gates already work. | Every prerequisite is evaluated or explicitly labeled advisory. |
 | Battle Master maneuvers | Add the Strength-or-Dexterity maneuver-DC choice and show computed informational DC notes for save-forcing riders rather than fake action buttons. | Disarming/Pushing/Trip show Str saves; Goading/Menacing show Wis saves; the DC uses the chosen ability. |
 | Dragonborn/Aasimar/Genasi utilities | Surface Metallic secondary breath, Gem flight/telepathy, Aasimar Celestial Revelation forms, and Genasi elemental utilities as useful, edition-correct chips or notes. | Each trait is discoverable without inventing incorrect action economy or resource use. |
-| Draconic ancestry (2014) | 2014 Dragonborn has no color subrace, so the ancestry is never chosen: the breath weapon carries no damage type/area/save and the "choose a resistance" pick floats free of the ancestry (you can pick fire resistance with a cold breath). Offer an ancestry choice — as the 2024 versioned races already do via name — that fixes the breath weapon and pre-answers the matching resistance. | A 2014 Dragonborn picks an ancestry that sets breath-weapon type/area/save and its resistance. |
-| Feat sub-choices | Give real pickers to feats whose embedded choices carry little structured data and today surface only as "see the trait text" warnings: Magic Initiate / Ritual Caster (class + cantrips + spell), Skilled (three skills or tools, prose-only), Elemental Adept (damage type; repeatable), and the chosen spell of Fey/Shadow Touched and Telekinetic/Telepathic. Disable options that duplicate a proficiency the origin already fixes. (Ability/skill/tool/language/expertise sub-choices already produce pickers — e.g. Prodigy, Chef.) | Each feat's embedded skill/tool/spell/class/damage-type choice is selectable, or shows an explicit honest note when unsupported. |
-| Condition effects | Conditions are advisory labels only — they never grant advantage/disadvantage on the affected rolls, change AC, or apply Paralyzed's melee auto-crit. Exhaustion is the one exception and only partly: `exhaustion.ts` computes reduced speed and flags level-6 death for a *user-triggered* drop to 0 HP, but the 2024 −2 d20 penalty and the 2014 disadvantage/half-HP-max effects are advisory lines that no roll reads. Wire condition and exhaustion state into attack/save/check rolls and speed as guidance the player can still override. (Absorbs the former "Exhaustion automation" row: it was the same gap seen from the other side.) | Applying a condition or exhaustion level changes the affected rolls/speed with a visible, overridable cue, and no advisory line contradicts a roll. |
+| Draconic ancestry (2014) | 2014 Dragonborn has no color subrace, so the ancestry is never chosen: the breath weapon carries no damage type/area/save and the "choose a resistance" pick floats free of the ancestry (you can pick fire resistance with a cold breath). Offer an ancestry choice (as the 2024 versioned races already do via name) that fixes the breath weapon and pre-answers the matching resistance. | A 2014 Dragonborn picks an ancestry that sets breath-weapon type/area/save and its resistance. |
+| Feat sub-choices | Give real pickers to feats whose embedded choices carry little structured data and today surface only as "see the trait text" warnings: Magic Initiate / Ritual Caster (class + cantrips + spell), Skilled (three skills or tools, prose-only), Elemental Adept (damage type; repeatable), and the chosen spell of Fey/Shadow Touched and Telekinetic/Telepathic. Disable options that duplicate a proficiency the origin already fixes. (Ability/skill/tool/language/expertise sub-choices already produce pickers, e.g. Prodigy and Chef.) | Each feat's embedded skill/tool/spell/class/damage-type choice is selectable, or shows an explicit honest note when unsupported. |
+| Condition effects | Conditions are advisory labels only: they never grant advantage/disadvantage on the affected rolls, change AC, or apply Paralyzed's melee auto-crit. Exhaustion is the one exception and only partly: `exhaustion.ts` computes reduced speed and flags level-6 death for a *user-triggered* drop to 0 HP, but the 2024 −2 d20 penalty and the 2014 disadvantage/half-HP-max effects are advisory lines that no roll reads. Wire condition and exhaustion state into attack/save/check rolls and speed as guidance the player can still override. (Absorbs the former "Exhaustion automation" row: it was the same gap seen from the other side.) | Applying a condition or exhaustion level changes the affected rolls/speed with a visible, overridable cue, and no advisory line contradicts a roll. |
 | Downed and death state | Death saves now roll for real (Durable-aware advantage, nat 1 = two failures, nat 20 = back up on 1 HP) and dropping to 0 breaks concentration. Remaining: 0 HP still never applies Unconscious, overkill and instant death (damage taken ≥ HP max) are discarded, and three successes or failures still only fill pips without reaching a stable or dead state. Model those transitions as guidance without blocking manual override. | The downed sequence and instant death are represented and overridable. |
 | Background equipment slots | Feed background `startingEquipment` through the concrete slot picker now used for classes. | Supported slots create real items; unsupported entries remain honest notes. |
 | Spell guidance | Extend current cantrip/level-1 starter tips into level-up and replacement guidance. | Each casting model gets useful, non-prescriptive guidance beyond level 1. |
@@ -203,7 +203,7 @@ work:
 | Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, trash/archive, and recovery documentation. (Import preview is IMP-002; undo is UX-004/UX-005.) |
 | Guided level-up | Preview HP, subclass timing, choices, spell gains/replacements, and resource changes before commit. Multiclassing remains in the free-form Build page unless product scope changes. |
 | Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff (the roster's actions are already grouped behind one row menu, with a loading skeleton for vitals). |
-| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling — no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character: `rollLogStore` is a module-level Zustand store capped at 100 entries, shared across every character and lost on reload. (Pools above the pip cap now get ±1/±5 steppers, and pips spend from the right so what is left stays anchored under the label.) |
+| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling, but no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character: `rollLogStore` is a module-level Zustand store capped at 100 entries, shared across every character and lost on reload. (Pools above the pip cap now get ±1/±5 steppers, and pips spend from the right so what is left stays anchored under the label.) |
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
@@ -283,7 +283,7 @@ work:
   document mirror/release provenance, checksums where available, emergency pin,
   security reporting, supported versions, and patch expectations.
 
-## P3 — later opportunities
+## P3: later opportunities
 
 - Search descriptions, aliases, tags, sources, and types; add keyboard
   navigation, recent searches, and explicit no-results/filter states.
