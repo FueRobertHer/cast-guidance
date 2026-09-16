@@ -13,7 +13,7 @@ Vite · React 19 · TypeScript (strict) · Tailwind CSS 4 · react-router · Zus
 
 ## Development
 
-Requires Bun (pinned via `.bun-version` / `packageManager`).
+Requires Bun. No version is pinned, so install a current release.
 
 ```bash
 bun install
