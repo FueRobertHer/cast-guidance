@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { Drawer } from 'vaul';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { headerFacts } from '@/features/library/fmt';
+import { Sheet } from './sheet';
 
 /**
  * Full-description bottom sheet for a build option (race, subrace, background,
@@ -30,15 +30,15 @@ export function EntityInfoSheet({
   const hasEntries = Array.isArray(entries) && entries.length > 0;
 
   return (
-    <Drawer.Root>
-      <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+    <Sheet.Root>
+      <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-1 shrink-0 text-base font-semibold">
+          <Sheet.Title className="mb-1 shrink-0 text-base font-semibold">
             {String(entity.name ?? '?')}
-          </Drawer.Title>
+          </Sheet.Title>
           {subtitle !== undefined && (
             <p className="mb-2 shrink-0 text-xs text-ink-muted">{subtitle}</p>
           )}
@@ -64,8 +64,8 @@ export function EntityInfoSheet({
               )
             )}
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }

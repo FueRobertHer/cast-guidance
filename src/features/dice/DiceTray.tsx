@@ -1,12 +1,12 @@
 import { Dices } from 'lucide-react';
 import { useState } from 'react';
-import { Drawer } from 'vaul';
 import { rollDetail } from '@/dice/format';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import { useScrollHidden } from '@/lib/useScrollHidden';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
+import { Sheet } from '@/ui/sheet';
 
 const QUICK = [4, 6, 8, 10, 12, 20, 100];
 
@@ -48,8 +48,8 @@ export function DiceTray() {
   };
 
   return (
-    <Drawer.Root>
-      <Drawer.Trigger asChild>
+    <Sheet.Root>
+      <Sheet.Trigger asChild>
         <button
           type="button"
           title="Dice tray"
@@ -59,12 +59,12 @@ export function DiceTray() {
         >
           <Dices size={22} />
         </button>
-      </Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      </Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-2 text-base font-semibold">Dice</Drawer.Title>
+          <Sheet.Title className="mb-2 text-base font-semibold">Dice</Sheet.Title>
 
           {/* Adv/dis toggle for d20 rolls, in the same order as the floating one */}
           <div className="mb-2 flex gap-1.5">
@@ -188,8 +188,8 @@ export function DiceTray() {
               );
             })}
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }

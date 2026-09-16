@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { Drawer } from 'vaul';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
+import { Sheet } from '@/ui/sheet';
 
 /**
  * Tap-to-explain bottom sheet for a spell — the same in-place rules popup that
@@ -59,15 +59,15 @@ export function SpellInfoSheet({
   const higher = spell?.entriesHigherLevel;
 
   return (
-    <Drawer.Root open={open} onOpenChange={setOpen}>
-      <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+    <Sheet.Root open={open} onOpenChange={setOpen}>
+      <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-1 shrink-0 text-base font-semibold capitalize">
+          <Sheet.Title className="mb-1 shrink-0 text-base font-semibold capitalize">
             {spell !== undefined ? String(spell.name) : name}
-          </Drawer.Title>
+          </Sheet.Title>
           {subtitle !== undefined && (
             <p className="mb-2 shrink-0 text-xs text-ink-muted">{subtitle}</p>
           )}
@@ -92,8 +92,8 @@ export function SpellInfoSheet({
               </>
             )}
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }

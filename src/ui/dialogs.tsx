@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Drawer } from 'vaul';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import { Sheet } from './sheet';
 
 /**
  * Themed, promise-based replacements for window.prompt/confirm. One DialogHost
@@ -153,17 +153,17 @@ export function DialogHost() {
   };
 
   return (
-    <Drawer.Root
+    <Sheet.Root
       open
       onOpenChange={(o) => {
         if (!o) dismiss();
       }}
     >
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-3 text-base font-semibold">{req.title}</Drawer.Title>
+          <Sheet.Title className="mb-3 text-base font-semibold">{req.title}</Sheet.Title>
           {req.kind === 'confirm' ? (
             <div className="flex flex-col gap-3">
               {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
@@ -221,8 +221,8 @@ export function DialogHost() {
               <InputForm key={req.title} req={req} />
             </div>
           )}
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }
