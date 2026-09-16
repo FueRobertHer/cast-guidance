@@ -1,8 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { History } from 'lucide-react';
-import { Drawer } from 'vaul';
 import { db } from '@/db/db';
 import { characterSessionStore } from '@/stores/characterSession';
+import { Sheet } from '@/ui/sheet';
 
 function timeLabel(at: number): string {
   const d = new Date(at);
@@ -24,8 +24,8 @@ export function HistoryDrawer({ charId }: { charId: string }) {
   );
 
   return (
-    <Drawer.Root>
-      <Drawer.Trigger asChild>
+    <Sheet.Root>
+      <Sheet.Trigger asChild>
         <button
           type="button"
           title="Character history — restore any earlier state"
@@ -33,12 +33,12 @@ export function HistoryDrawer({ charId }: { charId: string }) {
         >
           <History size={18} />
         </button>
-      </Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      </Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-1 text-base font-semibold">History</Drawer.Title>
+          <Sheet.Title className="mb-1 text-base font-semibold">History</Sheet.Title>
           <p className="mb-2 text-xs text-ink-muted">
             Every change is saved automatically (last 50). Restoring creates a new entry, so you can
             always come back.
@@ -59,7 +59,7 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                 {i === 0 ? (
                   <span className="shrink-0 text-xs text-emerald-300">current</span>
                 ) : (
-                  <Drawer.Close asChild>
+                  <Sheet.Close asChild>
                     <button
                       type="button"
                       onClick={() => characterSessionStore.getState().restore(row.doc)}
@@ -67,13 +67,13 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                     >
                       Restore
                     </button>
-                  </Drawer.Close>
+                  </Sheet.Close>
                 )}
               </div>
             ))}
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }

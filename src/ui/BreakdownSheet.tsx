@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
-import { Drawer } from 'vaul';
 import type { DerivedValue } from '@/engine/types';
+import { Sheet } from './sheet';
 
 /** Bottom sheet showing how a derived number was computed, with optional override. */
 export function BreakdownSheet({
@@ -21,16 +21,16 @@ export function BreakdownSheet({
   const [draft, setDraft] = useState('');
 
   return (
-    <Drawer.Root>
-      <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+    <Sheet.Root>
+      <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-2 flex items-baseline justify-between text-base font-semibold">
+          <Sheet.Title className="mb-2 flex items-baseline justify-between text-base font-semibold">
             {title}
             <span className="text-2xl font-bold">{value.value}</span>
-          </Drawer.Title>
+          </Sheet.Title>
           <dl className="flex flex-col gap-1 text-sm">
             {value.parts.map((p, i) => (
               <div key={`${p.label}-${String(i)}`} className="flex justify-between">
@@ -87,8 +87,8 @@ export function BreakdownSheet({
               )}
             </form>
           )}
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }

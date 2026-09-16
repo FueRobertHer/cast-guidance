@@ -1,7 +1,6 @@
 import { Plus, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { Drawer } from 'vaul';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
@@ -9,6 +8,7 @@ import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourc
 import { sourceName } from '@/data5e/sourceNames';
 import type { EquipmentEntry } from '@/engine/types';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
+import { Sheet } from '@/ui/sheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -55,24 +55,24 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
   };
 
   return (
-    <Drawer.Root
+    <Sheet.Root
       onOpenChange={(open) => {
         if (open) loadItems();
       }}
     >
-      <Drawer.Trigger asChild>
+      <Sheet.Trigger asChild>
         <button
           type="button"
           className="flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-semibold"
         >
           <Plus size={16} /> Add item
         </button>
-      </Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      </Sheet.Trigger>
+      <Sheet.Portal>
+        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
+        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Drawer.Title className="mb-2 text-base font-semibold">Add item</Drawer.Title>
+          <Sheet.Title className="mb-2 text-base font-semibold">Add item</Sheet.Title>
           <label className="mb-2 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2">
             <Search size={16} className="shrink-0 text-ink-muted" />
             <input
@@ -134,7 +134,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {results.map((e) => (
-              <Drawer.Close asChild key={`${nameOf(e)}|${sourceOf(e)}`}>
+              <Sheet.Close asChild key={`${nameOf(e)}|${sourceOf(e)}`}>
                 <button
                   type="button"
                   onClick={() =>
@@ -151,7 +151,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
                   <span className="truncate">{nameOf(e)}</span>
                   <span className="text-xs text-ink-muted">{sourceOf(e)}</span>
                 </button>
-              </Drawer.Close>
+              </Sheet.Close>
             ))}
           </div>
           <form
@@ -182,9 +182,9 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
               Add
             </button>
           </form>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </Sheet.Content>
+      </Sheet.Portal>
+    </Sheet.Root>
   );
 }
 
