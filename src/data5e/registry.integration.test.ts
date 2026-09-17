@@ -2,7 +2,7 @@
 // that powers SEARCH-001: an editable-homebrew edit must change the registry
 // signature (the search-index cache key) so results can't go stale.
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -101,5 +101,61 @@ describe('registry rebuild as the background drain lands files', () => {
     expect(second).not.toBe(first);
     expect(second.byType('background').map((b) => String(b.name))).toEqual(['Sage']);
     expect(second.byType('feat').map((f) => String(f.name))).toEqual(['Alert']);
+  });
+});
+
+describe('a rebuild that spans an invalidation', () => {
+  const putDataFile = (path: string, json: unknown) =>
+    dataCacheRepo.putFile({
+      key: dataCacheRepo.key(getActiveTag(), path),
+      tag: getActiveTag(),
+      path,
+      pack: 'essentials',
+      json,
+      bytes: 0,
+      fetchedAt: 1,
+    });
+
+  it('does not publish what it read before the data changed underneath it', async () => {
+    // Reading every cached row is the slow part of a rebuild, and the drain
+    // keeps starting rebuilds while someone is browsing. One that begins
+    // before a repair and finishes after it holds the pre-repair bodies, and
+    // publishing them installs the old data under a signature that says it is
+    // current. A repair changes bodies and no paths, so that signature matches
+    // the next request exactly: the repair is undone and cannot be retried,
+    // because nothing is missing and nothing has changed.
+    await putDataFile('races.json', { race: [] });
+    await getRegistry();
+
+    // A new path, so the next request really rebuilds rather than short-circuits.
+    await putDataFile('feats.json', { feat: [] });
+
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let hasRead = (): void => undefined;
+    const read = new Promise<void>((resolve) => {
+      hasRead = resolve;
+    });
+    const realFilesByTag = dataCacheRepo.filesByTag.bind(dataCacheRepo);
+    const spy = vi.spyOn(dataCacheRepo, 'filesByTag').mockImplementationOnce(async (tag) => {
+      const rows = await realFilesByTag(tag); // the rows as they are now
+      hasRead();
+      await held; // ...published only after the repair has landed
+      return rows;
+    });
+
+    const spanning = getRegistry();
+    // Not before the rows are in hand, or there is no stale read to publish.
+    await read;
+    await putDataFile('races.json', { race: [{ name: 'Elf', source: 'PHB' }] });
+    invalidateRegistry();
+    release();
+    await spanning;
+    spy.mockRestore();
+
+    const after = await getRegistry();
+    expect(after.get('race', 'Elf')).toBeDefined();
   });
 });

@@ -51,6 +51,20 @@ describe('DataBanner', () => {
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
+  it('never counts past the total it is counting towards', () => {
+    // The counters are shared and a new run resets them, so a run that began
+    // earlier can tick past the total of the one that replaced it. Only the
+    // bar was clamped, which left the text reading "13/5" and a screen reader
+    // announcing "13 of 5 files" for a download that had fetched nothing.
+    dataStatusStore.setState({ phase: 'working', filesDone: 13, filesTotal: 5 });
+    render(<DataBanner />);
+
+    const bar = screen.getByRole('progressbar');
+    expect(bar.textContent).toContain('5/5');
+    expect(bar.getAttribute('aria-valuenow')).toBe('5');
+    expect(bar.getAttribute('aria-valuetext')).toBe('5 of 5 files');
+  });
+
   it('reports a failure even though no files were counted', () => {
     // The error path must not inherit the work gate: a download that failed
     // before addTotal ran is exactly when the user needs the retry.

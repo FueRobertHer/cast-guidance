@@ -321,6 +321,24 @@ describe('useTypePacks', () => {
     expect(onRepaired).not.toHaveBeenCalled();
   });
 
+  it('still refreshes what the page reads when a repair fails part way', async () => {
+    // A repair writes rows as it goes, and its `Promise.all` rejects on the
+    // first failure while the siblings finish writing theirs. If only success
+    // refreshed the registry, it would be left serving bodies that are no
+    // longer on disk, and no retry could dislodge it: nothing is missing, so
+    // the retry fetches nothing and the signature never changes.
+    const onRepaired = vi.fn();
+    const { result } = renderHook(() => useTypePacks('spell', onRepaired));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    repairTypePacks.mockRejectedValue(new Error('HTTP 503'));
+    act(() => result.current.repair());
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(invalidateRegistry).toHaveBeenCalledOnce();
+    expect(onRepaired).toHaveBeenCalledOnce();
+  });
+
   it('treats a repair as one press, not a standing mode', async () => {
     // Returning to a section you repaired re-entered the effect with the same
     // attempt still asking for a repair, so a back-button press re-downloaded

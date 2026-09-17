@@ -239,15 +239,25 @@ export function useTypePacks(
     const repair = attempt.repair && attempt.for === type && startedRepair.current !== attempt.n;
     if (repair) startedRepair.current = attempt.n;
     const run = repair ? repairTypePacks(type) : ensureTypePacks(type);
-    run
-      .then(() => {
-        if (repair) {
-          // Unconditionally, not behind `alive`: the files are repaired
-          // whether or not this page is still watching, and a registry left
-          // holding the old bodies would serve them to every other page.
+    // A repair writes rows as it goes and `Promise.all` rejects on the first
+    // failure while its siblings finish, so a repair that failed has still
+    // changed what is on disk. Settling either way is what keeps a
+    // half-succeeded repair from leaving the registry serving bodies that are
+    // no longer there, which no retry could then dislodge: nothing is missing,
+    // so the retry fetches nothing, and the signature never changes.
+    if (repair) {
+      void run
+        .catch(() => undefined)
+        .then(() => {
+          // Not behind `alive`: the files are repaired whether or not this page
+          // is still watching, and a registry left holding the old bodies would
+          // serve them to every other page.
           invalidateRegistry();
           onRepairedRef.current?.();
-        }
+        });
+    }
+    run
+      .then(() => {
         if (!alive) return;
         setStatus('ready');
         setError(null);

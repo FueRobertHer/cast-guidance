@@ -310,14 +310,14 @@ export async function ensureTypePacks(type: string): Promise<void> {
 
 /** Fetch one file again and overwrite what is cached, cache hit or not. */
 async function refetchFile(path: string): Promise<void> {
-  const status = dataStatusStore.getState();
-  // The tag is read before the fetch and checked after it. `activeTag` is
-  // module state an install moves, so a repair that started before an install
-  // and lands after it would otherwise write the old release's body under the
-  // new tag's key, straight over what the installer staged and sanity-checked.
+  // The tag and its source are captured together, before the fetch, so the
+  // body written always matches the row it is written into however long the
+  // fetch takes. The check after it is about a tag that has been left behind:
+  // `updateToTag` sweeps the old tag's rows once it has swapped, and a late
+  // repair would otherwise put one back, stranded under a version nothing
+  // reads until the next boot cleans it up again.
   const tag = activeTag;
   const from = source;
-  status.fileStarted(path);
   const json = await fetchGate.run(() => from.fetchFile(path));
   if (activeTag !== tag) return;
   await dataCacheRepo.putFile({
@@ -329,9 +329,6 @@ async function refetchFile(path: string): Promise<void> {
     bytes: jsonByteSize(json),
     fetchedAt: Date.now(),
   });
-  // Every file landing ticks the same counter a download does, which is what
-  // the progress banner reads and what tells the registry hooks to look again.
-  status.fileDone();
 }
 
 /**
@@ -357,14 +354,15 @@ export async function repairTypePacks(type: string): Promise<void> {
   // Before `activeTag` is read, so the rows are written under the installed
   // tag rather than whichever one this session happened to start with.
   await ensureTagReady();
-  const status = dataStatusStore.getState();
-  status.addTotal(ESSENTIALS_FILES.length);
+  // Deliberately not reported through `dataStatusStore`: those counters belong
+  // to the background queue, and a run in progress resets them. Borrowing them
+  // made the shared banner read "13/5" for an install that had fetched
+  // nothing, and left its total short of its own count. A repair is a local,
+  // asked-for action, and the page that asked shows its own progress.
   await Promise.all(ESSENTIALS_FILES.map((path) => refetchFile(path)));
   const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
   const lists = await Promise.all(packs.map((p) => filesForPack(p)));
-  const paths = [...new Set(lists.flat())];
-  status.addTotal(paths.length);
-  await Promise.all(paths.map((path) => refetchFile(path)));
+  await Promise.all([...new Set(lists.flat())].map((path) => refetchFile(path)));
 }
 
 /**
