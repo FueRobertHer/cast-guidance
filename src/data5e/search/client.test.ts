@@ -206,6 +206,93 @@ describe('a worker that stops answering', () => {
   });
 });
 
+describe('two builds asked for at once', () => {
+  it('does not let the first index answer for the second signature', async () => {
+    // The registry identity changes on every homebrew save, and the hook
+    // rebuilds when it does. A `ready` message says nothing about which
+    // request it answers, so overlapping builds used to resolve each other:
+    // both callers took the first index, and the second signature's cache row
+    // was written holding the first signature's index. That row decodes
+    // perfectly, so nothing downstream could ever notice it was the wrong
+    // corpus.
+    const first = client.ensureSearchIndex(registry, 'sigA');
+    const second = client.ensureSearchIndex(registry, 'sigB');
+    await flush();
+
+    const w = FakeWorker.instances[0] as FakeWorker;
+    expect(w.posted).toHaveLength(1);
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_A' });
+    await first;
+    await flush();
+
+    // Only now is the second build even asked for.
+    expect(w.posted).toHaveLength(2);
+    w.reply({ kind: 'ready', serialized: 'INDEX_B' });
+    await second;
+
+    const stored = indexes.put.mock.calls.map(([r]) => r as { key: string; json: string });
+    expect(stored.map((r) => r.json)).toEqual(['INDEX_A', 'INDEX_B']);
+    // Two signatures, two keys, and neither holds the other's index.
+    expect(new Set(stored.map((r) => r.key)).size).toBe(2);
+  });
+});
+
+describe('a second failure from a worker already replaced', () => {
+  it('leaves the worker that replaced it alone', async () => {
+    // A dying worker can report more than once (an error, then a message it
+    // can no longer decode), and the handlers set up at construction outlive
+    // the worker they were made for. Acting on the second report would
+    // terminate the healthy replacement and leave a search box that says it is
+    // ready and answers nothing.
+    const first = client.ensureSearchIndex(registry, 'sigA');
+    await flush();
+    const dead = FakeWorker.instances[0] as FakeWorker;
+    dead.die();
+    await expect(first).rejects.toThrow();
+
+    const retried = client.ensureSearchIndex(registry, 'sigA');
+    await flush();
+    const live = FakeWorker.instances[1] as FakeWorker;
+    live.reply({ kind: 'ready', serialized: '{"index":1}' });
+    await retried;
+
+    const told = vi.fn();
+    client.onSearchIndexLost(told);
+    dead.die('and again');
+
+    expect(live.terminated).toBe(false);
+    expect(told).not.toHaveBeenCalled();
+    const hits = client.searchAll('fire');
+    await tick();
+    const sent = live.last;
+    expect(sent?.kind).toBe('query');
+    live.reply({
+      kind: 'results',
+      id: sent?.kind === 'query' ? sent.id : 0,
+      hits: [],
+      hiddenCount: 0,
+    });
+    await expect(hits).resolves.toEqual({ hits: [], hiddenCount: 0 });
+  });
+});
+
+describe('losing the worker', () => {
+  it('tells the view, so the retry it already offers comes back', async () => {
+    const w = await buildReady();
+    const told = vi.fn();
+    const stop = client.onSearchIndexLost(told);
+
+    w.die();
+
+    expect(told).toHaveBeenCalledTimes(1);
+    stop();
+    // A second loss reaches nobody once the view is gone.
+    (FakeWorker.instances[0] as FakeWorker).die();
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a query the worker refuses', () => {
   it('settles empty as soon as the refusal arrives', async () => {
     const w = await buildReady();

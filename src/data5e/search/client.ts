@@ -51,6 +51,12 @@ class SearchWorkerError extends Error {
 }
 
 let worker: Worker | null = null;
+/**
+ * Bumped every time the worker is replaced. A request holds the generation it
+ * was sent under, so a stale timeout cannot terminate the healthy worker that
+ * replaced its own.
+ */
+let workerGeneration = 0;
 let readyPromise: Promise<void> | null = null;
 let indexedSignature = '';
 let queryId = 0;
@@ -64,24 +70,46 @@ function settlePending(): void {
   }
 }
 
+/** Called when the worker is lost, so a view can drop to its error + retry. */
+const lost = new Set<() => void>();
+
+/** Subscribe to worker loss. Returns the unsubscribe. */
+export function onSearchIndexLost(fn: () => void): () => void {
+  lost.add(fn);
+  return () => {
+    lost.delete(fn);
+  };
+}
+
 /**
  * Throw the worker away so the next request builds a fresh one.
  *
  * A worker that failed to start, died, or stopped answering never recovers,
  * and the handle stays cached forever: without this, one dead worker turns
  * every later build into a 30-second timeout and every query into a 5-second
- * one, for the rest of the session. Resetting the signature is part of it —
+ * one, for the rest of the session. Resetting the signature is part of it:
  * the next `ensureSearchIndex` has to re-attempt rather than hand back the
  * promise that was settled against the corpse.
+ *
+ * `generation` is the worker the caller was talking to. A late timeout from a
+ * request that belonged to a worker already replaced would otherwise terminate
+ * the live one and null a newer `readyPromise`, leaving a search box that says
+ * it is ready and answers nothing.
  */
-function recycleWorker(): void {
+function recycleWorker(generation: number): void {
+  if (generation !== workerGeneration) return;
   if (worker !== null) {
     worker.terminate();
     worker = null;
   }
+  workerGeneration++;
   readyPromise = null;
   indexedSignature = '';
   settlePending();
+  // Nothing else is watching the worker, so the view that offers the retry has
+  // to be told: without this the search box stays enabled, keeps saying it is
+  // ready, and answers every query with nothing.
+  for (const fn of [...lost]) fn();
 }
 
 function getWorker(): Worker {
@@ -104,8 +132,9 @@ function getWorker(): Worker {
     };
     // A worker that dies (a chunk that won't load offline, an OOM kill) or is
     // handed a message it cannot decode reports it here and nowhere else.
-    worker.onerror = () => recycleWorker();
-    worker.onmessageerror = () => recycleWorker();
+    const generation = workerGeneration;
+    worker.onerror = () => recycleWorker(generation);
+    worker.onmessageerror = () => recycleWorker(generation);
   }
   return worker;
 }
@@ -149,8 +178,9 @@ const BUILD_TIMEOUT_MS = 30_000;
  * mid-request, and silence. Callers (`useSearchState`) can then show an error
  * and a retry instead of an index that silently never becomes ready.
  */
-function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
+function sendIndexRequest(msg: SearchWorkerRequest): Promise<string | undefined> {
   const w = getWorker();
+  const generation = workerGeneration;
   return new Promise<string | undefined>((resolve, reject) => {
     const stop = () => {
       clearTimeout(timer);
@@ -162,7 +192,7 @@ function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
       stop();
       // Nothing came back in thirty seconds, so nothing will: the next attempt
       // deserves a worker that might answer.
-      recycleWorker();
+      recycleWorker(generation);
       reject(new Error('search index build timed out'));
     }, BUILD_TIMEOUT_MS);
     const onMessage = (ev: MessageEvent<SearchWorkerResponse>) => {
@@ -176,7 +206,7 @@ function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
     };
     const onDead = (ev: Event) => {
       stop();
-      recycleWorker();
+      recycleWorker(generation);
       reject(
         new Error(
           ev instanceof ErrorEvent && ev.message !== '' ? ev.message : 'the search worker stopped',
@@ -188,6 +218,30 @@ function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
     w.addEventListener('messageerror', onDead);
     w.postMessage(msg);
   });
+}
+
+/** One index request at a time, in the order they were asked for. */
+let indexQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Queue an index request behind whatever the worker is already doing.
+ *
+ * A `ready` message says nothing about which request it answers, so two builds
+ * in flight at once resolve each other: the registry changes while the first
+ * build is still running (every homebrew save invalidates it), the first
+ * `ready` settles both callers, and the second signature's cache row is
+ * written holding the first signature's index. That row decodes perfectly, so
+ * nothing downstream can notice, and the app serves a stale corpus until the
+ * data tag moves. Serializing the requests is what makes an untagged `ready`
+ * unambiguous.
+ */
+function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
+  const run = indexQueue.then(
+    () => sendIndexRequest(msg),
+    () => sendIndexRequest(msg),
+  );
+  indexQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** Build (or rehydrate) the index for the given registry + cache signature. */

@@ -53,6 +53,42 @@ describe('DecodeBoundary', () => {
     expect(onDelete).toHaveBeenCalledTimes(1);
   });
 
+  it('tries again when resetKey says the subject may have changed', () => {
+    // List keys are positional, so a boundary that caught for one record can
+    // be handed to another when the list moves. Holding the first record's
+    // failure over the second would mark a healthy record unreadable forever.
+    const { rerender } = render(
+      <DecodeBoundary label="This item" resetKey={2}>
+        <Boom message="bad record" />
+      </DecodeBoundary>,
+    );
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+
+    rerender(
+      <DecodeBoundary label="This item" resetKey={1}>
+        <p>Sunblade</p>
+      </DecodeBoundary>,
+    );
+
+    expect(screen.getByText('Sunblade')).toBeTruthy();
+    expect(screen.queryByText(/could not be read/)).toBeNull();
+  });
+
+  it('holds the failure while resetKey is unchanged', () => {
+    const { rerender } = render(
+      <DecodeBoundary label="This item" resetKey={2}>
+        <Boom message="bad record" />
+      </DecodeBoundary>,
+    );
+    rerender(
+      <DecodeBoundary label="This item" resetKey={2}>
+        <Boom message="bad record" />
+      </DecodeBoundary>,
+    );
+
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+  });
+
   it('renders its children untouched when nothing throws', () => {
     render(
       <DecodeBoundary label="This item">

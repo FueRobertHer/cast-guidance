@@ -7,6 +7,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+type Json = Record<string, unknown>;
+
 const { saveEditable, invalidateRegistry, row } = vi.hoisted(() => ({
   saveEditable: vi.fn(),
   invalidateRegistry: vi.fn(),
@@ -228,13 +230,12 @@ describe('BuilderPage reads a file it did not write', () => {
     await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
     const [, written] = saveEditable.mock.calls[0] as [string, { item: Array<{ name: string }> }];
     expect(written.item).toEqual([{ name: 'Old blade' }]);
-    expect(noticeStore.getState().notice).toMatchObject({ title: 'Deleted the unreadable entry' });
+    expect(noticeStore.getState().notice).toMatchObject({
+      title: 'Deleted that unreadable entry',
+    });
   });
 
-  it('refuses a positional delete once the file has shifted under it', async () => {
-    // A nameless record has nothing but its position to be identified by, so
-    // the position has to still hold a nameless record. Deleting whatever
-    // moved into the slot would be worse than doing nothing.
+  it('refuses a positional delete once a named record moved into the slot', async () => {
     row.json.item = [null, { name: 'Old blade' }];
     renderBuilder();
 
@@ -243,10 +244,47 @@ describe('BuilderPage reads a file it did not write', () => {
 
     await waitFor(() =>
       expect(noticeStore.getState().notice).toMatchObject({
-        title: 'That entry is already gone',
+        title: 'That entry can no longer be found',
       }),
     );
     expect(saveEditable).not.toHaveBeenCalled();
+  });
+
+  it('deletes the nameless record it was aimed at, not the one that took its slot', async () => {
+    // The dangerous shift, because "the slot still holds something nameless"
+    // looks exactly like a match: removing the entry above these two moves
+    // both up one, and a delete aimed at the first would take the second.
+    row.json.item = [{ name: 'Keep me' }, 'first bad', 'second bad'];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    row.json.item = ['first bad', 'second bad'];
+    // Index 1 as rendered: the row showing 'first bad'.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1] as HTMLElement);
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: unknown[] }];
+    expect(written.item).toEqual(['second bad']);
+  });
+
+  it('saves an unnamed record over itself, not over the one that took its place', async () => {
+    // Two records the file gives no usable name, so neither can be found by
+    // one. Writing back at the remembered position would put the edit on the
+    // wrong record and destroy it.
+    row.json.item = [{ name: 'Keep me' }, { name: 123 }, { name: 456 }];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Unnamed item' })[0] as HTMLElement);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Fixed blade' } });
+    row.json.item = [{ name: 123 }, { name: 456 }];
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: Json[] }];
+    // The edit lands on the record it was opened on, wherever that moved to,
+    // and {name: 456} is untouched.
+    expect(written.item).toEqual([expect.objectContaining({ name: 'Fixed blade' }), { name: 456 }]);
   });
 
   it('says a record has no name rather than inventing one', () => {

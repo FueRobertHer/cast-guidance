@@ -6,7 +6,24 @@ interface DecodeBoundaryProps {
   label: string;
   /** Rendered beside the message: the way out, usually a delete or a close. */
   action?: ReactNode;
+  /**
+   * Changing this clears a caught failure and renders the children again.
+   *
+   * A caught boundary holds its error for as long as React keeps the instance,
+   * and a list key like `unnamed-2` does not identify a record: delete the
+   * entry ahead of it and the same key belongs to a different record, which
+   * would inherit a failure that was never its own. Pass something that
+   * changes when the list moves, and a boundary whose subject may have changed
+   * tries again instead.
+   */
+  resetKey?: string | number;
   children: ReactNode;
+}
+
+interface DecodeBoundaryState {
+  detail: string | null;
+  /** The `resetKey` the current state was reached under. */
+  seen: string | number | undefined;
 }
 
 /**
@@ -23,11 +40,19 @@ interface DecodeBoundaryProps {
  * damaged file, and a screen reader being told about each in turn is worse
  * than finding them in reading order.
  */
-export class DecodeBoundary extends Component<DecodeBoundaryProps, { detail: string | null }> {
-  state: { detail: string | null } = { detail: null };
+export class DecodeBoundary extends Component<DecodeBoundaryProps, DecodeBoundaryState> {
+  state: DecodeBoundaryState = { detail: null, seen: this.props.resetKey };
 
   static getDerivedStateFromError(error: unknown): { detail: string } {
     return { detail: error instanceof Error ? error.message : String(error) };
+  }
+
+  static getDerivedStateFromProps(
+    props: DecodeBoundaryProps,
+    state: DecodeBoundaryState,
+  ): DecodeBoundaryState | null {
+    if (props.resetKey === state.seen) return null;
+    return { detail: null, seen: props.resetKey };
   }
 
   render(): ReactNode {
