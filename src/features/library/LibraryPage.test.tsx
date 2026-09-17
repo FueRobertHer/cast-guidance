@@ -18,6 +18,8 @@ const { reg, packs } = vi.hoisted(() => ({
     },
   },
   packs: {
+    lastType: undefined as string | undefined,
+    lastOnRepaired: undefined as (() => void) | undefined,
     current: {
       status: 'loading' as string,
       error: null as string | null,
@@ -31,7 +33,11 @@ const { reg, packs } = vi.hoisted(() => ({
 vi.mock('@/data5e/hooks', () => ({
   useRegistryState: () => reg.current,
   useSearchState: () => ({ status: 'ready', error: null, retry: vi.fn() }),
-  useTypePacks: () => packs.current,
+  useTypePacks: (type: string, onRepaired?: () => void) => {
+    packs.lastType = type;
+    packs.lastOnRepaired = onRepaired;
+    return packs.current;
+  },
 }));
 vi.mock('@/data5e/sourceFilter', () => ({
   useSourcePolicy: () => ({ mode: 'all', except: [] }),
@@ -155,6 +161,15 @@ describe('the detail view when the entity is not there', () => {
     expect(screen.getByRole('link', { name: /Browse spells/i })).toBeTruthy();
   });
 
+  it('hands the repair a way to refresh what the page is reading', () => {
+    // The repair fixes rows in IndexedDB. The page reads a registry built from
+    // them, and that registry has no idea a body changed, so a repair with
+    // nothing to tell it leaves the same "missing" page on screen.
+    renderAt('/library/spell/nonesuch%7Cphb');
+    expect(packs.lastType).toBe('spell');
+    expect(packs.lastOnRepaired).toBe(reg.current.retry);
+  });
+
   it('offers a re-download for the case a retry cannot reach', () => {
     // Every file is cached, so nothing is missing and an ordinary retry has
     // nothing to fetch. Only throwing the files away gets the section back.
@@ -241,6 +256,31 @@ describe('the type list', () => {
 
     expect(screen.getByText('Downloading this section…')).toBeTruthy();
     expect(screen.queryByText('Nothing here yet.')).toBeNull();
+  });
+});
+
+describe('a rebuild that failed behind a registry still in hand', () => {
+  it('says so rather than blaming the link', () => {
+    // `status` stays 'ready' so pages that can still render do. For a page
+    // that cannot, the cause is a rebuild that threw, which the hook knows and
+    // used to tell nobody: the user was told their link was stale and offered
+    // a multi-megabyte re-download that could not have fixed it.
+    reg.current = { ...reg.current, error: 'QuotaExceededError' };
+    renderAt('/library/spell/nonesuch%7Cphb');
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('QuotaExceededError');
+    expect(screen.queryByText(/The link may be from an older version/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(reg.current.retry).toHaveBeenCalledOnce();
+  });
+
+  it('says so on the list too, instead of calling the section empty', () => {
+    reg.current = { ...reg.current, registry: registryWith([]), error: 'QuotaExceededError' };
+    renderAt('/library/spell');
+
+    expect(screen.getByRole('alert').textContent).toContain('QuotaExceededError');
   });
 });
 

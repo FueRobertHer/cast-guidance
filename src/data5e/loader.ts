@@ -301,23 +301,37 @@ export async function packsForType(type: string): Promise<PackId[]> {
 
 /** Ensure every pack an entity type draws from. */
 export async function ensureTypePacks(type: string): Promise<void> {
-  const packs = await packsForType(type);
+  // Essentials first and alone: the dynamic pack lists are read out of the
+  // indexes it carries, so the rest cannot be resolved until it is here.
   await ensurePack('essentials');
+  const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
   await Promise.all(packs.map((p) => ensurePack(p)));
 }
 
 /** Fetch one file again and overwrite what is cached, cache hit or not. */
 async function refetchFile(path: string): Promise<void> {
-  const json = await fetchGate.run(() => source.fetchFile(path));
+  const status = dataStatusStore.getState();
+  // The tag is read before the fetch and checked after it. `activeTag` is
+  // module state an install moves, so a repair that started before an install
+  // and lands after it would otherwise write the old release's body under the
+  // new tag's key, straight over what the installer staged and sanity-checked.
+  const tag = activeTag;
+  const from = source;
+  status.fileStarted(path);
+  const json = await fetchGate.run(() => from.fetchFile(path));
+  if (activeTag !== tag) return;
   await dataCacheRepo.putFile({
-    key: dataCacheRepo.key(activeTag, path),
-    tag: activeTag,
+    key: dataCacheRepo.key(tag, path),
+    tag,
     path,
     pack: packOfPath(path),
     json,
     bytes: jsonByteSize(json),
     fetchedAt: Date.now(),
   });
+  // Every file landing ticks the same counter a download does, which is what
+  // the progress banner reads and what tells the registry hooks to look again.
+  status.fileDone();
 }
 
 /**
@@ -343,10 +357,14 @@ export async function repairTypePacks(type: string): Promise<void> {
   // Before `activeTag` is read, so the rows are written under the installed
   // tag rather than whichever one this session happened to start with.
   await ensureTagReady();
+  const status = dataStatusStore.getState();
+  status.addTotal(ESSENTIALS_FILES.length);
   await Promise.all(ESSENTIALS_FILES.map((path) => refetchFile(path)));
   const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
   const lists = await Promise.all(packs.map((p) => filesForPack(p)));
-  await Promise.all([...new Set(lists.flat())].map((path) => refetchFile(path)));
+  const paths = [...new Set(lists.flat())];
+  status.addTotal(paths.length);
+  await Promise.all(paths.map((path) => refetchFile(path)));
 }
 
 /**

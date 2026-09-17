@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
 import type { PackId } from './packs';
-import { ensureRegistry, getRegistry, registrySignature } from './registry';
+import { ensureRegistry, getRegistry, invalidateRegistry, registrySignature } from './registry';
 import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';
@@ -190,7 +190,17 @@ export interface TypePacksState {
  * `downloading` in the status store when its fetch throws, so the app went on
  * reporting a download that had already failed.
  */
-export function useTypePacks(type: string | undefined): TypePacksState {
+export function useTypePacks(
+  type: string | undefined,
+  /**
+   * Called after a repair has replaced this type's files. A repair changes
+   * bodies and no paths, and the registry's signature is built from paths, so
+   * nothing downstream can notice on its own: without this the files are fixed
+   * on disk and the page that asked for the repair goes on saying the entity
+   * is missing until the app is reloaded.
+   */
+  onRepaired?: () => void,
+): TypePacksState {
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
@@ -205,6 +215,17 @@ export function useTypePacks(type: string | undefined): TypePacksState {
     n: 0,
     repair: false,
   });
+  /**
+   * The last repair attempt that has been started. An attempt is one press,
+   * not a standing mode: without this, leaving the section and coming back
+   * re-entered the effect with the same attempt still asking for a repair, and
+   * re-downloaded the whole section on a back-button press.
+   */
+  const startedRepair = useRef(-1);
+  // Held in a ref rather than a dependency: callers pass a fresh closure every
+  // render, and a dependency on it would restart the download on every one.
+  const onRepairedRef = useRef(onRepaired);
+  onRepairedRef.current = onRepaired;
 
   useEffect(() => {
     if (type === undefined) {
@@ -215,10 +236,18 @@ export function useTypePacks(type: string | undefined): TypePacksState {
     }
     let alive = true;
     setStatus('loading');
-    const repair = attempt.repair && attempt.for === type;
+    const repair = attempt.repair && attempt.for === type && startedRepair.current !== attempt.n;
+    if (repair) startedRepair.current = attempt.n;
     const run = repair ? repairTypePacks(type) : ensureTypePacks(type);
     run
       .then(() => {
+        if (repair) {
+          // Unconditionally, not behind `alive`: the files are repaired
+          // whether or not this page is still watching, and a registry left
+          // holding the old bodies would serve them to every other page.
+          invalidateRegistry();
+          onRepairedRef.current?.();
+        }
         if (!alive) return;
         setStatus('ready');
         setError(null);

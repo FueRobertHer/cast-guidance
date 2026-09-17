@@ -130,7 +130,8 @@ function GlobalSearch() {
           role="alert"
         >
           <span className="truncate">
-            Couldn&rsquo;t prepare search{regError !== null ? `: ${regError}` : ''}
+            Couldn&rsquo;t prepare search
+            {regStatus === 'error' && regError !== null ? `: ${regError}` : ''}
           </span>
           <button
             type="button"
@@ -236,7 +237,10 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
  * cannot even start because the device is offline.
  */
 function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
-  const regFailed = reg.status === 'error';
+  // `error`, not `status`: a registry already in hand keeps the status 'ready'
+  // so pages that can still render do, but the failed rebuild behind it is
+  // exactly what this panel exists to say.
+  const regFailed = reg.error !== null;
   const packsFailed = packs.status === 'error';
   // Both can fail at once, and a retry that fixes one of them leaves the other
   // unmentioned: say both, and let one press attempt both.
@@ -283,9 +287,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const [filter, setFilter] = useState('');
   const [pickedSource, setPickedSource] = useState<string>(MY_SOURCES);
   const policy = useSourcePolicy();
-  const packs = useTypePacks(type);
+  const packs = useTypePacks(type, reg.retry);
   const registry = reg.registry;
-  const failed = reg.status === 'error' || packs.status === 'error';
+  const failed = reg.error !== null || packs.status === 'error';
 
   const { items, sources, hiddenBySettings, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
@@ -453,7 +457,7 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
 
 function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
   const navigate = useNavigate();
-  const packs = useTypePacks(type);
+  const packs = useTypePacks(type, reg.retry);
   const registry = reg.registry;
 
   const decoded = decodeURIComponent(uid);
@@ -475,7 +479,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // for as long as the page was open: `useRegistry` swallowed the registry's
     // error, and the pack download was started with a bare `void`, so neither
     // had anywhere to report to.
-    if (reg.status === 'error' || packs.status === 'error') {
+    if (reg.error !== null || packs.status === 'error') {
       return (
         <main className="flex flex-1 flex-col gap-3 p-4">
           <BackLink onClick={() => navigate(-1)} />

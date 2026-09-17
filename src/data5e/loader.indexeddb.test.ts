@@ -28,6 +28,12 @@ const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
+  // Pin the tag the way an installed app has it. Without a pinned tag,
+  // `restoreActiveTag` asks the mirror for the latest release, which is a bare
+  // `fetch` this file's source mock does not intercept: a real request to
+  // api.github.com from the unit suite, and a 15-second block on a network
+  // that swallows it.
+  await db.settings.put({ key: 'dataTag', value: DATA_TAG });
   fetchFile.mockReset();
   dataStatusStore.setState({
     phase: 'idle',
@@ -203,5 +209,40 @@ describe('repairTypePacks', () => {
 
     const items = await dataCacheRepo.getFile(tag, 'items.json');
     expect((items?.json as { item: Array<{ name: string }> }).item).toEqual([{ name: 'Keep me' }]);
+  });
+
+  // Last in the file: a successful install moves `activeTag`, and the module
+  // memoizes tag resolution, so nothing after it would see the pinned tag.
+  it('cannot write the old release over the one an install just staged', async () => {
+    // `activeTag` is module state an install moves. A repair that started
+    // before the install and lands after it must not put the old release's
+    // body under the new tag's key: that is straight over what the installer
+    // staged and sanity-checked, and nothing downstream would ever know.
+    let release = (_json: unknown): void => undefined;
+    const held = new Promise<unknown>((resolve) => {
+      release = resolve;
+    });
+    let holdTheRepair = false;
+    fetchFile.mockImplementation((tag: string, path: string) => {
+      if (holdTheRepair && tag === DATA_TAG && path === 'races.json') return held;
+      if (path === 'races.json') {
+        return Promise.resolve({ race: [{ name: tag === DATA_TAG ? 'OLD-Elf' : 'NEW-Elf' }] });
+      }
+      return Promise.resolve({});
+    });
+    await ensureTypePacks('race');
+
+    holdTheRepair = true;
+    const repairing = repairTypePacks('race');
+    await updateToTag('v2.33.0');
+    expect(getActiveTag()).toBe('v2.33.0');
+    const staged = await dataCacheRepo.getFile('v2.33.0', 'races.json');
+    expect((staged?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'NEW-Elf' }]);
+
+    release({ race: [{ name: 'OLD-Elf' }] });
+    await repairing;
+
+    const after = await dataCacheRepo.getFile('v2.33.0', 'races.json');
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'NEW-Elf' }]);
   });
 });
