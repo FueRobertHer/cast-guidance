@@ -4,8 +4,7 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
-import { db, type HomebrewFileRow } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
@@ -13,10 +12,12 @@ import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
   const navigate = useNavigate();
-  const rows = useLiveQuery(
-    async () => db.homebrewFiles.orderBy('addedAt').reverse().toArray(),
-    [],
-  );
+  // Through the read boundary (REL-006): a row the app cannot read is reported
+  // here, on the one screen that can remove it, rather than reaching the
+  // registry and taking the compendium down with it.
+  const read = useLiveQuery(() => homebrewRepo.listSafe(), []);
+  const rows = read?.files;
+  const readErrors = read?.errors ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState<string>();
@@ -64,7 +65,7 @@ export function Component() {
    * whatever IndexedDB hands back: a row written by an older schema, or one
    * that came back damaged, has no counts to spread over a template string.
    */
-  const summary = (r: HomebrewFileRow) => {
+  const summary = (r: HomebrewFile) => {
     const counts: unknown = r.counts;
     if (typeof counts !== 'object' || counts === null) return 'contents unreadable';
     return (
@@ -156,6 +157,15 @@ export function Component() {
         </form>
         {status !== undefined && <p className="text-xs text-amber-300">{status}</p>}
       </div>
+
+      {readErrors.length > 0 && (
+        <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">
+          {readErrors.length} file{readErrors.length > 1 ? 's' : ''} on this device could not be
+          read and {readErrors.length > 1 ? 'are' : 'is'} not in use:{' '}
+          {readErrors.map((e) => e.fileName ?? e.id ?? 'an unnamed file').join(', ')}. The rest of
+          your homebrew is unaffected.
+        </p>
+      )}
 
       <div className="flex flex-col gap-2">
         {(rows ?? []).map((r) => (

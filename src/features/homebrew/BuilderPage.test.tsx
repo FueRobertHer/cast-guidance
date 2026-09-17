@@ -9,9 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Json = Record<string, unknown>;
 
-const { saveEditable, invalidateRegistry, row } = vi.hoisted(() => ({
+const { saveEditable, invalidateRegistry, row, read } = vi.hoisted(() => ({
   saveEditable: vi.fn(),
   invalidateRegistry: vi.fn(),
+  /** What the page's read resolves to; tests swap it for the other outcomes. */
+  read: { current: undefined as unknown },
   row: {
     id: 'f1',
     fileName: 'brews.json',
@@ -28,13 +30,18 @@ const { saveEditable, invalidateRegistry, row } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => row }));
-vi.mock('@/db/db', () => ({ db: { homebrewFiles: { get: () => Promise.resolve(row) } } }));
-vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { saveEditable } }));
+// The page reads through `homebrewRepo.getSafe`, whose result distinguishes
+// still-loading from no-such-file from a file that cannot be read.
+vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => read.current }));
+vi.mock('@/db/homebrewRepo', () => ({
+  homebrewRepo: { saveEditable, getSafe: () => Promise.resolve(read.current) },
+}));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry }));
 
 import { noticeStore } from '@/stores/notices';
 import { Component as BuilderPage } from './BuilderPage';
+
+read.current = { file: row };
 
 function renderBuilder() {
   return render(
@@ -54,6 +61,7 @@ function startNewItem(name: string) {
 
 afterEach(() => {
   cleanup();
+  read.current = { file: row };
   row.json.item = [{ name: 'Old blade' }];
   saveEditable.mockReset();
   invalidateRegistry.mockClear();
@@ -294,5 +302,30 @@ describe('BuilderPage reads a file it did not write', () => {
     renderBuilder();
 
     expect(screen.getByRole('button', { name: 'Unnamed item' })).toBeTruthy();
+  });
+});
+
+describe('BuilderPage opening a file it cannot use', () => {
+  it('waits while the read is still in flight', () => {
+    read.current = undefined;
+    renderBuilder();
+    expect(screen.getByText('Loading…')).toBeTruthy();
+  });
+
+  it('says a file is gone rather than loading forever', () => {
+    // Deleting the file in another tab used to leave this page on its spinner:
+    // the raw read returned undefined for "no such row" and for "not yet
+    // read", and the page could not tell them apart.
+    read.current = {};
+    renderBuilder();
+    expect(screen.getByRole('alert').textContent).toContain('no longer on this device');
+  });
+
+  it('says why a file could not be read, and where to go about it', () => {
+    read.current = { error: { id: 'f1', fileName: 'brews.json', message: 'content is not JSON' } };
+    renderBuilder();
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('content is not JSON');
+    expect(alert.textContent).toContain('remove it from the homebrew list');
   });
 });

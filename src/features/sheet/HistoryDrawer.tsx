@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { History } from 'lucide-react';
-import { db } from '@/db/db';
+import { historyRepo } from '@/db/historyRepo';
 import { characterSessionStore } from '@/stores/characterSession';
 import { Sheet } from '@/ui/sheet';
 
@@ -14,14 +14,10 @@ function timeLabel(at: number): string {
 
 /** Version history: every change is snapshotted; any state can be restored. */
 export function HistoryDrawer({ charId }: { charId: string }) {
-  const rows = useLiveQuery(
-    async () => {
-      const list = await db.characterHistory.where('charId').equals(charId).sortBy('at');
-      return list.reverse();
-    },
-    [charId],
-    [],
-  );
+  // Through the repo, which already had this exact query (REL-006). The copy
+  // here was the last live query in the app reaching past it into Dexie, and a
+  // second copy of a read is a second place for it to drift.
+  const rows = useLiveQuery(() => historyRepo.list(charId), [charId], []);
 
   return (
     <Sheet.Root>

@@ -19,7 +19,9 @@ async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // Embed only the homebrew this character depends on, as a minimal public DTO
   // (no local-only fields) — keeps exports self-contained without shipping all
   // of the user's unrelated homebrew.
-  const homebrew = homebrewForExport(doc, await homebrewRepo.enabled());
+  // Through the read boundary: a row the app cannot read has no place being
+  // embedded in an export that another device will have to read back.
+  const homebrew = homebrewForExport(doc, (await homebrewRepo.enabledSafe()).files);
   const payload = { $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew };
   downloadJson(doc.name.replaceAll(/[^\w-]+/g, '_') || 'character', payload);
 }
