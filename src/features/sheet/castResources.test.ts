@@ -14,6 +14,7 @@ import {
   castResourceOptions,
   castSpell,
   defaultCastResource,
+  needsCastChoice,
   nextCastResource,
   poolCastResources,
   upcastEffectSummary,
@@ -362,7 +363,7 @@ describe('castSpell pool conversion', () => {
     ).toBe(' (L1 from 2 Sorcery Points)');
   });
 
-  it('leaves the turn untouched when the spell itself has no action cost', () => {
+  it('marks the turn for the conversion alone when the spell has no action cost', () => {
     // A ritual cast has no economy; converting points is still a Bonus Action,
     // so the turn is marked for the conversion alone.
     const doc = { play: emptyPlayState() } as CharacterDoc;
@@ -444,5 +445,30 @@ describe('cast option wording', () => {
       }),
     ).toBe('L2 SP');
     expect(castResourceChipLabel({ kind: 'none', level: 2 })).toBe('no slot');
+  });
+});
+
+describe('needsCastChoice', () => {
+  it('asks whenever there is more than one way to pay', () => {
+    expect(needsCastChoice(availableCastResources(block(), emptyPlayState(), 1))).toBe(true);
+  });
+
+  it('does not ask about a single slot, or about having nothing left', () => {
+    const play = emptyPlayState();
+    play.slotsSpent = [0, 3, 2, 0, 0, 0, 0, 0, 0]; // only level 1 slots remain
+    expect(needsCastChoice(availableCastResources(block(), play, 1))).toBe(false);
+    play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
+    expect(needsCastChoice(availableCastResources(block(), play, 1))).toBe(false);
+    expect(needsCastChoice(availableCastResources(block(), play, 0))).toBe(false); // cantrip
+  });
+
+  it('asks about a lone conversion, which spends points nothing else mentions', () => {
+    const play = emptyPlayState();
+    play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
+    // Two points buys a level 1 slot and nothing else: one option, still a
+    // spend the player has to see coming.
+    const options = availableCastResources(block(), play, 1, [points(2)]);
+    expect(options).toHaveLength(1);
+    expect(needsCastChoice(options)).toBe(true);
   });
 });

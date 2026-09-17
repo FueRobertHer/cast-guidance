@@ -26,6 +26,7 @@ import {
   castResourceId,
   castResourceOptions,
   castSpell,
+  needsCastChoice,
 } from './castResources';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 
@@ -205,10 +206,8 @@ function ClassSpells({
       concentration: spellNeedsConcentration(spell),
     };
     const options = availableCastResources(block, doc.play, level, pools);
-    // Nothing to choose (exhausted, or a single option): cast directly, but
-    // still name the one option, since it may be a pool conversion that the
-    // automatic slot-first path would never have reached for.
-    if (options.length <= 1) {
+    // Nothing to decide: cast directly on the one option, or on none at all.
+    if (!needsCastChoice(options)) {
       castSpell(update, block, level, info, options[0]);
       return;
     }

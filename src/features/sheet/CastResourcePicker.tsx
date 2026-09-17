@@ -7,6 +7,7 @@ import {
   castResourceId,
   castResourceLabel,
   castResourceOptions,
+  needsCastChoice,
 } from './castResources';
 
 /**
@@ -16,8 +17,10 @@ import {
  * will spend and opens the chooser to change it, which leaves the roll chip
  * next to it to do nothing but roll.
  *
- * It renders only when there is a real choice: one option (or none) is not a
- * decision, and a silent chip would be a control that does nothing.
+ * It renders when there is a real choice, and also when the single remaining
+ * option is a pool conversion: that one spends points and a slice of the turn
+ * that nothing else on the row mentions, so leaving it unlabelled would let a
+ * tap on the roll chip quietly empty a pool the player was saving.
  */
 export function CastResourcePicker({
   spellName,
@@ -43,7 +46,7 @@ export function CastResourcePicker({
   characterLevel: number;
   onPick: (resource: CastResource) => void;
 }) {
-  if (options.length <= 1) return null;
+  if (!needsCastChoice(options)) return null;
   const choose = async () => {
     const picked = await askChoice({
       title: `Cast ${spellName}`,
@@ -68,6 +71,10 @@ export function CastResourcePicker({
       // The chip's text is a compact "L3" / "L3 SP"; the spoken name says which
       // resource that is and that pressing it changes the choice (A11Y-001).
       aria-label={`${spellName}: casting with ${castResourceLabel(resource)}. Change`}
+      aria-haspopup="dialog"
+      // The accessible name is unreachable with a mouse, and "L3 SP" explains
+      // itself to nobody, so the same sentence is the tooltip.
+      title={`Casting with ${castResourceLabel(resource).toLowerCase()}. Press to change.`}
       className="shrink-0 rounded border border-surface-2 px-1.5 py-0.5 text-xs font-semibold text-ink-muted"
     >
       {castResourceChipLabel(resource)}

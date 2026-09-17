@@ -1,5 +1,5 @@
 import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
@@ -17,6 +17,7 @@ import { CastResourcePicker } from '../CastResourcePicker';
 import {
   availableCastResources,
   type CastResource,
+  castingEconomy,
   castResourceId,
   castResourceLabel,
   castSpell,
@@ -105,9 +106,23 @@ export function Component() {
   const registry = useRegistry();
   // Which resource each castable spell will spend, keyed by class + spell, held
   // only for as long as the tab is open: a pick is about this cast, not a
-  // setting, and it is dropped the moment the cast happens or the option goes
-  // away (a rest, another cast, a build change).
+  // setting.
   const [castChoice, setCastChoice] = useState<Record<string, string>>({});
+  // Anything that moves a slot, a pact slot or a pool drops every standing pick.
+  // Suppressing an unavailable pick is not enough on its own: the id would sit
+  // there and take effect again the moment the option came back, so a choice
+  // made before a long rest would silently upcast the first cast after it.
+  const spendState = JSON.stringify([
+    doc?.play.slotsSpent,
+    doc?.play.pactSlotsSpent,
+    doc?.play.resources,
+  ]);
+  const lastSpendState = useRef(spendState);
+  useEffect(() => {
+    if (lastSpendState.current === spendState) return;
+    lastSpendState.current = spendState;
+    setCastChoice({});
+  }, [spendState]);
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
   // Look a spell up by its stored printing; when that misses (blank/wrong source
@@ -128,17 +143,8 @@ export function Component() {
   };
   const spellConcentrationOf = (name: string, source: string): boolean =>
     spellNeedsConcentration(spellEntity(name, source));
-  /** Which slice of the turn a spell's casting time uses (undefined for rituals). */
-  const spellCastEconomy = (
-    name: string,
-    source: string,
-  ): 'action' | 'bonus' | 'reaction' | undefined => {
-    const e = spellEntity(name, source);
-    const unit = Array.isArray(e?.time)
-      ? String((e.time[0] as { unit?: unknown })?.unit ?? '')
-      : '';
-    return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
-  };
+  const spellCastEconomy = (name: string, source: string) =>
+    castingEconomy(spellEntity(name, source));
 
   const play = doc.play;
 
@@ -260,17 +266,17 @@ export function Component() {
 
   /**
    * What a cast will spend, and everything it could spend: the player's standing
-   * pick when it is still on offer, else the automatic one. Re-validating the
-   * pick against the live options is what lets a stale one (a slot spent
-   * elsewhere, a rest, a build change) fall away quietly rather than spend
-   * something the character no longer has.
+   * pick when it is still on offer, else the automatic one. Checking the pick
+   * against the live options is the synchronous guard that a cast in the same
+   * tick as a build change cannot spend something the character no longer has;
+   * the effect above is what stops a suppressed pick from coming back.
    */
   const castResourceFor = (key: string, block: SpellcastingBlock, level: number) => {
     const options = availableCastResources(block, play, level, sheet.resources);
     const picked = options.find((o) => castResourceId(o) === castChoice[key]);
     return {
       options,
-      resource: picked ?? defaultCastResource(block, play, level, sheet.resources),
+      resource: picked ?? defaultCastResource(block, play, level, sheet.resources, options),
     };
   };
   const chooseCastResource = (key: string, resource: CastResource) =>
@@ -1389,7 +1395,9 @@ export function Component() {
                             title={
                               level === 0
                                 ? 'Cast cantrip (marks your action/bonus action)'
-                                : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
+                                : resource.kind === 'none'
+                                  ? 'Cast with nothing left to spend (marks your action)'
+                                  : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                             }
                           >
                             Cast
@@ -1567,7 +1575,9 @@ export function Component() {
                         title={
                           depleted
                             ? 'No uses left until you rest'
-                            : 'Cast (marks action economy and spends the applicable resource)'
+                            : resource !== undefined && resource.kind !== 'none'
+                              ? `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
+                              : 'Cast (marks action economy and spends the applicable resource)'
                         }
                       >
                         Cast

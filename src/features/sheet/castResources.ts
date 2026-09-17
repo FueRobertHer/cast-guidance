@@ -24,16 +24,42 @@ export type CastResource =
   | { kind: 'none'; level: number };
 
 /**
- * Point pools that convert into a spell slot, and what a slot of each level
- * costs (index 0 = a level-1 slot). Sorcery points (Font of Magic's "Creating
- * Spell Slots" / 2024 "Create Spell Slot") are the only conversion the shipped
- * data grants; the table is keyed by derived-resource key so another pool needs
- * only a row here. Both editions stop the table at 5th level, and both spend a
- * Bonus Action to convert, which the cast marks alongside the spell's own cost.
+ * Point pools that convert into a spell slot: what a slot of each level costs
+ * (index 0 = a level-1 slot) and which slice of the turn converting takes.
+ * Sorcery points (Font of Magic's "Creating Spell Slots" / 2024 "Create Spell
+ * Slot") are the only conversion the shipped data grants; the table is keyed by
+ * derived-resource key, so another pool needs a row here and a label that reads
+ * sensibly as initials on the chip.
+ *
+ * The costs and the 5th-level ceiling are the same in both editions. What is
+ * NOT modelled: 2024 added a minimum-Sorcerer-level column to the same table,
+ * so a 2024 sorcerer can be offered a slot level they are too low to create
+ * (the points alone gate it here). Offering it is the lesser error under
+ * guidance-not-gatekeeping, but it is an unlabelled one.
  */
-export const SLOT_CONVERSIONS: Record<string, { costs: readonly number[] }> = {
-  'sorcery-points': { costs: [2, 3, 5, 6, 7] },
+interface SlotConversion {
+  costs: readonly number[];
+  economy: 'action' | 'bonus';
+}
+
+const SLOT_CONVERSIONS: Record<string, SlotConversion> = {
+  'sorcery-points': { costs: [2, 3, 5, 6, 7], economy: 'bonus' },
 };
+
+/** Which slice of the turn converting `key` into a slot takes, if it converts. */
+export function conversionEconomy(key: string): 'action' | 'bonus' | undefined {
+  return SLOT_CONVERSIONS[key]?.economy;
+}
+
+/** Which slice of the turn a spell's own casting time uses (undefined for rituals). */
+export function castingEconomy(
+  entity: Entity | undefined,
+): 'action' | 'bonus' | 'reaction' | undefined {
+  const unit = Array.isArray(entity?.time)
+    ? String((entity.time[0] as { unit?: unknown })?.unit ?? '')
+    : '';
+  return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
+}
 
 /** Preview the resource the current automatic cast path will consume. */
 export function nextCastResource(
@@ -58,7 +84,7 @@ export function nextCastResource(
 }
 
 /** How many points of a pool are left to spend. */
-export function poolRemaining(pool: DerivedResource, play: PlayState): number {
+function poolRemaining(pool: DerivedResource, play: PlayState): number {
   return pool.max - (play.resources.find((r) => r.key === pool.key)?.used ?? 0);
 }
 
@@ -130,10 +156,22 @@ export function defaultCastResource(
   play: PlayState,
   spellLevel: number,
   pools: readonly DerivedResource[] = [],
+  /** The options for this same cast, when the caller has already built them. */
+  options?: readonly CastResource[],
 ): CastResource {
   const auto = nextCastResource(block, play, spellLevel);
   if (auto.kind !== 'none') return auto;
-  return availableCastResources(block, play, spellLevel, pools)[0] ?? auto;
+  return (options ?? availableCastResources(block, play, spellLevel, pools))[0] ?? auto;
+}
+
+/**
+ * Does this cast need to ask, or can it just happen? More than one option is a
+ * decision. A lone pool conversion is one too: it is the only single option
+ * that spends something the player was not already resigned to spending (points
+ * plus a slice of the turn), so it gets said out loud rather than taken.
+ */
+export function needsCastChoice(options: readonly CastResource[]): boolean {
+  return options.length > 1 || options[0]?.kind === 'pool';
 }
 
 /** Stable option id for the cast chooser; must round-trip through askChoice. */
@@ -215,8 +253,15 @@ export function castResourceOptions(
     if (option.kind === 'pool') {
       const pool = ctx.pools?.find((p) => p.key === option.key);
       const left = pool === undefined ? undefined : poolRemaining(pool, ctx.play);
+      const economy = conversionEconomy(option.key) ?? 'action';
+      // Converting takes its own slice of the turn. When the spell's casting
+      // time wants that same slice, the turn tracker has one flag for both and
+      // cannot show the second, so the option says so rather than letting the
+      // cast read as legal on a turn that could not hold it.
+      const clash = castingEconomy(ctx.spell) === economy;
+      const convert = `${economy === 'bonus' ? 'Bonus Action' : 'Action'} to convert`;
       parts.push(
-        `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · Bonus Action to convert`,
+        `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · ${convert}${clash ? ", on top of the spell's own" : ''}`,
       );
     } else if (option.kind === 'pact') {
       const left = (ctx.block.pactSlots?.count ?? 0) - ctx.play.pactSlotsSpent;
@@ -291,9 +336,10 @@ export function castSpell(
       const spend = resource ?? nextCastResource(block, d.play, level);
       spent = spend;
       if (spend.kind === 'pool') {
-        // Converting points into the slot is its own Bonus Action in both
-        // editions, so the cast costs that as well as the spell's own economy.
-        turn.bonus = true;
+        // Converting points into the slot takes its own slice of the turn, so
+        // the cast costs that as well as the spell's own economy. Both land on
+        // one flag when they want the same slice; the chooser says so.
+        turn[conversionEconomy(spend.key) ?? 'action'] = true;
         turnUsed = true;
         const entry = d.play.resources.find((r) => r.key === spend.key);
         if (entry !== undefined) entry.used += spend.cost;

@@ -198,6 +198,19 @@ const spell: DataEntity[] = [
       { entries: ['The damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'] },
     ],
   },
+  {
+    // Searing Bolt cast as a Bonus Action: converting points into a slot wants
+    // the same Bonus Action, which the turn tracker cannot hold twice.
+    name: 'Quick Bolt',
+    source: 'TST',
+    level: 1,
+    school: 'V',
+    time: [{ number: 1, unit: 'bonus' }],
+    entries: ['A quick bolt deals {@damage 2d6} fire damage.'],
+    entriesHigherLevel: [
+      { entries: ['The damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'] },
+    ],
+  },
 ];
 
 const background: DataEntity[] = [
