@@ -20,7 +20,7 @@ import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DATA_TAG } from './config';
-import { ensurePack, ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
+import { ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
 
 /** A dataset complete enough to pass the installer's sanity check. */
 const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
@@ -112,26 +112,26 @@ describe('updateToTag failure reporting', () => {
 });
 
 describe('repairTypePacks', () => {
-  it('re-downloads files an ordinary retry would skip', async () => {
-    // The case the retry cannot reach: every file this type needs is cached,
-    // so `ensurePack` finds nothing missing and returns immediately, however
-    // wrong the cached bodies are. Only dropping them turns the fetch back on.
-    fetchFile.mockImplementation(wholeMirror);
-    // Settles the installed tag first, so the rest of the test and the code
-    // under test are talking about the same one.
-    await ensureTypePacks('race');
-    const tag = getActiveTag();
+  /** Put a wrong body in the cache under a path the repair should replace. */
+  async function poison(tag: string, path: string, pack: string): Promise<void> {
     await dataCacheRepo.putFile({
-      key: dataCacheRepo.key(tag, 'races.json'),
+      key: dataCacheRepo.key(tag, path),
       tag,
-      path: 'races.json',
-      pack: 'essentials',
-      json: { race: [] },
+      path,
+      pack,
+      json: { poisoned: true },
       bytes: 10,
       fetchedAt: 1,
     });
-    const before = await dataCacheRepo.getFile(tag, 'races.json');
-    expect((before?.json as { race: unknown[] }).race).toEqual([]);
+  }
+
+  it('replaces a cached body an ordinary retry would never fetch again', async () => {
+    // The case the retry cannot reach: the file is cached, so `ensurePack`
+    // finds nothing missing and returns at once, however wrong the body is.
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await poison(tag, 'races.json', 'essentials');
 
     await repairTypePacks('race');
 
@@ -139,32 +139,50 @@ describe('repairTypePacks', () => {
     expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
   });
 
-  it('does not join a download that already decided nothing was missing', async () => {
-    // The background drain is running, which is exactly when someone is
-    // browsing the library. `ensurePack` works out what is missing when it
-    // starts and de-dupes on the pack id, so a repair that deletes the files
-    // and then awaits that same promise downloads nothing and leaves the cache
-    // emptier than it found it.
+  it('repairs the dynamic packs, not just the ones named after their files', async () => {
+    // `packsForType` speaks in pack ids (`spells:phb`), while a cached row
+    // records the group its path belongs to (`spells`). A repair that matched
+    // one vocabulary against the other left every spell and class file
+    // untouched: the two biggest sections the button is offered on.
+    fetchFile.mockImplementation((_tag: string, path: string) =>
+      Promise.resolve(
+        path === 'spells/index.json'
+          ? { PHB: 'spells-phb.json' }
+          : path === 'spells/spells-phb.json'
+            ? { spell: [{ name: 'Fireball' }] }
+            : path === 'races.json'
+              ? { race: [{ name: 'Elf' }] }
+              : {},
+      ),
+    );
+    await ensureTypePacks('spell');
+    const tag = getActiveTag();
+    await poison(tag, 'spells/spells-phb.json', 'spells');
+
+    await repairTypePacks('spell');
+
+    const after = await dataCacheRepo.getFile(tag, 'spells/spells-phb.json');
+    expect((after?.json as { spell: Array<{ name: string }> }).spell).toEqual([
+      { name: 'Fireball' },
+    ]);
+  });
+
+  it('leaves the cache alone when it cannot re-download', async () => {
+    // Every type's pack list starts with `essentials`, the files the whole app
+    // reads. Clearing those and then failing to fetch them, which is exactly
+    // what pressing this offline used to do, left the device with nothing.
     fetchFile.mockImplementation(wholeMirror);
     await ensureTypePacks('race');
     const tag = getActiveTag();
-    await dataCacheRepo.putFile({
-      key: dataCacheRepo.key(tag, 'races.json'),
-      tag,
-      path: 'races.json',
-      pack: 'essentials',
-      json: { race: [] },
-      bytes: 10,
-      fetchedAt: 1,
-    });
+    const before = (await dataCacheRepo.cachedPaths(tag)).size;
+    expect(before).toBeGreaterThan(0);
 
-    // In flight, and holding its own answer to "what is missing here?".
-    const drain = ensurePack('essentials');
-    await repairTypePacks('race');
-    await drain;
+    fetchFile.mockRejectedValue(new Error('Failed to fetch'));
+    await expect(repairTypePacks('race')).rejects.toThrow('Failed to fetch');
 
-    const after = await dataCacheRepo.getFile(tag, 'races.json');
-    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
+    expect((await dataCacheRepo.cachedPaths(tag)).size).toBe(before);
+    const races = await dataCacheRepo.getFile(tag, 'races.json');
+    expect(races).toBeDefined();
   });
 
   it('leaves the cached files of another type alone', async () => {

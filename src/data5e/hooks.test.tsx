@@ -205,6 +205,32 @@ describe('useTypePacks', () => {
     expect(ensureTypePacks).not.toHaveBeenCalled();
   });
 
+  it('does not carry a repair over to the next section', async () => {
+    // Navigating away mid-repair used to leave the repair flag set, because
+    // the only thing that cleared it was the settle handler the unmounted run
+    // skips. The next section the user opened was then re-downloaded without
+    // anyone asking for it, and a re-download is destructive work.
+    let settle = (): void => undefined;
+    repairTypePacks.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ type }: { type: string }) => useTypePacks(type), {
+      initialProps: { type: 'spell' },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledWith('spell'));
+
+    // The user navigates to another section while that repair is still running.
+    rerender({ type: 'item' });
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledWith('item'));
+    expect(repairTypePacks).not.toHaveBeenCalledWith('item');
+    settle();
+  });
+
   it('goes back to the ordinary ensure after a repair', async () => {
     // `repair` is one action, not a mode: leaving it on would throw the cache
     // away again on the next retry, turning a hiccup into a full re-download.

@@ -236,27 +236,41 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
  * cannot even start because the device is offline.
  */
 function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
-  const offline = packs.offline;
-  const text =
-    reg.status === 'error'
-      ? `The compendium couldn't be loaded${reg.error !== null ? `: ${reg.error}` : ''}`
-      : offline
+  const regFailed = reg.status === 'error';
+  const packsFailed = packs.status === 'error';
+  // Both can fail at once, and a retry that fixes one of them leaves the other
+  // unmentioned: say both, and let one press attempt both.
+  const lines = [
+    regFailed && `The compendium couldn't be loaded${reg.error !== null ? `: ${reg.error}` : ''}`,
+    packsFailed &&
+      (packs.offline
         ? "You're offline, so the rest of this section can't be downloaded yet."
-        : `This section couldn't be downloaded${packs.error !== null ? `: ${packs.error}` : ''}`;
+        : `This section couldn't be downloaded${packs.error !== null ? `: ${packs.error}` : ''}`),
+  ].filter((l): l is string => l !== false);
   return (
     <div
       className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
       role="alert"
     >
       <p className="min-w-0 flex-1 text-xs">
-        {text}
-        {offline && (
+        {lines.map((line) => (
+          <span key={line} className="block">
+            {line}
+          </span>
+        ))}
+        {packsFailed && packs.offline && (
           <span className="block text-ink-muted">
             Anything already downloaded is still here to read.
           </span>
         )}
       </p>
-      <Action label="Retry" onClick={reg.status === 'error' ? reg.retry : packs.retry} />
+      <Action
+        label="Retry"
+        onClick={() => {
+          if (regFailed) reg.retry();
+          if (packsFailed) packs.retry();
+        }}
+      />
     </div>
   );
 }
@@ -358,7 +372,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
       </div>
       {items.length === 0 && !failed && (
         <p className="text-sm text-ink-muted">
-          {packs.status === 'loading'
+          {/* The registry is what the list reads, so "nothing here" is only
+              true once it has finished catching up with the files on disk. */}
+          {packs.status === 'loading' || registry === null || reg.refreshing
             ? 'Downloading this section…'
             : filter.trim() !== ''
               ? `Nothing here matches “${filter.trim()}”.`
@@ -440,28 +456,43 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   const packs = useTypePacks(type);
   const registry = reg.registry;
 
-  // A failure comes before a spinner. Both of these used to render "Loading…"
-  // for as long as the page was open: `useRegistry` swallowed the registry's
-  // error, and the pack download was started with a bare `void`, so neither
-  // had anywhere to report to.
-  if (reg.status === 'error' || packs.status === 'error') {
-    return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
-        <BackLink onClick={() => navigate(-1)} />
-        <SectionProblem reg={reg} packs={packs} />
-      </main>
-    );
-  }
-
-  if (registry === null || packs.status === 'loading') {
-    return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
-  }
-
   const decoded = decodeURIComponent(uid);
   const [name, source] = decoded.split('|');
   const entity =
-    registry.get(type, name ?? '', source !== undefined && source !== '' ? source : undefined) ??
-    registry.get(type, decoded);
+    registry === null
+      ? undefined
+      : (registry.get(
+          type,
+          name ?? '',
+          source !== undefined && source !== '' ? source : undefined,
+        ) ?? registry.get(type, decoded));
+
+  // Having the entity outranks everything else that could be said. A download
+  // that failed for the rest of the section is not this page's problem when
+  // this page's subject is already in hand.
+  if (entity === undefined) {
+    // A failure comes before a spinner. Both of these used to render "Loading…"
+    // for as long as the page was open: `useRegistry` swallowed the registry's
+    // error, and the pack download was started with a bare `void`, so neither
+    // had anywhere to report to.
+    if (reg.status === 'error' || packs.status === 'error') {
+      return (
+        <main className="flex flex-1 flex-col gap-3 p-4">
+          <BackLink onClick={() => navigate(-1)} />
+          <SectionProblem reg={reg} packs={packs} />
+        </main>
+      );
+    }
+
+    // `refreshing` is the difference between "not in the data" and "not in the
+    // data yet". The registry rebuilds after the files land, so the moment a
+    // download finishes there is a window where the packs are ready and the
+    // registry is still the older, smaller one. Calling the entity missing in
+    // that window offers a re-download for something that just arrived.
+    if (registry === null || packs.status === 'loading' || reg.refreshing) {
+      return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+    }
+  }
 
   if (entity === undefined) {
     // Everything this type needs has downloaded, so "it may not have arrived
@@ -512,7 +543,8 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         </dl>
       )}
       <EntriesView entries={entity.entries} />
-      {type === 'class' && <ClassExtras registry={registry} entity={entity} />}
+      {/* Non-null wherever an entity came out of it. */}
+      {type === 'class' && registry !== null && <ClassExtras registry={registry} entity={entity} />}
     </main>
   );
 }

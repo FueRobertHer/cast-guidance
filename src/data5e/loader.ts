@@ -306,30 +306,47 @@ export async function ensureTypePacks(type: string): Promise<void> {
   await Promise.all(packs.map((p) => ensurePack(p)));
 }
 
+/** Fetch one file again and overwrite what is cached, cache hit or not. */
+async function refetchFile(path: string): Promise<void> {
+  const json = await fetchGate.run(() => source.fetchFile(path));
+  await dataCacheRepo.putFile({
+    key: dataCacheRepo.key(activeTag, path),
+    tag: activeTag,
+    path,
+    pack: packOfPath(path),
+    json,
+    bytes: jsonByteSize(json),
+    fetchedAt: Date.now(),
+  });
+}
+
 /**
- * Download this type's packs again from scratch.
+ * Download this type's files again and overwrite them.
  *
- * For the case the ordinary retry cannot reach: the files are cached, so
- * nothing is missing and `ensurePack` returns immediately, but what is in them
- * is not what the app needs (a truncated write, a body cached from a failing
- * proxy). Dropping the files is what turns the next fetch back on.
+ * For the case the ordinary retry cannot reach: `ensurePack` decides what to
+ * fetch from what is missing, so a file that is cached is never fetched again
+ * however wrong its contents are (a truncated write, a body cached from a
+ * failing proxy). This asks for every file regardless.
  *
- * Forgetting the in-flight entries is the other half, and not an optimisation:
- * `ensurePack` decides what is missing when it starts, and de-dupes on the
- * pack id. A repair during the background drain, which is exactly when someone
- * is browsing, would otherwise delete the files and then join a download that
- * had already decided there was nothing to fetch, leaving the cache emptier
- * than it found it.
+ * It overwrites rather than clearing first, which matters more than it sounds:
+ * every type's pack list starts with `essentials`, the thirteen files the
+ * whole app reads. Deleting those and then failing to re-download them, which
+ * is precisely what happens if the repair is pressed offline, would leave the
+ * device with nothing at all. Nothing is removed here, so a repair that cannot
+ * reach the network leaves the app exactly as it found it.
+ *
+ * Essentials goes first because it holds the indexes the other pack lists are
+ * read from: a corrupt index would otherwise get to decide what a repair is
+ * allowed to repair.
  */
 export async function repairTypePacks(type: string): Promise<void> {
-  // Before `activeTag` is read: every other entry point resolves the installed
-  // tag first, and a delete aimed at the tag this session happens to start
-  // with would clear files belonging to a version the app is not using.
+  // Before `activeTag` is read, so the rows are written under the installed
+  // tag rather than whichever one this session happened to start with.
   await ensureTagReady();
-  const packs = await packsForType(type);
-  await dataCacheRepo.deletePacks(activeTag, packs);
-  for (const pack of packs) packInflight.delete(pack);
-  await ensureTypePacks(type);
+  await Promise.all(ESSENTIALS_FILES.map((path) => refetchFile(path)));
+  const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
+  const lists = await Promise.all(packs.map((p) => filesForPack(p)));
+  await Promise.all([...new Set(lists.flat())].map((path) => refetchFile(path)));
 }
 
 /**

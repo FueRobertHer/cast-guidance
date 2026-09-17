@@ -12,6 +12,14 @@ export interface RegistryState {
   registry: EntityRegistry | null;
   status: AsyncStatus;
   error: string | null;
+  /**
+   * A registry is in hand and a newer one is being built. The registry
+   * rebuilds as downloads land, so there is a window where the one a caller
+   * holds is real but older than the files on disk. A page that reads
+   * "nothing here" from it during that window is reading a stale answer, not
+   * a final one.
+   */
+  refreshing: boolean;
   /** Re-attempt after a failure (or force a refresh). */
   retry: () => void;
 }
@@ -25,6 +33,7 @@ export interface RegistryState {
 export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   const [registry, setRegistry] = useState<EntityRegistry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(true);
   const [nonce, setNonce] = useState(0);
   const phase = useDataStatus((s) => s.phase);
   const filesDone = useDataStatus((s) => s.filesDone);
@@ -38,6 +47,7 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
+    setRefreshing(true);
     const run = async () => {
       const reg = packs.length > 0 ? await ensureRegistry([...packs]) : await getRegistry();
       if (alive) {
@@ -45,19 +55,27 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
         setError(null);
       }
     };
-    run().catch((e: unknown) => {
-      if (alive) setError(e instanceof Error ? e.message : String(e));
-    });
+    run()
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (alive) setRefreshing(false);
+      });
     return () => {
       alive = false;
     };
   }, [key, phase, filesDone, nonce]);
 
-  const status: AsyncStatus = error !== null ? 'error' : registry === null ? 'loading' : 'ready';
+  // A registry already in hand outranks a failed refresh: the pages reading it
+  // are still correct, and replacing a working screen with an error because a
+  // later rebuild failed loses more than it reports.
+  const status: AsyncStatus = registry !== null ? 'ready' : error !== null ? 'error' : 'loading';
   return {
     registry,
     status,
     error,
+    refreshing,
     retry: () => {
       setError(null);
       setNonce((n) => n + 1);
@@ -176,18 +194,29 @@ export function useTypePacks(type: string | undefined): TypePacksState {
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
-  const [nonce, setNonce] = useState(0);
-  const [repairing, setRepairing] = useState(false);
+  /**
+   * The attempt to run, and what kind. Carrying the kind here rather than in a
+   * flag of its own is what keeps a repair attached to the type it was asked
+   * for: a separate flag stayed set when the user navigated away mid-repair
+   * (its reset is in the settle handler, which the unmounted run skips), so
+   * the next section the user opened was re-downloaded without being asked.
+   */
+  const [attempt, setAttempt] = useState<{ n: number; repair: boolean; for?: string }>({
+    n: 0,
+    repair: false,
+  });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: nonce is the manual retry trigger
   useEffect(() => {
     if (type === undefined) {
       setStatus('ready');
+      setError(null);
+      setOffline(false);
       return;
     }
     let alive = true;
     setStatus('loading');
-    const run = repairing ? repairTypePacks(type) : ensureTypePacks(type);
+    const repair = attempt.repair && attempt.for === type;
+    const run = repair ? repairTypePacks(type) : ensureTypePacks(type);
     run
       .then(() => {
         if (!alive) return;
@@ -202,19 +231,15 @@ export function useTypePacks(type: string | undefined): TypePacksState {
         // Read at the moment of failure, not at render: a device that came back
         // online since would otherwise still be told it is offline.
         setOffline(typeof navigator !== 'undefined' && navigator.onLine === false);
-      })
-      .finally(() => {
-        if (alive) setRepairing(false);
       });
     return () => {
       alive = false;
     };
-  }, [type, nonce]);
+  }, [type, attempt]);
 
   const again = (repair: boolean) => {
     setError(null);
-    setRepairing(repair);
-    setNonce((n) => n + 1);
+    setAttempt((a) => ({ n: a.n + 1, repair, for: type }));
   };
 
   return {

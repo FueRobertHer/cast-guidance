@@ -13,6 +13,7 @@ const { reg, packs } = vi.hoisted(() => ({
       registry: null as unknown,
       status: 'loading' as string,
       error: null as string | null,
+      refreshing: false,
       retry: vi.fn(),
     },
   },
@@ -66,6 +67,7 @@ beforeEach(() => {
     registry: registryWith([{ name: 'Fireball', source: 'PHB', entries: [] }]),
     status: 'ready',
     error: null,
+    refreshing: false,
     retry: vi.fn(),
   };
   packs.current = {
@@ -82,7 +84,7 @@ afterEach(cleanup);
 describe('the detail view when the compendium fails', () => {
   it('says so and offers the registry retry, instead of loading forever', () => {
     reg.current = { ...reg.current, registry: null, status: 'error', error: 'quota exceeded' };
-    renderAt('/library/spell/fireball%7Cphb');
+    renderAt('/library/spell/nonesuch%7Cphb');
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain("compendium couldn't be loaded");
@@ -97,7 +99,7 @@ describe('the detail view when the compendium fails', () => {
 describe('the detail view when this section will not download', () => {
   it('reports the download failure and retries that, not the registry', () => {
     packs.current = { ...packs.current, status: 'error', error: 'HTTP 503' };
-    renderAt('/library/spell/fireball%7Cphb');
+    renderAt('/library/spell/nonesuch%7Cphb');
 
     expect(screen.getByRole('alert').textContent).toContain("section couldn't be downloaded");
     expect(screen.getByRole('alert').textContent).toContain('HTTP 503');
@@ -116,7 +118,7 @@ describe('the detail view when this section will not download', () => {
       error: 'Failed to fetch',
       offline: true,
     };
-    renderAt('/library/spell/fireball%7Cphb');
+    renderAt('/library/spell/nonesuch%7Cphb');
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain("You're offline");
@@ -133,6 +135,17 @@ describe('the detail view when the entity is not there', () => {
 
     expect(screen.getByText('Loading…')).toBeTruthy();
     expect(screen.queryByText(/Nothing in/)).toBeNull();
+  });
+
+  it('waits for the registry to catch up with a download that just landed', () => {
+    // The packs go ready when the files land; the registry is rebuilt after
+    // that. In between it is real but older, and reading "missing" from it
+    // offers a re-download for something that has only just arrived.
+    reg.current = { ...reg.current, refreshing: true };
+    renderAt('/library/spell/nonesuch%7Cphb');
+
+    expect(screen.getByText('Loading…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Download this section again/ })).toBeNull();
   });
 
   it('says what is missing once nothing is left to download', () => {
@@ -158,6 +171,26 @@ describe('the detail view when it works', () => {
     renderAt('/library/spell/fireball%7Cphb');
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy());
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('still renders it when the rest of the section failed to download', () => {
+    // The page has its subject. A download that failed for everything else in
+    // the section is not this page's problem, and replacing a working screen
+    // with an error panel loses more than it reports.
+    packs.current = { ...packs.current, status: 'error', error: 'HTTP 503' };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('still renders it when a later registry rebuild failed', () => {
+    // `useRegistryState` keeps the registry it has when a refresh throws, so a
+    // single bad row landing later must not blank a page that already works.
+    reg.current = { ...reg.current, error: 'one bad row' };
+    renderAt('/library/spell/fireball%7Cphb');
+
+    expect(screen.getByRole('heading', { name: 'Fireball' })).toBeTruthy();
   });
 });
 
@@ -198,5 +231,31 @@ describe('the type list', () => {
     renderAt('/library/spell');
 
     expect(screen.getByText('Nothing here yet.')).toBeTruthy();
+  });
+
+  it('does not call a section empty while the registry is catching up', () => {
+    // Every file cached means the packs are ready at once, while the registry
+    // is still deserializing the whole compendium behind it.
+    reg.current = { ...reg.current, registry: registryWith([]), refreshing: true };
+    renderAt('/library/spell');
+
+    expect(screen.getByText('Downloading this section…')).toBeTruthy();
+    expect(screen.queryByText('Nothing here yet.')).toBeNull();
+  });
+});
+
+describe('when the compendium and the download both fail', () => {
+  it('names both and one press attempts both', () => {
+    reg.current = { ...reg.current, registry: null, status: 'error', error: 'quota exceeded' };
+    packs.current = { ...packs.current, status: 'error', error: 'HTTP 503' };
+    renderAt('/library/spell/nonesuch%7Cphb');
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('quota exceeded');
+    expect(alert.textContent).toContain('HTTP 503');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(reg.current.retry).toHaveBeenCalledOnce();
+    expect(packs.current.retry).toHaveBeenCalledOnce();
   });
 });
