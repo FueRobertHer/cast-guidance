@@ -8,6 +8,7 @@ import { db, type HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
 import { errorText, notifyFailure } from '@/stores/notices';
+import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
@@ -58,10 +59,20 @@ export function Component() {
     }
   };
 
-  const summary = (r: HomebrewFileRow) =>
-    Object.entries(r.counts)
-      .map(([k, v]) => `${v} ${k}`)
-      .join(' · ') || 'no recognized entities';
+  /**
+   * Counts are recomputed from content on every write, but the row is still
+   * whatever IndexedDB hands back: a row written by an older schema, or one
+   * that came back damaged, has no counts to spread over a template string.
+   */
+  const summary = (r: HomebrewFileRow) => {
+    const counts: unknown = r.counts;
+    if (typeof counts !== 'object' || counts === null) return 'contents unreadable';
+    return (
+      Object.entries(counts)
+        .map(([k, v]) => `${String(v)} ${k}`)
+        .join(' · ') || 'no recognized entities'
+    );
+  };
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
@@ -148,72 +159,79 @@ export function Component() {
 
       <div className="flex flex-col gap-2">
         {(rows ?? []).map((r) => (
-          <div key={r.id} className="flex items-center gap-2 rounded-lg bg-surface p-3">
-            <button
-              type="button"
-              onClick={() => {
-                // The label reads from the row, so a rejected write leaves the
-                // badge saying what is actually stored; the toast is what says
-                // the press did not take. Pressing again is the retry.
-                void homebrewRepo
-                  .setEnabled(r.id, !r.enabled)
-                  .then(invalidateRegistry)
-                  .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
-              }}
-              className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-                r.enabled ? 'border-purple-300 text-purple-300' : 'border-surface-2 text-ink-muted'
-              }`}
-            >
-              {r.enabled ? 'enabled' : 'disabled'}
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold">{r.fileName}</div>
-              <div className="truncate text-xs text-ink-muted">{summary(r)}</div>
-            </div>
-            {r.editable && (
-              <Link
-                to={`/homebrew/edit/${r.id}`}
-                title="Edit in the builder"
-                className="shrink-0 rounded p-1.5 text-purple-300 hover:text-purple-200"
-              >
-                <Pencil size={15} />
-              </Link>
-            )}
-            <button
-              type="button"
-              title="Download"
-              onClick={() => {
-                try {
-                  downloadJson(r.fileName, r.json);
-                } catch (err) {
-                  notifyFailure('Download', err);
-                }
-              }}
-              className="shrink-0 rounded p-1.5 text-ink-muted hover:text-ink"
-            >
-              <Download size={15} />
-            </button>
-            <button
-              type="button"
-              title="Delete"
-              onClick={async () => {
-                const ok = await askConfirm({
-                  title: `Remove "${r.fileName}"?`,
-                  detail: 'Characters using it will show warnings.',
-                  confirmLabel: 'Remove',
-                  danger: true,
-                });
-                if (ok)
+          // A file the list cannot render is exactly the file you came here to
+          // remove, so the failure stays in its own row and the rest of the
+          // library, and its controls, keep working.
+          <DecodeBoundary key={r.id} label="This file">
+            <div className="flex items-center gap-2 rounded-lg bg-surface p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  // The label reads from the row, so a rejected write leaves the
+                  // badge saying what is actually stored; the toast is what says
+                  // the press did not take. Pressing again is the retry.
                   void homebrewRepo
-                    .delete(r.id)
+                    .setEnabled(r.id, !r.enabled)
                     .then(invalidateRegistry)
-                    .catch((err: unknown) => notifyFailure('Remove', err));
-              }}
-              className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
+                    .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
+                }}
+                className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
+                  r.enabled
+                    ? 'border-purple-300 text-purple-300'
+                    : 'border-surface-2 text-ink-muted'
+                }`}
+              >
+                {r.enabled ? 'enabled' : 'disabled'}
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{r.fileName}</div>
+                <div className="truncate text-xs text-ink-muted">{summary(r)}</div>
+              </div>
+              {r.editable && (
+                <Link
+                  to={`/homebrew/edit/${r.id}`}
+                  title="Edit in the builder"
+                  className="shrink-0 rounded p-1.5 text-purple-300 hover:text-purple-200"
+                >
+                  <Pencil size={15} />
+                </Link>
+              )}
+              <button
+                type="button"
+                title="Download"
+                onClick={() => {
+                  try {
+                    downloadJson(r.fileName, r.json);
+                  } catch (err) {
+                    notifyFailure('Download', err);
+                  }
+                }}
+                className="shrink-0 rounded p-1.5 text-ink-muted hover:text-ink"
+              >
+                <Download size={15} />
+              </button>
+              <button
+                type="button"
+                title="Delete"
+                onClick={async () => {
+                  const ok = await askConfirm({
+                    title: `Remove "${r.fileName}"?`,
+                    detail: 'Characters using it will show warnings.',
+                    confirmLabel: 'Remove',
+                    danger: true,
+                  });
+                  if (ok)
+                    void homebrewRepo
+                      .delete(r.id)
+                      .then(invalidateRegistry)
+                      .catch((err: unknown) => notifyFailure('Remove', err));
+                }}
+                className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </DecodeBoundary>
         ))}
         {rows !== undefined && rows.length === 0 && (
           <p className="text-sm text-ink-muted">No homebrew imported yet.</p>

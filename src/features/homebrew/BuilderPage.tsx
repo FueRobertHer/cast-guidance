@@ -10,6 +10,7 @@ import { ABILITIES, type Ability } from '@/engine/types';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
 import { errorText, notify } from '@/stores/notices';
+import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import {
   DEFAULT_RIDER_TYPE,
   damagePatch,
@@ -572,17 +573,46 @@ function EntityForm({
   );
 }
 
+function isRecord(v: unknown): v is Json {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * What a record is called, or `undefined` when it has no usable name.
+ *
+ * The file is data the app did not write: an entity can be missing, a string,
+ * a list, or an object whose `name` is a number. `String(e.name)` turned every
+ * one of those into a plausible-looking label ("undefined", "[object Object]")
+ * that then acted as identity for saves and deletes. A record without a name
+ * is identified by its position instead, and says so on screen.
+ */
+function entityName(e: unknown): string | undefined {
+  return isRecord(e) && typeof e.name === 'string' ? e.name : undefined;
+}
+
+/** What the slot holds, for a value the builder cannot show as an entry. */
+function describeValue(v: unknown): string {
+  if (v === null || v === undefined) return 'the entry is empty';
+  if (Array.isArray(v)) return 'it holds a list, not an entry';
+  return `it holds a ${typeof v}, not an entry`;
+}
+
 /**
  * Where an entity lives now, given where it was and what it was called. The
  * row list is a live query, so a position captured when a form or a row was
  * opened can point at a different entity by the time the write happens: the
  * position is right in the ordinary case and is checked first, the name is
  * what settles it when the file changed underneath us.
+ *
+ * A nameless record (including one that isn't an object at all) can only be
+ * matched by position, so it matches only while its slot still holds a
+ * nameless record: if the file shifted under it, nothing is deleted rather
+ * than the wrong thing.
  */
-function entityIndex(arr: Json[], index: number | undefined, name: string | undefined): number {
-  if (index !== undefined && String(arr[index]?.name) === name) return index;
+function entityIndex(arr: unknown[], index: number | undefined, name: string | undefined): number {
+  if (index !== undefined && index < arr.length && entityName(arr[index]) === name) return index;
   if (name === undefined) return -1;
-  return arr.findIndex((e) => String(e.name) === name);
+  return arr.findIndex((e) => entityName(e) === name);
 }
 
 export function Component() {
@@ -607,7 +637,7 @@ export function Component() {
   const [failure, setFailure] = useState<{
     text: string;
     hint: string;
-    retryDelete?: { type: BuildType; name: string };
+    retryDelete?: { type: BuildType; name: string | undefined; index?: number };
   }>();
 
   if (row === undefined) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
@@ -648,7 +678,7 @@ export function Component() {
       done: string;
       failed: string;
       hint: string;
-      retryDelete?: { type: BuildType; name: string };
+      retryDelete?: { type: BuildType; name: string | undefined; index?: number };
       after?: () => void;
     },
   ) => {
@@ -677,7 +707,7 @@ export function Component() {
     entity: Json,
   ) => {
     const next = structuredClone(json);
-    const arr = Array.isArray(next[type]) ? (next[type] as Json[]) : [];
+    const arr = Array.isArray(next[type]) ? (next[type] as unknown[]) : [];
     // Same identity rule as delete, for the same reason: the position the form
     // was opened at can point at a different entity by the time it is saved,
     // and overwriting an innocent entry is worse than adding one. An edit whose
@@ -699,23 +729,32 @@ export function Component() {
     });
   };
 
-  const deleteEntity = async (type: BuildType, name: string, index?: number) => {
+  /**
+   * `name` is undefined for a record the file gives no usable name, including
+   * one that isn't an object at all: those are matched by position, and only
+   * while their slot still holds a nameless record.
+   */
+  const deleteEntity = async (type: BuildType, name: string | undefined, index?: number) => {
     const next = structuredClone(json);
-    const arr = Array.isArray(next[type]) ? (next[type] as Json[]) : [];
+    const arr = Array.isArray(next[type]) ? (next[type] as unknown[]) : [];
     const at = entityIndex(arr, index, name);
+    const label = name ?? 'the unreadable entry';
     if (at === -1) {
       // Nothing left to delete, so the failure that offered this retry is over.
       setFailure(undefined);
-      notify({ title: `${name} is already gone`, tone: 'info' });
+      notify({
+        title: name === undefined ? 'That entry is already gone' : `${name} is already gone`,
+        tone: 'info',
+      });
       return;
     }
     arr.splice(at, 1);
     next[type] = arr;
     await write(next, {
-      done: `Deleted ${name}`,
-      failed: `Could not delete ${name}`,
+      done: `Deleted ${label}`,
+      failed: `Could not delete ${label}`,
       hint: 'Nothing was changed on this device.',
-      retryDelete: { type, name },
+      retryDelete: { type, name, index },
     });
   };
 
@@ -752,7 +791,9 @@ export function Component() {
             <button
               type="button"
               disabled={busy}
-              onClick={() => void deleteEntity(retryDelete.type, retryDelete.name)}
+              onClick={() =>
+                void deleteEntity(retryDelete.type, retryDelete.name, retryDelete.index)
+              }
               className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
             >
               {busy ? 'Retrying…' : 'Retry'}
@@ -762,7 +803,16 @@ export function Component() {
       )}
 
       {BUILDABLE.map(([type, label]) => {
-        const entities = Array.isArray(json[type]) ? (json[type] as Json[]) : [];
+        // Whatever the file holds, not whatever the type says it holds: these
+        // entries come back from IndexedDB and were only ever checked for
+        // `_meta`, so a slot can hold null, a string, or a list.
+        const entities: unknown[] = Array.isArray(json[type]) ? (json[type] as unknown[]) : [];
+        const lower = label.toLowerCase();
+        const editingIndex = editing?.type === type ? editing.index : null;
+        const editingInitial =
+          editingIndex !== null && isRecord(entities[editingIndex])
+            ? (entities[editingIndex] as Json)
+            : undefined;
         return (
           <section key={type} className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -775,53 +825,98 @@ export function Component() {
                 onClick={() => openEditor({ type, index: null })}
                 className="flex items-center gap-1 rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold"
               >
-                <Plus size={14} /> New {label.toLowerCase()}
+                <Plus size={14} /> New {lower}
               </button>
             </div>
             <div className="flex flex-col gap-1">
-              {entities.map((e, i) => (
-                <div
-                  key={`${String(e.name)}-${String(i)}`}
-                  className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2 text-sm"
-                >
-                  <button
-                    type="button"
-                    onClick={() => openEditor({ type, index: i, name: String(e.name) })}
-                    className="min-w-0 flex-1 truncate text-left hover:text-purple-300"
-                  >
-                    {String(e.name)}
-                  </button>
-                  <Link
-                    to={`/library/${type}/${encodeURIComponent(`${String(e.name)}|${sourceId}`.toLowerCase())}`}
-                    className="shrink-0 text-xs text-ink-muted hover:text-ink"
-                  >
-                    view
-                  </Link>
+              {entities.map((e, i) => {
+                const name = entityName(e);
+                const remove = (
                   <button
                     type="button"
                     title="Delete"
                     disabled={busy}
-                    onClick={() => void deleteEntity(type, String(e.name), i)}
+                    onClick={() => void deleteEntity(type, name, i)}
                     className="shrink-0 text-ink-muted hover:text-accent disabled:opacity-40"
                   >
                     <Trash2 size={14} />
                   </button>
-                </div>
-              ))}
+                );
+                const key = `${name ?? 'unnamed'}-${String(i)}`;
+                // A slot that isn't an object has nothing to open, name, or
+                // link to. It is still in the user's file, so it gets a row
+                // that says so and offers the one action that helps.
+                if (!isRecord(e)) {
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-surface px-3 py-2"
+                    >
+                      <p className="min-w-0 flex-1 text-xs text-ink-muted">
+                        This {lower} could not be read ({describeValue(e)}). Deleting it leaves the
+                        rest of the file alone.
+                      </p>
+                      {remove}
+                    </div>
+                  );
+                }
+                return (
+                  // One bad record fails in its own row rather than taking the
+                  // file's other entities, and the delete, down with it.
+                  <DecodeBoundary key={key} label={`This ${lower}`} action={remove}>
+                    <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => openEditor({ type, index: i, name })}
+                        className="min-w-0 flex-1 truncate text-left hover:text-purple-300"
+                      >
+                        {name ?? `Unnamed ${lower}`}
+                      </button>
+                      {name !== undefined && (
+                        <Link
+                          to={`/library/${type}/${encodeURIComponent(`${name}|${sourceId}`.toLowerCase())}`}
+                          className="shrink-0 text-xs text-ink-muted hover:text-ink"
+                        >
+                          view
+                        </Link>
+                      )}
+                      {remove}
+                    </div>
+                  </DecodeBoundary>
+                );
+              })}
             </div>
             {editing?.type === type && (
-              <EntityForm
-                // Every field seeds its state from `initial` once. Without a key
-                // tying the instance to the entity, editing a second item of the
-                // same type reuses the form and shows the first one's values.
-                key={`${type}:${editing.index ?? 'new'}`}
-                type={type}
-                source={sourceId}
-                initial={editing.index !== null ? (entities[editing.index] as Json) : undefined}
-                onSave={(entity) => saveEntity(type, editing.index, editing.name, entity)}
-                onCancel={() => openEditor(null)}
-                busy={busy}
-              />
+              // The form reads far more of a record than the row does: a field
+              // that chokes on what it finds closes the form, not the page.
+              <DecodeBoundary
+                // Keyed with the record: a form that failed for one entry must
+                // not keep the next one from opening.
+                key={`form:${type}:${editing.index ?? 'new'}`}
+                label="This entry's form"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => openEditor(null)}
+                    className="shrink-0 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Close
+                  </button>
+                }
+              >
+                <EntityForm
+                  // Every field seeds its state from `initial` once. Without a key
+                  // tying the instance to the entity, editing a second item of the
+                  // same type reuses the form and shows the first one's values.
+                  key={`${type}:${editing.index ?? 'new'}`}
+                  type={type}
+                  source={sourceId}
+                  initial={editingInitial}
+                  onSave={(entity) => saveEntity(type, editing.index, editing.name, entity)}
+                  onCancel={() => openEditor(null)}
+                  busy={busy}
+                />
+              </DecodeBoundary>
             )}
           </section>
         );

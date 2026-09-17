@@ -13,7 +13,12 @@ const { saveEditable, invalidateRegistry, row } = vi.hoisted(() => ({
   row: {
     id: 'f1',
     fileName: 'brews.json',
-    json: { _meta: { sources: [{ full: 'My Brews', json: 'HB' }] }, item: [{ name: 'Old blade' }] },
+    // `item` is typed as loosely as the file is: these rows come back from
+    // IndexedDB, and nothing ever checked that their entries are entities.
+    json: {
+      _meta: { sources: [{ full: 'My Brews', json: 'HB' }] },
+      item: [{ name: 'Old blade' }] as unknown[],
+    },
     editable: true,
     sourceIds: ['HB'],
     counts: { item: 1 },
@@ -195,5 +200,61 @@ describe('BuilderPage writes', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('press Save to try again');
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
+
+describe('BuilderPage reads a file it did not write', () => {
+  // Homebrew files are only ever checked for a `_meta` block, so an entity
+  // array can hold anything JSON can: a null left by a hand-edited file, a
+  // bare string, an entry whose name is a number. Reading one of those used to
+  // throw inside the row list, and the failure went all the way to the route
+  // boundary: the whole builder was replaced by an error screen, taking with
+  // it the delete button that was the only way to fix the file.
+  it('keeps a record it cannot read from taking the page down with it', () => {
+    row.json.item = [null, { name: 'Old blade' }];
+    renderBuilder();
+
+    expect(screen.getByRole('button', { name: 'Old blade' })).toBeTruthy();
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+  });
+
+  it('deletes an unreadable record by position and leaves the rest alone', async () => {
+    row.json.item = ['just a string', { name: 'Old blade' }];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: Array<{ name: string }> }];
+    expect(written.item).toEqual([{ name: 'Old blade' }]);
+    expect(noticeStore.getState().notice).toMatchObject({ title: 'Deleted the unreadable entry' });
+  });
+
+  it('refuses a positional delete once the file has shifted under it', async () => {
+    // A nameless record has nothing but its position to be identified by, so
+    // the position has to still hold a nameless record. Deleting whatever
+    // moved into the slot would be worse than doing nothing.
+    row.json.item = [null, { name: 'Old blade' }];
+    renderBuilder();
+
+    row.json.item = [{ name: 'New sword' }, { name: 'Old blade' }];
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+
+    await waitFor(() =>
+      expect(noticeStore.getState().notice).toMatchObject({
+        title: 'That entry is already gone',
+      }),
+    );
+    expect(saveEditable).not.toHaveBeenCalled();
+  });
+
+  it('says a record has no name rather than inventing one', () => {
+    // `String(e.name)` used to label these "undefined" and then use that
+    // string as the entity's identity for the next save or delete.
+    row.json.item = [{ rarity: 'rare' }];
+    renderBuilder();
+
+    expect(screen.getByRole('button', { name: 'Unnamed item' })).toBeTruthy();
   });
 });
