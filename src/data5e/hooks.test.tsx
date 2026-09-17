@@ -3,17 +3,29 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Control the registry the hook awaits.
-const { getRegistry, ensureSearchIndex, lost } = vi.hoisted(() => ({
+const {
+  getRegistry,
+  ensureSearchIndex,
+  lost,
+  ensureTypePacks,
+  repairTypePacks,
+  invalidateRegistry,
+} = vi.hoisted(() => ({
   getRegistry: vi.fn(),
   ensureSearchIndex: vi.fn(),
+  ensureTypePacks: vi.fn(),
+  repairTypePacks: vi.fn(),
+  invalidateRegistry: vi.fn(),
   /** Stands in for the client's worker-loss subscription. */
   lost: new Set<() => void>(),
 }));
+
+vi.mock('./loader', () => ({ ensureTypePacks, repairTypePacks }));
 vi.mock('./registry', () => ({
   getRegistry,
   ensureRegistry: getRegistry,
   registrySignature: () => 'sig',
-  invalidateRegistry: () => undefined,
+  invalidateRegistry,
 }));
 vi.mock('./search/client', () => ({
   ensureSearchIndex,
@@ -26,7 +38,7 @@ vi.mock('./search/client', () => ({
 }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
-import { useRegistryState, useSearchState } from './hooks';
+import { useRegistryState, useSearchState, useTypePacks } from './hooks';
 
 const fakeRegistry = { byType: () => [], get: () => undefined } as never;
 
@@ -36,6 +48,9 @@ afterEach(() => {
   cleanup();
   getRegistry.mockReset();
   ensureSearchIndex.mockReset();
+  ensureTypePacks.mockReset().mockResolvedValue(undefined);
+  repairTypePacks.mockReset().mockResolvedValue(undefined);
+  invalidateRegistry.mockReset();
   lost.clear();
   dataStatusStore.setState({ packs: {}, filesDone: 0, filesTotal: 0, phase: 'idle' });
 });
@@ -143,5 +158,209 @@ describe('useSearchState', () => {
 
     unmount();
     expect(lost.size).toBe(0);
+  });
+});
+
+describe('useRegistryState refresh reporting', () => {
+  it('reports refreshing while a rebuild is running, and not after', async () => {
+    let settle = (_registry: unknown): void => undefined;
+    getRegistry.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useRegistryState());
+    expect(result.current.refreshing).toBe(true);
+
+    act(() => settle(fakeRegistry));
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('keeps the registry it has when a later rebuild fails', async () => {
+    // The rebuild re-runs as downloads land. One that throws must not blank a
+    // page that is rendering correctly from the registry already in hand.
+    getRegistry.mockResolvedValueOnce(fakeRegistry);
+    const { result } = renderHook(() => useRegistryState());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    getRegistry.mockRejectedValue(new Error('QuotaExceededError'));
+    act(() => dataStatusStore.getState().fileDone());
+
+    // Still usable, and the failure is still reported rather than swallowed:
+    // the pages that cannot render without it read `error`.
+    await waitFor(() => expect(result.current.error).toBe('QuotaExceededError'));
+    expect(result.current.status).toBe('ready');
+    expect(result.current.registry).toBe(fakeRegistry);
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('reports an error when there is no registry to fall back on', async () => {
+    getRegistry.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useRegistryState());
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.refreshing).toBe(false);
+  });
+});
+
+describe('useTypePacks', () => {
+  it('reaches ready once this type has everything it needs', async () => {
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(ensureTypePacks).toHaveBeenCalledWith('spell');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('captures the failure the page used to drop on the floor', async () => {
+    // The library started this download with a bare `void ensureTypePacks()`,
+    // so a rejection had nowhere to land and the section simply stayed empty.
+    ensureTypePacks.mockRejectedValue(new Error('HTTP 503'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.error).toBe('HTTP 503');
+    expect(result.current.offline).toBe(false);
+  });
+
+  it('marks a failure as offline when that is what it was', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    ensureTypePacks.mockRejectedValue(new Error('Failed to fetch'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+
+    await waitFor(() => expect(result.current.offline).toBe(true));
+    onLine.mockRestore();
+  });
+
+  it('clears the offline mark once a retry succeeds', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    ensureTypePacks.mockRejectedValueOnce(new Error('Failed to fetch'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.offline).toBe(true));
+
+    onLine.mockReturnValue(true);
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.offline).toBe(false);
+    onLine.mockRestore();
+  });
+
+  it('repairs through the re-download, not the ordinary ensure', async () => {
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    ensureTypePacks.mockClear();
+
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledWith('spell'));
+    expect(ensureTypePacks).not.toHaveBeenCalled();
+  });
+
+  it('does not carry a repair over to the next section', async () => {
+    // Navigating away mid-repair used to leave the repair flag set, because
+    // the only thing that cleared it was the settle handler the unmounted run
+    // skips. The next section the user opened was then re-downloaded without
+    // anyone asking for it, and a re-download is destructive work.
+    let settle = (): void => undefined;
+    repairTypePacks.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(({ type }: { type: string }) => useTypePacks(type), {
+      initialProps: { type: 'spell' },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledWith('spell'));
+
+    // The user navigates to another section while that repair is still running.
+    rerender({ type: 'item' });
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledWith('item'));
+    expect(repairTypePacks).not.toHaveBeenCalledWith('item');
+    settle();
+  });
+
+  it('goes back to the ordinary ensure after a repair', async () => {
+    // `repair` is one action, not a mode: leaving it on would throw the cache
+    // away again on the next retry, turning a hiccup into a full re-download.
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledOnce());
+
+    repairTypePacks.mockClear();
+    ensureTypePacks.mockClear();
+    act(() => result.current.retry());
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledOnce());
+    expect(repairTypePacks).not.toHaveBeenCalled();
+  });
+
+  it('makes a repaired section visible instead of only fixing the disk', async () => {
+    // A repair changes bodies and no paths, and the registry's signature is
+    // built from paths: without invalidating it, the page that asked for the
+    // repair goes on reading the poisoned registry and saying the entity is
+    // missing until the app is reloaded.
+    const onRepaired = vi.fn();
+    const { result } = renderHook(() => useTypePacks('spell', onRepaired));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => result.current.repair());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(invalidateRegistry).toHaveBeenCalledOnce();
+    expect(onRepaired).toHaveBeenCalledOnce();
+  });
+
+  it('does not invalidate anything for an ordinary retry', async () => {
+    const onRepaired = vi.fn();
+    const { result } = renderHook(() => useTypePacks('spell', onRepaired));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => result.current.retry());
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledTimes(2));
+    expect(invalidateRegistry).not.toHaveBeenCalled();
+    expect(onRepaired).not.toHaveBeenCalled();
+  });
+
+  it('still refreshes what the page reads when a repair fails part way', async () => {
+    // A repair writes rows as it goes, and its `Promise.all` rejects on the
+    // first failure while the siblings finish writing theirs. If only success
+    // refreshed the registry, it would be left serving bodies that are no
+    // longer on disk, and no retry could dislodge it: nothing is missing, so
+    // the retry fetches nothing and the signature never changes.
+    const onRepaired = vi.fn();
+    const { result } = renderHook(() => useTypePacks('spell', onRepaired));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    repairTypePacks.mockRejectedValue(new Error('HTTP 503'));
+    act(() => result.current.repair());
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(invalidateRegistry).toHaveBeenCalledOnce();
+    expect(onRepaired).toHaveBeenCalledOnce();
+  });
+
+  it('treats a repair as one press, not a standing mode', async () => {
+    // Returning to a section you repaired re-entered the effect with the same
+    // attempt still asking for a repair, so a back-button press re-downloaded
+    // the whole section.
+    const { result, rerender } = renderHook(({ type }: { type: string }) => useTypePacks(type), {
+      initialProps: { type: 'spell' },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledOnce());
+
+    rerender({ type: 'item' });
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledWith('item'));
+    rerender({ type: 'spell' });
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledTimes(3));
+
+    expect(repairTypePacks).toHaveBeenCalledOnce();
+  });
+
+  it('asks for nothing at all without a type', async () => {
+    const { result } = renderHook(() => useTypePacks(undefined));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(ensureTypePacks).not.toHaveBeenCalled();
   });
 });

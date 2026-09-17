@@ -15,6 +15,16 @@ export { EntityRegistry, normalizeDataset } from './normalize';
 
 let current: EntityRegistry | null = null;
 let currentSignature = '';
+/**
+ * Bumped by every invalidation. A rebuild reads rows, which takes long enough
+ * to matter, and publishing what it read regardless of what happened meanwhile
+ * is how a repair loses: the rebuild starts before the repaired rows are
+ * written, finishes after the invalidation, and installs the bodies it read at
+ * the start under a signature that says they are current. Since a repair
+ * changes no paths, that signature matches the next request exactly, so the
+ * pre-repair registry is served from cache and the repair vanishes.
+ */
+let epoch = 0;
 
 async function cachedFilesMap(): Promise<Map<string, unknown>> {
   const rows = await dataCacheRepo.filesByTag(getActiveTag());
@@ -85,6 +95,7 @@ export function homebrewSourceNames(
  * in memory. That was most of the delay before a page could paint.
  */
 export async function getRegistry(): Promise<EntityRegistry> {
+  const startedAt = epoch;
   const [paths, { files: brews }] = await Promise.all([
     dataCacheRepo.cachedPaths(getActiveTag()),
     // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
@@ -103,9 +114,14 @@ export async function getRegistry(): Promise<EntityRegistry> {
   const brewMap = new Map<string, Record<string, unknown>>();
   for (const b of brews) brewMap.set(b.id, b.json);
   mergeHomebrew(reg, brewMap);
-  current = reg;
-  currentSignature = signature;
-  return current;
+  // Only if nothing invalidated the registry while this was reading. The
+  // caller still gets what was built, which is the best answer available to
+  // it; what it must not do is leave that answer behind as the current one.
+  if (startedAt === epoch) {
+    current = reg;
+    currentSignature = signature;
+  }
+  return reg;
 }
 
 /** Ensure the given packs are downloaded, then return a registry containing them. */
@@ -119,7 +135,8 @@ export function registrySignature(): string {
   return currentSignature;
 }
 
-/** Force a rebuild on next access (after homebrew add/remove/toggle). */
+/** Force a rebuild on next access (after homebrew add/remove/toggle, or a repair). */
 export function invalidateRegistry(): void {
   currentSignature = '';
+  epoch++;
 }

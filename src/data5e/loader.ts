@@ -284,26 +284,85 @@ export async function downloadAllPacks(): Promise<void> {
   }
 }
 
-/** Ensure every pack an entity type draws from (e.g. all spell sources). */
-export async function ensureTypePacks(type: string): Promise<void> {
-  await ensurePack('essentials');
+/** Every pack an entity type draws from (e.g. all spell sources). */
+export async function packsForType(type: string): Promise<PackId[]> {
   if (type === 'spell') {
-    const packs = (await allPackIds()).filter((p) => p.startsWith('spells:'));
-    await Promise.all(packs.map((p) => ensurePack(p)));
-    return;
+    return ['essentials', ...(await allPackIds()).filter((p) => p.startsWith('spells:'))];
   }
   if (type === 'class' || type === 'subclass' || type.endsWith('Feature')) {
-    const packs = (await allPackIds()).filter((p) => p.startsWith('class:'));
-    await Promise.all(packs.map((p) => ensurePack(p)));
-    return;
+    return ['essentials', ...(await allPackIds()).filter((p) => p.startsWith('class:'))];
   }
   if (type === 'item' || type === 'itemGroup' || type === 'magicvariant') {
-    await ensurePack('items-full');
-    return;
+    return ['essentials', 'items-full'];
   }
-  if (type === 'variantrule' || type === 'book') {
-    await ensurePack('library-extras');
-  }
+  if (type === 'variantrule' || type === 'book') return ['essentials', 'library-extras'];
+  return ['essentials'];
+}
+
+/** Ensure every pack an entity type draws from. */
+export async function ensureTypePacks(type: string): Promise<void> {
+  // Essentials first and alone: the dynamic pack lists are read out of the
+  // indexes it carries, so the rest cannot be resolved until it is here.
+  await ensurePack('essentials');
+  const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
+  await Promise.all(packs.map((p) => ensurePack(p)));
+}
+
+/** Fetch one file again and overwrite what is cached, cache hit or not. */
+async function refetchFile(path: string): Promise<void> {
+  // The tag and its source are captured together, before the fetch, so the
+  // body written always matches the row it is written into however long the
+  // fetch takes. The check after it is about a tag that has been left behind:
+  // `updateToTag` sweeps the old tag's rows once it has swapped, and a late
+  // repair would otherwise put one back, stranded under a version nothing
+  // reads until the next boot cleans it up again.
+  const tag = activeTag;
+  const from = source;
+  const json = await fetchGate.run(() => from.fetchFile(path));
+  if (activeTag !== tag) return;
+  await dataCacheRepo.putFile({
+    key: dataCacheRepo.key(tag, path),
+    tag,
+    path,
+    pack: packOfPath(path),
+    json,
+    bytes: jsonByteSize(json),
+    fetchedAt: Date.now(),
+  });
+}
+
+/**
+ * Download this type's files again and overwrite them.
+ *
+ * For the case the ordinary retry cannot reach: `ensurePack` decides what to
+ * fetch from what is missing, so a file that is cached is never fetched again
+ * however wrong its contents are (a truncated write, a body cached from a
+ * failing proxy). This asks for every file regardless.
+ *
+ * It overwrites rather than clearing first, which matters more than it sounds:
+ * every type's pack list starts with `essentials`, the thirteen files the
+ * whole app reads. Deleting those and then failing to re-download them, which
+ * is precisely what happens if the repair is pressed offline, would leave the
+ * device with nothing at all. Nothing is removed here, so a repair that cannot
+ * reach the network leaves the app exactly as it found it.
+ *
+ * Essentials goes first because it holds the indexes the other pack lists are
+ * read from: a corrupt index would otherwise get to decide what a repair is
+ * allowed to repair.
+ */
+export async function repairTypePacks(type: string): Promise<void> {
+  // Before `activeTag` is read, so the rows are written under the installed
+  // tag rather than whichever one this session happened to start with.
+  await ensureTagReady();
+  // Deliberately not reported through `dataStatusStore`: those counters belong
+  // to the background queue, and a run in progress resets them. Borrowing them
+  // made the shared banner read "13/5" for an install that had fetched
+  // nothing, and left its total short of its own count. A repair is a local,
+  // asked-for action, and the page that asked shows its own progress.
+  await Promise.all(ESSENTIALS_FILES.map((path) => refetchFile(path)));
+  const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
+  const lists = await Promise.all(packs.map((p) => filesForPack(p)));
+  await Promise.all([...new Set(lists.flat())].map((path) => refetchFile(path)));
 }
 
 /**

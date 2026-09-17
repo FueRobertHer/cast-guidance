@@ -16,10 +16,11 @@ vi.mock('./source', () => ({
   },
 }));
 
+import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DATA_TAG } from './config';
-import { getActiveTag, updateToTag } from './loader';
+import { ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
 
 /** A dataset complete enough to pass the installer's sanity check. */
 const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
@@ -27,6 +28,12 @@ const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
+  // Pin the tag the way an installed app has it. Without a pinned tag,
+  // `restoreActiveTag` asks the mirror for the latest release, which is a bare
+  // `fetch` this file's source mock does not intercept: a real request to
+  // api.github.com from the unit suite, and a 15-second block on a network
+  // that swallows it.
+  await db.settings.put({ key: 'dataTag', value: DATA_TAG });
   fetchFile.mockReset();
   dataStatusStore.setState({
     phase: 'idle',
@@ -107,5 +114,135 @@ describe('updateToTag failure reporting', () => {
     expect(dataStatusStore.getState()).toMatchObject({ phase: 'done', failedTag: undefined });
     expect(getActiveTag()).toBe('v2.33.0');
     expect((await db.settings.get('dataTag'))?.value).toBe('v2.33.0');
+  });
+});
+
+describe('repairTypePacks', () => {
+  /** Put a wrong body in the cache under a path the repair should replace. */
+  async function poison(tag: string, path: string, pack: string): Promise<void> {
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(tag, path),
+      tag,
+      path,
+      pack,
+      json: { poisoned: true },
+      bytes: 10,
+      fetchedAt: 1,
+    });
+  }
+
+  it('replaces a cached body an ordinary retry would never fetch again', async () => {
+    // The case the retry cannot reach: the file is cached, so `ensurePack`
+    // finds nothing missing and returns at once, however wrong the body is.
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await poison(tag, 'races.json', 'essentials');
+
+    await repairTypePacks('race');
+
+    const after = await dataCacheRepo.getFile(tag, 'races.json');
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
+  });
+
+  it('repairs the dynamic packs, not just the ones named after their files', async () => {
+    // `packsForType` speaks in pack ids (`spells:phb`), while a cached row
+    // records the group its path belongs to (`spells`). A repair that matched
+    // one vocabulary against the other left every spell and class file
+    // untouched: the two biggest sections the button is offered on.
+    fetchFile.mockImplementation((_tag: string, path: string) =>
+      Promise.resolve(
+        path === 'spells/index.json'
+          ? { PHB: 'spells-phb.json' }
+          : path === 'spells/spells-phb.json'
+            ? { spell: [{ name: 'Fireball' }] }
+            : path === 'races.json'
+              ? { race: [{ name: 'Elf' }] }
+              : {},
+      ),
+    );
+    await ensureTypePacks('spell');
+    const tag = getActiveTag();
+    await poison(tag, 'spells/spells-phb.json', 'spells');
+
+    await repairTypePacks('spell');
+
+    const after = await dataCacheRepo.getFile(tag, 'spells/spells-phb.json');
+    expect((after?.json as { spell: Array<{ name: string }> }).spell).toEqual([
+      { name: 'Fireball' },
+    ]);
+  });
+
+  it('leaves the cache alone when it cannot re-download', async () => {
+    // Every type's pack list starts with `essentials`, the files the whole app
+    // reads. Clearing those and then failing to fetch them, which is exactly
+    // what pressing this offline used to do, left the device with nothing.
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    const before = (await dataCacheRepo.cachedPaths(tag)).size;
+    expect(before).toBeGreaterThan(0);
+
+    fetchFile.mockRejectedValue(new Error('Failed to fetch'));
+    await expect(repairTypePacks('race')).rejects.toThrow('Failed to fetch');
+
+    expect((await dataCacheRepo.cachedPaths(tag)).size).toBe(before);
+    const races = await dataCacheRepo.getFile(tag, 'races.json');
+    expect(races).toBeDefined();
+  });
+
+  it('leaves the cached files of another type alone', async () => {
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(tag, 'items.json'),
+      tag,
+      path: 'items.json',
+      pack: 'items-full',
+      json: { item: [{ name: 'Keep me' }] },
+      bytes: 10,
+      fetchedAt: 1,
+    });
+
+    await repairTypePacks('race');
+
+    const items = await dataCacheRepo.getFile(tag, 'items.json');
+    expect((items?.json as { item: Array<{ name: string }> }).item).toEqual([{ name: 'Keep me' }]);
+  });
+
+  // Last in the file: a successful install moves `activeTag`, and the module
+  // memoizes tag resolution, so nothing after it would see the pinned tag.
+  it('cannot write the old release over the one an install just staged', async () => {
+    // `activeTag` is module state an install moves. A repair that started
+    // before the install and lands after it must not put the old release's
+    // body under the new tag's key: that is straight over what the installer
+    // staged and sanity-checked, and nothing downstream would ever know.
+    let release = (_json: unknown): void => undefined;
+    const held = new Promise<unknown>((resolve) => {
+      release = resolve;
+    });
+    let holdTheRepair = false;
+    fetchFile.mockImplementation((tag: string, path: string) => {
+      if (holdTheRepair && tag === DATA_TAG && path === 'races.json') return held;
+      if (path === 'races.json') {
+        return Promise.resolve({ race: [{ name: tag === DATA_TAG ? 'OLD-Elf' : 'NEW-Elf' }] });
+      }
+      return Promise.resolve({});
+    });
+    await ensureTypePacks('race');
+
+    holdTheRepair = true;
+    const repairing = repairTypePacks('race');
+    await updateToTag('v2.33.0');
+    expect(getActiveTag()).toBe('v2.33.0');
+    const staged = await dataCacheRepo.getFile('v2.33.0', 'races.json');
+    expect((staged?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'NEW-Elf' }]);
+
+    release({ race: [{ name: 'OLD-Elf' }] });
+    await repairing;
+
+    const after = await dataCacheRepo.getFile('v2.33.0', 'races.json');
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'NEW-Elf' }]);
   });
 });

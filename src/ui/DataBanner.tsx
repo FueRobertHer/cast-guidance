@@ -54,8 +54,11 @@ export function DataBanner() {
   if (phase === 'working' && total > 0) {
     // Clamped because the counters are shared: a run that starts while another
     // is still finishing can push `done` past its own total for a moment, and
-    // a bar wider than its track is worse than a bar that pauses at full.
-    const pct = Math.round((Math.min(done, total) / total) * 100);
+    // a bar wider than its track is worse than a bar that pauses at full. The
+    // count and the announcement are clamped with it, since only the bar was
+    // and a screen reader was left saying "13 of 5 files".
+    const counted = Math.min(done, total);
+    const pct = Math.round((counted / total) * 100);
     return (
       <div
         className="fixed inset-x-4 top-3 z-40 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs text-ink-muted shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
@@ -63,13 +66,13 @@ export function DataBanner() {
         aria-label="Downloading game data"
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-valuenow={done}
-        aria-valuetext={`${done} of ${total} files`}
+        aria-valuenow={counted}
+        aria-valuetext={`${counted} of ${total} files`}
       >
         <div className="flex items-center justify-between">
           <span>Downloading game data…</span>
           <span>
-            {done}/{total}
+            {counted}/{total}
           </span>
         </div>
         <div className="mt-1 h-0.5 overflow-hidden rounded bg-surface-2">
