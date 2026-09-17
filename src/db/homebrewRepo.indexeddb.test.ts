@@ -100,6 +100,36 @@ describe('the homebrew read boundary against the real database', () => {
     expect(enabled.errors).toHaveLength(1);
   });
 
+  it('lists newest first, including rows an ordered read would never see', async () => {
+    // The order has to survive the read changing: `orderBy('addedAt')` is what
+    // this replaced, and Dexie's reversed traversal broke ties on the primary
+    // key, descending. Two files imported in the same millisecond is reachable
+    // (a character import writes several in a loop), and a list that reshuffles
+    // itself for no visible reason is its own small bug.
+    const put = (id: string, addedAt: number | undefined) =>
+      db.homebrewFiles.put({
+        id,
+        fileName: `${id}.json`,
+        json: {},
+        enabled: true,
+        editable: false,
+        sourceIds: [],
+        counts: {},
+        addedAt,
+      } as never);
+    await put('c', 5);
+    await put('a', 5);
+    await put('b', 9);
+    await put('no-timestamp', undefined);
+
+    const { files, errors } = await homebrewRepo.listSafe();
+    expect(errors).toEqual([]);
+    // b is newest; c and a tie and break on id descending; the row with no
+    // timestamp is last rather than missing, which is the whole reason this
+    // read no longer goes through the index.
+    expect(files.map((f) => f.id)).toEqual(['b', 'c', 'a', 'no-timestamp']);
+  });
+
   it('tells a file that cannot be read apart from one that is not there', async () => {
     await db.homebrewFiles.put({ id: 'broken', fileName: 'broken.json', json: 7 } as never);
 

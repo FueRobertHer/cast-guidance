@@ -137,10 +137,15 @@ export const homebrewRepo = {
     // Read unordered and sort after, rather than `orderBy('addedAt')`: Dexie
     // leaves a row out of an index traversal when its indexed key is missing,
     // so the damaged rows this boundary exists to report are exactly the ones
-    // an ordered read would never hand it. Newest first, as before, with rows
-    // whose timestamp is gone treated as oldest.
+    // an ordered read would never hand it. Rows whose timestamp is gone are
+    // repaired to 0 and sort last.
+    //
+    // Ties break on the id, descending, which is what the reversed index
+    // traversal did: two files imported in the same millisecond (a character
+    // import writes several in a loop) would otherwise swap places purely
+    // because the read changed.
     const result = partitionHomebrewRows(await db.homebrewFiles.toArray());
-    result.files.sort((a, b) => b.addedAt - a.addedAt);
+    result.files.sort((a, b) => b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
     return result;
   },
 
