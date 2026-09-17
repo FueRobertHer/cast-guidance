@@ -1,11 +1,5 @@
-// The read boundary for stored homebrew (REL-006), as a pure function.
-//
-// What a row has to satisfy is not a matter of taste: it is what the rest of
-// the app does with each field. The registry indexes into `json` while merging,
-// every write addresses its row by `id`, and nothing else is dereferenced
-// without a fallback. So those two are the refusals and everything else is
-// repaired, because a file whose counts went missing is still the user's
-// content and hiding it would lose more than it protects.
+// The read boundary for stored homebrew (REL-006), as a pure function. What it
+// refuses and what it repairs, and why, is documented on `readHomebrewRow`.
 import { describe, expect, it } from 'vitest';
 import { partitionHomebrewRows } from './homebrewRepo';
 
@@ -44,9 +38,7 @@ describe('partitionHomebrewRows keeps a good row intact', () => {
 
 describe('partitionHomebrewRows refuses what cannot be used', () => {
   it('refuses a row whose content is not a JSON object', () => {
-    // The one that matters: `mergeHomebrew` reads `json[type]` directly, so
-    // this row used to throw out of getRegistry() and take down every view
-    // that needed the compendium, not just the homebrew screen.
+    // The refusal that matters: this row used to throw out of getRegistry().
     for (const json of [null, undefined, 7, 'text', [1, 2]]) {
       const { files, errors } = partitionHomebrewRows([row({ json })]);
       expect(files).toEqual([]);

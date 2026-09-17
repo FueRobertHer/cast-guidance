@@ -313,9 +313,8 @@ describe('BuilderPage opening a file it cannot use', () => {
   });
 
   it('says a file is gone rather than loading forever', () => {
-    // Deleting the file in another tab used to leave this page on its spinner:
-    // the raw read returned undefined for "no such row" and for "not yet
-    // read", and the page could not tell them apart.
+    // The raw read returned undefined both for "no such row" and for "not yet
+    // read", so this page could not tell them apart.
     read.current = {};
     renderBuilder();
     expect(screen.getByRole('alert').textContent).toContain('no longer on this device');

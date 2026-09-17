@@ -87,9 +87,8 @@ export function homebrewSourceNames(
 export async function getRegistry(): Promise<EntityRegistry> {
   const [paths, { files: brews }] = await Promise.all([
     dataCacheRepo.cachedPaths(getActiveTag()),
-    // Through the read boundary, so a row the app cannot read is left out of
-    // the registry instead of throwing out of it. `mergeHomebrew` reaches into
-    // `json` directly, and the compendium failing takes every view with it.
+    // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
+    // to throw out of here, and every view needs the compendium.
     homebrewRepo.enabledSafe(),
   ]);
   const signature = computeRegistrySignature(paths, brews);

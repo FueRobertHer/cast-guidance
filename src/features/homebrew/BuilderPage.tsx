@@ -664,10 +664,9 @@ function refLabel(ref: EntityRef): string {
 
 export function Component() {
   const { fileId } = useParams();
-  // Through the read boundary (REL-006), which is also what makes the three
-  // outcomes distinct: still loading, no such file, and a file that cannot be
-  // read. The raw Dexie read this replaced returned `undefined` for two of
-  // them, so a file deleted in another tab left the editor loading forever.
+  // The raw read this replaced returned `undefined` both for "not loaded yet"
+  // and for "no such file", so a file deleted in another tab left this page
+  // loading forever.
   const read = useLiveQuery<HomebrewRead>(
     async () => (fileId === undefined ? {} : homebrewRepo.getSafe(fileId)),
     [fileId],

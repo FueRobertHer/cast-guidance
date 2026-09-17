@@ -2,8 +2,7 @@
  * Scope and shape the homebrew embedded in a character export (IMP-002).
  *
  * Takes files that have crossed the read boundary, not raw stored rows: an
- * export is read back by another device, so a row this one could not read has
- * no business being embedded in it.
+ * export is read back by another device.
  *
  * Previously every export shipped *all* enabled homebrew plus the full local
  * `HomebrewFileRow` (with local-only fields like `enabled`, `editable`,

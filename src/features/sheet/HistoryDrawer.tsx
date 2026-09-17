@@ -14,9 +14,7 @@ function timeLabel(at: number): string {
 
 /** Version history: every change is snapshotted; any state can be restored. */
 export function HistoryDrawer({ charId }: { charId: string }) {
-  // Through the repo, which already had this exact query (REL-006). The copy
-  // here was the last live query in the app reaching past it into Dexie, and a
-  // second copy of a read is a second place for it to drift.
+  // `historyRepo.list` already had this exact query; this was a second copy.
   const rows = useLiveQuery(() => historyRepo.list(charId), [charId], []);
 
   return (

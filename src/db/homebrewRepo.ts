@@ -36,11 +36,9 @@ export async function buildHomebrewRow(
 }
 
 /**
- * A stored row that has crossed the read boundary. Identical to the stored
- * shape but for `json`, which is `unknown` on the way out of Dexie and a JSON
- * object once it has been read: the narrowing is the boundary's whole point,
- * and it is what lets the registry and the editors index into `json` without
- * an unchecked cast between them and a row nobody validated.
+ * A stored row that has crossed the read boundary: the stored shape, but with
+ * `json` narrowed from `unknown` to a JSON object. That narrowing is what lets
+ * callers index into `json` without an unchecked cast.
  */
 export interface HomebrewFile extends Omit<HomebrewFileRow, 'json'> {
   json: Record<string, unknown>;
@@ -113,7 +111,7 @@ function isReadError(v: HomebrewFile | HomebrewReadError): v is HomebrewReadErro
 /**
  * Read a batch of stored rows, collecting per-row failures instead of throwing.
  * Pure and unit-testable; backs every homebrew read the app makes, the same way
- * `partitionCharacterRows` backs the character list.
+ * {@link partitionCharacterRows} backs the character list.
  */
 export function partitionHomebrewRows(rows: readonly unknown[]): HomebrewListResult {
   const files: HomebrewFile[] = [];
@@ -127,23 +125,13 @@ export function partitionHomebrewRows(rows: readonly unknown[]): HomebrewListRes
 }
 
 export const homebrewRepo = {
-  /**
-   * Every stored homebrew file, newest first, read through the boundary. The
-   * unvalidated read this replaced handed `json` straight to the registry,
-   * where `json[type]` on a row whose content was not an object threw out of
-   * `getRegistry()` and took down every view that needed the compendium.
-   */
+  /** Every stored homebrew file, newest first. */
   async listSafe(): Promise<HomebrewListResult> {
-    // Read unordered and sort after, rather than `orderBy('addedAt')`: Dexie
+    // Unordered read, sorted after, rather than `orderBy('addedAt')`: Dexie
     // leaves a row out of an index traversal when its indexed key is missing,
-    // so the damaged rows this boundary exists to report are exactly the ones
-    // an ordered read would never hand it. Rows whose timestamp is gone are
-    // repaired to 0 and sort last.
-    //
-    // Ties break on the id, descending, which is what the reversed index
-    // traversal did: two files imported in the same millisecond (a character
-    // import writes several in a loop) would otherwise swap places purely
-    // because the read changed.
+    // so the damaged rows this exists to report are the ones an ordered read
+    // would never hand it. Ties break on the id descending, as the reversed
+    // traversal did, so a same-millisecond import keeps its order.
     const result = partitionHomebrewRows(await db.homebrewFiles.toArray());
     result.files.sort((a, b) => b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
     return result;
@@ -156,9 +144,9 @@ export const homebrewRepo = {
   },
 
   /**
-   * One file by id. All three outcomes are distinct: no row, an unreadable
+   * One file by id, with all three outcomes distinct: no row, an unreadable
    * row, and a file. A caller that cannot tell "still loading" from "no such
-   * file" shows a spinner forever over a file that was deleted in another tab.
+   * file" shows a spinner forever over a file deleted in another tab.
    */
   async getSafe(id: string): Promise<{ file?: HomebrewFile; error?: HomebrewReadError }> {
     const row = await db.homebrewFiles.get(id);

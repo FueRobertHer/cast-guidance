@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
-// The homebrew screen is the only place a file the app cannot read can be
-// removed, so it is the one screen that has to say such a file exists. Before
-// the read boundary it could not: the raw Dexie read handed the row straight
-// to the list, and the same row reached the registry, where it took down every
-// view that needed the compendium rather than the one row that was damaged.
+// This is the only screen that can remove a file the app cannot read, so it is
+// the one screen that has to say such a file exists, and offer the delete.
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -64,9 +61,8 @@ describe('ManageHomebrewPage read errors', () => {
   });
 
   it('gives an unreadable file a row and a way to remove it', async () => {
-    // The file you most want gone is the one the app cannot read, and this is
-    // the only screen that can remove it. Reporting it without a delete left
-    // the builder telling people to come here and do something they could not.
+    // Reporting these without a delete left the builder telling people to come
+    // here and do something they could not.
     remove.mockResolvedValue(undefined);
     read.current = {
       files: [],

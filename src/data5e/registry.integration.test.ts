@@ -54,10 +54,9 @@ describe('registry rebuild on editable-homebrew edit', () => {
 
 describe('a homebrew row the app cannot read', () => {
   it('is left out of the registry instead of taking it down', async () => {
-    // `mergeHomebrew` indexes into `json` directly, so a row whose content is
-    // not an object threw a TypeError out of getRegistry(). That is not a
-    // homebrew failure: every view needs the compendium, so the library, the
-    // creator and every character sheet went down with the one bad row.
+    // A row whose content is not an object threw a TypeError out of
+    // getRegistry(), so the library, the creator and every character sheet
+    // went down with it. That is not a homebrew failure.
     const good = await homebrewRepo.createEditable('Brew', 'BRW');
     await homebrewRepo.saveEditable(good.id, brewJson('Zap'));
     await db.homebrewFiles.put({

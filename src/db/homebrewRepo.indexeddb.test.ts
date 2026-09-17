@@ -81,9 +81,7 @@ describe('homebrewRepo editable files (IndexedDB-backed)', () => {
 
 describe('the homebrew read boundary against the real database', () => {
   // importJson validates what it stores, but the row read back is whatever
-  // IndexedDB holds: a row from an older schema, a half-written record, a
-  // database another tab damaged. Writing one directly is how that is
-  // reproduced, since the repo's own writes cannot produce it.
+  // IndexedDB holds. A direct write is the only way to reproduce that.
   it('reports an unreadable row and keeps serving the rest', async () => {
     const good = await homebrewRepo.importJson(file('A', ['x']), 'a.json');
     await db.homebrewFiles.put({ id: 'broken', fileName: 'broken.json', json: null } as never);
@@ -101,11 +99,9 @@ describe('the homebrew read boundary against the real database', () => {
   });
 
   it('lists newest first, including rows an ordered read would never see', async () => {
-    // The order has to survive the read changing: `orderBy('addedAt')` is what
-    // this replaced, and Dexie's reversed traversal broke ties on the primary
-    // key, descending. Two files imported in the same millisecond is reachable
-    // (a character import writes several in a loop), and a list that reshuffles
-    // itself for no visible reason is its own small bug.
+    // The order has to survive the read changing. Dexie's reversed traversal
+    // broke ties on the primary key descending, and a same-millisecond import
+    // is reachable: a character import writes several rows in a loop.
     const put = (id: string, addedAt: number | undefined) =>
       db.homebrewFiles.put({
         id,

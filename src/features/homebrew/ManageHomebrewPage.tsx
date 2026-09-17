@@ -12,9 +12,7 @@ import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
   const navigate = useNavigate();
-  // Through the read boundary (REL-006): a row the app cannot read is reported
-  // here, on the one screen that can remove it, rather than reaching the
-  // registry and taking the compendium down with it.
+  // Unreadable files are reported here, the one screen that can remove them.
   const read = useLiveQuery(() => homebrewRepo.listSafe(), []);
   const rows = read?.files;
   const readErrors = read?.errors ?? [];
@@ -61,10 +59,9 @@ export function Component() {
   };
 
   /**
-   * Removing a file, from a row the page can render and from one it cannot.
-   * An unreadable file is the one file you most want gone, so it gets the same
-   * delete as any other: the id is all a delete needs, and the boundary hands
-   * that over even when it refuses everything else about the row.
+   * Removing a file, from a row the page can render and from one it cannot: an
+   * unreadable file is the one you most want gone, and the id is all a delete
+   * needs, which the boundary hands over even when it refuses the rest.
    */
   const remove = async (id: string, name: string) => {
     const ok = await askConfirm({
