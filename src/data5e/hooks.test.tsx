@@ -3,9 +3,11 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Control the registry the hook awaits.
-const { getRegistry, ensureSearchIndex } = vi.hoisted(() => ({
+const { getRegistry, ensureSearchIndex, lost } = vi.hoisted(() => ({
   getRegistry: vi.fn(),
   ensureSearchIndex: vi.fn(),
+  /** Stands in for the client's worker-loss subscription. */
+  lost: new Set<() => void>(),
 }));
 vi.mock('./registry', () => ({
   getRegistry,
@@ -13,7 +15,15 @@ vi.mock('./registry', () => ({
   registrySignature: () => 'sig',
   invalidateRegistry: () => undefined,
 }));
-vi.mock('./search/client', () => ({ ensureSearchIndex }));
+vi.mock('./search/client', () => ({
+  ensureSearchIndex,
+  onSearchIndexLost: (fn: () => void) => {
+    lost.add(fn);
+    return () => {
+      lost.delete(fn);
+    };
+  },
+}));
 
 import { dataStatusStore } from '@/stores/dataStatus';
 import { useRegistryState, useSearchState } from './hooks';
@@ -26,6 +36,7 @@ afterEach(() => {
   cleanup();
   getRegistry.mockReset();
   ensureSearchIndex.mockReset();
+  lost.clear();
   dataStatusStore.setState({ packs: {}, filesDone: 0, filesTotal: 0, phase: 'idle' });
 });
 
@@ -107,5 +118,30 @@ describe('useSearchState', () => {
     ensureSearchIndex.mockResolvedValue(undefined);
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('drops out of ready when the worker behind the index is lost', async () => {
+    // Nothing fails at this point: the build resolved long ago. Without the
+    // subscription the box keeps saying it is ready and answers nothing.
+    ensureSearchIndex.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useSearchState(fakeRegistry));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => {
+      for (const fn of lost) fn();
+    });
+    expect(result.current.status).toBe('error');
+
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('stops listening for that loss once it is unmounted', async () => {
+    ensureSearchIndex.mockResolvedValue(undefined);
+    const { result, unmount } = renderHook(() => useSearchState(fakeRegistry));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    unmount();
+    expect(lost.size).toBe(0);
   });
 });

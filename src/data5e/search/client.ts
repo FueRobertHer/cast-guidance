@@ -3,6 +3,7 @@ import { getActiveTag } from '../loader';
 import type { EntityRegistry, EntityType } from '../normalize';
 import type {
   SearchDoc,
+  SearchErrorPhase,
   SearchSourceFilter,
   SearchWorkerRequest,
   SearchWorkerResponse,
@@ -31,11 +32,85 @@ const SEARCHABLE: EntityType[] = [
   'book',
 ];
 
+export interface SearchResult {
+  hits: SearchDoc[];
+  /** Matches the source filter dropped, so callers can offer to show them. */
+  hiddenCount: number;
+}
+
+const EMPTY_RESULT: SearchResult = { hits: [], hiddenCount: 0 };
+
+/** A failure the worker reported about itself, tagged with what it was doing. */
+class SearchWorkerError extends Error {
+  readonly phase: SearchErrorPhase;
+  constructor(message: string, phase: SearchErrorPhase) {
+    super(message);
+    this.name = 'SearchWorkerError';
+    this.phase = phase;
+  }
+}
+
 let worker: Worker | null = null;
+/**
+ * Bumped every time the worker is replaced. A request holds the generation it
+ * was sent under, so a stale timeout cannot terminate the healthy worker that
+ * replaced its own.
+ */
+let workerGeneration = 0;
 let readyPromise: Promise<void> | null = null;
 let indexedSignature = '';
 let queryId = 0;
 const pending = new Map<number, (result: SearchResult) => void>();
+
+/** Settle every in-flight query empty. Used when the worker can no longer answer. */
+function settlePending(): void {
+  for (const [id, resolve] of pending) {
+    resolve(EMPTY_RESULT);
+    pending.delete(id);
+  }
+}
+
+/** Called when the worker is lost, so a view can drop to its error + retry. */
+const lost = new Set<() => void>();
+
+/** Subscribe to worker loss. Returns the unsubscribe. */
+export function onSearchIndexLost(fn: () => void): () => void {
+  lost.add(fn);
+  return () => {
+    lost.delete(fn);
+  };
+}
+
+/**
+ * Throw the worker away so the next request builds a fresh one.
+ *
+ * A worker that failed to start, died, or stopped answering never recovers,
+ * and the handle stays cached forever: without this, one dead worker turns
+ * every later build into a 30-second timeout and every query into a 5-second
+ * one, for the rest of the session. Resetting the signature is part of it:
+ * the next `ensureSearchIndex` has to re-attempt rather than hand back the
+ * promise that was settled against the corpse.
+ *
+ * `generation` is the worker the caller was talking to. A late timeout from a
+ * request that belonged to a worker already replaced would otherwise terminate
+ * the live one and null a newer `readyPromise`, leaving a search box that says
+ * it is ready and answers nothing.
+ */
+function recycleWorker(generation: number): void {
+  if (generation !== workerGeneration) return;
+  if (worker !== null) {
+    worker.terminate();
+    worker = null;
+  }
+  workerGeneration++;
+  readyPromise = null;
+  indexedSignature = '';
+  settlePending();
+  // Nothing else is watching the worker, so the view that offers the retry has
+  // to be told: without this the search box stays enabled, keeps saying it is
+  // ready, and answers every query with nothing.
+  for (const fn of [...lost]) fn();
+}
 
 function getWorker(): Worker {
   if (worker === null) {
@@ -47,8 +122,19 @@ function getWorker(): Worker {
       if (msg.kind === 'results') {
         pending.get(msg.id)?.({ hits: msg.hits, hiddenCount: msg.hiddenCount });
         pending.delete(msg.id);
+      } else if (msg.kind === 'error' && msg.phase === 'query' && msg.id !== undefined) {
+        // A record the index cannot read is one query's problem, not the app's.
+        // The answer already came back, so the caller settles now rather than
+        // spinning out the full query timeout over it.
+        pending.get(msg.id)?.(EMPTY_RESULT);
+        pending.delete(msg.id);
       }
     };
+    // A worker that dies (a chunk that won't load offline, an OOM kill) or is
+    // handed a message it cannot decode reports it here and nowhere else.
+    const generation = workerGeneration;
+    worker.onerror = () => recycleWorker(generation);
+    worker.onmessageerror = () => recycleWorker(generation);
   }
   return worker;
 }
@@ -84,6 +170,80 @@ function hashString(s: string): string {
 /** A build/load that produces no ready/error within this window is failed. */
 const BUILD_TIMEOUT_MS = 30_000;
 
+/**
+ * Send one index request and wait for the worker to finish it.
+ *
+ * Rejects on every way the request can fail rather than only the one the
+ * worker is well enough to report: a reported error, a worker that died
+ * mid-request, and silence. Callers (`useSearchState`) can then show an error
+ * and a retry instead of an index that silently never becomes ready.
+ */
+function sendIndexRequest(msg: SearchWorkerRequest): Promise<string | undefined> {
+  const w = getWorker();
+  const generation = workerGeneration;
+  return new Promise<string | undefined>((resolve, reject) => {
+    const stop = () => {
+      clearTimeout(timer);
+      w.removeEventListener('message', onMessage);
+      w.removeEventListener('error', onDead);
+      w.removeEventListener('messageerror', onDead);
+    };
+    const timer = setTimeout(() => {
+      stop();
+      // Nothing came back in thirty seconds, so nothing will: the next attempt
+      // deserves a worker that might answer.
+      recycleWorker(generation);
+      reject(new Error('search index build timed out'));
+    }, BUILD_TIMEOUT_MS);
+    const onMessage = (ev: MessageEvent<SearchWorkerResponse>) => {
+      if (ev.data.kind === 'ready') {
+        stop();
+        resolve(ev.data.serialized);
+      } else if (ev.data.kind === 'error' && ev.data.phase !== 'query') {
+        stop();
+        reject(new SearchWorkerError(ev.data.message || 'search worker failed', ev.data.phase));
+      }
+    };
+    const onDead = (ev: Event) => {
+      stop();
+      recycleWorker(generation);
+      reject(
+        new Error(
+          ev instanceof ErrorEvent && ev.message !== '' ? ev.message : 'the search worker stopped',
+        ),
+      );
+    };
+    w.addEventListener('message', onMessage);
+    w.addEventListener('error', onDead);
+    w.addEventListener('messageerror', onDead);
+    w.postMessage(msg);
+  });
+}
+
+/** One index request at a time, in the order they were asked for. */
+let indexQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Queue an index request behind whatever the worker is already doing.
+ *
+ * A `ready` message says nothing about which request it answers, so two builds
+ * in flight at once resolve each other: the registry changes while the first
+ * build is still running (every homebrew save invalidates it), the first
+ * `ready` settles both callers, and the second signature's cache row is
+ * written holding the first signature's index. That row decodes perfectly, so
+ * nothing downstream can notice, and the app serves a stale corpus until the
+ * data tag moves. Serializing the requests is what makes an untagged `ready`
+ * unambiguous.
+ */
+function requestIndex(msg: SearchWorkerRequest): Promise<string | undefined> {
+  const run = indexQueue.then(
+    () => sendIndexRequest(msg),
+    () => sendIndexRequest(msg),
+  );
+  indexQueue = run.catch(() => undefined);
+  return run;
+}
+
 /** Build (or rehydrate) the index for the given registry + cache signature. */
 export function ensureSearchIndex(registry: EntityRegistry, signature: string): Promise<void> {
   if (signature === indexedSignature && readyPromise !== null) return readyPromise;
@@ -91,34 +251,24 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
   const key = `${getActiveTag()}|official|${hashString(signature)}`;
 
   const attempt = (async () => {
-    const w = getWorker();
     const cached = await db.searchIndexes.get(key);
-    // Reject on worker error or timeout so callers (useSearchState) can show an
-    // error + retry instead of an index that silently never becomes ready.
-    const serialized = await new Promise<string | undefined>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        w.removeEventListener('message', onReady);
-        reject(new Error('search index build timed out'));
-      }, BUILD_TIMEOUT_MS);
-      const onReady = (ev: MessageEvent<SearchWorkerResponse>) => {
-        if (ev.data.kind === 'ready') {
-          clearTimeout(timer);
-          w.removeEventListener('message', onReady);
-          resolve(ev.data.serialized);
-        } else if (ev.data.kind === 'error') {
-          clearTimeout(timer);
-          w.removeEventListener('message', onReady);
-          reject(new Error(ev.data.message || 'search worker failed'));
-        }
-      };
-      w.addEventListener('message', onReady);
-      send(
-        cached
-          ? { kind: 'load', serialized: cached.json }
-          : { kind: 'build', docs: docsFrom(registry) },
-      );
-    });
-    if (!cached && serialized !== undefined) {
+    if (cached !== undefined) {
+      try {
+        await requestIndex({ kind: 'load', serialized: cached.json });
+        return;
+      } catch (err) {
+        // A cached index that will not decode is the one failure search can
+        // repair by itself, and the only one worth repairing here: the docs it
+        // was built from are still in the registry, so the poisoned row goes
+        // and the index is built again below. Before this, a half-written or
+        // format-shifted cache entry failed the same way on every retry and
+        // every reload, and search stayed dead until the data tag changed.
+        if (!(err instanceof SearchWorkerError) || err.phase !== 'load') throw err;
+        await db.searchIndexes.delete(key);
+      }
+    }
+    const serialized = await requestIndex({ kind: 'build', docs: docsFrom(registry) });
+    if (serialized !== undefined) {
       // Keep only the latest index for this tag.
       await db.searchIndexes.where('key').startsWith(`${getActiveTag()}|official|`).delete();
       await db.searchIndexes.put({ key, json: serialized });
@@ -140,14 +290,6 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
 /** A query with no worker response within this window resolves empty. */
 const QUERY_TIMEOUT_MS = 5000;
 
-export interface SearchResult {
-  hits: SearchDoc[];
-  /** Matches the source filter dropped, so callers can offer to show them. */
-  hiddenCount: number;
-}
-
-const EMPTY_RESULT: SearchResult = { hits: [], hiddenCount: 0 };
-
 export async function searchAll(
   q: string,
   opts: { limit?: number; sources?: SearchSourceFilter } = {},
@@ -162,10 +304,7 @@ export async function searchAll(
   const id = ++queryId;
   // Supersede any in-flight queries: settle them empty so a slower, older
   // response can't win, and no resolver is left dangling.
-  for (const [oldId, resolve] of pending) {
-    resolve(EMPTY_RESULT);
-    pending.delete(oldId);
-  }
+  settlePending();
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pending.delete(id);

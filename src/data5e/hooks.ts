@@ -3,7 +3,7 @@ import { useDataStatus } from '@/stores/dataStatus';
 import type { EntityRegistry } from './normalize';
 import type { PackId } from './packs';
 import { ensureRegistry, getRegistry, registrySignature } from './registry';
-import { ensureSearchIndex } from './search/client';
+import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';
 
@@ -116,6 +116,19 @@ export function useSearchState(registry: EntityRegistry | null): SearchState {
       alive = false;
     };
   }, [registry, nonce]);
+
+  // A worker that dies after the index is ready leaves nothing to fail: the
+  // build already resolved, so without this the box keeps offering to search
+  // and answers every query with nothing. Dropping to `error` is what puts the
+  // retry that rebuilds it back in front of the user.
+  useEffect(
+    () =>
+      onSearchIndexLost(() => {
+        setStatus('error');
+        setError('the search index was lost');
+      }),
+    [],
+  );
 
   return {
     status,

@@ -7,13 +7,20 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+type Json = Record<string, unknown>;
+
 const { saveEditable, invalidateRegistry, row } = vi.hoisted(() => ({
   saveEditable: vi.fn(),
   invalidateRegistry: vi.fn(),
   row: {
     id: 'f1',
     fileName: 'brews.json',
-    json: { _meta: { sources: [{ full: 'My Brews', json: 'HB' }] }, item: [{ name: 'Old blade' }] },
+    // `item` is typed as loosely as the file is: these rows come back from
+    // IndexedDB, and nothing ever checked that their entries are entities.
+    json: {
+      _meta: { sources: [{ full: 'My Brews', json: 'HB' }] },
+      item: [{ name: 'Old blade' }] as unknown[],
+    },
     editable: true,
     sourceIds: ['HB'],
     counts: { item: 1 },
@@ -195,5 +202,97 @@ describe('BuilderPage writes', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('press Save to try again');
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
+
+describe('BuilderPage reads a file it did not write', () => {
+  // Homebrew files are only ever checked for a `_meta` block, so an entity
+  // array can hold anything JSON can: a null left by a hand-edited file, a
+  // bare string, an entry whose name is a number. Reading one of those used to
+  // throw inside the row list, and the failure went all the way to the route
+  // boundary: the whole builder was replaced by an error screen, taking with
+  // it the delete button that was the only way to fix the file.
+  it('keeps a record it cannot read from taking the page down with it', () => {
+    row.json.item = [null, { name: 'Old blade' }];
+    renderBuilder();
+
+    expect(screen.getByRole('button', { name: 'Old blade' })).toBeTruthy();
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
+  });
+
+  it('deletes an unreadable record by position and leaves the rest alone', async () => {
+    row.json.item = ['just a string', { name: 'Old blade' }];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: Array<{ name: string }> }];
+    expect(written.item).toEqual([{ name: 'Old blade' }]);
+    expect(noticeStore.getState().notice).toMatchObject({
+      title: 'Deleted that unreadable entry',
+    });
+  });
+
+  it('refuses a positional delete once a named record moved into the slot', async () => {
+    row.json.item = [null, { name: 'Old blade' }];
+    renderBuilder();
+
+    row.json.item = [{ name: 'New sword' }, { name: 'Old blade' }];
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+
+    await waitFor(() =>
+      expect(noticeStore.getState().notice).toMatchObject({
+        title: 'That entry can no longer be found',
+      }),
+    );
+    expect(saveEditable).not.toHaveBeenCalled();
+  });
+
+  it('deletes the nameless record it was aimed at, not the one that took its slot', async () => {
+    // The dangerous shift, because "the slot still holds something nameless"
+    // looks exactly like a match: removing the entry above these two moves
+    // both up one, and a delete aimed at the first would take the second.
+    row.json.item = [{ name: 'Keep me' }, 'first bad', 'second bad'];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    row.json.item = ['first bad', 'second bad'];
+    // Index 1 as rendered: the row showing 'first bad'.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1] as HTMLElement);
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: unknown[] }];
+    expect(written.item).toEqual(['second bad']);
+  });
+
+  it('saves an unnamed record over itself, not over the one that took its place', async () => {
+    // Two records the file gives no usable name, so neither can be found by
+    // one. Writing back at the remembered position would put the edit on the
+    // wrong record and destroy it.
+    row.json.item = [{ name: 'Keep me' }, { name: 123 }, { name: 456 }];
+    saveEditable.mockResolvedValue(undefined);
+    renderBuilder();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Unnamed item' })[0] as HTMLElement);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Fixed blade' } });
+    row.json.item = [{ name: 123 }, { name: 456 }];
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
+    const [, written] = saveEditable.mock.calls[0] as [string, { item: Json[] }];
+    // The edit lands on the record it was opened on, wherever that moved to,
+    // and {name: 456} is untouched.
+    expect(written.item).toEqual([expect.objectContaining({ name: 'Fixed blade' }), { name: 456 }]);
+  });
+
+  it('says a record has no name rather than inventing one', () => {
+    // `String(e.name)` used to label these "undefined" and then use that
+    // string as the entity's identity for the next save or delete.
+    row.json.item = [{ rarity: 'rare' }];
+    renderBuilder();
+
+    expect(screen.getByRole('button', { name: 'Unnamed item' })).toBeTruthy();
   });
 });

@@ -25,11 +25,21 @@ export type SearchWorkerRequest =
   // at rank 31.
   | { kind: 'query'; id: number; q: string; limit?: number; sources?: SearchSourceFilter };
 
+/**
+ * What the worker was doing when it failed. The client acts on this rather
+ * than on the message text: a `load` failure means the cached index is
+ * undecodable and should be thrown away and rebuilt, while a `build` or
+ * `query` failure says nothing about the cache and must not cost the user a
+ * working index.
+ */
+export type SearchErrorPhase = 'load' | 'build' | 'query';
+
 export type SearchWorkerResponse =
   | { kind: 'ready'; serialized?: string }
   /** `hiddenCount` is how many matches `sources` dropped, itself capped at `limit`. */
   | { kind: 'results'; id: number; hits: SearchDoc[]; hiddenCount: number }
-  | { kind: 'error'; message: string };
+  /** `id` is set when the failure was a query, so that one caller can settle. */
+  | { kind: 'error'; message: string; phase: SearchErrorPhase; id?: number };
 
 export const SEARCH_FIELDS = ['name'] as const;
 export const STORE_FIELDS = ['type', 'uid', 'name', 'source'] as const;

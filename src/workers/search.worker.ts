@@ -1,6 +1,7 @@
 import MiniSearch from 'minisearch';
 import type {
   SearchDoc,
+  SearchErrorPhase,
   SearchWorkerRequest,
   SearchWorkerResponse,
 } from '@/data5e/search/protocol';
@@ -41,6 +42,18 @@ self.onmessage = (ev: MessageEvent<SearchWorkerRequest>) => {
       }
     }
   } catch (err) {
-    post({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+    // Say what failed, not just that something did. A serialized index that no
+    // longer decodes (a truncated write, a MiniSearch format change) is the one
+    // failure the client can repair on its own, and it can only tell that from
+    // the phase: the same message text arrives for a build that ran out of
+    // memory, where throwing the cache away would cost a good index for nothing.
+    const phase: SearchErrorPhase =
+      msg.kind === 'load' ? 'load' : msg.kind === 'build' ? 'build' : 'query';
+    post({
+      kind: 'error',
+      phase,
+      id: msg.kind === 'query' ? msg.id : undefined,
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 };
