@@ -3,12 +3,18 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Control the registry the hook awaits.
-const { getRegistry, ensureSearchIndex, lost } = vi.hoisted(() => ({
-  getRegistry: vi.fn(),
-  ensureSearchIndex: vi.fn(),
-  /** Stands in for the client's worker-loss subscription. */
-  lost: new Set<() => void>(),
-}));
+const { getRegistry, ensureSearchIndex, lost, ensureTypePacks, repairTypePacks } = vi.hoisted(
+  () => ({
+    getRegistry: vi.fn(),
+    ensureSearchIndex: vi.fn(),
+    ensureTypePacks: vi.fn(),
+    repairTypePacks: vi.fn(),
+    /** Stands in for the client's worker-loss subscription. */
+    lost: new Set<() => void>(),
+  }),
+);
+
+vi.mock('./loader', () => ({ ensureTypePacks, repairTypePacks }));
 vi.mock('./registry', () => ({
   getRegistry,
   ensureRegistry: getRegistry,
@@ -26,7 +32,7 @@ vi.mock('./search/client', () => ({
 }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
-import { useRegistryState, useSearchState } from './hooks';
+import { useRegistryState, useSearchState, useTypePacks } from './hooks';
 
 const fakeRegistry = { byType: () => [], get: () => undefined } as never;
 
@@ -36,6 +42,8 @@ afterEach(() => {
   cleanup();
   getRegistry.mockReset();
   ensureSearchIndex.mockReset();
+  ensureTypePacks.mockReset().mockResolvedValue(undefined);
+  repairTypePacks.mockReset().mockResolvedValue(undefined);
   lost.clear();
   dataStatusStore.setState({ packs: {}, filesDone: 0, filesTotal: 0, phase: 'idle' });
 });
@@ -143,5 +151,78 @@ describe('useSearchState', () => {
 
     unmount();
     expect(lost.size).toBe(0);
+  });
+});
+
+describe('useTypePacks', () => {
+  it('reaches ready once this type has everything it needs', async () => {
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(ensureTypePacks).toHaveBeenCalledWith('spell');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('captures the failure the page used to drop on the floor', async () => {
+    // The library started this download with a bare `void ensureTypePacks()`,
+    // so a rejection had nowhere to land and the section simply stayed empty.
+    ensureTypePacks.mockRejectedValue(new Error('HTTP 503'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.error).toBe('HTTP 503');
+    expect(result.current.offline).toBe(false);
+  });
+
+  it('marks a failure as offline when that is what it was', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    ensureTypePacks.mockRejectedValue(new Error('Failed to fetch'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+
+    await waitFor(() => expect(result.current.offline).toBe(true));
+    onLine.mockRestore();
+  });
+
+  it('clears the offline mark once a retry succeeds', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    ensureTypePacks.mockRejectedValueOnce(new Error('Failed to fetch'));
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.offline).toBe(true));
+
+    onLine.mockReturnValue(true);
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.offline).toBe(false);
+    onLine.mockRestore();
+  });
+
+  it('repairs through the re-download, not the ordinary ensure', async () => {
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    ensureTypePacks.mockClear();
+
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledWith('spell'));
+    expect(ensureTypePacks).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the ordinary ensure after a repair', async () => {
+    // `repair` is one action, not a mode: leaving it on would throw the cache
+    // away again on the next retry, turning a hiccup into a full re-download.
+    const { result } = renderHook(() => useTypePacks('spell'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    act(() => result.current.repair());
+    await waitFor(() => expect(repairTypePacks).toHaveBeenCalledOnce());
+
+    repairTypePacks.mockClear();
+    ensureTypePacks.mockClear();
+    act(() => result.current.retry());
+    await waitFor(() => expect(ensureTypePacks).toHaveBeenCalledOnce());
+    expect(repairTypePacks).not.toHaveBeenCalled();
+  });
+
+  it('asks for nothing at all without a type', async () => {
+    const { result } = renderHook(() => useTypePacks(undefined));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(ensureTypePacks).not.toHaveBeenCalled();
   });
 });

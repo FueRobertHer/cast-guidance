@@ -16,10 +16,11 @@ vi.mock('./source', () => ({
   },
 }));
 
+import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DATA_TAG } from './config';
-import { getActiveTag, updateToTag } from './loader';
+import { ensurePack, ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
 
 /** A dataset complete enough to pass the installer's sanity check. */
 const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
@@ -107,5 +108,82 @@ describe('updateToTag failure reporting', () => {
     expect(dataStatusStore.getState()).toMatchObject({ phase: 'done', failedTag: undefined });
     expect(getActiveTag()).toBe('v2.33.0');
     expect((await db.settings.get('dataTag'))?.value).toBe('v2.33.0');
+  });
+});
+
+describe('repairTypePacks', () => {
+  it('re-downloads files an ordinary retry would skip', async () => {
+    // The case the retry cannot reach: every file this type needs is cached,
+    // so `ensurePack` finds nothing missing and returns immediately, however
+    // wrong the cached bodies are. Only dropping them turns the fetch back on.
+    fetchFile.mockImplementation(wholeMirror);
+    // Settles the installed tag first, so the rest of the test and the code
+    // under test are talking about the same one.
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(tag, 'races.json'),
+      tag,
+      path: 'races.json',
+      pack: 'essentials',
+      json: { race: [] },
+      bytes: 10,
+      fetchedAt: 1,
+    });
+    const before = await dataCacheRepo.getFile(tag, 'races.json');
+    expect((before?.json as { race: unknown[] }).race).toEqual([]);
+
+    await repairTypePacks('race');
+
+    const after = await dataCacheRepo.getFile(tag, 'races.json');
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
+  });
+
+  it('does not join a download that already decided nothing was missing', async () => {
+    // The background drain is running, which is exactly when someone is
+    // browsing the library. `ensurePack` works out what is missing when it
+    // starts and de-dupes on the pack id, so a repair that deletes the files
+    // and then awaits that same promise downloads nothing and leaves the cache
+    // emptier than it found it.
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(tag, 'races.json'),
+      tag,
+      path: 'races.json',
+      pack: 'essentials',
+      json: { race: [] },
+      bytes: 10,
+      fetchedAt: 1,
+    });
+
+    // In flight, and holding its own answer to "what is missing here?".
+    const drain = ensurePack('essentials');
+    await repairTypePacks('race');
+    await drain;
+
+    const after = await dataCacheRepo.getFile(tag, 'races.json');
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
+  });
+
+  it('leaves the cached files of another type alone', async () => {
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const tag = getActiveTag();
+    await dataCacheRepo.putFile({
+      key: dataCacheRepo.key(tag, 'items.json'),
+      tag,
+      path: 'items.json',
+      pack: 'items-full',
+      json: { item: [{ name: 'Keep me' }] },
+      bytes: 10,
+      fetchedAt: 1,
+    });
+
+    await repairTypePacks('race');
+
+    const items = await dataCacheRepo.getFile(tag, 'items.json');
+    expect((items?.json as { item: Array<{ name: string }> }).item).toEqual([{ name: 'Keep me' }]);
   });
 });

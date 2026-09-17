@@ -3,9 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
-import { useRegistry, useRegistryState, useSearchState } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
-import type { EntityRegistry, EntityType } from '@/data5e/normalize';
+import {
+  type RegistryState,
+  type TypePacksState,
+  useRegistryState,
+  useSearchState,
+  useTypePacks,
+} from '@/data5e/hooks';
+import { type EntityRegistry, type EntityType, isEntityType } from '@/data5e/normalize';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
@@ -198,18 +203,75 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
   );
 }
 
+function BackLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-fit items-center gap-1 text-sm text-ink-muted hover:text-ink"
+    >
+      <ArrowLeft size={16} /> Back
+    </button>
+  );
+}
+
+function Action({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white"
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Why this section has nothing to show, and what to press about it.
+ *
+ * One panel for both the list and the detail view, because both fail for the
+ * same three reasons and the answer is the same in each: the compendium could
+ * not be built, this type's files could not be downloaded, or the download
+ * cannot even start because the device is offline.
+ */
+function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
+  const offline = packs.offline;
+  const text =
+    reg.status === 'error'
+      ? `The compendium couldn't be loaded${reg.error !== null ? `: ${reg.error}` : ''}`
+      : offline
+        ? "You're offline, so the rest of this section can't be downloaded yet."
+        : `This section couldn't be downloaded${packs.error !== null ? `: ${packs.error}` : ''}`;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
+      role="alert"
+    >
+      <p className="min-w-0 flex-1 text-xs">
+        {text}
+        {offline && (
+          <span className="block text-ink-muted">
+            Anything already downloaded is still here to read.
+          </span>
+        )}
+      </p>
+      <Action label="Retry" onClick={reg.status === 'error' ? reg.retry : packs.retry} />
+    </div>
+  );
+}
+
 /** Sentinel values for the source dropdown, which is otherwise source codes. */
 const MY_SOURCES = '';
 const EVERY_SOURCE = '*';
 
-function TypeList({ type, registry }: { type: EntityType; registry: EntityRegistry | null }) {
+function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const [filter, setFilter] = useState('');
   const [pickedSource, setPickedSource] = useState<string>(MY_SOURCES);
   const policy = useSourcePolicy();
-
-  useEffect(() => {
-    void ensureTypePacks(type);
-  }, [type]);
+  const packs = useTypePacks(type);
+  const registry = reg.registry;
+  const failed = reg.status === 'error' || packs.status === 'error';
 
   const { items, sources, hiddenBySettings, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
@@ -257,6 +319,8 @@ function TypeList({ type, registry }: { type: EntityType; registry: EntityRegist
         <h1 className="text-xl font-bold">{TYPE_LABELS.get(type) ?? type}</h1>
         <span className="text-sm text-ink-muted">{items.length}</span>
       </header>
+      {/* An empty list and a failed download used to look identical here. */}
+      {failed && <SectionProblem reg={reg} packs={packs} />}
       <label className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
         <Search size={16} className="shrink-0 text-ink-muted" />
         <input
@@ -292,6 +356,15 @@ function TypeList({ type, registry }: { type: EntityType; registry: EntityRegist
           className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-muted"
         />
       </div>
+      {items.length === 0 && !failed && (
+        <p className="text-sm text-ink-muted">
+          {packs.status === 'loading'
+            ? 'Downloading this section…'
+            : filter.trim() !== ''
+              ? `Nothing here matches “${filter.trim()}”.`
+              : 'Nothing here yet.'}
+        </p>
+      )}
       <VirtualList
         items={items}
         className="min-h-0 flex-1"
@@ -362,22 +435,25 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
   );
 }
 
-function EntityDetail({
-  type,
-  uid,
-  registry,
-}: {
-  type: EntityType;
-  uid: string;
-  registry: EntityRegistry | null;
-}) {
+function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
   const navigate = useNavigate();
+  const packs = useTypePacks(type);
+  const registry = reg.registry;
 
-  useEffect(() => {
-    void ensureTypePacks(type);
-  }, [type]);
+  // A failure comes before a spinner. Both of these used to render "Loading…"
+  // for as long as the page was open: `useRegistry` swallowed the registry's
+  // error, and the pack download was started with a bare `void`, so neither
+  // had anywhere to report to.
+  if (reg.status === 'error' || packs.status === 'error') {
+    return (
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <BackLink onClick={() => navigate(-1)} />
+        <SectionProblem reg={reg} packs={packs} />
+      </main>
+    );
+  }
 
-  if (registry === null) {
+  if (registry === null || packs.status === 'loading') {
     return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
   }
 
@@ -388,18 +464,24 @@ function EntityDetail({
     registry.get(type, decoded);
 
   if (entity === undefined) {
+    // Everything this type needs has downloaded, so "it may not have arrived
+    // yet" is no longer an available excuse: either the link is wrong, or what
+    // did arrive is not what it should be. The second is the one the ordinary
+    // retry cannot fix, because nothing is missing for it to fetch.
     return (
       <main className="flex flex-1 flex-col gap-3 p-4">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="flex w-fit items-center gap-1 text-sm text-ink-muted hover:text-ink"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
+        <BackLink onClick={() => navigate(-1)} />
         <p className="text-sm text-ink-muted">
-          Not found: {decoded} — it may live in a pack that hasn't downloaded yet.
+          Nothing in {TYPE_LABELS.get(type)?.toLowerCase() ?? type} is called{' '}
+          <span className="font-semibold text-ink">{decoded}</span>. The link may be from an older
+          version of the app, or from a homebrew file that is no longer installed.
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Action label="Download this section again" onClick={packs.repair} />
+          <Link to={`/library/${type}`} className="text-sm text-ink-muted underline hover:text-ink">
+            Browse {TYPE_LABELS.get(type)?.toLowerCase() ?? type}
+          </Link>
+        </div>
       </main>
     );
   }
@@ -407,13 +489,7 @@ function EntityDetail({
   const facts = headerFacts(type, entity);
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
-      <button
-        type="button"
-        onClick={() => navigate(-1)}
-        className="flex w-fit items-center gap-1 text-sm text-ink-muted hover:text-ink"
-      >
-        <ArrowLeft size={16} /> Back
-      </button>
+      <BackLink onClick={() => navigate(-1)} />
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
@@ -443,13 +519,27 @@ function EntityDetail({
 
 export function Component() {
   const { type, uid } = useParams();
-  const registry = useRegistry();
+  const reg = useRegistryState();
+
+  // The `:type` segment came out of a URL, so it is a string until checked.
+  // Casting it used to produce a section with a plausible heading and nothing
+  // in it, which reads as "the app lost my data" rather than "no such page".
+  if (type !== undefined && !isEntityType(type)) {
+    return (
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <p className="text-sm text-ink-muted">
+          There is no <span className="font-semibold text-ink">{type}</span> section in the library.
+        </p>
+        <Link to="/library" className="text-sm text-ink-muted underline hover:text-ink">
+          Back to the library
+        </Link>
+      </main>
+    );
+  }
 
   if (type !== undefined && uid !== undefined) {
-    return <EntityDetail type={type as EntityType} uid={uid} registry={registry} />;
+    return <EntityDetail type={type} uid={uid} reg={reg} />;
   }
-  if (type !== undefined) {
-    return <TypeList type={type as EntityType} registry={registry} />;
-  }
-  return <LibraryHome registry={registry} />;
+  if (type !== undefined) return <TypeList type={type} reg={reg} />;
+  return <LibraryHome registry={reg.registry} />;
 }

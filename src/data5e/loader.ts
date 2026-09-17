@@ -284,26 +284,52 @@ export async function downloadAllPacks(): Promise<void> {
   }
 }
 
-/** Ensure every pack an entity type draws from (e.g. all spell sources). */
-export async function ensureTypePacks(type: string): Promise<void> {
-  await ensurePack('essentials');
+/** Every pack an entity type draws from (e.g. all spell sources). */
+export async function packsForType(type: string): Promise<PackId[]> {
   if (type === 'spell') {
-    const packs = (await allPackIds()).filter((p) => p.startsWith('spells:'));
-    await Promise.all(packs.map((p) => ensurePack(p)));
-    return;
+    return ['essentials', ...(await allPackIds()).filter((p) => p.startsWith('spells:'))];
   }
   if (type === 'class' || type === 'subclass' || type.endsWith('Feature')) {
-    const packs = (await allPackIds()).filter((p) => p.startsWith('class:'));
-    await Promise.all(packs.map((p) => ensurePack(p)));
-    return;
+    return ['essentials', ...(await allPackIds()).filter((p) => p.startsWith('class:'))];
   }
   if (type === 'item' || type === 'itemGroup' || type === 'magicvariant') {
-    await ensurePack('items-full');
-    return;
+    return ['essentials', 'items-full'];
   }
-  if (type === 'variantrule' || type === 'book') {
-    await ensurePack('library-extras');
-  }
+  if (type === 'variantrule' || type === 'book') return ['essentials', 'library-extras'];
+  return ['essentials'];
+}
+
+/** Ensure every pack an entity type draws from. */
+export async function ensureTypePacks(type: string): Promise<void> {
+  const packs = await packsForType(type);
+  await ensurePack('essentials');
+  await Promise.all(packs.map((p) => ensurePack(p)));
+}
+
+/**
+ * Download this type's packs again from scratch.
+ *
+ * For the case the ordinary retry cannot reach: the files are cached, so
+ * nothing is missing and `ensurePack` returns immediately, but what is in them
+ * is not what the app needs (a truncated write, a body cached from a failing
+ * proxy). Dropping the files is what turns the next fetch back on.
+ *
+ * Forgetting the in-flight entries is the other half, and not an optimisation:
+ * `ensurePack` decides what is missing when it starts, and de-dupes on the
+ * pack id. A repair during the background drain, which is exactly when someone
+ * is browsing, would otherwise delete the files and then join a download that
+ * had already decided there was nothing to fetch, leaving the cache emptier
+ * than it found it.
+ */
+export async function repairTypePacks(type: string): Promise<void> {
+  // Before `activeTag` is read: every other entry point resolves the installed
+  // tag first, and a delete aimed at the tag this session happens to start
+  // with would clear files belonging to a version the app is not using.
+  await ensureTagReady();
+  const packs = await packsForType(type);
+  await dataCacheRepo.deletePacks(activeTag, packs);
+  for (const pack of packs) packInflight.delete(pack);
+  await ensureTypePacks(type);
 }
 
 /**

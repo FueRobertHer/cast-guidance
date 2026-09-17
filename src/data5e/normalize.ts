@@ -12,32 +12,44 @@ import {
   uidOf,
 } from './copyMod';
 
-export type EntityType =
-  | 'race'
-  | 'subrace'
-  | 'background'
-  | 'feat'
-  | 'optionalfeature'
-  | 'item'
-  | 'itemGroup'
-  | 'baseitem'
-  | 'itemProperty'
-  | 'itemType'
-  | 'magicvariant'
-  | 'skill'
-  | 'language'
-  | 'sense'
-  | 'action'
-  | 'condition'
-  | 'disease'
-  | 'status'
-  | 'variantrule'
-  | 'book'
-  | 'class'
-  | 'subclass'
-  | 'classFeature'
-  | 'subclassFeature'
-  | 'spell';
+/**
+ * The list and the union are one declaration, so a type added to one cannot go
+ * missing from the other. The runtime list is what lets a `:type` out of the
+ * URL be checked before it is treated as one.
+ */
+export const ENTITY_TYPES = [
+  'race',
+  'subrace',
+  'background',
+  'feat',
+  'optionalfeature',
+  'item',
+  'itemGroup',
+  'baseitem',
+  'itemProperty',
+  'itemType',
+  'magicvariant',
+  'skill',
+  'language',
+  'sense',
+  'action',
+  'condition',
+  'disease',
+  'status',
+  'variantrule',
+  'book',
+  'class',
+  'subclass',
+  'classFeature',
+  'subclassFeature',
+  'spell',
+] as const;
+
+export type EntityType = (typeof ENTITY_TYPES)[number];
+
+export function isEntityType(value: string): value is EntityType {
+  return (ENTITY_TYPES as readonly string[]).includes(value);
+}
 
 /**
  * Types a player actually browses or picks; see {@link EntityRegistry.sourceCounts}.

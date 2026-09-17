@@ -61,6 +61,22 @@ export const dataCacheRepo = {
     }
   },
 
+  /**
+   * Drop every cached file of these packs, so the next `ensurePack` fetches
+   * them again. `ensurePack` decides what is missing from the cached paths
+   * rather than the completion mark, so removing the files is what makes a
+   * re-download happen; a file that is present but wrong is otherwise
+   * indistinguishable from one that is right, and is skipped forever.
+   */
+  async deletePacks(tag: string, packs: readonly string[]): Promise<number> {
+    if (packs.length === 0) return 0;
+    return db.dataFiles
+      .where('pack')
+      .anyOf([...packs])
+      .and((row) => row.tag === tag)
+      .delete();
+  },
+
   async deleteTag(tag: string): Promise<void> {
     await db.dataFiles.where('tag').equals(tag).delete();
   },
