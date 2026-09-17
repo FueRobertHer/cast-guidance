@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { HomebrewFileRow } from '@/db/db';
+import type { HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import { collectCharacterSources, homebrewForExport } from './homebrewExport';
 
-function brew(id: string, sourceIds: string[]): HomebrewFileRow {
+function brew(id: string, sourceIds: string[]): HomebrewFile {
   return {
     id,
     fileName: `${id}.json`,

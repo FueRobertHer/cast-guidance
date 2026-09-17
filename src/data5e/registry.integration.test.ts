@@ -52,6 +52,29 @@ describe('registry rebuild on editable-homebrew edit', () => {
   });
 });
 
+describe('a homebrew row the app cannot read', () => {
+  it('is left out of the registry instead of taking it down', async () => {
+    // A row whose content is not an object threw a TypeError out of
+    // getRegistry(), so the library, the creator and every character sheet
+    // went down with it. That is not a homebrew failure.
+    const good = await homebrewRepo.createEditable('Brew', 'BRW');
+    await homebrewRepo.saveEditable(good.id, brewJson('Zap'));
+    await db.homebrewFiles.put({
+      id: 'broken',
+      fileName: 'broken.json',
+      json: null,
+      enabled: true,
+      editable: false,
+      sourceIds: ['BAD'],
+      counts: {},
+      addedAt: 2,
+    } as never);
+    invalidateRegistry();
+
+    await expect(spellNames()).resolves.toContain('Zap');
+  });
+});
+
 describe('registry rebuild as the background drain lands files', () => {
   const putDataFile = (path: string, json: unknown) =>
     dataCacheRepo.putFile({

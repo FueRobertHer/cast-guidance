@@ -50,7 +50,7 @@ describe('homebrewRepo editable files (IndexedDB-backed)', () => {
     await homebrewRepo.saveEditable(created.id, file('MB', ['One']));
     await homebrewRepo.saveEditable(created.id, file('MB', ['Two', 'Three']));
 
-    const saved = await homebrewRepo.get(created.id);
+    const { file: saved } = await homebrewRepo.getSafe(created.id);
     expect(saved?.rev).toBe(2);
     expect(saved?.counts).toEqual({ spell: 2 });
     expect(saved?.id).toBe(created.id); // identity stable across edits
@@ -69,12 +69,73 @@ describe('homebrewRepo editable files (IndexedDB-backed)', () => {
     await expect(homebrewRepo.setEnabled(created.id, false)).rejects.toThrow('no longer exists');
   });
 
-  it('enabled() returns only enabled files', async () => {
+  it('enabledSafe() returns only enabled files', async () => {
     const a = await homebrewRepo.importJson(file('A', ['x']), 'a.json');
     const b = await homebrewRepo.importJson(file('B', ['y']), 'b.json');
     await homebrewRepo.setEnabled(b.id, false);
-    const enabled = await homebrewRepo.enabled();
-    expect(enabled.map((r) => r.id)).toEqual([a.id]);
+    const enabled = await homebrewRepo.enabledSafe();
+    expect(enabled.files.map((r) => r.id)).toEqual([a.id]);
+    expect(enabled.errors).toEqual([]);
+  });
+});
+
+describe('the homebrew read boundary against the real database', () => {
+  // importJson validates what it stores, but the row read back is whatever
+  // IndexedDB holds. A direct write is the only way to reproduce that.
+  it('reports an unreadable row and keeps serving the rest', async () => {
+    const good = await homebrewRepo.importJson(file('A', ['x']), 'a.json');
+    await db.homebrewFiles.put({ id: 'broken', fileName: 'broken.json', json: null } as never);
+
+    const listed = await homebrewRepo.listSafe();
+    expect(listed.files.map((r) => r.id)).toEqual([good.id]);
+    expect(listed.errors).toEqual([
+      { id: 'broken', fileName: 'broken.json', message: expect.stringContaining('not a JSON') },
+    ]);
+
+    // And the enabled read, which is the one the registry uses.
+    const enabled = await homebrewRepo.enabledSafe();
+    expect(enabled.files.map((r) => r.id)).toEqual([good.id]);
+    expect(enabled.errors).toHaveLength(1);
+  });
+
+  it('lists newest first, including rows an ordered read would never see', async () => {
+    // The order has to survive the read changing. Dexie's reversed traversal
+    // broke ties on the primary key descending, and a same-millisecond import
+    // is reachable: a character import writes several rows in a loop.
+    const put = (id: string, addedAt: number | undefined) =>
+      db.homebrewFiles.put({
+        id,
+        fileName: `${id}.json`,
+        json: {},
+        enabled: true,
+        editable: false,
+        sourceIds: [],
+        counts: {},
+        addedAt,
+      } as never);
+    await put('c', 5);
+    await put('a', 5);
+    await put('b', 9);
+    await put('no-timestamp', undefined);
+
+    const { files, errors } = await homebrewRepo.listSafe();
+    expect(errors).toEqual([]);
+    // b is newest; c and a tie and break on id descending; the row with no
+    // timestamp is last rather than missing, which is the whole reason this
+    // read no longer goes through the index.
+    expect(files.map((f) => f.id)).toEqual(['b', 'c', 'a', 'no-timestamp']);
+  });
+
+  it('tells a file that cannot be read apart from one that is not there', async () => {
+    await db.homebrewFiles.put({ id: 'broken', fileName: 'broken.json', json: 7 } as never);
+
+    const broken = await homebrewRepo.getSafe('broken');
+    expect(broken.file).toBeUndefined();
+    expect(broken.error?.fileName).toBe('broken.json');
+
+    const missing = await homebrewRepo.getSafe('never-existed');
+    expect(missing.file).toBeUndefined();
+    expect(missing.error).toBeUndefined();
   });
 });
 

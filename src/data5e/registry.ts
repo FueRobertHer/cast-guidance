@@ -85,9 +85,11 @@ export function homebrewSourceNames(
  * in memory. That was most of the delay before a page could paint.
  */
 export async function getRegistry(): Promise<EntityRegistry> {
-  const [paths, brews] = await Promise.all([
+  const [paths, { files: brews }] = await Promise.all([
     dataCacheRepo.cachedPaths(getActiveTag()),
-    homebrewRepo.enabled(),
+    // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
+    // to throw out of here, and every view needs the compendium.
+    homebrewRepo.enabledSafe(),
   ]);
   const signature = computeRegistrySignature(paths, brews);
   if (current !== null && signature === currentSignature) return current;
@@ -99,7 +101,7 @@ export async function getRegistry(): Promise<EntityRegistry> {
   setHomebrewSourceNames(homebrewSourceNames(brews));
   const reg = normalizeDataset(files);
   const brewMap = new Map<string, Record<string, unknown>>();
-  for (const b of brews) brewMap.set(b.id, b.json as Record<string, unknown>);
+  for (const b of brews) brewMap.set(b.id, b.json);
   mergeHomebrew(reg, brewMap);
   current = reg;
   currentSignature = signature;

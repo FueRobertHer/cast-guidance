@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { History } from 'lucide-react';
-import { db } from '@/db/db';
+import { historyRepo } from '@/db/historyRepo';
 import { characterSessionStore } from '@/stores/characterSession';
 import { Sheet } from '@/ui/sheet';
 
@@ -14,14 +14,8 @@ function timeLabel(at: number): string {
 
 /** Version history: every change is snapshotted; any state can be restored. */
 export function HistoryDrawer({ charId }: { charId: string }) {
-  const rows = useLiveQuery(
-    async () => {
-      const list = await db.characterHistory.where('charId').equals(charId).sortBy('at');
-      return list.reverse();
-    },
-    [charId],
-    [],
-  );
+  // `historyRepo.list` already had this exact query; this was a second copy.
+  const rows = useLiveQuery(() => historyRepo.list(charId), [charId], []);
 
   return (
     <Sheet.Root>

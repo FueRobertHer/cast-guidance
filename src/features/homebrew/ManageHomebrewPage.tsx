@@ -1,11 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
-import { db, type HomebrewFileRow } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
@@ -13,10 +12,10 @@ import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
   const navigate = useNavigate();
-  const rows = useLiveQuery(
-    async () => db.homebrewFiles.orderBy('addedAt').reverse().toArray(),
-    [],
-  );
+  // Unreadable files are reported here, the one screen that can remove them.
+  const read = useLiveQuery(() => homebrewRepo.listSafe(), []);
+  const rows = read?.files;
+  const readErrors = read?.errors ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState<string>();
@@ -60,19 +59,31 @@ export function Component() {
   };
 
   /**
-   * Counts are recomputed from content on every write, but the row is still
-   * whatever IndexedDB hands back: a row written by an older schema, or one
-   * that came back damaged, has no counts to spread over a template string.
+   * Removing a file, from a row the page can render and from one it cannot: an
+   * unreadable file is the one you most want gone, and the id is all a delete
+   * needs, which the boundary hands over even when it refuses the rest.
    */
-  const summary = (r: HomebrewFileRow) => {
-    const counts: unknown = r.counts;
-    if (typeof counts !== 'object' || counts === null) return 'contents unreadable';
-    return (
-      Object.entries(counts)
-        .map(([k, v]) => `${String(v)} ${k}`)
-        .join(' · ') || 'no recognized entities'
-    );
+  const remove = async (id: string, name: string) => {
+    const ok = await askConfirm({
+      title: `Remove "${name}"?`,
+      detail: 'Characters using it will show warnings.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await homebrewRepo.delete(id);
+      invalidateRegistry();
+    } catch (err) {
+      notifyFailure('Remove', err);
+    }
   };
+
+  /** Counts are a plain record by the time a file is here: see the boundary. */
+  const summary = (r: HomebrewFile) =>
+    Object.entries(r.counts)
+      .map(([k, v]) => `${String(v)} ${k}`)
+      .join(' · ') || 'no recognized entities';
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
@@ -157,6 +168,14 @@ export function Component() {
         {status !== undefined && <p className="text-xs text-amber-300">{status}</p>}
       </div>
 
+      {readErrors.length > 0 && (
+        <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">
+          {readErrors.length} file{readErrors.length > 1 ? 's' : ''} on this device could not be
+          read and {readErrors.length > 1 ? 'are' : 'is'} not in use. The rest of your homebrew is
+          unaffected.
+        </p>
+      )}
+
       <div className="flex flex-col gap-2">
         {(rows ?? []).map((r) => (
           // A file the list cannot render is exactly the file you came here to
@@ -213,19 +232,7 @@ export function Component() {
               <button
                 type="button"
                 title="Delete"
-                onClick={async () => {
-                  const ok = await askConfirm({
-                    title: `Remove "${r.fileName}"?`,
-                    detail: 'Characters using it will show warnings.',
-                    confirmLabel: 'Remove',
-                    danger: true,
-                  });
-                  if (ok)
-                    void homebrewRepo
-                      .delete(r.id)
-                      .then(invalidateRegistry)
-                      .catch((err: unknown) => notifyFailure('Remove', err));
-                }}
+                onClick={() => void remove(r.id, r.fileName)}
                 className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
               >
                 <Trash2 size={15} />
@@ -233,7 +240,35 @@ export function Component() {
             </div>
           </DecodeBoundary>
         ))}
-        {rows !== undefined && rows.length === 0 && (
+        {readErrors.map((e) => {
+          // A local binding, so the id stays narrowed inside the handler.
+          const id = e.id;
+          return (
+            <div
+              key={id ?? e.fileName ?? e.message}
+              className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-surface p-3"
+            >
+              <AlertTriangle size={15} className="shrink-0 text-amber-300" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">
+                  {e.fileName ?? 'An unnamed file'}
+                </div>
+                <div className="truncate text-xs text-ink-muted">{e.message}</div>
+              </div>
+              {id !== undefined && (
+                <button
+                  type="button"
+                  title="Delete"
+                  onClick={() => void remove(id, e.fileName ?? 'this file')}
+                  className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {rows !== undefined && rows.length === 0 && readErrors.length === 0 && (
           <p className="text-sm text-ink-muted">No homebrew imported yet.</p>
         )}
       </div>

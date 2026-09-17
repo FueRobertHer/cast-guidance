@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { invalidateRegistry } from '@/data5e/registry';
-import { db } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { type HomebrewFile, type HomebrewReadError, homebrewRepo } from '@/db/homebrewRepo';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
@@ -23,6 +22,12 @@ import {
 import { COMPLEX, readSpellGrant, type SpellGrant, writeSpellGrant } from './spellGrant';
 
 type Json = Record<string, unknown>;
+
+/** What the file read resolves to; `undefined` from the hook is still loading. */
+interface HomebrewRead {
+  file?: HomebrewFile;
+  error?: HomebrewReadError;
+}
 
 /** Builder v1 covers the flat schemas; the rest still import fine. */
 const BUILDABLE = [
@@ -659,8 +664,11 @@ function refLabel(ref: EntityRef): string {
 
 export function Component() {
   const { fileId } = useParams();
-  const row = useLiveQuery(
-    async () => (fileId !== undefined ? db.homebrewFiles.get(fileId) : undefined),
+  // The raw read this replaced returned `undefined` both for "not loaded yet"
+  // and for "no such file", so a file deleted in another tab left this page
+  // loading forever.
+  const read = useLiveQuery<HomebrewRead>(
+    async () => (fileId === undefined ? {} : homebrewRepo.getSafe(fileId)),
     [fileId],
   );
   /** `ref` is how the form finds its subject again; null means a new entity. */
@@ -678,7 +686,17 @@ export function Component() {
     retryDelete?: { type: BuildType; ref: EntityRef };
   }>();
 
-  if (row === undefined) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+  if (read === undefined) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+  const row = read.file;
+  if (row === undefined) {
+    return (
+      <main className="p-4 text-sm text-ink-muted" role="alert">
+        {read.error === undefined
+          ? 'This homebrew file is no longer on this device.'
+          : `This homebrew file could not be read: ${read.error.message}. You can remove it from the homebrew list.`}
+      </main>
+    );
+  }
   if (!row.editable) {
     return (
       <main className="p-4 text-sm text-ink-muted">
@@ -687,7 +705,7 @@ export function Component() {
     );
   }
 
-  const json = row.json as Json;
+  const json = row.json;
   const sourceId = row.sourceIds[0] ?? 'HB';
   const retryDelete = failure?.retryDelete;
 

@@ -20,7 +20,7 @@ import {
   sourceGroup,
   sourceName,
 } from '@/data5e/sourceNames';
-import { db } from '@/db/db';
+import { homebrewRepo } from '@/db/homebrewRepo';
 import { notifyFailure } from '@/stores/notices';
 
 /** Homebrew gets its own heading rather than falling into "everything else". */
@@ -59,7 +59,7 @@ export function SourcesSection() {
   const registry = useRegistry();
   const policy = useSourcePolicy();
   const brewSources = useLiveQuery(
-    async () => new Set((await db.homebrewFiles.toArray()).flatMap((r) => r.sourceIds)),
+    async () => new Set((await homebrewRepo.listSafe()).files.flatMap((r) => r.sourceIds)),
     [],
   );
 

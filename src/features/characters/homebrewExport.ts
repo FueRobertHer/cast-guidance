@@ -1,13 +1,16 @@
 /**
  * Scope and shape the homebrew embedded in a character export (IMP-002).
  *
+ * Takes files that have crossed the read boundary, not raw stored rows: an
+ * export is read back by another device.
+ *
  * Previously every export shipped *all* enabled homebrew plus the full local
  * `HomebrewFileRow` (with local-only fields like `enabled`, `editable`,
  * `addedAt`, `rev`). This selects only the homebrew the character actually
  * depends on and maps it to a minimal public DTO. Import recomputes identity
  * and metadata from `json`, so the DTO only needs the file content + a name.
  */
-import type { HomebrewFileRow } from '@/db/db';
+import type { HomebrewFile } from '@/db/homebrewRepo';
 import type { CharacterDoc, EntityRef } from '@/engine/types';
 
 /** Public export shape for one embedded homebrew file. */
@@ -50,20 +53,20 @@ export function collectCharacterSources(doc: CharacterDoc): Set<string> {
  */
 export function selectHomebrewForExport(
   doc: CharacterDoc,
-  enabled: readonly HomebrewFileRow[],
-): HomebrewFileRow[] {
+  enabled: readonly HomebrewFile[],
+): HomebrewFile[] {
   const sources = collectCharacterSources(doc);
   return enabled.filter((row) => row.sourceIds.some((s) => sources.has(s.toLowerCase())));
 }
 
-export function toHomebrewExportDTO(row: HomebrewFileRow): HomebrewExportDTO {
+export function toHomebrewExportDTO(row: HomebrewFile): HomebrewExportDTO {
   return { fileName: row.fileName, json: row.json };
 }
 
 /** Select + shape the homebrew to embed in an export. */
 export function homebrewForExport(
   doc: CharacterDoc,
-  enabled: readonly HomebrewFileRow[],
+  enabled: readonly HomebrewFile[],
 ): HomebrewExportDTO[] {
   return selectHomebrewForExport(doc, enabled).map(toHomebrewExportDTO);
 }
