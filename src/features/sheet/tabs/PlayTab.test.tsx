@@ -2,7 +2,7 @@
 // FIX-003: the HP damage/heal controls apply an exact, deterministic amount and
 // roll exactly one concentration save per gesture. (The old single/double-tap
 // combo double-fired: a "double-tap −5" applied −6 and rolled up to three saves.)
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
@@ -17,9 +17,37 @@ import { Component as PlayTab } from './PlayTab';
 // usually does NOT take. The synthetic world stands in for the compendium.
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
 
+// The cast chooser is a bottom sheet mounted by AppShell, which this router does
+// not render; mocking it puts the offered options themselves under assertion and
+// lets a test answer the prompt.
+const dialogs = vi.hoisted(() => ({
+  askChoice: vi.fn<(req: ChoiceRequest) => Promise<string | null>>(),
+}));
+vi.mock('@/ui/dialogs', () => ({
+  askChoice: dialogs.askChoice,
+  askConfirm: () => Promise.resolve(false),
+  askNumber: () => Promise.resolve(null),
+  askText: () => Promise.resolve(null),
+}));
+
+interface ChoiceRequest {
+  title: string;
+  detail?: string;
+  options: Array<{ id: string; label: string; hint?: string }>;
+}
+
+/** The options the last chooser offered. */
+const offered = () => {
+  const req = dialogs.askChoice.mock.calls.at(-1)?.[0];
+  return (req?.options ?? []).map((o) => `${o.label} | ${o.hint ?? ''}`);
+};
+/** Answer the next chooser with the option carrying this id. */
+const answerWith = (id: string) => dialogs.askChoice.mockResolvedValueOnce(id);
+
 afterEach(() => {
   cleanup();
   rollLogStore.getState().clear();
+  dialogs.askChoice.mockReset();
 });
 
 /** Render the Play tab for a level-3 Warrior at full HP; returns a live doc getter. */
@@ -142,3 +170,261 @@ function sheet_key(doc: CharacterDoc): string {
   const derived = deriveSheet(doc, makeTestContext());
   return derived.grantedSpells.find((g) => g.name === 'searing bolt')?.resourceKey ?? '';
 }
+
+/**
+ * A level-5 sorcerer who knows one scaling level-1 spell, with slots [4,3,2] and
+ * a five-point Font of Magic pool: the shipped non-slot cast source.
+ */
+function renderSorcerer(mutate?: (doc: CharacterDoc) => void, build?: (doc: CharacterDoc) => void) {
+  const doc = newCharacterDoc('s1', 'Sparks', 't');
+  doc.abilities.method = 'manual';
+  doc.abilities.base = { str: 10, dex: 12, con: 12, int: 10, wis: 10, cha: 16 };
+  doc.classes = [
+    {
+      ref: { name: 'Sorcerer', source: 'TST' },
+      levels: 5,
+      hp: ['avg', 'avg', 'avg', 'avg', 'avg'],
+    },
+  ];
+  const bolt = { name: 'Searing Bolt', source: 'TST' };
+  doc.spellcasting = { 'sorcerer|tst': { known: [bolt], prepared: [bolt] } };
+  // "build" changes what the sheet is derived FROM; "mutate" changes play state.
+  build?.(doc);
+  const sheet = deriveSheet(doc, makeTestContext());
+  doc.play.currentHp = sheet.maxHp.value;
+  doc.play.hpInitialized = true;
+  mutate?.(doc);
+
+  let current = doc;
+  const update = (recipe: (d: CharacterDoc) => void) => {
+    const d = structuredClone(current);
+    recipe(d);
+    current = d;
+    rerender();
+  };
+  const ctxValue = () =>
+    ({
+      doc: current,
+      sheet: deriveSheet(current, makeTestContext()),
+      update,
+      loadStatus: 'ready',
+      missing: false,
+      error: null,
+      saveStatus: 'saved',
+      retryLoad: () => undefined,
+    }) as unknown as CharacterSheetState;
+  const routes = () => [
+    {
+      path: '/',
+      element: <Outlet context={ctxValue()} />,
+      children: [{ index: true, element: <PlayTab /> }],
+    },
+  ];
+  const view = render(<RouterProvider router={createMemoryRouter(routes())} />);
+  // The doc lives outside React here, so a save has to be pushed back in for the
+  // tab to re-read it, exactly as the real character session does.
+  const rerender = () => view.rerender(<RouterProvider router={createMemoryRouter(routes())} />);
+  /** Change what the sheet is derived from, leaving play state alone. */
+  const rebuild = (recipe: (d: CharacterDoc) => void) => update(recipe);
+  return { sheet, rebuild, getDoc: () => current };
+}
+
+describe('PlayTab cast resource choice (GAME-001)', () => {
+  it('offers every slot level and every pool conversion, not just the lowest slot', async () => {
+    renderSorcerer();
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await waitFor(() => expect(dialogs.askChoice).toHaveBeenCalled());
+    expect(offered()).toEqual([
+      'Level 1 slot | 2d6 · 4 left',
+      'Level 2 slot (upcast) | 3d6 · 3 left',
+      'Level 3 slot (upcast) | 4d6 · 2 left',
+      'Level 1 slot from Sorcery Points | 2d6 · 2 points of 5 · Bonus Action to convert',
+      'Level 2 slot from Sorcery Points (upcast) | 3d6 · 3 points of 5 · Bonus Action to convert',
+      'Level 3 slot from Sorcery Points (upcast) | 4d6 · 5 points of 5 · Bonus Action to convert',
+    ]);
+  });
+
+  it('scales the roll chip to the chosen slot before the roll happens', async () => {
+    renderSorcerer();
+    expect(screen.getByRole('button', { name: '2d6' })).toBeTruthy();
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    // Choosing does not cast: it re-aims the roll chip, and the roll spends it.
+    await screen.findByRole('button', { name: '4d6' });
+    expect(screen.queryByRole('button', { name: '2d6' })).toBeNull();
+  });
+
+  it('spends the chosen slot on the roll, and returns to the automatic pick after', async () => {
+    const { getDoc } = renderSorcerer();
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    fireEvent.click(await screen.findByRole('button', { name: '4d6' }));
+
+    expect(getDoc().play.slotsSpent[2]).toBe(1); // the level 3 slot
+    expect(getDoc().play.slotsSpent[0]).toBe(0); // level 1 untouched
+    // The pick was about that cast: the next one starts from the lowest slot.
+    await screen.findByRole('button', { name: /casting with level 1 slot/i });
+    expect(screen.getByRole('button', { name: '2d6' })).toBeTruthy();
+  });
+
+  it('casts from the point pool when that is the choice, spending points and a Bonus Action', async () => {
+    const { getDoc } = renderSorcerer();
+    answerWith('pool-sorcery-points-2');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    fireEvent.click(await screen.findByRole('button', { name: '3d6' }));
+
+    expect(getDoc().play.resources).toContainEqual({ key: 'sorcery-points', used: 3 });
+    expect(getDoc().play.slotsSpent.every((n) => n === 0)).toBe(true);
+    expect(getDoc().play.turn?.action).toBe(true); // the spell
+    expect(getDoc().play.turn?.bonus).toBe(true); // converting the points
+  });
+
+  it('reaches for the pool rather than a slotless cast once the slots are gone', async () => {
+    const { getDoc } = renderSorcerer((doc) => {
+      doc.play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
+    });
+    // No slots left, but three points buy a level 2 slot: the chip says so
+    // instead of offering a cast that spends nothing.
+    await screen.findByRole('button', { name: /casting with level 1 slot from sorcery points/i });
+    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    expect(getDoc().play.resources).toContainEqual({ key: 'sorcery-points', used: 2 });
+  });
+
+  it('drops a stale pick instead of spending what the character no longer has', async () => {
+    const { getDoc } = renderSorcerer((doc) => {
+      doc.play.slotsSpent = [0, 0, 1, 0, 0, 0, 0, 0, 0]; // one level 3 slot left
+    });
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await screen.findByRole('button', { name: '4d6' });
+
+    // That last level 3 slot goes elsewhere (the slot pips) before the roll.
+    fireEvent.click(screen.getByLabelText('Level 3 slot 2'));
+    await screen.findByRole('button', { name: /casting with level 1 slot/i });
+    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    expect(getDoc().play.slotsSpent[0]).toBe(1); // fell back to level 1
+    expect(getDoc().play.slotsSpent[2]).toBe(2); // not over-spent
+  });
+});
+
+describe('PlayTab cast resource cues (GAME-001)', () => {
+  it('still shows the chip when the only thing left to spend is a conversion', async () => {
+    // Two points buys a level 1 slot and nothing else, so there is one option.
+    // With no chip the row's only control is the damage roll, and pressing it
+    // would empty the pool and take a Bonus Action with nothing said first.
+    const { getDoc } = renderSorcerer((doc) => {
+      doc.play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
+      doc.play.resources = [{ key: 'sorcery-points', used: 3 }];
+    });
+    const chip = await screen.findByRole('button', {
+      name: /casting with level 1 slot from sorcery points/i,
+    });
+    expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
+
+    // Pressing it prices the one option rather than casting it.
+    fireEvent.click(chip);
+    await waitFor(() => expect(dialogs.askChoice).toHaveBeenCalled());
+    expect(offered()).toEqual([
+      'Level 1 slot from Sorcery Points | 2d6 · 2 points of 2 · Bonus Action to convert',
+    ]);
+    expect(getDoc().play.resources).toEqual([{ key: 'sorcery-points', used: 3 }]);
+  });
+
+  it('does not bring a suppressed pick back when its slot returns', async () => {
+    const { getDoc } = renderSorcerer((doc) => {
+      doc.play.slotsSpent = [0, 0, 1, 0, 0, 0, 0, 0, 0]; // one level 3 slot left
+    });
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await screen.findByRole('button', { name: '4d6' });
+
+    // Spend that last level 3 slot elsewhere, then get it back (an undo, or the
+    // long rest that happens on this very tab). The pick was made against a
+    // state that no longer exists and must not reapply itself.
+    fireEvent.click(screen.getByLabelText('Level 3 slot 2'));
+    await screen.findByRole('button', { name: /casting with level 1 slot/i });
+    fireEvent.click(screen.getByLabelText('Level 3 slot 2'));
+    await waitFor(() => expect(getDoc().play.slotsSpent[2]).toBe(1));
+
+    expect(screen.getByRole('button', { name: /casting with level 1 slot/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    expect(getDoc().play.slotsSpent[0]).toBe(1); // level 1, not the abandoned pick
+  });
+
+  it('warns when converting wants the Bonus Action the spell already wants', async () => {
+    renderSorcerer(undefined, (doc) => {
+      doc.spellcasting = {
+        'sorcerer|tst': { known: [{ name: 'Quick Bolt', source: 'TST' }], prepared: [] },
+      };
+    });
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await waitFor(() => expect(dialogs.askChoice).toHaveBeenCalled());
+    expect(offered().filter((o) => o.includes('Sorcery Points'))).toEqual([
+      "Level 1 slot from Sorcery Points | 2d6 · 2 points of 5 · Bonus Action to convert, on top of the spell's own",
+      "Level 2 slot from Sorcery Points (upcast) | 3d6 · 3 points of 5 · Bonus Action to convert, on top of the spell's own",
+      "Level 3 slot from Sorcery Points (upcast) | 4d6 · 5 points of 5 · Bonus Action to convert, on top of the spell's own",
+    ]);
+  });
+});
+
+describe('PlayTab always-prepared grants (GAME-001)', () => {
+  /** Warrior 3 / Path of Tests, whose subclass always-prepares bless at level 1. */
+  const withPreparedGrant = (doc: CharacterDoc) => {
+    doc.classes = [
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        subclass: { name: 'Path of Tests', source: 'TST' },
+        levels: 3,
+        hp: ['avg', 'avg', 'avg'],
+      },
+      ...doc.classes,
+    ];
+  };
+
+  it('offers the same choice on a grant cast from class slots, and spends the pick', async () => {
+    const { sheet, getDoc } = renderSorcerer(undefined, withPreparedGrant);
+    expect(sheet.grantedSpells.some((g) => g.name === 'bless' && g.usage === 'prepared')).toBe(
+      true,
+    );
+
+    answerWith('slot-2');
+    fireEvent.click(screen.getByRole('button', { name: /^bless: casting with level 1 slot/i }));
+    await waitFor(() => expect(dialogs.askChoice).toHaveBeenCalled());
+    expect(offered()[1]).toContain('Level 2 slot (upcast)');
+
+    const cast = await screen.findByRole('button', { name: /^bless: casting with level 2 slot/i });
+    expect(cast).toBeTruthy();
+    fireEvent.click(screen.getByTitle('Cast (spends level 2 slot)'));
+    expect(getDoc().play.slotsSpent[1]).toBe(1);
+    expect(getDoc().play.slotsSpent[0]).toBe(0);
+    // The pick was for that cast only.
+    await screen.findByRole('button', { name: /^bless: casting with level 1 slot/i });
+  });
+});
+
+describe('PlayTab pick lifecycle (GAME-001)', () => {
+  it('drops a pick the build invalidated, with play state untouched', async () => {
+    // The other stale-pick tests invalidate by spending a slot, which moves
+    // play state and so cannot tell the live-options check apart from the
+    // spend-state effect. A level drop moves neither: only the check can catch
+    // it, so this is what pins that half of the lifecycle.
+    const { getDoc, rebuild } = renderSorcerer();
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await screen.findByRole('button', { name: '4d6' });
+    const spendBefore = JSON.stringify(getDoc().play.slotsSpent);
+
+    rebuild((d) => {
+      d.classes = [
+        { ref: { name: 'Sorcerer', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+      ];
+    });
+
+    // A level-3 sorcerer has no level 3 slots, and nothing was spent to say so.
+    expect(JSON.stringify(getDoc().play.slotsSpent)).toBe(spendBefore);
+    await screen.findByRole('button', { name: /casting with level 1 slot/i });
+    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    expect(getDoc().play.slotsSpent[0]).toBe(1);
+    expect(getDoc().play.slotsSpent[2]).toBe(0);
+  });
+});

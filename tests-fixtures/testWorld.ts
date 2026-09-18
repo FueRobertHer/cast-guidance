@@ -192,6 +192,24 @@ const spell: DataEntity[] = [
     school: 'V',
     time: [{ number: 1, unit: 'action' }],
     entries: ['A bolt deals {@damage 2d6} fire damage.'],
+    // Scales with the slot, so an upcast choice visibly changes the dice a roll
+    // chip offers, which is what choose-then-roll has to get right.
+    entriesHigherLevel: [
+      { entries: ['The damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'] },
+    ],
+  },
+  {
+    // Searing Bolt cast as a Bonus Action: converting points into a slot wants
+    // the same Bonus Action, which the turn tracker cannot hold twice.
+    name: 'Quick Bolt',
+    source: 'TST',
+    level: 1,
+    school: 'V',
+    time: [{ number: 1, unit: 'bonus' }],
+    entries: ['A quick bolt deals {@damage 2d6} fire damage.'],
+    entriesHigherLevel: [
+      { entries: ['The damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'] },
+    ],
   },
 ];
 
@@ -355,6 +373,21 @@ const cls: DataEntity[] = [
     classFeatures: ['Spellcasting|Mage|TST|1'],
   },
   {
+    // Sorcerer-shaped: a full caster whose Font of Magic gives a point pool that
+    // converts into spell slots, which is the one shipped non-slot cast source.
+    name: 'Sorcerer',
+    source: 'TST',
+    hd: { number: 1, faces: 6 },
+    proficiency: ['con', 'cha'],
+    casterProgression: 'full',
+    spellcastingAbility: 'cha',
+    cantripProgression: [4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+    spellsKnownProgression: [
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15,
+    ],
+    classFeatures: ['Font of Magic|Sorcerer|TST|2'],
+  },
+  {
     // Paladin-shaped: the once-per-rest "Vow Power" is NOT in classFeatures.
     // It's a refClassFeature nested inside Sacred Vow, exactly how the real
     // 2014 paladin routes Channel Divinity through Sacred Oath.
@@ -414,6 +447,14 @@ const classFeature: DataEntity[] = [
     classSource: 'TST',
     level: 1,
     entries: ['You cast spells.'],
+  },
+  {
+    name: 'Font of Magic',
+    source: 'TST',
+    className: 'Sorcerer',
+    classSource: 'TST',
+    level: 2,
+    entries: ['You have a pool of sorcery points you can convert into spell slots.'],
   },
   {
     name: 'Ki',

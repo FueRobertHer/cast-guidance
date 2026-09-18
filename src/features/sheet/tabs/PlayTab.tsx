@@ -1,9 +1,10 @@
 import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
-import type { PlayState } from '@/engine/types';
+import type { PlayState, SpellcastingBlock } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -12,13 +13,23 @@ import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
+import { CastResourcePicker } from '../CastResourcePicker';
+import {
+  availableCastResources,
+  type CastResource,
+  castingEconomy,
+  castResourceId,
+  castResourceLabel,
+  castSpell,
+  defaultCastResource,
+} from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
-import { castSpell, nextCastResource, spellNeedsConcentration } from '../SpellManager';
+import { spellNeedsConcentration } from '../SpellManager';
 import { spellRollActions } from '../spellRolls';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
@@ -93,6 +104,25 @@ function rollConcentration(
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
+  // Which resource each castable spell will spend, keyed by class + spell, held
+  // only for as long as the tab is open: a pick is about this cast, not a
+  // setting.
+  const [castChoice, setCastChoice] = useState<Record<string, string>>({});
+  // Anything that moves a slot, a pact slot or a pool drops every standing pick.
+  // Suppressing an unavailable pick is not enough on its own: the id would sit
+  // there and take effect again the moment the option came back, so a choice
+  // made before a long rest would silently upcast the first cast after it.
+  const spendState = JSON.stringify([
+    doc?.play.slotsSpent,
+    doc?.play.pactSlotsSpent,
+    doc?.play.resources,
+  ]);
+  const lastSpendState = useRef(spendState);
+  useEffect(() => {
+    if (lastSpendState.current === spendState) return;
+    lastSpendState.current = spendState;
+    setCastChoice({});
+  }, [spendState]);
   if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
 
   // Look a spell up by its stored printing; when that misses (blank/wrong source
@@ -113,17 +143,8 @@ export function Component() {
   };
   const spellConcentrationOf = (name: string, source: string): boolean =>
     spellNeedsConcentration(spellEntity(name, source));
-  /** Which slice of the turn a spell's casting time uses (undefined for rituals). */
-  const spellCastEconomy = (
-    name: string,
-    source: string,
-  ): 'action' | 'bonus' | 'reaction' | undefined => {
-    const e = spellEntity(name, source);
-    const unit = Array.isArray(e?.time)
-      ? String((e.time[0] as { unit?: unknown })?.unit ?? '')
-      : '';
-    return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
-  };
+  const spellCastEconomy = (name: string, source: string) =>
+    castingEconomy(spellEntity(name, source));
 
   const play = doc.play;
 
@@ -242,6 +263,24 @@ export function Component() {
   };
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
+
+  /**
+   * What a cast will spend, and everything it could spend: the player's standing
+   * pick when it is still on offer, else the automatic one. Checking the pick
+   * against the live options is the synchronous guard that a cast in the same
+   * tick as a build change cannot spend something the character no longer has;
+   * the effect above is what stops a suppressed pick from coming back.
+   */
+  const castResourceFor = (key: string, block: SpellcastingBlock, level: number) => {
+    const options = availableCastResources(block, play, level, sheet.resources);
+    const picked = options.find((o) => castResourceId(o) === castChoice[key]);
+    return {
+      options,
+      resource: picked ?? defaultCastResource(block, play, level, sheet.resources, options),
+    };
+  };
+  const chooseCastResource = (key: string, resource: CastResource) =>
+    setCastChoice((prev) => ({ ...prev, [key]: castResourceId(resource) }));
 
   const hpDelta = async (delta: number) => {
     // Healing is a plain apply; damage may force a concentration save.
@@ -1251,7 +1290,10 @@ export function Component() {
                   const prepared = preparedUids.has(uid);
                   const level = spellLevelOf(ref.name, ref.source);
                   const entity = spellEntity(ref.name, ref.source);
-                  const resource = nextCastResource(sc, play, level);
+                  const choiceKey = `${sc.classUid}::${uid}`;
+                  const { resource, options } = castResourceFor(choiceKey, sc, level);
+                  // The dice follow the chosen slot, which is the whole reason
+                  // the choice has to come before the roll rather than after it.
                   const rolls = spellRollActions(entity, {
                     characterLevel: sheet.totalLevel,
                     slotLevel: resource.level,
@@ -1259,13 +1301,20 @@ export function Component() {
                   });
                   const hasAttack =
                     Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
-                  const cast = () =>
-                    castSpell(update, sc, level, {
-                      name: ref.name,
-                      source: ref.source,
-                      concentration: spellConcentrationOf(ref.name, ref.source),
-                      economy: spellCastEconomy(ref.name, ref.source),
-                    });
+                  const cast = () => {
+                    castSpell(
+                      update,
+                      sc,
+                      level,
+                      {
+                        name: ref.name,
+                        source: ref.source,
+                        concentration: spellConcentrationOf(ref.name, ref.source),
+                        economy: spellCastEconomy(ref.name, ref.source),
+                      },
+                      resource,
+                    );
+                  };
                   return (
                     <div key={uid} className="flex items-center gap-2 text-sm">
                       <span className="w-6 shrink-0 text-xs text-ink-muted">
@@ -1299,6 +1348,18 @@ export function Component() {
                         </span>
                       )}
                       <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                        <CastResourcePicker
+                          spellName={ref.name}
+                          resource={resource}
+                          options={options}
+                          block={sc}
+                          play={play}
+                          pools={sheet.resources}
+                          spell={entity}
+                          spellLevel={level}
+                          characterLevel={sheet.totalLevel}
+                          onPick={(picked) => chooseCastResource(choiceKey, picked)}
+                        />
                         {hasAttack && (
                           <RollChip
                             expr={`1d20${fmt(sc.attackMod.value)}`}
@@ -1324,8 +1385,10 @@ export function Component() {
                             className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
                             title={
                               level === 0
-                                ? 'Cast cantrip (marks your action/bonus action)'
-                                : `Cast (spends the lowest available slot ≥ L${level})`
+                                ? 'Cast cantrip (marks the action economy its casting time uses)'
+                                : resource.kind === 'none'
+                                  ? 'Cast with nothing left to spend (marks action economy)'
+                                  : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                             }
                           >
                             Cast
@@ -1356,10 +1419,15 @@ export function Component() {
                 g.ability !== undefined ? sheet.abilities[g.ability].mod : undefined;
               const attackModifier =
                 abilityModifier !== undefined ? sheet.profBonus.value + abilityModifier : undefined;
-              const resource =
+              // An always-prepared grant casts with class slots, so it gets the
+              // same choose-then-roll picker; an innate grant spends its own
+              // pool and has nothing to choose.
+              const choiceKey = `granted::${g.name}|${g.source}`;
+              const slotChoice =
                 g.usage === 'prepared' && block !== undefined
-                  ? nextCastResource(block, play, level)
+                  ? castResourceFor(choiceKey, block, level)
                   : undefined;
+              const resource = slotChoice?.resource;
               const rolls = spellRollActions(entity, {
                 characterLevel: sheet.totalLevel,
                 slotLevel: resource?.level,
@@ -1384,12 +1452,18 @@ export function Component() {
               const depleted = remaining !== undefined && remaining <= 0;
               const cast = () => {
                 if (g.usage === 'prepared' && block !== undefined) {
-                  castSpell(update, block, level, {
-                    name: g.name,
-                    source: g.source,
-                    concentration: spellConcentrationOf(g.name, g.source),
-                    economy: spellCastEconomy(g.name, g.source),
-                  });
+                  castSpell(
+                    update,
+                    block,
+                    level,
+                    {
+                      name: g.name,
+                      source: g.source,
+                      concentration: spellConcentrationOf(g.name, g.source),
+                      economy: spellCastEconomy(g.name, g.source),
+                    },
+                    resource,
+                  );
                 } else {
                   castGranted(
                     g.name,
@@ -1450,6 +1524,20 @@ export function Component() {
                     </span>
                   )}
                   <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                    {slotChoice !== undefined && resource !== undefined && block !== undefined && (
+                      <CastResourcePicker
+                        spellName={g.name}
+                        resource={resource}
+                        options={slotChoice.options}
+                        block={block}
+                        play={play}
+                        pools={sheet.resources}
+                        spell={entity}
+                        spellLevel={level}
+                        characterLevel={sheet.totalLevel}
+                        onPick={(picked) => chooseCastResource(choiceKey, picked)}
+                      />
+                    )}
                     {hasAttack && (
                       <RollChip
                         expr={`1d20${fmt(attackModifier)}`}
@@ -1477,7 +1565,11 @@ export function Component() {
                         title={
                           depleted
                             ? 'No uses left until you rest'
-                            : 'Cast (marks action economy and spends the applicable resource)'
+                            : resource === undefined
+                              ? 'Cast (marks action economy and spends the applicable resource)'
+                              : resource.kind === 'none'
+                                ? 'Cast with nothing left to spend (marks action economy)'
+                                : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                         }
                       >
                         Cast

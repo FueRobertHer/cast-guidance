@@ -13,16 +13,22 @@ import {
 } from '@/data5e/spellLookup';
 import type {
   CharacterDoc,
+  DerivedResource,
   DerivedSheet,
-  PlayState,
   SpellcastingBlock,
   SpellcastingMode,
 } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { askChoice } from '@/ui/dialogs';
 import { SourceBadge } from '@/ui/SourceBadge';
+import {
+  availableCastResources,
+  castResourceId,
+  castResourceOptions,
+  castSpell,
+  needsCastChoice,
+} from './castResources';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
-import { spellRollActions } from './spellRolls';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -77,166 +83,21 @@ export function spellNeedsConcentration(e: Entity | undefined): boolean {
   );
 }
 
-export interface CastSpellInfo {
-  name: string;
-  source: string;
-  concentration?: boolean;
-  /** Which slice of the turn casting uses (from the spell's casting time). */
-  economy?: 'action' | 'bonus' | 'reaction';
-}
-
-export type CastResource =
-  | { kind: 'cantrip'; level: 0 }
-  | { kind: 'pact'; level: number }
-  | { kind: 'slot'; level: number }
-  | { kind: 'none'; level: number };
-
-/** Preview the resource the current automatic cast path will consume. */
-export function nextCastResource(
-  block: SpellcastingBlock,
-  play: PlayState,
-  spellLevel: number,
-): CastResource {
-  if (spellLevel === 0) return { kind: 'cantrip', level: 0 };
-  if (
-    block.pactSlots !== undefined &&
-    block.pactSlots.level >= spellLevel &&
-    play.pactSlotsSpent < block.pactSlots.count
-  ) {
-    return { kind: 'pact', level: block.pactSlots.level };
-  }
-  for (let level = spellLevel; level <= 9; level++) {
-    const total = block.slots[level - 1] ?? 0;
-    const spent = play.slotsSpent[level - 1] ?? 0;
-    if (total > 0 && spent < total) return { kind: 'slot', level };
-  }
-  return { kind: 'none', level: spellLevel };
-}
-
-/**
- * Every slot/pact resource the character could spend on a spell of `spellLevel`
- * — the whole upcast ladder, not just the lowest — so the UI can offer an
- * explicit choice (GAME-001). Slot levels ascending, then the pact pool. Empty
- * for a cantrip or when nothing castable remains.
- */
-export function availableCastResources(
-  block: SpellcastingBlock,
-  play: PlayState,
-  spellLevel: number,
-): CastResource[] {
-  if (spellLevel === 0) return [];
-  const out: CastResource[] = [];
-  for (let level = spellLevel; level <= 9; level++) {
-    const total = block.slots[level - 1] ?? 0;
-    const spent = play.slotsSpent[level - 1] ?? 0;
-    if (total > 0 && spent < total) out.push({ kind: 'slot', level });
-  }
-  if (
-    block.pactSlots !== undefined &&
-    block.pactSlots.level >= spellLevel &&
-    play.pactSlotsSpent < block.pactSlots.count
-  ) {
-    out.push({ kind: 'pact', level: block.pactSlots.level });
-  }
-  return out;
-}
-
-/** Stable option id for the cast chooser; must round-trip through askChoice. */
-export function castResourceId(resource: CastResource): string {
-  return resource.kind === 'pact' ? 'pact' : `${resource.kind}-${resource.level}`;
-}
-
-/**
- * A one-line preview of a spell's rolled dice when cast at `slotLevel`, so the
- * upcast chooser can show e.g. Fireball "8d6" at level 3 vs "9d6" at level 4, or
- * Ice Knife "1d10 / 3d6" (the cold die scales). Ability modifiers are left out —
- * the dice are the point. Returns undefined when there's nothing rolled, and —
- * crucially — also for an upcast whose dice are unchanged from the base level
- * (e.g. Magic Missile / Scorching Ray add darts/rays, not dice), so the preview
- * never implies a bigger die that upcasting doesn't actually grant.
- */
-export function upcastEffectSummary(
-  entity: Entity | undefined,
-  characterLevel: number,
-  slotLevel: number,
-): string | undefined {
-  const rollExprs = (level: number) =>
-    spellRollActions(entity, { characterLevel, slotLevel: level })
-      .filter((a) => a.variant === 'damage' || a.variant === 'dice')
-      .map((a) => a.expr);
-  const atSlot = rollExprs(slotLevel);
-  if (atSlot.length === 0) return undefined;
-  const baseLevel = typeof entity?.level === 'number' ? entity.level : slotLevel;
-  if (slotLevel > baseLevel && atSlot.join('+') === rollExprs(baseLevel).join('+')) {
-    return undefined; // upcast changes targets/instances, not dice — show no dice
-  }
-  return atSlot.join(' / ');
-}
-
-/**
- * Cast a spell, spending `resource` when given (an explicit slot/upcast choice)
- * or else the lowest available slot ≥ `level` (pact-aware). Marks the action
- * economy the casting time uses and, when the spell concentrates, it becomes the
- * active concentration (dropping any prior one — one at a time).
- */
-export function castSpell(
-  update: DocUpdater,
-  block: SpellcastingBlock,
-  level: number,
-  spell?: CastSpellInfo,
-  resource?: CastResource,
-): void {
-  // Which resource actually paid for it is only known inside the recipe, so the
-  // history label is resolved afterwards (see DocUpdater).
-  let spent: CastResource | undefined;
-  update(
-    (d) => {
-      if (spell?.concentration === true) {
-        d.play.concentratingOn = { label: spell.name };
-      }
-      if (spell?.economy !== undefined) {
-        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-        turn[spell.economy] = true;
-        d.play.turn = turn;
-      }
-      const spend = resource ?? nextCastResource(block, d.play, level);
-      spent = spend;
-      if (spend.kind === 'cantrip' || spend.kind === 'none') return;
-      if (spend.kind === 'pact') {
-        d.play.pactSlotsSpent += 1;
-        return;
-      }
-      const at = d.play.slotsSpent[spend.level - 1] ?? 0;
-      d.play.slotsSpent[spend.level - 1] = at + 1;
-    },
-    spell === undefined ? undefined : () => `Cast ${spell.name}${castCost(spent, level)}`,
-  );
-}
-
-/** " (L3)" / " (pact slot)" / " (no slot)" / "", when it isn't the obvious cost. */
-export function castCost(spent: CastResource | undefined, level: number): string {
-  if (spent === undefined) return '';
-  if (spent.kind === 'pact') return ' (pact slot)';
-  // Casting with nothing left to spend is deliberate but must not read the same
-  // as a paid cast, since the explicit label replaces the diff that would show it.
-  if (spent.kind === 'none') return ' (no slot)';
-  // An upcast is news; paying the spell's own level is not.
-  if (spent.kind === 'slot' && spent.level !== level) return ` (L${spent.level})`;
-  return '';
-}
-
 function ClassSpells({
   block,
   doc,
   update,
   allowCasting,
   characterLevel,
+  pools,
 }: {
   block: SpellcastingBlock;
   doc: CharacterDoc;
   update: DocUpdater;
   allowCasting: boolean;
   characterLevel: number;
+  /** Derived pools, so a convertible one (sorcery points) is offered as a source. */
+  pools: readonly DerivedResource[];
 }) {
   const registry = useRegistry();
   const [classUids, setClassUids] = useState<Set<string> | null>(null);
@@ -344,39 +205,31 @@ function ClassSpells({
       source: sourceOf(spell),
       concentration: spellNeedsConcentration(spell),
     };
-    const options = availableCastResources(block, doc.play, level);
-    // Nothing to choose (exhausted, or a single option) — cast directly: the
-    // lowest available slot, or an intentional no-slot cast when tapped out.
-    if (options.length <= 1) {
-      castSpell(update, block, level, info);
+    const options = availableCastResources(block, doc.play, level, pools);
+    // Nothing to decide: cast directly on the one option, or on none at all.
+    if (!needsCastChoice(options)) {
+      castSpell(update, block, level, info, options[0]);
       return;
     }
-    // Multiple slot levels (and/or pact) available — let the player pick which
-    // to spend instead of always the lowest (GAME-001 upcast choice).
+    // Multiple slot levels (and/or pact, and/or a convertible pool) available:
+    // let the player pick which to spend instead of always the lowest (GAME-001).
     const picked = await askChoice({
       title: `Cast ${nameOf(spell)}`,
       detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
-      options: options.map((o) => {
-        const upcast = o.level > level ? ' (upcast)' : '';
-        // Preview the spell's dice at this slot level (e.g. 8d6 vs 9d6 upcast).
-        const effect = upcastEffectSummary(spell, characterLevel, o.level);
-        const left =
-          o.kind === 'pact'
-            ? (block.pactSlots?.count ?? 0) - doc.play.pactSlotsSpent
-            : (block.slots[o.level - 1] ?? 0) - (doc.play.slotsSpent[o.level - 1] ?? 0);
-        const label =
-          o.kind === 'pact'
-            ? `Pact slot · level ${o.level}${upcast}`
-            : `Level ${o.level} slot${upcast}`;
-        return {
-          id: castResourceId(o),
-          label,
-          hint: effect !== undefined ? `${effect} · ${left} left` : `${left} left`,
-        };
+      options: castResourceOptions(options, {
+        block,
+        play: doc.play,
+        pools,
+        spell,
+        spellLevel: level,
+        characterLevel,
       }),
     });
     if (picked === null) return;
     const chosen = options.find((o) => castResourceId(o) === picked);
+    // Ids round-trip, so a miss is impossible; casting the automatic pick
+    // instead of the choice would be the wrong way to find that out.
+    if (chosen === undefined) return;
     castSpell(update, block, level, info, chosen);
   };
 
@@ -614,6 +467,7 @@ export function SpellManager({
           update={update}
           allowCasting={allowCasting}
           characterLevel={sheet.totalLevel}
+          pools={sheet.resources}
         />
       ))}
     </div>
