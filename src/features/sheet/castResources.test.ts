@@ -472,3 +472,61 @@ describe('needsCastChoice', () => {
     expect(needsCastChoice(options)).toBe(true);
   });
 });
+
+describe('what a conversion costs the turn', () => {
+  const conversion = {
+    kind: 'pool',
+    level: 1,
+    key: 'sorcery-points',
+    label: 'Sorcery Points',
+    cost: 2,
+  } as const;
+  const spell = (unit?: string) =>
+    ({
+      name: 'Ward',
+      source: 'phb',
+      level: 1,
+      entries: ['A ward.'],
+      ...(unit === undefined ? {} : { time: [{ number: 1, unit }] }),
+    }) as unknown as Entity;
+  const hint = (entity: Entity | undefined, play = emptyPlayState()) =>
+    castResourceOptions([conversion], {
+      block: block(),
+      play,
+      pools: [points(2)],
+      spell: entity,
+      spellLevel: 1,
+      characterLevel: 5,
+    })[0]?.hint;
+
+  it('says only what it costs when the turn can hold it', () => {
+    expect(hint(spell('action'))).toBe('2 points of 2 · Bonus Action to convert');
+    expect(hint(undefined)).toBe('2 points of 2 · Bonus Action to convert'); // a ritual
+  });
+
+  it('says a reaction leaves no Bonus Action to convert with', () => {
+    // Shield and its kind are cast on another creature's turn, where there is
+    // no Bonus Action to be had. The turn tracker records one anyway, because
+    // it has a flag and not a timeline, so the option is where this gets said.
+    expect(hint(spell('reaction'))).toBe(
+      "2 points of 2 · Bonus Action to convert, no Bonus Action on another creature's turn",
+    );
+  });
+
+  it('says when the spell already wants the same slice of the turn', () => {
+    expect(hint(spell('bonus'))).toBe(
+      "2 points of 2 · Bonus Action to convert, on top of the spell's own",
+    );
+  });
+
+  it('says when the Bonus Action has already gone this turn', () => {
+    const play = emptyPlayState();
+    play.turn = { action: false, bonus: true, reaction: false };
+    expect(hint(spell('action'), play)).toBe(
+      '2 points of 2 · Bonus Action to convert, your Bonus Action is already used',
+    );
+    // An unspent turn says nothing extra.
+    play.turn = { action: true, bonus: false, reaction: false };
+    expect(hint(spell('action'), play)).toBe('2 points of 2 · Bonus Action to convert');
+  });
+});

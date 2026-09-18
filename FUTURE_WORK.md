@@ -56,7 +56,7 @@ CI.
 | Frozen dependency install | Pass: 555 packages |
 | Lint/format | Pass: 223 files |
 | TypeScript | Pass |
-| Unit + integration tests | Pass: 91 files, 813 tests |
+| Unit + integration tests | Pass: 99 files, 942 tests |
 | Coverage report | `bun run test:coverage`: ~59% statements, ~51% branches (engine/guards high, UI improving) |
 | Production/PWA build | Pass |
 | Real pinned-dataset audit | Last run 2026-07-15: 48 files; 936 spells; 40 versioned `replaceArr` warnings. Not re-run since (network-gated; the mirror CDN is unreachable from CI and from sandboxed sessions). |
@@ -203,7 +203,7 @@ work:
 | Backup and recovery | Full-app backup/restore (one-click export-all beyond per-character export), reminder, trash/archive, and recovery documentation. (Import preview is IMP-002; undo is UX-004/UX-005.) |
 | Guided level-up | Preview HP, subclass timing, choices, spell gains/replacements, and resource changes before commit. Multiclassing remains in the free-form Build page unless product scope changes. |
 | Character management | Search, sort, last-played, campaign/tags, optional portraits, and safer cross-device handoff (the roster's actions are already grouped behind one row menu, with a loading skeleton for vitals). |
-| Sheet and casting polish | Unify spell-row and slot-pip casting (the Play-tab cast flow is the GAME-001 remainder), add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling, but no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character: `rollLogStore` is a module-level Zustand store capped at 100 entries, shared across every character and lost on reload. (Pools above the pip cap now get ±1/±5 steppers, and pips spend from the right so what is left stays anchored under the label.) |
+| Sheet and casting polish | Unify spell-row and slot-pip casting, add material/ritual reminders and cast history, and support critical/rider rolls (the dice engine already supports crit doubling, but no UI path passes it, so a natural 20 never doubles damage dice). Persist the roll log per character: `rollLogStore` is a module-level Zustand store capped at 100 entries, shared across every character and lost on reload. (Pools above the pip cap now get ±1/±5 steppers, and pips spend from the right so what is left stays anchored under the label.) |
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |

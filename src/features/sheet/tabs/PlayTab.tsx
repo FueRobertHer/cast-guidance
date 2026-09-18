@@ -281,14 +281,6 @@ export function Component() {
   };
   const chooseCastResource = (key: string, resource: CastResource) =>
     setCastChoice((prev) => ({ ...prev, [key]: castResourceId(resource) }));
-  /** A cast consumes its pick: the next one starts from the automatic choice. */
-  const clearCastChoice = (key: string) =>
-    setCastChoice((prev) => {
-      if (prev[key] === undefined) return prev;
-      const rest = { ...prev };
-      delete rest[key];
-      return rest;
-    });
 
   const hpDelta = async (delta: number) => {
     // Healing is a plain apply; damage may force a concentration save.
@@ -1322,7 +1314,6 @@ export function Component() {
                       },
                       resource,
                     );
-                    clearCastChoice(choiceKey);
                   };
                   return (
                     <div key={uid} className="flex items-center gap-2 text-sm">
@@ -1394,9 +1385,9 @@ export function Component() {
                             className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
                             title={
                               level === 0
-                                ? 'Cast cantrip (marks your action/bonus action)'
+                                ? 'Cast cantrip (marks the action economy its casting time uses)'
                                 : resource.kind === 'none'
-                                  ? 'Cast with nothing left to spend (marks your action)'
+                                  ? 'Cast with nothing left to spend (marks action economy)'
                                   : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                             }
                           >
@@ -1473,7 +1464,6 @@ export function Component() {
                     },
                     resource,
                   );
-                  clearCastChoice(choiceKey);
                 } else {
                   castGranted(
                     g.name,
@@ -1575,9 +1565,11 @@ export function Component() {
                         title={
                           depleted
                             ? 'No uses left until you rest'
-                            : resource !== undefined && resource.kind !== 'none'
-                              ? `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
-                              : 'Cast (marks action economy and spends the applicable resource)'
+                            : resource === undefined
+                              ? 'Cast (marks action economy and spends the applicable resource)'
+                              : resource.kind === 'none'
+                                ? 'Cast with nothing left to spend (marks action economy)'
+                                : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                         }
                       >
                         Cast

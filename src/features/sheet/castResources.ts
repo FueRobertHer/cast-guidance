@@ -23,13 +23,19 @@ export type CastResource =
   | { kind: 'pool'; level: number; key: string; label: string; cost: number }
   | { kind: 'none'; level: number };
 
+interface SlotConversion {
+  /** Index 0 = what a level-1 slot costs. */
+  costs: readonly number[];
+  /** Which slice of the turn converting takes. */
+  economy: 'action' | 'bonus';
+}
+
 /**
- * Point pools that convert into a spell slot: what a slot of each level costs
- * (index 0 = a level-1 slot) and which slice of the turn converting takes.
- * Sorcery points (Font of Magic's "Creating Spell Slots" / 2024 "Create Spell
- * Slot") are the only conversion the shipped data grants; the table is keyed by
- * derived-resource key, so another pool needs a row here and a label that reads
- * sensibly as initials on the chip.
+ * Point pools that convert into a spell slot. Sorcery points (Font of Magic's
+ * "Creating Spell Slots" / 2024 "Create Spell Slot") are the only conversion
+ * the shipped data grants; the table is keyed by derived-resource key, so
+ * another pool needs a row here and a label that reads sensibly as initials on
+ * the chip.
  *
  * The costs and the 5th-level ceiling are the same in both editions. What is
  * NOT modelled: 2024 added a minimum-Sorcerer-level column to the same table,
@@ -37,18 +43,36 @@ export type CastResource =
  * (the points alone gate it here). Offering it is the lesser error under
  * guidance-not-gatekeeping, but it is an unlabelled one.
  */
-interface SlotConversion {
-  costs: readonly number[];
-  economy: 'action' | 'bonus';
-}
-
 const SLOT_CONVERSIONS: Record<string, SlotConversion> = {
   'sorcery-points': { costs: [2, 3, 5, 6, 7], economy: 'bonus' },
 };
 
 /** Which slice of the turn converting `key` into a slot takes, if it converts. */
-export function conversionEconomy(key: string): 'action' | 'bonus' | undefined {
+function conversionEconomy(key: string): 'action' | 'bonus' | undefined {
   return SLOT_CONVERSIONS[key]?.economy;
+}
+
+const ECONOMY_LABEL = { action: 'Action', bonus: 'Bonus Action', reaction: 'Reaction' } as const;
+
+/**
+ * Why converting might not fit in the turn this cast happens on, or undefined
+ * when it fits. The turn tracker is one flag per slice, so it cannot record a
+ * second Bonus Action or one taken on somebody else's turn; rather than let a
+ * cast read as a legal turn that no turn could hold, the option says what is
+ * wrong and stays pressable (guidance, not gatekeeping).
+ */
+function conversionTurnNote(
+  economy: 'action' | 'bonus',
+  spell: Entity | undefined,
+  play: PlayState,
+): string | undefined {
+  const slice = ECONOMY_LABEL[economy];
+  const own = castingEconomy(spell);
+  // A reaction is cast on another creature's turn, where you have neither.
+  if (own === 'reaction') return `no ${slice} on another creature's turn`;
+  if (own === economy) return "on top of the spell's own";
+  if (play.turn?.[economy] === true) return `your ${slice} is already used`;
+  return undefined;
 }
 
 /** Which slice of the turn a spell's own casting time uses (undefined for rituals). */
@@ -61,7 +85,12 @@ export function castingEconomy(
   return unit === 'bonus' || unit === 'reaction' || unit === 'action' ? unit : undefined;
 }
 
-/** Preview the resource the current automatic cast path will consume. */
+/**
+ * The lowest slot (pact first) a cast would reach for on its own, or `none`
+ * when every slot is gone. This is the automatic pick alone: it never reaches
+ * into a convertible pool, so it is not the whole of what an unchosen cast
+ * spends: see `defaultCastResource`, which is what the UI resolves against.
+ */
 export function nextCastResource(
   block: SpellcastingBlock,
   play: PlayState,
@@ -254,14 +283,10 @@ export function castResourceOptions(
       const pool = ctx.pools?.find((p) => p.key === option.key);
       const left = pool === undefined ? undefined : poolRemaining(pool, ctx.play);
       const economy = conversionEconomy(option.key) ?? 'action';
-      // Converting takes its own slice of the turn. When the spell's casting
-      // time wants that same slice, the turn tracker has one flag for both and
-      // cannot show the second, so the option says so rather than letting the
-      // cast read as legal on a turn that could not hold it.
-      const clash = castingEconomy(ctx.spell) === economy;
-      const convert = `${economy === 'bonus' ? 'Bonus Action' : 'Action'} to convert`;
+      const note = conversionTurnNote(economy, ctx.spell, ctx.play);
+      const convert = `${ECONOMY_LABEL[economy]} to convert`;
       parts.push(
-        `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · ${convert}${clash ? ", on top of the spell's own" : ''}`,
+        `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · ${convert}${note === undefined ? '' : `, ${note}`}`,
       );
     } else if (option.kind === 'pact') {
       const left = (ctx.block.pactSlots?.count ?? 0) - ctx.play.pactSlotsSpent;

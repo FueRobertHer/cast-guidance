@@ -205,7 +205,7 @@ function renderSorcerer(mutate?: (doc: CharacterDoc) => void, build?: (doc: Char
   const ctxValue = () =>
     ({
       doc: current,
-      sheet,
+      sheet: deriveSheet(current, makeTestContext()),
       update,
       loadStatus: 'ready',
       missing: false,
@@ -224,7 +224,9 @@ function renderSorcerer(mutate?: (doc: CharacterDoc) => void, build?: (doc: Char
   // The doc lives outside React here, so a save has to be pushed back in for the
   // tab to re-read it, exactly as the real character session does.
   const rerender = () => view.rerender(<RouterProvider router={createMemoryRouter(routes())} />);
-  return { sheet, getDoc: () => current };
+  /** Change what the sheet is derived from, leaving play state alone. */
+  const rebuild = (recipe: (d: CharacterDoc) => void) => update(recipe);
+  return { sheet, rebuild, getDoc: () => current };
 }
 
 describe('PlayTab cast resource choice (GAME-001)', () => {
@@ -397,5 +399,32 @@ describe('PlayTab always-prepared grants (GAME-001)', () => {
     expect(getDoc().play.slotsSpent[0]).toBe(0);
     // The pick was for that cast only.
     await screen.findByRole('button', { name: /^bless: casting with level 1 slot/i });
+  });
+});
+
+describe('PlayTab pick lifecycle (GAME-001)', () => {
+  it('drops a pick the build invalidated, with play state untouched', async () => {
+    // The other stale-pick tests invalidate by spending a slot, which moves
+    // play state and so cannot tell the live-options check apart from the
+    // spend-state effect. A level drop moves neither: only the check can catch
+    // it, so this is what pins that half of the lifecycle.
+    const { getDoc, rebuild } = renderSorcerer();
+    answerWith('slot-3');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await screen.findByRole('button', { name: '4d6' });
+    const spendBefore = JSON.stringify(getDoc().play.slotsSpent);
+
+    rebuild((d) => {
+      d.classes = [
+        { ref: { name: 'Sorcerer', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+      ];
+    });
+
+    // A level-3 sorcerer has no level 3 slots, and nothing was spent to say so.
+    expect(JSON.stringify(getDoc().play.slotsSpent)).toBe(spendBefore);
+    await screen.findByRole('button', { name: /casting with level 1 slot/i });
+    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    expect(getDoc().play.slotsSpent[0]).toBe(1);
+    expect(getDoc().play.slotsSpent[2]).toBe(0);
   });
 });

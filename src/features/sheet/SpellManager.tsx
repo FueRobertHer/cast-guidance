@@ -227,6 +227,9 @@ function ClassSpells({
     });
     if (picked === null) return;
     const chosen = options.find((o) => castResourceId(o) === picked);
+    // Ids round-trip, so a miss is impossible; casting the automatic pick
+    // instead of the choice would be the wrong way to find that out.
+    if (chosen === undefined) return;
     castSpell(update, block, level, info, chosen);
   };
 
