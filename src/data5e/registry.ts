@@ -146,10 +146,31 @@ async function readRegistry(): Promise<EntityRegistry> {
 let readsInFlight = 0;
 const readListeners = new Set<() => void>();
 
-/** Tell the listeners, but only when the flag itself moved. */
+/**
+ * Tell the listeners, but only when the flag itself moved.
+ *
+ * Each one is isolated because the count is raised before this runs and
+ * released after the caller has its release function: a subscriber throwing
+ * its way out of here would strand `readsInFlight` above zero with nothing
+ * left to lower it, leaving the library reporting a download in progress for
+ * the rest of the session over a registry that finished long ago, and would
+ * take the subscribers behind it down with it.
+ *
+ * Reported rather than swallowed. A stranded counter at least shows a
+ * symptom; a subscriber that fails in silence gives nobody anything to go on.
+ * The app has no error reporting to hand it to, and rethrowing out of band
+ * would surface as an unhandled error with no stack pointing here, so the
+ * console is the honest place for it.
+ */
 function announceReads(wasRefreshing: boolean): void {
   if (isRegistryRefreshing() === wasRefreshing) return;
-  for (const fn of [...readListeners]) fn();
+  for (const fn of [...readListeners]) {
+    try {
+      fn();
+    } catch (err) {
+      console.error('a registry refresh subscriber threw', err);
+    }
+  }
 }
 
 function beginRead(): void {

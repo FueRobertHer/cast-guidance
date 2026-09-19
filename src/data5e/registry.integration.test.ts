@@ -222,6 +222,27 @@ describe('the rebuild-in-flight signal', () => {
     spy.mockRestore();
   });
 
+  it('is not left raised by a subscriber that throws', async () => {
+    // The count is raised before the listeners are told and released after, so
+    // a subscriber escaping the notification would stick the flag up with no
+    // release left to run: the library would report a download in progress
+    // for the rest of the session, over a registry that finished long ago.
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const after: boolean[] = [];
+    listen(() => {
+      throw new Error('a subscriber came apart');
+    });
+    listen(() => after.push(isRegistryRefreshing()));
+
+    await expect(getRegistry()).resolves.toBeDefined();
+    expect(isRegistryRefreshing()).toBe(false);
+    // The subscribers behind it were still told, both ways.
+    expect(after).toEqual([true, false]);
+    // And it did not fail in silence.
+    expect(reported).toHaveBeenCalled();
+    reported.mockRestore();
+  });
+
   it('stops telling a subscriber that unsubscribed', async () => {
     let told = 0;
     const unsubscribe = subscribeRegistryRefreshing(() => told++);
