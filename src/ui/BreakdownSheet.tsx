@@ -1,15 +1,9 @@
 import { type ReactNode, useState } from 'react';
 import type { DerivedValue } from '@/engine/types';
-import { Sheet } from './sheet';
+import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /** Bottom sheet showing how a derived number was computed, with optional override. */
-export function BreakdownSheet({
-  title,
-  value,
-  trigger,
-  onOverride,
-  children,
-}: {
+export interface BreakdownSheetProps {
   title: string;
   value: DerivedValue;
   trigger: ReactNode;
@@ -17,11 +11,35 @@ export function BreakdownSheet({
   onOverride?: (value: number | null) => void;
   /** Extra controls for this value, shown under the breakdown. */
   children?: ReactNode;
-}) {
+}
+
+/**
+ * The trigger until the player asks how a number was reached, then the sheet.
+ * Rendered once per derived value on the Play and Stats tabs, so the unopened
+ * case has to stay cheap (see {@link SheetStandIn}).
+ */
+export function BreakdownSheet(props: BreakdownSheetProps) {
+  const [armed, setArmed] = useState(false);
+  if (!armed) {
+    return <SheetStandIn trigger={props.trigger} onArm={() => setArmed(true)} />;
+  }
+  return <BreakdownSheetContent {...props} />;
+}
+
+function BreakdownSheetContent({
+  title,
+  value,
+  trigger,
+  onOverride,
+  children,
+}: BreakdownSheetProps) {
   const [draft, setDraft] = useState('');
 
+  // Mounted by the press that opens it; see `useSheetOpenOnMount`.
+  const [open, setOpen] = useSheetOpenOnMount();
+
   return (
-    <Sheet.Root>
+    <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />

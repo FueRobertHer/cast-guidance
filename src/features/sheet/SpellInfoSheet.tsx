@@ -5,7 +5,7 @@ import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
-import { Sheet } from '@/ui/sheet';
+import { Sheet, SheetStandIn, useSheetOpenOnMount } from '@/ui/sheet';
 
 /**
  * Tap-to-explain bottom sheet for a spell — the same in-place rules popup that
@@ -14,22 +14,36 @@ import { Sheet } from '@/ui/sheet';
  * source (e.g. "dancing lights" with no source, which broke the old link), so
  * we fall back to a name-only match and load the spell packs lazily on open.
  */
-export function SpellInfoSheet({
-  name,
-  source,
-  version,
-  subtitle,
-  trigger,
-}: {
+export interface SpellInfoSheetProps {
   name: string;
   source?: string;
   /** Character's rules version — picks the right printing when source misses. */
   version?: RulesVersion;
   subtitle?: string;
   trigger: ReactNode;
-}) {
+}
+
+/**
+ * The trigger until the player asks for the spell, then the sheet.
+ *
+ * The Play tab renders one of these per spell row, so everything below the
+ * split is per-row cost on a screen that may list hundreds: a `Drawer.Root`
+ * and its `window` scroll listener, a Radix dialog context, a registry
+ * subscription, and a lookup that scans every spell when the row's source does
+ * not match. None of it is worth paying for a row nobody taps.
+ */
+export function SpellInfoSheet(props: SpellInfoSheetProps) {
+  const [armed, setArmed] = useState(false);
+  if (!armed) {
+    return <SheetStandIn trigger={props.trigger} onArm={() => setArmed(true)} />;
+  }
+  return <SpellInfoSheetContent {...props} />;
+}
+
+function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: SpellInfoSheetProps) {
   const registry = useRegistry();
-  const [open, setOpen] = useState(false);
+  // Mounted by the press that opens it; see `useSheetOpenOnMount`.
+  const [open, setOpen] = useSheetOpenOnMount();
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {

@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { headerFacts } from '@/features/library/fmt';
-import { Sheet } from './sheet';
+import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /**
  * Full-description bottom sheet for a build option (race, subrace, background,
@@ -12,25 +12,44 @@ import { Sheet } from './sheet';
  * `entriesOverride` supplies text for entities that keep their description
  * elsewhere (a subclass's rules live in its features, not the entity itself).
  */
-export function EntityInfoSheet({
-  type,
-  entity,
-  entriesOverride,
-  subtitle,
-  trigger,
-}: {
+export interface EntityInfoSheetProps {
   type: string;
   entity: Entity;
   entriesOverride?: unknown;
   subtitle?: string;
   trigger: ReactNode;
-}) {
+}
+
+/**
+ * The trigger until the player asks about the option, then the sheet. The
+ * pickers and the inventory render one per row, so the unopened case has to
+ * stay cheap: `headerFacts` walks the entity, and a `Drawer.Root` brings a
+ * `window` scroll listener with it (see {@link SheetStandIn}).
+ */
+export function EntityInfoSheet(props: EntityInfoSheetProps) {
+  const [armed, setArmed] = useState(false);
+  if (!armed) {
+    return <SheetStandIn trigger={props.trigger} onArm={() => setArmed(true)} />;
+  }
+  return <EntityInfoSheetContent {...props} />;
+}
+
+function EntityInfoSheetContent({
+  type,
+  entity,
+  entriesOverride,
+  subtitle,
+  trigger,
+}: EntityInfoSheetProps) {
   const facts = headerFacts(type, entity);
   const entries = entriesOverride ?? entity.entries;
   const hasEntries = Array.isArray(entries) && entries.length > 0;
 
+  // Mounted by the press that opens it; see `useSheetOpenOnMount`.
+  const [open, setOpen] = useSheetOpenOnMount();
+
   return (
-    <Sheet.Root>
+    <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
