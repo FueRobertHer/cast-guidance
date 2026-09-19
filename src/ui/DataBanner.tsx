@@ -27,7 +27,7 @@ export function DataBanner() {
           };
     return (
       <div
-        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg lg:right-6 lg:left-auto lg:w-96"
+        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
         role="alert"
       >
         <span className="truncate">

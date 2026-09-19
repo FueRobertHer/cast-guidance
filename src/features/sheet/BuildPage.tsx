@@ -94,17 +94,15 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
     prev.current = next;
   }, [sheet]);
 
-  // Both banners below are solid under `lg` and frosted above; see the note on
-  // SheetLayout's header for what the blur costs on a phone.
   if (diff.length === 0) {
     return (
-      <div className="sticky top-0 z-10 rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted lg:bg-surface/95 lg:backdrop-blur">
+      <div className="sticky top-0 z-10 rounded-lg bg-surface/95 px-3 py-2 text-xs text-ink-muted backdrop-blur">
         Change anything below — the effects on your stats show up here instantly.
       </div>
     );
   }
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/30 bg-surface px-3 py-2 lg:bg-surface/95 lg:backdrop-blur">
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/30 bg-surface/95 px-3 py-2 backdrop-blur">
       {diff.map((d) => (
         <span key={d.label} className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
           {d.label} <span className="text-ink-muted">{d.from}</span>

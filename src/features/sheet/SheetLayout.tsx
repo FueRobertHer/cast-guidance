@@ -96,15 +96,7 @@ export function Component() {
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Solid below `lg`, frosted above. `backdrop-filter` makes the
-          compositor re-read and re-blur whatever is behind this header on
-          every scroll frame, and it is a sticky element over a document
-          scroll, so that is every frame of every scroll. A desktop GPU
-          absorbs it; a phone's does not, which is why the character screens
-          stuttered on Android while the library, which has no blurred
-          header, stayed smooth. At 90% opacity the blur was barely visible
-          anyway. */}
-      <header className="sticky top-0 z-20 flex items-center gap-2 bg-zinc-950 px-4 py-3 lg:bg-zinc-950/90 lg:pl-40 lg:backdrop-blur">
+      <header className="sticky top-0 z-20 flex items-center gap-2 bg-zinc-950/90 px-4 py-3 backdrop-blur lg:pl-40">
         <Link
           to="/"
           aria-label="Back to characters"
