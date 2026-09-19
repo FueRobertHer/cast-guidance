@@ -7,7 +7,13 @@ import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { getActiveTag } from './loader';
-import { getRegistry, invalidateRegistry, registrySignature } from './registry';
+import {
+  getRegistry,
+  invalidateRegistry,
+  isRegistryRefreshing,
+  registrySignature,
+  subscribeRegistryRefreshing,
+} from './registry';
 
 function brewJson(spellName: string) {
   return {
@@ -157,5 +163,63 @@ describe('a rebuild that spans an invalidation', () => {
 
     const after = await getRegistry();
     expect(after.get('race', 'Elf')).toBeDefined();
+  });
+});
+
+describe('the rebuild-in-flight signal', () => {
+  it('is raised for as long as a read is running, and told to whoever asked', async () => {
+    // The library reads this to tell "not in the data" from "not in the data
+    // yet". It lives on the registry rather than in each component's state
+    // because it moves once per file a background drain lands, and every page
+    // holding its own copy re-rendered twice for each one.
+    expect(isRegistryRefreshing()).toBe(false);
+
+    const seen: boolean[] = [];
+    const unsubscribe = subscribeRegistryRefreshing(() => seen.push(isRegistryRefreshing()));
+
+    const reading = getRegistry();
+    expect(isRegistryRefreshing()).toBe(true);
+    await reading;
+    expect(isRegistryRefreshing()).toBe(false);
+
+    expect(seen).toEqual([true, false]);
+    unsubscribe();
+  });
+
+  it('stays raised until the last of several overlapping reads is done', async () => {
+    // Every page mounts its own registry hook, so reads overlap constantly.
+    // Dropping the flag when the first of them finishes would call the
+    // registry current while another was still rebuilding it.
+    const seen: boolean[] = [];
+    const unsubscribe = subscribeRegistryRefreshing(() => seen.push(isRegistryRefreshing()));
+
+    const reads = [getRegistry(), getRegistry(), getRegistry()];
+    expect(isRegistryRefreshing()).toBe(true);
+    // One transition each way, however many readers there were.
+    expect(seen).toEqual([true]);
+
+    await Promise.all(reads);
+    expect(isRegistryRefreshing()).toBe(false);
+    expect(seen).toEqual([true, false]);
+    unsubscribe();
+  });
+
+  it('comes back down when a read throws', async () => {
+    const spy = vi
+      .spyOn(dataCacheRepo, 'cachedPaths')
+      .mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+    await expect(getRegistry()).rejects.toThrow('QuotaExceededError');
+    expect(isRegistryRefreshing()).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('stops telling a subscriber that unsubscribed', async () => {
+    let told = 0;
+    const unsubscribe = subscribeRegistryRefreshing(() => told++);
+    unsubscribe();
+
+    await getRegistry();
+    expect(told).toBe(0);
   });
 });

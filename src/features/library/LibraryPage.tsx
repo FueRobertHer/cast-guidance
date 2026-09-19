@@ -6,6 +6,7 @@ import { EntriesView } from '@/data5e/entries/renderEntries';
 import {
   type RegistryState,
   type TypePacksState,
+  useRegistryRefreshing,
   useRegistryState,
   useSearchState,
   useTypePacks,
@@ -288,6 +289,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const [pickedSource, setPickedSource] = useState<string>(MY_SOURCES);
   const policy = useSourcePolicy();
   const packs = useTypePacks(type, reg.retry);
+  const refreshing = useRegistryRefreshing();
   const registry = reg.registry;
   const failed = reg.error !== null || packs.status === 'error';
 
@@ -378,7 +380,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         <p className="text-sm text-ink-muted">
           {/* The registry is what the list reads, so "nothing here" is only
               true once it has finished catching up with the files on disk. */}
-          {packs.status === 'loading' || registry === null || reg.refreshing
+          {packs.status === 'loading' || registry === null || refreshing
             ? 'Downloading this section…'
             : filter.trim() !== ''
               ? `Nothing here matches “${filter.trim()}”.`
@@ -458,6 +460,7 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
 function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
   const navigate = useNavigate();
   const packs = useTypePacks(type, reg.retry);
+  const refreshing = useRegistryRefreshing();
   const registry = reg.registry;
 
   const decoded = decodeURIComponent(uid);
@@ -493,7 +496,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // download finishes there is a window where the packs are ready and the
     // registry is still the older, smaller one. Calling the entity missing in
     // that window offers a re-download for something that just arrived.
-    if (registry === null || packs.status === 'loading' || reg.refreshing) {
+    if (registry === null || packs.status === 'loading' || refreshing) {
       return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
     }
   }

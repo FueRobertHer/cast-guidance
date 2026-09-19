@@ -216,10 +216,15 @@ describe('two builds asked for at once', () => {
     // perfectly, so nothing downstream could ever notice it was the wrong
     // corpus.
     const first = client.ensureSearchIndex(registry, 'sigA');
+    // Flushed before the second is asked for, so the first is already at the
+    // worker: too late to drop, which is the case serializing exists for.
+    await flush();
+    const w = FakeWorker.instances[0] as FakeWorker;
+    expect(w.posted).toHaveLength(1);
+
     const second = client.ensureSearchIndex(registry, 'sigB');
     await flush();
-
-    const w = FakeWorker.instances[0] as FakeWorker;
+    // The second waits rather than joining the first at the worker.
     expect(w.posted).toHaveLength(1);
 
     w.reply({ kind: 'ready', serialized: 'INDEX_A' });
@@ -235,6 +240,93 @@ describe('two builds asked for at once', () => {
     expect(stored.map((r) => r.json)).toEqual(['INDEX_A', 'INDEX_B']);
     // Two signatures, two keys, and neither holds the other's index.
     expect(new Set(stored.map((r) => r.key)).size).toBe(2);
+  });
+
+  it('drops a queued build that a newer signature superseded', async () => {
+    // What serializing costs if every queued request is honoured. The
+    // signature is the sorted list of cached paths, so a background drain
+    // moves it once per file that lands: an install used to queue a full
+    // corpus build per file and run every one, each walking the registry,
+    // cloning the doc set to the worker and writing an index back, with search
+    // staying unready until the last of them drained. Only the newest can
+    // produce a row anybody reads.
+    const superseded = [
+      client.ensureSearchIndex(registry, 'sig1'),
+      client.ensureSearchIndex(registry, 'sig2'),
+      client.ensureSearchIndex(registry, 'sig3'),
+    ];
+    const current = client.ensureSearchIndex(registry, 'sig4');
+    await flush();
+
+    const w = FakeWorker.instances[0] as FakeWorker;
+    expect(w.posted).toHaveLength(1);
+
+    // The dropped ones settle rather than hanging: a caller still waiting on
+    // one gets the same answer as waiting on the build that replaced it.
+    await expect(Promise.all(superseded)).resolves.toEqual([undefined, undefined, undefined]);
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_4' });
+    await current;
+
+    // One build, one row, and it is the one the app will ask for next.
+    const stored = indexes.put.mock.calls.map(([r]) => r as { key: string; json: string });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.json).toBe('INDEX_4');
+  });
+
+  it('does not drop a queued build because the worker ahead of it died', async () => {
+    // A worker death is not a newer signature. Reading it as one would settle
+    // the queued build with no index built and nothing to press: its caller
+    // would be told the index is ready and get nothing back from every query.
+    const first = client.ensureSearchIndex(registry, 'sigA');
+    await flush();
+    const dead = FakeWorker.instances[0] as FakeWorker;
+    expect(dead.posted).toHaveLength(1);
+
+    const second = client.ensureSearchIndex(registry, 'sigB');
+    await flush();
+    dead.die();
+    await expect(first).rejects.toThrow();
+    await flush();
+
+    // The replacement worker is asked for the build that was waiting.
+    expect(FakeWorker.instances).toHaveLength(2);
+    const fresh = FakeWorker.instances[1] as FakeWorker;
+    expect(fresh.last?.kind).toBe('build');
+
+    fresh.reply({ kind: 'ready', serialized: 'INDEX_B' });
+    await second;
+    const stored = indexes.put.mock.calls.map(([r]) => r as { json: string });
+    expect(stored.map((r) => r.json)).toEqual(['INDEX_B']);
+  });
+
+  it('does not pay for the docs of a build it is going to drop', async () => {
+    // `docsFrom` walks the whole registry. A request that will be dropped
+    // should not walk it, which is why the message is built after the queue
+    // has confirmed the request is still the current one.
+    let walks = 0;
+    const counted = {
+      byType: () => {
+        walks++;
+        return [];
+      },
+      get: () => undefined,
+    } as never;
+
+    client.ensureSearchIndex(counted, 'sigX');
+    const current = client.ensureSearchIndex(counted, 'sigY');
+    await flush();
+
+    const w = FakeWorker.instances[0] as FakeWorker;
+    expect(w.posted).toHaveLength(1);
+    const walksForOneBuild = walks;
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_Y' });
+    await current;
+
+    // The walk happened once, for the build that ran.
+    expect(walksForOneBuild).toBeGreaterThan(0);
+    expect(walks).toBe(walksForOneBuild);
   });
 });
 

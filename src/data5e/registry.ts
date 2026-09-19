@@ -95,6 +95,15 @@ export function homebrewSourceNames(
  * in memory. That was most of the delay before a page could paint.
  */
 export async function getRegistry(): Promise<EntityRegistry> {
+  beginRead();
+  try {
+    return await readRegistry();
+  } finally {
+    endRead();
+  }
+}
+
+async function readRegistry(): Promise<EntityRegistry> {
   const startedAt = epoch;
   const [paths, { files: brews }] = await Promise.all([
     dataCacheRepo.cachedPaths(getActiveTag()),
@@ -122,6 +131,54 @@ export async function getRegistry(): Promise<EntityRegistry> {
     currentSignature = signature;
   }
   return reg;
+}
+
+/**
+ * Whether a registry read is in flight, and who to tell when that changes.
+ *
+ * This lives here rather than in each `useRegistryState` because it is a
+ * property of the registry, not of any one component. Every consumer used to
+ * hold its own copy as React state, which meant two extra renders of every
+ * page reading the registry for each of the hundreds of files a background
+ * drain lands, in components that never looked at the value. Published once,
+ * only the pages that ask to hear about it pay for it.
+ */
+let readsInFlight = 0;
+const readListeners = new Set<() => void>();
+
+/** Tell the listeners, but only when the flag itself moved. */
+function announceReads(wasRefreshing: boolean): void {
+  if (isRegistryRefreshing() === wasRefreshing) return;
+  for (const fn of [...readListeners]) fn();
+}
+
+function beginRead(): void {
+  const wasRefreshing = isRegistryRefreshing();
+  readsInFlight++;
+  announceReads(wasRefreshing);
+}
+
+function endRead(): void {
+  const wasRefreshing = isRegistryRefreshing();
+  readsInFlight--;
+  announceReads(wasRefreshing);
+}
+
+/**
+ * True while the registry is catching up with the files on disk. A page that
+ * reads "nothing here" out of the registry during this window is reading a
+ * stale answer, not a final one.
+ */
+export function isRegistryRefreshing(): boolean {
+  return readsInFlight > 0;
+}
+
+/** Subscribe to {@link isRegistryRefreshing} changes. Returns the unsubscribe. */
+export function subscribeRegistryRefreshing(fn: () => void): () => void {
+  readListeners.add(fn);
+  return () => {
+    readListeners.delete(fn);
+  };
 }
 
 /** Ensure the given packs are downloaded, then return a registry containing them. */

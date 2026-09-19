@@ -10,6 +10,7 @@ const {
   ensureTypePacks,
   repairTypePacks,
   invalidateRegistry,
+  refreshing,
 } = vi.hoisted(() => ({
   getRegistry: vi.fn(),
   ensureSearchIndex: vi.fn(),
@@ -18,7 +19,15 @@ const {
   invalidateRegistry: vi.fn(),
   /** Stands in for the client's worker-loss subscription. */
   lost: new Set<() => void>(),
+  /** Stands in for the registry module's rebuild-in-flight signal. */
+  refreshing: { value: false, listeners: new Set<() => void>() },
 }));
+
+/** Move the fake signal and tell whoever subscribed, as the real one does. */
+function setRefreshing(value: boolean): void {
+  refreshing.value = value;
+  for (const fn of [...refreshing.listeners]) fn();
+}
 
 vi.mock('./loader', () => ({ ensureTypePacks, repairTypePacks }));
 vi.mock('./registry', () => ({
@@ -26,6 +35,13 @@ vi.mock('./registry', () => ({
   ensureRegistry: getRegistry,
   registrySignature: () => 'sig',
   invalidateRegistry,
+  isRegistryRefreshing: () => refreshing.value,
+  subscribeRegistryRefreshing: (fn: () => void) => {
+    refreshing.listeners.add(fn);
+    return () => {
+      refreshing.listeners.delete(fn);
+    };
+  },
 }));
 vi.mock('./search/client', () => ({
   ensureSearchIndex,
@@ -38,7 +54,7 @@ vi.mock('./search/client', () => ({
 }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
-import { useRegistryState, useSearchState, useTypePacks } from './hooks';
+import { useRegistryRefreshing, useRegistryState, useSearchState, useTypePacks } from './hooks';
 
 const fakeRegistry = { byType: () => [], get: () => undefined } as never;
 
@@ -161,22 +177,46 @@ describe('useSearchState', () => {
   });
 });
 
-describe('useRegistryState refresh reporting', () => {
-  it('reports refreshing while a rebuild is running, and not after', async () => {
-    let settle = (_registry: unknown): void => undefined;
-    getRegistry.mockReturnValue(
-      new Promise((resolve) => {
-        settle = resolve;
-      }),
-    );
-    const { result } = renderHook(() => useRegistryState());
-    expect(result.current.refreshing).toBe(true);
+describe('useRegistryRefreshing', () => {
+  it('follows the registry module\u2019s signal', async () => {
+    setRefreshing(false);
+    const { result } = renderHook(() => useRegistryRefreshing());
+    expect(result.current).toBe(false);
 
-    act(() => settle(fakeRegistry));
-    await waitFor(() => expect(result.current.refreshing).toBe(false));
-    expect(result.current.status).toBe('ready');
+    act(() => setRefreshing(true));
+    expect(result.current).toBe(true);
+
+    act(() => setRefreshing(false));
+    expect(result.current).toBe(false);
   });
 
+  it('unsubscribes on unmount', () => {
+    const { unmount } = renderHook(() => useRegistryRefreshing());
+    expect(refreshing.listeners.size).toBe(1);
+    unmount();
+    expect(refreshing.listeners.size).toBe(0);
+  });
+
+  it('does not re-render the pages that only want the registry', async () => {
+    // The whole reason this is a hook of its own: the registry rebuilds once
+    // per file a background drain lands, and every page reading the registry
+    // used to re-render twice for each one over a value it never looked at.
+    getRegistry.mockResolvedValue(fakeRegistry);
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useRegistryState();
+    });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const settled = renders;
+    act(() => setRefreshing(true));
+    act(() => setRefreshing(false));
+    expect(renders).toBe(settled);
+  });
+});
+
+describe('useRegistryState refresh reporting', () => {
   it('keeps the registry it has when a later rebuild fails', async () => {
     // The rebuild re-runs as downloads land. One that throws must not blank a
     // page that is rendering correctly from the registry already in hand.
@@ -192,14 +232,12 @@ describe('useRegistryState refresh reporting', () => {
     await waitFor(() => expect(result.current.error).toBe('QuotaExceededError'));
     expect(result.current.status).toBe('ready');
     expect(result.current.registry).toBe(fakeRegistry);
-    expect(result.current.refreshing).toBe(false);
   });
 
   it('reports an error when there is no registry to fall back on', async () => {
     getRegistry.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useRegistryState());
     await waitFor(() => expect(result.current.status).toBe('error'));
-    expect(result.current.refreshing).toBe(false);
   });
 });
 
