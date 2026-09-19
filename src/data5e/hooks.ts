@@ -6,6 +6,7 @@ import type { PackId } from './packs';
 import {
   ensureRegistry,
   getRegistry,
+  holdRegistryRefreshing,
   invalidateRegistry,
   isRegistryRefreshing,
   registrySignature,
@@ -58,18 +59,29 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
+    // Released in the same synchronous block as `setRegistry`, so React
+    // batches the flag dropping with the registry arriving. Releasing it any
+    // later (in a `.finally`, or inside `getRegistry` itself) commits a frame
+    // that reports nothing in flight while this hook still holds the previous
+    // registry, which is what the library reads as "nothing here".
+    const release = holdRegistryRefreshing();
     const run = async () => {
       const reg = packs.length > 0 ? await ensureRegistry([...packs]) : await getRegistry();
       if (alive) {
         setRegistry(reg);
         setError(null);
       }
+      release();
     };
     run().catch((e: unknown) => {
       if (alive) setError(e instanceof Error ? e.message : String(e));
+      release();
     });
     return () => {
       alive = false;
+      // An unmounted hook will never apply what it read, so it has no claim on
+      // the flag: leaving it held would strand the pages that do read it.
+      release();
     };
   }, [key, phase, filesDone, nonce]);
 

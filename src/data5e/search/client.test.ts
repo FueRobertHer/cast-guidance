@@ -276,8 +276,14 @@ describe('two builds asked for at once', () => {
 
   it('does not drop a queued build because the worker ahead of it died', async () => {
     // A worker death is not a newer signature. Reading it as one would settle
-    // the queued build with no index built and nothing to press: its caller
-    // would be told the index is ready and get nothing back from every query.
+    // the queued build without ever asking the replacement worker to build,
+    // which is what this checks: the build is posted and its row written.
+    //
+    // Note what this does NOT cover. `recycleWorker` nulls `readyPromise` and
+    // nothing restores it, so a query after this sequence still answers empty
+    // while `useSearchState` reports ready. That hole predates supersession
+    // and is not what this test is about; adding a `searchAll` assertion here
+    // would fail today.
     const first = client.ensureSearchIndex(registry, 'sigA');
     await flush();
     const dead = FakeWorker.instances[0] as FakeWorker;
@@ -313,20 +319,30 @@ describe('two builds asked for at once', () => {
       get: () => undefined,
     } as never;
 
-    client.ensureSearchIndex(counted, 'sigX');
-    const current = client.ensureSearchIndex(counted, 'sigY');
+    // What one build costs, measured with nothing to supersede it.
+    const alone = client.ensureSearchIndex(counted, 'sig1');
     await flush();
-
     const w = FakeWorker.instances[0] as FakeWorker;
-    expect(w.posted).toHaveLength(1);
-    const walksForOneBuild = walks;
+    w.reply({ kind: 'ready', serialized: 'INDEX_1' });
+    await alone;
+    const perBuild = walks;
+    expect(perBuild).toBeGreaterThan(0);
 
-    w.reply({ kind: 'ready', serialized: 'INDEX_Y' });
+    // Now one that gets dropped, and one that runs. Counted against `perBuild`
+    // rather than against a mark taken after the drop: the dropped request has
+    // already had its chance to walk by then, so a mark cannot tell the two
+    // apart and the assertion holds whether or not the message is lazy.
+    client.ensureSearchIndex(counted, 'sig2');
+    const current = client.ensureSearchIndex(counted, 'sig3');
+    await flush();
+    expect(w.posted).toHaveLength(2);
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_3' });
     await current;
 
-    // The walk happened once, for the build that ran.
-    expect(walksForOneBuild).toBeGreaterThan(0);
-    expect(walks).toBe(walksForOneBuild);
+    // Two builds ran in total, so two walks' worth. Building the message up
+    // front instead would make it three.
+    expect(walks).toBe(perBuild * 2);
   });
 });
 

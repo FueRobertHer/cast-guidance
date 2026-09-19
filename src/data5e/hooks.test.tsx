@@ -35,6 +35,7 @@ vi.mock('./registry', () => ({
   ensureRegistry: getRegistry,
   registrySignature: () => 'sig',
   invalidateRegistry,
+  holdRegistryRefreshing: () => () => undefined,
   isRegistryRefreshing: () => refreshing.value,
   subscribeRegistryRefreshing: (fn: () => void) => {
     refreshing.listeners.add(fn);
@@ -197,10 +198,13 @@ describe('useRegistryRefreshing', () => {
     expect(refreshing.listeners.size).toBe(0);
   });
 
-  it('does not re-render the pages that only want the registry', async () => {
-    // The whole reason this is a hook of its own: the registry rebuilds once
-    // per file a background drain lands, and every page reading the registry
-    // used to re-render twice for each one over a value it never looked at.
+  it('is not something useRegistryState subscribes to on its behalf', async () => {
+    // The whole reason this is a hook of its own. The registry rebuilds once
+    // per file a background drain lands, so the flag moves hundreds of times
+    // during an install, and it used to be state inside the shared hook: every
+    // page reading the registry re-rendered for a value only the library looks
+    // at, and `useRegistry` discarded it at ten call sites. A subscription
+    // taken here is the thing that must not come back.
     getRegistry.mockResolvedValue(fakeRegistry);
     let renders = 0;
     const { result } = renderHook(() => {
@@ -208,6 +212,7 @@ describe('useRegistryRefreshing', () => {
       return useRegistryState();
     });
     await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(refreshing.listeners.size).toBe(0);
 
     const settled = renders;
     act(() => setRefreshing(true));

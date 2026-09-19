@@ -173,6 +173,30 @@ export function isRegistryRefreshing(): boolean {
   return readsInFlight > 0;
 }
 
+/**
+ * Hold the flag up across work this module cannot see the end of, and release
+ * it with the returned function (idempotent, so a cleanup path can call it
+ * without checking).
+ *
+ * `useRegistryState` needs this because the flag has to stay up until the
+ * registry it read has been *applied*, not until the read settled. `endRead`
+ * runs in `getRegistry`'s `finally`, which is a microtask before the awaiting
+ * caller's `setRegistry`, so a consumer bracketing only the read commits a
+ * frame reporting nothing in flight while still holding the previous
+ * registry. That frame is the exact false answer this flag exists to prevent:
+ * the library renders "Nothing here yet" over a section whose files have
+ * already landed.
+ */
+export function holdRegistryRefreshing(): () => void {
+  beginRead();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    endRead();
+  };
+}
+
 /** Subscribe to {@link isRegistryRefreshing} changes. Returns the unsubscribe. */
 export function subscribeRegistryRefreshing(fn: () => void): () => void {
   readListeners.add(fn);

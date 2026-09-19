@@ -2,7 +2,7 @@
 // that powers SEARCH-001: an editable-homebrew edit must change the registry
 // signature (the search-index cache key) so results can't go stale.
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
@@ -167,6 +167,16 @@ describe('a rebuild that spans an invalidation', () => {
 });
 
 describe('the rebuild-in-flight signal', () => {
+  // Registered subscribers are module state: one left behind by a test that
+  // threw before its own cleanup would go on firing for the rest of the file.
+  const subscribed: Array<() => void> = [];
+  const listen = (fn: () => void) => {
+    subscribed.push(subscribeRegistryRefreshing(fn));
+  };
+  afterEach(() => {
+    for (const off of subscribed.splice(0)) off();
+  });
+
   it('is raised for as long as a read is running, and told to whoever asked', async () => {
     // The library reads this to tell "not in the data" from "not in the data
     // yet". It lives on the registry rather than in each component's state
@@ -175,7 +185,7 @@ describe('the rebuild-in-flight signal', () => {
     expect(isRegistryRefreshing()).toBe(false);
 
     const seen: boolean[] = [];
-    const unsubscribe = subscribeRegistryRefreshing(() => seen.push(isRegistryRefreshing()));
+    listen(() => seen.push(isRegistryRefreshing()));
 
     const reading = getRegistry();
     expect(isRegistryRefreshing()).toBe(true);
@@ -183,7 +193,6 @@ describe('the rebuild-in-flight signal', () => {
     expect(isRegistryRefreshing()).toBe(false);
 
     expect(seen).toEqual([true, false]);
-    unsubscribe();
   });
 
   it('stays raised until the last of several overlapping reads is done', async () => {
@@ -191,7 +200,7 @@ describe('the rebuild-in-flight signal', () => {
     // Dropping the flag when the first of them finishes would call the
     // registry current while another was still rebuilding it.
     const seen: boolean[] = [];
-    const unsubscribe = subscribeRegistryRefreshing(() => seen.push(isRegistryRefreshing()));
+    listen(() => seen.push(isRegistryRefreshing()));
 
     const reads = [getRegistry(), getRegistry(), getRegistry()];
     expect(isRegistryRefreshing()).toBe(true);
@@ -201,7 +210,6 @@ describe('the rebuild-in-flight signal', () => {
     await Promise.all(reads);
     expect(isRegistryRefreshing()).toBe(false);
     expect(seen).toEqual([true, false]);
-    unsubscribe();
   });
 
   it('comes back down when a read throws', async () => {
