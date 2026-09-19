@@ -276,14 +276,7 @@ describe('two builds asked for at once', () => {
 
   it('does not drop a queued build because the worker ahead of it died', async () => {
     // A worker death is not a newer signature. Reading it as one would settle
-    // the queued build without ever asking the replacement worker to build,
-    // which is what this checks: the build is posted and its row written.
-    //
-    // Note what this does NOT cover. `recycleWorker` nulls `readyPromise` and
-    // nothing restores it, so a query after this sequence still answers empty
-    // while `useSearchState` reports ready. That hole predates supersession
-    // and is not what this test is about; adding a `searchAll` assertion here
-    // would fail today.
+    // the queued build without ever asking the replacement worker to build.
     const first = client.ensureSearchIndex(registry, 'sigA');
     await flush();
     const dead = FakeWorker.instances[0] as FakeWorker;
@@ -304,6 +297,83 @@ describe('two builds asked for at once', () => {
     await second;
     const stored = indexes.put.mock.calls.map(([r]) => r as { json: string });
     expect(stored.map((r) => r.json)).toEqual(['INDEX_B']);
+
+    // And the index it built is reachable. `recycleWorker` nulled
+    // `readyPromise` for the worker it buried; a build that survives it has to
+    // put that back, or `searchAll` short-circuits empty for the rest of the
+    // session while the view it feeds reports the index ready.
+    const posted = fresh.posted.length;
+    const hits = client.searchAll('fire');
+    await tick();
+    expect(fresh.posted).toHaveLength(posted + 1);
+    expect(fresh.last?.kind).toBe('query');
+    fresh.reply({
+      kind: 'results',
+      id: (fresh.last as { id: number }).id,
+      hits: [
+        {
+          id: 'spell:fireball|phb',
+          type: 'spell',
+          uid: 'fireball|phb',
+          name: 'Fireball',
+          source: 'PHB',
+        },
+      ],
+      hiddenCount: 0,
+    });
+    expect((await hits).hits.map((h) => h.name)).toEqual(['Fireball']);
+  });
+
+  it('does not restore a build whose own worker died right after answering', async () => {
+    // The index lives inside the worker. Putting `readyPromise` back for a
+    // build whose worker is already gone points every query at a fresh, empty
+    // one: five seconds of waiting and no hits, where short-circuiting at
+    // least settles at once and leaves the retry in front of the user.
+    const first = client.ensureSearchIndex(registry, 'sigA');
+    await flush();
+    const w = FakeWorker.instances[0] as FakeWorker;
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_A' });
+    // Between the answer and the row being written: the attempt has its index,
+    // and then has nowhere to keep it.
+    w.die();
+    await first;
+    await flush();
+
+    const before = FakeWorker.instances.length;
+    await expect(client.searchAll('fire')).resolves.toEqual({ hits: [], hiddenCount: 0 });
+    // No fresh worker was spun up to answer into the void.
+    expect(FakeWorker.instances).toHaveLength(before);
+  });
+
+  it('does not install a stale index when the build that replaced it failed', async () => {
+    // The narrow case `stillWanted` covers in the restore. This attempt passed
+    // the supersession check and genuinely built, so it has a real index in a
+    // live worker; a newer signature arrived only afterwards, and then failed,
+    // which is what nulls `readyPromise` and opens the restore path. Putting
+    // this one back would point `searchAll` at the older corpus under a
+    // signature saying it is current, which is the staleness the whole queue
+    // exists to prevent.
+    const first = client.ensureSearchIndex(registry, 'sigA');
+    await flush();
+    const w = FakeWorker.instances[0] as FakeWorker;
+    expect(w.last?.kind).toBe('build');
+
+    w.reply({ kind: 'ready', serialized: 'INDEX_A' });
+    // After sigA's turn, so sigA was current when it built, and before its
+    // own continuation has finished writing the row.
+    indexes.get.mockRejectedValueOnce(new Error('QuotaExceededError'));
+    const second = client.ensureSearchIndex(registry, 'sigB');
+    await expect(second).rejects.toThrow('QuotaExceededError');
+    await first;
+    await flush();
+
+    // sigB failed, so search is down and offers its retry. What it must not do
+    // is quietly answer out of sigA's corpus instead.
+    const before = FakeWorker.instances.length;
+    await expect(client.searchAll('fire')).resolves.toEqual({ hits: [], hiddenCount: 0 });
+    expect(FakeWorker.instances).toHaveLength(before);
+    expect(w.last?.kind).toBe('build');
   });
 
   it('does not pay for the docs of a build it is going to drop', async () => {

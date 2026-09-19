@@ -186,10 +186,20 @@ const BUILD_TIMEOUT_MS = 30_000;
  * mid-request, and silence. Callers (`useSearchState`) can then show an error
  * and a retry instead of an index that silently never becomes ready.
  */
-function sendIndexRequest(msg: SearchWorkerRequest): Promise<string | undefined> {
+interface IndexOutcome {
+  serialized: string | undefined;
+  /**
+   * The worker that answered. Captured where the request was posted rather
+   * than read back after the await: a worker can die between its own `ready`
+   * and the caller resuming, and reading it late reports the replacement.
+   */
+  generation: number;
+}
+
+function sendIndexRequest(msg: SearchWorkerRequest): Promise<IndexOutcome> {
   const w = getWorker();
   const generation = workerGeneration;
-  return new Promise<string | undefined>((resolve, reject) => {
+  return new Promise<IndexOutcome>((resolve, reject) => {
     const stop = () => {
       clearTimeout(timer);
       w.removeEventListener('message', onMessage);
@@ -206,7 +216,7 @@ function sendIndexRequest(msg: SearchWorkerRequest): Promise<string | undefined>
     const onMessage = (ev: MessageEvent<SearchWorkerResponse>) => {
       if (ev.data.kind === 'ready') {
         stop();
-        resolve(ev.data.serialized);
+        resolve({ serialized: ev.data.serialized, generation });
       } else if (ev.data.kind === 'error' && ev.data.phase !== 'query') {
         stop();
         reject(new SearchWorkerError(ev.data.message || 'search worker failed', ev.data.phase));
@@ -271,7 +281,7 @@ class SupersededError extends Error {
 function requestIndex(
   build: () => SearchWorkerRequest,
   stillWanted: () => boolean,
-): Promise<string | undefined> {
+): Promise<IndexOutcome> {
   const run = async () => {
     if (!stillWanted()) throw new SupersededError();
     return sendIndexRequest(build());
@@ -292,11 +302,18 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
   wantedSignature = signature;
   const stillWanted = () => signature === wantedSignature;
 
+  // The worker generation that answered this attempt's request. The index
+  // lives inside that worker, so a restore below is only meaningful while it
+  // is still the one `getWorker` hands out.
+  let builtUnder = -1;
+
   const attempt = (async () => {
     const cached = await db.searchIndexes.get(key);
     if (cached !== undefined) {
       try {
-        await requestIndex(() => ({ kind: 'load', serialized: cached.json }), stillWanted);
+        builtUnder = (
+          await requestIndex(() => ({ kind: 'load', serialized: cached.json }), stillWanted)
+        ).generation;
         return;
       } catch (err) {
         if (err instanceof SupersededError) return;
@@ -312,10 +329,12 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
     }
     let serialized: string | undefined;
     try {
-      serialized = await requestIndex(
+      const outcome = await requestIndex(
         () => ({ kind: 'build', docs: docsFrom(registry) }),
         stillWanted,
       );
+      serialized = outcome.serialized;
+      builtUnder = outcome.generation;
     } catch (err) {
       // A newer signature is already in flight, so there is nothing to report
       // and nothing to retry: resolving hands this attempt's waiters the same
@@ -331,14 +350,38 @@ export function ensureSearchIndex(registry: EntityRegistry, signature: string): 
   })();
 
   readyPromise = attempt;
-  // On failure, clear state so a retry with the same signature re-attempts
-  // instead of returning the already-rejected promise.
-  attempt.catch(() => {
-    if (readyPromise === attempt) {
-      readyPromise = null;
-      indexedSignature = '';
-    }
-  });
+  attempt.then(
+    () => {
+      // `recycleWorker` nulls `readyPromise` for the worker it buried, but a
+      // request queued behind that worker goes on to succeed on its
+      // replacement, and nothing else puts the index it built back within
+      // reach. Without this, `searchAll` sees a null `readyPromise` and
+      // answers every query empty for the rest of the session while
+      // `useSearchState`, whose promise resolved, reports the index ready.
+      //
+      // All three guards are load-bearing. `stillWanted` keeps a superseded
+      // attempt, which resolves having built nothing, from installing itself.
+      // The null check keeps it from displacing a newer attempt already in
+      // flight (a signature can return to one it has left, so `stillWanted`
+      // alone would let the first, abandoned attempt back in). And the
+      // generation check keeps a worker that died after answering from being
+      // restored anyway: the index went with it, so pointing `searchAll` at a
+      // resolved promise would send every query to a fresh, empty worker to
+      // time out, which is worse than short-circuiting.
+      if (stillWanted() && readyPromise === null && builtUnder === workerGeneration) {
+        readyPromise = attempt;
+        indexedSignature = signature;
+      }
+    },
+    // On failure, clear state so a retry with the same signature re-attempts
+    // instead of returning the already-rejected promise.
+    () => {
+      if (readyPromise === attempt) {
+        readyPromise = null;
+        indexedSignature = '';
+      }
+    },
+  );
   return attempt;
 }
 
