@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import type { FeatureCard } from '@/engine/types';
-import { Sheet } from './sheet';
+import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /**
  * The rules text behind a derived mechanic (resource, action, …), located by
@@ -55,19 +55,33 @@ export function findFeatureInfo(
  * Tap-to-explain bottom sheet: shows a feature's full rules text right where
  * the player is, instead of sending them hunting through the More tab.
  */
-export function FeatureInfoSheet({
-  title,
-  subtitle,
-  entries,
-  trigger,
-}: {
+export interface FeatureInfoSheetProps {
   title: string;
   subtitle?: string;
   entries: unknown;
   trigger: ReactNode;
-}) {
+}
+
+/**
+ * The trigger until the player asks for the feature, then the sheet. The Play
+ * tab renders one per feature row, and an unopened row should not be paying
+ * for a `Drawer.Root` and the `window` scroll listener it brings (see
+ * {@link SheetStandIn}).
+ */
+export function FeatureInfoSheet(props: FeatureInfoSheetProps) {
+  const [armed, setArmed] = useState(false);
+  if (!armed) {
+    return <SheetStandIn trigger={props.trigger} onArm={() => setArmed(true)} />;
+  }
+  return <FeatureInfoSheetContent {...props} />;
+}
+
+function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureInfoSheetProps) {
+  // Mounted by the press that opens it; see `useSheetOpenOnMount`.
+  const [open, setOpen] = useSheetOpenOnMount();
+
   return (
-    <Sheet.Root>
+    <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
