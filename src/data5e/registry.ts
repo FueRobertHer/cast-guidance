@@ -95,6 +95,15 @@ export function homebrewSourceNames(
  * in memory. That was most of the delay before a page could paint.
  */
 export async function getRegistry(): Promise<EntityRegistry> {
+  beginRead();
+  try {
+    return await readRegistry();
+  } finally {
+    endRead();
+  }
+}
+
+async function readRegistry(): Promise<EntityRegistry> {
   const startedAt = epoch;
   const [paths, { files: brews }] = await Promise.all([
     dataCacheRepo.cachedPaths(getActiveTag()),
@@ -122,6 +131,99 @@ export async function getRegistry(): Promise<EntityRegistry> {
     currentSignature = signature;
   }
   return reg;
+}
+
+/**
+ * Whether a registry read is in flight, and who to tell when that changes.
+ *
+ * This lives here rather than in each `useRegistryState` because it is a
+ * property of the registry, not of any one component. Every consumer used to
+ * hold its own copy as React state, which meant two extra renders of every
+ * page reading the registry for each of the hundreds of files a background
+ * drain lands, in components that never looked at the value. Published once,
+ * only the pages that ask to hear about it pay for it.
+ */
+let readsInFlight = 0;
+const readListeners = new Set<() => void>();
+
+/**
+ * Tell the listeners, but only when the flag itself moved.
+ *
+ * Each one is isolated because the count is raised before this runs and
+ * released after the caller has its release function: a subscriber throwing
+ * its way out of here would strand `readsInFlight` above zero with nothing
+ * left to lower it, leaving the library reporting a download in progress for
+ * the rest of the session over a registry that finished long ago, and would
+ * take the subscribers behind it down with it.
+ *
+ * Reported rather than swallowed. A stranded counter at least shows a
+ * symptom; a subscriber that fails in silence gives nobody anything to go on.
+ * The app has no error reporting to hand it to, and rethrowing out of band
+ * would surface as an unhandled error with no stack pointing here, so the
+ * console is the honest place for it.
+ */
+function announceReads(wasRefreshing: boolean): void {
+  if (isRegistryRefreshing() === wasRefreshing) return;
+  for (const fn of [...readListeners]) {
+    try {
+      fn();
+    } catch (err) {
+      console.error('a registry refresh subscriber threw', err);
+    }
+  }
+}
+
+function beginRead(): void {
+  const wasRefreshing = isRegistryRefreshing();
+  readsInFlight++;
+  announceReads(wasRefreshing);
+}
+
+function endRead(): void {
+  const wasRefreshing = isRegistryRefreshing();
+  readsInFlight--;
+  announceReads(wasRefreshing);
+}
+
+/**
+ * True while the registry is catching up with the files on disk. A page that
+ * reads "nothing here" out of the registry during this window is reading a
+ * stale answer, not a final one.
+ */
+export function isRegistryRefreshing(): boolean {
+  return readsInFlight > 0;
+}
+
+/**
+ * Hold the flag up across work this module cannot see the end of, and release
+ * it with the returned function (idempotent, so a cleanup path can call it
+ * without checking).
+ *
+ * `useRegistryState` needs this because the flag has to stay up until the
+ * registry it read has been *applied*, not until the read settled. `endRead`
+ * runs in `getRegistry`'s `finally`, which is a microtask before the awaiting
+ * caller's `setRegistry`, so a consumer bracketing only the read commits a
+ * frame reporting nothing in flight while still holding the previous
+ * registry. That frame is the exact false answer this flag exists to prevent:
+ * the library renders "Nothing here yet" over a section whose files have
+ * already landed.
+ */
+export function holdRegistryRefreshing(): () => void {
+  beginRead();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    endRead();
+  };
+}
+
+/** Subscribe to {@link isRegistryRefreshing} changes. Returns the unsubscribe. */
+export function subscribeRegistryRefreshing(fn: () => void): () => void {
+  readListeners.add(fn);
+  return () => {
+    readListeners.delete(fn);
+  };
 }
 
 /** Ensure the given packs are downloaded, then return a registry containing them. */

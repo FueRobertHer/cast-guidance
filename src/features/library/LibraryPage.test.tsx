@@ -7,16 +7,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { reg, packs } = vi.hoisted(() => ({
+const { reg, refreshing, packs } = vi.hoisted(() => ({
   reg: {
     current: {
       registry: null as unknown,
       status: 'loading' as string,
       error: null as string | null,
-      refreshing: false,
       retry: vi.fn(),
     },
   },
+  /**
+   * Whether a registry rebuild is in flight. Its own hook, not a field of the
+   * registry state, so the pages that only want the registry do not re-render
+   * every time it moves.
+   */
+  refreshing: { current: false },
   packs: {
     lastType: undefined as string | undefined,
     lastOnRepaired: undefined as (() => void) | undefined,
@@ -32,6 +37,7 @@ const { reg, packs } = vi.hoisted(() => ({
 
 vi.mock('@/data5e/hooks', () => ({
   useRegistryState: () => reg.current,
+  useRegistryRefreshing: () => refreshing.current,
   useSearchState: () => ({ status: 'ready', error: null, retry: vi.fn() }),
   useTypePacks: (type: string, onRepaired?: () => void) => {
     packs.lastType = type;
@@ -73,9 +79,9 @@ beforeEach(() => {
     registry: registryWith([{ name: 'Fireball', source: 'PHB', entries: [] }]),
     status: 'ready',
     error: null,
-    refreshing: false,
     retry: vi.fn(),
   };
+  refreshing.current = false;
   packs.current = {
     status: 'ready',
     error: null,
@@ -147,7 +153,7 @@ describe('the detail view when the entity is not there', () => {
     // The packs go ready when the files land; the registry is rebuilt after
     // that. In between it is real but older, and reading "missing" from it
     // offers a re-download for something that has only just arrived.
-    reg.current = { ...reg.current, refreshing: true };
+    refreshing.current = true;
     renderAt('/library/spell/nonesuch%7Cphb');
 
     expect(screen.getByText('Loading…')).toBeTruthy();
@@ -251,7 +257,8 @@ describe('the type list', () => {
   it('does not call a section empty while the registry is catching up', () => {
     // Every file cached means the packs are ready at once, while the registry
     // is still deserializing the whole compendium behind it.
-    reg.current = { ...reg.current, registry: registryWith([]), refreshing: true };
+    reg.current = { ...reg.current, registry: registryWith([]) };
+    refreshing.current = true;
     renderAt('/library/spell');
 
     expect(screen.getByText('Downloading this section…')).toBeTruthy();

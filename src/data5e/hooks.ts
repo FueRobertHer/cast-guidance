@@ -1,9 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
 import type { PackId } from './packs';
-import { ensureRegistry, getRegistry, invalidateRegistry, registrySignature } from './registry';
+import {
+  ensureRegistry,
+  getRegistry,
+  holdRegistryRefreshing,
+  invalidateRegistry,
+  isRegistryRefreshing,
+  registrySignature,
+  subscribeRegistryRefreshing,
+} from './registry';
 import { ensureSearchIndex, onSearchIndexLost } from './search/client';
 
 export type AsyncStatus = 'loading' | 'ready' | 'error';
@@ -12,16 +20,21 @@ export interface RegistryState {
   registry: EntityRegistry | null;
   status: AsyncStatus;
   error: string | null;
-  /**
-   * A registry is in hand and a newer one is being built. The registry
-   * rebuilds as downloads land, so there is a window where the one a caller
-   * holds is real but older than the files on disk. A page that reads
-   * "nothing here" from it during that window is reading a stale answer, not
-   * a final one.
-   */
-  refreshing: boolean;
   /** Re-attempt after a failure (or force a refresh). */
   retry: () => void;
+}
+
+/**
+ * Whether a registry rebuild is running (see {@link isRegistryRefreshing}).
+ *
+ * Separate from {@link useRegistryState} on purpose. The registry rebuilds
+ * once per file a background drain lands, so this flips hundreds of times
+ * during an install, and it used to be React state inside the shared hook:
+ * every page reading the registry re-rendered twice per file for a value only
+ * the library looks at. Asking for it is now what costs something.
+ */
+export function useRegistryRefreshing(): boolean {
+  return useSyncExternalStore(subscribeRegistryRefreshing, isRegistryRefreshing, () => false);
 }
 
 /**
@@ -33,7 +46,6 @@ export interface RegistryState {
 export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   const [registry, setRegistry] = useState<EntityRegistry | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(true);
   const [nonce, setNonce] = useState(0);
   const phase = useDataStatus((s) => s.phase);
   const filesDone = useDataStatus((s) => s.filesDone);
@@ -47,23 +59,29 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
-    setRefreshing(true);
+    // Released in the same synchronous block as `setRegistry`, so React
+    // batches the flag dropping with the registry arriving. Releasing it any
+    // later (in a `.finally`, or inside `getRegistry` itself) commits a frame
+    // that reports nothing in flight while this hook still holds the previous
+    // registry, which is what the library reads as "nothing here".
+    const release = holdRegistryRefreshing();
     const run = async () => {
       const reg = packs.length > 0 ? await ensureRegistry([...packs]) : await getRegistry();
       if (alive) {
         setRegistry(reg);
         setError(null);
       }
+      release();
     };
-    run()
-      .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (alive) setRefreshing(false);
-      });
+    run().catch((e: unknown) => {
+      if (alive) setError(e instanceof Error ? e.message : String(e));
+      release();
+    });
     return () => {
       alive = false;
+      // An unmounted hook will never apply what it read, so it has no claim on
+      // the flag: leaving it held would strand the pages that do read it.
+      release();
     };
   }, [key, phase, filesDone, nonce]);
 
@@ -75,7 +93,6 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
     registry,
     status,
     error,
-    refreshing,
     retry: () => {
       setError(null);
       setNonce((n) => n + 1);

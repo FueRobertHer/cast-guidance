@@ -2,12 +2,18 @@
 // that powers SEARCH-001: an editable-homebrew edit must change the registry
 // signature (the search-index cache key) so results can't go stale.
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { getActiveTag } from './loader';
-import { getRegistry, invalidateRegistry, registrySignature } from './registry';
+import {
+  getRegistry,
+  invalidateRegistry,
+  isRegistryRefreshing,
+  registrySignature,
+  subscribeRegistryRefreshing,
+} from './registry';
 
 function brewJson(spellName: string) {
   return {
@@ -157,5 +163,92 @@ describe('a rebuild that spans an invalidation', () => {
 
     const after = await getRegistry();
     expect(after.get('race', 'Elf')).toBeDefined();
+  });
+});
+
+describe('the rebuild-in-flight signal', () => {
+  // Registered subscribers are module state: one left behind by a test that
+  // threw before its own cleanup would go on firing for the rest of the file.
+  const subscribed: Array<() => void> = [];
+  const listen = (fn: () => void) => {
+    subscribed.push(subscribeRegistryRefreshing(fn));
+  };
+  afterEach(() => {
+    for (const off of subscribed.splice(0)) off();
+  });
+
+  it('is raised for as long as a read is running, and told to whoever asked', async () => {
+    // The library reads this to tell "not in the data" from "not in the data
+    // yet". It lives on the registry rather than in each component's state
+    // because it moves once per file a background drain lands, and every page
+    // holding its own copy re-rendered twice for each one.
+    expect(isRegistryRefreshing()).toBe(false);
+
+    const seen: boolean[] = [];
+    listen(() => seen.push(isRegistryRefreshing()));
+
+    const reading = getRegistry();
+    expect(isRegistryRefreshing()).toBe(true);
+    await reading;
+    expect(isRegistryRefreshing()).toBe(false);
+
+    expect(seen).toEqual([true, false]);
+  });
+
+  it('stays raised until the last of several overlapping reads is done', async () => {
+    // Every page mounts its own registry hook, so reads overlap constantly.
+    // Dropping the flag when the first of them finishes would call the
+    // registry current while another was still rebuilding it.
+    const seen: boolean[] = [];
+    listen(() => seen.push(isRegistryRefreshing()));
+
+    const reads = [getRegistry(), getRegistry(), getRegistry()];
+    expect(isRegistryRefreshing()).toBe(true);
+    // One transition each way, however many readers there were.
+    expect(seen).toEqual([true]);
+
+    await Promise.all(reads);
+    expect(isRegistryRefreshing()).toBe(false);
+    expect(seen).toEqual([true, false]);
+  });
+
+  it('comes back down when a read throws', async () => {
+    const spy = vi
+      .spyOn(dataCacheRepo, 'cachedPaths')
+      .mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+    await expect(getRegistry()).rejects.toThrow('QuotaExceededError');
+    expect(isRegistryRefreshing()).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('is not left raised by a subscriber that throws', async () => {
+    // The count is raised before the listeners are told and released after, so
+    // a subscriber escaping the notification would stick the flag up with no
+    // release left to run: the library would report a download in progress
+    // for the rest of the session, over a registry that finished long ago.
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const after: boolean[] = [];
+    listen(() => {
+      throw new Error('a subscriber came apart');
+    });
+    listen(() => after.push(isRegistryRefreshing()));
+
+    await expect(getRegistry()).resolves.toBeDefined();
+    expect(isRegistryRefreshing()).toBe(false);
+    // The subscribers behind it were still told, both ways.
+    expect(after).toEqual([true, false]);
+    // And it did not fail in silence.
+    expect(reported).toHaveBeenCalled();
+    reported.mockRestore();
+  });
+
+  it('stops telling a subscriber that unsubscribed', async () => {
+    let told = 0;
+    const unsubscribe = subscribeRegistryRefreshing(() => told++);
+    unsubscribe();
+
+    await getRegistry();
+    expect(told).toBe(0);
   });
 });
