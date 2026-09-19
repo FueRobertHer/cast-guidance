@@ -109,3 +109,15 @@ db.version(3)
         row.bytes = jsonByteSize(row.json);
       });
   });
+
+/**
+ * Compound `[charId+at]` for the history table, for the same reason version 3
+ * indexed `bytes`: without it, the only way to ask for a character's newest
+ * snapshot, or for its snapshot keys in age order, is to load every row it
+ * has. Each row holds a whole character document, so every autosave was
+ * deserializing the fifty kept snapshots twice over (once to find the newest,
+ * once to work out what to prune) to end up using one of them and none of
+ * them respectively. Purely additive: no data changes shape, so no upgrade
+ * step.
+ */
+db.version(4).stores({ characterHistory: 'id, charId, at, [charId+at]' });
