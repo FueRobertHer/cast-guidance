@@ -2,9 +2,10 @@ import { ChevronUp, Dices } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
+import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
-import { filterByRulesVersion } from '@/data5e/rulesVersion';
+import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import {
   meetsMulticlassRequirements,
@@ -27,6 +28,15 @@ import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
+import {
+  cueKey,
+  type EditionCue,
+  type EditionSlot,
+  type EntityLookup,
+  editionCueNotes,
+  editionCues,
+  editionSwitchPreview,
+} from './editionCues';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -123,6 +133,24 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * How one identity pick sits with the character's rules version (GAME-003). The
+ * source badge beside it already says which book it came from; this says what
+ * that means here, which is the part filtering alone never answered.
+ */
+function EditionChip({ cue, version }: { cue: EditionCue | undefined; version: RulesVersion }) {
+  const chip = cue === undefined ? undefined : editionFitChip(cue.fit, version);
+  if (chip === undefined) return null;
+  return (
+    <span
+      title={chip.title}
+      className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
+    >
+      {chip.text}
+    </span>
+  );
+}
+
 function Section({
   title,
   summary,
@@ -190,6 +218,33 @@ export function Component() {
           )
       : [];
   const backgrounds = filterByRulesVersion([...registry.byType('background')], doc.rulesVersion);
+
+  // Edition standing of the identity picks, against the version this character
+  // is on now. Keyed by slot + ref so a chip beside a pick finds its own cue.
+  const lookup: EntityLookup = (type, ref) => registry.get(type, ref.name, ref.source);
+  const cues = editionCues(doc, doc.rulesVersion, lookup);
+  const cueFor = (slot: EditionSlot, ref: { name: string; source: string } | undefined) =>
+    ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref));
+  const cueNotes = editionCueNotes(cues, doc.rulesVersion);
+
+  /**
+   * Switch rules version, but say first what it does to this character.
+   * Re-deriving under the other edition changes what every pick means, and the
+   * change was one unguarded tap with a legend promising warnings that did not
+   * exist. Nothing is ever removed, which is the reassurance the preview leads
+   * with; the cues afterwards carry the detail.
+   */
+  const switchRulesVersion = async (v: RulesVersion) => {
+    if (doc.rulesVersion === v) return;
+    const { summary } = describeSwitch(editionSwitchPreview(doc, v, lookup), v);
+    const ok = await askConfirm({
+      title: `Switch to ${v} rules?`,
+      detail: summary,
+      confirmLabel: `Switch to ${v}`,
+    });
+    if (!ok) return;
+    update((d) => void (d.rulesVersion = v));
+  };
 
   const hdFacesOf = (ref: { name: string; source: string }): number => {
     const cls = registry.get('class', ref.name, ref.source);
@@ -266,13 +321,14 @@ export function Component() {
         </label>
         <fieldset className="flex gap-1.5">
           <legend className="mb-1 text-xs text-ink-muted">
-            Rules version — switching re-derives everything; mismatched picks show warnings
+            Rules version: switching re-derives everything and keeps every pick. You get a preview
+            of what changes first.
           </legend>
           {(['2014', '2024'] as const).map((v) => (
             <button
               key={v}
               type="button"
-              onClick={() => update((d) => void (d.rulesVersion = v))}
+              onClick={() => void switchRulesVersion(v)}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
                 doc.rulesVersion === v
                   ? 'border-accent bg-accent-deep/40 font-semibold'
@@ -283,6 +339,18 @@ export function Component() {
             </button>
           ))}
         </fieldset>
+        {cueNotes.length > 0 && (
+          <div className="flex flex-col gap-1 rounded-lg border border-surface-2 p-2.5">
+            <span className="text-xs font-semibold text-ink-muted">
+              Mixed editions ({cueNotes.length})
+            </span>
+            {cueNotes.map((note) => (
+              <p key={note} className="text-xs text-ink-muted">
+                {note}
+              </p>
+            ))}
+          </div>
+        )}
       </Section>
 
       <Section
@@ -330,9 +398,12 @@ export function Component() {
               className="flex flex-col gap-2 rounded-lg border border-surface-2 p-3"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">
-                  {entry.ref.name} {entry.levels}
-                  <span className="ml-1.5 text-xs font-normal text-ink-muted">d{faces}</span>
+                <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                  <span>
+                    {entry.ref.name} {entry.levels}
+                    <span className="ml-1.5 text-xs font-normal text-ink-muted">d{faces}</span>
+                  </span>
+                  <EditionChip cue={cueFor('class', entry.ref)} version={doc.rulesVersion} />
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -447,7 +518,11 @@ export function Component() {
               ) : subclasses.length > 0 ? (
                 <details open={entry.subclass === undefined}>
                   <summary className="cursor-pointer text-xs text-ink-muted">
-                    Subclass: {entry.subclass?.name ?? 'none picked'}
+                    Subclass: {entry.subclass?.name ?? 'none picked'}{' '}
+                    <EditionChip
+                      cue={cueFor('subclass', entry.subclass)}
+                      version={doc.rulesVersion}
+                    />
                   </summary>
                   <div className="pt-2">
                     <EntityCardList
@@ -536,7 +611,8 @@ export function Component() {
               doc.race === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
             }`}
           >
-            {doc.race === undefined ? 'Pick a species to start' : 'Change species'}
+            {doc.race === undefined ? 'Pick a species to start' : 'Change species'}{' '}
+            <EditionChip cue={cueFor('race', doc.race)} version={doc.rulesVersion} />
           </summary>
           <div className="pt-2">
             <EntityCardList
@@ -563,7 +639,8 @@ export function Component() {
         {subraces.length > 0 && (
           <details key={pickerKey(doc.subrace)} open={doc.subrace === undefined}>
             <summary className="cursor-pointer text-xs text-ink-muted">
-              Subrace: {doc.subrace?.name ?? 'none picked'}
+              Subrace: {doc.subrace?.name ?? 'none picked'}{' '}
+              <EditionChip cue={cueFor('subrace', doc.subrace)} version={doc.rulesVersion} />
             </summary>
             <div className="pt-2">
               <EntityCardList
@@ -736,7 +813,8 @@ export function Component() {
               doc.background === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
             }`}
           >
-            {doc.background === undefined ? 'Pick a background to start' : 'Change background'}
+            {doc.background === undefined ? 'Pick a background to start' : 'Change background'}{' '}
+            <EditionChip cue={cueFor('background', doc.background)} version={doc.rulesVersion} />
           </summary>
           <div className="pt-2">
             <EntityCardList
