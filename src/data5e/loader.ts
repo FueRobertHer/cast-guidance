@@ -5,7 +5,15 @@ import { runWhenIdle } from '@/lib/idle';
 import { Semaphore } from '@/lib/semaphore';
 import { singleFlight } from '@/lib/singleFlight';
 import { dataStatusStore } from '@/stores/dataStatus';
-import { DATA_TAG, FETCH_CONCURRENCY, isCompatibleTag } from './config';
+import {
+  BOOT_TAG_RESOLVE_TIMEOUT_MS,
+  DATA_TAG,
+  FETCH_CONCURRENCY,
+  isCompatibleTag,
+  TAG_LIST_TIMEOUT_MS,
+  TAG_LIST_TTL_MS,
+  TAGS_API_URL,
+} from './config';
 import {
   classPackId,
   ESSENTIALS_FILES,
@@ -35,19 +43,42 @@ async function restoreActiveTag(): Promise<void> {
     return;
   }
   // No tag pinned yet (a fresh install), so grab the latest compatible
-  // release instead of the build's pinned DATA_TAG. Best-effort: if the
-  // mirror's tag list can't be reached (offline), fall back to the pin.
-  try {
-    const tags = await listAvailableTags();
-    const latest = tags[0];
-    if (latest !== undefined && latest !== activeTag) {
-      activeTag = latest;
-      source = new GithubTagSource(activeTag);
-    }
-  } catch {
-    return;
+  // release instead of the build's pinned DATA_TAG. Every data read is gated
+  // behind this, so it sits in front of the first screen's content: bounded,
+  // because a mirror that is merely slow (rather than unreachable) should not
+  // hold the app empty. Asked live, because the answer decides what this
+  // device installs: a remembered list is fine for noticing a release weeks
+  // later, not for choosing the one to download now.
+  const tags = await withDeadline(listAvailableTags({ maxAgeMs: 0 }), BOOT_TAG_RESOLVE_TIMEOUT_MS);
+  const latest = tags?.[0];
+  if (latest !== undefined && latest !== activeTag) {
+    activeTag = latest;
+    source = new GithubTagSource(activeTag);
   }
+  // Pinned whichever way it went, the newest release or the build's own
+  // fallback. Recording only the former left a boot that missed the deadline
+  // with no pin at all: it downloaded the whole compendium under the fallback,
+  // and the next launch, finding nothing pinned, resolved to the newer release
+  // and downloaded all of it again, sweeping the first copy away as a stale
+  // tag. Worse, silently: the release the user had been offered and could have
+  // declined installed itself on the next open. A pin they can be prompted to
+  // update is the honest record of what is on the device.
   await db.settings.put({ key: 'dataTag', value: activeTag });
+}
+
+/**
+ * Resolve `promise`, or `undefined` if it takes longer than `ms` or fails.
+ * The promise keeps running: its result is single-flighted and cached, so a
+ * late answer is not wasted, it just misses this deadline.
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  return Promise.race([promise.catch(() => undefined), deadline]).finally(() =>
+    clearTimeout(timer),
+  );
 }
 
 /**
@@ -89,16 +120,27 @@ export async function getFile(path: string): Promise<unknown> {
     fetchGate.run(async () => {
       const status = dataStatusStore.getState();
       status.fileStarted(path);
-      const json = await source.fetchFile(path);
-      await dataCacheRepo.putFile({
-        key: dataCacheRepo.key(activeTag, path),
-        tag: activeTag,
-        path,
-        pack: packOfPath(path),
-        json,
-        bytes: jsonByteSize(json),
-        fetchedAt: Date.now(),
-      });
+      // Tag and source captured together before the fetch, exactly as
+      // `refetchFile` does and for the same reason: an install can flip both
+      // while this is in flight, and reading them afterwards wrote one
+      // release's body under another release's key, over the body the
+      // installer had just staged and sanity-checked. Nothing downstream
+      // would ever know. A file fetched for a tag that has since been left
+      // behind is simply not written: it is the caller's answer, not cache.
+      const tag = activeTag;
+      const from = source;
+      const json = await from.fetchFile(path);
+      if (activeTag === tag) {
+        await dataCacheRepo.putFile({
+          key: dataCacheRepo.key(tag, path),
+          tag,
+          path,
+          pack: packOfPath(path),
+          json,
+          bytes: jsonByteSize(json),
+          fetchedAt: Date.now(),
+        });
+      }
       return json;
     }),
   );
@@ -156,14 +198,35 @@ async function fetchAll(paths: string[]): Promise<void> {
 /** De-dupe concurrent `ensurePack(samePack)` so progress is counted once. */
 const packInflight = new Map<PackId, Promise<void>>();
 
-/** Download every missing file of a pack; marks it complete in dataMeta. */
-export function ensurePack(pack: PackId): Promise<void> {
+/** Packs recorded complete under the active tag, or an empty set. */
+async function completedPacks(): Promise<Set<string>> {
+  const tag = activeTag;
+  try {
+    const meta = await dataCacheRepo.getMeta();
+    return new Set(meta?.tag === tag ? meta.completedPacks : []);
+  } catch {
+    // Unreadable bookkeeping costs a re-check, never a skipped download.
+    return new Set();
+  }
+}
+
+/**
+ * Download every missing file of a pack; marks it complete in dataMeta.
+ *
+ * `cached` is the caller's own view of what is already on disk. Working out
+ * what a pack is missing means scanning the cache's keys, and a caller that
+ * walks many packs (the boot drain, or the thirty-odd spell packs behind one
+ * library screen) was paying for that scan once per pack to read the same
+ * answer every time. Pack file lists are disjoint, so one snapshot taken
+ * before the walk stays accurate for every pack in it.
+ */
+export function ensurePack(pack: PackId, cached?: Set<string>): Promise<void> {
   return singleFlight(packInflight, pack, async () => {
     await ensureTagReady();
     const status = dataStatusStore.getState();
     const all = await filesForPack(pack);
-    const cached = await dataCacheRepo.cachedPaths(activeTag);
-    const missing = all.filter((p) => !cached.has(p));
+    const onDisk = cached ?? (await dataCacheRepo.cachedPaths(activeTag));
+    const missing = all.filter((p) => !onDisk.has(p));
     if (missing.length === 0) {
       await dataCacheRepo.markPackComplete(activeTag, pack);
       status.setPack(pack, 'ready');
@@ -225,18 +288,39 @@ export async function initDataLayer(): Promise<void> {
   status.beginRun();
   try {
     await ensureTagReady();
+    // Started here rather than at the tail of the drain below. It is one small
+    // request that shares no budget with the download queue, and hanging it
+    // off the end meant the app could not say whether a new release existed
+    // until the entire compendium had finished arriving, and never said so at
+    // all if one pack failed on the way. Not awaited: nothing here needs the
+    // answer, and the toast appears whenever it lands.
+    void checkForDataUpdate();
     await ensurePack('essentials');
-    const packs = (await allPackIds()).filter((p) => p !== 'essentials');
+    const done = await completedPacks();
+    const packs = (await allPackIds()).filter((p) => p !== 'essentials' && !done.has(p));
+    const finish = () => {
+      dataStatusStore.getState().setPhase('done');
+      void navigator.storage?.persist?.().catch(() => undefined);
+      void pruneStaleTags();
+    };
+    // A warm boot has nothing left to drain, and used to spend an idle
+    // callback per pack discovering that one pack at a time before it would
+    // admit it was done.
+    if (packs.length === 0) {
+      finish();
+      return;
+    }
+    // One key scan shared by the whole drain, taken after essentials so it
+    // includes what that just fetched, and after the check above so a launch
+    // with nothing to download does not scan the compendium for no reader.
+    const onDisk = await dataCacheRepo.cachedPaths(activeTag);
     const drainNext = () => {
       const next = packs.shift();
       if (!next) {
-        dataStatusStore.getState().setPhase('done');
-        void navigator.storage?.persist?.().catch(() => undefined);
-        void pruneStaleTags();
-        runWhenIdle(() => void checkForDataUpdate());
+        finish();
         return;
       }
-      void ensurePack(next)
+      void ensurePack(next, onDisk)
         .then(() => runWhenIdle(drainNext))
         .catch((err: unknown) => {
           dataStatusStore
@@ -305,7 +389,11 @@ export async function ensureTypePacks(type: string): Promise<void> {
   // indexes it carries, so the rest cannot be resolved until it is here.
   await ensurePack('essentials');
   const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
-  await Promise.all(packs.map((p) => ensurePack(p)));
+  // Taken after essentials, so it sees what that just fetched, and shared by
+  // the fan-out below: a spell screen ensures every spell pack there is, and
+  // each of those used to scan the cache's keys for itself.
+  const onDisk = await dataCacheRepo.cachedPaths(activeTag);
+  await Promise.all(packs.map((p) => ensurePack(p, onDisk)));
 }
 
 /** Fetch one file again and overwrite what is cached, cache hit or not. */
@@ -365,14 +453,41 @@ export async function repairTypePacks(type: string): Promise<void> {
   await Promise.all([...new Set(lists.flat())].map((path) => refetchFile(path)));
 }
 
-/**
- * Compatible tags available on the mirror (newest first, top 15). Tags of a
- * different schema major — which this build cannot parse safely — are filtered
- * out rather than offered blindly.
- */
-export async function listAvailableTags(): Promise<string[]> {
-  const res = await fetch('https://api.github.com/repos/5etools-mirror-3/5etools-src/tags', {
-    signal: AbortSignal.timeout(15000),
+/** The settings key the release list is remembered under, with its timestamp. */
+const TAG_LIST_SETTING = 'dataTagList';
+
+interface TagListCache {
+  tags: string[];
+  checkedAt: number;
+}
+
+/** The remembered release list, if it is still inside `maxAgeMs`. */
+async function readTagListCache(maxAgeMs: number): Promise<string[] | undefined> {
+  if (maxAgeMs <= 0) return undefined;
+  try {
+    const value = (await db.settings.get(TAG_LIST_SETTING))?.value as Partial<TagListCache> | null;
+    if (value === null || typeof value !== 'object') return undefined;
+    const { tags, checkedAt } = value;
+    if (!Array.isArray(tags) || typeof checkedAt !== 'number') return undefined;
+    if (Date.now() - checkedAt > maxAgeMs) return undefined;
+    // Compatibility is a property of this build, not of the list: a list
+    // written before the app updated can hold tags this build must not offer,
+    // so it is filtered on the way out as well as on the way in.
+    const usable = tags.filter((t): t is string => typeof t === 'string' && isCompatibleTag(t));
+    // Nothing usable is a miss, not an answer. Returning the empty list
+    // suppressed the request that would have found the usable tags, which is
+    // precisely the case the filter above exists for: a list written by the
+    // previous app build, against a schema major this one cannot read.
+    return usable.length > 0 ? usable : undefined;
+  } catch {
+    // An unreadable cache is a cache miss, not a failure.
+    return undefined;
+  }
+}
+
+async function fetchTagList(): Promise<string[]> {
+  const res = await fetch(TAGS_API_URL, {
+    signal: AbortSignal.timeout(TAG_LIST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
   const tags = (await res.json()) as Array<{ name?: string }>;
@@ -381,6 +496,47 @@ export async function listAvailableTags(): Promise<string[]> {
     .filter((n): n is string => typeof n === 'string')
     .filter((n) => isCompatibleTag(n))
     .slice(0, 15);
+}
+
+/** Shared so a boot's tag resolution and its update check make one request. */
+const tagListInflight = new Map<string, Promise<string[]>>();
+
+/**
+ * Compatible tags available on the mirror (newest first, top 15). Tags of a
+ * different schema major, which this build cannot parse safely, are filtered
+ * out rather than offered blindly.
+ *
+ * Answered from the remembered list while that is younger than `maxAgeMs`.
+ * Releases are weeks apart and this is not a CDN endpoint but GitHub's API,
+ * rate-limited per address and uncached, so asking on every boot spent a
+ * round-trip (and a slice of that budget) to re-learn what the last boot
+ * already knew. Pass `maxAgeMs: 0` for a user who explicitly asked to check
+ * now: they are owed a real answer, not yesterday's.
+ */
+export async function listAvailableTags({
+  maxAgeMs = TAG_LIST_TTL_MS,
+}: {
+  maxAgeMs?: number;
+} = {}): Promise<string[]> {
+  const remembered = await readTagListCache(maxAgeMs);
+  if (remembered !== undefined) return remembered;
+  return singleFlight(tagListInflight, 'tags', async () => {
+    const tags = await fetchTagList();
+    try {
+      // An empty answer is not worth remembering: a mirror with nothing this
+      // build can install, or a captive portal answering 200 with something
+      // else entirely, would otherwise own the next six hours of checks.
+      if (tags.length > 0) {
+        await db.settings.put({
+          key: TAG_LIST_SETTING,
+          value: { tags, checkedAt: Date.now() } satisfies TagListCache,
+        });
+      }
+    } catch {
+      // A list we cannot write down is still good for this session.
+    }
+    return tags;
+  });
 }
 
 /**
@@ -411,6 +567,7 @@ export async function updateToTag(newTag: string): Promise<void> {
     // failure for it is over: leaving it up would show an error about a
     // version that is now the live one, behind a retry that does nothing.
     if (status.failedTag === newTag) status.setPhase('done');
+    status.setUpdateAvailableTag(undefined);
     return;
   }
   const oldTag = activeTag;
@@ -481,6 +638,11 @@ export async function updateToTag(newTag: string): Promise<void> {
     });
     activeTag = newTag;
     source = newSource;
+    // The offer is spent whichever route took it: only the toast's own button
+    // used to clear this, so installing from the settings picker left the
+    // toast advertising the version that was now live ("v2.33.0 is available
+    // (current: v2.33.0)"), with an Update button that did nothing.
+    status.setUpdateAvailableTag(undefined);
     status.setPhase('done');
   } catch (err) {
     // The old data is still live and still works; what is broken is this

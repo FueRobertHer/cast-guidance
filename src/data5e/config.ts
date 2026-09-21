@@ -42,3 +42,32 @@ export function isCompatibleTag(tag: string, baseTag: string = DATA_TAG): boolea
   if (candidate === null || base === null) return false;
   return candidate.major === base.major;
 }
+
+/** Where the compatible-release list comes from. */
+export const TAGS_API_URL = 'https://api.github.com/repos/5etools-mirror-3/5etools-src/tags';
+
+/**
+ * How long a fetched release list stays good. The check exists to notice a new
+ * data release, which happens every few weeks, so asking once per boot bought
+ * nothing and cost a round-trip on the critical path of every cold start (plus
+ * a slice of GitHub's 60-requests-an-hour unauthenticated budget, shared by
+ * everyone behind the same address). Inside this window the answer comes from
+ * IndexedDB and the update prompt can appear on the first frame.
+ */
+export const TAG_LIST_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Timeout for the release list. Shorter than `FETCH_TIMEOUT_MS` because
+ * nothing in the app is waiting on the answer: a check that cannot complete
+ * quickly is better retried next boot than left holding a connection.
+ */
+export const TAG_LIST_TIMEOUT_MS = 5_000;
+
+/**
+ * How long a fresh install waits for the release list before falling back to
+ * the build's pinned tag. Every data read is gated behind tag resolution, so
+ * this one request sits in front of the first screen's content; past a few
+ * seconds it is better to start downloading the pin (and offer the newer
+ * release later, once the list arrives) than to keep the app empty.
+ */
+export const BOOT_TAG_RESOLVE_TIMEOUT_MS = 3_000;
