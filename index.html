@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      The first thing the app does after boot is talk to these two: the CDN for
+      game data, the API for the release list. Opening the connections here
+      overlaps DNS and TLS with parsing and running the bundle, instead of
+      paying for them once the data layer asks.
+    -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="preconnect" href="https://api.github.com" crossorigin />
+    <!-- Fallback endpoint: worth resolving, not worth a connection nothing may use. -->
+    <link rel="dns-prefetch" href="https://raw.githubusercontent.com" />
     <meta name="theme-color" content="#18181b" />
     <title>Cast Guidance</title>
   </head>

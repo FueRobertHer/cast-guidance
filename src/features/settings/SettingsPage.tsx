@@ -200,7 +200,9 @@ export function Component() {
             type="button"
             disabled={updating}
             onClick={() => {
-              void listAvailableTags()
+              // `maxAgeMs: 0` skips the remembered list: someone who pressed
+              // "check for updates" is owed a live answer, not this morning's.
+              void listAvailableTags({ maxAgeMs: 0 })
                 .then(setTags)
                 .catch((err: unknown) =>
                   setUpdateMsg({
