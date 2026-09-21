@@ -211,6 +211,34 @@ export function itemDamage(e: Entity): string | undefined {
     .join(' + ');
 }
 
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/**
+ * "2014-08-19" -> "19 August 2014", without going through `Date`: the strings
+ * in the data are plain calendar dates, and parsing one as a timestamp shifts
+ * it a day backwards for anybody west of UTC.
+ */
+export function publishedDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '') return undefined;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (m === null) return value;
+  const month = MONTHS[Number(m[2]) - 1];
+  return month === undefined ? value : `${Number(m[3])} ${month} ${m[1]}`;
+}
+
 /** [label, value] fact rows for the detail header, per entity type. */
 export function headerFacts(type: string, e: Entity): Array<[string, string]> {
   const facts: Array<[string, string]> = [];
@@ -281,6 +309,10 @@ export function headerFacts(type: string, e: Entity): Array<[string, string]> {
       push('Category', typeof cat === 'string' ? cat : undefined);
       break;
     }
+    case 'book':
+      push('Published', publishedDate(e.published));
+      push('Author', typeof e.author === 'string' ? e.author : undefined);
+      break;
     default:
       break;
   }

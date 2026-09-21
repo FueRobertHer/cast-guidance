@@ -4,10 +4,12 @@
 // "Not found" if it did not. ERR-001 is about telling those apart, and giving
 // each one something to press.
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { reg, refreshing, packs } = vi.hoisted(() => ({
+type TestPolicy = { mode: 'all'; except: string[] } | { mode: 'only'; sources: string[] };
+
+const { reg, refreshing, packs, policy } = vi.hoisted(() => ({
   reg: {
     current: {
       registry: null as unknown,
@@ -22,6 +24,13 @@ const { reg, refreshing, packs } = vi.hoisted(() => ({
    * every time it moves.
    */
   refreshing: { current: false },
+  /**
+   * The browsing policy, settable per test. Mocked as the real thing rather
+   * than as identity: a source the settings hide is exactly what the scoped
+   * sections have to get right, and an identity filter makes every one of
+   * those paths unreachable from a test.
+   */
+  policy: { current: { mode: 'all', except: [] } as TestPolicy },
   packs: {
     lastType: undefined as string | undefined,
     lastOnRepaired: undefined as (() => void) | undefined,
@@ -46,8 +55,11 @@ vi.mock('@/data5e/hooks', () => ({
   },
 }));
 vi.mock('@/data5e/sourceFilter', () => ({
-  useSourcePolicy: () => ({ mode: 'all', except: [] }),
-  applySourcePolicy: (list: unknown[]) => list,
+  useSourcePolicy: () => policy.current,
+  applySourcePolicy: <T,>(list: readonly T[], p: TestPolicy, sourceOf: (e: T) => string) =>
+    p.mode === 'all'
+      ? list.filter((e) => !p.except.includes(sourceOf(e)))
+      : list.filter((e) => p.sources.includes(sourceOf(e))),
   policyForSearch: () => undefined,
 }));
 vi.mock('@/data5e/search/client', () => ({
@@ -61,12 +73,31 @@ const registryWith = (entities: Array<Record<string, unknown>>) => ({
   byType: () => entities,
   get: (_type: string, name: string) =>
     entities.find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
+  counts: () => ({}),
   sourceCounts: () => new Map(),
 });
+
+/** A registry whose sections differ, which is what a book's index reads. */
+const registryOfTypes = (byType: Record<string, Array<Record<string, unknown>>>) => ({
+  byType: (type: string) => byType[type] ?? [],
+  get: (type: string, name: string) =>
+    (byType[type] ?? []).find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
+  counts: () => ({}),
+  sourceCounts: () => new Map(),
+});
+
+/** The page writes its scope into the URL, so the URL has to be observable. */
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+  return <div data-testid="location">{`${pathname}${search}`}</div>;
+}
+
+const locationNow = () => screen.getByTestId('location').textContent;
 
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      <LocationProbe />
       <Routes>
         <Route path="/library/:type?/:uid?" element={<LibraryPage />} />
       </Routes>
@@ -82,6 +113,7 @@ beforeEach(() => {
     retry: vi.fn(),
   };
   refreshing.current = false;
+  policy.current = { mode: 'all', except: [] };
   packs.current = {
     status: 'ready',
     error: null,
@@ -304,5 +336,154 @@ describe('when the compendium and the download both fail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(reg.current.retry).toHaveBeenCalledOnce();
     expect(packs.current.retry).toHaveBeenCalledOnce();
+  });
+});
+
+describe('books', () => {
+  const phb = {
+    name: "Player's Handbook",
+    source: 'PHB',
+    published: '2014-08-19',
+    contents: [
+      { name: 'Step-by-Step Characters', ordinal: { type: 'chapter', identifier: 1 } },
+      { name: 'Conditions', ordinal: { type: 'appendix', identifier: 'A' }, headers: ['Blinded'] },
+    ],
+  };
+
+  beforeEach(() => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        book: [phb],
+        spell: [
+          { name: 'Fireball', source: 'PHB' },
+          { name: 'Toll the Dead', source: 'XGE' },
+        ],
+      }),
+    };
+  });
+
+  it('is a section of its own on the library home', () => {
+    renderAt('/library');
+    expect(screen.getByRole('link', { name: /Books/ }).getAttribute('href')).toBe('/library/book');
+  });
+
+  it("shows a book's chapters, which is what the data carries", () => {
+    renderAt("/library/book/player's%20handbook%7Cphb");
+
+    expect(screen.getByText('Published')).toBeTruthy();
+    expect(screen.getByText('19 August 2014')).toBeTruthy();
+    expect(screen.getByText('Step-by-Step Characters')).toBeTruthy();
+    expect(screen.getByText('Appendix A.')).toBeTruthy();
+    expect(screen.getByText('Blinded')).toBeTruthy();
+  });
+
+  it('indexes what the device holds from it, scoped by the link itself', () => {
+    // The point of the section: one tap from a book to that book's spells,
+    // rather than to every spell with the book's own list to find again.
+    renderAt("/library/book/player's%20handbook%7Cphb");
+
+    const spells = screen.getByRole('link', { name: /Spells/ });
+    expect(spells.getAttribute('href')).toBe('/library/spell?source=PHB');
+    // One of the two spells carries PHB; the other is a different book's.
+    expect(spells.textContent).toContain('1');
+  });
+});
+
+describe('a section opened scoped to one book', () => {
+  // The rows are virtualized, and a jsdom viewport has no height to fill, so
+  // the count beside the heading is what says a scope was applied.
+  const shownCount = () =>
+    screen.getByRole('heading', { name: 'Spells' }).nextElementSibling?.textContent;
+  const sourcePicker = () => screen.getByRole('combobox', { name: 'Source' });
+
+  beforeEach(() => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        spell: [
+          { name: 'Fireball', source: 'PHB' },
+          { name: 'Magic Missile', source: 'PHB' },
+          { name: 'Toll the Dead', source: 'XGE' },
+        ],
+      }),
+    };
+  });
+
+  it("reads the scope out of the URL, so a book's link lands filtered", () => {
+    renderAt('/library/spell?source=XGE');
+
+    expect(sourcePicker()).toHaveProperty('value', 'XGE');
+    expect(shownCount()).toBe('1');
+    // The dropdown counts what each book holds, not how many books there are.
+    expect(screen.getByRole('option', { name: /Player.s Handbook/ }).textContent).toContain('(2)');
+  });
+
+  it('writes the dropdown back to the URL, leaving other params alone', () => {
+    // Scope lives in the URL so a link can carry it; that only holds if the
+    // control writes there too, and writes nothing else away.
+    renderAt('/library/spell?keep=1');
+
+    fireEvent.change(sourcePicker(), { target: { value: 'PHB' } });
+    expect(locationNow()).toBe('/library/spell?keep=1&source=PHB');
+    expect(shownCount()).toBe('2');
+
+    fireEvent.change(sourcePicker(), { target: { value: '' } });
+    expect(locationNow()).toBe('/library/spell?keep=1');
+    expect(shownCount()).toBe('3');
+  });
+
+  it('falls back to my sources when the link names a book that is not there', () => {
+    renderAt('/library/spell?source=BOGUS');
+
+    expect(sourcePicker()).toHaveProperty('value', '');
+    expect(shownCount()).toBe('3');
+  });
+
+  it('matches the source code however the link spells it', () => {
+    // A homebrew file writes its own code by hand, and nothing normalizes the
+    // case, so a book entry saying `MyBrew` can sit over spells saying
+    // `mybrew`. The count on the book page and the list behind it have to
+    // agree, or the index offers a link to an empty section.
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        spell: [{ name: 'Sudden Insight', source: 'mybrew' }],
+      }),
+    };
+    renderAt('/library/spell?source=MyBrew');
+
+    expect(shownCount()).toBe('1');
+    // Displayed as the data spells it, so the value names a real option.
+    expect(sourcePicker()).toHaveProperty('value', 'mybrew');
+  });
+
+  it('keeps a scope the settings hide, and says that is why it is offered', () => {
+    // Following a book's index into a book hidden in settings should show that
+    // book. It stays legible: the option says it is hidden, so the dropdown is
+    // not read as the setting having failed to take.
+    policy.current = { mode: 'all', except: ['XGE'] };
+    renderAt('/library/spell?source=XGE');
+
+    expect(sourcePicker()).toHaveProperty('value', 'XGE');
+    expect(shownCount()).toBe('1');
+    // Named specifically: the "Everything, including 1 hidden in settings"
+    // option carries that phrase too, and it is a different offer.
+    expect(screen.getByRole('option', { name: /Xanathar.*hidden in settings/ })).toHaveProperty(
+      'value',
+      'XGE',
+    );
+  });
+
+  it('leaves the ordinary options unlabelled', () => {
+    policy.current = { mode: 'all', except: ['XGE'] };
+    renderAt('/library/spell?source=PHB');
+
+    // The book hidden in settings is not offered when nothing points at it,
+    // and the book that is scoped is offered without the note.
+    expect(screen.queryByRole('option', { name: /Xanathar/ })).toBeNull();
+    expect(screen.getByRole('option', { name: /Player.s Handbook/ }).textContent).not.toContain(
+      'hidden in settings',
+    );
   });
 });

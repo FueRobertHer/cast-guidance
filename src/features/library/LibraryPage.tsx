@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import {
@@ -17,28 +17,9 @@ import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/so
 import { sourceName } from '@/data5e/sourceNames';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
+import { bookContents, bookIndex } from './books';
+import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
 import { headerFacts } from './fmt';
-
-const BROWSE_TYPES: Array<{ type: EntityType; label: string }> = [
-  { type: 'class', label: 'Classes' },
-  { type: 'subclass', label: 'Subclasses' },
-  { type: 'race', label: 'Species / Races' },
-  { type: 'background', label: 'Backgrounds' },
-  { type: 'feat', label: 'Feats' },
-  { type: 'spell', label: 'Spells' },
-  { type: 'item', label: 'Items' },
-  { type: 'baseitem', label: 'Basic equipment' },
-  { type: 'optionalfeature', label: 'Optional features' },
-  { type: 'condition', label: 'Conditions' },
-  { type: 'action', label: 'Actions' },
-  { type: 'skill', label: 'Skills' },
-  { type: 'language', label: 'Languages' },
-  { type: 'sense', label: 'Senses' },
-  { type: 'variantrule', label: 'Rules' },
-  { type: 'disease', label: 'Diseases' },
-];
-
-const TYPE_LABELS = new Map(BROWSE_TYPES.map((t) => [t.type as string, t.label]));
 
 function nameOf(e: Entity): string {
   return typeof e.name === 'string' ? e.name : '?';
@@ -48,6 +29,10 @@ function sourceOf(e: Entity): string {
 }
 function uidOf(e: Entity): string {
   return `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
+}
+/** Source codes compare case-insensitively; only their display keeps the case. */
+function sourceKey(e: Entity): string {
+  return sourceOf(e).toLowerCase();
 }
 
 function EntityRow({ type, e }: { type: string; e: Entity }) {
@@ -286,46 +271,95 @@ const EVERY_SOURCE = '*';
 
 function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const [filter, setFilter] = useState('');
-  const [pickedSource, setPickedSource] = useState<string>(MY_SOURCES);
+  // In the URL rather than in state, so a book's index can link straight to
+  // "the spells in this book" and so that scope survives a reload or a share.
+  const [params, setParams] = useSearchParams();
+  const pickedSource = params.get('source') ?? MY_SOURCES;
+  const setPickedSource = (next: string) => {
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === MY_SOURCES) out.delete('source');
+        else out.set('source', next);
+        return out;
+      },
+      // Replace: working the dropdown is refining one screen, not a trail of
+      // screens to walk back through on the way out of the section.
+      { replace: true },
+    );
+  };
   const policy = useSourcePolicy();
   const packs = useTypePacks(type, reg.retry);
   const refreshing = useRegistryRefreshing();
   const registry = reg.registry;
   const failed = reg.error !== null || packs.status === 'error';
 
-  const { items, sources, hiddenBySettings, selected } = useMemo(() => {
+  const { items, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
       nameOf(a).localeCompare(nameOf(b)),
     );
     const mine = applySourcePolicy(all, policy, sourceOf);
 
+    // Tallied case-insensitively, the way identity works everywhere else here
+    // (`registry.get`, `uidOf`): a homebrew file writes its own source code by
+    // hand, and one that spells it `MyBrew` in its book entry and `mybrew` in
+    // its spells must still count as one book on both sides of a link.
+    const tally = (list: readonly Entity[]) => {
+      const out = new Map<string, { code: string; count: number }>();
+      for (const e of list) {
+        const row = out.get(sourceKey(e));
+        if (row === undefined) out.set(sourceKey(e), { code: sourceOf(e), count: 1 });
+        else row.count += 1;
+      }
+      return out;
+    };
+
     // The dropdown offers the books this type actually has, so it never lists a
     // source that would come back empty. Built from `mine` so the settings stay
     // the default frame; "everything" is a deliberate step outside it.
-    const counts = new Map<string, number>();
-    for (const e of mine) counts.set(sourceOf(e), (counts.get(sourceOf(e)) ?? 0) + 1);
-    const sources = [...counts.entries()].sort((a, b) =>
-      sourceName(a[0]).localeCompare(sourceName(b[0])),
-    );
+    const counts = tally(mine);
+    const everyCount = tally(all);
 
     // Resolve first: a source can stop being offered when data updates or the
     // policy changes, and filtering on the raw state would leave the dropdown
     // reading "My sources" over a list scoped to a source it no longer lists.
+    // A hidden book still resolves, because the scope now also arrives by link
+    // (a book's index), and following one into a book that settings hide
+    // should show that book rather than silently widening to everything.
+    const known = everyCount.get(pickedSource.toLowerCase());
+    // The data's own casing, not the link's, so the value matches an option.
     const picked =
-      pickedSource === MY_SOURCES || pickedSource === EVERY_SOURCE || counts.has(pickedSource)
+      pickedSource === MY_SOURCES || pickedSource === EVERY_SOURCE
         ? pickedSource
-        : MY_SOURCES;
+        : (known?.code ?? MY_SOURCES);
+
+    // An option the settings hide is not on the list above, and a `select`
+    // whose value names no option renders blank over a list that is scoped. It
+    // is named as hidden where it is offered, so a book the player took off
+    // their shelf turning up in the dropdown reads as this link's doing rather
+    // than as the setting having failed.
+    const hiddenPick =
+      picked !== MY_SOURCES && picked !== EVERY_SOURCE && !counts.has(picked.toLowerCase())
+        ? picked
+        : null;
+    const offered = [...counts.values()];
+    if (hiddenPick !== null) offered.push({ code: hiddenPick, count: known?.count ?? 0 });
+    const sources = offered
+      .map(({ code, count }): [string, number] => [code, count])
+      .sort((a, b) => sourceName(a[0]).localeCompare(sourceName(b[0])));
+
     const scoped =
       picked === MY_SOURCES
         ? mine
         : picked === EVERY_SOURCE
           ? all
-          : all.filter((e) => sourceOf(e) === picked);
+          : all.filter((e) => sourceKey(e) === picked.toLowerCase());
     const f = filter.trim().toLowerCase();
     return {
       items: f === '' ? scoped : scoped.filter((e) => nameOf(e).toLowerCase().includes(f)),
       sources,
       hiddenBySettings: all.length - mine.length,
+      hiddenPick,
       selected: picked,
     };
   }, [registry, type, filter, policy, pickedSource]);
@@ -362,7 +396,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
           </option>
           {sources.map(([s, n]) => (
             <option key={s} value={s} className="bg-surface-2 text-ink">
-              {sourceName(s)} ({n})
+              {sourceName(s)} ({n}){s === hiddenPick ? ' · hidden in settings' : ''}
             </option>
           ))}
           {hiddenBySettings > 0 && (
@@ -451,6 +485,63 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
                 </div>
               ))}
           </dl>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A book entry is a way into the compendium, not something to read: the data
+ * carries the chapter listing and the metadata, while the chapters themselves
+ * live in files the app never downloads. So the index comes first (the book's
+ * own entries, by section, each link landing on that section already scoped to
+ * this book), and the contents below it say what the book covers.
+ */
+function BookExtras({ registry, entity }: { registry: EntityRegistry; entity: Entity }) {
+  const source = sourceOf(entity);
+  const sections = bookIndex(registry, source);
+  const chapters = bookContents(entity);
+  return (
+    <div className="flex flex-col gap-4">
+      {sections.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h3 className="font-semibold">In this book</h3>
+          {/* Spells and items stream in after boot, so a book opened early can
+              honestly hold more than this says. */}
+          <p className="text-xs text-ink-muted">
+            What has downloaded to this device from {sourceName(source)}.
+          </p>
+          <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {sections.map((s) => (
+              <Link
+                key={s.type}
+                to={`/library/${s.type}?source=${encodeURIComponent(source)}`}
+                className="flex flex-col gap-1 rounded-lg bg-surface p-3 hover:bg-surface-2"
+              >
+                <span className="text-sm font-semibold">{s.label}</span>
+                <span className="text-xs text-ink-muted">{s.count}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+      {chapters.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h3 className="font-semibold">Contents</h3>
+          <ol className="flex flex-col gap-2">
+            {chapters.map((c) => (
+              <li key={c.id} className="flex flex-col">
+                <span className="text-sm">
+                  {c.ordinal !== undefined && <span className="text-ink-muted">{c.ordinal}. </span>}
+                  {c.name}
+                </span>
+                {c.headers.length > 0 && (
+                  <span className="text-xs text-ink-muted">{c.headers.join(' · ')}</span>
+                )}
+              </li>
+            ))}
+          </ol>
         </section>
       )}
     </div>
@@ -552,6 +643,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
       <EntriesView entries={entity.entries} />
       {/* Non-null wherever an entity came out of it. */}
       {type === 'class' && registry !== null && <ClassExtras registry={registry} entity={entity} />}
+      {type === 'book' && registry !== null && <BookExtras registry={registry} entity={entity} />}
     </main>
   );
 }

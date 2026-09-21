@@ -79,6 +79,11 @@ const COUNTED_TYPES = new Set<EntityType>([
   'skill',
   'language',
   'sense',
+  // A book's own entry, which the library browses and therefore source-filters
+  // too. Several books reach this app as nothing but their own row (no bestiary
+  // is loaded, so the 2014 Monster Manual has no other entries at all), and
+  // leaving the type out here would hide those from settings entirely.
+  'book',
 ]);
 
 export class EntityRegistry {
