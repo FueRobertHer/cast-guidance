@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import { getActiveTag, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
-import { dataStatusStore, useDataStatus } from '@/stores/dataStatus';
+import { dataStatusStore, showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
 /** Shows once a boot-time check finds a newer compatible data tag than the installed one. */
 export function DataUpdateToast() {
   const tag = useDataStatus((s) => s.updateAvailableTag);
+  const banner = useDataStatus(showsDataBanner);
   const [dismissed, setDismissed] = useState<string>();
 
-  if (tag === undefined || tag === dismissed) return null;
+  // The banner holds this position, and the offer waits its turn. Knowing about
+  // a release early is the point of checking at boot; interrupting the download
+  // of the version already installed to advertise a different one is not, and
+  // installing on top of a queue still fetching under the old tag is how the
+  // two ended up racing for the same rows. Nothing is lost by waiting: the
+  // answer is already in the store, and the queue either finishes or reports
+  // why it could not.
+  if (tag === undefined || tag === dismissed || banner) return null;
 
   const install = () => {
     // Clear immediately so this toast steps aside for the DataBanner, which
