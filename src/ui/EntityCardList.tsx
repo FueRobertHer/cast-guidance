@@ -51,6 +51,7 @@ export function EntityCardList({
   describe,
   infoType,
   infoEntries,
+  fill = false,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
@@ -72,6 +73,17 @@ export function EntityCardList({
   infoType?: string;
   /** Optional entries override for the info drawer (subclasses store text in features). */
   infoEntries?: (e: Entity) => unknown;
+  /**
+   * Let the list run at its natural height and scroll with the page, instead of
+   * capping it at 24rem behind its own scrollbar.
+   *
+   * The cap suits the build page, where the list is one of several accordions
+   * and a section that grew to 2000px would bury the ones below it. It does
+   * not suit a wizard step whose whole job is this list: the cap ended the
+   * step 24rem down and left the rest of the screen empty above the step nav,
+   * with the remaining entries behind a second, nested scroll.
+   */
+  fill?: boolean;
 }) {
   const [filter, setFilter] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -137,7 +149,11 @@ export function EntityCardList({
           className="rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
         />
       )}
-      <div className="grid max-h-96 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
+      <div
+        className={`grid grid-cols-1 gap-1.5 sm:grid-cols-2 ${
+          fill ? '' : 'max-h-96 overflow-y-auto'
+        }`}
+      >
         {list.map((e) => {
           const blurb = describe?.(e);
           const selected = selectedUid === uidOf(e);
