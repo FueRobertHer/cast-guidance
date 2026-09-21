@@ -19,7 +19,24 @@ function world(entries: Array<[EntityType, Entity]>): EntityLookup {
   for (const [type, entity] of entries) {
     byKey.set(`${type}:${String(entity.name)}|${String(entity.source)}`.toLowerCase(), entity);
   }
-  return (type, ref) => byKey.get(`${type}:${ref.name}|${ref.source}`.toLowerCase());
+  return (type, ref) => {
+    // Subclass reprint targets name a shortName, as `registryLookup` handles.
+    if (ref.shortName !== undefined) {
+      const shortName = ref.shortName.toLowerCase();
+      const source = ref.source.toLowerCase();
+      for (const [key, entity] of byKey) {
+        if (!key.startsWith(`${type}:`)) continue;
+        if (
+          String(entity.shortName).toLowerCase() === shortName &&
+          String(entity.source).toLowerCase() === source
+        ) {
+          return entity;
+        }
+      }
+      return undefined;
+    }
+    return byKey.get(`${type}:${ref.name}|${ref.source}`.toLowerCase());
+  };
 }
 
 const ref = (name: string, source: string) => ({ name, source });
@@ -57,9 +74,18 @@ describe('editionCues', () => {
       ['class', 'carryOver'],
     ]);
     expect(editionCueNotes(cues, '2024')).toEqual([
-      'Elf: 2014 content, reprinted for 2024 as Elf. Kept as chosen.',
-      'Acolyte: 2014 content with no 2024 reprint. Kept as chosen.',
-      'Fighter: 2014 content with no 2024 reprint. Kept as chosen.',
+      {
+        key: 'race:elf|phb',
+        note: 'Elf: 2014 content, reprinted for 2024 as Elf. Kept as chosen.',
+      },
+      {
+        key: 'background:acolyte|phb',
+        note: 'Acolyte: 2014 content with no 2024 reprint. Kept as chosen.',
+      },
+      {
+        key: 'class:fighter|phb',
+        note: 'Fighter: 2014 content with no 2024 reprint. Kept as chosen.',
+      },
     ]);
   });
 
@@ -97,6 +123,80 @@ describe('editionCues', () => {
     const cues = editionCues(d, '2024', baseWorld);
     expect(cues.some((c) => c.slot === 'race')).toBe(false);
     expect(cues).toHaveLength(2);
+  });
+
+  it('only calls a reprint installed when the lookup actually finds it', () => {
+    // The Elf declares a 2024 reprint, but this world does not have it. Without
+    // consulting the lookup at all, the cue would claim a reprint that is not
+    // there.
+    const w = world([
+      ['race', { name: 'Elf', source: 'PHB', reprintedAs: ['Elf|XPHB'] } as Entity],
+      ['background', { name: 'Acolyte', source: 'PHB' } as Entity],
+      ['class', { name: 'Fighter', source: 'PHB' } as Entity],
+    ]);
+    expect(editionCues(doc2014(), '2024', w).map((c) => c.fit.kind)).toEqual([
+      'carryOver',
+      'carryOver',
+      'carryOver',
+    ]);
+  });
+
+  it('follows a subrace reprint into the race bucket it names', () => {
+    // High|PHB is reprinted as Elf|XPHB, which is a race, not a subrace. Looking
+    // the target up under the holder's own type finds nothing and reports "no
+    // 2024 reprint" while the reprint sits in the same loaded data.
+    const d = doc2014();
+    d.subrace = ref('High Elf', 'PHB');
+    d.background = undefined;
+    d.classes = [];
+    const w = world([
+      ['race', { name: 'Elf', source: 'PHB' } as Entity],
+      ['race', { name: 'Elf', source: 'XPHB' } as Entity],
+      ['subrace', { name: 'High Elf', source: 'PHB', reprintedAs: ['Elf|XPHB'] } as Entity],
+    ]);
+    const subrace = editionCues(d, '2024', w).find((c) => c.slot === 'subrace');
+    expect(subrace?.fit).toEqual({ kind: 'reprinted', as: { name: 'Elf', source: 'XPHB' } });
+  });
+
+  it('reads a subclass reprint uid and names the target by its real name', () => {
+    const d = doc2014();
+    d.race = undefined;
+    d.background = undefined;
+    d.classes = [
+      { ref: ref('Cleric', 'PHB'), subclass: ref('Life Domain', 'PHB'), levels: 3, hp: ['avg'] },
+    ];
+    const w = world([
+      ['class', { name: 'Cleric', source: 'PHB' } as Entity],
+      [
+        'subclass',
+        {
+          name: 'Life Domain',
+          shortName: 'Life',
+          source: 'PHB',
+          reprintedAs: ['Life|Cleric|XPHB|XPHB'],
+        } as Entity,
+      ],
+      ['subclass', { name: 'Life Domain', shortName: 'Life', source: 'XPHB' } as Entity],
+    ]);
+    const subclass = editionCues(d, '2024', w).find((c) => c.slot === 'subclass');
+    // Reading the uid's first two segments would look for source "Cleric".
+    expect(subclass?.fit).toEqual({
+      kind: 'reprinted',
+      as: { name: 'Life Domain', source: 'XPHB' },
+    });
+  });
+
+  it('does not call a same-edition reprint a reprint', () => {
+    // Bugbear|VGM points at Bugbear|MPMM, another 2014 book.
+    const d = doc2014();
+    d.race = ref('Bugbear', 'VGM');
+    d.background = undefined;
+    d.classes = [];
+    const w = world([
+      ['race', { name: 'Bugbear', source: 'VGM', reprintedAs: ['Bugbear|MPMM'] } as Entity],
+      ['race', { name: 'Bugbear', source: 'MPMM' } as Entity],
+    ]);
+    expect(editionCues(d, '2024', w).map((c) => c.fit.kind)).toEqual(['carryOver']);
   });
 
   it('reads an older pick on a 2024 character and a newer one on a 2014 character', () => {

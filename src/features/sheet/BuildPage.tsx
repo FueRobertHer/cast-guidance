@@ -36,6 +36,7 @@ import {
   editionCueNotes,
   editionCues,
   editionSwitchPreview,
+  registryLookup,
 } from './editionCues';
 import type { CharacterSheetState } from './useCharacterSheet';
 
@@ -221,7 +222,7 @@ export function Component() {
 
   // Edition standing of the identity picks, against the version this character
   // is on now. Keyed by slot + ref so a chip beside a pick finds its own cue.
-  const lookup: EntityLookup = (type, ref) => registry.get(type, ref.name, ref.source);
+  const lookup: EntityLookup = registryLookup(registry);
   const cues = editionCues(doc, doc.rulesVersion, lookup);
   const cueFor = (slot: EditionSlot, ref: { name: string; source: string } | undefined) =>
     ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref));
@@ -236,13 +237,18 @@ export function Component() {
    */
   const switchRulesVersion = async (v: RulesVersion) => {
     if (doc.rulesVersion === v) return;
-    const { summary } = describeSwitch(editionSwitchPreview(doc, v, lookup), v);
-    const ok = await askConfirm({
-      title: `Switch to ${v} rules?`,
-      detail: summary,
-      confirmLabel: `Switch to ${v}`,
-    });
-    if (!ok) return;
+    const { summary, unchanged } = describeSwitch(editionSwitchPreview(doc, v, lookup), v);
+    // Nothing to warn about means nothing to confirm: an empty character, or one
+    // whose every pick already suits the target, would otherwise pay a modal to
+    // be told the switch changes nothing for it.
+    if (!unchanged) {
+      const ok = await askConfirm({
+        title: `Switch to ${v} rules?`,
+        detail: summary,
+        confirmLabel: `Switch to ${v}`,
+      });
+      if (!ok) return;
+    }
     update((d) => void (d.rulesVersion = v));
   };
 
@@ -344,8 +350,8 @@ export function Component() {
             <span className="text-xs font-semibold text-ink-muted">
               Mixed editions ({cueNotes.length})
             </span>
-            {cueNotes.map((note) => (
-              <p key={note} className="text-xs text-ink-muted">
+            {cueNotes.map(({ key, note }) => (
+              <p key={key} className="text-xs text-ink-muted">
                 {note}
               </p>
             ))}

@@ -16,52 +16,128 @@ const old = (name: string, reprintedAs?: unknown): Entity =>
 /** A 2024 printing (XPHB is a core 2024 source). */
 const revised = (name: string): Entity => ({ name, source: 'XPHB' }) as Entity;
 
-const nothingInstalled = () => false;
-const allInstalled = () => true;
+/**
+ * Resolvers hand back the target entity, because a reprint has to be installed
+ * *and* be the right edition. A world is the set of printings that exist here.
+ */
+const world = (...entities: Entity[]) => {
+  const byUid = new Map(entities.map((e) => [`${String(e.name)}|${String(e.source)}`, e]));
+  return (ref: { name: string; source: string }) => byUid.get(`${ref.name}|${ref.source}`);
+};
+const nothingInstalled = () => undefined;
 
 describe('editionFit', () => {
   it('says nothing when the pick already suits the character', () => {
-    expect(editionFit(old('Fighter'), '2014', allInstalled)).toEqual({ kind: 'match' });
-    expect(editionFit(revised('Fighter'), '2024', allInstalled)).toEqual({ kind: 'match' });
+    expect(editionFit(old('Fighter'), 'class', '2014', nothingInstalled)).toEqual({
+      kind: 'match',
+    });
+    expect(editionFit(revised('Fighter'), 'class', '2024', nothingInstalled)).toEqual({
+      kind: 'match',
+    });
   });
 
   it('names the reprint when the newer books have one and it is installed', () => {
-    const fit = editionFit(old('Elf', ['Elf|XPHB']), '2024', allInstalled);
+    const fit = editionFit(old('Elf', ['Elf|XPHB']), 'race', '2024', world(revised('Elf')));
     expect(fit).toEqual({ kind: 'reprinted', as: { name: 'Elf', source: 'XPHB' } });
   });
 
   it('is a carry-over when the reprint is declared but not installed', () => {
     // Offering a reprint the device does not have would send someone looking
     // for content that never downloaded.
-    expect(editionFit(old('Elf', ['Elf|XPHB']), '2024', nothingInstalled)).toEqual({
+    expect(editionFit(old('Elf', ['Elf|XPHB']), 'race', '2024', nothingInstalled)).toEqual({
       kind: 'carryOver',
     });
   });
 
   it('is a carry-over when nothing reprints it at all', () => {
-    expect(editionFit(old('Kalashtar'), '2024', allInstalled)).toEqual({ kind: 'carryOver' });
+    expect(editionFit(old('Kalashtar'), 'race', '2024', world(revised('Kalashtar')))).toEqual({
+      kind: 'carryOver',
+    });
   });
 
-  it('picks the first installed reprint when several are declared', () => {
-    const installed = (ref: { source: string }) => ref.source === 'XMM';
-    expect(editionFit(old('Thing', ['A|XPHB', 'B|XMM']), '2024', installed)).toEqual({
-      kind: 'reprinted',
-      as: { name: 'B', source: 'XMM' },
+  it('ignores a reprint that is itself older content', () => {
+    // The common shape in the real data: Bugbear|VGM is "reprinted as"
+    // Bugbear|MPMM, and MPMM is a 2014 book. Installed is not enough — calling
+    // that a 2024 reprint would be false, and the switch it offers gains
+    // nothing.
+    const mpmm = { name: 'Bugbear', source: 'MPMM' } as Entity;
+    expect(editionFit(old('Bugbear', ['Bugbear|MPMM']), 'race', '2024', world(mpmm))).toEqual({
+      kind: 'carryOver',
     });
+  });
+
+  it('passes over an older reprint to reach a 2024 one', () => {
+    const mpmm = { name: 'Aasimar', source: 'MPMM' } as Entity;
+    expect(
+      editionFit(
+        old('Aasimar', ['Aasimar|MPMM', 'Aasimar|XPHB']),
+        'race',
+        '2024',
+        world(mpmm, revised('Aasimar')),
+      ),
+    ).toEqual({ kind: 'reprinted', as: { name: 'Aasimar', source: 'XPHB' } });
+  });
+
+  it('reads a subclass reprint by shortName and names it from the entity', () => {
+    // Subclass uids are ShortName|ClassName|ClassSource|SubclassSource, and the
+    // entity is called "Life Domain" where the uid says only "Life".
+    const domain = { name: 'Life Domain', shortName: 'Life', source: 'XPHB' } as Entity;
+    const pick = {
+      name: 'Life Domain',
+      shortName: 'Life',
+      source: 'PHB',
+      reprintedAs: ['Life|Cleric|XPHB|XPHB'],
+    } as Entity;
+    const resolve = (ref: { shortName?: string; source: string }) =>
+      ref.shortName === 'Life' && ref.source === 'XPHB' ? domain : undefined;
+    expect(editionFit(pick, 'subclass', '2024', resolve)).toEqual({
+      kind: 'reprinted',
+      as: { name: 'Life Domain', source: 'XPHB' },
+    });
+  });
+
+  it('follows a cross-type reprint into the type the target names', () => {
+    // Every 2014 subrace points at a race: High|PHB is reprinted as Elf|XPHB.
+    const seen: string[] = [];
+    const resolve = (ref: { name: string; source: string; type?: string }) => {
+      seen.push(String(ref.type));
+      return revised('Elf');
+    };
+    expect(editionFit(old('High', ['Elf|XPHB']), 'subrace', '2024', resolve)).toEqual({
+      kind: 'reprinted',
+      as: { name: 'Elf', source: 'XPHB' },
+    });
+    // The 2024 books fold subraces into the race, so the target is looked for
+    // among races even though the holder is a subrace.
+    expect(seen).toEqual(['race']);
   });
 
   it('flags newer content in an older game, reprints being irrelevant there', () => {
     // 2024 content in a 2014 game cannot be "reprinted back", so the direction
     // matters: this is the case the pickers never produce and only a switch or
     // an import can create.
-    expect(editionFit(revised('Elf'), '2014', allInstalled)).toEqual({ kind: 'newer' });
-    expect(editionFit(revised('Elf'), '2014', nothingInstalled)).toEqual({ kind: 'newer' });
+    expect(editionFit(revised('Elf'), 'race', '2014', world(old('Elf')))).toEqual({
+      kind: 'newer',
+    });
+    expect(editionFit(revised('Elf'), 'race', '2014', nothingInstalled)).toEqual({
+      kind: 'newer',
+    });
   });
 
   it('honours an explicit edition tag over the source heuristic', () => {
     const homebrew2024 = { name: 'Homebrewed', source: 'MINE', edition: 'one' } as Entity;
-    expect(editionFit(homebrew2024, '2024', allInstalled)).toEqual({ kind: 'match' });
-    expect(editionFit(homebrew2024, '2014', allInstalled)).toEqual({ kind: 'newer' });
+    expect(editionFit(homebrew2024, 'race', '2024', nothingInstalled)).toEqual({ kind: 'match' });
+    expect(editionFit(homebrew2024, 'race', '2014', nothingInstalled)).toEqual({ kind: 'newer' });
+  });
+
+  it('accepts a reprint whose source is not core but is tagged 2024', () => {
+    // FRHoF is not in SOURCES_2024, so only the entity's own edition tag says
+    // it is 2024 content. Resolving the entity is what makes that readable.
+    const frhof = { name: 'Hexblood', source: 'FRHoF', edition: 'one' } as Entity;
+    expect(editionFit(old('Hexblood', ['Hexblood|FRHoF']), 'race', '2024', world(frhof))).toEqual({
+      kind: 'reprinted',
+      as: { name: 'Hexblood', source: 'FRHoF' },
+    });
   });
 });
 

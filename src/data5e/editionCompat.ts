@@ -1,4 +1,5 @@
 import type { Entity } from './copyMod';
+import type { EntityType } from './normalize';
 import { type EditionRef, editionOf, type RulesVersion, reprintTargets } from './rulesVersion';
 
 export type { EditionRef } from './rulesVersion';
@@ -20,21 +21,39 @@ export type EditionFit =
   | { kind: 'newer' };
 
 /**
- * Classify one selection. `installed` answers whether a reprint is actually on
- * this device: a reprint the character cannot select is not worth offering, and
- * saying "a 2024 version exists" about content that never downloaded would send
- * someone looking for a thing that isn't there.
+ * Resolves a reprint target to the entity that is actually installed, or
+ * undefined when it is not. It hands back the entity rather than a yes/no
+ * because a target has to clear two bars, and only the entity answers both.
+ */
+export type ReprintResolver = (ref: EditionRef) => Entity | undefined;
+
+/**
+ * Classify one selection against the version the character is on.
+ *
+ * A reprint only counts when it is installed *and* is itself this version's
+ * content. Both matter: naming a printing that never downloaded sends someone
+ * looking for content that is not there, and most 2014 `reprintedAs` chains
+ * point at another 2014 book (`Bugbear|VGM` points at `Bugbear|MPMM`), so
+ * announcing those as "reprinted for 2024" would be a false claim about the
+ * rules and would offer a switch that gains the player nothing.
  */
 export function editionFit(
   entity: Entity,
+  type: EntityType,
   version: RulesVersion,
-  installed: (ref: EditionRef) => boolean,
+  resolve: ReprintResolver,
 ): EditionFit {
   const edition = editionOf(entity);
   if (edition === version) return { kind: 'match' };
   if (edition === '2024') return { kind: 'newer' };
-  const reprint = reprintTargets(entity).find(installed);
-  return reprint === undefined ? { kind: 'carryOver' } : { kind: 'reprinted', as: reprint };
+  for (const target of reprintTargets(entity, type)) {
+    const found = resolve(target);
+    if (found === undefined || editionOf(found) !== version) continue;
+    // Named from the resolved entity, so the note reads "Life Domain" where the
+    // uid carried only the shortName "Life".
+    return { kind: 'reprinted', as: { name: String(found.name), source: String(found.source) } };
+  }
+  return { kind: 'carryOver' };
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   editionFitNote,
   emptySwitchPreview,
 } from '@/data5e/editionCompat';
-import type { EntityType } from '@/data5e/normalize';
+import type { EntityRegistry, EntityType } from '@/data5e/normalize';
 import type { EditionRef, RulesVersion } from '@/data5e/rulesVersion';
 import type { CharacterDoc, EntityRef } from '@/engine/types';
 
@@ -23,8 +23,33 @@ export interface EditionCue {
   fit: EditionFit;
 }
 
-/** Looks an entity up by type, as the registry does. Injected so this stays testable. */
-export type EntityLookup = (type: EntityType, ref: EntityRef) => Entity | undefined;
+/**
+ * Looks an entity up by type, as the registry does. Injected so this stays
+ * testable. The ref is an {@link EditionRef} rather than a plain `EntityRef`
+ * because a reprint target may name a subclass by its `shortName`.
+ */
+export type EntityLookup = (type: EntityType, ref: EditionRef) => Entity | undefined;
+
+/**
+ * The lookup over a real registry. Subclass reprint targets name their
+ * subclass by `shortName`, which the registry does not index, so those fall
+ * back to a scan of the type. That costs a pass over a few hundred subclasses
+ * at most, and only for a pick that is off-edition to begin with.
+ */
+export function registryLookup(registry: EntityRegistry): EntityLookup {
+  return (type, ref) => {
+    if (ref.shortName === undefined) return registry.get(type, ref.name, ref.source);
+    const shortName = ref.shortName.toLowerCase();
+    const source = ref.source.toLowerCase();
+    return registry
+      .byType(type)
+      .find(
+        (e) =>
+          String(e.shortName).toLowerCase() === shortName &&
+          String(e.source).toLowerCase() === source,
+      );
+  };
+}
 
 export const cueKey = (slot: EditionSlot, ref: EntityRef): string =>
   `${slot}:${ref.name}|${ref.source}`.toLowerCase();
@@ -52,11 +77,9 @@ export function editionCues(
     // found"; guessing at its edition from the source alone would add a second,
     // vaguer note about the same broken reference.
     if (entity === undefined) return;
-    const fit = editionFit(
-      entity,
-      version,
-      (target: EditionRef) => lookup(type, target) !== undefined,
-    );
+    // A target is looked up in its own bucket, not the holder's: every 2014
+    // subrace is reprinted as a race, and some races as a feat or an item.
+    const fit = editionFit(entity, type, version, (target) => lookup(target.type ?? type, target));
     cues.push({ slot, key: cueKey(slot, ref), label, fit });
   };
 
@@ -74,12 +97,19 @@ export function editionCues(
   return cues;
 }
 
-/** Every cue worth showing, as sentences. A matching pick yields nothing. */
-export function editionCueNotes(cues: readonly EditionCue[], version: RulesVersion): string[] {
-  const notes: string[] = [];
+/**
+ * Every cue worth showing, as sentences. A matching pick yields nothing. Each
+ * note keeps its cue's key: two picks can share a label and a fit, and so
+ * produce identical text, which would collide as a React key.
+ */
+export function editionCueNotes(
+  cues: readonly EditionCue[],
+  version: RulesVersion,
+): Array<{ key: string; note: string }> {
+  const notes: Array<{ key: string; note: string }> = [];
   for (const cue of cues) {
     const note = editionFitNote(cue.label, cue.fit, version);
-    if (note !== undefined) notes.push(note);
+    if (note !== undefined) notes.push({ key: cue.key, note });
   }
   return notes;
 }
