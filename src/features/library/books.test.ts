@@ -32,6 +32,27 @@ describe('bookContents', () => {
     ]);
   });
 
+  it('labels an ordinal that has a type but no number, which is what the ids are for', () => {
+    // Two unnumbered appendices in one book is the case `BookChapter.id`
+    // exists to survive.
+    const book = {
+      contents: [
+        { name: 'Creatures', ordinal: { type: 'appendix' } },
+        { name: 'Creatures', ordinal: { type: 'appendix' } },
+      ],
+    } as unknown as Entity;
+    const chapters = bookContents(book);
+    expect(chapters.map((c) => c.ordinal)).toEqual(['Appendix', 'Appendix']);
+    expect(new Set(chapters.map((c) => c.id)).size).toBe(2);
+  });
+
+  it('titles an ordinal type it has never heard of rather than dropping it', () => {
+    const book = {
+      contents: [{ name: 'The Cards', ordinal: { type: 'insert', identifier: 2 } }],
+    } as unknown as Entity;
+    expect(bookContents(book)[0]?.ordinal).toBe('Insert 2');
+  });
+
   it('keeps a chapter whose ordinal is missing or malformed', () => {
     const book = {
       contents: [{ name: 'Introduction' }, { name: 'Foreword', ordinal: 'chapter 1' }],

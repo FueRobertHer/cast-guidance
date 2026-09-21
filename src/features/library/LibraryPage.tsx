@@ -30,6 +30,10 @@ function sourceOf(e: Entity): string {
 function uidOf(e: Entity): string {
   return `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
 }
+/** Source codes compare case-insensitively; only their display keeps the case. */
+function sourceKey(e: Entity): string {
+  return sourceOf(e).toLowerCase();
+}
 
 function EntityRow({ type, e }: { type: string; e: Entity }) {
   return (
@@ -290,20 +294,31 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const registry = reg.registry;
   const failed = reg.error !== null || packs.status === 'error';
 
-  const { items, sources, hiddenBySettings, selected } = useMemo(() => {
+  const { items, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
       nameOf(a).localeCompare(nameOf(b)),
     );
     const mine = applySourcePolicy(all, policy, sourceOf);
 
+    // Tallied case-insensitively, the way identity works everywhere else here
+    // (`registry.get`, `uidOf`): a homebrew file writes its own source code by
+    // hand, and one that spells it `MyBrew` in its book entry and `mybrew` in
+    // its spells must still count as one book on both sides of a link.
+    const tally = (list: readonly Entity[]) => {
+      const out = new Map<string, { code: string; count: number }>();
+      for (const e of list) {
+        const row = out.get(sourceKey(e));
+        if (row === undefined) out.set(sourceKey(e), { code: sourceOf(e), count: 1 });
+        else row.count += 1;
+      }
+      return out;
+    };
+
     // The dropdown offers the books this type actually has, so it never lists a
     // source that would come back empty. Built from `mine` so the settings stay
     // the default frame; "everything" is a deliberate step outside it.
-    const counts = new Map<string, number>();
-    for (const e of mine) counts.set(sourceOf(e), (counts.get(sourceOf(e)) ?? 0) + 1);
-    const sources = [...counts.entries()].sort((a, b) =>
-      sourceName(a[0]).localeCompare(sourceName(b[0])),
-    );
+    const counts = tally(mine);
+    const everyCount = tally(all);
 
     // Resolve first: a source can stop being offered when data updates or the
     // policy changes, and filtering on the raw state would leave the dropdown
@@ -311,28 +326,40 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
     // A hidden book still resolves, because the scope now also arrives by link
     // (a book's index), and following one into a book that settings hide
     // should show that book rather than silently widening to everything.
-    const everyCount = new Map<string, number>();
-    for (const e of all) everyCount.set(sourceOf(e), (everyCount.get(sourceOf(e)) ?? 0) + 1);
+    const known = everyCount.get(pickedSource.toLowerCase());
+    // The data's own casing, not the link's, so the value matches an option.
     const picked =
-      pickedSource === MY_SOURCES || pickedSource === EVERY_SOURCE || everyCount.has(pickedSource)
+      pickedSource === MY_SOURCES || pickedSource === EVERY_SOURCE
         ? pickedSource
-        : MY_SOURCES;
+        : (known?.code ?? MY_SOURCES);
+
     // An option the settings hide is not on the list above, and a `select`
-    // whose value names no option renders blank over a list that is scoped.
-    if (picked !== MY_SOURCES && picked !== EVERY_SOURCE && !counts.has(picked)) {
-      sources.push([picked, everyCount.get(picked) ?? 0]);
-    }
+    // whose value names no option renders blank over a list that is scoped. It
+    // is named as hidden where it is offered, so a book the player took off
+    // their shelf turning up in the dropdown reads as this link's doing rather
+    // than as the setting having failed.
+    const hiddenPick =
+      picked !== MY_SOURCES && picked !== EVERY_SOURCE && !counts.has(picked.toLowerCase())
+        ? picked
+        : null;
+    const offered = [...counts.values()];
+    if (hiddenPick !== null) offered.push({ code: hiddenPick, count: known?.count ?? 0 });
+    const sources = offered
+      .map(({ code, count }): [string, number] => [code, count])
+      .sort((a, b) => sourceName(a[0]).localeCompare(sourceName(b[0])));
+
     const scoped =
       picked === MY_SOURCES
         ? mine
         : picked === EVERY_SOURCE
           ? all
-          : all.filter((e) => sourceOf(e) === picked);
+          : all.filter((e) => sourceKey(e) === picked.toLowerCase());
     const f = filter.trim().toLowerCase();
     return {
       items: f === '' ? scoped : scoped.filter((e) => nameOf(e).toLowerCase().includes(f)),
       sources,
       hiddenBySettings: all.length - mine.length,
+      hiddenPick,
       selected: picked,
     };
   }, [registry, type, filter, policy, pickedSource]);
@@ -369,7 +396,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
           </option>
           {sources.map(([s, n]) => (
             <option key={s} value={s} className="bg-surface-2 text-ink">
-              {sourceName(s)} ({n})
+              {sourceName(s)} ({n}){s === hiddenPick ? ' · hidden in settings' : ''}
             </option>
           ))}
           {hiddenBySettings > 0 && (
