@@ -61,6 +61,16 @@ const registryWith = (entities: Array<Record<string, unknown>>) => ({
   byType: () => entities,
   get: (_type: string, name: string) =>
     entities.find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
+  counts: () => ({}),
+  sourceCounts: () => new Map(),
+});
+
+/** A registry whose sections differ, which is what a book's index reads. */
+const registryOfTypes = (byType: Record<string, Array<Record<string, unknown>>>) => ({
+  byType: (type: string) => byType[type] ?? [],
+  get: (type: string, name: string) =>
+    (byType[type] ?? []).find((e) => String(e.name).toLowerCase() === name.toLowerCase()),
+  counts: () => ({}),
   sourceCounts: () => new Map(),
 });
 
@@ -304,5 +314,79 @@ describe('when the compendium and the download both fail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(reg.current.retry).toHaveBeenCalledOnce();
     expect(packs.current.retry).toHaveBeenCalledOnce();
+  });
+});
+
+describe('books', () => {
+  const phb = {
+    name: "Player's Handbook",
+    source: 'PHB',
+    published: '2014-08-19',
+    contents: [
+      { name: 'Step-by-Step Characters', ordinal: { type: 'chapter', identifier: 1 } },
+      { name: 'Conditions', ordinal: { type: 'appendix', identifier: 'A' }, headers: ['Blinded'] },
+    ],
+  };
+
+  beforeEach(() => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        book: [phb],
+        spell: [
+          { name: 'Fireball', source: 'PHB' },
+          { name: 'Toll the Dead', source: 'XGE' },
+        ],
+      }),
+    };
+  });
+
+  it('is a section of its own on the library home', () => {
+    renderAt('/library');
+    expect(screen.getByRole('link', { name: /Books/ }).getAttribute('href')).toBe('/library/book');
+  });
+
+  it("shows a book's chapters, which is what the data carries", () => {
+    renderAt("/library/book/player's%20handbook%7Cphb");
+
+    expect(screen.getByText('Published')).toBeTruthy();
+    expect(screen.getByText('19 August 2014')).toBeTruthy();
+    expect(screen.getByText('Step-by-Step Characters')).toBeTruthy();
+    expect(screen.getByText('Appendix A.')).toBeTruthy();
+    expect(screen.getByText('Blinded')).toBeTruthy();
+  });
+
+  it('indexes what the device holds from it, scoped by the link itself', () => {
+    // The point of the section: one tap from a book to that book's spells,
+    // rather than to every spell with the book's own list to find again.
+    renderAt("/library/book/player's%20handbook%7Cphb");
+
+    const spells = screen.getByRole('link', { name: /Spells/ });
+    expect(spells.getAttribute('href')).toBe('/library/spell?source=PHB');
+    // One of the two spells carries PHB; the other is a different book's.
+    expect(spells.textContent).toContain('1');
+  });
+});
+
+describe('a section opened scoped to one book', () => {
+  it("reads the scope out of the URL, so a book's link lands filtered", () => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        spell: [
+          { name: 'Fireball', source: 'PHB' },
+          { name: 'Toll the Dead', source: 'XGE' },
+        ],
+      }),
+    };
+    renderAt('/library/spell?source=XGE');
+
+    expect(screen.getByRole('combobox', { name: 'Source' })).toHaveProperty('value', 'XGE');
+    // The rows are virtualized, and a jsdom viewport has no height to fill, so
+    // the count beside the heading is what says the scope was applied: one of
+    // the two spells is XGE's.
+    expect(screen.getByRole('heading', { name: 'Spells' }).nextElementSibling?.textContent).toBe(
+      '1',
+    );
   });
 });

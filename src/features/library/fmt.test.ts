@@ -3,9 +3,11 @@ import type { Entity } from '@/data5e/copyMod';
 import {
   abilitySummary,
   castingTime,
+  headerFacts,
   itemDamage,
   itemTypeName,
   itemValue,
+  publishedDate,
   speedSummary,
   spellComponents,
   spellDuration,
@@ -174,5 +176,36 @@ describe('itemTypeName', () => {
     expect(itemTypeName(undefined)).toBeUndefined();
     expect(itemTypeName('')).toBeUndefined();
     expect(itemTypeName(7)).toBeUndefined();
+  });
+});
+
+describe('publishedDate', () => {
+  it('spells a calendar date out without going through a timezone', () => {
+    expect(publishedDate('2014-08-19')).toBe('19 August 2014');
+    expect(publishedDate('2024-09-17')).toBe('17 September 2024');
+  });
+  it('passes anything it does not recognise straight through', () => {
+    expect(publishedDate('Summer 2014')).toBe('Summer 2014');
+    expect(publishedDate('2014-13-01')).toBe('2014-13-01');
+    expect(publishedDate(20140819)).toBeUndefined();
+    expect(publishedDate(undefined)).toBeUndefined();
+  });
+});
+
+describe('headerFacts for a book', () => {
+  it('shows what the bibliography actually carries', () => {
+    const book = {
+      name: "Player's Handbook",
+      source: 'PHB',
+      published: '2014-08-19',
+      author: 'Wizards RPG Team',
+    } as unknown as Entity;
+    expect(headerFacts('book', book)).toEqual([
+      ['Published', '19 August 2014'],
+      ['Author', 'Wizards RPG Team'],
+    ]);
+  });
+  it('omits fields the entry does not have', () => {
+    expect(headerFacts('book', { name: 'Homebrew Compendium' } as unknown as Entity)).toEqual([]);
   });
 });
