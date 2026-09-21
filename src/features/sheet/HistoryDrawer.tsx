@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { History } from 'lucide-react';
+import { useState } from 'react';
 import { historyRepo } from '@/db/historyRepo';
 import { characterSessionStore } from '@/stores/characterSession';
 import { Sheet } from '@/ui/sheet';
@@ -14,11 +15,27 @@ function timeLabel(at: number): string {
 
 /** Version history: every change is snapshotted; any state can be restored. */
 export function HistoryDrawer({ charId }: { charId: string }) {
-  // `historyRepo.list` already had this exact query; this was a second copy.
-  const rows = useLiveQuery(() => historyRepo.list(charId), [charId], []);
+  const [open, setOpen] = useState(false);
+  /**
+   * Only while the drawer is open. This is mounted on every tab of every
+   * character, and a live query re-runs whenever the table it read changes,
+   * so leaving it on meant every autosave re-read the fifty kept snapshots
+   * and re-rendered a list nobody was looking at. Each snapshot is a whole
+   * character document, which is cheap enough to shrug at on a desktop and
+   * is not on a phone.
+   *
+   * `undefined` is "not asked yet", which is what separates the closed state
+   * and the first frame after opening from a character that genuinely has no
+   * history.
+   */
+  const rows = useLiveQuery(
+    () => (open ? historyRepo.list(charId) : undefined),
+    [charId, open],
+    undefined,
+  );
 
   return (
-    <Sheet.Root>
+    <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>
         <button
           type="button"
@@ -38,10 +55,11 @@ export function HistoryDrawer({ charId }: { charId: string }) {
             always come back.
           </p>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {rows.length === 0 && (
+            {rows === undefined && <p className="text-sm text-ink-muted">Loading…</p>}
+            {rows?.length === 0 && (
               <p className="text-sm text-ink-muted">No history yet — make a change first.</p>
             )}
-            {rows.map((row, i) => (
+            {rows?.map((row, i) => (
               <div
                 key={row.id}
                 className="flex items-center gap-2 border-b border-surface-2/40 py-2 text-sm last:border-b-0"
