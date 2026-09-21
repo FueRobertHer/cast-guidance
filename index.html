@@ -5,14 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!--
-      The first thing the app does after boot is talk to these two: the CDN for
-      game data, the API for the release list. Opening the connections here
-      overlaps DNS and TLS with parsing and running the bundle, instead of
-      paying for them once the data layer asks.
+      Game data comes from this CDN, and the app asks for some on most boots, so
+      opening the connection here overlaps DNS and TLS with parsing and running
+      the bundle instead of paying for them once the data layer asks.
     -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-    <link rel="preconnect" href="https://api.github.com" crossorigin />
-    <!-- Fallback endpoint: worth resolving, not worth a connection nothing may use. -->
+    <!--
+      Resolved but not connected. The release list is remembered for six hours,
+      so most boots never call the API, and the mirror fallback is only reached
+      when the CDN fails: a connection opened for either would usually go unused.
+    -->
+    <link rel="dns-prefetch" href="https://api.github.com" />
     <link rel="dns-prefetch" href="https://raw.githubusercontent.com" />
     <meta name="theme-color" content="#18181b" />
     <title>Cast Guidance</title>

@@ -169,17 +169,19 @@ describe('the boot-time update check', () => {
     await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
   });
 
-  it('skips the request entirely on a fresh install', async () => {
-    const { dataStatusStore, loader } = await boot();
+  it('asks once on a fresh install and serves the check from the same answer', async () => {
+    const { db, dataStatusStore, loader } = await boot();
 
     void loader.initDataLayer();
 
-    // A fresh install resolves to the newest release there is, so the check has
-    // its answer already: one request for both, and nothing to prompt about.
+    // A fresh install takes the newest release there is, so there is nothing to
+    // prompt about, and the check reads the list resolution just wrote rather
+    // than asking for it again.
     await vi.waitFor(() => expect(loader.getActiveTag()).toBe('v2.33.0'));
     await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
     expect(tagsFetch).toHaveBeenCalledOnce();
     expect(dataStatusStore.getState().updateAvailableTag).toBeUndefined();
+    expect((await db.settings.get('dataTag'))?.value).toBe('v2.33.0');
   });
 
   it('does not re-read the whole cache once per pack on a warm boot', async () => {
@@ -196,10 +198,109 @@ describe('the boot-time update check', () => {
 
     expect(fetchFile).not.toHaveBeenCalled();
     // Working out what a pack is missing means scanning the cache's keys, and
-    // the queue asks that of every pack: forty-odd scans of the whole
-    // compendium, on a launch with nothing left to download. Two now, one for
-    // essentials and one shared by the rest of the queue.
-    expect(scan).toHaveBeenCalledTimes(2);
+    // the queue asked that of every pack: forty-odd scans of the whole
+    // compendium, on a launch with nothing left to download. One now, for
+    // essentials. The queue's own shared snapshot is taken only once it knows
+    // it has something to drain, which here it does not.
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it('pins the release it settled on when the list arrives too late', async () => {
+    // The deadline path used to pin nothing at all. The boot downloaded the
+    // whole compendium under the fallback, and the next launch, finding nothing
+    // pinned, resolved to the newer release and downloaded all of it again,
+    // sweeping the first copy away as a stale tag. Silently, too: the release
+    // the user had just been offered, and could have declined, installed itself.
+    tagsFetch.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(tagList('v2.33.0', DATA_TAG)), 200)),
+    );
+    const first = await boot();
+    await first.loader.initDataLayer();
+    await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'));
+    expect((await first.db.settings.get('dataTag'))?.value).toBe(DATA_TAG);
+    // The list landed and was remembered, so the next launch has it for free.
+    await vi.waitFor(() =>
+      expect(first.dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+    );
+    fetchFile.mockClear();
+
+    const { dataStatusStore, loader } = await reboot();
+    await loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
+
+    // Still on the release it installed, and still only offering the other one.
+    expect(loader.getActiveTag()).toBe(DATA_TAG);
+    expect(fetchFile).not.toHaveBeenCalled();
+    expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0');
+  });
+
+  it('treats a remembered list with nothing installable in it as no answer', async () => {
+    // The case the compatibility filter exists for: a list written by the
+    // previous app build, against a schema major this one cannot read. Filtering
+    // it to empty and calling that the answer suppressed the request that would
+    // have found the tags this build can install.
+    const { loader } = await boot([
+      { key: 'dataTag', value: DATA_TAG },
+      { key: 'dataTagList', value: { tags: ['v3.0.0', 'v4.1.0'], checkedAt: Date.now() } },
+    ]);
+
+    await expect(loader.listAvailableTags()).resolves.toEqual(['v2.33.0', DATA_TAG]);
+    expect(tagsFetch).toHaveBeenCalledOnce();
+  });
+
+  it('does not remember an answer with nothing installable in it', async () => {
+    // A mirror carrying only releases this build cannot read, or a captive
+    // portal answering 200 with something else entirely, would otherwise own
+    // the next six hours of checks.
+    tagsFetch.mockResolvedValue(tagList('v3.0.0'));
+    const { db, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await expect(loader.listAvailableTags()).resolves.toEqual([]);
+    expect(await db.settings.get('dataTagList')).toBeUndefined();
+
+    tagsFetch.mockResolvedValue(tagList('v2.33.0', DATA_TAG));
+    await expect(loader.listAvailableTags()).resolves.toEqual(['v2.33.0', DATA_TAG]);
+  });
+
+  it('stops offering a release once it is installed', async () => {
+    const { dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
+
+    await loader.updateToTag('v2.33.0');
+
+    // Only the toast's own button used to clear this, so installing from the
+    // settings picker left the toast advertising the version now live.
+    expect(dataStatusStore.getState().updateAvailableTag).toBeUndefined();
+  });
+
+  it('cannot write a file fetched under the old release under the new one', async () => {
+    // Reachable now that the offer can be taken while the queue is still
+    // fetching: the write used to read the active tag after its own round trip,
+    // so a file in flight when an install swapped tags landed under the new
+    // tag's key, over the body the installer had staged and sanity-checked.
+    let release = (_json: unknown): void => undefined;
+    const held = new Promise<unknown>((resolve) => {
+      release = resolve;
+    });
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path === 'items.json'
+        ? tag === DATA_TAG
+          ? held
+          : Promise.resolve({ item: [{ name: 'NEW' }] })
+        : wholeMirror(tag, path),
+    );
+    const { db, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    const inFlight = loader.getFile('items.json');
+    await loader.updateToTag('v2.33.0');
+    expect(loader.getActiveTag()).toBe('v2.33.0');
+
+    release({ item: [{ name: 'OLD' }] });
+    await expect(inFlight).resolves.toEqual({ item: [{ name: 'OLD' }] });
+
+    const staged = await db.dataFiles.get(`v2.33.0:items.json`);
+    expect((staged?.json as { item: Array<{ name: string }> }).item).toEqual([{ name: 'NEW' }]);
   });
 
   it('does not let a slow release list hold up a fresh install', async () => {

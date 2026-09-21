@@ -1,14 +1,19 @@
 import { retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
-import { useDataStatus } from '@/stores/dataStatus';
+import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
 /** Download progress for the background data queue, and its failure state. */
 export function DataBanner() {
+  const shows = useDataStatus(showsDataBanner);
   const phase = useDataStatus((s) => s.phase);
   const done = useDataStatus((s) => s.filesDone);
   const total = useDataStatus((s) => s.filesTotal);
   const error = useDataStatus((s) => s.error);
   const failedTag = useDataStatus((s) => s.failedTag);
+
+  // The same predicate the update toast stands aside for, so neither can drift
+  // into painting over the other.
+  if (!shows) return null;
 
   if (phase === 'error') {
     // Two different failures reach this banner and they need different

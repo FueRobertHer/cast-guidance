@@ -68,3 +68,17 @@ export const dataStatusStore = createStore<DataStatusState>((set) => ({
 export function useDataStatus<T>(selector: (s: DataStatusState) => T): T {
   return useStore(dataStatusStore, selector);
 }
+
+/**
+ * Whether the data banner has anything to show: download progress it can put a
+ * number on, or a failure with a retry behind it.
+ *
+ * It lives here because two components at the same fixed position depend on the
+ * same answer. The banner and the update toast could not previously collide (the
+ * update check ran only after the download queue had finished, and never after
+ * it failed), so nothing enforced it; the check runs at boot now, and one of the
+ * two has to stand aside on purpose rather than by luck.
+ */
+export function showsDataBanner(s: DataStatusState): boolean {
+  return s.phase === 'error' || (s.phase === 'working' && s.filesTotal > 0);
+}
