@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
 import {
   characterSessionStore,
@@ -52,6 +52,15 @@ export function AppShell() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
+      {/*
+        Every page here is one window scroll, so a push navigation used to land
+        on the new page at the old page's scroll offset: tapping a spell three
+        screens down the library list opened its description already scrolled
+        past the title. This resets to the top on push and restores the saved
+        offset on back, which is what the library's own "Back" (a navigate(-1))
+        wants.
+      */}
+      <ScrollRestoration />
       <DataBanner />
       <DataUpdateToast />
       <SaveErrorBanner />

@@ -270,6 +270,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
+              fill
               dedupe
               describe={classBlurb}
               infoType="class"
@@ -390,6 +391,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
+              fill
               dedupe
               describe={raceBlurb}
               infoType="race"
@@ -598,6 +600,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <EntityCardList
+              fill
               dedupe
               describe={backgroundBlurb}
               infoType="background"
@@ -933,7 +936,7 @@ export function Component() {
   };
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 pb-24">
+    <main className="flex flex-1 flex-col gap-4 p-4 pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]">
       <header className="flex items-center gap-3">
         <Link to="/" className="text-ink-muted hover:text-ink">
           <ArrowLeft size={20} />
