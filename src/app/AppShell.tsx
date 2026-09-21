@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react';
 import { useEffect } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
@@ -69,6 +70,7 @@ export function AppShell() {
       <NoticeToast />
       <RollToast />
       <PwaUpdateToast />
+      <Analytics />
     </div>
   );
 }
