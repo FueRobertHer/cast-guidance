@@ -28,6 +28,7 @@ describe('RouteError', () => {
     expect(screen.getByRole('link', { name: /back to characters/i }).getAttribute('href')).toBe(
       '/',
     );
+    expect(document.title).toBe('Something went wrong · Cast Guidance');
     spy.mockRestore();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sheetTab, tabRolls } from './SheetLayout';
+import { sheetTab, tabRolls, tabTitle } from './SheetLayout';
 
 const base = '/c/996e8de4';
 
@@ -26,5 +26,18 @@ describe('tabRolls', () => {
     for (const tab of ['inventory', 'spells', 'features', 'build']) {
       expect(tabRolls(sheetTab(base, `${base}/${tab}`)), tab).toBe(false);
     }
+  });
+});
+
+describe('tabTitle', () => {
+  it('names each tab for the document title, not the tab bar', () => {
+    expect(tabTitle('')).toBe('Play');
+    expect(tabTitle('inventory')).toBe('Inventory');
+    expect(tabTitle('features')).toBe('Features');
+    expect(tabTitle('build')).toBe('Build');
+  });
+
+  it('has no name for a segment that is not a tab', () => {
+    expect(tabTitle('nope')).toBeUndefined();
   });
 });

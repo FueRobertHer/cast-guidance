@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
@@ -14,7 +14,10 @@ import { subclassUnlockLevel } from '@/engine/multiclass';
 import { ABILITIES, type CharacterDoc, type EffectOrigin, newCharacterDoc } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
 import { pruneChoicesFor } from '@/lib/pruneChoices';
+import { usePageTitle } from '@/lib/usePageTitle';
+import { notifyFailure } from '@/stores/notices';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
   backgroundBlurb,
@@ -34,7 +37,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-import { normalizeStep, STEPS, type Step } from './steps';
+import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -43,6 +46,7 @@ const DRAFT_KEY = 'cast-guidance:creator-draft';
 
 export function Component() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
@@ -65,6 +69,19 @@ export function Component() {
     void ensureTypePacks('item');
   }, []);
 
+  // Set once Create is pressed: the name of the character being opened. From
+  // then on the wizard is spent, and its history entries are being unwound.
+  const [opening, setOpening] = useState<string | null>(null);
+  const creating = useRef(false);
+  // True between a step push and the render that commits it. Router state
+  // lands in a transition, so a fast double tap could otherwise push twice
+  // from the same stale location and miscount the depth Create unwinds.
+  const pushing = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new entry is the signal, not a value read here
+  useEffect(() => {
+    pushing.current = false;
+  }, [location.key]);
+
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
 
@@ -81,11 +98,53 @@ export function Component() {
     });
   };
 
-  const goto = (s: Step) => setParams({ step: s }, { replace: false });
+  const goto = (s: Step) => {
+    if (pushing.current) return;
+    pushing.current = true;
+    setParams(
+      { step: s },
+      { replace: false, state: { creatorDepth: wizardDepth(location.state) + 1 } },
+    );
+  };
   const stepIdx = STEPS.indexOf(step);
 
+  usePageTitle(
+    ...(opening !== null
+      ? ['Opening character']
+      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${STEPS.length}`, 'New character']),
+  );
+
+  if (opening !== null) {
+    return (
+      <main role="status" className="p-4 text-sm text-ink-muted">
+        Opening {opening}…
+      </main>
+    );
+  }
+
+  const header = (
+    <header className="flex items-center gap-3">
+      <Link
+        to="/"
+        aria-label="Back to characters (your draft is kept)"
+        className="text-ink-muted hover:text-ink"
+      >
+        <ArrowLeft size={20} aria-hidden />
+      </Link>
+      <h1 className="text-xl font-bold">{STEP_LABELS[step]}</h1>
+      <span className="text-sm text-ink-muted">
+        {stepIdx + 1}/{STEPS.length}
+      </span>
+    </header>
+  );
+
   if (registry === null) {
-    return <main className="p-4 text-sm text-ink-muted">Loading game data…</main>;
+    return (
+      <main className="flex flex-1 flex-col gap-4 p-4">
+        {header}
+        <p className="text-sm text-ink-muted">Loading game data…</p>
+      </main>
+    );
   }
 
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
@@ -781,12 +840,24 @@ export function Component() {
 
       case 'review': {
         const create = async () => {
+          // A second tap would start a second unwind, and two queued pops can
+          // walk right out of the app.
+          if (creating.current) return;
+          creating.current = true;
           const final = structuredClone(doc);
           if (final.name.trim() === '') final.name = 'Unnamed hero';
           final.play.currentHp = sheet?.maxHp.value ?? 0;
-          await characterRepo.put(final);
+          setOpening(final.name);
+          try {
+            await characterRepo.put(final);
+          } catch (err) {
+            creating.current = false;
+            setOpening(null);
+            notifyFailure('Create', err);
+            return;
+          }
           sessionStorage.removeItem(DRAFT_KEY);
-          navigate(`/c/${final.id}`, { replace: true });
+          await replaceWizardWith(navigate, wizardDepth(location.state), `/c/${final.id}`);
         };
         // Everything a new player might have missed, each one tap from its fix.
         const issues: Array<{ key: string; text: string; step: Step }> = [];
@@ -937,17 +1008,7 @@ export function Component() {
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]">
-      <header className="flex items-center gap-3">
-        <Link to="/" className="text-ink-muted hover:text-ink">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-xl font-bold capitalize">
-          {step === 'species' ? 'Species / Race' : step}
-        </h1>
-        <span className="text-sm text-ink-muted">
-          {stepIdx + 1}/{STEPS.length}
-        </span>
-      </header>
+      {header}
 
       {/* Live summary bar — the "like a game" feedback loop */}
       {sheet !== null && doc.classes.length > 0 && (

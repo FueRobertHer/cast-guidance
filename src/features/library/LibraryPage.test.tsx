@@ -95,8 +95,13 @@ function LocationProbe() {
 const locationNow = () => screen.getByTestId('location').textContent;
 
 function renderAt(path: string) {
+  return renderAtEntries([path], 0);
+}
+
+/** For the cases that need history behind the page, which a deep link lacks. */
+function renderAtEntries(entries: string[], index: number) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter initialEntries={entries} initialIndex={index}>
       <LocationProbe />
       <Routes>
         <Route path="/library/:type?/:uid?" element={<LibraryPage />} />
@@ -484,6 +489,54 @@ describe('a section opened scoped to one book', () => {
     expect(screen.queryByRole('option', { name: /Xanathar/ })).toBeNull();
     expect(screen.getByRole('option', { name: /Player.s Handbook/ }).textContent).not.toContain(
       'hidden in settings',
+    );
+  });
+});
+
+describe('titles and the way back', () => {
+  it('goes up to the section from a deep-linked entry, where there is no history', async () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(locationNow()).toBe('/library/spell'));
+  });
+
+  it('goes back where it came from when there is history', async () => {
+    renderAtEntries(['/library', '/library/spell/fireball%7Cphb'], 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(locationNow()).toBe('/library'));
+  });
+
+  it('names each view in the document title', () => {
+    renderAt('/library/spell/fireball%7Cphb');
+    expect(document.title).toBe('Fireball · Spells · Library · Cast Guidance');
+    cleanup();
+
+    renderAt('/library/spell/nonesuch%7Cphb');
+    expect(document.title).toBe('Not found · Spells · Library · Cast Guidance');
+    cleanup();
+
+    renderAt('/library/spell');
+    expect(document.title).toBe('Spells · Library · Cast Guidance');
+    cleanup();
+
+    renderAt('/library');
+    expect(document.title).toBe('Library · Cast Guidance');
+    cleanup();
+
+    renderAt('/library/bogus');
+    expect(document.title).toBe('No such section · Library · Cast Guidance');
+  });
+
+  it('does not call an entry missing while its section is still downloading', () => {
+    packs.current = { ...packs.current, status: 'loading' };
+    renderAt('/library/spell/nonesuch%7Cphb');
+    expect(document.title).toBe('Spells · Library · Cast Guidance');
+  });
+
+  it('labels the icon that leads back out of a section', () => {
+    renderAt('/library/spell');
+    expect(screen.getByRole('link', { name: 'Back to the library' }).getAttribute('href')).toBe(
+      '/library',
     );
   });
 });

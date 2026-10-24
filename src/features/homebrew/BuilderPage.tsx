@@ -8,6 +8,7 @@ import { type HomebrewFile, type HomebrewReadError, homebrewRepo } from '@/db/ho
 import { ABILITIES, type Ability } from '@/engine/types';
 import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import {
@@ -662,6 +663,23 @@ function refLabel(ref: EntityRef): string {
   return isRecord(ref.value) ? 'that unnamed entry' : 'that unreadable entry';
 }
 
+/** The file's display name: its declared source title, else the file name. */
+function fileTitle(file: HomebrewFile): string {
+  return String(
+    (file.json._meta as { sources?: Array<{ full?: string }> } | undefined)?.sources?.[0]?.full ??
+      file.fileName.replace(/\.json$/, ''),
+  );
+}
+
+/** The way out, on every state of this page: it sits outside the app nav. */
+function BackToHomebrew() {
+  return (
+    <Link to="/homebrew" aria-label="Back to homebrew" className="text-ink-muted hover:text-ink">
+      <ArrowLeft size={20} aria-hidden />
+    </Link>
+  );
+}
+
 export function Component() {
   const { fileId } = useParams();
   // The raw read this replaced returned `undefined` both for "not loaded yet"
@@ -686,21 +704,47 @@ export function Component() {
     retryDelete?: { type: BuildType; ref: EntityRef };
   }>();
 
-  if (read === undefined) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+  usePageTitle(
+    ...(read === undefined
+      ? ['Homebrew editor']
+      : read.file === undefined
+        ? [read.error === undefined ? 'Homebrew file not found' : 'Homebrew file could not be read']
+        : [fileTitle(read.file), read.file.editable ? 'Homebrew editor' : 'Homebrew']),
+  );
+
+  if (read === undefined) {
+    return (
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <BackToHomebrew />
+        <p className="text-sm text-ink-muted">Loading…</p>
+      </main>
+    );
+  }
   const row = read.file;
   if (row === undefined) {
     return (
-      <main className="p-4 text-sm text-ink-muted" role="alert">
-        {read.error === undefined
-          ? 'This homebrew file is no longer on this device.'
-          : `This homebrew file could not be read: ${read.error.message}. You can remove it from the homebrew list.`}
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <BackToHomebrew />
+        <p className="text-sm text-ink-muted" role="alert">
+          {read.error === undefined
+            ? 'This homebrew file is no longer on this device.'
+            : `This homebrew file could not be read: ${read.error.message}. You can remove it from the homebrew list.`}
+        </p>
+        {read.error !== undefined && (
+          <Link to="/homebrew" className="text-sm text-ink-muted underline hover:text-ink">
+            Go to the homebrew list
+          </Link>
+        )}
       </main>
     );
   }
   if (!row.editable) {
     return (
-      <main className="p-4 text-sm text-ink-muted">
-        This file was imported, not built here. Only in-app creations are editable.
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <BackToHomebrew />
+        <p className="text-sm text-ink-muted">
+          This file was imported, not built here. Only in-app creations are editable.
+        </p>
       </main>
     );
   }
@@ -811,16 +855,9 @@ export function Component() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center gap-3">
-        <Link to="/homebrew" className="text-ink-muted hover:text-ink">
-          <ArrowLeft size={20} />
-        </Link>
+        <BackToHomebrew />
         <div>
-          <h1 className="text-xl font-bold">
-            {String(
-              (json._meta as { sources?: Array<{ full?: string }> } | undefined)?.sources?.[0]
-                ?.full ?? row.fileName.replace(/\.json$/, ''),
-            )}
-          </h1>
+          <h1 className="text-xl font-bold">{fileTitle(row)}</h1>
           <p className="text-xs text-ink-muted">
             source: {sourceId}. Everything you build is instantly usable on characters, and exports
             as a standard 5etools file.

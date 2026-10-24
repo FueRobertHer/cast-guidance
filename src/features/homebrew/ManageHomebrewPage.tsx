@@ -6,11 +6,13 @@ import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
 
 export function Component() {
+  usePageTitle('Homebrew');
   const navigate = useNavigate();
   // Unreadable files are reported here, the one screen that can remove them.
   const read = useLiveQuery(() => homebrewRepo.listSafe(), []);
