@@ -58,8 +58,8 @@ export function AppShell() {
         on the new page at the old page's scroll offset: tapping a spell three
         screens down the library list opened its description already scrolled
         past the title. This resets to the top on push and restores the saved
-        offset on back, which is what the library's own "Back" (a navigate(-1))
-        wants.
+        offset on back, which is what the library's own "Back" (a navigate(-1),
+        unless the page was opened from a link) wants.
       */}
       <ScrollRestoration />
       <DataBanner />

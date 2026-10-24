@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import {
@@ -15,6 +15,8 @@ import { type EntityRegistry, type EntityType, isEntityType } from '@/data5e/nor
 import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { useBack } from '@/lib/useBack';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
@@ -167,6 +169,7 @@ function GlobalSearch() {
 }
 
 function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
+  usePageTitle('Library');
   const counts = registry?.counts() ?? {};
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
@@ -197,7 +200,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="flex w-fit items-center gap-1 text-sm text-ink-muted hover:text-ink"
     >
-      <ArrowLeft size={16} /> Back
+      <ArrowLeft size={16} aria-hidden /> Back
     </button>
   );
 }
@@ -293,6 +296,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const refreshing = useRegistryRefreshing();
   const registry = reg.registry;
   const failed = reg.error !== null || packs.status === 'error';
+  usePageTitle(TYPE_LABELS.get(type) ?? type, 'Library');
 
   const { items, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
@@ -367,8 +371,12 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <header className="flex items-center gap-3">
-        <Link to="/library" className="text-ink-muted hover:text-ink">
-          <ArrowLeft size={20} />
+        <Link
+          to="/library"
+          aria-label="Back to the library"
+          className="text-ink-muted hover:text-ink"
+        >
+          <ArrowLeft size={20} aria-hidden />
         </Link>
         <h1 className="text-xl font-bold">{TYPE_LABELS.get(type) ?? type}</h1>
         <span className="text-sm text-ink-muted">{items.length}</span>
@@ -549,7 +557,7 @@ function BookExtras({ registry, entity }: { registry: EntityRegistry; entity: En
 }
 
 function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
-  const navigate = useNavigate();
+  const back = useBack(`/library/${type}`);
   const packs = useTypePacks(type, reg.retry);
   const refreshing = useRegistryRefreshing();
   const registry = reg.registry;
@@ -565,6 +573,15 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
           source !== undefined && source !== '' ? source : undefined,
         ) ?? registry.get(type, decoded));
 
+  const typeLabel = TYPE_LABELS.get(type) ?? type;
+  const failed = reg.error !== null || packs.status === 'error';
+  const settled = registry !== null && packs.status !== 'loading' && !refreshing;
+  usePageTitle(
+    entity !== undefined ? nameOf(entity) : !failed && settled ? 'Not found' : null,
+    typeLabel,
+    'Library',
+  );
+
   // Having the entity outranks everything else that could be said. A download
   // that failed for the rest of the section is not this page's problem when
   // this page's subject is already in hand.
@@ -573,10 +590,10 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // for as long as the page was open: `useRegistry` swallowed the registry's
     // error, and the pack download was started with a bare `void`, so neither
     // had anywhere to report to.
-    if (reg.error !== null || packs.status === 'error') {
+    if (failed) {
       return (
         <main className="flex flex-1 flex-col gap-3 p-4">
-          <BackLink onClick={() => navigate(-1)} />
+          <BackLink onClick={back} />
           <SectionProblem reg={reg} packs={packs} />
         </main>
       );
@@ -588,7 +605,12 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // registry is still the older, smaller one. Calling the entity missing in
     // that window offers a re-download for something that just arrived.
     if (registry === null || packs.status === 'loading' || refreshing) {
-      return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+      return (
+        <main className="flex flex-1 flex-col gap-3 p-4">
+          <BackLink onClick={back} />
+          <p className="text-sm text-ink-muted">Loading…</p>
+        </main>
+      );
     }
   }
 
@@ -599,7 +621,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // retry cannot fix, because nothing is missing for it to fetch.
     return (
       <main className="flex flex-1 flex-col gap-3 p-4">
-        <BackLink onClick={() => navigate(-1)} />
+        <BackLink onClick={back} />
         <p className="text-sm text-ink-muted">
           Nothing in {TYPE_LABELS.get(type)?.toLowerCase() ?? type} is called{' '}
           <span className="font-semibold text-ink">{decoded}</span>. The link may be from an older
@@ -618,7 +640,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   const facts = headerFacts(type, entity);
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
-      <BackLink onClick={() => navigate(-1)} />
+      <BackLink onClick={back} />
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-2">
           <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
@@ -648,6 +670,20 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   );
 }
 
+function NoSuchSection({ type }: { type: string }) {
+  usePageTitle('No such section', 'Library');
+  return (
+    <main className="flex flex-1 flex-col gap-3 p-4">
+      <p className="text-sm text-ink-muted">
+        There is no <span className="font-semibold text-ink">{type}</span> section in the library.
+      </p>
+      <Link to="/library" className="text-sm text-ink-muted underline hover:text-ink">
+        Back to the library
+      </Link>
+    </main>
+  );
+}
+
 export function Component() {
   const { type, uid } = useParams();
   const reg = useRegistryState();
@@ -655,18 +691,7 @@ export function Component() {
   // The `:type` segment came out of a URL, so it is a string until checked.
   // Casting it used to produce a section with a plausible heading and nothing
   // in it, which reads as "the app lost my data" rather than "no such page".
-  if (type !== undefined && !isEntityType(type)) {
-    return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
-        <p className="text-sm text-ink-muted">
-          There is no <span className="font-semibold text-ink">{type}</span> section in the library.
-        </p>
-        <Link to="/library" className="text-sm text-ink-muted underline hover:text-ink">
-          Back to the library
-        </Link>
-      </main>
-    );
-  }
+  if (type !== undefined && !isEntityType(type)) return <NoSuchSection type={type} />;
 
   if (type !== undefined && uid !== undefined) {
     return <EntityDetail type={type} uid={uid} reg={reg} />;

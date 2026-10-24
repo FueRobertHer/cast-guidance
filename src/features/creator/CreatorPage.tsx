@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
@@ -14,7 +14,10 @@ import { subclassUnlockLevel } from '@/engine/multiclass';
 import { ABILITIES, type CharacterDoc, type EffectOrigin, newCharacterDoc } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
 import { pruneChoicesFor } from '@/lib/pruneChoices';
+import { usePageTitle } from '@/lib/usePageTitle';
+import { notifyFailure } from '@/stores/notices';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
   backgroundBlurb,
@@ -34,7 +37,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-import { normalizeStep, STEPS, type Step } from './steps';
+import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -43,6 +46,7 @@ const DRAFT_KEY = 'cast-guidance:creator-draft';
 
 export function Component() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
@@ -65,6 +69,42 @@ export function Component() {
     void ensureTypePacks('item');
   }, []);
 
+  // Set once Create is pressed: the name of the character being opened. From
+  // then on the wizard is spent, and its history entries are being unwound.
+  const [opening, setOpening] = useState<string | null>(null);
+  const creating = useRef(false);
+  // Create awaits a save before it unwinds, and the depth it unwinds is the
+  // one current when the save lands, not when the button was pressed.
+  // A layout effect, so a save that settles right after a Back reads the
+  // entry the Back landed on.
+  const live = useRef({ location, mounted: true });
+  useLayoutEffect(() => {
+    live.current.location = location;
+  }, [location]);
+  useEffect(() => {
+    const state = live.current;
+    state.mounted = true;
+    return () => {
+      state.mounted = false;
+    };
+  }, []);
+  // The entry a step push left from, and when. Router state lands in a
+  // transition, so a fast double tap could otherwise push twice from the same
+  // stale location and miscount the depth Create unwinds. It expires rather
+  // than waiting for a new entry: a Back that lands before the push commits
+  // returns to the same entry, and a guard waiting on a new one would hold
+  // every step button forever.
+  const pushed = useRef<{ key: string; at: number } | null>(null);
+  // A save slow enough to look stuck (a database blocked by another tab).
+  // Only then is leaving offered: leaving mid-save pushes over the wizard's
+  // entries, which is the trap Create unwinds, so a normal save never offers it.
+  const [slowSave, setSlowSave] = useState(false);
+  useEffect(() => {
+    if (opening === null) return;
+    const timer = setTimeout(() => setSlowSave(true), 3000);
+    return () => clearTimeout(timer);
+  }, [opening]);
+
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
 
@@ -81,11 +121,58 @@ export function Component() {
     });
   };
 
-  const goto = (s: Step) => setParams({ step: s }, { replace: false });
+  const goto = (s: Step) => {
+    const now = performance.now();
+    if (pushed.current?.key === location.key && now - pushed.current.at < 1000) return;
+    pushed.current = { key: location.key, at: now };
+    setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
+  };
   const stepIdx = STEPS.indexOf(step);
 
+  usePageTitle(
+    ...(opening !== null
+      ? ['Opening character']
+      : [STEP_LABELS[step], `Step ${stepIdx + 1} of ${STEPS.length}`, 'New character']),
+  );
+
+  if (opening !== null) {
+    return (
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <p role="status" className="text-sm text-ink-muted">
+          Opening {opening}…
+        </p>
+        {slowSave && (
+          <Link to="/" className="text-sm text-ink-muted underline hover:text-ink">
+            Still saving. Back to characters
+          </Link>
+        )}
+      </main>
+    );
+  }
+
+  const header = (
+    <header className="flex items-center gap-3">
+      <Link
+        to="/"
+        aria-label="Back to characters (your draft is kept)"
+        className="text-ink-muted hover:text-ink"
+      >
+        <ArrowLeft size={20} aria-hidden />
+      </Link>
+      <h1 className="text-xl font-bold">{STEP_LABELS[step]}</h1>
+      <span className="text-sm text-ink-muted">
+        {stepIdx + 1}/{STEPS.length}
+      </span>
+    </header>
+  );
+
   if (registry === null) {
-    return <main className="p-4 text-sm text-ink-muted">Loading game data…</main>;
+    return (
+      <main className="flex flex-1 flex-col gap-4 p-4">
+        {header}
+        <p className="text-sm text-ink-muted">Loading game data…</p>
+      </main>
+    );
   }
 
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
@@ -781,12 +868,31 @@ export function Component() {
 
       case 'review': {
         const create = async () => {
+          // A second tap would start a second unwind, and two queued pops can
+          // walk right out of the app.
+          if (creating.current) return;
+          creating.current = true;
           const final = structuredClone(doc);
           if (final.name.trim() === '') final.name = 'Unnamed hero';
           final.play.currentHp = sheet?.maxHp.value ?? 0;
-          await characterRepo.put(final);
+          setOpening(final.name);
+          try {
+            await characterRepo.put(final);
+          } catch (err) {
+            creating.current = false;
+            setOpening(null);
+            notifyFailure('Create', err);
+            return;
+          }
           sessionStorage.removeItem(DRAFT_KEY);
-          navigate(`/c/${final.id}`, { replace: true });
+          // Left while the save was in flight: the character is saved, and
+          // the page the player went to is not this flow's to replace.
+          if (!live.current.mounted) return;
+          await replaceWizardWith(
+            navigate,
+            wizardDepth(live.current.location.state),
+            `/c/${final.id}`,
+          );
         };
         // Everything a new player might have missed, each one tap from its fix.
         const issues: Array<{ key: string; text: string; step: Step }> = [];
@@ -937,17 +1043,7 @@ export function Component() {
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]">
-      <header className="flex items-center gap-3">
-        <Link to="/" className="text-ink-muted hover:text-ink">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-xl font-bold capitalize">
-          {step === 'species' ? 'Species / Race' : step}
-        </h1>
-        <span className="text-sm text-ink-muted">
-          {stepIdx + 1}/{STEPS.length}
-        </span>
-      </header>
+      {header}
 
       {/* Live summary bar — the "like a game" feedback loop */}
       {sheet !== null && doc.classes.length > 0 && (

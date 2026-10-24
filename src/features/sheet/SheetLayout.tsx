@@ -12,18 +12,21 @@ import {
 } from 'lucide-react';
 import { Link, NavLink, Outlet, useLocation, useParams, useResolvedPath } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { AdvToggle } from '@/ui/AdvToggle';
 import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
 import { useOpenElsewhere } from './useOpenElsewhere';
 
+// `label` is sized for the tab bar; `title` is what the document title says,
+// where "More" and "Items" would not tell a history list which screen it was.
 const tabs = [
-  { to: '.', label: 'Play', icon: Swords, end: true },
-  { to: 'stats', label: 'Stats', icon: Gauge, end: false },
-  { to: 'inventory', label: 'Items', icon: Backpack, end: false },
-  { to: 'spells', label: 'Spells', icon: Sparkles, end: false },
-  { to: 'features', label: 'More', icon: ScrollText, end: false },
-  { to: 'build', label: 'Build', icon: Wrench, end: false },
+  { to: '.', label: 'Play', title: 'Play', icon: Swords, end: true },
+  { to: 'stats', label: 'Stats', title: 'Stats', icon: Gauge, end: false },
+  { to: 'inventory', label: 'Items', title: 'Inventory', icon: Backpack, end: false },
+  { to: 'spells', label: 'Spells', title: 'Spells', icon: Sparkles, end: false },
+  { to: 'features', label: 'More', title: 'Features', icon: ScrollText, end: false },
+  { to: 'build', label: 'Build', title: 'Build', icon: Wrench, end: false },
 ] as const;
 
 /**
@@ -48,11 +51,28 @@ export function tabRolls(tab: string): boolean {
   return ROLLING_TABS.has(tab);
 }
 
+/** Document-title name for a tab segment ('' is Play); undefined if unknown. */
+export function tabTitle(tab: string): string | undefined {
+  return tabs.find((t) => (t.to === '.' ? '' : t.to) === tab)?.title;
+}
+
 export function Component() {
   const { id } = useParams();
   const state = useCharacterSheet(id);
   const openElsewhere = useOpenElsewhere(id);
-  const rollsHere = tabRolls(sheetTab(useResolvedPath('.').pathname, useLocation().pathname));
+  const tab = sheetTab(useResolvedPath('.').pathname, useLocation().pathname);
+  const rollsHere = tabRolls(tab);
+  // The layout owns the title for every tab (see usePageTitle): the tabs are
+  // its children, and their effects would run first and lose to it anyway.
+  usePageTitle(
+    ...(state.loadStatus === 'loading' || state.loadStatus === 'idle'
+      ? ['Loading character']
+      : state.loadStatus === 'error'
+        ? ['Could not load character']
+        : state.missing
+          ? ['Character not found']
+          : [tabTitle(tab), state.doc?.name.trim() || 'Unnamed character']),
+  );
 
   if (state.loadStatus === 'loading' || state.loadStatus === 'idle') {
     return (

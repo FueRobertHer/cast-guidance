@@ -11,6 +11,7 @@ import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { homebrewForExport } from './homebrewExport';
@@ -112,6 +113,7 @@ function VitalsLine({ v }: { v?: Vitals }) {
 }
 
 export function Component() {
+  usePageTitle('Characters');
   const navigate = useNavigate();
   const { registry, status: registryStatus } = useRegistryState(['essentials']);
   const result = useLiveQuery(() => characterRepo.listSafe(), []);

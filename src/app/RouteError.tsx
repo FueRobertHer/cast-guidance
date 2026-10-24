@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 /**
  * Route-level recovery UI (REL-005). Rendered by react-router when a route's
@@ -10,6 +11,7 @@ import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
  */
 export function RouteError() {
   const error = useRouteError();
+  usePageTitle('Something went wrong');
   const detail = isRouteErrorResponse(error)
     ? `${error.status} ${error.statusText}`
     : error instanceof Error

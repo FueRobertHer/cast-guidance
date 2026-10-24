@@ -327,4 +327,46 @@ describe('BuilderPage opening a file it cannot use', () => {
     expect(alert.textContent).toContain('content is not JSON');
     expect(alert.textContent).toContain('remove it from the homebrew list');
   });
+
+  it('offers a labelled way back to homebrew in every state that has no form', () => {
+    // This page sits outside the app nav, and these states used to render a
+    // bare message with nothing to press.
+    const states: unknown[] = [
+      undefined,
+      {},
+      { error: { id: 'f1', fileName: 'brews.json', message: 'content is not JSON' } },
+      { file: { ...row, editable: false } },
+    ];
+    for (const state of states) {
+      read.current = state;
+      renderBuilder();
+      const back = screen.getByRole('link', { name: 'Back to homebrew' });
+      expect(back.getAttribute('href'), JSON.stringify(state)).toBe('/homebrew');
+      cleanup();
+    }
+  });
+
+  it('names an imported file by its file name when its declared title is not text', () => {
+    read.current = {
+      file: { ...row, editable: false, json: { _meta: { sources: [{ full: { x: 1 } }] } } },
+    };
+    renderBuilder();
+    expect(document.title).toBe('brews · Homebrew · Cast Guidance');
+  });
+
+  it('names the state it is in, in the document title', () => {
+    read.current = {};
+    renderBuilder();
+    expect(document.title).toBe('Homebrew file not found · Cast Guidance');
+  });
+});
+
+describe('BuilderPage titles and navigation', () => {
+  it('names the file being edited, and labels the way back', () => {
+    renderBuilder();
+    expect(document.title).toBe('My Brews · Homebrew editor · Cast Guidance');
+    expect(screen.getByRole('link', { name: 'Back to homebrew' }).getAttribute('href')).toBe(
+      '/homebrew',
+    );
+  });
 });

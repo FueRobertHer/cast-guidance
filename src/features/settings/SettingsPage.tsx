@@ -10,6 +10,7 @@ import {
 import { invalidateRegistry } from '@/data5e/registry';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
@@ -47,6 +48,7 @@ function useStorageUsage(phase: string) {
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 export function Component() {
+  usePageTitle('Settings');
   const phase = useDataStatus((s) => s.phase);
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
