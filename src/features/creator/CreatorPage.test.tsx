@@ -37,6 +37,8 @@ afterEach(() => {
   put.mockReset();
   noticeStore.setState({ notice: null, seq: 0 });
   document.title = '';
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 type Entry = string | { pathname: string; search?: string; state?: unknown };
@@ -94,7 +96,7 @@ describe('stepping through the creator', () => {
 
   it('lets the steps move again after a Back that beat the push', async () => {
     let now = 1_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
     const router = renderCreator(['/', '/create']);
     await act(async () => {
       screen.getByRole('button', { name: /Next/ }).click();
@@ -105,7 +107,6 @@ describe('stepping through the creator', () => {
     now += 1000;
     fireEvent.click(screen.getByRole('button', { name: /Next/ }));
     await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
-    vi.restoreAllMocks();
   });
 
   it('names the step in the document title', () => {
@@ -144,10 +145,10 @@ describe('creating a character', () => {
       create.click();
     });
     // The wizard is spent the moment Create is pressed: nothing on it can be
-    // pressed again, though the page is never a trap while the save runs.
+    // pressed again, and a save that settles quickly offers no way off it.
     expect(screen.getByRole('status').textContent).toContain('Opening Aria');
     expect(screen.queryByRole('button', { name: /Next|Back|Create/ })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Back to characters' })).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
 
     finish();
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
@@ -172,14 +173,16 @@ describe('creating a character', () => {
     expect(router.state.location.pathname).toBe('/create');
   });
 
-  it('opens nothing when the player left while the save ran', async () => {
+  it('offers a way out of a save that looks stuck, and opens nothing after it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     seedDraft();
     let finish: () => void = () => undefined;
     put.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
     const router = renderCreator(walkedToReview);
 
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
-    fireEvent.click(screen.getByRole('link', { name: 'Back to characters' }));
+    act(() => vi.advanceTimersByTime(3000));
+    fireEvent.click(screen.getByRole('link', { name: /Back to characters/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     await act(async () => finish());
     expect(put).toHaveBeenCalledOnce();

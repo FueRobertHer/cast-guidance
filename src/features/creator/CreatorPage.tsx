@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
 import type { Entity } from '@/data5e/copyMod';
@@ -75,8 +75,10 @@ export function Component() {
   const creating = useRef(false);
   // Create awaits a save before it unwinds, and the depth it unwinds is the
   // one current when the save lands, not when the button was pressed.
+  // A layout effect, so a save that settles right after a Back reads the
+  // entry the Back landed on.
   const live = useRef({ location, mounted: true });
-  useEffect(() => {
+  useLayoutEffect(() => {
     live.current.location = location;
   }, [location]);
   useEffect(() => {
@@ -93,6 +95,15 @@ export function Component() {
   // returns to the same entry, and a guard waiting on a new one would hold
   // every step button forever.
   const pushed = useRef<{ key: string; at: number } | null>(null);
+  // A save slow enough to look stuck (a database blocked by another tab).
+  // Only then is leaving offered: leaving mid-save pushes over the wizard's
+  // entries, which is the trap Create unwinds, so a normal save never offers it.
+  const [slowSave, setSlowSave] = useState(false);
+  useEffect(() => {
+    if (opening === null) return;
+    const timer = setTimeout(() => setSlowSave(true), 3000);
+    return () => clearTimeout(timer);
+  }, [opening]);
 
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
@@ -111,7 +122,7 @@ export function Component() {
   };
 
   const goto = (s: Step) => {
-    const now = Date.now();
+    const now = performance.now();
     if (pushed.current?.key === location.key && now - pushed.current.at < 1000) return;
     pushed.current = { key: location.key, at: now };
     setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
@@ -130,10 +141,11 @@ export function Component() {
         <p role="status" className="text-sm text-ink-muted">
           Opening {opening}…
         </p>
-        {/* A save that never settles (a blocked database) must not trap the page. */}
-        <Link to="/" className="text-sm text-ink-muted underline hover:text-ink">
-          Back to characters
-        </Link>
+        {slowSave && (
+          <Link to="/" className="text-sm text-ink-muted underline hover:text-ink">
+            Still saving. Back to characters
+          </Link>
+        )}
       </main>
     );
   }
