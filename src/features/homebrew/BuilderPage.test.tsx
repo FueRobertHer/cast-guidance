@@ -346,6 +346,14 @@ describe('BuilderPage opening a file it cannot use', () => {
     }
   });
 
+  it('names an imported file by its file name when its declared title is not text', () => {
+    read.current = {
+      file: { ...row, editable: false, json: { _meta: { sources: [{ full: { x: 1 } }] } } },
+    };
+    renderBuilder();
+    expect(document.title).toBe('brews · Homebrew · Cast Guidance');
+  });
+
   it('names the state it is in, in the document title', () => {
     read.current = {};
     renderBuilder();

@@ -37,7 +37,7 @@ import {
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
-import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth } from './steps';
+import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState } from './steps';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -73,14 +73,26 @@ export function Component() {
   // then on the wizard is spent, and its history entries are being unwound.
   const [opening, setOpening] = useState<string | null>(null);
   const creating = useRef(false);
-  // True between a step push and the render that commits it. Router state
-  // lands in a transition, so a fast double tap could otherwise push twice
-  // from the same stale location and miscount the depth Create unwinds.
-  const pushing = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new entry is the signal, not a value read here
+  // Create awaits a save before it unwinds, and the depth it unwinds is the
+  // one current when the save lands, not when the button was pressed.
+  const live = useRef({ location, mounted: true });
   useEffect(() => {
-    pushing.current = false;
-  }, [location.key]);
+    live.current.location = location;
+  }, [location]);
+  useEffect(() => {
+    const state = live.current;
+    state.mounted = true;
+    return () => {
+      state.mounted = false;
+    };
+  }, []);
+  // The entry a step push left from, and when. Router state lands in a
+  // transition, so a fast double tap could otherwise push twice from the same
+  // stale location and miscount the depth Create unwinds. It expires rather
+  // than waiting for a new entry: a Back that lands before the push commits
+  // returns to the same entry, and a guard waiting on a new one would hold
+  // every step button forever.
+  const pushed = useRef<{ key: string; at: number } | null>(null);
 
   const ctx = registry !== null ? engineContextFor(registry) : null;
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
@@ -99,12 +111,10 @@ export function Component() {
   };
 
   const goto = (s: Step) => {
-    if (pushing.current) return;
-    pushing.current = true;
-    setParams(
-      { step: s },
-      { replace: false, state: { creatorDepth: wizardDepth(location.state) + 1 } },
-    );
+    const now = Date.now();
+    if (pushed.current?.key === location.key && now - pushed.current.at < 1000) return;
+    pushed.current = { key: location.key, at: now };
+    setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
   };
   const stepIdx = STEPS.indexOf(step);
 
@@ -116,8 +126,14 @@ export function Component() {
 
   if (opening !== null) {
     return (
-      <main role="status" className="p-4 text-sm text-ink-muted">
-        Opening {opening}…
+      <main className="flex flex-1 flex-col gap-3 p-4">
+        <p role="status" className="text-sm text-ink-muted">
+          Opening {opening}…
+        </p>
+        {/* A save that never settles (a blocked database) must not trap the page. */}
+        <Link to="/" className="text-sm text-ink-muted underline hover:text-ink">
+          Back to characters
+        </Link>
       </main>
     );
   }
@@ -857,7 +873,14 @@ export function Component() {
             return;
           }
           sessionStorage.removeItem(DRAFT_KEY);
-          await replaceWizardWith(navigate, wizardDepth(location.state), `/c/${final.id}`);
+          // Left while the save was in flight: the character is saved, and
+          // the page the player went to is not this flow's to replace.
+          if (!live.current.mounted) return;
+          await replaceWizardWith(
+            navigate,
+            wizardDepth(live.current.location.state),
+            `/c/${final.id}`,
+          );
         };
         // Everything a new player might have missed, each one tap from its fix.
         const issues: Array<{ key: string; text: string; step: Step }> = [];

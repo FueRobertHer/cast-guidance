@@ -663,12 +663,16 @@ function refLabel(ref: EntityRef): string {
   return isRecord(ref.value) ? 'that unnamed entry' : 'that unreadable entry';
 }
 
-/** The file's display name: its declared source title, else the file name. */
+/**
+ * The file's display name: its declared source title, else the file name. The
+ * title is read from an imported file too, so it is used only if it is text.
+ */
 function fileTitle(file: HomebrewFile): string {
-  return String(
-    (file.json._meta as { sources?: Array<{ full?: string }> } | undefined)?.sources?.[0]?.full ??
-      file.fileName.replace(/\.json$/, ''),
-  );
+  const full = (file.json._meta as { sources?: Array<{ full?: unknown }> } | undefined)
+    ?.sources?.[0]?.full;
+  return typeof full === 'string' && full.trim() !== ''
+    ? full
+    : file.fileName.replace(/\.json$/, '');
 }
 
 /** The way out, on every state of this page: it sits outside the app nav. */

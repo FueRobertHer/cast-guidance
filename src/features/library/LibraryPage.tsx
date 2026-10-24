@@ -605,7 +605,12 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // registry is still the older, smaller one. Calling the entity missing in
     // that window offers a re-download for something that just arrived.
     if (registry === null || packs.status === 'loading' || refreshing) {
-      return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
+      return (
+        <main className="flex flex-1 flex-col gap-3 p-4">
+          <BackLink onClick={back} />
+          <p className="text-sm text-ink-muted">Loading…</p>
+        </main>
+      );
     }
   }
 

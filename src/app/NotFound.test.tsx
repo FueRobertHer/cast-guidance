@@ -34,6 +34,8 @@ describe('nearestPage', () => {
 
   it('points into a library section only when the section exists', () => {
     expect(nearestPage('/library/spell/a/b')?.to).toBe('/library/spell');
+    // Not on the home grid, but a section the library still opens.
+    expect(nearestPage('/library/classFeature/a/b')?.to).toBe('/library/classFeature');
     expect(nearestPage('/library/bogus/a/b')?.to).toBe('/library');
   });
 

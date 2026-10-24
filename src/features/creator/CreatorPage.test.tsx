@@ -24,6 +24,7 @@ vi.mock('@/db/characterRepo', () => ({ characterRepo: { put } }));
 
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
+import { wizardState } from './steps';
 
 registry.current = makeTestContext();
 
@@ -58,8 +59,8 @@ function renderCreator(entries: Entry[], index = entries.length - 1) {
 const walkedToReview: Entry[] = [
   '/',
   '/create',
-  { pathname: '/create', search: '?step=class', state: { creatorDepth: 1 } },
-  { pathname: '/create', search: '?step=review', state: { creatorDepth: 2 } },
+  { pathname: '/create', search: '?step=class', state: wizardState(1) },
+  { pathname: '/create', search: '?step=review', state: wizardState(2) },
 ];
 
 function seedDraft() {
@@ -71,11 +72,40 @@ describe('stepping through the creator', () => {
     const router = renderCreator(['/', '/create']);
     fireEvent.click(screen.getByRole('button', { name: /Next/ }));
     await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
-    expect(router.state.location.state).toEqual({ creatorDepth: 1 });
+    expect(router.state.location.state).toEqual(wizardState(1));
 
     fireEvent.click(screen.getByRole('button', { name: /Next/ }));
     await waitFor(() => expect(router.state.location.search).toBe('?step=species'));
-    expect(router.state.location.state).toEqual({ creatorDepth: 2 });
+    expect(router.state.location.state).toEqual(wizardState(2));
+  });
+
+  it('pushes once for a double tap that lands before the first push commits', async () => {
+    const router = renderCreator(['/', '/create']);
+    const next = screen.getByRole('button', { name: /Next/ });
+    act(() => {
+      next.click();
+      next.click();
+    });
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    await act(() => router.navigate(-1));
+    // One entry above the one the wizard was entered on, not two.
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('lets the steps move again after a Back that beat the push', async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const router = renderCreator(['/', '/create']);
+    await act(async () => {
+      screen.getByRole('button', { name: /Next/ }).click();
+      await router.navigate(-1);
+    });
+    // Back on the entry the push left from, under its old key. A guard that
+    // waited for a new entry would hold Next here for good.
+    now += 1000;
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    vi.restoreAllMocks();
   });
 
   it('names the step in the document title', () => {
@@ -106,19 +136,55 @@ describe('creating a character', () => {
     put.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
     const router = renderCreator(walkedToReview);
 
+    // Both taps inside one batch, so the second runs before the re-render
+    // that takes the button away.
     const create = screen.getByRole('button', { name: /Create character/ });
-    fireEvent.click(create);
-    fireEvent.click(create);
-    // The wizard is spent the moment Create is pressed; nothing on it can be
-    // pressed again, including the way out.
+    act(() => {
+      create.click();
+      create.click();
+    });
+    // The wizard is spent the moment Create is pressed: nothing on it can be
+    // pressed again, though the page is never a trap while the save runs.
     expect(screen.getByRole('status').textContent).toContain('Opening Aria');
-    expect(screen.queryByRole('link', { name: /Back to characters/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Next|Back|Create/ })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Back to characters' })).toBeTruthy();
 
     finish();
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
     expect(put).toHaveBeenCalledOnce();
     await act(() => router.navigate(-1));
     expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('just replaces its own entry when the depth it holds is from before a reload', async () => {
+    seedDraft();
+    put.mockResolvedValue(undefined);
+    // History state outlives a reload; the entries it counted do not.
+    const router = renderCreator([
+      '/',
+      '/create',
+      { pathname: '/create', search: '?step=review', state: { creatorDepth: 1, creatorLoad: 'x' } },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
+    await act(() => router.navigate(-1));
+    expect(router.state.location.pathname).toBe('/create');
+  });
+
+  it('opens nothing when the player left while the save ran', async () => {
+    seedDraft();
+    let finish: () => void = () => undefined;
+    put.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+    const router = renderCreator(walkedToReview);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
+    fireEvent.click(screen.getByRole('link', { name: 'Back to characters' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    await act(async () => finish());
+    expect(put).toHaveBeenCalledOnce();
+    expect(router.state.location.pathname).toBe('/');
+    expect(screen.getByText('Roster')).toBeTruthy();
   });
 
   it('keeps the wizard and says so when the save is refused', async () => {

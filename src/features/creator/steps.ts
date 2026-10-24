@@ -36,13 +36,30 @@ export const STEP_LABELS: Readonly<Record<Step, string>> = {
 };
 
 /**
+ * This page load. History state outlives a reload, but the entries a depth
+ * counts do not: they belong to the document before it, and going back into
+ * one is a full page load that tears down the code waiting to finish Create.
+ */
+export const WIZARD_LOAD: string = crypto.randomUUID();
+
+/** The history state a step push records; see {@link wizardDepth}. */
+export function wizardState(depth: number): { creatorDepth: number; creatorLoad: string } {
+  return { creatorDepth: depth, creatorLoad: WIZARD_LOAD };
+}
+
+/**
  * How many wizard entries were pushed above this one in the tab's history
  * (0 = the entry the wizard was entered on). Each step push records its depth
  * in `location.state`, which is untrusted: it survives reloads and can come
- * from an older build, so anything but a non-negative integer reads as 0.
+ * from an older build, so anything but a non-negative integer recorded by
+ * this page load reads as 0, and counting starts again from here.
  */
-export function wizardDepth(state: unknown): number {
+export function wizardDepth(state: unknown, load: string = WIZARD_LOAD): number {
   if (typeof state !== 'object' || state === null) return 0;
-  const depth = (state as { creatorDepth?: unknown }).creatorDepth;
+  const { creatorDepth: depth, creatorLoad } = state as {
+    creatorDepth?: unknown;
+    creatorLoad?: unknown;
+  };
+  if (creatorLoad !== load) return 0;
   return typeof depth === 'number' && Number.isInteger(depth) && depth >= 0 ? depth : 0;
 }

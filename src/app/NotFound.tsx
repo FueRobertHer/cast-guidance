@@ -1,6 +1,6 @@
 import { Compass } from 'lucide-react';
 import { Link, useLocation } from 'react-router';
-import { TYPE_LABELS } from '@/features/library/browseTypes';
+import { isEntityType } from '@/data5e/normalize';
 import { usePageTitle } from '@/lib/usePageTitle';
 
 export interface NearestPage {
@@ -22,7 +22,7 @@ export function nearestPage(pathname: string): NearestPage | null {
         : { to: `/c/${second}`, label: 'Open this character’s sheet' };
     case 'library':
       // An unknown section would only land on "no such section", one level short.
-      return second !== undefined && TYPE_LABELS.has(decodeSegment(second))
+      return second !== undefined && isEntityType(decodeSegment(second))
         ? { to: `/library/${second}`, label: 'Browse this library section' }
         : { to: '/library', label: 'Go to the library' };
     case 'homebrew':

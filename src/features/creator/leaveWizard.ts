@@ -13,6 +13,10 @@ import type { NavigateFunction } from 'react-router';
  * `timeoutMs` this stops waiting and replaces the current entry, which is the
  * old behavior. A pop that lands even later than that could still reopen the
  * creator; that is no worse than before and rarer.
+ *
+ * The step entries stay reachable through the browser's Forward, which shows
+ * a fresh creator. Clearing them would take a push, which costs a duplicate
+ * roster entry on the way back; Forward into a finished flow is the rarer path.
  */
 export async function replaceWizardWith(
   navigate: NavigateFunction,

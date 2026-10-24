@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeStep, STEP_LABELS, STEPS, wizardDepth } from './steps';
+import { normalizeStep, STEP_LABELS, STEPS, wizardDepth, wizardState } from './steps';
 
 describe('normalizeStep', () => {
   it('passes through every valid step', () => {
@@ -23,8 +23,15 @@ describe('STEP_LABELS', () => {
 
 describe('wizardDepth', () => {
   it('reads the depth a step push recorded', () => {
-    expect(wizardDepth({ creatorDepth: 4 })).toBe(4);
-    expect(wizardDepth({ creatorDepth: 0 })).toBe(0);
+    expect(wizardDepth(wizardState(4))).toBe(4);
+    expect(wizardDepth(wizardState(0))).toBe(0);
+  });
+
+  it('ignores a depth recorded before a reload', () => {
+    // Those entries belong to the old document: going back into one is a full
+    // page load, and the replace that should follow it never runs.
+    expect(wizardDepth(wizardState(4), 'a later load')).toBe(0);
+    expect(wizardDepth({ creatorDepth: 4 })).toBe(0);
   });
 
   it('reads anything else as the entry the wizard was entered on', () => {
@@ -34,10 +41,10 @@ describe('wizardDepth', () => {
       null,
       {},
       'x',
-      { creatorDepth: '3' },
-      { creatorDepth: -1 },
-      { creatorDepth: 1.5 },
-      { creatorDepth: Number.NaN },
+      { ...wizardState(0), creatorDepth: '3' },
+      { ...wizardState(0), creatorDepth: -1 },
+      { ...wizardState(0), creatorDepth: 1.5 },
+      { ...wizardState(0), creatorDepth: Number.NaN },
     ]) {
       expect(wizardDepth(state), JSON.stringify(state)).toBe(0);
     }
