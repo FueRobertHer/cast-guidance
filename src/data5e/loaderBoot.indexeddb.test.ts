@@ -29,8 +29,10 @@ import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 
 // IndexedDB under fake-indexeddb is slow on a loaded runner: the default
-// one-second wait was enough locally and flaked in CI under the coverage gate.
-const WAIT = { timeout: 5000 };
+// one-second wait was enough locally and flaked in CI under the coverage gate,
+// and a fresh install has since run past five seconds in a full local run.
+// Still well inside the 15 second test timeout, so a real hang fails.
+const WAIT = { timeout: 10_000 };
 
 /** Every release list request the loader makes. */
 const tagsFetch = vi.fn();
