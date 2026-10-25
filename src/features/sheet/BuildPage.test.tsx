@@ -8,6 +8,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { dataStatusStore } from '@/stores/dataStatus';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from './BuildPage';
@@ -63,6 +64,7 @@ vi.mock('@/ui/dialogs', () => ({
 }));
 
 afterEach(() => {
+  dataStatusStore.setState({ phase: 'idle', error: undefined });
   cleanup();
   dialogs.askConfirm.mockReset();
   extra.current = [];
@@ -642,22 +644,25 @@ describe('BuildPage destructive changes (UX-004)', () => {
 // files (offline, or a failed download) the picker showed "Pick a class" over
 // an empty list, and the rejection surfaced only as an uncaught error.
 /** The alert beside the class picker (the page has other live regions). */
+/** The panel beside the class picker, found by its words (offline it is no alert). */
 function classListAlert(): HTMLElement {
-  const found = screen
-    .getAllByRole('alert')
-    .find((el) => el.textContent?.includes('class list') === true);
-  if (found === undefined) throw new Error('no class list alert');
-  return found;
+  const panel = screen.getByText(/class list/).parentElement;
+  if (panel === null) throw new Error('no class list panel');
+  return panel;
 }
 
 describe('BuildPage class list without its download', () => {
   it('says the device is offline beside the class picker, with Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     classPacks.current = { status: 'error', error: 'Failed to fetch', offline: true };
     renderBuild();
     const alert = classListAlert();
     expect(alert.textContent).toContain(
       "You're offline, so the class list can't be downloaded yet.",
     );
+    // The shell's data banner is the alert offline (A11Y-002).
+    expect(alert.getAttribute('role')).toBeNull();
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
     expect(classPacks.retry).toHaveBeenCalledOnce();
   });
@@ -674,6 +679,8 @@ describe('BuildPage class list without its download', () => {
   it('names a failed download online', () => {
     classPacks.current = { status: 'error', error: 'HTTP 503', offline: false };
     renderBuild();
+    // Online, with the shell's queue fine, the panel is the one alert.
+    expect(classListAlert().getAttribute('role')).toBe('alert');
     expect(classListAlert().textContent).toContain(
       "The class list couldn't be downloaded: HTTP 503",
     );

@@ -21,6 +21,7 @@ import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { useFailureAlert } from '@/ui/failureAlert';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
@@ -285,6 +286,9 @@ const DB_CLOSED_NOTE = 'rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted';
  */
 function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
   const dbOpen = useDbLifecycle((s) => s.state === 'open');
+  // Mounted with the failure. A visual while the shell's DataBanner alerts
+  // the same outage (A11Y-002).
+  const alerts = useFailureAlert();
   // `error`, not `status`: a registry already in hand keeps the status 'ready'
   // so pages that can still render do, but the failed rebuild behind it is
   // exactly what this panel exists to say.
@@ -315,7 +319,7 @@ function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksSt
   return (
     <div
       className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
-      role="alert"
+      role={alerts ? 'alert' : undefined}
     >
       <p className="min-w-0 flex-1 text-xs">
         {lines.map((line) => (

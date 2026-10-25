@@ -5,6 +5,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dataStatusStore } from '@/stores/dataStatus';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { Component as SheetLayout } from './SheetLayout';
 import type { CharacterSheetState } from './useCharacterSheet';
@@ -49,18 +50,22 @@ beforeEach(() => retry.mockClear());
 afterEach(() => {
   cleanup();
   dbLifecycleStore.setState({ state: 'open' });
+  dataStatusStore.setState({ phase: 'idle', error: undefined });
   vi.restoreAllMocks();
 });
 
 describe('SheetLayout without game data', () => {
   it('says the data is not downloaded and the device is offline, with Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     loaded({ status: 'error', error: 'Failed to fetch', retry });
     renderSheet();
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain(
+    // A visual offline: the shell's data banner is the alert that says it.
+    expect(screen.queryByRole('alert')).toBeNull();
+    const alert = screen.getByText(
       "You're offline, and the game data this needs isn't downloaded yet.",
-    );
+    ).parentElement as HTMLElement;
     expect(alert.textContent).toContain('Your character is saved on this device.');
     expect(alert.textContent).toContain("It downloads by itself once you're back online.");
     expect(screen.queryByText('tab content')).toBeNull();
@@ -101,6 +106,14 @@ describe('SheetLayout without game data', () => {
       window.dispatchEvent(new Event('online'));
     });
     expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('is no second alert online while the data banner alerts the same failure', () => {
+    dataStatusStore.setState({ phase: 'error', error: 'HTTP 503' });
+    loaded({ status: 'error', error: 'HTTP 503', retry });
+    renderSheet();
+    expect(screen.getByText(/couldn't be downloaded: HTTP 503/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('leaves the tab to its own wait while the data is still coming', () => {

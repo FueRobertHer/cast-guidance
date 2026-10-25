@@ -58,6 +58,7 @@ vi.mock('@/ui/dialogs', () => ({
   askChoice: () => Promise.resolve(null),
 }));
 
+import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
 import { LEGACY_DRAFT_KEY, RESUME_STATE, readDraft, writeDraft } from './draft';
@@ -78,6 +79,7 @@ function saved(): CharacterDoc {
 }
 
 afterEach(() => {
+  dataStatusStore.setState({ phase: 'idle', error: undefined });
   cleanup();
   sessionStorage.clear();
   registry.loading = false;
@@ -93,6 +95,13 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+/** The panel a line of text sits in (a failure panel is a visual offline, not an alert). */
+function panelOf(text: string): HTMLElement {
+  const panel = screen.getByText(text).parentElement;
+  if (panel === null) throw new Error(`no panel around ${text}`);
+  return panel;
+}
 
 type Entry = string | { pathname: string; search?: string; state?: unknown };
 
@@ -266,16 +275,17 @@ describe('the way out', () => {
   });
 
   it('is there when game data cannot be had, beside the reason and a Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     // PWA-001: a first launch offline never gets the essentials pack, and the
     // creator used to say "Loading game data…" for good.
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     registry.error = 'Failed to fetch';
     renderCreator(['/', '/create']);
     expect(screen.queryByText('Loading game data…')).toBeNull();
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain(
-      "You're offline, and the game data this needs isn't downloaded yet.",
-    );
+    // A visual offline: the shell's data banner is the alert that says it.
+    expect(screen.queryByRole('alert')).toBeNull();
+    const alert = panelOf("You're offline, and the game data this needs isn't downloaded yet.");
     expect(alert.textContent).toContain('Your draft is kept.');
     expect(alert.textContent).toContain("It downloads by itself once you're back online.");
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
@@ -1073,12 +1083,12 @@ describe('an unfinished draft', () => {
 // files the step offered an empty list and the rejection went uncaught.
 describe('the class step without its download', () => {
   it('says the device is offline above the list, with Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     registry.classPacks = { status: 'error', error: 'Failed to fetch', offline: true };
     renderCreator(['/', '/create?step=class']);
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain(
-      "You're offline, so the class list can't be downloaded yet.",
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    const alert = panelOf("You're offline, so the class list can't be downloaded yet.");
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
     expect(registry.classRetry).toHaveBeenCalledOnce();
   });

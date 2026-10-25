@@ -69,6 +69,7 @@ vi.mock('@/data5e/sourceFilter', () => ({
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
 
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
+import { dataStatusStore } from '@/stores/dataStatus';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { Component as LibraryPage, SEARCH_SETTLE_MS } from './LibraryPage';
 
@@ -168,6 +169,8 @@ describe('the detail view when this section will not download', () => {
   });
 
   it('explains being offline rather than blaming the download', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     // A download that cannot start because there is no network is not broken,
     // and "failed: Failed to fetch" tells the user nothing they can act on.
     packs.current = {
@@ -178,9 +181,20 @@ describe('the detail view when this section will not download', () => {
     };
     renderAt('/library/spell/nonesuch%7Cphb');
 
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain("You're offline");
-    expect(alert.textContent).toContain('already downloaded is still here');
+    const panel = screen.getByText(/^You're offline/).closest('div');
+    expect(panel?.textContent).toContain('already downloaded is still here');
+    // A visual offline: the shell's data banner is the alert that says it
+    // (A11Y-002, one voice per failure).
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('stays a visual online too while the data banner alerts a failed download', () => {
+    dataStatusStore.setState({ phase: 'error', error: 'HTTP 503' });
+    packs.current = { ...packs.current, status: 'error', error: 'HTTP 503', offline: false };
+    renderAt('/library/spell/nonesuch%7Cphb');
+    expect(screen.getByText(/section couldn't be downloaded/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    dataStatusStore.setState({ phase: 'idle', error: undefined });
   });
 
   it('tries the section again by itself once the device is back online', () => {

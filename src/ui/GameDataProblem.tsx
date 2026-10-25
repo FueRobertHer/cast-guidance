@@ -1,5 +1,6 @@
 import { useOnline, useOnReconnect } from '@/lib/useOnline';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { useFailureAlert } from './failureAlert';
 
 /**
  * Why a page that needs game data has none to show, and the way on (PWA-001).
@@ -25,6 +26,8 @@ export function GameDataProblem({
   note?: string;
 }) {
   const online = useOnline();
+  // Not the alert while the shell's DataBanner alerts the same outage (A11Y-002).
+  const alerts = useFailureAlert();
   const dbOpen = useDbLifecycle((s) => s.state === 'open');
   // Back online, the download that could not start is tried again unasked.
   // Not with the database closed (another tab deleted or upgraded it): no
@@ -42,7 +45,7 @@ export function GameDataProblem({
   return (
     <div
       className="flex flex-col items-start gap-2 rounded-lg bg-accent-deep px-3 py-2"
-      role="alert"
+      role={alerts ? 'alert' : undefined}
     >
       <p className="text-sm">
         {online
