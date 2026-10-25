@@ -3,7 +3,7 @@
 // never after it failed, so this toast and the DataBanner could not be on screen
 // together. The check runs at boot now, so the two share a fixed position at the
 // same z-index with nothing but render order deciding which one the user sees.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { getActiveTag, retryDataLayer, updateToTag } = vi.hoisted(() => ({
@@ -14,6 +14,7 @@ const { getActiveTag, retryDataLayer, updateToTag } = vi.hoisted(() => ({
 vi.mock('@/data5e/loader', () => ({ getActiveTag, retryDataLayer, updateToTag }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: () => undefined }));
 
+import { DEDUPE_MS, getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DataBanner } from './DataBanner';
 import { DataUpdateToast } from './DataUpdateToast';
@@ -29,6 +30,8 @@ const renderBoth = () =>
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  resetAnnouncer();
   updateToTag.mockClear();
   dataStatusStore.setState({
     phase: 'idle',
@@ -104,5 +107,66 @@ describe('DataUpdateToast', () => {
     renderBoth();
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));
     expect(screen.queryByText(/is available/)).toBeNull();
+  });
+});
+
+// A11Y-002, amendment S10: the offer is a plain visual, said once through the
+// announcer under the 'update' key, since a region that mounts with its text is
+// announced unreliably.
+describe('DataUpdateToast announcement', () => {
+  const spoken = () => getAnnouncerState().messages.map((m) => m.text);
+  const later = () => act(() => vi.advanceTimersByTime(DEDUPE_MS + 1));
+
+  it('says an offer once, even when the banner hides it and hands it back', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    dataStatusStore.setState({ phase: 'done', updateAvailableTag: 'v2.33.0' });
+    const { rerender } = renderBoth();
+    expect(spoken()).toEqual(['Game data v2.33.0 is available (current: v2.32.0).']);
+
+    // Past the de-duplication window each time, so only the component keeps
+    // it to one: re-renders, then a download taking the position and giving
+    // it back.
+    later();
+    rerender(
+      <>
+        <DataBanner />
+        <DataUpdateToast />
+      </>,
+    );
+    later();
+    act(() => dataStatusStore.setState({ phase: 'working', filesDone: 1, filesTotal: 4 }));
+    expect(screen.queryByText(/is available/)).toBeNull();
+    later();
+    act(() => dataStatusStore.setState({ phase: 'done', filesDone: 4 }));
+    expect(screen.getByText(/is available/)).toBeTruthy();
+
+    expect(getAnnouncerState().emitted).toBe(1);
+    const toast = screen.getByText(/is available/);
+    expect(toast.closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
+  });
+
+  it('says nothing while the offer waits behind the banner', () => {
+    dataStatusStore.setState({
+      phase: 'working',
+      filesDone: 3,
+      filesTotal: 10,
+      updateAvailableTag: 'v2.33.0',
+    });
+    renderBoth();
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('says a newer offer that replaces the first', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    dataStatusStore.setState({ phase: 'done', updateAvailableTag: 'v2.33.0' });
+    renderBoth();
+    act(() => dataStatusStore.setState({ updateAvailableTag: 'v2.34.0' }));
+    // The same key, so it waits out the throttle rather than talking over.
+    expect(getAnnouncerState().emitted).toBe(1);
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    expect(spoken()).toEqual([
+      'Game data v2.33.0 is available (current: v2.32.0).',
+      'Game data v2.34.0 is available (current: v2.32.0).',
+    ]);
   });
 });

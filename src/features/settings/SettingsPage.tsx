@@ -15,12 +15,16 @@ import { resetAppData } from '@/db/reset';
 import { usePersistentStorage } from '@/lib/persistentStorage';
 import { storageErrorText } from '@/lib/storageErrors';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { announce } from '@/stores/announcer';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText } from '@/stores/notices';
 import { onboardingStore } from '@/stores/onboarding';
 import { askConfirm } from '@/ui/dialogs';
 import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
+
+/** Said once a requested download completes; it matches the line that turns to "ready". */
+export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
 
 /**
  * Measured cached-data size alongside the browser's own figure. They differ,
@@ -144,7 +148,11 @@ export function Component() {
     try {
       await updateToTag(tag);
       invalidateRegistry();
-      setUpdateMsg({ text: `Now on ${tag}. Characters re-derive automatically.` });
+      const done = `Now on ${tag}. Characters re-derive automatically.`;
+      setUpdateMsg({ text: done });
+      // The line appears with its text, which a screen reader may not hear,
+      // and the install was waited on, so the outcome is said (A11Y-002).
+      announce(done, { key: 'update' });
       setTags(null);
       measureOffline();
     } catch (err) {
@@ -179,6 +187,9 @@ export function Component() {
     setDownloadFailed(undefined);
     try {
       await downloadAllPacks();
+      // The button that was pressed retires with the download, so focus
+      // has nothing left to say; this is the one word that it finished.
+      announce(OFFLINE_DOWNLOADED_TEXT, { key: 'download' });
     } catch (err) {
       setDownloadFailed(storageErrorText(err));
     } finally {
@@ -295,7 +306,14 @@ export function Component() {
           (updateMsg.failed !== true ? (
             <p className="text-xs text-ink-muted">{updateMsg.text}</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2" role="alert">
+            // A failed install is also the shell's DataBanner alert ("Update
+            // to … failed"), so only a failed version check, which nothing else
+            // reports, is an alert here. Two alerts for one failure were read
+            // back to back (A11Y-002).
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role={failedInstallTag === undefined ? 'alert' : undefined}
+            >
               <p className="text-xs text-amber-300">
                 {updateMsg.text}
                 {failedInstallTag !== undefined && ' Your current version is untouched.'}
@@ -329,10 +347,10 @@ export function Component() {
                   ? 'Make available offline'
                   : 'Retry download'}
             </button>
+            {/* Visual only: the shell's DataBanner alerts the same failure
+                ("Game data download failed"), and one alert is enough. */}
             {downloadFailed !== undefined && !downloading && (
-              <p className="text-xs text-amber-300" role="alert">
-                Download failed: {downloadFailed}
-              </p>
+              <p className="text-xs text-amber-300">Download failed: {downloadFailed}</p>
             )}
           </div>
         )}

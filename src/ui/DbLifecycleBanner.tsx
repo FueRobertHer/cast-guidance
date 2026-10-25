@@ -27,9 +27,12 @@ function reloadPage(): void {
  * stays where it was, because nothing here needs an answer this second; the
  * person can finish reading what they were on and reload when ready.
  *
- * For PR7 (A11Y-002 announcer): this is the third always-mounted live region
- * in the shell, beside the save status and the announcer itself. Keep it, or
- * route this message through `announce` and make this a plain visual.
+ * Kept as its own region rather than routed through `announce` (A11Y-002):
+ * it is already mounted from boot, which is what makes the announcer reliable
+ * too, and it changes once at most, since every closed state lasts until the
+ * reload. Its text is exactly what the banner shows, so the spoken and the
+ * visible message cannot drift apart, and the announcer would drop it after a
+ * few seconds while this one stays readable for as long as the tab is open.
  */
 export function DbLifecycleBanner({ onReload = reloadPage }: { onReload?: () => void }) {
   const state = useDbLifecycle((s) => s.state);

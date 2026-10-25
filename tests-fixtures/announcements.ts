@@ -60,3 +60,17 @@ export function listenForAnnouncements(root: Node = document.body): Announcement
     },
   };
 }
+
+/**
+ * Every line the announcer says from now on, kept after the regions let it
+ * go (they drop a line after a few seconds, which a slow IndexedDB test can
+ * outlast). Call `stop` in `afterEach`.
+ */
+export function recordAnnouncer(): { readonly lines: string[]; stop(): void } {
+  const lines: string[] = [];
+  const stop = announcerStore.subscribe((state, prev) => {
+    const known = new Set(prev.messages.map((m) => m.id));
+    for (const m of state.messages) if (!known.has(m.id)) lines.push(m.text);
+  });
+  return { lines, stop };
+}

@@ -13,11 +13,26 @@ export function gettingStartedDismiss(page: Page): Locator {
 }
 
 /**
+ * Everything but the announcer's screen-reader-only lines (A11Y-002). A toast
+ * is a plain visual whose words are also said through the announcer, so a
+ * text locator for the toast matches its spoken copy too; this is the one
+ * place a spec reaches past roles and names, to tell the two apart.
+ */
+export function onScreen(page: Page): Locator {
+  return page.locator('xpath=//*[not(ancestor-or-self::*[@data-announcer])]');
+}
+
+/** The lines the announcer is saying, or has said in the last few seconds. */
+export function announcements(page: Page, politeness: 'polite' | 'assertive' = 'polite'): Locator {
+  return page.locator(`[data-announcer="${politeness}"] > *`);
+}
+
+/**
  * The one-time "Ready to use offline" notice: a toast near the bottom of the
  * screen that hides itself after a few seconds.
  */
 export function offlineReadyNotice(page: Page): Locator {
-  return page.getByRole('status').filter({ hasText: 'Ready to use offline' });
+  return page.getByText('Ready to use offline').and(onScreen(page));
 }
 
 /**

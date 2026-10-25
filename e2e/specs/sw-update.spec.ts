@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
 import { E2E_BUILD_META } from '../server/swVariants.ts';
-import { gotoRoster, rosterHeading } from '../support/app.ts';
+import { announcements, gotoRoster, onScreen, rosterHeading } from '../support/app.ts';
 import { countDataFiles } from '../support/idb.ts';
 import {
   isRememberedWorkerActive,
@@ -15,7 +15,8 @@ import { expect, test } from '../support/test.ts';
 // Each test deploys a new build on a server of its own (see swVariants.ts).
 test.use({ privateServer: true });
 
-const updateToast = (page: Page) => page.getByText('A new version of the app is ready.');
+const UPDATE_TEXT = 'A new version of the app is ready.';
+const updateToast = (page: Page) => page.getByText(UPDATE_TEXT).and(onScreen(page));
 
 /** Which build served the page's shell: `v1` (dist as built) or `v2`. */
 function shellBuild(page: Page): Promise<string> {
@@ -57,6 +58,9 @@ test.describe('service worker updates', () => {
     server.setVariant('v2');
     expect((await triggerSwUpdate(page)).state).toBe('installed');
     await expect(updateToast(page)).toBeVisible();
+    // A11Y-002: the toast is a plain visual; the offer is said once, through
+    // the announcer's polite region, which was in the page before it.
+    await expect(announcements(page).filter({ hasText: UPDATE_TEXT })).toHaveCount(1);
 
     await applyUpdate(page);
     expect(await shellBuild(page)).toBe('v2');

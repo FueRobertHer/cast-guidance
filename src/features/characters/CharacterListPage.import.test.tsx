@@ -48,8 +48,10 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { onboardingStore } from '@/stores/onboarding';
+import { recordAnnouncer } from '../../../tests-fixtures/announcements';
 import { Component as CharacterListPage } from './CharacterListPage';
 
 beforeAll(() => {
@@ -75,7 +77,19 @@ beforeEach(async () => {
   onboardingStore.setState({ dismissed: true });
 });
 
-afterEach(cleanup);
+/** Everything the announcer says in a test; see `outcome`. */
+let heard = recordAnnouncer();
+beforeEach(() => {
+  heard.stop();
+  resetAnnouncer();
+  heard = recordAnnouncer();
+});
+
+afterEach(() => {
+  cleanup();
+  heard.stop();
+  resetAnnouncer();
+});
 
 type Json = Record<string, unknown>;
 
@@ -120,8 +134,23 @@ function chooseFile(content: unknown) {
   return button;
 }
 
-/** The roster's import line: the only status region with no draft to undo. */
-const importStatus = () => screen.getByRole('status');
+/** The roster's import line: a plain visual, its words said by the announcer (A11Y-002). */
+function importLine(): HTMLElement {
+  const line = document.querySelector<HTMLElement>('[data-import-status]');
+  if (line === null) throw new Error('no import line');
+  return line;
+}
+
+/**
+ * The outcome on the import line, which the announcer must have said too, as
+ * the latest thing it said: the line is no longer a live region, so a shown
+ * outcome nobody heard would otherwise pass.
+ */
+function outcome(): string {
+  const shown = importLine().textContent ?? '';
+  expect(heard.lines.at(-1)).toBe(shown);
+  return shown;
+}
 /** The first preview also waits for its chunk to load, so it gets longer. */
 const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
 
@@ -143,9 +172,7 @@ describe('character import preview', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() =>
-      expect(importStatus().textContent).toBe('Imported Brin. Added 1 homebrew file'),
-    );
+    await waitFor(() => expect(outcome()).toBe('Imported Brin. Added 1 homebrew file'));
     expect((await db.characters.toArray()).map((c) => c.id)).toEqual(['hero-1']);
     expect(await db.homebrewFiles.count()).toBe(1);
     await waitFor(() => expect(document.activeElement).toBe(opener));
@@ -159,7 +186,7 @@ describe('character import preview', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(importStatus().textContent).toBe('Import canceled. Nothing was added.');
+    expect(outcome()).toBe('Import canceled. Nothing was added.');
     expect(await db.characters.count()).toBe(0);
     expect(await db.homebrewFiles.count()).toBe(0);
   });
@@ -182,7 +209,7 @@ describe('character import preview', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
     await waitFor(() =>
-      expect(importStatus().textContent).toBe(
+      expect(outcome()).toBe(
         'Imported Brin as a copy, since a character with the same id was already here. 1 homebrew file already here',
       ),
     );
@@ -300,7 +327,7 @@ describe('character import preview', () => {
     const dialog = await findDialog('Import Brin?');
     expect(dialog.textContent).toContain(classLine);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(importStatus().textContent).toMatch(/^Imported Brin/));
+    await waitFor(() => expect(outcome()).toMatch(/^Imported Brin/));
     expect(await db.characters.count()).toBe(1);
     // The roster still renders the imported character.
     expect(await screen.findByRole('button', { name: 'Actions for Brin' })).toBeTruthy();
@@ -317,9 +344,7 @@ describe('character import preview', () => {
     );
     expect(dialog.textContent).toMatch(/Size\d+ bytes/);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() =>
-      expect(importStatus().textContent).toBe('Imported Brin. Added 1 homebrew file'),
-    );
+    await waitFor(() => expect(outcome()).toBe('Imported Brin. Added 1 homebrew file'));
   });
 
   it('keeps the newest preview when an earlier check finishes late', async () => {
@@ -356,7 +381,7 @@ describe('character import preview', () => {
     expect(screen.queryByRole('dialog', { name: 'Import Slow?' })).toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(importStatus().textContent).toBe('Imported Quick'));
+    await waitFor(() => expect(outcome()).toBe('Imported Quick'));
     expect((await db.characters.toArray()).map((c) => c.name)).toEqual(['Quick']);
     expect(opener.getAttribute('aria-disabled')).toBe('false');
   });
@@ -365,10 +390,43 @@ describe('character import preview', () => {
     renderRoster();
     chooseFile('{ not json');
 
-    await waitFor(() =>
-      expect(importStatus().textContent).toBe('Import failed: file is not valid JSON'),
-    );
+    await waitFor(() => expect(outcome()).toBe('Import failed: file is not valid JSON'));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(await db.characters.count()).toBe(0);
+  });
+});
+
+// A11Y-002: each message on the import line is said once through the
+// announcer, the check in progress and then its outcome.
+describe('character import announcements', () => {
+  it('says the check and each outcome once', async () => {
+    renderRoster();
+    chooseFile(exported(hero()));
+    expect(outcome()).toBe('Checking "brin.json"…');
+    let dialog = await findDialog('Import Brin?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
+
+    chooseFile(exported(hero()));
+    dialog = await findDialog('Import Brin?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(outcome()).toBe('Imported Brin. Added 1 homebrew file'));
+
+    // Right after the last one, so this one waits out the key's throttle.
+    chooseFile('{ not json');
+    await waitFor(() => expect(outcome()).toBe('Import failed: file is not valid JSON'), {
+      timeout: 3000,
+    });
+
+    // A check that is answered inside the key's throttle can be replaced by
+    // its answer before it is said, so only the outcomes are counted exactly.
+    const outcomes = heard.lines.filter((line) => !line.startsWith('Checking'));
+    expect(outcomes).toEqual([
+      'Import canceled. Nothing was added.',
+      'Imported Brin. Added 1 homebrew file',
+      'Import failed: file is not valid JSON',
+    ]);
+    expect(heard.lines[0]).toBe('Checking "brin.json"…');
+    expect(importLine().closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
   });
 });

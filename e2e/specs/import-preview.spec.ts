@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { jsonFile } from '../fixtures/characterFile.ts';
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
 import {
+  announcements,
   answerImportPreview,
   createBlankCharacter,
   expectDataSettled,
@@ -33,7 +34,15 @@ const BREW = {
   ],
 };
 
-const homebrewStatus = (page: Page) => page.getByRole('main').getByRole('status');
+/**
+ * The import messages under the controls. A plain visual (A11Y-002): each
+ * message is said through the announcer instead, which `expectSaid` checks.
+ */
+const homebrewStatus = (page: Page) => page.getByRole('main').locator('[data-import-status]');
+
+/** The announcer said `text` once, in its polite region. */
+const expectSaid = (page: Page, text: string) =>
+  expect(announcements(page).filter({ hasText: text })).toHaveCount(1);
 
 test.describe('import preview', () => {
   test('a homebrew file is previewed, then Cancel writes nothing and Import stores it', async ({
@@ -68,6 +77,7 @@ test.describe('import preview', () => {
 
     await answerImportPreview(page, 'Import "brew.json"?', 'Cancel');
     await expect(homebrewStatus(page)).toHaveText('Import canceled. Nothing was added.');
+    await expectSaid(page, 'Import canceled. Nothing was added.');
     expect(await countHomebrewFiles(page)).toBe(0);
     // Focus is back where the import started.
     await expect(page.getByRole('button', { name: 'Import file', exact: true })).toBeFocused();
@@ -75,6 +85,7 @@ test.describe('import preview', () => {
     await importHomebrewFile(page, jsonFile('brew.json', BREW));
     await answerImportPreview(page, 'Import "brew.json"?');
     await expect(homebrewStatus(page)).toHaveText('Imported "brew.json" (2 spell)');
+    await expectSaid(page, 'Imported "brew.json" (2 spell)');
     await expect.poll(() => countHomebrewFiles(page)).toBe(1);
     await expect(page.getByRole('button', { name: 'Enable brew.json' })).toBeVisible();
 
@@ -88,6 +99,7 @@ test.describe('import preview', () => {
     await expect(homebrewStatus(page)).toHaveText(
       'Kept the existing "brew.json". Nothing was added.',
     );
+    await expectSaid(page, 'Kept the existing "brew.json". Nothing was added.');
     expect(await countHomebrewFiles(page)).toBe(1);
   });
 

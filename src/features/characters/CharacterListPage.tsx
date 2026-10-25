@@ -24,6 +24,7 @@ import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
+import { announce } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { UndoBar } from '@/ui/UndoBar';
@@ -157,7 +158,19 @@ export function Component() {
   const readErrors = result?.errors ?? [];
   const importInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const [importStatus, setImportStatus] = useState<string>();
+  const [importStatus, setImportStatusText] = useState<string>();
+  /**
+   * The import line, on screen and said (A11Y-002): the line below is a plain
+   * visual and each message goes through the announcer once, the check in
+   * progress and then its outcome. Each answers something the person did, so
+   * the same words twice (the same file imported twice) are said twice. The
+   * check has a key of its own, so its answer is not held behind it by the
+   * outcome key's throttle.
+   */
+  const setImportStatus = (text: string | undefined, key = 'import') => {
+    setImportStatusText(text);
+    if (text !== undefined) announce(text, { key, repeat: true });
+  };
   const [pendingImport, setPendingImport] = useState<PendingImport>();
   const [checking, setChecking] = useState(false);
   // Which check is the latest: a slow one must not land after a newer one
@@ -172,7 +185,7 @@ export function Component() {
   const previewImport = async (file: File) => {
     latestImport.current += 1;
     const request = latestImport.current;
-    setImportStatus(`Checking "${file.name}"…`);
+    setImportStatus(`Checking "${file.name}"…`, 'import-check');
     setChecking(true);
     try {
       const prepared = await characterRepo.prepareImport(
@@ -505,9 +518,9 @@ export function Component() {
           e.target.value = '';
         }}
       />
-      {/* Mounted before it has anything to say, so the first message is
-          announced too. */}
-      <p role="status" className="text-xs text-amber-300 empty:hidden">
+      {/* A plain visual: `setImportStatus` says each outcome through the
+          announcer, so a live role here would say it twice. */}
+      <p data-import-status="" className="text-xs text-amber-300 empty:hidden">
         {importStatus}
       </p>
       {pendingImport !== undefined && (

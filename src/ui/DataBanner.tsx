@@ -1,8 +1,26 @@
+import { useEffect } from 'react';
 import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
+import { announce } from '@/stores/announcer';
 import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
-/** Download progress for the background data queue, and its failure state. */
+/** What the rollback notice says, on screen and to a screen reader. */
+export function rollbackText(from: string, to: string): string {
+  return `Game data ${from} could not start, so the app went back to ${to}.`;
+}
+
+/**
+ * Download progress for the background data queue, and its failure state.
+ *
+ * What a screen reader hears (A11Y-002), kept to the two things worth hearing:
+ * - a failure: `role="alert"`, the one kind of region announced reliably when
+ *   it is inserted. It is said once and carries the Retry.
+ * - a rollback: said through the announcer, since a status region that mounts
+ *   with its text is announced unreliably. The notice itself is a visual.
+ * The progress bar says nothing on its own. It is a real `progressbar` with a
+ * value a reader can query, not a live region, so a 48-file drain is not 48
+ * announcements; the drain finishing is the offline-ready notice's to say.
+ */
 export function DataBanner() {
   const shows = useDataStatus(showsDataBanner);
   const phase = useDataStatus((s) => s.phase);
@@ -11,6 +29,11 @@ export function DataBanner() {
   const error = useDataStatus((s) => s.error);
   const failedTag = useDataStatus((s) => s.failedTag);
   const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
+  const rollbackShown = shows && phase !== 'error' && rolledBackFrom !== undefined;
+
+  useEffect(() => {
+    if (rollbackShown) announce(rollbackText(rolledBackFrom, getActiveTag()), { key: 'data' });
+  }, [rollbackShown, rolledBackFrom]);
 
   // The same predicate the update toast stands aside for, so neither can drift
   // into painting over the other.
@@ -56,13 +79,8 @@ export function DataBanner() {
   // rollback would otherwise cover the only explanation for it.
   if (rolledBackFrom !== undefined) {
     return (
-      <div
-        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
-        role="status"
-      >
-        <span>
-          Game data {rolledBackFrom} could not start, so the app went back to {getActiveTag()}.
-        </span>
+      <div className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96">
+        <span>{rollbackText(rolledBackFrom, getActiveTag())}</span>
         <button
           type="button"
           onClick={() => void dismissRollbackNotice()}

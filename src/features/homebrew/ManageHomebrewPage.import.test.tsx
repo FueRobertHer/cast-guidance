@@ -47,9 +47,23 @@ import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
+import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
+import { recordAnnouncer } from '../../../tests-fixtures/announcements';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
+
+/** Everything the announcer says in a test; see `outcome`. */
+let heard = recordAnnouncer();
+beforeEach(() => {
+  heard.stop();
+  resetAnnouncer();
+  heard = recordAnnouncer();
+});
+afterEach(() => {
+  heard.stop();
+  resetAnnouncer();
+});
 
 // jsdom has no matchMedia and the sheet asks for one on mount.
 beforeAll(() => {
@@ -108,7 +122,26 @@ function chooseFile(name: string, content: unknown) {
   return button;
 }
 
-const status = () => screen.getByRole('status');
+/** The import messages under the controls: a plain visual now (A11Y-002). */
+function importLine(): HTMLElement {
+  const line = document.querySelector<HTMLElement>('[data-import-status]');
+  if (line === null) throw new Error('no import line');
+  return line;
+}
+
+/**
+ * The message on the import line, which the announcer must have said too, as
+ * the latest thing it said: the line is no longer a live region, so a message
+ * shown and never heard would otherwise pass.
+ */
+function outcome(): string {
+  const shown = importLine().textContent ?? '';
+  // The message itself: a refusal's block also holds its Open file and
+  // Import file links, which are not part of what is said.
+  const message = importLine().querySelector('p')?.textContent ?? shown;
+  expect(heard.lines.at(-1)).toBe(message);
+  return shown;
+}
 /** The first preview also waits for its chunk to load, so it gets longer. */
 const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
 const fileCount = () => db.homebrewFiles.count();
@@ -140,7 +173,7 @@ describe('homebrew import preview', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(status().textContent).toBe('Imported "brew.json" (2 spell)'));
+    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (2 spell)'));
     expect(await fileCount()).toBe(1);
     expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']);
     expect(invalidateRegistry).toHaveBeenCalled();
@@ -157,7 +190,7 @@ describe('homebrew import preview', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(status().textContent).toBe('Imported "brew.json" (1 spell)'));
+    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (1 spell)'));
     expect(await fileCount()).toBe(1);
     expect(invalidateRegistry).toHaveBeenCalled();
     expect(noticeStore.getState().notice?.title).toBe('Show sources failed');
@@ -171,7 +204,7 @@ describe('homebrew import preview', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(status().textContent).toBe('Import canceled. Nothing was added.');
+    expect(outcome()).toBe('Import canceled. Nothing was added.');
     expect(await fileCount()).toBe(0);
     expect(await db.settings.count()).toBe(0);
     expect(ensureSourcesVisible).not.toHaveBeenCalled();
@@ -196,9 +229,7 @@ describe('homebrew import preview', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Keep the existing file' }));
 
-    await waitFor(() =>
-      expect(status().textContent).toBe('Kept the existing "zap.json". Nothing was added.'),
-    );
+    await waitFor(() => expect(outcome()).toBe('Kept the existing "zap.json". Nothing was added.'));
     expect(await db.homebrewFiles.toArray()).toEqual([{ ...existing, enabled: false }]);
     // As the old flow did for a file imported twice.
     await waitFor(() => expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']));
@@ -221,7 +252,7 @@ describe('homebrew import preview', () => {
     );
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(status().textContent).toContain('Imported "newer.json"'));
+    await waitFor(() => expect(outcome()).toContain('Imported "newer.json"'));
 
     // What a character would get: the version in the file the preview named.
     const winner = (await getRegistry()).get('spell', 'Zap', 'HB');
@@ -258,7 +289,7 @@ describe('homebrew import preview', () => {
     );
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(status().textContent).toContain('Imported "needs.json"'));
+    await waitFor(() => expect(outcome()).toContain('Imported "needs.json"'));
     expect(await fileCount()).toBe(1);
   });
 
@@ -365,9 +396,9 @@ describe('homebrew import preview', () => {
     await waitFor(() => expect(registry.calls).toBe(1));
     // While a file is checked, the button says it is busy and starts nothing.
     expect(opener.getAttribute('aria-disabled')).toBe('true');
-    // The Checking line is announced: no busy ancestor holds it back.
-    expect(status().textContent).toBe('Checking "a.json"…');
-    expect(status().closest('[aria-busy="true"]')).toBeNull();
+    // The Checking line is announced, and no busy ancestor holds it back.
+    expect(outcome()).toBe('Checking "a.json"…');
+    expect(importLine().closest('[aria-busy="true"]')).toBeNull();
 
     chooseFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]));
     const dialog = await findDialog('Import "b.json"?');
@@ -377,7 +408,7 @@ describe('homebrew import preview', () => {
     expect(screen.queryByRole('dialog', { name: 'Import "a.json"?' })).toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(status().textContent).toBe('Imported "b.json" (1 spell)'));
+    await waitFor(() => expect(outcome()).toBe('Imported "b.json" (1 spell)'));
     expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['b.json']);
     expect(opener.getAttribute('aria-disabled')).toBe('false');
   });
@@ -407,7 +438,7 @@ describe('homebrew import preview', () => {
     renderPage();
     chooseFile('broken.json', '{ not json');
 
-    await waitFor(() => expect(status().textContent).toMatch(/^Import failed: /));
+    await waitFor(() => expect(outcome()).toMatch(/^Import failed: /));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(await fileCount()).toBe(0);
   });
@@ -438,7 +469,7 @@ describe('homebrew import from a URL', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
-    await waitFor(() => expect(status().textContent).toBe('Imported "brew.json" (1 spell)'));
+    await waitFor(() => expect(outcome()).toBe('Imported "brew.json" (1 spell)'));
     expect((await db.homebrewFiles.toArray()).map((f) => f.url)).toEqual([URL_RAW]);
     expect(field.value).toBe('');
   });
@@ -451,7 +482,7 @@ describe('homebrew import from a URL', () => {
     const dialog = await findDialog('Import "brew.json"?');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
-    await waitFor(() => expect(status().textContent).toBe('Import canceled. Nothing was added.'));
+    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Homebrew JSON URL' }).value).toBe(
       URL_RAW,
     );
@@ -464,7 +495,7 @@ describe('homebrew import from a URL', () => {
     submitUrl(URL_RAW);
 
     await waitFor(() =>
-      expect(status().textContent).toBe(
+      expect(outcome()).toBe(
         'URL import failed (Failed to fetch). The host may be down or may not allow the app to read the file; download it and use Import file instead.',
       ),
     );
@@ -477,8 +508,8 @@ describe('homebrew import from a URL', () => {
     renderPage();
     submitUrl('https://example.com/x.json');
 
-    await waitFor(() => expect(status().textContent).toContain('only from GitHub'));
-    expect(within(status()).getByRole('button', { name: 'Import file' })).toBeTruthy();
+    await waitFor(() => expect(outcome()).toContain('only from GitHub'));
+    expect(within(importLine()).getByRole('button', { name: 'Import file' })).toBeTruthy();
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });

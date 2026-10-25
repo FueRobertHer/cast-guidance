@@ -19,11 +19,16 @@ vi.mock('@/data5e/loader', () => ({
 }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: () => undefined }));
 
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { DataBanner } from './DataBanner';
 
+/** Every line the announcer has said so far. */
+const spoken = () => getAnnouncerState().messages.map((m) => m.text);
+
 afterEach(() => {
   cleanup();
+  resetAnnouncer();
   retryDataLayer.mockClear();
   updateToTag.mockClear();
   dismissRollbackNotice.mockClear();
@@ -106,9 +111,9 @@ describe('DataBanner', () => {
     });
     render(<DataBanner />);
     expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByRole('status').textContent).toContain(
-      'v2.33.0 could not start, so the app went back to v2.32.0',
-    );
+    expect(
+      screen.getByText('Game data v2.33.0 could not start, so the app went back to v2.32.0.'),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     // Dismissing is remembered by the loader; the store follows it.
@@ -120,6 +125,45 @@ describe('DataBanner', () => {
   it('says so even once the queue has finished', () => {
     dataStatusStore.setState({ phase: 'done', rolledBackFrom: 'v2.33.0' });
     render(<DataBanner />);
-    expect(screen.getByRole('status').textContent).toContain('v2.33.0 could not start');
+    expect(screen.getByText(/v2\.33\.0 could not start/)).toBeTruthy();
+  });
+});
+
+// A11Y-002: restrained announcements. The bar is real progress semantics a
+// reader can query, never a live region, so a drain is not one line per file.
+describe('DataBanner announcements', () => {
+  it('reports progress as a progressbar value and says nothing per file', () => {
+    dataStatusStore.setState({ phase: 'working', filesDone: 0, filesTotal: 48 });
+    render(<DataBanner />);
+    for (let done = 1; done <= 48; done++) {
+      act(() => dataStatusStore.setState({ filesDone: done }));
+    }
+    const bar = screen.getByRole('progressbar', { name: 'Downloading game data' });
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('48');
+    expect(bar.getAttribute('aria-valuenow')).toBe('48');
+    expect(bar.getAttribute('aria-valuetext')).toBe('48 of 48 files');
+    // Not a region that would speak each change on its own.
+    expect(bar.closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('says a rollback once, through the announcer, with no region of its own', () => {
+    dataStatusStore.setState({ phase: 'done', rolledBackFrom: 'v2.33.0' });
+    const { rerender } = render(<DataBanner />);
+    rerender(<DataBanner />);
+    act(() => dataStatusStore.setState({ filesDone: 3 }));
+    expect(spoken()).toEqual([
+      'Game data v2.33.0 could not start, so the app went back to v2.32.0.',
+    ]);
+    const notice = screen.getByText(/could not start/);
+    expect(notice.closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
+  });
+
+  it('leaves a failure to its alert, which is inserted once', () => {
+    dataStatusStore.setState({ phase: 'error', error: 'offline' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain('offline');
+    expect(getAnnouncerState().emitted).toBe(0);
   });
 });

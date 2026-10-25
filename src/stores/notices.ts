@@ -1,5 +1,6 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import { announce } from './announcer';
 
 export type NoticeTone = 'info' | 'good' | 'warn';
 
@@ -32,8 +33,21 @@ export const noticeStore = createStore<NoticeState>((set) => ({
   clear: () => set({ notice: null }),
 }));
 
+/** A notice as one sentence or two, for a screen reader. */
+export function noticeText({ title, detail }: Notice): string {
+  if (detail === undefined) return title;
+  return `${title}${/[.!?]$/.test(title) ? '' : '.'} ${detail}`;
+}
+
+/**
+ * Show a notice, and say it. The toast is a plain visual: a region that
+ * mounts with its text is announced unreliably, so the words go through the
+ * announcer (A11Y-002). Each notice is an event, so the same words twice are
+ * said twice; a burst is cut to its first and last by the key's throttle.
+ */
 export function notify(notice: Notice): void {
   noticeStore.getState().push(notice);
+  announce(noticeText(notice), { key: 'notice', repeat: true });
 }
 
 /**
