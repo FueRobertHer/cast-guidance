@@ -249,6 +249,8 @@ describe('isNetworkFailure', () => {
       'Load failed',
       'failed to fetch "races.json": the device is offline',
       'TimeoutError: signal timed out',
+      'The network connection was lost.',
+      'The Internet connection appears to be offline.',
     ]) {
       expect(isNetworkFailure(error), error).toBe(true);
     }

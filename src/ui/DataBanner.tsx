@@ -13,13 +13,16 @@ export function rollbackText(from: string, to: string): string {
 /**
  * Whether a download error is the network's doing: a fetch that never got an
  * answer (Chromium's "Failed to fetch", Firefox's NetworkError, Safari's "Load
- * failed"), a timeout, or the data source's own offline note. Anything else
- * carries a reason of its own.
+ * failed", and older Safari's "The network connection was lost." and "The
+ * Internet connection appears to be offline."), a timeout, or the data
+ * source's own offline note. Anything else carries a reason of its own.
  */
 export function isNetworkFailure(error: string | undefined): boolean {
   return (
     error === undefined ||
-    /failed to fetch|networkerror|load failed|the device is offline|timed? ?out/i.test(error)
+    /failed to fetch|networkerror|load failed|network connection was lost|internet connection appears to be offline|the device is offline|timed? ?out/i.test(
+      error,
+    )
   );
 }
 
