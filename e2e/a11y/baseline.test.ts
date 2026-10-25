@@ -6,12 +6,14 @@ import {
   type Baseline,
   compareState,
   countViolations,
+  distinctScans,
   isNarrowedRun,
   nextBaseline,
   parseBaseline,
   type RuleCount,
   renderSummary,
   serializeBaseline,
+  staleCheck,
   staleStates,
 } from './baseline.ts';
 
@@ -190,7 +192,7 @@ describe('stale baseline states', () => {
       baseline: BASE,
       updated: false,
       updateCommand: 'bun run e2e:a11y:update',
-      complete: true,
+      stale: 'fail',
     });
     expect(md).toContain('Stale baseline states (these fail the run)');
     expect(md).toContain('none scanned: settings.');
@@ -204,9 +206,63 @@ describe('stale baseline states', () => {
       baseline: BASE,
       updated: true,
       updateCommand: 'x',
-      complete: true,
+      stale: 'prune',
     });
     expect(md).toContain('Pruned from the baseline, no longer scanned: settings.');
+  });
+
+  it('says an unfinished run did not check, rather than that it was narrowed', () => {
+    const md = renderSummary({
+      scans,
+      baseline: BASE,
+      updated: false,
+      updateCommand: 'x',
+      stale: 'unfinished',
+    });
+    expect(md).toContain('not checked for staleness because an axe test failed');
+    expect(md).not.toContain('narrowed');
+  });
+});
+
+describe('staleCheck', () => {
+  const run = (statuses: Array<string | undefined>, updating = false, narrowed = false) =>
+    staleCheck({ narrowed, statuses, updating });
+
+  it('checks a run in which every axe test passed or was skipped', () => {
+    expect(run(['passed', 'passed'])).toBe('fail');
+    // A skip must not switch the check off for every other state.
+    expect(run(['passed', 'skipped'])).toBe('fail');
+  });
+
+  it('does not check one an axe test failed or never finished', () => {
+    expect(run(['passed', 'failed'])).toBe('unfinished');
+    expect(run(['passed', 'timedOut'])).toBe('unfinished');
+    expect(run(['passed', undefined])).toBe('unfinished');
+  });
+
+  it('prunes only in an update in which every axe test passed', () => {
+    expect(run(['passed', 'passed'], true)).toBe('prune');
+    expect(run(['passed', 'skipped'], true)).toBe('unfinished');
+  });
+
+  it('leaves a narrowed run, or one with no axe test, alone', () => {
+    expect(run(['passed'], false, true)).toBe('narrowed');
+    expect(run([], false)).toBe('narrowed');
+  });
+});
+
+describe('distinctScans', () => {
+  it('lists identical repeats once, and keeps repeats that differ', () => {
+    const a = { state: 'roster', rules: {}, incomplete: { 'color-contrast': 2 } };
+    const b = { state: 'roster', rules: {}, incomplete: { 'color-contrast': 3 } };
+    expect(distinctScans([a, { ...a }, b])).toEqual([a, b]);
+    const md = renderSummary({
+      scans: [a, { ...a }, { ...a }],
+      baseline: { roster: {} },
+      updated: false,
+      updateCommand: 'x',
+    });
+    expect(md.match(/\| roster \| color-contrast \| 2 \|/g)).toHaveLength(1);
   });
 });
 

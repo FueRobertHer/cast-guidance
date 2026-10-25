@@ -19,6 +19,7 @@ import {
   SCAN_ATTACHMENT,
   type ScanRecord,
   serializeBaseline,
+  staleCheck,
   staleStates,
   UPDATE_COMMAND,
   UPDATING,
@@ -38,11 +39,12 @@ const AXE_SPEC = path.join('a11y', 'axe.spec.ts');
  * A state is only taken from a test that passed, so an update run never
  * writes the half-scanned state of a test that broke part way.
  *
- * When the run was complete (no grep, shard or line filter, and every axe
- * test ran and passed), a baseline state that no scan covered is stale: a
- * state renamed or dropped from the spec. That fails the run, so the
- * baseline cannot keep allowing violations for a state nothing checks; an
- * update run prunes it instead.
+ * When the run was not narrowed (no grep, shard or line filter) and every
+ * axe test ran to an end, passed or skipped, a baseline state that no scan
+ * covered fails the run: a state renamed or dropped from the spec, or one a
+ * skipped test no longer checks. So the baseline cannot keep allowing
+ * violations for a state nothing checks. An update run in which every axe
+ * test passed prunes such states instead (see `staleCheck`).
  */
 export default class A11yReporter implements Reporter {
   private readonly scans: ScanRecord[] = [];
@@ -84,15 +86,16 @@ export default class A11yReporter implements Reporter {
 
   async onEnd(): Promise<{ status?: FullResult['status'] } | undefined> {
     if (this.scans.length === 0) return undefined;
-    const complete =
-      !this.narrowed &&
-      this.axeTests.size > 0 &&
-      [...this.axeTests.values()].every((status) => status === 'passed');
+    const stale = staleCheck({
+      narrowed: this.narrowed,
+      statuses: [...this.axeTests.values()],
+      updating: UPDATING,
+    });
     const previous: Baseline = existsSync(BASELINE_PATH)
       ? parseBaseline(readFileSync(BASELINE_PATH, 'utf8'))
       : {};
     if (UPDATING) {
-      const next = nextBaseline(previous, this.recordable, { prune: complete });
+      const next = nextBaseline(previous, this.recordable, { prune: stale === 'prune' });
       writeFileSync(BASELINE_PATH, serializeBaseline(next));
     }
     mkdirSync(path.dirname(SUMMARY_PATH), { recursive: true });
@@ -103,14 +106,15 @@ export default class A11yReporter implements Reporter {
         baseline: previous,
         updated: UPDATING,
         updateCommand: UPDATE_COMMAND,
-        complete,
+        stale,
       }),
     );
-    const stale = complete && !UPDATING ? staleStates(previous, this.scans) : [];
-    if (stale.length === 0) return undefined;
+    const unscanned = stale === 'fail' ? staleStates(previous, this.scans) : [];
+    if (unscanned.length === 0) return undefined;
     console.error(
-      `\naxe baseline: every axe test ran, and these baseline states were not scanned: ` +
-        `${stale.join(', ')}. Run \`${UPDATE_COMMAND}\` to prune them, and commit the baseline.\n`,
+      `\naxe baseline: every axe test ran or was skipped, and these baseline states were ` +
+        `not scanned: ${unscanned.join(', ')}. Unskip the test that scans them, or run ` +
+        `\`${UPDATE_COMMAND}\` to prune states that are gone, and commit the baseline.\n`,
     );
     return { status: 'failed' };
   }

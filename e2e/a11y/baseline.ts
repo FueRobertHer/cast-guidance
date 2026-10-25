@@ -284,6 +284,52 @@ export function parseBaseline(text: string): Baseline {
   return raw as Baseline;
 }
 
+/**
+ * What a run may conclude about baseline states no scan covered:
+ * - `fail`: every axe test ran to an end, passed or skipped, so a state
+ *   nothing scanned is stale (or skipped) and fails the run;
+ * - `prune`: an update in which every axe test passed, so such states are
+ *   dropped from the baseline;
+ * - `narrowed`: a grep, shard or line filter may have left tests out;
+ * - `unfinished`: an axe test failed or never finished (or, in an update,
+ *   was skipped), so its states may be missing for that reason alone.
+ */
+export type StaleCheck = 'fail' | 'prune' | 'narrowed' | 'unfinished';
+
+/**
+ * Decides the {@link StaleCheck} from how the run was scoped and how each axe
+ * test ended (`undefined` for one that never reported an end). A skipped
+ * test counts as having run: skipping one must not switch the check off
+ * for every other state. Only pruning needs every test to have passed.
+ */
+export function staleCheck({
+  narrowed,
+  statuses,
+  updating,
+}: {
+  narrowed: boolean;
+  statuses: ReadonlyArray<string | undefined>;
+  updating: boolean;
+}): StaleCheck {
+  if (narrowed || statuses.length === 0) return 'narrowed';
+  if (updating) return statuses.every((st) => st === 'passed') ? 'prune' : 'unfinished';
+  return statuses.every((st) => st === 'passed' || st === 'skipped') ? 'fail' : 'unfinished';
+}
+
+/**
+ * One record per distinct scan: `--repeat-each` scans every state several
+ * times, and identical repeats would list each finding as many times. Repeats
+ * that differ are all kept, since that difference is worth seeing.
+ */
+export function distinctScans(scans: ReadonlyArray<ScanRecord>): ScanRecord[] {
+  const seen = new Map<string, ScanRecord>();
+  for (const scan of scans) {
+    const key = JSON.stringify([scan.state, scan.rules, scan.incomplete ?? {}]);
+    if (!seen.has(key)) seen.set(key, scan);
+  }
+  return [...seen.values()];
+}
+
 export interface SummaryInput {
   scans: ReadonlyArray<ScanRecord>;
   baseline: Baseline;
@@ -291,11 +337,8 @@ export interface SummaryInput {
   updated: boolean;
   /** The command that rewrites the baseline, for the note. */
   updateCommand: string;
-  /**
-   * True when every axe test ran and passed, so a baseline state no scan
-   * covered is stale: it fails the run (or is pruned by an update).
-   */
-  complete?: boolean;
+  /** What to say about baseline states no scan covered; see {@link StaleCheck}. */
+  stale?: StaleCheck;
 }
 
 /**
@@ -304,12 +347,13 @@ export interface SummaryInput {
  * counts the baseline still allows.
  */
 export function renderSummary({
-  scans,
+  scans: all,
   baseline,
   updated,
   updateCommand,
-  complete = false,
+  stale = 'narrowed',
 }: SummaryInput): string {
+  const scans = distinctScans(all);
   const lines: string[] = ['### Accessibility (axe)', ''];
   if (scans.length === 0) {
     lines.push('_No axe scans ran._', '');
@@ -390,21 +434,27 @@ export function renderSummary({
   }
 
   const unscanned = staleStates(baseline, scans);
-  if (unscanned.length > 0 && complete && updated) {
-    lines.push(`Pruned from the baseline, no longer scanned: ${unscanned.join(', ')}.`, '');
-  } else if (unscanned.length > 0 && complete) {
+  const list = unscanned.join(', ');
+  if (unscanned.length === 0) return lines.join('\n');
+  if (stale === 'prune') {
+    lines.push(`Pruned from the baseline, no longer scanned: ${list}.`, '');
+  } else if (stale === 'fail') {
     lines.push(
       '#### Stale baseline states (these fail the run)',
       '',
-      `Every axe test ran, and none scanned: ${unscanned.join(', ')}. ` +
-        `A renamed or removed state must leave the baseline too: run \`${updateCommand}\`.`,
+      `Every axe test ran or was skipped, and none scanned: ${list}. A renamed or ` +
+        `removed state must leave the baseline too (\`${updateCommand}\` prunes it); a ` +
+        'skipped test leaves its states unchecked, so unskip it or take its states out.',
       '',
     );
-  } else if (unscanned.length > 0) {
+  } else if (stale === 'unfinished') {
     lines.push(
-      `Baseline states this run did not scan (it was narrowed): ${unscanned.join(', ')}.`,
+      `Baseline states this run did not scan, not checked for staleness because an axe ` +
+        `test ${updated ? 'did not pass' : 'failed or did not finish'}: ${list}.`,
       '',
     );
+  } else {
+    lines.push(`Baseline states this run did not scan (it was narrowed): ${list}.`, '');
   }
   return lines.join('\n');
 }
