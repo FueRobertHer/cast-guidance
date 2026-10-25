@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import { DEVICE } from './e2e/support/device.ts';
+import { hermeticLaunchOptions } from './e2e/support/launch.ts';
 
 const CI = process.env.CI !== undefined && process.env.CI !== '';
 
@@ -43,11 +44,14 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...DEVICE,
-        // An escape hatch for a machine whose browser build does not match
+        // Off the real network below the routing layer (see launch.ts), plus
+        // an escape hatch for a machine whose browser build does not match
         // the pinned @playwright/test.
-        launchOptions: process.env.PW_CHROMIUM_EXECUTABLE
-          ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE }
-          : {},
+        launchOptions: hermeticLaunchOptions(
+          process.env.PW_CHROMIUM_EXECUTABLE
+            ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE }
+            : {},
+        ),
       },
     },
   ],

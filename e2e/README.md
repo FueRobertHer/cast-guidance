@@ -50,6 +50,15 @@ the binary outright, as an escape hatch when the two drift.
   (`NEXT_TAG` and `withNextRelease` serve one with an extra species, so a page
   shows which release it reads).
 - **Network guard**: every other host is aborted and fails the test.
+- **Below the routing layer** (`support/launch.ts`): some sockets never pass
+  through `context.route` (a `<link rel="preconnect">`, a WebSocket, the
+  browser's own background traffic). Every launch, the project's browser and
+  persistent profiles alike, gets `--proxy-server=direct://` and a
+  `--host-resolver-rules` that leaves only `localhost` and `127.0.0.1`
+  resolvable, so none of them can reach a real host or a proxy. Routed
+  requests are answered before any lookup, so the mirror is unaffected.
+  `harness.spec.ts` checks it with a WebSocket from both launch paths. Launch
+  with `hermeticLaunchOptions` if you add another launch path.
 - **Console guard**: any console error or uncaught page error fails the test,
   with two exceptions. "Failed to load resource" is expected for a mirror
   request the test failed on purpose (`setFail`, or the mirror offline), and,
@@ -104,6 +113,7 @@ flows by role and accessible name).
 | `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
+| `harness` | A socket the routes cannot see (a WebSocket to jsDelivr) fails to resolve, from the default context and from a persistent profile, so nothing leaves the machine. |
 | `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); an update from Settings (the old release swept once a registry builds, the new one active after a reload); a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
 
 The rollback spec seeds the start counter (`dataTagRollback.starts`) instead of
