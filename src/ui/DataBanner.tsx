@@ -11,6 +11,19 @@ export function rollbackText(from: string, to: string): string {
 }
 
 /**
+ * Whether a download error is the network's doing: a fetch that never got an
+ * answer (Chromium's "Failed to fetch", Firefox's NetworkError, Safari's "Load
+ * failed"), a timeout, or the data source's own offline note. Anything else
+ * carries a reason of its own.
+ */
+export function isNetworkFailure(error: string | undefined): boolean {
+  return (
+    error === undefined ||
+    /failed to fetch|networkerror|load failed|the device is offline|timed? ?out/i.test(error)
+  );
+}
+
+/**
  * Download progress for the background data queue, and its failure state.
  *
  * What a screen reader hears (A11Y-002), kept to the two things worth hearing:
@@ -36,6 +49,10 @@ export function DataBanner() {
     if (rollbackShown) announce(rollbackText(rolledBackFrom, getActiveTag()), { key: 'data' });
   }, [rollbackShown, rolledBackFrom]);
   const online = useOnline();
+  // Offline copy only for a failure the network explains. A reason of its own
+  // (storage full, a body the validator refused) is still the reason offline,
+  // and masking it would send the user to wait for a network that fixes nothing.
+  const offlineFailure = !online && isNetworkFailure(error);
   // The queue stops at the first file it cannot fetch, so losing the network
   // stops it for good. Back online, it picks up where it stopped. A failed
   // version install is left to its own Retry: that is a download of several
@@ -69,16 +86,16 @@ export function DataBanner() {
         className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
         role="alert"
       >
-        <span className={online ? 'truncate' : undefined}>
+        <span className={offlineFailure ? undefined : 'truncate'}>
           {/* Offline, the reason is the network and so is the remedy. The
               fetch error under it (a list of mirror URLs that each "failed to
               fetch") says neither, and read as the app being broken. */}
-          {online
+          {!offlineFailure
             ? failedTag === undefined
               ? `Game data download failed: ${error}`
               : `Update to ${failedTag} failed: ${error}`
             : failedTag === undefined
-              ? "You're offline, so the game data download can't finish yet. Retry once you're back online."
+              ? "You're offline, so the game data download can't finish yet. It picks up by itself once you're back online."
               : `You're offline, so the update to ${failedTag} can't install yet. Retry once you're back online.`}
         </span>
         <button
