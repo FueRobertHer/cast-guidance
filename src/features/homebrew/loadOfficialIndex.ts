@@ -10,7 +10,9 @@ import { type OfficialIndex, officialIndexFrom } from './importPreview';
  * `complete` is read before the registry, from the download queue: `done` is
  * only set once every pack has landed, so anything not found then is truly
  * not on this device. Read the other way round, a pack landing in between
- * could be counted as checked when the registry read never saw it.
+ * could be counted as checked when the registry read never saw it. Every
+ * other phase (`working`, `error`, `idle`) only means "not all of it is here",
+ * which is all the preview's wording claims.
  */
 export async function loadOfficialIndex(): Promise<OfficialIndex | null> {
   const complete = dataStatusStore.getState().phase === 'done';

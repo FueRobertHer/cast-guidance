@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HomebrewFile } from '@/db/homebrewRepo';
-import { newCharacterDoc } from '@/engine/types';
+import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { collectCharacterSources, homebrewForExport } from './homebrewExport';
 
 function brew(id: string, sourceIds: string[]): HomebrewFile {
@@ -35,6 +35,20 @@ describe('collectCharacterSources', () => {
     };
     const sources = collectCharacterSources(doc);
     expect(sources).toEqual(new Set(['mybrew', 'phb', 'mybrew2', 'featbrew', 'spellbrew']));
+  });
+
+  it('reads a malformed document without throwing', () => {
+    // Shapes the importer and the roster accept: lists missing, an entry with
+    // no reference, a spellcasting block with no lists, stray values.
+    const doc = {
+      ...newCharacterDoc('c', 'Hero', 'tag'),
+      classes: undefined,
+      feats: [null, { ref: 7 }],
+      equipment: 'not a list',
+      spellcasting: { wizard: {}, cleric: { known: [{ name: 'Bless', source: 'PHB' }, 3] } },
+      homebrewDeps: [5, 'MyBrew', ''],
+    } as unknown as CharacterDoc;
+    expect(collectCharacterSources(doc)).toEqual(new Set(['phb', 'mybrew']));
   });
 });
 

@@ -40,7 +40,54 @@ function prepared(homebrew: HomebrewFileRow[] = []): PreparedCharacterImport {
   return { doc, homebrew, bytes: 2048 };
 }
 
+describe('previewCharacterImport on shapes the importer accepts', () => {
+  const base = { existing: [], official: officialPhb(), characterExists: false };
+  const shaped = (edit: (doc: Record<string, unknown>) => void): PreparedCharacterImport => {
+    const p = prepared();
+    edit(p.doc as unknown as Record<string, unknown>);
+    return p;
+  };
+
+  it('reads a character with no class list', () => {
+    const p = previewCharacterImport({ ...base, prepared: shaped((d) => delete d.classes) });
+    expect(p.classLabel).toBe('');
+  });
+
+  it('names a class entry with no reference as an unknown class', () => {
+    const p = previewCharacterImport({
+      ...base,
+      prepared: shaped((d) => {
+        d.classes = [{ levels: 2, hp: [] }];
+      }),
+    });
+    expect(p.classLabel).toBe('Unknown class 2');
+  });
+
+  it('ignores a stray value among the homebrew dependencies', () => {
+    const p = previewCharacterImport({
+      ...base,
+      prepared: shaped((d) => {
+        d.homebrewDeps = [5, 'Gone'];
+      }),
+    });
+    expect(p.missingSources.sort()).toEqual(['gone', 'hb']);
+  });
+});
+
 describe('previewCharacterImport', () => {
+  it('says when a file already here is turned off', () => {
+    const p = previewCharacterImport({
+      prepared: prepared([brew('same', ['SAME']), brew('on', ['ON'])]),
+      characterExists: false,
+      existing: [local('same', ['SAME'], false), local('on', ['ON'])],
+      official: officialPhb(),
+    });
+    expect(p.files.map((f) => [f.status, f.existingEnabled])).toEqual([
+      ['already-here', false],
+      ['already-here', true],
+    ]);
+  });
+
   it('names the character and says when it imports as a copy', () => {
     const base = { prepared: prepared(), existing: [], official: officialPhb() };
     const fresh = previewCharacterImport({ ...base, characterExists: false });
@@ -120,7 +167,9 @@ describe('previewCharacterImport', () => {
     });
     expect(downloading.missingSources).toEqual([]);
     expect(downloading.notDownloadedSources.sort()).toEqual(['gone', 'hb']);
-    expect(downloading.notes).toEqual([expect.stringContaining('still downloading')]);
+    expect(downloading.notes).toEqual([
+      expect.stringContaining('Not all game data is on this device yet'),
+    ]);
 
     const none = previewCharacterImport({
       prepared: doc,

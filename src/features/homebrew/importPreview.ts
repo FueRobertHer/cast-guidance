@@ -39,8 +39,9 @@ export const MAX_LISTED_COLLISIONS = 50;
 
 /**
  * The official entities and sources the registry holds, reduced to what a
- * preview needs. `complete` is false while game data is still downloading:
- * something not found yet may only be in a pack that has not arrived.
+ * preview needs. `complete` is false until every pack has landed (the
+ * download may be running, stopped or not begun): something not found yet
+ * may only be in a pack that has not arrived.
  */
 export interface OfficialIndex {
   /** Lowercased `name|source` per type: what a `_copy` resolves against. */
@@ -167,7 +168,10 @@ export type DependencyStatus =
   | 'homebrew'
   /** Only a disabled homebrew file here declares it. */
   | 'disabled'
-  /** Not found, but game data is not all here yet, so it may still arrive. */
+  /**
+   * Not found, but not all game data is here (still downloading, stopped, or
+   * not read at all), so it may still be official.
+   */
   | 'not-downloaded'
   /** Not found anywhere, and all game data is here. */
   | 'missing';
@@ -185,6 +189,19 @@ export interface CopyIssue {
   name: string;
   /** `name|source` of the target that will not resolve. */
   target: string;
+  /** A turned-off file here that has the target: turning it on fixes the copy. */
+  disabledIn?: FileRef;
+}
+
+/**
+ * How much official data the preview could check against: all of it, only
+ * what is on this device so far, or none (the registry could not be read).
+ */
+export type OfficialCoverage = 'complete' | 'partial' | 'unavailable';
+
+export function officialCoverage(official: OfficialIndex | null): OfficialCoverage {
+  if (official === null) return 'unavailable';
+  return official.complete ? 'complete' : 'partial';
 }
 
 /** An enabled file here whose broken `_copy` entries this file would fix. */
@@ -213,6 +230,7 @@ export interface HomebrewPreview {
   copyIssues: CopyIssue[];
   satisfiesCopies: SatisfiedCopies[];
   affectedCharacters: { id: string; name: string }[];
+  officialCoverage: OfficialCoverage;
   notes: string[];
 }
 
@@ -333,6 +351,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const homebrewUids = firstFileBy(enabled, uidKey);
   const enabledClashes = firstFileBy(enabled, clashKey);
   const disabledClashMap = firstFileBy(disabled, clashKey);
+  const disabledUids = firstFileBy(disabled, uidKey);
   const officialHas = (type: EntityType, key: string) =>
     official?.clashKeys.get(type)?.has(key) === true;
 
@@ -400,7 +419,13 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     // A target in a pack that has not downloaded yet may still resolve; one
     // the file names under its own source never will.
     if (officialKnown || ownSources.has(lower(target.source))) {
-      copyIssues.push({ type, name, target: `${target.name}|${target.source}` });
+      const off = disabledUids.get(`${type}:${uid}`);
+      copyIssues.push({
+        type,
+        name,
+        target: `${target.name}|${target.source}`,
+        ...(off === undefined ? {} : { disabledIn: off }),
+      });
     }
   }
 
@@ -432,20 +457,26 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     }
   }
 
-  const affectedCharacters = input.characters
-    .filter((doc) => {
+  // One character the roster cannot read must not stop every import, so each
+  // is read on its own and a bad one is left out of the list.
+  const affectedCharacters: { id: string; name: string }[] = [];
+  for (const doc of input.characters) {
+    try {
       const used = collectCharacterSources(doc);
-      return [...ownSources].some((s) => used.has(s));
-    })
-    .map((doc) => ({ id: doc.id, name: doc.name }));
+      if ([...ownSources].some((s) => used.has(s))) {
+        affectedCharacters.push({ id: String(doc.id), name: String(doc.name) });
+      }
+    } catch {
+      // Unreadable: the roster reports it; the preview just cannot list it.
+    }
+  }
 
-  if (official === null) {
+  const coverage = officialCoverage(official);
+  if (coverage === 'unavailable') {
+    notes.push('Game data could not be read, so clashes with official content were not checked.');
+  } else if (coverage === 'partial') {
     notes.push(
-      'Game data is not available yet, so clashes with official content were not checked.',
-    );
-  } else if (!official.complete) {
-    notes.push(
-      'Game data is still downloading, so clashes with official content may be incomplete.',
+      'Not all game data is on this device yet, so clashes with official content may be incomplete.',
     );
   }
   const clashingFiles = new Map<string, string>();
@@ -482,6 +513,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     copyIssues,
     satisfiesCopies,
     affectedCharacters,
+    officialCoverage: coverage,
     notes,
   };
 }

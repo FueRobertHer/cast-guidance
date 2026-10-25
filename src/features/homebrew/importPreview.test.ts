@@ -273,6 +273,60 @@ describe('previewHomebrewImport', () => {
     expect(p.affectedCharacters).toEqual([{ id: 'c1', name: 'Uses it' }]);
   });
 
+  it('skips a roster character it cannot read instead of failing the preview', () => {
+    const user = newCharacterDoc('c1', 'Uses it', 'tag');
+    user.homebrewDeps = ['HB'];
+    const broken = newCharacterDoc('c2', 'Broken', 'tag');
+    // A stored doc with a spellcasting entry missing its lists.
+    (broken.spellcasting as Record<string, unknown>).wizard = {};
+    (broken as unknown as { classes: unknown }).classes = undefined;
+    const odd = { id: 'c3', name: 'Odd' } as unknown as ReturnType<typeof newCharacterDoc>;
+    // Whatever else a reader trips on, one character is skipped, not the import.
+    const throwing = newCharacterDoc('c4', 'Throws', 'tag');
+    Object.defineProperty(throwing, 'race', {
+      get() {
+        throw new TypeError('unreadable');
+      },
+    });
+    const p = preview(
+      { _meta: meta(['HB']), spell: [spell('Zap', 'HB')] },
+      { characters: [broken, odd, throwing, user] },
+    );
+    expect(p.affectedCharacters).toEqual([{ id: 'c1', name: 'Uses it' }]);
+  });
+
+  it('says how much official data it checked against', () => {
+    const json = { _meta: meta(['HB']) };
+    expect(preview(json).officialCoverage).toBe('complete');
+    expect(preview(json, { official: official({}, false) }).officialCoverage).toBe('partial');
+    expect(preview(json, { official: null }).officialCoverage).toBe('unavailable');
+  });
+
+  it('names the turned-off file that holds a copy target', () => {
+    const off = local(
+      'off',
+      { _meta: meta(['OFF']), spell: [spell('Base', 'OFF')] },
+      {
+        enabled: false,
+      },
+    );
+    const p = preview(
+      {
+        _meta: meta(['HB']),
+        spell: [spell('Child', 'HB', { _copy: { name: 'Base', source: 'OFF' } })],
+      },
+      { existing: [off] },
+    );
+    expect(p.copyIssues).toEqual([
+      {
+        type: 'spell',
+        name: 'Child',
+        target: 'Base|OFF',
+        disabledIn: { id: 'off', fileName: 'off.json' },
+      },
+    ]);
+  });
+
   it('notes when official content could not be checked, and claims no official clash', () => {
     const p = preview(
       { _meta: meta(['HB']), spell: [spell('Fire Bolt', 'PHB')] },
@@ -284,7 +338,9 @@ describe('previewHomebrewImport', () => {
       { _meta: meta(['HB']) },
       { official: official({ spell: ['Fire Bolt|PHB'] }, false) },
     );
-    expect(partial.notes).toEqual([expect.stringContaining('still downloading')]);
+    expect(partial.notes).toEqual([
+      expect.stringContaining('Not all game data is on this device yet'),
+    ]);
   });
 
   it('caps the clash list but keeps the real total', () => {
