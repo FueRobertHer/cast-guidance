@@ -389,7 +389,9 @@ export function Component() {
       )}
       {/* HP */}
       <section className="rounded-lg bg-surface p-4">
-        <div className="flex items-center justify-between gap-1.5">
+        {/* Wraps where the row cannot fit (large text), the heal pair kept
+            at the right, rather than push the page sideways (A11Y-003). */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
           {/* Explicit amounts — a reliable single click each. (The old single/
               double-tap combo double-fired: a "double-tap −5" applied −6 and
               rolled up to three concentration saves.) Tap the total for an
@@ -418,9 +420,12 @@ export function Component() {
               <Minus size={22} />
             </button>
           </div>
+          {/* Zero basis: the row wraps only when the HP's narrowest layout
+              cannot fit, never just because a long total would rather not
+              break onto two lines. */}
           <button
             type="button"
-            className="text-center"
+            className="grow basis-0 text-center"
             onClick={async () => {
               const n = await askNumber({
                 title: 'Set current HP',
@@ -465,7 +470,7 @@ export function Component() {
               {sheet.maxHp.overridden ? ' •' : ''}
             </div>
           </button>
-          <div className="flex items-center gap-0.5">
+          <div className="ml-auto flex items-center gap-0.5">
             <button
               type="button"
               aria-label="Heal 1 hit point"
@@ -764,8 +769,10 @@ export function Component() {
         </button>
       </section>
 
-      {/* Turn tracker: action economy */}
-      <section className="flex items-center gap-2 rounded-lg bg-surface p-3">
+      {/* Turn tracker: action economy. Wraps End turn onto a line of its own,
+          at the right, where the row is too narrow for all four (320px, or
+          large text) instead of pushing the page sideways (A11Y-003). */}
+      <section className="flex flex-wrap items-center gap-2 rounded-lg bg-surface p-3">
         {(
           [
             ['action', 'Action'],
@@ -812,7 +819,7 @@ export function Component() {
               d.play.turn = { action: false, bonus: false, reaction: false };
             }, 'Turn ended')
           }
-          className="shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-xs font-semibold"
+          className="ml-auto shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-xs font-semibold"
           title="Reset action, bonus action, and reaction"
         >
           End turn
