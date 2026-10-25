@@ -120,6 +120,27 @@ test.describe('data installs', () => {
     expect(mirror.hits.get(`${PINNED_TAG}:${LAST_FILE}`)).toBeGreaterThan(1);
   });
 
+  test('a first install interrupted by a reload finishes on the next launch, pinned once', async ({
+    page,
+    mirror,
+  }) => {
+    // Held, so the reload lands while essentials are still downloading.
+    mirror.setHold((tag, path) => tag === PINNED_TAG && path === 'races.json');
+    await page.goto('/');
+    await expect.poll(() => mirror.hits.get(`${PINNED_TAG}:races.json`) ?? 0).toBe(1);
+    expect(await countDataFiles(page, PINNED_TAG)).toBeLessThan(MIRROR_PATHS.length);
+
+    await page.reload();
+    mirror.releaseHeld();
+    await expectDataSettled(page);
+
+    // The tag the first launch pinned is the one the second one finished: the
+    // release list was asked for once, and every file sits under that tag.
+    expect(await getSetting(page, 'dataTag')).toBe(PINNED_TAG);
+    expect(mirror.tagListRequests).toBe(1);
+    expect(await cachedPaths(page, PINNED_TAG)).toEqual([...MIRROR_PATHS].sort());
+  });
+
   test('an offered update installs from Settings, sweeps the old release once a registry builds, and survives a reload', async ({
     page,
     mirror,
@@ -193,8 +214,17 @@ test.describe('data installs', () => {
     await expect(dataProgress(page)).toBeVisible();
     expect(await getSetting(page, 'dataTag')).toBe(PINNED_TAG);
     expect(await countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
+    // Read again, not just still on screen: Settings and the library mount
+    // afresh (in-app, so the install keeps running) and read the old release.
+    await page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Settings' })
+      .click();
+    await expect(settingsValue(page, 'Dataset version')).toHaveText(PINNED_TAG);
+    await openRacesInApp(page);
     await expect(libraryEntry(page, SHARED_RACE)).toBeVisible();
     await expect(libraryEntry(page, NEXT_ONLY_RACE)).toHaveCount(0);
+    await expect(dataProgress(page)).toBeVisible();
     // The failed attempt's staged rows were pruned, so the retry downloads
     // every file again rather than resuming.
     for (const path of pathsExcept(LAST_FILE)) {
@@ -213,6 +243,8 @@ test.describe('data installs', () => {
     launchProfile,
     mirror,
   }, testInfo) => {
+    // Two browser launches and two installs.
+    test.slow();
     const dir = testInfo.outputPath('profile');
     const first = await launchProfile(dir);
     const page = first.pages()[0] ?? (await first.newPage());
@@ -266,8 +298,9 @@ test.describe('data installs', () => {
     await installPinned(page);
     mirror.setTags([NEXT_TAG, PINNED_TAG]);
     mirror.setBodies(withNextRelease);
-    // Remembered long ago, so this launch's update check asks the mirror.
-    await putSetting(page, 'dataTagList', { tags: [NEXT_TAG, PINNED_TAG], checkedAt: 0 });
+    // Remembered long ago, and without the new release, so only this launch's
+    // own request to the mirror can be what offers it.
+    await putSetting(page, 'dataTagList', { tags: [PINNED_TAG], checkedAt: 0 });
     const tagLists = mirror.tagListRequests;
 
     await page.goto('/');
@@ -292,7 +325,7 @@ test.describe('data installs', () => {
     await installPinned(page);
     mirror.setTags([NEXT_TAG, PINNED_TAG]);
     mirror.setBodies(withNextRelease);
-    await putSetting(page, 'dataTagList', { tags: [NEXT_TAG, PINNED_TAG], checkedAt: 0 });
+    await putSetting(page, 'dataTagList', { tags: [PINNED_TAG], checkedAt: 0 });
 
     // Installed from a page that builds no registry, so the install stays on
     // probation: both releases kept, no build started yet.

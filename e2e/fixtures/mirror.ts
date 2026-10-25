@@ -21,7 +21,7 @@ export const NEXT_BODIES: Readonly<Record<string, unknown>> = {
   ...VALID_BODIES,
   'races.json': {
     race: [
-      { name: 'Elf', source: 'PHB' },
+      ...(VALID_BODIES['races.json'] as { race: readonly unknown[] }).race,
       { name: NEXT_ONLY_RACE, source: 'PHB' },
     ],
   },
