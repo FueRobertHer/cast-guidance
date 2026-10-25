@@ -13,8 +13,16 @@ import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
 const { registry, put, dialogs } = vi.hoisted(() => ({
-  /** What `useRegistry` returns; null stands for game data still loading. */
-  registry: { current: undefined as unknown, loading: false },
+  /**
+   * What `useRegistryState` returns: `loading` stands for game data still on
+   * its way, `error` for game data that could not be had.
+   */
+  registry: {
+    current: undefined as unknown,
+    loading: false,
+    error: null as string | null,
+    retry: vi.fn(),
+  },
   put: vi.fn(),
   dialogs: {
     askConfirm: vi.fn<(req: { title: string; detail?: string }) => Promise<boolean>>(),
@@ -22,7 +30,12 @@ const { registry, put, dialogs } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/data5e/hooks', () => ({
-  useRegistry: () => (registry.loading ? null : registry.current),
+  useRegistryState: () => ({
+    registry: registry.loading || registry.error !== null ? null : registry.current,
+    status: registry.error !== null ? 'error' : registry.loading ? 'loading' : 'ready',
+    error: registry.error,
+    retry: registry.retry,
+  }),
 }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
 vi.mock('@/db/characterRepo', () => ({ characterRepo: { put } }));
@@ -56,6 +69,8 @@ afterEach(() => {
   cleanup();
   sessionStorage.clear();
   registry.loading = false;
+  registry.error = null;
+  registry.retry.mockReset();
   put.mockReset();
   dialogs.askConfirm.mockReset();
   registry.current = makeTestContext();
@@ -233,6 +248,23 @@ describe('the way out', () => {
     registry.loading = true;
     renderCreator(['/', '/create']);
     expect(screen.getByText('Loading game data…')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
+  });
+
+  it('is there when game data cannot be had, beside the reason and a Retry', () => {
+    // PWA-001: a first launch offline never gets the essentials pack, and the
+    // creator used to say "Loading game data…" for good.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    registry.error = 'Failed to fetch';
+    renderCreator(['/', '/create']);
+    expect(screen.queryByText('Loading game data…')).toBeNull();
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      "You're offline, and the game data this needs isn't downloaded yet.",
+    );
+    expect(alert.textContent).toContain('Your draft is kept.');
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(registry.retry).toHaveBeenCalledOnce();
     expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
   });
 

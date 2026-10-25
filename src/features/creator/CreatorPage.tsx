@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
-import { useRegistry } from '@/data5e/hooks';
+import { useRegistryState } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
@@ -31,6 +31,7 @@ import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { GameDataProblem } from '@/ui/GameDataProblem';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
@@ -149,7 +150,8 @@ export function Component() {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const step = normalizeStep(params.get('step'));
-  const registry = useRegistry(['essentials']);
+  const registryState = useRegistryState(['essentials']);
+  const registry = registryState.registry;
   // The in-progress draft survives reloads and trips to the roster via
   // sessionStorage, kit rows included.
   const [entry] = useState(() => {
@@ -348,7 +350,18 @@ export function Component() {
     return (
       <main className="flex flex-1 flex-col gap-4 p-4">
         {header}
-        <p className="text-sm text-ink-muted">Loading game data…</p>
+        {registryState.status === 'error' ? (
+          // Every step picks from the game data, so a first launch that never
+          // downloaded it (offline, or a failed download) has nothing to offer
+          // until it arrives. Waiting was the only outcome before.
+          <GameDataProblem
+            error={registryState.error}
+            onRetry={registryState.retry}
+            note="Your draft is kept. Retry once you're back online."
+          />
+        ) : (
+          <p className="text-sm text-ink-muted">Loading game data…</p>
+        )}
       </main>
     );
   }
