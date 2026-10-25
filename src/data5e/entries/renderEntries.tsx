@@ -9,54 +9,16 @@ import { Link } from 'react-router';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
+import { LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
 
 // ---------------------------------------------------------------------------
 // Inline tags
 // ---------------------------------------------------------------------------
 
-/** Tags that link into a Library-browsable entity type (tag -> route type). */
-const LINKED_TYPES: Record<string, string> = {
-  spell: 'spell',
-  item: 'item',
-  condition: 'condition',
-  skill: 'skill',
-  action: 'action',
-  sense: 'sense',
-  feat: 'feat',
-  race: 'race',
-  background: 'background',
-  class: 'class',
-  subclass: 'subclass',
-  language: 'language',
-  variantrule: 'variantrule',
-  optfeature: 'optionalfeature',
-  disease: 'disease',
-  status: 'status',
-  book: 'book',
-};
-
-/** Tags rendered as a styled name only (no target in our registry). */
-const PLAIN_REF_TAGS = new Set([
-  'creature',
-  'deity',
-  'hazard',
-  'object',
-  'trap',
-  'card',
-  'deck',
-  'vehicle',
-  'vehupgrade',
-  'adventure',
-  'table',
-  'quickref',
-  'filter',
-  '5etools',
-  'classFeature',
-  'subclassFeature',
-  'itemProperty',
-  'itemMastery',
-]);
-
+/**
+ * Every explicit case below is listed in `FORMATTING_TAGS` (inlineTags.ts), so
+ * the data audit counts it as handled; the renderer test keeps the two in step.
+ */
 function TagView({ tag, args }: { tag: string; args: string[] }): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {

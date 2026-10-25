@@ -149,6 +149,119 @@ describe('spellRollActions: spells with two outcomes', () => {
   });
 });
 
+// Real v2.32.0 data: the secondary block carries a 5etools template variable,
+// and the on-hit block starts at 5th level.
+const greenFlameBlade: Entity = {
+  name: 'Green-Flame Blade',
+  source: 'TCE',
+  level: 0,
+  entries: [
+    "On a hit, the target suffers the weapon attack's normal effects, and you can cause green fire to leap from the target to a different creature of your choice that you can see within 5 feet of it. The second creature takes fire damage equal to your spellcasting ability modifier.",
+    "This spell's damage increases when you reach certain levels. At 5th level, the melee attack deals an extra {@damage 1d8} fire damage to the target on a hit, and the fire damage to the second creature increases to {@damage 1d8} + your spellcasting ability modifier. Both damage rolls increase by {@damage 1d8} at 11th level ({@damage 2d8} and {@damage 2d8}) and 17th level ({@damage 3d8} and {@damage 3d8}).",
+  ],
+  scalingLevelDice: [
+    {
+      label: 'fire damage to secondary creature',
+      scaling: {
+        '1': '{{spellcasting_mod}}',
+        '5': '1d8 + {{spellcasting_mod}}',
+        '11': '2d8 + {{spellcasting_mod}}',
+        '17': '3d8 + {{spellcasting_mod}}',
+      },
+    },
+    { label: 'fire damage on hit', scaling: { '5': '1d8', '11': '2d8', '17': '3d8' } },
+  ],
+};
+
+const secondary = (expr: string) => ({
+  expr,
+  label: 'Green-Flame Blade fire damage to secondary creature',
+  variant: 'damage',
+});
+const onHit = (expr: string) => ({
+  expr,
+  label: 'Green-Flame Blade fire damage on hit',
+  variant: 'damage',
+});
+
+describe('spellRollActions: the spellcasting modifier template', () => {
+  it.each([1, 2, 3, 4])('rolls only the modifier at level %i, with no on-hit die', (level) => {
+    expect(
+      spellRollActions(greenFlameBlade, { characterLevel: level, abilityModifier: 3 }),
+    ).toEqual([secondary('3')]);
+  });
+
+  it.each([
+    [5, '1d8'],
+    [11, '2d8'],
+    [17, '3d8'],
+  ])('adds the modifier to the secondary die at level %i', (level, die) => {
+    expect(
+      spellRollActions(greenFlameBlade, { characterLevel: level, abilityModifier: 3 }),
+    ).toEqual([secondary(`${die}+3`), onHit(die)]);
+  });
+
+  it('writes a negative modifier with its own sign', () => {
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 5, abilityModifier: -1 })).toEqual([
+      secondary('1d8-1'),
+      onHit('1d8'),
+    ]);
+  });
+
+  it('offers no fixed roll of zero or less', () => {
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 1, abilityModifier: -1 })).toEqual(
+      [],
+    );
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 1, abilityModifier: 0 })).toEqual(
+      [],
+    );
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 5, abilityModifier: 0 })).toEqual([
+      secondary('1d8'),
+      onHit('1d8'),
+    ]);
+  });
+
+  it('drops the term when no modifier is known', () => {
+    // Level 1 leaves nothing to roll, and the prose's 5th-level dice stay
+    // description rather than turning into chips.
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 1 })).toEqual([]);
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 5 })).toEqual([
+      secondary('1d8'),
+      onHit('1d8'),
+    ]);
+  });
+
+  it('gives a sheet with no class yet the 1st-level rolls, not 5th-level dice', () => {
+    // Level 0 rolls as level 1: the modifier alone, and no on-hit die.
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 0, abilityModifier: 2 })).toEqual([
+      secondary('2'),
+    ]);
+    expect(spellRollActions(greenFlameBlade, { characterLevel: 0 })).toEqual([]);
+  });
+
+  it('drops a roll carrying any other template it cannot fill', () => {
+    const spell: Entity = {
+      name: 'Template Test',
+      level: 0,
+      entries: ['Deals {@damage 1d6} cold damage.'],
+      scalingLevelDice: { label: 'cold damage', scaling: { '1': '1d6+{{summon_level}}' } },
+    };
+    expect(spellRollActions(spell, { characterLevel: 1, abilityModifier: 3 })).toEqual([]);
+  });
+
+  it('keeps the prose dice when the block has no scaling table', () => {
+    const spell: Entity = {
+      name: 'Broken Block',
+      level: 0,
+      entries: ['Deals {@damage 1d6} cold damage.'],
+      scalingLevelDice: { label: 'cold damage' },
+    };
+    expect(spellRollActions(spell, { characterLevel: 1 })).toEqual([
+      { expr: '1d6', label: 'Broken Block cold damage', variant: 'damage' },
+    ]);
+  });
+});
+
 describe('spellRollActions on hostile text', () => {
   it('still reads a slot-scaled roll through the bounded patterns', () => {
     const fireball: Entity = {

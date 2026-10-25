@@ -26,8 +26,18 @@ bun run build          # production / PWA build
 bun run check          # lint + typecheck + test (the fast offline gate)
 bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget
 bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a build)
-bun run data:audit     # download the pinned dataset and audit normalization (network-gated)
+bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
 ```
+
+The data audit downloads the real pinned release, runs it through the app's
+own normalization, and fails when a count leaves its budget: entities, parser
+warnings, unresolved `_copy` targets, spell rolls the dice engine refuses,
+`{@tag}`s the renderer does not draw, or a multi-name `additionalSpells` block
+nobody has confirmed is a choice. `--tag <tag|latest>` audits another release,
+`--write-budget` writes that release's budget entry, `--json <path>` saves the
+report, and `--report-only` never exits 1. `.github/workflows/data-audit.yml`
+runs it weekly (pinned tag and newest release) and on PRs that touch the data
+pipeline. A `DATA_TAG` bump needs a budget entry, or `bun run test` fails.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the

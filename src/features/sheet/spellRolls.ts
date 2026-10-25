@@ -79,43 +79,85 @@ interface ScalingBlock {
  * against a wounded target), so this runs per block and the caller keeps one
  * chip for each.
  */
-function levelScaledRoll(block: ScalingBlock, characterLevel: number): TaggedRoll | undefined {
+function levelScaledRoll(
+  block: ScalingBlock,
+  characterLevel: number,
+  abilityModifier: number | undefined,
+): TaggedRoll | undefined {
   if (block.scaling === undefined) return undefined;
+  // A sheet with no class picked yet is level 0. It rolls what a 1st-level
+  // character rolls: Fire Bolt's 1d10, and no on-hit die for Booming or
+  // Green-Flame Blade, which only gain one at 5th level. Offering a block's
+  // first tier instead handed a classless sheet 5th-level dice.
+  const atLevel = Math.max(characterLevel, 1);
   let bestLevel = -1;
   let expr: string | undefined;
-  let firstLevel = Number.POSITIVE_INFINITY;
-  let firstExpr: string | undefined;
   for (const [rawLevel, rawExpr] of Object.entries(block.scaling)) {
     const level = Number.parseInt(rawLevel, 10);
     if (typeof rawExpr !== 'string') continue;
-    if (level <= characterLevel && level > bestLevel) {
+    if (level <= atLevel && level > bestLevel) {
       bestLevel = level;
       expr = rawExpr.replaceAll(' ', '');
     }
-    if (level < firstLevel) {
-      firstLevel = level;
-      firstExpr = rawExpr.replaceAll(' ', '');
-    }
   }
-  // Below the block's first tier (a sheet with no class picked yet) the cantrip
-  // still has a die: the first one. Falling through to the prose instead listed
-  // every tier at once, which reads as four different attacks to choose from.
-  expr = expr ?? firstExpr;
   if (expr === undefined) return undefined;
+  const filled = fillSpellcastingModifier(expr, abilityModifier);
+  if (filled === undefined) return undefined;
   const label = typeof block.label === 'string' ? block.label : '';
-  return { expr, kind: 'damage', source: label, after: '', scalingLabel: label };
+  return { expr: filled, kind: 'damage', source: label, after: '', scalingLabel: label };
+}
+
+const SPELLCASTING_MOD = /([+-]?)\{\{spellcasting_mod\}\}/g;
+
+/**
+ * Put the caster's modifier where 5etools writes `{{spellcasting_mod}}`
+ * (Green-Flame Blade's "1d8 + {{spellcasting_mod}}"), signed so a negative one
+ * reads `1d8-1`. Without a known modifier the term is dropped, since a chip
+ * cannot roll a number the sheet does not have.
+ *
+ * Returns undefined when nothing rollable is left: an empty expression, a
+ * fixed amount of zero or less, or any other `{{...}}` template this does not
+ * know, which the dice parser would refuse.
+ */
+function fillSpellcastingModifier(expr: string, modifier: number | undefined): string | undefined {
+  const filled = expr
+    .replace(SPELLCASTING_MOD, (_match, sign: string, offset: number) => {
+      if (modifier === undefined) return '';
+      const value = sign === '-' ? -modifier : modifier;
+      if (value === 0) return '';
+      if (sign === '' && offset === 0) return String(value);
+      return value > 0 ? `+${value}` : String(value);
+    })
+    .replace(/^\+/, '');
+  if (filled === '' || filled.includes('{{')) return undefined;
+  if (/^[+-]?\d+$/.test(filled) && Number(filled) <= 0) return undefined;
+  return filled;
 }
 
 /** Every scaling block a spell carries, in file order: one on most cantrips,
- *  and an array on the two-outcome ones. */
-function levelScaledRolls(entity: Entity, characterLevel: number): TaggedRoll[] {
-  const raw = entity.scalingLevelDice as ScalingBlock | ScalingBlock[] | undefined;
+ *  and an array on the two-outcome ones. A block without a `scaling` table is
+ *  skipped, so a malformed one leaves the prose dice in place. */
+function scalingBlocks(entity: Entity): ScalingBlock[] {
+  const raw: unknown = entity.scalingLevelDice;
   if (raw === undefined || raw === null) return [];
-  const blocks = Array.isArray(raw) ? raw : [raw];
+  const blocks: unknown[] = Array.isArray(raw) ? raw : [raw];
+  return blocks.filter(
+    (block): block is ScalingBlock =>
+      block !== null &&
+      typeof block === 'object' &&
+      typeof (block as ScalingBlock).scaling === 'object' &&
+      (block as ScalingBlock).scaling !== null,
+  );
+}
+
+function levelScaledRolls(
+  blocks: ScalingBlock[],
+  characterLevel: number,
+  abilityModifier: number | undefined,
+): TaggedRoll[] {
   const out: TaggedRoll[] = [];
   for (const block of blocks) {
-    if (block === null || typeof block !== 'object') continue;
-    const roll = levelScaledRoll(block, characterLevel);
+    const roll = levelScaledRoll(block, characterLevel, abilityModifier);
     if (roll !== undefined) out.push(roll);
   }
   return out;
@@ -195,14 +237,17 @@ export function spellRollActions(
   const name = typeof entity.name === 'string' ? entity.name : 'Spell';
   const baseLevel = typeof entity.level === 'number' ? entity.level : 0;
   const slotLevel = Math.max(baseLevel, options.slotLevel ?? baseLevel);
-  const scaled = levelScaledRolls(entity, options.characterLevel);
+  const blocks = scalingBlocks(entity);
+  const scaled = levelScaledRolls(blocks, options.characterLevel, options.abilityModifier);
   const primary = taggedRolls(entity.entries);
   // A scaling cantrip states its ladder twice: once in the machine-readable
   // block, and again in prose ("increases by 1d10 when you reach 5th level").
   // Only the block knows the character's level, so the sentence beside it is
   // description, not a roll anyone makes, whichever tag it happens to carry.
+  // That holds even when no block has a roll at this level (Green-Flame Blade
+  // at 1st level with no modifier known): the prose dice are 5th-level dice.
   const rolls =
-    scaled.length === 0
+    blocks.length === 0
       ? primary
       : [...scaled, ...primary.filter((roll) => roll.kind !== 'damage' && !describesScaling(roll))];
   const seen = new Set<string>();

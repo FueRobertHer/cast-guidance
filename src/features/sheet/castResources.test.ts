@@ -218,6 +218,27 @@ describe('upcastEffectSummary (GAME-001 preview)', () => {
     expect(upcastEffectSummary(cureWounds, 5, 2)).toBe('2d8');
   });
 
+  it('never previews a template the dice engine cannot roll', () => {
+    // This caller passes no ability modifier. Green-Flame Blade's secondary
+    // die is written "1d8 + {{spellcasting_mod}}" in the data, and its on-hit
+    // die starts at 5th level, so a 1st-level preview has no dice at all.
+    const greenFlameBlade = {
+      name: 'Green-Flame Blade',
+      source: 'TCE',
+      level: 0,
+      entries: ['At 5th level, the attack deals an extra {@damage 1d8} fire damage.'],
+      scalingLevelDice: [
+        {
+          label: 'fire damage to secondary creature',
+          scaling: { '1': '{{spellcasting_mod}}', '5': '1d8 + {{spellcasting_mod}}' },
+        },
+        { label: 'fire damage on hit', scaling: { '5': '1d8' } },
+      ],
+    } as Entity;
+    expect(upcastEffectSummary(greenFlameBlade, 1, 0)).toBeUndefined();
+    expect(upcastEffectSummary(greenFlameBlade, 5, 0)).toBe('1d8 / 1d8');
+  });
+
   it('is undefined for a spell with no rolled dice', () => {
     const shield = { name: 'Shield', source: 'phb', level: 1, entries: ['+5 AC.'] } as Entity;
     expect(upcastEffectSummary(shield, 5, 1)).toBeUndefined();

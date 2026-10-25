@@ -1,0 +1,93 @@
+{
+  "$comment": "Data audit budgets (TEST-005), one entry per data tag, checked by scripts/data-audit.ts. Counts are exact for a pinned tag: a parser change that moves one updates this file in the same PR. Problem counts are ceilings and spellsWithDice is a floor. A DATA_TAG bump needs a new entry: run `bun run data:audit -- --tag <tag> --write-budget`, then review the diff. branchAllow entries are human verdicts that a multi-name additionalSpells block is a real choice even though the entity's own prose does not say so.",
+  "tags": {
+    "v2.32.0": {
+      "files": 48,
+      "entities": {
+        "race": 222,
+        "subrace": 139,
+        "background": 161,
+        "feat": 276,
+        "optionalfeature": 213,
+        "skill": 36,
+        "language": 201,
+        "sense": 8,
+        "action": 48,
+        "condition": 30,
+        "disease": 29,
+        "status": 5,
+        "variantrule": 230,
+        "book": 63,
+        "baseitem": 230,
+        "itemProperty": 26,
+        "itemType": 67,
+        "item": 2428,
+        "itemGroup": 109,
+        "magicvariant": 214,
+        "class": 30,
+        "subclass": 322,
+        "classFeature": 677,
+        "subclassFeature": 1441,
+        "spell": 936
+      },
+      "warningGroups": {
+        "versions: replaceArr target not found on \"…\": \"…\"": 40
+      },
+      "unresolvedCopies": 0,
+      "spellsWithDice": 402,
+      "invalidSpellRolls": 0,
+      "unhandledTags": {},
+      "underscoreKeys": [
+        "_",
+        "_copy",
+        "_preserve",
+        "_mod",
+        "_subclassFluff",
+        "_variables",
+        "_versions",
+        "_meta",
+        "_abstract",
+        "_implementations"
+      ],
+      "branchAllow": [
+        {
+          "uid": "circle of the land|phb",
+          "key": "subclass",
+          "names": [
+            "Arctic",
+            "Coast",
+            "Desert",
+            "Forest",
+            "Grassland",
+            "Mountain",
+            "Swamp",
+            "Underdark"
+          ],
+          "verdict": "choice",
+          "note": "Circle Spells: the druid chooses the land where they became a druid. The wording lives in the subclassFeature, not the subclass entry."
+        },
+        {
+          "uid": "circle of the land|xphb",
+          "key": "subclass",
+          "names": ["Arid Land", "Polar Land", "Temperate Land", "Tropical Land"],
+          "verdict": "choice",
+          "note": "Circle of the Land Spells: choose one land type, changeable after a Long Rest. The wording lives in the subclassFeature."
+        },
+        {
+          "uid": "divine soul|xge",
+          "key": "subclass",
+          "names": ["Good", "Evil", "Law", "Chaos", "Neutrality"],
+          "verdict": "choice",
+          "note": "Divine Magic: choose one affinity for the source of your power. The wording lives in the subclassFeature."
+        },
+        {
+          "uid": "the genie|tce",
+          "key": "subclass",
+          "names": ["Dao", "Djinni", "Efreeti", "Marid"],
+          "verdict": "choice",
+          "note": "Genie's Kind: the patron is one kind of genie. The wording lives in the subclassFeature."
+        }
+      ]
+    }
+  }
+}
