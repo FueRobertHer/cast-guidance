@@ -3,6 +3,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { characterRepo } from '@/db/characterRepo';
 import { historyRepo } from '@/db/historyRepo';
 import type { CharacterDoc } from '@/engine/types';
+import { burstKey, diffDocs } from '@/lib/docDiff';
 import { historyLabel } from '@/lib/historyLabel';
 
 export type CharacterLoadStatus = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
@@ -48,6 +49,14 @@ interface SessionDependencies {
   characters: Pick<typeof characterRepo, 'get' | 'put'>;
   history: Pick<typeof historyRepo, 'record'>;
   debounceMs?: number;
+  /** Clock for grouping rapid edits; injectable for tests. */
+  now?: () => number;
+  /**
+   * How rapid edits group into one history entry: a run continues while each
+   * edit lands within `idleMs` of the last and the run is under `maxSpanMs`
+   * old, so a long stretch of typing still leaves a checkpoint now and then.
+   */
+  coalesce?: { idleMs: number; maxSpanMs: number };
 }
 
 interface PendingSave {
@@ -61,8 +70,26 @@ interface PendingSave {
   attempted?: boolean;
 }
 
+/**
+ * A run of rapid edits being folded into one history row (UX-005). Without
+ * this, fifty taps on an HP stepper were fifty rows, and the 50-row cap pruned
+ * the level-up someone actually wanted to go back to.
+ */
+interface Burst {
+  /** The document before the run began, so the label covers the whole run. */
+  base: CharacterDoc;
+  /** Which kinds of edit belong to this run; see {@link burstKey}. */
+  key: string;
+  rowId: string;
+  startedAt: number;
+  lastAt: number;
+}
+
 interface SaveSlot {
   baseline: CharacterDoc | null;
+  burst?: Burst;
+  /** Bumps whenever the run must end regardless of saves still in flight. */
+  epoch: number;
   pending?: PendingSave;
   timer?: ReturnType<typeof setTimeout>;
   inFlight?: Promise<void>;
@@ -77,6 +104,8 @@ export function createCharacterSessionStore({
   characters,
   history,
   debounceMs = 400,
+  now = Date.now,
+  coalesce = { idleMs: 10_000, maxSpanMs: 120_000 },
 }: SessionDependencies): StoreApi<CharacterSessionState> {
   const slots = new Map<string, SaveSlot>();
   let loadGeneration = 0;
@@ -85,7 +114,7 @@ export function createCharacterSessionStore({
   const slotFor = (id: string): SaveSlot => {
     const existing = slots.get(id);
     if (existing !== undefined) return existing;
-    const created: SaveSlot = { baseline: null };
+    const created: SaveSlot = { baseline: null, epoch: 0 };
     slots.set(id, created);
     return created;
   };
@@ -100,6 +129,50 @@ export function createCharacterSessionStore({
       saveCharacterId: characterId,
       saveErrors,
     });
+  };
+
+  /**
+   * Record one saved snapshot, folding it into the current run of rapid edits
+   * when it continues that run. A named action (a rest, a cast, a restore)
+   * always gets its own entry and ends the run, as does anything that reshapes
+   * the character (a level, a class, a species), a pause, or a different kind
+   * of edit.
+   */
+  const recordHistory = async (slot: SaveSlot, pending: PendingSave): Promise<void> => {
+    const prev = slot.baseline;
+    const epoch = slot.epoch;
+    const t = now();
+    const changes = pending.label === undefined && prev !== null ? diffDocs(prev, pending.doc) : [];
+    const burst = slot.burst;
+    if (pending.label === undefined && prev !== null && changes.length === 0) {
+      // An edit that changed nothing (a clamped stepper, re-ticking a used
+      // pip) neither starts nor ends a run. History skips it as a duplicate.
+      const rowId = await history.record(pending.doc, historyLabel(prev, pending.doc));
+      if (rowId !== undefined && slot.epoch === epoch) slot.burst = undefined;
+      return;
+    }
+    const key = burstKey(changes);
+    const merging =
+      key !== undefined &&
+      burst !== undefined &&
+      burst.key === key &&
+      t - burst.lastAt <= coalesce.idleMs &&
+      t - burst.startedAt <= coalesce.maxSpanMs;
+    const label =
+      pending.label ?? historyLabel((merging ? burst.base : prev) ?? undefined, pending.doc);
+    const rowId = await history.record(
+      pending.doc,
+      label,
+      merging ? { replaceId: burst.rowId } : undefined,
+    );
+    // The character was left and reopened while this was saving: the run
+    // belonged to the earlier visit.
+    if (slot.epoch !== epoch) return;
+    if (key === undefined || prev === null || rowId === undefined) slot.burst = undefined;
+    // Another tab wrote in between, so this went into a fresh row. Its label
+    // already covers the whole run, so the run carries on in that row.
+    else if (merging) slot.burst = { ...burst, rowId, lastAt: t };
+    else slot.burst = { base: structuredClone(prev), key, rowId, startedAt: t, lastAt: t };
   };
 
   const flushCharacter = async (characterId: string): Promise<void> => {
@@ -117,13 +190,11 @@ export function createCharacterSessionStore({
         publishSave('saving', characterId);
         try {
           await characters.put(pending.doc);
-          await history.record(
-            pending.doc,
-            pending.label ?? historyLabel(slot.baseline ?? undefined, pending.doc),
-          );
+          await recordHistory(slot, pending);
           slot.baseline = structuredClone(pending.doc);
           publishSave('saved', characterId);
         } catch (error) {
+          slot.burst = undefined;
           // A newer edit supersedes a failed older snapshot. Otherwise retain the
           // failed snapshot so Retry can persist it without reconstructing state.
           slot.pending ??= { ...pending, attempted: true };
@@ -215,6 +286,10 @@ export function createCharacterSessionStore({
           return false;
         }
         if (slot.pending === undefined) slot.baseline = structuredClone(doc);
+        // A return visit starts a fresh entry rather than extending the run
+        // left behind last time, even one whose last save is still landing.
+        slot.burst = undefined;
+        slot.epoch++;
         set({ doc: structuredClone(doc), rev: 1, loadStatus: 'ready' });
         return true;
       } catch (error) {
@@ -262,6 +337,11 @@ export function createCharacterSessionStore({
         return;
       }
       const restored = structuredClone(snapshot);
+      const slot = slots.get(snapshot.id);
+      if (slot !== undefined) {
+        slot.burst = undefined;
+        slot.epoch++;
+      }
       set((current) => ({ doc: restored, rev: current.rev + 1 }));
       scheduleSave(restored, 'Restored from history', true);
     },

@@ -77,3 +77,65 @@ describe('what one autosave reads', () => {
     expect(await db.characterHistory.where('charId').equals('c1').count()).toBe(50);
   });
 });
+
+describe('folding rapid edits into one row (UX-005)', () => {
+  // Rows order by time, and two saves in the same millisecond would tie, so
+  // every save here gets its own tick.
+  let tick = 1_000;
+  beforeEach(() => {
+    vi.spyOn(Date, 'now').mockImplementation(() => ++tick);
+    return () => vi.restoreAllMocks();
+  });
+
+  const hero = () => newCharacterDoc('c1', 'Hero', 't');
+  const withHp = (hp: number) => {
+    const doc = hero();
+    doc.play.currentHp = hp;
+    return doc;
+  };
+
+  it('returns the id of the row it wrote, and nothing for a duplicate', async () => {
+    const id = await historyRepo.record(withHp(10), 'A');
+    expect(id).toBe((await historyRepo.list('c1'))[0]?.id);
+    expect(await historyRepo.record(withHp(10), 'again')).toBeUndefined();
+  });
+
+  it('rewrites the newest row in place when asked to replace it', async () => {
+    await historyRepo.record(withHp(20), 'Level up');
+    const id = await historyRepo.record(withHp(19), 'HP 20→19');
+    const again = await historyRepo.record(withHp(15), 'HP 20→15', { replaceId: id });
+
+    expect(again).toBe(id);
+    const rows = await historyRepo.list('c1');
+    expect(rows.map((r) => r.label)).toEqual(['HP 20→15', 'Level up']);
+    expect(rows[0]?.doc.play.currentHp).toBe(15);
+  });
+
+  it('drops the row when the run ends where it started', async () => {
+    await historyRepo.record(withHp(20), 'Level up');
+    const id = await historyRepo.record(withHp(19), 'HP 20→19');
+    expect(await historyRepo.record(withHp(20), 'HP 20→20', { replaceId: id })).toBeUndefined();
+    expect((await historyRepo.list('c1')).map((r) => r.label)).toEqual(['Level up']);
+  });
+
+  it('treats a stale updatedAt as the same character when collapsing', async () => {
+    // The stored row was written in an earlier session with another stamp.
+    await historyRepo.record({ ...withHp(20), updatedAt: '2020-01-01T00:00:00.000Z' }, 'Level up');
+    const id = await historyRepo.record(withHp(19), 'HP 20→19');
+    expect(await historyRepo.record(withHp(20), 'HP 20→20', { replaceId: id })).toBeUndefined();
+    expect(await historyRepo.list('c1')).toHaveLength(1);
+  });
+
+  it('inserts instead when the row to replace is no longer the newest', async () => {
+    const id = await historyRepo.record(withHp(19), 'mine');
+    await historyRepo.record(withHp(18), 'another tab');
+    const next = await historyRepo.record(withHp(17), 'mine again', { replaceId: id });
+
+    expect(next).not.toBe(id);
+    expect((await historyRepo.list('c1')).map((r) => r.label)).toEqual([
+      'mine again',
+      'another tab',
+      'mine',
+    ]);
+  });
+});

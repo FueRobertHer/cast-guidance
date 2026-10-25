@@ -323,3 +323,178 @@ describe('history labels across a failed save', () => {
     expect(record.mock.calls.map(([, label]) => label)).toEqual(['Long rest']);
   });
 });
+
+describe('folding rapid edits into one history entry (UX-005)', () => {
+  /**
+   * A session on a hand-driven clock whose history hands out row ids r1, r2,
+   * and so on for new rows and keeps the id of a replaced one, as the real
+   * repo does.
+   */
+  const burstSession = (start = character('a')) => {
+    let clock = 0;
+    let rows = 0;
+    const record = vi.fn(
+      async (_doc: CharacterDoc, _label: string, opts?: { replaceId?: string }) =>
+        (opts?.replaceId ?? `r${++rows}`) as string | undefined,
+    );
+    const session = createCharacterSessionStore({
+      characters: {
+        get: vi.fn(async () => structuredClone(start)),
+        put: vi.fn(async () => undefined),
+      },
+      history: { record },
+      debounceMs: 10_000,
+      now: () => clock,
+    });
+    /** Make one edit `afterMs` after the last, and save it. */
+    const edit = async (afterMs: number, recipe: (doc: CharacterDoc) => void, label?: string) => {
+      clock += afterMs;
+      session.getState().update(recipe, label);
+      await session.getState().flush();
+    };
+    const calls = () =>
+      record.mock.calls.map(([, label, opts]) => ({ label, replaceId: opts?.replaceId }));
+    return { session, record, edit, calls };
+  };
+  const hp = (value: number) => (doc: CharacterDoc) => {
+    doc.play.currentHp = value;
+  };
+
+  it('folds quick HP changes into one entry labelled for the whole run', async () => {
+    const { session, edit, calls } = burstSession({
+      ...character('a'),
+      play: { ...character('a').play, currentHp: 20 },
+    });
+    await session.getState().load('a');
+    await edit(0, hp(19));
+    await edit(2_000, hp(18));
+    await edit(2_000, hp(17));
+    expect(calls()).toEqual([
+      { label: 'HP 20→19', replaceId: undefined },
+      { label: 'HP 20→18', replaceId: 'r1' },
+      { label: 'HP 20→17', replaceId: 'r1' },
+    ]);
+  });
+
+  it('keeps taking hits with temp HP in the same run', async () => {
+    const { session, edit, calls } = burstSession({
+      ...character('a'),
+      play: { ...character('a').play, currentHp: 20, tempHp: 3 },
+    });
+    await session.getState().load('a');
+    await edit(0, (doc) => {
+      doc.play.tempHp = 0;
+      doc.play.currentHp = 18;
+    });
+    await edit(1_000, hp(15));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, 'r1']);
+  });
+
+  it('never folds a level up, nor the edit right after it', async () => {
+    const { session, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    await edit(1_000, (doc) => {
+      doc.classes = [{ ref: { name: 'Wizard', source: 'PHB' }, levels: 2, hp: ['avg', 'avg'] }];
+    });
+    await edit(1_000, hp(4));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('gives a named action its own entry and ends the run', async () => {
+    const { session, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    await edit(1_000, hp(9), 'Short rest');
+    await edit(1_000, hp(8));
+    expect(calls()).toEqual([
+      { label: 'HP 0→5', replaceId: undefined },
+      { label: 'Short rest', replaceId: undefined },
+      { label: 'HP 9→8', replaceId: undefined },
+    ]);
+  });
+
+  it('starts a new entry after a pause, after a long run, or on another kind of edit', async () => {
+    const { session, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5)); // r1
+    await edit(10_001, hp(6)); // paused past 10 s: r2
+    // Every 9 s keeps the run alive, but only until it is two minutes old.
+    for (let i = 1; i <= 14; i++) await edit(9_000, hp(6 + i));
+    await edit(1_000, (doc) => {
+      doc.notes = 'loot';
+    });
+    expect(calls().map((c) => c.replaceId)).toEqual([
+      undefined,
+      undefined,
+      ...Array.from({ length: 13 }, () => 'r2'),
+      undefined, // 126 s after r2 began: r3
+      undefined, // notes are another kind of edit: r4
+    ]);
+  });
+
+  it('ends the run on restore and on a return visit', async () => {
+    const { session, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    const snapshot = structuredClone(session.getState().doc);
+    if (snapshot === null) throw new Error('no doc');
+    session.getState().restore({ ...snapshot, play: { ...snapshot.play, currentHp: 1 } });
+    await session.getState().flush();
+    await edit(1_000, hp(2));
+
+    await session.getState().close();
+    await session.getState().load('a');
+    await edit(1_000, hp(3));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it('has nothing to extend when history kept no row', async () => {
+    const { session, record, edit, calls } = burstSession();
+    record.mockImplementationOnce(async () => undefined);
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    await edit(1_000, hp(6));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined]);
+  });
+
+  it('ends the run when a write fails', async () => {
+    const { session, record, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    record.mockImplementationOnce(async () => {
+      throw new Error('quota');
+    });
+    await edit(1_000, hp(6)).catch(() => undefined);
+    await session.getState().retryFailedSaves();
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, 'r1', undefined]);
+  });
+
+  it('lets an edit that changed nothing pass without ending the run', async () => {
+    const { session, record, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    record.mockImplementationOnce(async () => undefined); // skipped as a duplicate
+    await edit(1_000, hp(5)); // a clamped stepper: nothing moved
+    await edit(1_000, hp(6));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined, 'r1']);
+  });
+
+  it('carries on in the new row when another tab wrote mid-run', async () => {
+    const { session, record, edit, calls } = burstSession({
+      ...character('a'),
+      play: { ...character('a').play, currentHp: 20 },
+    });
+    await session.getState().load('a');
+    await edit(0, hp(19));
+    // The repo found another tab's row on top and inserted instead.
+    record.mockImplementationOnce(async () => 'other-row');
+    await edit(1_000, hp(18));
+    await edit(1_000, hp(17));
+    expect(calls()).toEqual([
+      { label: 'HP 20→19', replaceId: undefined },
+      { label: 'HP 20→18', replaceId: 'r1' },
+      { label: 'HP 20→17', replaceId: 'other-row' },
+    ]);
+  });
+});
