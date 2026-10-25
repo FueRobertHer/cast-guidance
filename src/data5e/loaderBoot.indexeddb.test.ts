@@ -19,19 +19,23 @@ vi.mock('./source', () => ({
   },
 }));
 
-// A deadline the suite can afford to wait out.
+// A deadline the suite can afford to wait out, with room on both sides: a
+// prompt list must beat it even on a loaded runner (at 20 ms a fresh install
+// sometimes fell back to the pinned release), and a slow one must miss it.
 vi.mock('./config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./config')>()),
-  BOOT_TAG_RESOLVE_TIMEOUT_MS: 20,
+  BOOT_TAG_RESOLVE_TIMEOUT_MS: 500,
 }));
+/** How long a "slow" release list takes: well past the mocked deadline. */
+const SLOW_LIST_MS = 2_000;
 
 import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 
 // IndexedDB under fake-indexeddb is slow on a loaded runner: the default
-// one-second wait was enough locally and flaked in CI under the coverage gate,
-// and a fresh install has since run past five seconds in a full local run.
-// Still well inside the 15 second test timeout, so a real hang fails.
+// one-second wait was enough locally and flaked in CI under the coverage gate.
+// Ten seconds also covers the slow release list below, and stays well inside
+// the 15 second test timeout, so a real hang still fails.
 const WAIT = { timeout: 10_000 };
 
 /** Every release list request the loader makes. */
@@ -222,15 +226,19 @@ describe('the boot-time update check', () => {
     // sweeping the first copy away as a stale tag. Silently, too: the release
     // the user had just been offered, and could have declined, installed itself.
     tagsFetch.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(tagList('v2.33.0', DATA_TAG)), 200)),
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve(tagList('v2.33.0', DATA_TAG)), SLOW_LIST_MS),
+        ),
     );
     const first = await boot();
     await first.loader.initDataLayer();
     await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'), WAIT);
     expect((await first.db.settings.get('dataTag'))?.value).toBe(DATA_TAG);
     // The list landed and was remembered, so the next launch has it for free.
-    await vi.waitFor(() =>
-      expect(first.dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+    await vi.waitFor(
+      () => expect(first.dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+      WAIT,
     );
     fetchFile.mockClear();
 
@@ -330,7 +338,10 @@ describe('the boot-time update check', () => {
     // Reachable, just not quickly. Every data read is gated behind tag
     // resolution, so waiting this out leaves the app with nothing on screen.
     tagsFetch.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(tagList('v2.33.0', DATA_TAG)), 200)),
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve(tagList('v2.33.0', DATA_TAG)), SLOW_LIST_MS),
+        ),
     );
     const { db, dataStatusStore, loader } = await boot();
 
