@@ -19,7 +19,11 @@ truth: `src/lib/guards.ts`, `src/db/characterRepo.ts`,
 
 - **`$format`** — the envelope version. Import rejects anything else.
 - **`character`** — the stored `CharacterDoc`: choices + play state, never derived
-  results. Carries its own `schemaVersion` (currently `1`).
+  results. Carries its own `schemaVersion` (currently `1`). Never the stored
+  row's `revision`: that is a per-write token the save check between tabs
+  uses (REL-007, #98), stripped from every read, so no export carries it. One
+  in an imported file (from a build that leaked it) is dropped, and the import
+  gets a revision of its own.
 - **`homebrew`** — only the homebrew files the character actually depends on
   (matched by the source ids its refs use), each as a **minimal DTO**:
   `{ fileName, json }`. No local-only fields (`enabled`, `editable`, `addedAt`,

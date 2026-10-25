@@ -3,10 +3,13 @@ import { activePeerCount, applyPeerEvent, HEARTBEAT_MS, type PeerEvent } from '.
 
 /**
  * True while the same character is open in another tab/window (REL-007), via a
- * per-character BroadcastChannel heartbeat. Used to warn that concurrent edits
- * can overwrite each other. Peers age out by staleness, so a closed/crashed tab
- * clears the warning even if its `bye` is never delivered. No-op where
- * BroadcastChannel is unavailable (returns false).
+ * per-character BroadcastChannel heartbeat. Used to warn that editing in both
+ * will ask which version to keep: a stale tab's save is refused rather than
+ * written over the other's (see `characterRepo.save`). Peers age out by
+ * staleness, so a closed/crashed tab clears the warning even if its `bye` is
+ * never delivered. No-op where BroadcastChannel is unavailable (returns false).
+ * Saves are relayed between tabs on Dexie's own channel, not this one, where
+ * every message counts as presence.
  */
 export function useOpenElsewhere(charId: string | undefined): boolean {
   const [active, setActive] = useState(false);

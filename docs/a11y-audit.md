@@ -39,7 +39,7 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
 | Other routes | `settings`, `creator` (step 1), `not-found` |
 | Sheet confirm | `long-rest-confirm` (a confirm that is not destructive, so its button is the red fill) |
-| Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
+| Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-save-conflict` (a save refused because another tab saved the character first: its alert, Reload stored version and Keep mine), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
 | Desktop layout | `desktop-roster`, `desktop-library`, `desktop-settings`, `desktop-sheet-play` |
 
 The character is a blank sheet, except in the caster states (the Sorcerer 13
@@ -229,7 +229,7 @@ every selector would be a false change.
 The first run found 14 serious nodes across 9 states. Unmasking the drawers
 found one more (a destructive choice's red label in the actions sheet). All
 are fixed, so the baseline is empty: axe reports no violation in any of the
-46 states. That is not the same as every node passing. Some nodes are
+47 states. That is not the same as every node passing. Some nodes are
 undecided, and those are listed, not gated:
 
 | Undecided `color-contrast` | Nodes | States |
@@ -238,12 +238,13 @@ undecided, and those are listed, not gated:
 | After it, same 37 states | 16 | 9 |
 | After it, with the 6 states added since (the two import previews add none) | 22 | 12 |
 | With the caster's 3 states (`sheet-spells-caster` adds none) | 26 | 14 |
+| With `banner-save-conflict` (the sheet's own two, as in `sheet-play`) | 28 | 15 |
 
 What is left is of two kinds. Most are symbols with no text (the Inspiration
 star, the toast icon), which have no contrast requirement: in `sheet-play`,
 `desktop-sheet-play`, `dice-tray`, `history-drawer`, `long-rest-confirm`,
 `spell-info-sheet`, `spell-pack-problem`, `banner-save-error`,
-`banner-db-closed` and `toast-offline-ready`. The rest
+`banner-save-conflict`, `banner-db-closed` and `toast-offline-ready`. The rest
 are text another layer partly covers, so axe cannot pick one background:
 under the fixed bottom nav or the update toast (`settings`,
 `desktop-settings`, `toast-app-update`), on a translucent toast
