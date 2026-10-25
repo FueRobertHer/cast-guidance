@@ -62,7 +62,7 @@ vi.mock('./search/client', () => ({
 
 import { dataStatusStore } from '@/stores/dataStatus';
 import { useRegistryRefreshing, useRegistryState, useSearchState, useTypePacks } from './hooks';
-import { flushLanded, noteFileLanded } from './landing';
+import { flushLanded, getRevision, noteFileLanded } from './landing';
 
 const fakeRegistry = { byType: () => [], get: () => undefined } as never;
 
@@ -432,10 +432,13 @@ describe('useTypePacks', () => {
     const { result } = renderHook(() => useTypePacks('spell', onRepaired));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
+    const before = getRevision();
     act(() => result.current.repair());
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(invalidateRegistry).toHaveBeenCalledOnce();
     expect(onRepaired).toHaveBeenCalledOnce();
+    // Every other mounted consumer hears of it too, not only this page.
+    expect(getRevision()).toBeGreaterThan(before);
   });
 
   it('does not invalidate anything for an ordinary retry', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
-import { getRevision, subscribeRevision } from './landing';
+import { getRevision, markDataChanged, subscribeRevision } from './landing';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
 import type { PackId } from './packs';
@@ -293,6 +293,9 @@ export function useTypePacks(
           // is still watching, and a registry left holding the old bodies would
           // serve them to every other page.
           invalidateRegistry();
+          // A repair writes outside the landing count, so every mounted
+          // consumer, not only this page, re-reads the repaired bodies.
+          markDataChanged();
           onRepairedRef.current?.();
         });
     }

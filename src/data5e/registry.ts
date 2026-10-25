@@ -115,6 +115,10 @@ export async function getRegistry(): Promise<EntityRegistry> {
   beginRead();
   try {
     const reg = await readRegistry();
+    // Only a read that succeeded vouches for the files, so a failed one leaves
+    // the flag up until a later read succeeds. Callers show their failure
+    // before they consult the flag, so the raised flag is never what a page
+    // with a failed read renders.
     if (covers > builtThrough) builtThrough = covers;
     return reg;
   } finally {
