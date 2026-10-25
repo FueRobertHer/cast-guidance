@@ -24,8 +24,10 @@ bun run lint           # biome check (src, scripts, tests-fixtures, e2e)
 bun run typecheck      # tsc -b
 bun run build          # production / PWA build
 bun run check          # lint + typecheck + test (the fast offline gate)
-bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget
+bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget, notices check
 bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a build)
+bun run notices        # regenerate THIRD_PARTY_NOTICES.md from dist/ (after a build)
+bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
@@ -44,9 +46,11 @@ pipeline. A `DATA_TAG` bump needs a budget entry, or `bun run test` fails.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the
-frozen install, lint, typecheck, tests with coverage floors, the build, and a
-bundle budget on every push and PR, and fails when coverage drops below the
-floors in `vite.config.ts` or the build outgrows `scripts/bundle-budget.json`.
+frozen install, lint, typecheck, tests with coverage floors, the build, the
+third-party notices check, and a bundle budget on every push and PR, and fails
+when coverage drops below the floors in `vite.config.ts`, the build outgrows
+`scripts/bundle-budget.json`, or `THIRD_PARTY_NOTICES.md` no longer matches
+what the build ships.
 
 ### Browser E2E
 

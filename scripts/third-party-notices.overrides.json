@@ -1,0 +1,14 @@
+{
+  "$comment": "Per-package fixes for scripts/third-party-notices.ts. Each entry needs a reason; an entry that matches no shipped package fails the generator. Fields: text (replacement license text, needs source), source (where text came from), identifier (replacement SPDX id), cutBefore (keep the license file up to this line).",
+  "packages": {
+    "react-remove-scroll-bar": {
+      "reason": "Declares MIT in package.json (author Anton Korzunov) but publishes no license file. The text is the LICENSE file in the upstream repository, which was added after the 2.3.8 tag.",
+      "source": "https://github.com/theKashey/react-remove-scroll-bar/blob/master/LICENSE",
+      "text": "MIT License\n\nCopyright (c) 2025 Anton Korzunov <thekashey@gmail.com>\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+    },
+    "vite": {
+      "reason": "LICENSE.md also reproduces the licenses of the dependencies bundled into Vite's own build tooling, which run at build time and do not ship. Only Vite's core license covers the injected helpers.",
+      "cutBefore": "# Licenses of bundled dependencies"
+    }
+  }
+}
