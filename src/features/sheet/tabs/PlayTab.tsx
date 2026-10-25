@@ -365,15 +365,19 @@ export function Component() {
               double-tap combo double-fired: a "double-tap −5" applied −6 and
               rolled up to three concentration saves.) Tap the total for an
               exact value. */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {/* ±5 keep their smaller circle so ±1 still reads as the main
+                control, inside a 44px target (A11Y-002). */}
             <button
               type="button"
               aria-label="Damage 5 hit points"
               onClick={() => void hpDelta(-5)}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-deep/70 text-sm font-semibold"
+              className="tap rounded-full text-sm font-semibold"
               title="Damage 5"
             >
-              −5
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-deep/70">
+                −5
+              </span>
             </button>
             <button
               type="button"
@@ -426,7 +430,7 @@ export function Component() {
               {sheet.maxHp.overridden ? ' •' : ''}
             </div>
           </button>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
               aria-label="Heal 1 hit point"
@@ -440,23 +444,39 @@ export function Component() {
               type="button"
               aria-label="Heal 5 hit points"
               onClick={() => void hpDelta(5)}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900/50 text-sm font-semibold"
+              className="tap rounded-full text-sm font-semibold"
               title="Heal 5"
             >
-              +5
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900/50">
+                +5
+              </span>
             </button>
           </div>
         </div>
-        {/* HP bar: green → amber → red as it drops; temp HP shows as a cyan cap */}
+        {/* HP bar: green → amber → red as it drops; temp HP shows as a cyan cap.
+            The colour is a glance cue only: the numbers above say the same
+            thing, and the bar is a meter that reports them (A11Y-002). */}
         {sheet.maxHp.value > 0 &&
           (() => {
-            const ratio = Math.max(0, Math.min(1, play.currentHp / sheet.maxHp.value));
+            const max = sheet.maxHp.value;
+            const ratio = Math.max(0, Math.min(1, play.currentHp / max));
             const color =
               ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
-            const tempPct =
-              play.tempHp > 0 ? Math.min(100, (play.tempHp / sheet.maxHp.value) * 100) : 0;
+            const tempPct = play.tempHp > 0 ? Math.min(100, (play.tempHp / max) * 100) : 0;
+            const now = Math.max(0, Math.min(max, play.currentHp));
             return (
-              <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2">
+              // biome-ignore lint/a11y/useSemanticElements: a native <meter> draws one fill and cannot show the temp HP cap beside it
+              <div
+                role="meter"
+                aria-label="Hit points"
+                aria-valuemin={0}
+                aria-valuemax={max}
+                aria-valuenow={now}
+                aria-valuetext={`${now} of ${max}${
+                  play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : ''
+                }`}
+                className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2"
+              >
                 <div
                   className={`h-full ${color} transition-all`}
                   style={{ width: `${ratio * 100}%` }}
@@ -798,15 +818,17 @@ export function Component() {
         <div className="flex flex-col gap-2 border-t border-surface-2/40 p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-semibold">Exhaustion</span>
-            <div className="flex items-center gap-2">
+            <div className="-my-2 flex items-center">
               <button
                 type="button"
                 aria-label="Decrease exhaustion"
                 onClick={() => setExhaustion(exLevel - 1)}
                 disabled={exLevel === 0}
-                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+                className="tap rounded-full text-lg leading-none disabled:opacity-30"
               >
-                −
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2">
+                  −
+                </span>
               </button>
               <span className="w-10 text-center text-sm font-bold">{exLevel} / 6</span>
               <button
@@ -814,9 +836,11 @@ export function Component() {
                 aria-label="Increase exhaustion"
                 onClick={() => setExhaustion(exLevel + 1)}
                 disabled={exLevel >= 6}
-                className="h-7 w-7 rounded-full bg-surface-2 text-lg leading-none disabled:opacity-30"
+                className="tap rounded-full text-lg leading-none disabled:opacity-30"
               >
-                +
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2">
+                  +
+                </span>
               </button>
             </div>
           </div>
@@ -962,7 +986,7 @@ export function Component() {
                           aria-label={`Spend ${step} ${r.label}`}
                           onClick={() => setUsed(r.key, Math.min(r.max, used + step))}
                           disabled={used >= r.max}
-                          className="h-8 min-w-8 rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                          className="tap rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
                         >
                           −{step}
                         </button>
@@ -978,14 +1002,14 @@ export function Component() {
                           aria-label={`Restore ${step} ${r.label}`}
                           onClick={() => setUsed(r.key, Math.max(0, used - step))}
                           disabled={used === 0}
-                          className="h-8 min-w-8 rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                          className="tap rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
                         >
                           +{step}
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap">
                       <Pips
                         total={r.max}
                         spent={used}
@@ -1253,8 +1277,10 @@ export function Component() {
             </span>
           </div>
           {sc.pactSlots !== undefined && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-ink-muted">Pact (level {sc.pactSlots.level})</span>
+            <div className="flex flex-wrap items-center">
+              <span className="mr-1.5 text-xs text-ink-muted">
+                Pact (level {sc.pactSlots.level})
+              </span>
               <Pips
                 total={sc.pactSlots.count}
                 spent={play.pactSlotsSpent}
@@ -1275,8 +1301,8 @@ export function Component() {
               )}
               {sc.slots.map((count, lvlIdx) =>
                 count > 0 ? (
-                  <div key={`slots-${String(lvlIdx)}`} className="flex items-center gap-1.5">
-                    <span className="w-8 text-xs text-ink-muted">L{lvlIdx + 1}</span>
+                  <div key={`slots-${String(lvlIdx)}`} className="flex flex-wrap items-center">
+                    <span className="w-8 shrink-0 text-xs text-ink-muted">L{lvlIdx + 1}</span>
                     <Pips
                       total={count}
                       spent={play.slotsSpent[lvlIdx] ?? 0}

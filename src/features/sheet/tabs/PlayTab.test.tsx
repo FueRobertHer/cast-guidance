@@ -551,3 +551,24 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     ).toBeTruthy();
   });
 });
+
+describe('PlayTab hit point meter (A11Y-002)', () => {
+  it('reports current and maximum hit points, and follows a damage tap', () => {
+    // The sorcerer sheet rerenders on every update, so the meter is read live.
+    const { sheet } = renderSorcerer((d) => {
+      d.play.tempHp = 3;
+    });
+    const max = sheet.maxHp.value;
+    const meter = screen.getByRole('meter', { name: 'Hit points' });
+    expect(meter.getAttribute('aria-valuemin')).toBe('0');
+    expect(meter.getAttribute('aria-valuemax')).toBe(String(max));
+    expect(meter.getAttribute('aria-valuenow')).toBe(String(max));
+    expect(meter.getAttribute('aria-valuetext')).toBe(`${max} of ${max}, plus 3 temporary`);
+
+    // Temp HP soaks damage first: 3 of the 5 come off it, 2 off current.
+    fireEvent.click(screen.getByRole('button', { name: 'Damage 5 hit points' }));
+    const after = screen.getByRole('meter', { name: 'Hit points' });
+    expect(after.getAttribute('aria-valuenow')).toBe(String(max - 2));
+    expect(after.getAttribute('aria-valuetext')).toBe(`${max - 2} of ${max}`);
+  });
+});
