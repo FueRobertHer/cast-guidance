@@ -271,6 +271,22 @@ describe('GettingStarted', () => {
     await waitFor(() => expect(document.activeElement).toBe(status));
   });
 
+  it('leaves focus where the player moved it while the prompt was open', async () => {
+    let answer: (yes: boolean) => void = () => undefined;
+    const persist = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    stub('storage', { persisted: () => Promise.resolve(false), persist });
+    renderCard();
+    const ask = await screen.findByRole('button', { name: 'Ask the browser to keep my data' });
+    ask.focus();
+    fireEvent.click(ask);
+    const hide = screen.getByRole('button', { name: 'Got it, hide this' });
+    hide.focus();
+
+    await act(async () => answer(true));
+    expect(await screen.findByText('Protected')).toBeTruthy();
+    expect(document.activeElement).toBe(hide);
+  });
+
   it('after a refusal, says the browser decides and points at backups', async () => {
     stub('storage', {
       persisted: () => Promise.resolve(false),

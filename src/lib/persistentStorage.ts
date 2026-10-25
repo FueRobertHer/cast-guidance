@@ -48,8 +48,12 @@ export function usePersistentStorage(): {
   }, []);
 
   // After the commit, so the label already reads the answer when it is spoken.
+  // Only when focus fell with the button that just went away: Firefox's prompt
+  // does not block the page, so someone may have moved on while it was open.
   useEffect(() => {
-    if (answers > 0) statusRef.current?.focus();
+    if (answers === 0) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) statusRef.current?.focus();
   }, [answers]);
 
   /**
