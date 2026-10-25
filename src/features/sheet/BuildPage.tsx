@@ -15,9 +15,11 @@ import {
 } from '@/engine/multiclass';
 import {
   ABILITIES,
+  type CharacterDoc,
   type ClassLevelEntry,
   type DerivedSheet,
   type EffectOrigin,
+  refUid,
   SKILLS,
 } from '@/engine/types';
 import { OriginChoices } from '@/features/creator/OriginChoices';
@@ -28,13 +30,15 @@ import {
   makeSubclassEntries,
   raceBlurb,
 } from '@/features/creator/pickerHints';
-import { pruneChoicesFor } from '@/lib/pruneChoices';
+import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
+import { UndoBar } from '@/ui/UndoBar';
 import {
   cueKey,
   type EditionCue,
@@ -114,13 +118,13 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
 
   if (diff.length === 0) {
     return (
-      <div className="sticky top-0 z-10 rounded-lg bg-surface/95 px-3 py-2 text-xs text-ink-muted backdrop-blur">
+      <div className="rounded-lg bg-surface/95 px-3 py-2 text-xs text-ink-muted backdrop-blur">
         Change anything below — the effects on your stats show up here instantly.
       </div>
     );
   }
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/30 bg-surface/95 px-3 py-2 backdrop-blur">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/30 bg-surface/95 px-3 py-2 backdrop-blur">
       {diff.map((d) => (
         <span key={d.label} className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
           {d.label} <span className="text-ink-muted">{d.from}</span>
@@ -139,6 +143,90 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Taking things away: what goes, said before or after (UX-004)
+// ---------------------------------------------------------------------------
+
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+/** "a", "a and b", "a, b and c". */
+function listJoin(parts: string[]): string {
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+}
+
+/**
+ * How many picks a set of removed choice keys held, counting only prompts the
+ * player can see now (`active`). A key can hold several picks (two skills
+ * under one prompt), and a stored answer to a prompt no longer offered (an ASI
+ * feat kept from a higher level) is not one the player would recognise, so
+ * counting keys told a player with two skills that three picks went.
+ */
+function pickCount(doc: CharacterDoc, keys: string[], active: ReadonlySet<string>): number {
+  return keys.reduce((n, k) => {
+    if (!active.has(k)) return n;
+    const v = doc.choices[k];
+    return n + (Array.isArray(v) ? v.length : v === undefined ? 0 : 1);
+  }, 0);
+}
+
+/** "3 Testfolk picks cleared", or nothing when no picks went. */
+const picksCleared = (
+  before: CharacterDoc,
+  keys: string[],
+  owner: string | undefined,
+  active: ReadonlySet<string>,
+) => {
+  const n = pickCount(before, keys, active);
+  return n === 0
+    ? undefined
+    : `${plural(n, owner === undefined ? 'pick' : `${owner} pick`)} cleared`;
+};
+
+/**
+ * What removing a class takes with it, for the confirm and the undo bar: its
+ * picks (with the feats it took at an ASI), its subclass and that subclass's
+ * picks, and its spell list. Worked out on a copy, so it matches what
+ * {@link pruneClass} will remove.
+ */
+function classRemovalParts(
+  doc: CharacterDoc,
+  entry: ClassLevelEntry,
+  active: ReadonlySet<string>,
+): string[] {
+  const uid = refUid(entry.ref);
+  const probe = structuredClone(doc);
+  probe.classes = probe.classes.filter((c) => refUid(c.ref) !== uid);
+  const removed = pruneClass(probe, entry);
+  const subKeys = removed.filter((k) => k.startsWith('subclass:'));
+  const subPicks = pickCount(doc, subKeys, active);
+  const ownPicks = pickCount(
+    doc,
+    removed.filter((k) => !k.startsWith('subclass:')),
+    active,
+  );
+  const parts: string[] = [];
+  if (ownPicks > 0) parts.push(plural(ownPicks, `${entry.ref.name} pick`));
+  if (entry.subclass !== undefined) {
+    parts.push(
+      subPicks > 0
+        ? `subclass ${entry.subclass.name} (${plural(subPicks, 'pick')})`
+        : `subclass ${entry.subclass.name}`,
+    );
+  }
+  const spells = doc.spellcasting[uid];
+  if (spells !== undefined && spells.known.length + spells.prepared.length > 0) {
+    const counts = [
+      spells.known.length > 0 ? `${spells.known.length} known` : '',
+      spells.prepared.length > 0 ? `${spells.prepared.length} prepared` : '',
+    ].filter((c) => c !== '');
+    parts.push(`its spell list (${counts.join(', ')})`);
+  }
+  return parts;
+}
+
+const scoresText = (d: CharacterDoc) => ABILITIES.map((a) => d.abilities.base[a]).join('/');
 
 // ---------------------------------------------------------------------------
 
@@ -188,8 +276,9 @@ function Section({
 }
 
 export function Component() {
-  const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
+  const { sheet, doc, update, restore } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry(['essentials']);
+  const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
   // Tap-to-swap for ability scores (tap one value, then another).
   const [swapFrom, setSwapFrom] = useState<(typeof ABILITIES)[number] | null>(null);
 
@@ -201,6 +290,8 @@ export function Component() {
     return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
+  // Prompts the player can see now, so "N picks cleared" counts only those.
+  const activeChoices = new Set(sheet.resolvedChoices.map((r) => r.prompt.id));
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
   const subclassesFor = (entry: ClassLevelEntry) =>
     subclassOptions(registry.byType('subclass'), entry.ref, doc.rulesVersion, entry.subclass);
@@ -283,6 +374,117 @@ export function Component() {
     });
   };
 
+  /**
+   * Make a change that takes something away, then offer to put it back
+   * (UX-004). The recipe runs once; `describe` gets the doc on either side of
+   * it. A change that changed nothing offers nothing.
+   *
+   * Equipment is never part of it: after creation the inventory is the
+   * player's, not tied to the species, background or class that once supplied
+   * it, so an identity change leaves it alone. Removing items here would be its
+   * own silent loss.
+   */
+  const undoable = (
+    recipe: (d: CharacterDoc) => void,
+    describe: (before: CharacterDoc, after: CharacterDoc) => UndoNotice,
+    label?: string,
+  ) => {
+    const change = captureUpdate<CharacterDoc>((r) => update(r, label), recipe);
+    if (change === undefined || sameForUndo(change.before, change.after)) return;
+    const { title, detail } = describe(change.before, change.after);
+    undo.offer(change.before, change.after, title, detail);
+  };
+
+  /**
+   * Removing a class asks first, whichever class it is: it takes the class's
+   * picks, its subclass and its spell list with it. A level-1 class that was not
+   * the only one used to go on one tap, with its subclass picks and spells
+   * left behind.
+   */
+  const removeClass = async (entry: ClassLevelEntry) => {
+    const name = entry.ref.name;
+    const parts = classRemovalParts(doc, entry, activeChoices);
+    const clears = parts.length > 0 ? `Clears ${listJoin(parts)}.` : 'Nothing else is tied to it.';
+    const ok = await askConfirm({
+      title: `Remove ${name}?`,
+      detail: `${clears} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
+      confirmLabel: 'Remove class',
+      danger: true,
+    });
+    if (!ok) return;
+    const uid = refUid(entry.ref);
+    undoable(
+      (d) => {
+        const i = d.classes.findIndex((c) => refUid(c.ref) === uid);
+        const c = d.classes[i];
+        if (c === undefined) return;
+        d.classes.splice(i, 1);
+        pruneClass(d, c);
+      },
+      () => ({
+        title: `Removed ${name}`,
+        detail: parts.length > 0 ? `${listJoin(parts)} cleared` : undefined,
+      }),
+      `Removed ${name}`,
+    );
+  };
+
+  /** One level off a class. Its rolled HP for that level goes, so it can come back. */
+  const levelDownClass = (idx: number) => {
+    undoable(
+      (d) => {
+        const c = d.classes[idx];
+        if (c === undefined || c.levels <= 1) return;
+        c.levels -= 1;
+        c.hp = c.hp.slice(0, c.levels);
+      },
+      (before) => {
+        // From the snapshot the recipe ran on, not the render that scheduled it.
+        const c = before.classes[idx];
+        const lost = c?.hp[c.levels - 1];
+        return {
+          title: `${c?.ref.name ?? 'Class'} level ${c?.levels ?? 0} → ${(c?.levels ?? 1) - 1}`,
+          detail: typeof lost === 'number' ? `rolled ${lost} HP for that level cleared` : undefined,
+        };
+      },
+    );
+  };
+
+  /** Swap or clear a class's subclass; the old one's picks go with it. */
+  const setSubclass = (idx: number, next: { name: string; source: string } | undefined) => {
+    const removed: string[] = [];
+    undoable(
+      (d) => {
+        const c = d.classes[idx];
+        if (c === undefined) return;
+        if (c.subclass !== undefined) removed.push(...pruneChoicesFor(d, 'subclass', c.subclass));
+        c.subclass = next;
+      },
+      (before) => {
+        const c = before.classes[idx];
+        return {
+          title: `${c?.ref.name ?? 'Class'} subclass: ${c?.subclass?.name ?? 'none'} → ${next?.name ?? 'none'}`,
+          detail: picksCleared(before, removed, c?.subclass?.name, activeChoices),
+        };
+      },
+    );
+  };
+
+  /** Swap or clear the subrace; the old one's picks go with it. */
+  const setSubrace = (next: { name: string; source: string } | undefined) => {
+    const removed: string[] = [];
+    undoable(
+      (d) => {
+        if (d.subrace !== undefined) removed.push(...pruneOrigin(d, 'subrace', d.subrace));
+        d.subrace = next;
+      },
+      (before) => ({
+        title: `Subrace: ${before.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
+        detail: picksCleared(before, removed, before.subrace?.name, activeChoices),
+      }),
+    );
+  };
+
   const openChoices = () => {
     // Choices live inline under their origin now — jump to the first unmade one,
     // expanding whatever collapsed sections/details contain it.
@@ -299,7 +501,10 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-3">
-      <ChangeBar sheet={sheet} />
+      <div className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
+        <ChangeBar sheet={sheet} />
+        <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
+      </div>
 
       {sheet.pending.length > 0 && (
         <button
@@ -415,30 +620,9 @@ export function Component() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={async () => {
-                      // Removing the only level-1 class = swapping class; ask,
-                      // then clear it so the "Pick a class" list reopens.
-                      if (entry.levels <= 1 && doc.classes.length === 1) {
-                        const ok = await askConfirm({
-                          title: `Remove ${entry.ref.name}?`,
-                          detail:
-                            'Class-linked choices (skills, fighting styles…) reset. Pick a new class right after.',
-                          confirmLabel: 'Remove class',
-                          danger: true,
-                        });
-                        if (!ok) return;
-                      }
-                      update((d) => {
-                        const c = d.classes[idx];
-                        if (c === undefined) return;
-                        if (c.levels <= 1) {
-                          d.classes.splice(idx, 1);
-                          pruneChoicesFor(d, 'class', c.ref);
-                          return;
-                        }
-                        c.levels -= 1;
-                        c.hp = c.hp.slice(0, c.levels);
-                      });
+                    onClick={() => {
+                      if (entry.levels <= 1) void removeClass(entry);
+                      else levelDownClass(idx);
                     }}
                     className="h-8 w-8 rounded-full bg-surface-2 text-lg"
                     aria-label={
@@ -549,19 +733,8 @@ export function Component() {
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
                           : undefined
                       }
-                      onSelect={(e) =>
-                        update((d) => {
-                          const c = d.classes[idx];
-                          if (c !== undefined)
-                            c.subclass = { name: nameOf(e), source: sourceOf(e) };
-                        })
-                      }
-                      onDeselect={() =>
-                        update((d) => {
-                          const c = d.classes[idx];
-                          if (c !== undefined) c.subclass = undefined;
-                        })
-                      }
+                      onSelect={(e) => setSubclass(idx, { name: nameOf(e), source: sourceOf(e) })}
+                      onDeselect={() => setSubclass(idx, undefined)}
                     />
                   </div>
                 </details>
@@ -639,14 +812,28 @@ export function Component() {
                   ? `${doc.race.name}|${doc.race.source}`.toLowerCase()
                   : undefined
               }
-              onSelect={(e) =>
-                update((d) => {
-                  if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
-                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                  d.race = { name: nameOf(e), source: sourceOf(e) };
-                  d.subrace = undefined;
-                })
-              }
+              onSelect={(e) => {
+                const removed: string[] = [];
+                undoable(
+                  (d) => {
+                    if (d.race !== undefined) removed.push(...pruneOrigin(d, 'race', d.race));
+                    if (d.subrace !== undefined) {
+                      removed.push(...pruneOrigin(d, 'subrace', d.subrace));
+                    }
+                    d.race = { name: nameOf(e), source: sourceOf(e) };
+                    d.subrace = undefined;
+                  },
+                  (before, after) => ({
+                    title: `Species: ${before.race?.name ?? 'none'} → ${after.race?.name ?? 'none'}`,
+                    detail: picksCleared(
+                      before,
+                      removed,
+                      before.subrace === undefined ? before.race?.name : undefined,
+                      activeChoices,
+                    ),
+                  }),
+                );
+              }}
             />
           </div>
         </details>
@@ -666,18 +853,8 @@ export function Component() {
                     ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
                     : undefined
                 }
-                onSelect={(e) =>
-                  update((d) => {
-                    if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                    d.subrace = { name: nameOf(e), source: sourceOf(e) };
-                  })
-                }
-                onDeselect={() =>
-                  update((d) => {
-                    if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                    d.subrace = undefined;
-                  })
-                }
+                onSelect={(e) => setSubrace({ name: nameOf(e), source: sourceOf(e) })}
+                onDeselect={() => setSubrace(undefined)}
               />
             </div>
           </details>
@@ -696,12 +873,19 @@ export function Component() {
           <button
             type="button"
             onClick={() =>
-              update((d) => {
-                const arr = [15, 14, 13, 12, 10, 8];
-                ABILITIES.forEach((a, i) => {
-                  d.abilities.base[a] = arr[i] ?? 10;
-                });
-              })
+              undoable(
+                (d) => {
+                  const arr = [15, 14, 13, 12, 10, 8];
+                  ABILITIES.forEach((a, i) => {
+                    d.abilities.base[a] = arr[i] ?? 10;
+                  });
+                },
+                (before) => ({
+                  title: 'Applied standard array',
+                  detail: `was ${scoresText(before)}`,
+                }),
+                'Applied standard array',
+              )
             }
             className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
           >
@@ -716,11 +900,18 @@ export function Component() {
                 // 4d6 drop lowest
                 return dice.slice(1).reduce((s, v) => s + v, 0);
               });
-              update((d) => {
-                ABILITIES.forEach((a, i) => {
-                  d.abilities.base[a] = scores[i] ?? 10;
-                });
-              });
+              undoable(
+                (d) => {
+                  ABILITIES.forEach((a, i) => {
+                    d.abilities.base[a] = scores[i] ?? 10;
+                  });
+                },
+                (before, after) => ({
+                  title: `Rolled ability scores: ${scoresText(after)}`,
+                  detail: `was ${scoresText(before)}`,
+                }),
+                'Rolled ability scores',
+              );
             }}
             className="flex items-center gap-1 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
           >
@@ -842,12 +1033,21 @@ export function Component() {
                   ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
                   : undefined
               }
-              onSelect={(e) =>
-                update((d) => {
-                  if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
-                  d.background = { name: nameOf(e), source: sourceOf(e) };
-                })
-              }
+              onSelect={(e) => {
+                const removed: string[] = [];
+                undoable(
+                  (d) => {
+                    if (d.background !== undefined) {
+                      removed.push(...pruneOrigin(d, 'background', d.background));
+                    }
+                    d.background = { name: nameOf(e), source: sourceOf(e) };
+                  },
+                  (before, after) => ({
+                    title: `Background: ${before.background?.name ?? 'none'} → ${after.background?.name ?? 'none'}`,
+                    detail: picksCleared(before, removed, before.background?.name, activeChoices),
+                  }),
+                );
+              }}
             />
           </div>
         </details>

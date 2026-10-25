@@ -449,6 +449,23 @@ describe('folding rapid edits into one history entry (UX-005)', () => {
     expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined, undefined, undefined]);
   });
 
+  it('records a restore under the label it is given, and as a restore otherwise', async () => {
+    const { session, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    const snapshot = structuredClone(session.getState().doc);
+    if (snapshot === null) throw new Error('no doc');
+    session.getState().restore({ ...snapshot, play: { ...snapshot.play, currentHp: 1 } });
+    await session.getState().flush();
+    session.getState().restore(snapshot, 'Undo: Species: Testfolk → Dragonborn');
+    await session.getState().flush();
+    expect(calls().map((c) => c.label)).toEqual([
+      'HP 0→5',
+      'Restored from history',
+      'Undo: Species: Testfolk → Dragonborn',
+    ]);
+  });
+
   it('has nothing to extend when history kept no row', async () => {
     const { session, record, edit, calls } = burstSession();
     record.mockImplementationOnce(async () => undefined);

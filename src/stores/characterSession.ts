@@ -37,8 +37,12 @@ export interface CharacterSessionState {
   load(id: string): Promise<boolean>;
   /** Mutate the doc via a recipe; persists (debounced) and bumps rev. */
   update: DocUpdater;
-  /** Replace the doc with a history snapshot (records its own entry). */
-  restore(snapshot: CharacterDoc): void;
+  /**
+   * Replace the doc with an earlier snapshot. It records its own history entry,
+   * under `label` when given (an undo names what it undid) and as a restore from
+   * history otherwise.
+   */
+  restore(snapshot: CharacterDoc, label?: string): void;
   flush(characterId?: string): Promise<void>;
   flushAll(): Promise<void>;
   retryFailedSaves(): Promise<void>;
@@ -326,7 +330,7 @@ export function createCharacterSessionStore({
       scheduleSave(draft, typeof label === 'function' ? label(draft) : label);
     },
 
-    restore(snapshot) {
+    restore(snapshot, label = 'Restored from history') {
       const state = get();
       if (
         state.doc === null ||
@@ -343,7 +347,7 @@ export function createCharacterSessionStore({
         slot.epoch++;
       }
       set((current) => ({ doc: restored, rev: current.rev + 1 }));
-      scheduleSave(restored, 'Restored from history', true);
+      scheduleSave(restored, label, true);
     },
 
     flush(characterId) {
