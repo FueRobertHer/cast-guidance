@@ -1,6 +1,6 @@
 # Cast Guidance: future work
 
-Last reviewed: 2026-09-09 (`b335754`)
+Last reviewed: 2026-10-25 (`f1ba8fe`)
 
 The planning document for open product and engineering work. It tracks what
 **remains**; completed work lives in git history, not here.
@@ -49,16 +49,17 @@ worker-based search, history, self-contained scoped character exports, PWA
 update prompting, transactional imports with validation, class-aware creation
 guidance, edition-correct descriptions, persistent navigation, serialized save
 queues with visible recovery, and unit + IndexedDB + component test harnesses in
-CI.
+CI, gated on coverage floors and a bundle budget.
 
 | Check | Current result |
 |---|---|
-| Frozen dependency install | Pass: 555 packages |
-| Lint/format | Pass: 223 files |
-| TypeScript | Pass |
-| Unit + integration tests | Pass: 99 files, 942 tests |
-| Coverage report | `bun run test:coverage`: ~59% statements, ~51% branches (engine/guards high, UI improving) |
-| Production/PWA build | Pass |
+| Frozen dependency install | Pass: 556 packages |
+| Lint/format | Pass: 292 files |
+| TypeScript | Pass (app, `vite.config.ts`, and the bundle budget scripts) |
+| Unit + integration tests | Pass: 134 files, 1,328 tests |
+| Coverage gate | `bun run test:coverage`: 81.09% statements, 71.82% branches, 72.65% functions, 82.92% lines. CI fails below the `vite.config.ts` floors of 80 / 70 / 71 / 81. |
+| Production/PWA build | Pass: 48 unique precache entries |
+| Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 381,418 B raw, 119,846 B gzip (budget 420,000 / 132,000); initial JS 532,142 B raw, 170,740 B gzip (586,000 / 188,000); total JS 916,214 B (1,008,000); largest chunk 381,418 B (420,000); CSS 42,544 B (47,000); precache 961,244 B (1,058,000). |
 | Real pinned-dataset audit | Last run 2026-07-15: 48 files; 936 spells; 40 versioned `replaceArr` warnings. Not re-run since (network-gated; the mirror CDN is unreachable from CI and from sandboxed sessions). |
 | Browser E2E and automated accessibility (axe) | No harness yet |
 
@@ -264,14 +265,14 @@ work:
 
 ### Testing, documentation, and release operations
 
-- Choose the risk-based threshold *targets* per area (engine, owned import
-  schemas, persistence, loader, search protocol, gameplay commands) that
-  TEST-001 then enforces in CI; add property/fuzz coverage (dice, choices,
-  entry rendering, copy/mod, migrations, hostile imports) and golden 2014/2024
-  characters. Coverage reporting (`bun run test:coverage`) is wired.
-- Add a bundle-analysis script to sit behind TEST-001's budget, and the E2E
-  harness TEST-004 needs (repeatable `bun run check` / `bun run data:audit` and
-  coverage reporting are already wired; `tests-fixtures` is linted;
+- Choose risk-based threshold *targets* per area (engine, owned import
+  schemas, persistence, loader, search protocol, gameplay commands) on top of
+  the global coverage floors CI already enforces; add property/fuzz coverage
+  (dice, choices, entry rendering, copy/mod, migrations, hostile imports) and
+  golden 2014/2024 characters.
+- Add a bundle-analysis view (what is in each chunk) to explain a bundle budget
+  failure, and the E2E harness TEST-004 needs (`bun run ci` mirrors the CI
+  gates locally; `bun run data:audit` is wired; `tests-fixtures` is linted;
   `passWithNoTests` is off).
 - Document architecture, persistence/migrations, automation limits, homebrew,
   troubleshooting, and the deployment fallback/cache policy (Bun/Node versions
@@ -324,9 +325,11 @@ device checks pass.
 The P1 index needs no maintenance: closing an issue is the update. What does
 drift is everything above and below it.
 
-- Re-run `bun run check` and `bun run test:coverage` and refresh the baseline
-  table whenever it is quoted anywhere that matters. It was two months and
-  thirteen points of coverage stale at the last review.
+- Re-run `bun run ci` and refresh the baseline table whenever it is quoted
+  anywhere that matters. When coverage or bundle size improves, ratchet the
+  floors in `vite.config.ts` and the budgets in `scripts/bundle-budget.json`.
+  Before CI enforced them, the table drifted about 22 points of coverage out
+  of date between reviews.
 - When a P2 or P3 theme grows a stable id and an acceptance signal, it has
   become an issue. File it and leave a one-line pointer, rather than letting
   the theme quietly accumulate specifics that no PR can close.

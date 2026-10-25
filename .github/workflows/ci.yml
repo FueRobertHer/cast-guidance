@@ -1,7 +1,9 @@
 name: CI
 
 # Runs the local green baseline on every push and PR: frozen install, lint,
-# typecheck, unit tests, and a production/PWA build, then reports bundle sizes.
+# typecheck, unit tests with coverage thresholds, a production/PWA build, and a
+# bundle budget. Coverage floors live in vite.config.ts and byte budgets in
+# scripts/bundle-budget.json; `bun run ci` runs the same gates locally.
 on:
   push:
     branches: [main]
@@ -39,32 +41,36 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Unit tests
-        run: bun run test
+      - name: Unit tests + coverage gate
+        # Fails when any global coverage metric drops under its threshold.
+        run: bun run test:coverage
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          summary=coverage/coverage-summary.json
+          {
+            echo "### Coverage"
+            echo ""
+            if [ -f "$summary" ]; then
+              echo "| Metric | Covered | Total | % |"
+              echo "| --- | ---: | ---: | ---: |"
+              for metric in statements branches functions lines; do
+                jq -r --arg m "$metric" \
+                  '.total[$m] | "| \($m) | \(.covered) | \(.total) | \(.pct) |"' "$summary"
+              done
+            else
+              echo "_No coverage summary: the test step did not produce one._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Production / PWA build
         run: bun run build
 
-      - name: Report bundle sizes
-        if: always()
-        run: |
-          {
-            echo "### Bundle sizes (\`dist/assets\`)"
-            echo ""
-            echo "| File | Size |"
-            echo "| --- | ---: |"
-            if [ -d dist/assets ]; then
-              for f in $(ls -1 dist/assets/*.js dist/assets/*.css 2>/dev/null | sort); do
-                size=$(du -h "$f" | cut -f1)
-                echo "| \`$(basename "$f")\` | $size |"
-              done
-              total=$(du -sh dist | cut -f1)
-              echo ""
-              echo "**Total \`dist/\`:** $total"
-            else
-              echo "| _no build output_ | — |"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Bundle budget
+        # Fails when any metric in scripts/bundle-budget.json is exceeded, or
+        # when dist/ cannot be measured. Also writes its table to the summary.
+        run: bun run bundle:budget
 
       - name: Upload build artifact
         if: always()
