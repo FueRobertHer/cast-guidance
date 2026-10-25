@@ -17,8 +17,8 @@ function prompt(kind: ChoicePrompt['kind'], id: string, label: string): ChoicePr
 function mixedDoc(allowedSources: string[]): CharacterDoc {
   const doc = newCharacterDoc('s1', 'Mixed', 't');
   doc.allowedSources = allowedSources;
-  doc.race = { name: 'Human', source: 'PHB' };
-  doc.subrace = { name: 'Variant', source: 'PHB' };
+  doc.race = { name: 'Eladrin', source: 'MPMM' };
+  doc.subrace = { name: 'Duergar', source: 'MTF' };
   doc.background = { name: 'Feylost', source: 'WBtW' };
   doc.classes = [
     {
@@ -68,6 +68,8 @@ describe('outOfPolicyPicks (GAME-005)', () => {
     // Read-only: naming a pick never takes it back.
     expect(doc).toEqual(before);
     expect(picks.map((p) => [p.label, p.source])).toEqual([
+      ['Eladrin', 'MPMM'],
+      ['Duergar', 'MTF'],
       ['Feylost', 'WBtW'],
       ['Twilight Domain', 'TCE'],
       ['Fey Touched', 'TCE'],
@@ -80,6 +82,8 @@ describe('outOfPolicyPicks (GAME-005)', () => {
 
   it('finds nothing when the character has no list', () => {
     expect(outOfPolicyPicks(mixedDoc([]), resolved)).toEqual([]);
-    expect(outOfPolicyPicks(mixedDoc(['PHB', 'TCE', 'XGE', 'WBTW']), resolved)).toEqual([]);
+    expect(
+      outOfPolicyPicks(mixedDoc(['PHB', 'TCE', 'XGE', 'WBTW', 'MPMM', 'MTF']), resolved),
+    ).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@
  * Lines read "from → to", neutral about direction, so the same helper serves a
  * restore preview (current → snapshot) and an undo (now → before).
  */
+import { characterSourceList } from '@/data5e/sourceNames';
 import { ABILITIES, type CharacterDoc, type EntityRef } from '@/engine/types';
 
 export type ChangeKind =
@@ -194,10 +195,11 @@ function signedNames(added: string[], removed: string[]): string {
  * to or from one is a change of kind, not a diff of names: turning a list on
  * writes every allowed book at once, and "+PHB +81 more" says nothing useful.
  */
-function sourcesLine(from: string[], to: string[]): string {
-  const books = (list: string[]) => (Array.isArray(list) ? list : []);
-  const prev = books(from);
-  const next = books(to);
+function sourcesLine(from: unknown, to: unknown): string {
+  // Read the way the pickers read it, so junk entries count for nothing and
+  // a respelling ("phb" to "PHB") is not reported as a swap.
+  const prev = characterSourceList(from);
+  const next = characterSourceList(to);
   if (prev.length === 0 && next.length > 0)
     return `Sources: limited to ${next.length} book${next.length === 1 ? '' : 's'}`;
   if (prev.length > 0 && next.length === 0) return 'Sources: book restriction removed';

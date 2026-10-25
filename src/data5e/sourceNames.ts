@@ -302,6 +302,25 @@ export function canonicalSource(source: string): string {
   return source;
 }
 
+/**
+ * A character's `allowedSources`, cleaned up once as it is read: strings only,
+ * trimmed, empties dropped, each id respelled the way the dataset spells it
+ * ("phb" reads as "PHB"), and duplicates removed. An id this device does not
+ * know is kept as written, so a friend's homebrew book survives the round trip.
+ * The guards only check that the field is an array, so this has to tolerate
+ * anything inside it.
+ */
+export function characterSourceList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const id = v.trim();
+    if (id !== '') out.add(canonicalSource(id));
+  }
+  return [...out];
+}
+
 /** Category a source belongs to; unrecognized codes are grouped as 'other'. */
 export function sourceGroup(source: string): SourceGroup {
   return entryFor(source)?.[1] ?? 'other';

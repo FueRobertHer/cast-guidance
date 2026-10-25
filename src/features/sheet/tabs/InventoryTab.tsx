@@ -14,6 +14,7 @@ import { sourceName } from '@/data5e/sourceNames';
 import type { EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
+import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { Sheet } from '@/ui/sheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -163,7 +164,13 @@ export function AddItemDrawer({
                   className="flex w-full items-center justify-between border-b border-surface-2/40 px-1 py-2.5 text-left text-sm last:border-b-0"
                 >
                   <span className="truncate">{nameOf(e)}</span>
-                  <span className="text-xs text-ink-muted">{sourceOf(e)}</span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {/* Only reachable through "show them anyway". */}
+                    {scope === 'character' && !policyAllows(policy, sourceOf(e)) && (
+                      <OutsideSourcesChip />
+                    )}
+                    <span className="text-xs text-ink-muted">{sourceOf(e)}</span>
+                  </span>
                 </button>
               </Sheet.Close>
             ))}

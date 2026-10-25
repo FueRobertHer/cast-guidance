@@ -28,7 +28,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import type { SearchSourceFilter } from './search/protocol';
-import { canonicalSource, knownSources, type SourceGroup, sourceGroup } from './sourceNames';
+import { characterSourceList, knownSources, type SourceGroup, sourceGroup } from './sourceNames';
 
 export type SourcePolicy =
   | { mode: 'all'; except: readonly string[] }
@@ -189,24 +189,9 @@ export async function ensureSourcesVisible(sources: readonly string[]): Promise<
 /** Whose list a picker is narrowing by, which decides how it explains itself. */
 export type PolicyScope = 'device' | 'character';
 
-/**
- * A character's `allowedSources`, cleaned up once as it is read: strings only,
- * trimmed, empties dropped, each id respelled the way the dataset spells it
- * ("phb" reads as "PHB"), and duplicates removed. An id this device does not
- * know is kept as written, so a friend's homebrew book survives the round trip.
- * The guards only check that the field is an array, so this has to tolerate
- * anything inside it.
- */
-export function characterSourceList(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out = new Set<string>();
-  for (const v of raw) {
-    if (typeof v !== 'string') continue;
-    const id = v.trim();
-    if (id !== '') out.add(canonicalSource(id));
-  }
-  return [...out];
-}
+// Lives with the source table (React- and Dexie-free) so the history diff can
+// read a list the same way the pickers do without importing this module.
+export { characterSourceList };
 
 /** The character's list as a policy, or `undefined` when it restricts nothing. */
 export function characterPolicy(raw: unknown): SourcePolicy | undefined {

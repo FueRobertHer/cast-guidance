@@ -221,5 +221,12 @@ describe("InventoryTab item search under a character's own sources", () => {
     expect(screen.getByRole('button', { name: /Longsword/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Sword of Answering/ })).toBeNull();
     expect(screen.getByText(/1 outside this character's sources/)).toBeTruthy();
+    expect(screen.queryByText("Not in this character's sources")).toBeNull();
+
+    // Shown anyway on request, and labelled as outside the list.
+    fireEvent.click(screen.getByText(/1 outside this character's sources/));
+    const revealed = screen.getByRole('button', { name: /Sword of Answering/ });
+    expect(revealed.textContent).toContain("Not in this character's sources");
+    expect(screen.getByRole('button', { name: /Longsword/ }).textContent).not.toContain('Not in');
   });
 });

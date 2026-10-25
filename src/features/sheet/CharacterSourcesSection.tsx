@@ -1,3 +1,4 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { ChevronRight, ChevronUp } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useRegistry } from '@/data5e/hooks';
@@ -8,9 +9,17 @@ import {
   type SourcePolicy,
   useSourcePolicy,
 } from '@/data5e/sourceFilter';
-import { SOURCE_GROUP_LABELS, SOURCE_GROUPS, sourceGroup, sourceName } from '@/data5e/sourceNames';
+import {
+  SOURCE_GROUP_LABELS,
+  SOURCE_GROUPS,
+  type SourceGroup,
+  sourceGroup,
+  sourceName,
+} from '@/data5e/sourceNames';
+import { homebrewRepo } from '@/db/homebrewRepo';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
+import { useDataStatus } from '@/stores/dataStatus';
 import { outOfPolicyPicks } from './sourceCues';
 
 const sorted = (list: Iterable<string>) => [...list].sort();
@@ -36,11 +45,20 @@ const PRESETS: ReadonlyArray<{ id: string; label: string; sources: () => string[
  * The device settings as a character list. "All except" becomes every book on
  * this device minus the exceptions; a device that hides nothing becomes no
  * restriction, for the same reason as the "Everything" preset.
+ *
+ * `undefined` when the device shows nothing at all: as a character list that
+ * would be empty, which means the opposite, no restriction.
  */
-function fromDevice(device: SourcePolicy, onDevice: readonly string[]): string[] {
+export function fromDevice(
+  device: SourcePolicy,
+  onDevice: readonly string[],
+): string[] | undefined {
   if (!isPolicyNarrowed(device)) return [];
-  if (device.mode === 'only') return sorted(device.sources);
-  return sorted(onDevice.filter((s) => !device.except.includes(s)));
+  const list =
+    device.mode === 'only'
+      ? sorted(device.sources)
+      : sorted(onDevice.filter((s) => !device.except.includes(s)));
+  return list.length > 0 ? list : undefined;
 }
 
 /**
@@ -134,10 +152,17 @@ export function CharacterSourcesSection({
   );
 }
 
+/** Homebrew gets its own heading rather than falling into "everything else". */
+type Section = SourceGroup | 'homebrew';
+
+const SECTION_LABELS: Record<Section, string> = { ...SOURCE_GROUP_LABELS, homebrew: 'Homebrew' };
+const SECTION_ORDER: readonly Section[] = [...SOURCE_GROUPS, 'homebrew'];
+
 interface Row {
   source: string;
   name: string;
   onDevice: boolean;
+  section: Section;
 }
 
 function SourceChecklist({
@@ -149,15 +174,27 @@ function SourceChecklist({
 }) {
   const registry = useRegistry();
   const device = useSourcePolicy();
+  // The books "here" come from the registry, which only holds packs that have
+  // arrived, so a list written out from it mid-download can miss some.
+  const downloading = useDataStatus((s) => s.phase !== 'done');
+  const brewSources = useLiveQuery(
+    async () => new Set((await homebrewRepo.listSafe()).files.flatMap((r) => r.sourceIds)),
+    [],
+  );
   const lastHintId = useId();
   const onDevice = useMemo(() => sorted(registry?.sourceCounts().keys() ?? []), [registry]);
 
   const rows: Row[] = useMemo(() => {
     const here = new Set(onDevice);
     return sorted(new Set([...onDevice, ...list]))
-      .map((source) => ({ source, name: sourceName(source), onDevice: here.has(source) }))
+      .map((source) => ({
+        source,
+        name: sourceName(source),
+        onDevice: here.has(source),
+        section: brewSources?.has(source) === true ? ('homebrew' as const) : sourceGroup(source),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [onDevice, list]);
+  }, [onDevice, list, brewSources]);
 
   const restricted = list.length > 0;
   const isOn = (source: string) => !restricted || list.includes(source);
@@ -204,12 +241,21 @@ function SourceChecklist({
     <div className="flex flex-col gap-2">
       <button
         type="button"
-        onClick={() => onChange(fromDeviceList)}
-        disabled={sameList(fromDeviceList, list)}
+        onClick={() => {
+          if (fromDeviceList !== undefined) onChange(fromDeviceList);
+        }}
+        disabled={fromDeviceList === undefined || sameList(fromDeviceList, list)}
         className="self-start rounded-lg border border-surface-2 px-3 py-1 text-xs text-ink-muted hover:text-ink disabled:opacity-50"
       >
         Copy this device&apos;s settings
       </button>
+      {downloading && (
+        <p className="text-xs text-ink-muted">
+          Game data is still downloading. Unticking a book from No restriction, or copying a device
+          setting that hides a few books, writes out the books here now, so it can miss some that
+          are still on the way. Check the list again once the download finishes.
+        </p>
+      )}
       {restricted && list.length === 1 && (
         <p id={lastHintId} className="text-xs text-ink-muted">
           A list needs at least one book. Choose No restriction to clear it.
@@ -221,19 +267,23 @@ function SourceChecklist({
       {missing.length > 0 && (
         <div className="flex flex-col rounded-lg bg-surface-2/40">{missing.map(checkbox)}</div>
       )}
-      {SOURCE_GROUPS.map((group) => {
-        const inGroup = rows.filter((r) => r.onDevice && sourceGroup(r.source) === group);
+      {SECTION_ORDER.map((section) => {
+        const inGroup = rows.filter((r) => r.onDevice && r.section === section);
         if (inGroup.length === 0) return null;
         const on = inGroup.filter((r) => isOn(r.source)).length;
         return (
-          <details key={group} open={group === 'core'} className="group/books">
+          <details
+            key={section}
+            open={section === 'core' || section === 'homebrew'}
+            className="group/books"
+          >
             <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg bg-surface-2/40 px-3 py-2 text-sm font-semibold">
               <ChevronRight
                 aria-hidden
                 size={14}
                 className="shrink-0 text-ink-muted transition-transform group-open/books:rotate-90"
               />
-              <span className="min-w-0 flex-1 truncate">{SOURCE_GROUP_LABELS[group]}</span>
+              <span className="min-w-0 flex-1 truncate">{SECTION_LABELS[section]}</span>
               <span className="shrink-0 text-xs font-normal text-ink-muted">
                 {on}/{inGroup.length}
               </span>

@@ -360,6 +360,43 @@ describe("BuildPage under a character's own sources", () => {
     expect(screen.getByText(/2 outside this character's sources/)).toBeTruthy();
   });
 
+  // One entity per picker from a book the character's list leaves out. Every
+  // other entity in the test world comes from a listed book.
+  const outside: Array<[string, string, Record<string, unknown>]> = [
+    ['class', 'Outrider', { name: 'Outrider', source: 'OUT' }],
+    [
+      'subclass',
+      'Path of Elsewhere',
+      {
+        name: 'Path of Elsewhere',
+        shortName: 'Elsewhere',
+        source: 'OUT',
+        className: 'Warrior',
+        classSource: 'TST',
+      },
+    ],
+    ['race', 'Outfolk', { name: 'Outfolk', source: 'OUT' }],
+    ['subrace', 'Far Testfolk', { name: 'Far Testfolk', source: 'OUT', raceName: 'Testfolk' }],
+    ['background', 'Outlander', { name: 'Outlander', source: 'OUT' }],
+  ];
+
+  it.each(outside)('passes the list to the %s picker', (type, name, entity) => {
+    extra.current = [
+      [type, entity],
+      // A listed subrace, so the subrace picker has something to show.
+      ['subrace', { name: 'Near Testfolk', source: 'TST', raceName: 'Testfolk' }],
+    ];
+    renderBuild((d) => {
+      d.allowedSources = ['TST', 'TS2', 'XTST', 'PHB'];
+    });
+    expect(screen.queryByRole('button', { name, hidden: true })).toBeNull();
+    cleanup();
+
+    // The same page with no list offers it, so the list is what hid it.
+    renderBuild();
+    expect(screen.queryByRole('button', { name, hidden: true })).not.toBeNull();
+  });
+
   it('edits the list from a Sources section, through the doc updater', () => {
     const { getDoc } = renderBuild();
     expect(screen.getByText('No restriction', { selector: 'summary *' })).toBeTruthy();

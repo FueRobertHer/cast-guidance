@@ -154,13 +154,15 @@ describe("OriginChoices under a character's own sources (GAME-005)", () => {
     label: 'Feat',
     count: 1,
     options: [
-      { id: 'alert|phb', label: 'Alert' },
-      { id: 'telekinetic|tce', label: 'Telekinetic' },
+      // Described, as the engine's feat options are, so they render as the
+      // readable list that carries advisories.
+      { id: 'alert|phb', label: 'Alert', description: 'Always on the lookout.' },
+      { id: 'telekinetic|tce', label: 'Telekinetic', description: 'Move things with your mind.' },
     ],
   };
 
-  function renderFeats(allowedSources: string[]) {
-    const doc = { rulesVersion: '2014', choices: {}, allowedSources } as unknown as CharacterDoc;
+  function renderFeats(allowedSources: string[], choices: CharacterDoc['choices'] = {}) {
+    const doc = { rulesVersion: '2014', choices, allowedSources } as unknown as CharacterDoc;
     const sheet = { pending: [featPick], resolvedChoices: [] } as unknown as DerivedSheet;
     render(
       <OriginChoices
@@ -180,5 +182,14 @@ describe("OriginChoices under a character's own sources (GAME-005)", () => {
     cleanup();
     renderFeats([]);
     expect(screen.queryByText('Telekinetic')).not.toBeNull();
+  });
+
+  it('keeps a chosen feat from outside the list, and says where it is from', () => {
+    renderFeats(['PHB'], { [featPick.id]: ['telekinetic|tce'] });
+    const kept = screen.getByText('Telekinetic').closest('button');
+    expect(kept?.getAttribute('aria-pressed')).toBe('true');
+    expect(kept?.textContent).toContain("From a book outside this character's sources.");
+    // A feat from a listed book carries no such cue.
+    expect(screen.getByText('Alert').closest('button')?.textContent).not.toContain('outside');
   });
 });

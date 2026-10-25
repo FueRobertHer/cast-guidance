@@ -58,8 +58,10 @@ set on its Build page. It travels inside `character`, so the envelope and
 `schemaVersion` are unchanged.
 
 - **Empty, missing, or no usable strings** means no restriction. Exports made
-  before the list was editable read this way, and so does any entry that is not
-  a string (the guards only check that the field is an array).
+  before the list was editable read this way.
+- **Entries that are not strings are ignored** (the guards only check that the
+  field is an array), as are blank strings. A list with at least one usable
+  string still restricts.
 - **A non-empty list** narrows this character's pickers (classes, species,
   backgrounds, feats, optional features, spells to learn, item search) to those
   books. It replaces the importing device's own source settings for this
