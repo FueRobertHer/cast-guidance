@@ -6,7 +6,7 @@ import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { PlayState, SpellcastingBlock } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
-import { announce } from '@/stores/announcer';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -117,6 +117,10 @@ function rollConcentration(
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
+  // Keyed by character, so a settling HP line is only ever about the one it
+  // was for; leaving the tab or the character drops one still settling.
+  const hpKey = `hp:${doc?.id ?? ''}`;
+  useEffect(() => () => cancelAnnouncement(hpKey), [hpKey]);
   // Which resource each castable spell will spend, keyed by class + spell, held
   // only for as long as the tab is open: a pick is about this cast, not a
   // setting.
@@ -297,7 +301,7 @@ export function Component() {
 
   /** Say where HP ended up, once the taps stop; see {@link HP_SETTLE_MS}. */
   const sayHp = (after: Pick<PlayState, 'currentHp' | 'tempHp'>) =>
-    announce(hpSpeech(after, sheet.maxHp.value), { key: 'hp', settleMs: HP_SETTLE_MS });
+    announce(hpSpeech(after, sheet.maxHp.value), { key: hpKey, settleMs: HP_SETTLE_MS });
   const hpDelta = async (delta: number) => {
     const after = { currentHp: play.currentHp, tempHp: play.tempHp };
     // Healing is a plain apply; damage may force a concentration save.

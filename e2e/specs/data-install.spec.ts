@@ -199,8 +199,8 @@ test.describe('data installs', () => {
     await expect(banner).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(1);
     // The alert is the speaker; the announcer does not say it a second time.
-    await expect(announcements(page, 'assertive').filter({ hasText: 'failed' })).toHaveCount(0);
-    await expect(announcements(page, 'polite').filter({ hasText: 'failed' })).toHaveCount(0);
+    const saidAsWell = () => announcements(page, 'any').filter({ hasText: /fail/i });
+    await expect(saidAsWell()).toHaveCount(0);
 
     // Nothing moved: the old release is the one in use and still whole, and
     // everything the attempt had staged was pruned.
@@ -213,6 +213,9 @@ test.describe('data installs', () => {
     await openRacesInApp(page);
     await expect(libraryEntry(page, SHARED_RACE)).toBeVisible();
     await expect(libraryEntry(page, NEXT_ONLY_RACE)).toHaveCount(0);
+    // Checked again after these steps, which take longer than any throttle:
+    // a polite duplicate held back by one would have landed by now.
+    await expect(saidAsWell()).toHaveCount(0);
 
     // Retry from the banner, holding the last file so the install is caught
     // mid-flight: the old release is still the one in use until the swap.
@@ -222,6 +225,7 @@ test.describe('data installs', () => {
     await banner.getByRole('button', { name: 'Retry' }).click();
     await expect.poll(() => mirror.hits.get(`${NEXT_TAG}:${LAST_FILE}`)).toBe(failedHits + 1);
     await expect(dataProgress(page)).toBeVisible();
+    await expect(saidAsWell()).toHaveCount(0);
     expect(await getSetting(page, 'dataTag')).toBe(PINNED_TAG);
     expect(await countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
     // Read again, not just still on screen: Settings and the library mount

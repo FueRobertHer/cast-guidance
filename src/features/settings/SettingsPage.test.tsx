@@ -25,10 +25,10 @@ vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
 import { flushLanded, noteFileLanded } from '@/data5e/landing';
-import { OFFLINE_ANNOUNCED_KEY } from '@/features/onboarding/OfflineReadyNotice';
 import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { OFFLINE_ANNOUNCED_KEY } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
 import { DataBanner } from '@/ui/DataBanner';
 import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
@@ -249,6 +249,61 @@ describe('SettingsPage data announcements', () => {
     await screen.findByText(/Update failed/);
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByRole('alert').textContent).toContain('Update to v2.33.0 failed');
+  });
+
+  it('decides a failure line is not an alert once, and a banner Retry does not change that', async () => {
+    // The line stays on screen through a Retry from the banner. Read from the
+    // live phase, it became an alert the moment the retry moved the phase
+    // on, and stayed one after the retry worked.
+    loader.updateToTag.mockImplementationOnce(() => {
+      const status = dataStatusStore.getState();
+      status.setPhase('error', 'HTTP 500');
+      status.setFailedTag('v2.33.0');
+      return Promise.reject(new Error('HTTP 500'));
+    });
+    let finish: () => void = () => undefined;
+    loader.updateToTag.mockImplementationOnce(() => {
+      dataStatusStore.getState().beginRun();
+      return new Promise<void>((resolve) => {
+        finish = () => {
+          dataStatusStore.getState().setPhase('done');
+          resolve();
+        };
+      });
+    });
+    renderInShell();
+    await installVersion('v2.33.0');
+    const line = (await screen.findByText(/^Update failed: HTTP 500/)).parentElement;
+    const roles: Array<string | null> = [line?.getAttribute('role') ?? null];
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(loader.updateToTag).toHaveBeenCalledTimes(2));
+    roles.push(line?.getAttribute('role') ?? null);
+    await act(async () => finish());
+    roles.push(line?.getAttribute('role') ?? null);
+
+    expect(roles).toEqual([null, null, null]);
+    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+  });
+
+  it('decides a download failure line is not an alert once, through a banner Retry', async () => {
+    loader.downloadAllPacks.mockImplementationOnce(() => {
+      dataStatusStore.getState().setPhase('error', 'offline');
+      return Promise.reject(new Error('offline'));
+    });
+    // The banner's Retry re-arms the background queue.
+    loader.retryDataLayer.mockImplementationOnce(() => {
+      dataStatusStore.getState().beginRun();
+    });
+    renderInShell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    const line = await screen.findByText(/^Download failed: offline/);
+    expect(line.getAttribute('role')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(loader.retryDataLayer).toHaveBeenCalledOnce());
+    act(() => dataStatusStore.getState().setPhase('done'));
+    expect(screen.getByText(/^Download failed: offline/).getAttribute('role')).toBeNull();
   });
 
   it('keeps a failed version check an alert, since nothing else reports it', async () => {

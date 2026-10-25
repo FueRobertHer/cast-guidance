@@ -665,6 +665,21 @@ describe('library search announcements', () => {
     expect(spoken()).toEqual(['2 results']);
   });
 
+  it('says a new query that has the same count as the last', async () => {
+    // Both at the search's limit, so both say "30 or more results".
+    const page = (prefix: string) => ({
+      hits: Array.from({ length: 30 }, (_, i) => hit(`${prefix} ${i}`)),
+      hiddenCount: 0,
+    });
+    searchAll.mockImplementation((q: string) => Promise.resolve(page(q)));
+    render(tree());
+    type('fire');
+    await settled();
+    type('cold');
+    await settled();
+    expect(spoken()).toEqual(['30 or more results', '30 or more results']);
+  });
+
   it('says when nothing matches, and what is hidden', async () => {
     searchAll.mockResolvedValue({ hits: [], hiddenCount: 4 });
     render(tree());
@@ -685,6 +700,18 @@ describe('library search announcements', () => {
     search.current = { ...search.current, indexVersion: 2 };
     view.rerender(tree());
     await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(2));
+    await settled();
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('drops a count still waiting when the page goes away', async () => {
+    searchAll.mockResolvedValue({ hits: [hit('Fireball')], hiddenCount: 0 });
+    const view = render(tree());
+    type('fire');
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(1));
+    // Answered, and its count waiting out the settle.
+    await pause(250);
+    view.unmount();
     await settled();
     expect(getAnnouncerState().emitted).toBe(0);
   });

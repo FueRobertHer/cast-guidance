@@ -16,12 +16,12 @@ import { usePersistentStorage } from '@/lib/persistentStorage';
 import { storageErrorText } from '@/lib/storageErrors';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce } from '@/stores/announcer';
-import { useDataStatus } from '@/stores/dataStatus';
-import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { dataStatusStore, useDataStatus } from '@/stores/dataStatus';
+import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { errorText } from '@/stores/notices';
+import { offlineReadyAnnounced } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
 import { askConfirm } from '@/ui/dialogs';
-import { offlineReadyAnnounced } from '../onboarding/OfflineReadyNotice';
 import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
 
@@ -65,8 +65,6 @@ export function Component() {
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
   const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
-  const dataFailedTag = useDataStatus((s) => s.failedTag);
-  const dbOpen = useDbLifecycle((s) => s.state === 'open');
   const queueId = useId();
   const [offline, setOffline] = useState<{ cached: number; total: number }>();
   /** Set when the offline inventory itself could not be read. */
@@ -75,16 +73,18 @@ export function Component() {
   const [updating, setUpdating] = useState(false);
   /**
    * The last thing the data section has to say. `failed` decides whether it is
-   * announced and styled as a failure; `failedTag` additionally means there is
-   * a specific install to retry.
+   * styled as a failure; `failedTag` additionally means there is a specific
+   * install to retry; `alert` whether the line is the alert that says it (see
+   * `alertsHere`).
    */
   const [updateMsg, setUpdateMsg] = useState<{
     text: string;
     failed?: boolean;
     failedTag?: string;
+    alert?: boolean;
   }>();
   const [downloading, setDownloading] = useState(false);
-  const [downloadFailed, setDownloadFailed] = useState<string>();
+  const [downloadFailed, setDownloadFailed] = useState<{ text: string; alert: boolean }>();
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string>();
   const { estimate, cachedBytes } = useStorageUsage(phase);
@@ -142,14 +142,21 @@ export function Component() {
   /** Non-undefined only when the last install attempt failed, and it names it. */
   const failedInstallTag = updateMsg?.failedTag;
   /**
-   * Whether the shell's DataBanner is alerting this very failure (A11Y-002).
-   * Then the line here is a visual, so one failure is not two alerts read back
-   * to back; any failure the banner is not showing stays an alert here.
+   * Whether a failure line here is the alert that says it (A11Y-002). Not when
+   * the shell's DataBanner is alerting that very failure, so one failure is not
+   * two alerts read back to back. Decided once, as the failure is recorded:
+   * read from the live phase, a stale line gained the alert role the moment a
+   * banner Retry moved the phase on, and kept it after the retry succeeded.
+   * `failedTag` is the install that failed, or undefined for a download.
    */
-  const bannerAlerts = dbOpen && phase === 'error';
-  const bannerHasInstall =
-    bannerAlerts && failedInstallTag !== undefined && dataFailedTag === failedInstallTag;
-  const bannerHasDownload = bannerAlerts && dataFailedTag === undefined;
+  const alertsHere = (failedTag: string | undefined): boolean => {
+    const data = dataStatusStore.getState();
+    const bannerShowsIt =
+      dbLifecycleStore.getState().state === 'open' &&
+      data.phase === 'error' &&
+      data.failedTag === failedTag;
+    return !bannerShowsIt;
+  };
 
   /**
    * The install itself, without the confirmation. Retrying is agreeing to the
@@ -173,6 +180,7 @@ export function Component() {
       setUpdateMsg({
         text: `Update failed: ${storageErrorText(err)}`,
         failed: true,
+        alert: alertsHere(tag),
         failedTag: tag,
       });
     } finally {
@@ -209,7 +217,7 @@ export function Component() {
       // the offline-ready notice is saying it.
       if (noticeSpent) announce(OFFLINE_DOWNLOADED_TEXT, { key: 'download' });
     } catch (err) {
-      setDownloadFailed(storageErrorText(err));
+      setDownloadFailed({ text: storageErrorText(err), alert: alertsHere(undefined) });
     } finally {
       setDownloading(false);
       measureOffline();
@@ -325,10 +333,10 @@ export function Component() {
             <p className="text-xs text-ink-muted">{updateMsg.text}</p>
           ) : (
             // An alert unless the shell's DataBanner is alerting this same
-            // install failure ("Update to … failed"); see `bannerHasInstall`.
+            // install failure ("Update to … failed"); see `alertsHere`.
             <div
               className="flex flex-wrap items-center gap-2"
-              role={bannerHasInstall ? undefined : 'alert'}
+              role={updateMsg.alert === false ? undefined : 'alert'}
             >
               <p className="text-xs text-amber-300">
                 {updateMsg.text}
@@ -371,8 +379,11 @@ export function Component() {
             {/* An alert unless the shell's DataBanner is alerting the same
                 failure ("Game data download failed"); one alert is enough. */}
             {downloadFailed !== undefined && !downloading && (
-              <p className="text-xs text-amber-300" role={bannerHasDownload ? undefined : 'alert'}>
-                Download failed: {downloadFailed}
+              <p
+                className="text-xs text-amber-300"
+                role={downloadFailed.alert ? 'alert' : undefined}
+              >
+                Download failed: {downloadFailed.text}
               </p>
             )}
           </div>

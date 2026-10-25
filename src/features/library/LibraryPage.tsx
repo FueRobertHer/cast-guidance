@@ -93,6 +93,9 @@ function GlobalSearch() {
   // query again as files land, and that is not news: only a query or source
   // change the person made is.
   const spokenFor = useRef<string | null>(null);
+  // Leaving the library drops a count still settling: it is about a page
+  // nobody is on any more.
+  useEffect(() => () => cancelAnnouncement('search'), []);
 
   // The index rebuilds behind a `ready` status as a download lands files, so
   // `indexVersion` asks the query again whenever one of those finishes:
@@ -115,8 +118,15 @@ function GlobalSearch() {
         const asked = `${trimmed}\n${sourcesKey}`;
         if (spokenFor.current === asked) return;
         spokenFor.current = asked;
-        // Settled, so typing a word is one count, for the word, not one per letter.
-        announce(searchSpeech(trimmed, res), { key: 'search', settleMs: SEARCH_SETTLE_MS });
+        // Settled, so typing a word is one count, for the word, not one per
+        // letter. A repeat, because a new query with the same count ("30 or
+        // more results" twice) is a new answer; `spokenFor` already keeps a
+        // rebuild behind the same query quiet.
+        announce(searchSpeech(trimmed, res), {
+          key: 'search',
+          settleMs: SEARCH_SETTLE_MS,
+          repeat: true,
+        });
       });
     }, 150);
     return () => {

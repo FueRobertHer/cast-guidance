@@ -616,6 +616,17 @@ describe('PlayTab hit point announcements (A11Y-002)', () => {
     expect(getAnnouncerState().emitted).toBe(1);
   });
 
+  it('drops an HP line still settling when the tab goes away', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    resetAnnouncer();
+    renderPlay();
+    fireEvent.click(screen.getByLabelText('Damage 1 hit point'));
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS / 2));
+    cleanup();
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS * 2));
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
   it('says an exact value typed into the HP dialog', async () => {
     resetAnnouncer();
     dialogs.askNumber.mockResolvedValueOnce(7);

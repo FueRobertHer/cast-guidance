@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { NOTICE_MS, noticeStore, notify } from '@/stores/notices';
+import {
+  offlineReadyAnnounced as announced,
+  markOfflineReadyAnnounced as markAnnounced,
+} from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
 import {
   type OfflineReadiness,
@@ -10,28 +14,7 @@ import {
   swStatusStore,
 } from '@/stores/swStatus';
 
-export const OFFLINE_ANNOUNCED_KEY = 'cast-guidance:offline-ready-announced';
-
-/** Whether this device has had its one "Ready to use offline" notice (or skipped it). */
-export function offlineReadyAnnounced(): boolean {
-  return announced();
-}
-
-function announced(): boolean {
-  try {
-    return localStorage.getItem(OFFLINE_ANNOUNCED_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
-function markAnnounced(): void {
-  try {
-    localStorage.setItem(OFFLINE_ANNOUNCED_KEY, new Date().toISOString());
-  } catch {
-    // Unremembered: at worst a later visit decides again, silently or not.
-  }
-}
+export { OFFLINE_ANNOUNCED_KEY } from '@/stores/offlineReady';
 
 /** What the notice says, honest about a tab the worker does not control yet. */
 const NOTICE_COPY: Record<Exclude<OfflineReadiness, 'no'>, { title: string; detail: string }> = {

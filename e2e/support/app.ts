@@ -22,9 +22,16 @@ export function onScreen(page: Page): Locator {
   return page.locator('xpath=//*[not(ancestor-or-self::*[@data-announcer])]');
 }
 
-/** The lines the announcer is saying, or has said in the last few seconds. */
-export function announcements(page: Page, politeness: 'polite' | 'assertive' = 'polite'): Locator {
-  return page.locator(`[data-announcer="${politeness}"] > *`);
+/**
+ * The lines the announcer is saying, or has said in the last few seconds, in
+ * one region or (`any`) in both.
+ */
+export function announcements(
+  page: Page,
+  politeness: 'polite' | 'assertive' | 'any' = 'polite',
+): Locator {
+  const region = politeness === 'any' ? '[data-announcer]' : `[data-announcer="${politeness}"]`;
+  return page.locator(`${region} > *`);
 }
 
 /**
