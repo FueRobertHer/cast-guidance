@@ -57,13 +57,14 @@ CI, gated on coverage floors and a bundle budget.
 |---|---|
 | Frozen dependency install | Pass: 556 packages |
 | Lint/format | Pass: 292 files |
-| TypeScript | Pass (app, `vite.config.ts`, and the bundle budget scripts) |
+| TypeScript | Pass (app, `vite.config.ts`, the bundle budget scripts, and the E2E harness) |
 | Unit + integration tests | Pass: 134 files, 1,328 tests |
 | Coverage gate | `bun run test:coverage`: 81.09% statements, 71.82% branches, 72.65% functions, 82.92% lines. CI fails below the `vite.config.ts` floors of 80 / 70 / 71 / 81. |
 | Production/PWA build | Pass: 48 unique precache entries |
 | Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 381,418 B raw, 119,846 B gzip (budget 420,000 / 132,000); initial JS 532,142 B raw, 170,740 B gzip (586,000 / 188,000); total JS 916,214 B (1,008,000); largest chunk 381,418 B (420,000); CSS 42,544 B (47,000); precache 961,244 B (1,058,000). |
 | Real pinned-dataset audit | `bun run data:audit`, run 2026-10-25 against v2.32.0 (jsDelivr refused, the raw.githubusercontent fallback answered): 48 files; 8,141 entities, 936 spells; 40 versioned `replaceArr` warnings; 0 unresolved `_copy`; 402 spells with dice, every generated roll parses; all 53 `{@tag}`s rendered; 17 multi-name `additionalSpells` blocks, 4 of them without choice wording and allowed by verdict. Every check is within the `scripts/data-audit-budget.json` entry. The `Data audit` workflow re-runs it weekly and on data-pipeline PRs. |
-| Browser E2E and automated accessibility (axe) | No harness yet |
+| Browser E2E | Chromium, in the `e2e` CI job: 5 spec files, 17 tests pass and 1 is `fixme` (an edit inside the save debounce is lost on reload). Data-install specs are still to come. |
+| Automated accessibility (axe) | Not yet |
 
 Priority meanings:
 
@@ -172,7 +173,7 @@ to a mis-tap. Remaining:
 | TEST-001 | [#120](https://github.com/FueRobertHer/cast-guidance/issues/120) | Make CI fail on coverage thresholds and a bundle budget, not just report them. |
 | TEST-002 | [#121](https://github.com/FueRobertHer/cast-guidance/issues/121) | IndexedDB coverage for quota exhaustion, lifecycle events, and multi-tab races. |
 | TEST-003 | [#122](https://github.com/FueRobertHer/cast-guidance/issues/122) | Component coverage for rules switching, casting, rests, imports, homebrew edits, and the spell-state cues. |
-| TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | Browser E2E harness. PWA-001 and PWA-002 are effectively blocked on it. |
+| TEST-004 | [#123](https://github.com/FueRobertHer/cast-guidance/issues/123) | The harness and the first-load, offline, SW update, lifecycle and import/export specs are in (`e2e/`). Remaining: failed and resumed data installs, and browsers beyond Chromium. |
 | TEST-005 | [#124](https://github.com/FueRobertHer/cast-guidance/issues/124) | The audit, its per-tag budgets, the branch-heuristic check and the workflow exist. Left: make the `Data audit` check required in branch protection, and close once the workflow's first run is green. The weekly run against the newest release already reports two problems a bump to v2.39.0 must handle: a new `item: unknown _mod mode` warning group (14) and an unworded multi-name block on `Vestige Patron\|AU`. |
 
 ## P2: product and engineering depth
@@ -273,8 +274,8 @@ work:
   (dice, choices, entry rendering, copy/mod, migrations, hostile imports) and
   golden 2014/2024 characters.
 - Add a bundle-analysis view (what is in each chunk) to explain a bundle budget
-  failure, and the E2E harness TEST-004 needs (`bun run ci` mirrors the CI
-  gates locally; `bun run data:audit` is wired; `tests-fixtures` is linted;
+  failure (`bun run ci` mirrors the CI gates locally, `bun run e2e:ci` the E2E
+  job; `bun run data:audit` is wired; `tests-fixtures` is linted;
   `passWithNoTests` is off).
 - Document architecture, persistence/migrations, automation limits, homebrew,
   troubleshooting, and the deployment fallback/cache policy (Bun/Node versions

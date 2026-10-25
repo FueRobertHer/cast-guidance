@@ -1,0 +1,86 @@
+# Browser E2E
+
+Playwright specs that run the production build in Chromium, as a phone
+(Pixel 7), with the service worker on and no real network.
+
+```bash
+bun run build          # the suite tests dist/, so build first
+bun run e2e            # run every spec
+bun run e2e:ci         # build, then run every spec
+bun run e2e -- e2e/specs/sw-update.spec.ts   # one file
+bun run e2e -- -g "offline"                  # by title
+bun run e2e -- --headed --workers=1          # watch it
+bun run e2e -- --debug                       # step through with the inspector
+```
+
+A failing test keeps a trace in `test-results/e2e/`; open it with
+`bunx playwright show-trace <path>/trace.zip`. In CI the `e2e` job uploads
+`playwright-report/` and `test-results/` as the `e2e-report` artifact.
+
+## Browsers
+
+`@playwright/test` is pinned to an exact version, which pins the Chromium
+build. Install it once with `bunx playwright install chromium` (CI adds
+`--with-deps`). If your machine already has browsers for that version, point
+`PLAYWRIGHT_BROWSERS_PATH` at them instead. `PW_CHROMIUM_EXECUTABLE` overrides
+the binary outright, as an escape hatch when the two drift.
+
+## How the harness works
+
+- **Server** (`server/staticServer.ts`): a `node:http` server for `dist/`. One
+  per worker, on a free port, so every worker has its own origin. Response
+  headers (the enforced CSP included) and the SPA fallback come from
+  `vercel.json` (`server/vercelRouting.ts`), so the suite runs under what
+  production sends, and a deep link that would 404 on Vercel 404s here too.
+  It stubs the Vercel analytics script and logs every request.
+- **Down switch**: `server.setDown(true)` destroys every connection
+  unanswered, as an unreachable host would.
+- **Build variants** (`server/swVariants.ts`): `test.use({ privateServer: true })`
+  gives a test its own server whose `setVariant('v2')` serves a new build (a
+  new `index.html` revision and an `e2e-build` meta tag) and `'v2-broken'` one
+  whose install fails. The transform throws if the build output stops
+  matching its patterns, so a variant can never silently be the old build.
+- **Mirror** (`fixtures/mirror.ts`): answers jsDelivr, raw GitHub and the
+  GitHub tags API through `context.route`, with the release from
+  `tests-fixtures/dataMirror.ts`. It counts hits per `tag:path`, and takes fail
+  (`abort` or a status), hold and offline rules.
+- **Network guard**: every other host is aborted and fails the test.
+- **Console guard**: any console error or uncaught page error fails the test
+  unless the test caused it (a request it failed on purpose). CSP violations
+  are never allowed, so every spec also checks the policy.
+- **Offline** is a harness state, not just a browser flag:
+  `network.goOffline()` makes the mirror refuse, takes the server down and
+  sets every context offline (`navigator.onLine` is what the app reads).
+  `context.setOffline` alone would not stop `route.fulfill`. Then
+  `network.assertNothingServedOffline()` checks that nothing was.
+- **Persistent profiles**: `launchProfile(dir, { offline })` launches a real
+  browser profile wired to the same server, mirror and guards, for cold
+  restarts.
+- **Overlays**: the roster's getting-started card is hidden whenever it is
+  on screen before an action (`support/app.ts`), so specs do not depend on it.
+
+Helpers: `support/sw.ts` (`waitForSwControl`, `triggerSwUpdate`, `swState`),
+`support/idb.ts` (raw IndexedDB reads), `support/app.ts` (roster flows by
+role and accessible name).
+
+## Writing specs
+
+- Import `test` and `expect` from `support/test.ts`, not from `@playwright/test`.
+- Locate by role and accessible name, and keep page flows in `support/app.ts`.
+- Never sleep. Use web-first assertions, `expect.poll` on IndexedDB, and
+  events (`statechange`, `download`, `load`). Fake time with `page.clock`,
+  installed only after the page has booted.
+- The first load is never controlled by the service worker (prompt mode, no
+  `clientsClaim`). Call `waitForSwControl` before anything offline.
+- No retries: a flaky spec is a bug. Fix it, or mark a genuine product gap
+  with `test.fixme` and a reason.
+
+## Specs
+
+| Spec | Covers |
+|---|---|
+| `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the 404 screen; the routing canary for a controlled page. |
+| `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
+| `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
+| `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
+| `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
