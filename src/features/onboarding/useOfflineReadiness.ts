@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { type DataStatusState, useDataStatus } from '@/stores/dataStatus';
-import { type ShellReadiness, shellReadiness, swStatusStore, useSwStatus } from '@/stores/swStatus';
+import {
+  isOfflineReady,
+  type ShellReadiness,
+  shellReadiness,
+  swStatusStore,
+  useSwStatus,
+} from '@/stores/swStatus';
 
 /**
  * How long a first install may take before the card stops saying "Not yet" and
@@ -28,11 +34,6 @@ export function compendiumState(phase: DataStatusState['phase']): CompendiumStat
     default:
       return 'downloading';
   }
-}
-
-/** Safe to open with no connection: the shell is cached and so is every pack. */
-export function isOfflineReady(shell: ShellStatus, phase: DataStatusState['phase']): boolean {
-  return shell === 'ready' && phase === 'done';
 }
 
 export function useAppShellReadiness(): ShellStatus {

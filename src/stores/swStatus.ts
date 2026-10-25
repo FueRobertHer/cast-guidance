@@ -1,5 +1,6 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import type { DataStatusState } from './dataStatus';
 
 /**
  * Whether the service worker has the app shell cached, so the app itself can
@@ -45,4 +46,17 @@ export type ShellReadiness = 'unsupported' | SwState;
 
 export function shellReadiness(s: SwStatusState): ShellReadiness {
   return serviceWorkerSupported() ? s.state : 'unsupported';
+}
+
+/**
+ * Safe to open with no connection: the shell is cached and so is every pack
+ * (`done` is set only once the whole compendium has drained). Here rather than
+ * beside the card's hooks so the shell's offline notice can use it without
+ * pulling those hooks into the entry chunk.
+ */
+export function isOfflineReady(
+  shell: ShellReadiness | 'stalled',
+  phase: DataStatusState['phase'],
+): boolean {
+  return shell === 'ready' && phase === 'done';
 }

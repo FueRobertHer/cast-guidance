@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { NOTICE_MS, noticeStore, notify } from '@/stores/notices';
 import { onboardingStore } from '@/stores/onboarding';
-import { shellReadiness, swStatusStore } from '@/stores/swStatus';
-import { isOfflineReady } from './useOfflineReadiness';
+import { isOfflineReady, shellReadiness, swStatusStore } from '@/stores/swStatus';
 
 export const OFFLINE_ANNOUNCED_KEY = 'cast-guidance:offline-ready-announced';
 
