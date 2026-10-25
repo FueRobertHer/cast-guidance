@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { CharacterDoc } from '@/engine/types';
 import { jsonByteSize } from '@/lib/byteSize';
+import { installDbLifecycle } from './lifecycle';
 
 export interface DataFileRow {
   /** `${tag}:${path}` */
@@ -121,3 +122,8 @@ db.version(3)
  * step.
  */
 db.version(4).stores({ characterHistory: 'id, charId, at, [charId+at]' });
+
+// Here rather than in the shell: every write to this database, including the
+// data loader's drain that runs before and outside it, must stop once another
+// tab deletes or upgrades the database. See ./lifecycle.
+installDbLifecycle(db);

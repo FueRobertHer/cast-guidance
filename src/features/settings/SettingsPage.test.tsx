@@ -22,8 +22,10 @@ vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
+import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { onboardingStore } from '@/stores/onboarding';
+import { quotaExceeded } from '../../../tests-fixtures/idbFaults';
 import { Component as SettingsPage } from './SettingsPage';
 
 /** Walk the version picker as a user does, up to the install attempt. */
@@ -103,6 +105,29 @@ describe('SettingsPage data section', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('offline');
     fireEvent.click(screen.getByRole('button', { name: 'Retry download' }));
     await waitFor(() => expect(loader.downloadAllPacks).toHaveBeenCalledTimes(2));
+  });
+
+  // Both failures are shown as text, so a full device is told what to do
+  // rather than "The quota has been exceeded." (TEST-002).
+  it('words a failed install on a full device as guidance', async () => {
+    loader.updateToTag.mockRejectedValueOnce(quotaExceeded());
+    render(<SettingsPage />);
+    await installVersion('v2.33.0');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(QUOTA_GUIDANCE);
+    expect(alert.textContent).not.toContain('quota has been exceeded');
+  });
+
+  it('words a failed download on a full device as guidance', async () => {
+    loader.downloadAllPacks.mockRejectedValueOnce(quotaExceeded());
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(QUOTA_GUIDANCE);
+    expect(alert.textContent).not.toContain('quota has been exceeded');
   });
 
   it('says when the installed version is one the app went back to', () => {

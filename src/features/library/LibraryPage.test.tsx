@@ -68,6 +68,7 @@ vi.mock('@/data5e/sourceFilter', () => ({
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
 
+import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { Component as LibraryPage } from './LibraryPage';
 
 /** A registry holding one spell, which is all the detail view reads. */
@@ -132,7 +133,10 @@ beforeEach(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  dbLifecycleStore.setState({ state: 'open' });
+});
 
 describe('the detail view when the compendium fails', () => {
   it('says so and offers the registry retry, instead of loading forever', () => {
@@ -583,5 +587,35 @@ describe('the library search while a download lands files', () => {
     view.rerender(tree());
     await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(2));
     expect(searchAll).toHaveBeenLastCalledWith('fire', expect.anything());
+  });
+});
+
+// Once another tab deletes or upgrades the database (TEST-002) every read
+// here fails with "Database has been closed", and no Retry can fix that. The
+// shell's banner explains it; the panels only point at the reload.
+describe('the library after another tab closed the database', () => {
+  const closedError = 'Database has been closed';
+
+  it('drops the raw error and the dead Retry from a section', () => {
+    dbLifecycleStore.getState().markClosed('deleted');
+    reg.current = { ...reg.current, registry: null, status: 'error', error: closedError };
+    packs.current = { ...packs.current, status: 'error', error: closedError };
+    renderAt('/library/spell/nonesuch%7Cphb');
+
+    expect(screen.getByText('Reload this tab to see this section.')).toBeTruthy();
+    expect(screen.queryByText(new RegExp(closedError))).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('drops them from search too', () => {
+    dbLifecycleStore.getState().markClosed('superseded');
+    reg.current = { ...reg.current, status: 'error', error: closedError };
+    renderAt('/library');
+
+    expect(screen.getByText('Reload this tab to search.')).toBeTruthy();
+    expect(screen.queryByText(/Couldn.t prepare search/)).toBeNull();
+    expect(screen.queryByText(new RegExp(closedError))).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 });

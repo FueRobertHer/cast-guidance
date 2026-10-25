@@ -5,6 +5,7 @@ import { historyRepo } from '@/db/historyRepo';
 import type { CharacterDoc } from '@/engine/types';
 import { burstKey, diffDocs, sameContent } from '@/lib/docDiff';
 import { historyLabel } from '@/lib/historyLabel';
+import { storageErrorText } from '@/lib/storageErrors';
 import {
   contentHash,
   type JournalBase,
@@ -163,7 +164,8 @@ export function createCharacterSessionStore({
   const publishSave = (status: CharacterSaveStatus, characterId: string, error?: unknown): void => {
     const previous = store.getState().saveErrors;
     const saveErrors = { ...previous };
-    if (error !== undefined) saveErrors[characterId] = errorMessage(error);
+    // Stored as text, so a full device is told what to do here, at the catch.
+    if (error !== undefined) saveErrors[characterId] = storageErrorText(error);
     else if (status === 'saved') delete saveErrors[characterId];
     store.setState({
       saveStatus: status,

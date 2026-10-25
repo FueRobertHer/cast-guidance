@@ -7,6 +7,7 @@ import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { historyRepo } from '@/db/historyRepo';
 import { newCharacterDoc } from '@/engine/types';
+import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { createCharacterSessionStore } from './characterSession';
 
@@ -48,7 +49,8 @@ describe('autosave under a full device', () => {
 
     expect(fault.hits).toBe(1);
     expect(session.getState().saveStatus).toBe('error');
-    expect(session.getState().saveErrors.c1).toBeTruthy();
+    // Stored as guidance, not as the browser's "The quota has been exceeded."
+    expect(session.getState().saveErrors.c1).toBe(QUOTA_GUIDANCE);
     // The screen still shows the edit; the database never got it.
     expect(session.getState().doc?.play.currentHp).toBe(4);
     expect((await db.characters.get('c1'))?.play.currentHp).toBe(0);
@@ -83,7 +85,7 @@ describe('autosave under a full device', () => {
     expect((await db.characters.get('c1'))?.play.currentHp).toBe(4);
     expect(await db.characterHistory.count()).toBe(0);
     expect(session.getState().saveStatus).toBe('error');
-    expect(session.getState().saveErrors.c1).toBeTruthy();
+    expect(session.getState().saveErrors.c1).toBe(QUOTA_GUIDANCE);
 
     // The fault has spent its one failure, so Retry goes through.
     clock += 1_000;

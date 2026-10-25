@@ -17,6 +17,7 @@ import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/so
 import { sourceName } from '@/data5e/sourceNames';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
@@ -96,6 +97,9 @@ function GlobalSearch() {
     setShowHidden(false);
   }, [trimmed]);
 
+  // A closed database (TEST-002) gets no raw error and no dead Retry; the
+  // shell's banner explains it.
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
   // Distinguish error / preparing / ready so a failure isn't an endless spinner.
   const failed = regStatus === 'error' || searchStatus === 'error';
   const placeholder = failed
@@ -117,7 +121,8 @@ function GlobalSearch() {
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:opacity-60"
         />
       </label>
-      {failed && (
+      {failed && !dbOpen && <p className={DB_CLOSED_NOTE}>Reload this tab to search.</p>}
+      {failed && dbOpen && (
         <div
           className="flex items-center justify-between gap-2 rounded-lg bg-accent-deep/30 px-3 py-2 text-xs"
           role="alert"
@@ -222,6 +227,9 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
+/** What a library panel says in place of its failure once the database is closed. */
+const DB_CLOSED_NOTE = 'rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted';
+
 /**
  * Why this section has nothing to show, and what to press about it.
  *
@@ -231,6 +239,11 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
  * cannot even start because the device is offline.
  */
 function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
+  // Another tab deleted or upgraded the database (TEST-002): the failure here
+  // is "Database has been closed" and a Retry cannot fix it. The shell's
+  // banner says what happened and offers the reload.
+  if (!dbOpen) return <p className={DB_CLOSED_NOTE}>Reload this tab to see this section.</p>;
   // `error`, not `status`: a registry already in hand keeps the status 'ready'
   // so pages that can still render do, but the failed rebuild behind it is
   // exactly what this panel exists to say.
