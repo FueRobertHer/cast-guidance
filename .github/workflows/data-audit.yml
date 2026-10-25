@@ -1,0 +1,205 @@
+name: Data audit
+
+# TEST-005. Downloads a real 5etools release and judges it against
+# scripts/data-audit-budget.json: entity counts, parser warnings, copy/mod
+# results, renderer tag coverage, spell roll validity and the additionalSpells
+# branch heuristic. It needs the network, so it runs here rather than in CI:
+#   - on PRs that touch the data pipeline (including a DATA_TAG bump),
+#   - weekly against the pinned tag and against the newest compatible release,
+#   - on demand, for any tag.
+# A scheduled failure comments on the open `data-audit` issue, or opens one.
+#
+# Every PR triggers the workflow, and the `changes` job decides whether the
+# audit needs to run. A `paths:` filter would instead leave the check missing
+# on unrelated PRs, which then wait forever once `audit` is a required check;
+# a skipped `audit` job reports success.
+on:
+  pull_request:
+  schedule:
+    # Mondays 06:17 UTC; off the hour, when scheduled runs queue up.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Data tag to audit (empty for the pinned DATA_TAG, or "latest")'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: data-audit-${{ github.ref }}
+  # A new push cancels a running PR run. Other runs are never cancelled once
+  # started, but GitHub keeps one pending run per group: a scheduled run still
+  # waiting to start can be replaced by a newer queued dispatch on main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege by default. Only the notify job, which runs no repository
+# code, can write issues.
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      data: ${{ steps.diff.outputs.data }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its first parent, the base branch tip.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Does the PR touch the data pipeline?
+        id: diff
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          pattern='^(src/data5e/|src/dice/|src/lib/boundedRead\.ts$|src/engine/effects/additionalSpells\.ts$|src/features/sheet/spellRolls\.ts$|scripts/data-audit|\.github/workflows/data-audit\.yml$|package\.json$|bun\.lock$)'
+          # A here-string, not a pipe: with pipefail, `grep -q` exiting at the
+          # first match could fail the writer with SIGPIPE and read as false.
+          if grep -qE "$pattern" <<< "$changed"; then
+            echo "data=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "data=false" >> "$GITHUB_OUTPUT"
+            echo "No data pipeline files changed; the audit is skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  audit:
+    needs: changes
+    # Schedule and dispatch always run (`changes` is skipped there). On a PR
+    # the audit runs when data files changed, or when `changes` itself did
+    # not succeed, so a broken diff never turns into a silent pass.
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' ||
+      needs.changes.result != 'success' || needs.changes.outputs.data == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      pinned: ${{ steps.pinned.outcome }}
+      pinned_tag: ${{ steps.pinned.outputs.tag }}
+      latest: ${{ steps.latest.outcome }}
+      latest_tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # On a PR, the bump check reads DATA_TAG from the merge commit's
+          # first parent, the base branch tip.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: DATA_TAG bump?
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          read_tag() { sed -n "s/^export const DATA_TAG = '\(.*\)';$/\1/p"; }
+          base=$(git show "HEAD^1:src/data5e/config.ts" | read_tag)
+          head=$(read_tag < src/data5e/config.ts)
+          if [ -z "$base" ] || [ -z "$head" ]; then
+            echo "::error file=src/data5e/config.ts::could not read DATA_TAG (base '$base', head '$head')"
+            exit 1
+          fi
+          {
+            echo "### DATA_TAG"
+            echo ""
+            if [ "$base" = "$head" ]; then
+              echo "No bump: still \`$head\`."
+            else
+              echo "Bump \`$base\` -> \`$head\`. The audit below must pass against a new budget entry."
+            fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Audit the pinned tag (or the requested one)
+        id: pinned
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          # Read by the tags API lookup, so only handed over for "latest".
+          GITHUB_TOKEN: ${{ inputs.tag == 'latest' && github.token || '' }}
+        run: |
+          if [ -n "$TAG_INPUT" ]; then
+            bun run data:audit -- --tag "$TAG_INPUT" --json audit.json
+          else
+            bun run data:audit -- --json audit.json
+          fi
+
+      - name: Audit the newest compatible release (early warning)
+        id: latest
+        # Scheduled runs only. A failure here never blocks a PR; the notify
+        # job reports it like a pinned failure.
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun run data:audit -- --tag latest --json audit-latest.json
+
+      - name: Upload audit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-audit
+          path: |
+            audit.json
+            audit-latest.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  notify:
+    needs: audit
+    if: >-
+      ${{ !cancelled() && github.event_name == 'schedule' &&
+      (needs.audit.result == 'failure' || needs.audit.outputs.latest == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PINNED: ${{ needs.audit.outputs.pinned }}
+      PINNED_TAG: ${{ needs.audit.outputs.pinned_tag }}
+      LATEST: ${{ needs.audit.outputs.latest }}
+      LATEST_TAG: ${{ needs.audit.outputs.latest_tag }}
+    steps:
+      - name: Comment on or open the data-audit issue
+        run: |
+          label=data-audit
+          gh label create "$label" --color d93f0b \
+            --description "Scheduled data audit failures (TEST-005)" --force
+          # A pinned run that failed, or never ran because an earlier step
+          # failed, names the issue; otherwise only the early warning failed.
+          if [ "$PINNED" != "success" ]; then
+            tag="${PINNED_TAG:-the pinned tag}"
+          else
+            tag="${LATEST_TAG:-the latest release}"
+          fi
+          body=$(printf '%s\n' \
+            "The scheduled data audit failed: $RUN_URL" \
+            "" \
+            "- Pinned tag ${PINNED_TAG:-(unknown)}: ${PINNED:-did not run}" \
+            "- Newest compatible release ${LATEST_TAG:-(unknown)}: ${LATEST:-did not run}" \
+            "" \
+            "The run summary lists each failing check, and the data-audit artifact holds the full reports.")
+          number=$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "Scheduled data audit failed for $tag" --label "$label" --body "$body"
+          fi

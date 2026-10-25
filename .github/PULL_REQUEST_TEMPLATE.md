@@ -13,6 +13,7 @@
 - [ ] `bun run test`
 - [ ] `bun run build`
 - [ ] Manual/browser check (describe below)
+- [ ] DATA_TAG bump or parser change: the `Data audit` workflow is green, and `scripts/data-audit-budget.json` has the new or updated entry (`bun run data:audit -- --write-budget`)
 
 ## Notes for the reviewer
 
