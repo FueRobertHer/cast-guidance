@@ -131,12 +131,12 @@ experience.)
 
 | ID | Issue | Remaining work |
 |---|---|---|
-| SEC-001 | [#108](https://github.com/FueRobertHer/cast-guidance/issues/108) | Promote the shipped CSP from report-only to enforced. |
+| SEC-001 | [#108](https://github.com/FueRobertHer/cast-guidance/issues/108) | The CSP is enforced through `vercel.json`; confirm the live header and a clean console on the production deployment, then close. |
 | SEC-002 | [#109](https://github.com/FueRobertHer/cast-guidance/issues/109) | Bound the raw remote-response byte stream before parse; cap regex and worker work. |
 | IMP-002 | [#110](https://github.com/FueRobertHer/cast-guidance/issues/110) | Import preview explaining dependencies, duplicates, winner policy, and collisions before commit. |
 | LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | Content and licensing review, license, third-party notices, mirror attribution, trademark disclaimer. |
 
-(`{@link}` sanitization + report-only deployment headers (SEC-001) and the
+(`{@link}` sanitization + enforced deployment headers (SEC-001) and the
 local-data/privacy explanation + "Reset app data" control (PRIV-001) have
 shipped; a one-click full backup is tracked under P2 product experience.)
 

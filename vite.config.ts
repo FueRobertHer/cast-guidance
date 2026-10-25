@@ -1,14 +1,24 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { headersMetaPlugin } from './src/app/headersMeta.ts';
+
+// vercel.json is the source of truth for the response headers. Their digest
+// goes into index.html so a header change also changes the precached shell's
+// revision; see src/app/headersMeta.ts.
+const vercelConfig: { headers?: unknown } = JSON.parse(
+  readFileSync(path.resolve(__dirname, 'vercel.json'), 'utf8'),
+);
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    headersMetaPlugin(vercelConfig.headers),
     VitePWA({
       registerType: 'prompt',
       // Game data lives in IndexedDB, not the SW cache — precache the app shell only.
