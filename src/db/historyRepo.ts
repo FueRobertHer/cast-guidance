@@ -13,6 +13,14 @@ function snapshotsOf(charId: string) {
 }
 
 /**
+ * Rows order by time, and two in the same millisecond would order by their
+ * random ids, so a new or rewritten row always lands strictly after the newest.
+ */
+function nextAt(newest: number | undefined): number {
+  return newest === undefined ? Date.now() : Math.max(Date.now(), newest + 1);
+}
+
+/**
  * Rewrite the newest row in place, or false when `rowId` is no longer the
  * newest. A burst that ends where it started (HP down one, then back up) leaves
  * nothing to return to, so its row is dropped and undefined comes back; the
@@ -30,7 +38,7 @@ async function replaceNewest(
     await db.characterHistory.delete(rowId);
     return undefined;
   }
-  await db.characterHistory.put({ ...latest, at: Date.now(), label, doc: snapshot });
+  await db.characterHistory.put({ ...latest, at: nextAt(latest.at), label, doc: snapshot });
   return rowId;
 }
 
@@ -58,20 +66,30 @@ export const historyRepo = {
     opts?: { replaceId?: string },
   ): Promise<string | undefined> {
     const snapshot = structuredClone(doc);
-    if (opts?.replaceId !== undefined) {
-      const replaced = await replaceNewest(snapshot, label, opts.replaceId);
-      if (replaced !== false) return replaced;
-    }
-    const latest = await snapshotsOf(doc.id).last();
-    if (latest !== undefined && sameContent(latest.doc, snapshot)) return undefined;
-    const id = crypto.randomUUID();
-    await db.characterHistory.put({ id, charId: doc.id, at: Date.now(), label, doc: snapshot });
-    // Keys only, already in `at` order, so the oldest are simply the front.
-    const keys = await snapshotsOf(doc.id).primaryKeys();
-    if (keys.length > KEEP_PER_CHARACTER) {
-      await db.characterHistory.bulkDelete(keys.slice(0, keys.length - KEEP_PER_CHARACTER));
-    }
-    return id;
+    // One transaction, so another tab's write cannot land between finding the
+    // newest row and writing after it.
+    return db.transaction('rw', db.characterHistory, async () => {
+      if (opts?.replaceId !== undefined) {
+        const replaced = await replaceNewest(snapshot, label, opts.replaceId);
+        if (replaced !== false) return replaced;
+      }
+      const latest = await snapshotsOf(doc.id).last();
+      if (latest !== undefined && sameContent(latest.doc, snapshot)) return undefined;
+      const id = crypto.randomUUID();
+      await db.characterHistory.put({
+        id,
+        charId: doc.id,
+        at: nextAt(latest?.at),
+        label,
+        doc: snapshot,
+      });
+      // Keys only, already in `at` order, so the oldest are simply the front.
+      const keys = await snapshotsOf(doc.id).primaryKeys();
+      if (keys.length > KEEP_PER_CHARACTER) {
+        await db.characterHistory.bulkDelete(keys.slice(0, keys.length - KEEP_PER_CHARACTER));
+      }
+      return id;
+    });
   },
 
   /**

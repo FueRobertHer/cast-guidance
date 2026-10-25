@@ -469,4 +469,32 @@ describe('folding rapid edits into one history entry (UX-005)', () => {
     await session.getState().retryFailedSaves();
     expect(calls().map((c) => c.replaceId)).toEqual([undefined, 'r1', undefined]);
   });
+
+  it('lets an edit that changed nothing pass without ending the run', async () => {
+    const { session, record, edit, calls } = burstSession();
+    await session.getState().load('a');
+    await edit(0, hp(5));
+    record.mockImplementationOnce(async () => undefined); // skipped as a duplicate
+    await edit(1_000, hp(5)); // a clamped stepper: nothing moved
+    await edit(1_000, hp(6));
+    expect(calls().map((c) => c.replaceId)).toEqual([undefined, undefined, 'r1']);
+  });
+
+  it('carries on in the new row when another tab wrote mid-run', async () => {
+    const { session, record, edit, calls } = burstSession({
+      ...character('a'),
+      play: { ...character('a').play, currentHp: 20 },
+    });
+    await session.getState().load('a');
+    await edit(0, hp(19));
+    // The repo found another tab's row on top and inserted instead.
+    record.mockImplementationOnce(async () => 'other-row');
+    await edit(1_000, hp(18));
+    await edit(1_000, hp(17));
+    expect(calls()).toEqual([
+      { label: 'HP 20→19', replaceId: undefined },
+      { label: 'HP 20→18', replaceId: 'r1' },
+      { label: 'HP 20→17', replaceId: 'other-row' },
+    ]);
+  });
 });

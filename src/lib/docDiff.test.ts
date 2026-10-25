@@ -28,7 +28,6 @@ describe('diffDocs', () => {
       d.createdAt = '2000-01-01T00:00:00.000Z';
       d.schemaVersion = 999;
       d.homebrewDeps = ['x'];
-      d.play.hpInitialized = true;
     });
     expect(diffDocs(base(), to)).toEqual([]);
     expect(sameContent(base(), to)).toBe(true);
@@ -45,6 +44,31 @@ describe('diffDocs', () => {
     });
     expect(diffDocs(old, fresh)).toEqual([]);
     expect(sameContent(old, fresh)).toBe(true);
+  });
+
+  it('treats zero-valued play entries as absent', () => {
+    // Ticking a pip and unticking it leaves {used: 0} where there was nothing.
+    const touched = edited((d) => {
+      d.play.resources = [{ key: 'rage', used: 0 }];
+      d.play.hitDiceSpent = { d8: 0 };
+      d.play.slotsSpent = [0, 0];
+      d.play.conditions = [{ id: 'exhaustion', level: 0 }];
+    });
+    const untouched = edited((d) => {
+      d.play.conditions = [{ id: 'exhaustion' }];
+    });
+    expect(diffDocs(untouched, touched)).toEqual([]);
+    expect(sameContent(untouched, touched)).toBe(true);
+  });
+
+  it('keeps whether HP still follows the maximum', () => {
+    const following = edited((d) => {
+      d.play.hpInitialized = false;
+    });
+    const settled = edited((d) => {
+      d.play.hpInitialized = true;
+    });
+    expect(sameContent(following, settled)).toBe(false);
   });
 
   it('is not fooled by key order', () => {

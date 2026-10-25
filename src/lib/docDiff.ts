@@ -137,19 +137,36 @@ function sortedJson(value: unknown): string {
 }
 
 /**
- * A comparison key for a document's content. Key order and the bookkeeping
- * fields are ignored: the session's copy keeps the `updatedAt` it loaded while
- * the stored row gets a fresh stamp, so raw JSON calls two identical
- * characters different.
+ * A comparison key for a document's content. Key order, the bookkeeping fields,
+ * and zero-valued entries the sheet treats as absent are ignored: the session's
+ * copy keeps the `updatedAt` it loaded while the stored row gets a fresh stamp,
+ * and ticking a resource pip then unticking it leaves `{used: 0}` where there
+ * was no entry, so raw JSON calls two identical characters different.
+ *
+ * `hpInitialized` stays in: it decides whether current HP keeps following the
+ * maximum, so a snapshot that differs there is not the same character.
  */
 export function contentKey(doc: CharacterDoc): string {
   const clone: Record<string, unknown> = { ...doc };
   for (const k of IGNORED_TOP) delete clone[k];
-  const play: Record<string, unknown> = { ...doc.play };
-  delete play.hpInitialized;
-  // Older documents predate the turn tracker; absent means nothing used.
-  play.turn = doc.play.turn ?? { action: false, bonus: false, reaction: false };
-  clone.play = play;
+  const p = doc.play;
+  const slots = [...p.slotsSpent];
+  while (slots.length > 0 && slots[slots.length - 1] === 0) slots.pop();
+  clone.play = {
+    ...p,
+    slotsSpent: slots,
+    hitDiceSpent: Object.fromEntries(Object.entries(p.hitDiceSpent).filter(([, n]) => n !== 0)),
+    resources: p.resources
+      .filter((r) => r.used !== 0)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
+    conditions: p.conditions
+      .map((c) => ({ id: c.id, level: c.level ?? 0 }))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    // Older documents predate the turn tracker; absent means nothing used.
+    turn: p.turn ?? { action: false, bonus: false, reaction: false },
+    // Absent on older documents, which are left exactly as saved: settled.
+    hpInitialized: p.hpInitialized !== false,
+  };
   clone.hpMethod = doc.hpMethod ?? 'average';
   return sortedJson(clone);
 }
@@ -297,8 +314,9 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
     push('conditions', `Conditions: ${signedNames(cond.added, cond.removed)}`);
   const prevLevel = new Map(p.conditions.map((c) => [c.id, c.level]));
   for (const c of n.conditions) {
-    if (prevLevel.has(c.id) && prevLevel.get(c.id) !== c.level)
-      push('conditions', `${c.id} ${prevLevel.get(c.id) ?? 0} → ${c.level ?? 0}`);
+    const was = prevLevel.get(c.id) ?? 0;
+    if (prevLevel.has(c.id) && was !== (c.level ?? 0))
+      push('conditions', `${c.id} ${was} → ${c.level ?? 0}`);
   }
 
   for (let i = 0; i < Math.max(p.slotsSpent.length, n.slotsSpent.length); i++) {

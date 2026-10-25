@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { History } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { historyRepo } from '@/db/historyRepo';
 import { contentKey, diffDocs, summarizeChanges } from '@/lib/docDiff';
 import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
@@ -23,7 +23,9 @@ function timeLabel(at: number): string {
 export function HistoryDrawer({ charId }: { charId: string }) {
   const [open, setOpen] = useState(false);
   const [previewing, setPreviewing] = useState<string | null>(null);
-  const current = useCharacterSession((s) => s.doc);
+  const sessionDoc = useCharacterSession((s) => s.doc);
+  // For a render after a route change the session can still hold the last character.
+  const current = sessionDoc?.id === charId ? sessionDoc : null;
   /**
    * Only while the drawer is open. This is mounted on every tab of every
    * character, and a live query re-runs whenever the table it read changes,
@@ -42,10 +44,24 @@ export function HistoryDrawer({ charId }: { charId: string }) {
     undefined,
   );
   // Which entries already match the character, so they offer no Restore.
+  // Rows never change once written except the newest, so each row's key is
+  // kept until its time stamp moves rather than rebuilt for all fifty on every
+  // re-read.
+  const keys = useRef(new Map<string, { at: number; key: string }>());
   const matching = useMemo(() => {
     if (rows === undefined || current === null) return new Set<string>();
     const now = contentKey(current);
-    return new Set(rows.filter((r) => contentKey(r.doc) === now).map((r) => r.id));
+    const cache = keys.current;
+    const out = new Set<string>();
+    for (const r of rows) {
+      let hit = cache.get(r.id);
+      if (hit?.at !== r.at) {
+        hit = { at: r.at, key: contentKey(r.doc) };
+        cache.set(r.id, hit);
+      }
+      if (hit.key === now) out.add(r.id);
+    }
+    return out;
   }, [rows, current]);
 
   const onOpenChange = (next: boolean) => {
@@ -96,7 +112,7 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                     </div>
                     {same ? (
                       <span className="shrink-0 text-xs text-emerald-300">same as now</span>
-                    ) : (
+                    ) : current === null ? null : (
                       <button
                         type="button"
                         aria-expanded={expanded}
@@ -105,7 +121,7 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                         onClick={() => setPreviewing(expanded ? null : row.id)}
                         className="shrink-0 rounded border border-surface-2 px-2.5 py-1 text-xs font-semibold hover:border-accent hover:text-accent"
                       >
-                        {expanded ? 'Hide' : 'Preview'}
+                        Preview
                       </button>
                     )}
                   </div>
@@ -121,8 +137,12 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                       <button
                         type="button"
                         aria-label={`Restore "${row.label}" from ${timeLabel(row.at)}`}
-                        onClick={() => {
-                          characterSessionStore.getState().restore(row.doc);
+                        onClick={async () => {
+                          const session = characterSessionStore.getState();
+                          // Save an edit still waiting on the debounce first, so
+                          // the state being replaced is in history to come back to.
+                          await session.flush().catch(() => undefined);
+                          session.restore(row.doc);
                           onOpenChange(false);
                         }}
                         className="mt-1 rounded bg-accent px-2.5 py-1 text-xs font-semibold text-white"
