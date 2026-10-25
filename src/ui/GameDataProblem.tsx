@@ -1,4 +1,5 @@
 import { useOnline, useOnReconnect } from '@/lib/useOnline';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
 
 /**
  * Why a page that needs game data has none to show, and the way on (PWA-001).
@@ -20,12 +21,24 @@ export function GameDataProblem({
 }: {
   error: string | null;
   onRetry: () => void;
-  /** What is still safe, or what happens next, in the page's own terms. */
+  /** What is still safe, in the page's own terms. */
   note?: string;
 }) {
   const online = useOnline();
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
   // Back online, the download that could not start is tried again unasked.
-  useOnReconnect(onRetry);
+  // Not with the database closed (another tab deleted or upgraded it): no
+  // download can land then, and the shell's banner offers the reload.
+  useOnReconnect(() => {
+    if (dbOpen) onRetry();
+  });
+  if (!dbOpen) {
+    return (
+      <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
+        Reload this tab to load the game data.
+      </p>
+    );
+  }
   return (
     <div
       className="flex flex-col items-start gap-2 rounded-lg bg-accent-deep px-3 py-2"
@@ -36,7 +49,13 @@ export function GameDataProblem({
           ? `The game data this needs couldn't be downloaded${error === null ? '.' : `: ${error}`}`
           : "You're offline, and the game data this needs isn't downloaded yet."}
       </p>
-      {note !== undefined && <p className="text-xs text-ink-muted">{note}</p>}
+      {(note !== undefined || !online) && (
+        <p className="text-xs text-ink-muted">
+          {[note, online ? undefined : "It downloads by itself once you're back online."]
+            .filter((part) => part !== undefined)
+            .join(' ')}
+        </p>
+      )}
       <button
         type="button"
         onClick={onRetry}

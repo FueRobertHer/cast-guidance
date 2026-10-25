@@ -358,7 +358,7 @@ export function Component() {
           <GameDataProblem
             error={registryState.error}
             onRetry={registryState.retry}
-            note="Your draft is kept. Retry once you're back online."
+            note="Your draft is kept."
           />
         ) : (
           <p className="text-sm text-ink-muted">Loading game data…</p>

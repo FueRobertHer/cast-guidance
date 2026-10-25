@@ -220,7 +220,7 @@ export function Component() {
           <GameDataProblem
             error={state.data.error}
             onRetry={state.data.retry}
-            note="Your character is saved on this device. Retry once you're back online."
+            note="Your character is saved on this device."
           />
         ) : (
           <Outlet context={state} />

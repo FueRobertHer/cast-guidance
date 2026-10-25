@@ -277,6 +277,7 @@ describe('the way out', () => {
       "You're offline, and the game data this needs isn't downloaded yet.",
     );
     expect(alert.textContent).toContain('Your draft is kept.');
+    expect(alert.textContent).toContain("It downloads by itself once you're back online.");
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
     expect(registry.retry).toHaveBeenCalledOnce();
     expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
