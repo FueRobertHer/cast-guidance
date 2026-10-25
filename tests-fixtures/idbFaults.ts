@@ -98,7 +98,14 @@ export async function injectIdbFault(
       },
     }),
   });
-  await database.open();
+  try {
+    await database.open();
+  } catch (err) {
+    // Leave the database as it was found: no fault installed, auto-open on.
+    database.unuse({ stack: 'dbcore', name });
+    database.close({ disableAutoOpen: false });
+    throw err;
+  }
 
   let removed = false;
   const remove = async (): Promise<void> => {

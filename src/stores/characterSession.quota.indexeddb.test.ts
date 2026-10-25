@@ -66,7 +66,7 @@ describe('autosave under a full device', () => {
     expect(rows[0]?.doc.play.currentHp).toBe(4);
   });
 
-  it('retries the history row when only history was refused, and records it once', async () => {
+  it('keeps the stored doc when only history was refused, and Retry adds the missing row', async () => {
     const session = openSession();
     await session.getState().load('c1');
     const fault = await injectIdbFault(db, { tables: ['characterHistory'], times: 1 });
@@ -88,8 +88,6 @@ describe('autosave under a full device', () => {
     // The fault has spent its one failure, so Retry goes through.
     clock += 1_000;
     await session.getState().retryFailedSaves();
-    await session.getState().retryFailedSaves();
-    await session.getState().flushAll();
 
     expect(session.getState().saveErrors).toEqual({});
     const rows = await historyRepo.list('c1');

@@ -16,22 +16,35 @@ const QUOTA_NAMES: ReadonlySet<string> = new Set([
   'NS_ERROR_DOM_QUOTA_REACHED',
 ]);
 
-/** Wrappers to look through before giving up: Dexie's inner, a cause, an aggregate. */
+/** Legacy `DOMException.QUOTA_EXCEEDED_ERR`. Only trusted on a DOMException. */
+const QUOTA_CODE = 22;
+
+/** Wrappers to look through before giving up: inner, cause, aggregates, failures. */
 const MAX_DEPTH = 4;
 
 export const QUOTA_GUIDANCE =
-  'This device is out of storage space for the app. Free some space, for example by deleting ' +
-  'homebrew files you no longer use, then try again.';
+  'This device is out of storage space for the app. Free some space on this device, then try ' +
+  'again. Settings shows how much storage the app is using.';
+
+/**
+ * Errors one failure can hold several of. `AggregateError` comes from a batch
+ * of saves (`flushAll`, `retryFailedSaves`). Dexie's `ModifyError` and
+ * `BulkError` keep theirs in `failures`, with no `inner` or `cause`: an array
+ * in Dexie 4, a position-to-error map in Dexie 3. `Object.values` reads both.
+ */
+function nestedErrors(err: object): unknown[] {
+  if (err instanceof AggregateError) return err.errors;
+  const failures = (err as { failures?: unknown }).failures;
+  return typeof failures === 'object' && failures !== null ? Object.values(failures) : [];
+}
 
 function isQuotaAt(err: unknown, depth: number): boolean {
   if (typeof err !== 'object' || err === null || depth > MAX_DEPTH) return false;
-  // By name only: the legacy code 22 always comes with the standard name.
   const e = err as { name?: unknown; inner?: unknown; cause?: unknown };
   if (typeof e.name === 'string' && QUOTA_NAMES.has(e.name)) return true;
-  // A batch of saves (`flushAll`, `retryFailedSaves`) rejects with every failure.
-  if (err instanceof AggregateError && err.errors.some((inner) => isQuotaAt(inner, depth + 1))) {
-    return true;
-  }
+  // A Node errno can also be 22 (EINVAL), so the code counts on a DOMException only.
+  if (err instanceof DOMException && err.code === QUOTA_CODE) return true;
+  if (nestedErrors(err).some((inner) => isQuotaAt(inner, depth + 1))) return true;
   return isQuotaAt(e.inner, depth + 1) || isQuotaAt(e.cause, depth + 1);
 }
 

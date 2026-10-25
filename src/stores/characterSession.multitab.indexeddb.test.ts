@@ -30,6 +30,11 @@ function openTab() {
   return { session, edit };
 }
 
+/** History rows must order strictly by time, even when written in one millisecond. */
+function expectStrictlyIncreasing(ats: number[]): void {
+  for (let i = 1; i < ats.length; i++) expect(ats[i]).toBeGreaterThan(ats[i - 1] ?? Infinity);
+}
+
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
   vi.spyOn(Date, 'now').mockImplementation(() => clock);
@@ -100,8 +105,7 @@ describe('one character open in two tabs', () => {
     expect(rows.map((r) => r.doc.play.currentHp)).toEqual([9, 8, 6, 5]);
     // Each tab labels its run from its own starting point.
     expect(rows.map((r) => r.label)).toEqual(['HP 10→9', 'HP 10→8', 'HP 10→6', 'HP 10→5']);
-    const ats = rows.map((r) => r.at);
-    expect([...ats].sort((x, y) => x - y)).toEqual(ats);
+    expectStrictlyIncreasing(rows.map((r) => r.at));
   });
 
   it('settles saves racing from both tabs without a rejection, each in its own history row', async () => {
@@ -123,12 +127,17 @@ describe('one character open in two tabs', () => {
 
     expect(a.session.getState().saveStatus).toBe('saved');
     expect(b.session.getState().saveStatus).toBe('saved');
-    const rows = await historyRepo.list('c1');
+    const rows = (await historyRepo.list('c1')).reverse();
     expect(rows).toHaveLength(2);
-    expect(new Set(rows.map((r) => r.at)).size).toBe(2);
-    // Whichever write landed last is what the character now holds.
+    expectStrictlyIncreasing(rows.map((r) => r.at));
+    // The character holds one tab's whole document, never a blend. Which one is
+    // not pinned: the write and its history row are separate transactions.
     const stored = await db.characters.get('c1');
-    expect(stored).toMatchObject({ name: rows[0]?.doc.name });
-    expect(stored?.play.currentHp).toBe(rows[0]?.doc.play.currentHp);
+    const pair = [stored?.name, stored?.play.currentHp];
+    expect([
+      ['Wren', 4],
+      ['Wren the Bold', 10],
+    ]).toContainEqual(pair);
+    expect(rows.map((r) => [r.doc.name, r.doc.play.currentHp])).toContainEqual(pair);
   });
 });
