@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   announce,
   CLEAR_MS,
+  cancelAnnouncement,
   DEDUPE_MS,
   getAnnouncerState,
   resetAnnouncer,
@@ -145,5 +146,15 @@ describe('announce: the regions', () => {
     const [a, b] = getAnnouncerState().messages;
     expect(a?.text).toBe(b?.text);
     expect(a?.id).not.toBe(b?.id);
+  });
+});
+
+describe('cancelAnnouncement', () => {
+  it('drops a message still waiting under the key, and only that key', () => {
+    announce('3 results', { key: 'search', settleMs: 750 });
+    announce('Imported', { key: 'import', settleMs: 750 });
+    cancelAnnouncement('search');
+    vi.advanceTimersByTime(750);
+    expect(spoken()).toEqual(['polite: Imported']);
   });
 });

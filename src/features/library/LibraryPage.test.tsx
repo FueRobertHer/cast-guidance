@@ -68,8 +68,9 @@ vi.mock('@/data5e/sourceFilter', () => ({
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
 
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
-import { Component as LibraryPage } from './LibraryPage';
+import { Component as LibraryPage, SEARCH_SETTLE_MS } from './LibraryPage';
 
 /** A registry holding one spell, which is all the detail view reads. */
 const registryWith = (entities: Array<Record<string, unknown>>) => ({
@@ -617,5 +618,86 @@ describe('the library after another tab closed the database', () => {
     expect(screen.queryByText(/Couldn.t prepare search/)).toBeNull();
     expect(screen.queryByText(new RegExp(closedError))).toBeNull();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
+
+// A11Y-002: the result count is said once the query settles, and a rebuild of
+// the index behind the box (files landing during a download) says nothing.
+describe('library search announcements', () => {
+  const spoken = () => getAnnouncerState().messages.map((m) => m.text);
+  const hit = (name: string) => ({ id: name, type: 'spell', uid: name, name, source: 'PHB' });
+  const tree = () => (
+    <MemoryRouter initialEntries={['/library']}>
+      <Routes>
+        <Route path="/library/:type?/:uid?" element={<LibraryPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  const type = (value: string) =>
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search everything' }), {
+      target: { value },
+    });
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  /** Long enough for the query's own debounce and the announcer's settle. */
+  const settled = () => pause(SEARCH_SETTLE_MS + 400);
+
+  beforeEach(resetAnnouncer);
+  afterEach(resetAnnouncer);
+
+  it('says the count once, for the query typing ended on', async () => {
+    searchAll.mockImplementation((q: string) =>
+      Promise.resolve({
+        hits: q === 'fire' ? [hit('Fireball'), hit('Fire Bolt')] : [hit('X')],
+        hiddenCount: 0,
+      }),
+    );
+    render(tree());
+    // Each prefix waits out the query's own debounce and gets its answer,
+    // so only the announcer's settle keeps them from being said one by one.
+    type('fi');
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(1));
+    await pause(250);
+    type('fir');
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(2));
+    await pause(250);
+    type('fire');
+    await settled();
+    expect(spoken()).toEqual(['2 results']);
+  });
+
+  it('says when nothing matches, and what is hidden', async () => {
+    searchAll.mockResolvedValue({ hits: [], hiddenCount: 4 });
+    render(tree());
+    type('zzz');
+    await settled();
+    expect(spoken()).toEqual(['No matches. 4 more in sources you have hidden']);
+  });
+
+  it('says nothing when the index is rebuilt behind the same query', async () => {
+    searchAll.mockResolvedValue({ hits: [hit('Fireball')], hiddenCount: 0 });
+    const view = render(tree());
+    type('fire');
+    await settled();
+    expect(spoken()).toEqual(['1 result']);
+
+    // Past the de-duplication window, so only the page keeps it quiet.
+    resetAnnouncer();
+    search.current = { ...search.current, indexVersion: 2 };
+    view.rerender(tree());
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(2));
+    await settled();
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('drops a count still waiting when the box is cleared', async () => {
+    searchAll.mockResolvedValue({ hits: [hit('Fireball')], hiddenCount: 0 });
+    render(tree());
+    type('fire');
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(1));
+    // Answered, and its count waiting out the settle.
+    await pause(250);
+    type('');
+    await settled();
+    expect(getAnnouncerState().emitted).toBe(0);
   });
 });

@@ -126,6 +126,14 @@ export function announce(text: string, options: AnnounceOptions = {}): void {
   }, at - now);
 }
 
+/** Drop a message still waiting under `key`, for a state that is gone before it was said. */
+export function cancelAnnouncement(key: string): void {
+  const slot = slots.get(key);
+  if (slot === undefined) return;
+  clearTimeout(slot.pending);
+  slot.pending = undefined;
+}
+
 /** A snapshot of the regions' contents, for tests. */
 export function getAnnouncerState(): AnnouncerState {
   return announcerStore.getState();

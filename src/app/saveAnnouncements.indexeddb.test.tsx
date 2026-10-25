@@ -2,7 +2,8 @@
 // A11Y-002: saving is quiet until it fails (#113). The sheet header's Unsaved,
 // Saving and Saved used to be a live region, so every HP tap was read out
 // three times. This runs the real sheet, the real session store and the shell's
-// banners over fake-indexeddb, and listens the way a screen reader would.
+// banners over fake-indexeddb, and listens the way a screen reader would. The
+// only other thing an HP tap says is the HP itself, once the taps settle.
 import 'fake-indexeddb/auto';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -27,6 +28,10 @@ vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
 vi.mock('@/features/sheet/HistoryDrawer', () => ({ HistoryDrawer: () => null }));
 
 const SAVED_WAIT = { timeout: 5000 };
+
+/** The Play tab's settled HP line (see `hpSpeech`), the one thing an HP tap may say. */
+const HP_LINE = /^\d+ of \d+ hit points$/;
+const aboutSaving = (heard: string[]) => heard.filter((t) => !HP_LINE.test(t));
 
 async function seedWarrior(): Promise<number> {
   const doc = newCharacterDoc('c1', 'Hero', 't');
@@ -77,7 +82,7 @@ afterEach(async () => {
 });
 
 describe('save announcements', () => {
-  it('says nothing for a run of HP edits, however many saves they take', async () => {
+  it('says nothing about saving for a run of HP edits, however many saves they take', async () => {
     const max = await seedWarrior();
     renderSheet();
     const damage = await screen.findByRole('button', { name: 'Damage 1 hit point' });
@@ -91,10 +96,17 @@ describe('save announcements', () => {
     for (let i = 0; i < 5; i++) fireEvent.click(damage);
     await waitFor(async () => expect(await storedHp()).toBe(max - 10), SAVED_WAIT);
     await waitFor(() => expect(saveStatus()).toBe('saved'), SAVED_WAIT);
+    // The HP, once, where the second run ended. The first run's line is said
+    // too only if its save outlasted the settle; either way, only HP lines.
+    await waitFor(
+      () => expect(listener.heard.at(-1)).toBe(`${max - 10} of ${max} hit points`),
+      SAVED_WAIT,
+    );
     await act(async () => undefined);
     listener.stop();
 
-    expect(listener.heard).toEqual([]);
+    expect(aboutSaving(listener.heard)).toEqual([]);
+    expect(listener.heard.length).toBeLessThanOrEqual(2);
     // The indicator still shows the state, as text nobody is made to hear.
     const indicator = document.querySelector('[data-save-indicator]');
     expect(indicator?.textContent).toContain('Saved');
@@ -121,8 +133,8 @@ describe('save announcements', () => {
     }
     await act(async () => undefined);
     expect(fault.hits).toBe(4);
-    expect(listener.heard).toHaveLength(1);
-    expect(listener.heard[0]).toContain('Character changes could not be saved');
+    expect(aboutSaving(listener.heard)).toHaveLength(1);
+    expect(aboutSaving(listener.heard)[0]).toContain('Character changes could not be saved');
 
     await fault();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -131,7 +143,8 @@ describe('save announcements', () => {
     await act(async () => undefined);
     listener.stop();
 
-    expect(listener.heard).toEqual([listener.heard[0], SAVE_RECOVERED_TEXT]);
+    const saving = aboutSaving(listener.heard);
+    expect(saving).toEqual([saving[0], SAVE_RECOVERED_TEXT]);
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
