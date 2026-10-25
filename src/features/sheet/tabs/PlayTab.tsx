@@ -360,7 +360,7 @@ export function Component() {
       )}
       {/* HP */}
       <section className="rounded-lg bg-surface p-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-1.5">
           {/* Explicit amounts — a reliable single click each. (The old single/
               double-tap combo double-fired: a "double-tap −5" applied −6 and
               rolled up to three concentration saves.) Tap the total for an
@@ -421,7 +421,9 @@ export function Component() {
               if (notice !== null) notify(notice);
             }}
           >
-            <div className="text-4xl font-bold">
+            {/* One size down under 360px: three-digit HP between two 94px
+                button pairs has about 50px there (A11Y-002). */}
+            <div className="text-3xl font-bold min-[360px]:text-4xl">
               {play.currentHp}
               <span className="text-xl text-ink-muted"> / {sheet.maxHp.value}</span>
             </div>
@@ -463,6 +465,8 @@ export function Component() {
             const color =
               ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
             const tempPct = play.tempHp > 0 ? Math.min(100, (play.tempHp / max) * 100) : 0;
+            // valuenow has to sit inside the range, but the text says what the
+            // screen says: a house rule can leave HP above max (140 / 136).
             const now = Math.max(0, Math.min(max, play.currentHp));
             return (
               // biome-ignore lint/a11y/useSemanticElements: a native <meter> draws one fill and cannot show the temp HP cap beside it
@@ -472,7 +476,7 @@ export function Component() {
                 aria-valuemin={0}
                 aria-valuemax={max}
                 aria-valuenow={now}
-                aria-valuetext={`${now} of ${max}${
+                aria-valuetext={`${play.currentHp} of ${max}${
                   play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : ''
                 }`}
                 className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2"

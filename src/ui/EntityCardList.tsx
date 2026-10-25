@@ -218,7 +218,7 @@ export function EntityCardList({
                 )}
                 {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
-              <div className="flex shrink-0 items-center gap-1 py-2.5 pr-2.5">
+              <div className="flex shrink-0 items-center gap-2.5 py-2.5 pr-2.5">
                 <SourceBadge source={sourceOf(e)} />
                 {infoType !== undefined && (
                   <EntityInfoSheet

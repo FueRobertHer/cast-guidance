@@ -878,7 +878,7 @@ export function Component() {
                 className="flex flex-col items-center gap-1 rounded-lg bg-surface-2 px-1 py-2"
               >
                 <span className="text-[10px] font-semibold uppercase text-ink-muted">{a}</span>
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     aria-label={`Decrease ${a.toUpperCase()}`}

@@ -188,3 +188,13 @@ describe("EntityCardList under a character's own sources (GAME-005)", () => {
     expect(screen.queryByRole('button', { name: 'Goblin' })).toBeNull();
   });
 });
+
+describe('EntityCardList info button (A11Y-002)', () => {
+  it('gives the details button a 44px target without growing the row', () => {
+    render(<EntityCardList entities={entities} onSelect={vi.fn()} infoType="race" />);
+    const info = screen.getByRole('button', { name: 'Elf details' });
+    expect(info.className.split(' ')).toEqual(expect.arrayContaining(['tap', '-m-2.5']));
+    // The gap matches the negative margin, so the target stops at the badge.
+    expect(info.closest('div')?.className.split(' ')).toContain('gap-2.5');
+  });
+});

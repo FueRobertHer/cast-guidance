@@ -571,4 +571,16 @@ describe('PlayTab hit point meter (A11Y-002)', () => {
     expect(after.getAttribute('aria-valuenow')).toBe(String(max - 2));
     expect(after.getAttribute('aria-valuetext')).toBe(`${max - 2} of ${max}`);
   });
+
+  it('says the HP on screen when a house rule leaves it above max', () => {
+    // The overage banner lets a player keep HP over a lowered maximum. The
+    // value has to stay in range; the spoken text must not quietly cap it.
+    const { sheet } = renderSorcerer((d) => {
+      d.play.currentHp = d.play.currentHp + 4;
+    });
+    const max = sheet.maxHp.value;
+    const meter = screen.getByRole('meter', { name: 'Hit points' });
+    expect(meter.getAttribute('aria-valuenow')).toBe(String(max));
+    expect(meter.getAttribute('aria-valuetext')).toBe(`${max + 4} of ${max}`);
+  });
 });
