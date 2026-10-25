@@ -189,6 +189,24 @@ function signedNames(added: string[], removed: string[]): string {
   return all.length > 3 ? `${all.slice(0, 3).join(', ')} +${all.length - 3} more` : all.join(', ');
 }
 
+/**
+ * The character's own book list. An empty list means no restriction, so going
+ * to or from one is a change of kind, not a diff of names: turning a list on
+ * writes every allowed book at once, and "+PHB +81 more" says nothing useful.
+ */
+function sourcesLine(from: string[], to: string[]): string {
+  const books = (list: string[]) => (Array.isArray(list) ? list : []);
+  const prev = books(from);
+  const next = books(to);
+  if (prev.length === 0 && next.length > 0)
+    return `Sources: limited to ${next.length} book${next.length === 1 ? '' : 's'}`;
+  if (prev.length > 0 && next.length === 0) return 'Sources: book restriction removed';
+  const { added, removed } = nameDiff(prev, next);
+  return added.length > 0 || removed.length > 0
+    ? `Sources: ${signedNames(added, removed)}`
+    : 'Source order';
+}
+
 function refChange(
   out: DocChange[],
   kind: ChangeKind,
@@ -417,13 +435,9 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
   if (from.name !== to.name)
     out.push({ kind: 'name', line: `Name: "${from.name}" → "${to.name}"`, structural: false });
   if (!same(from.allowedSources, to.allowedSources)) {
-    const { added, removed } = nameDiff(from.allowedSources, to.allowedSources);
     out.push({
       kind: 'sources',
-      line:
-        added.length > 0 || removed.length > 0
-          ? `Sources: ${signedNames(added, removed)}`
-          : 'Source order',
+      line: sourcesLine(from.allowedSources, to.allowedSources),
       structural: false,
     });
   }

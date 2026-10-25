@@ -348,6 +348,26 @@ describe('BuildPage accessible names', () => {
   });
 });
 
+// GAME-005: the character's own book list narrows the Build page pickers in
+// place of this device's settings, and is edited right under Identity.
+describe("BuildPage under a character's own sources", () => {
+  it("narrows the background picker to the character's books", () => {
+    renderBuild((d) => {
+      d.allowedSources = ['TST'];
+    });
+    expect(screen.queryByRole('button', { name: 'Scholar' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Modern Scholar' })).toBeNull();
+    expect(screen.getByText(/2 outside this character's sources/)).toBeTruthy();
+  });
+
+  it('edits the list from a Sources section, through the doc updater', () => {
+    const { getDoc } = renderBuild();
+    expect(screen.getByText('No restriction', { selector: 'summary *' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '2024 core only' }));
+    expect(getDoc().allowedSources).toEqual(['XDMG', 'XMM', 'XPHB']);
+  });
+});
+
 // UX-004: changes that take picks away say what went and offer to put it back,
 // and removing a class asks first whichever class it is.
 describe('BuildPage destructive changes (UX-004)', () => {

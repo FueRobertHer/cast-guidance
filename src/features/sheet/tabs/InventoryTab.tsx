@@ -4,9 +4,15 @@ import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
-import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
+import {
+  applySourcePolicy,
+  backToSourcesLabel,
+  hiddenSourcesLabel,
+  policyAllows,
+} from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
 import type { EquipmentEntry } from '@/engine/types';
+import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { Sheet } from '@/ui/sheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -14,13 +20,20 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
-export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => void }) {
+export function AddItemDrawer({
+  onAdd,
+  sources,
+}: {
+  onAdd: (entry: EquipmentEntry) => void;
+  /** The character's own `allowedSources`; a non-empty list replaces the device settings. */
+  sources?: readonly string[];
+}) {
   const registry = useRegistry();
   const [q, setQ] = useState('');
   const [customName, setCustomName] = useState('');
   const [load, setLoad] = useState<'pending' | 'done' | 'failed'>('pending');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const policy = useSourcePolicy();
+  const { policy, scope } = usePickSourcePolicy(sources);
 
   const { results, poolSize, sourceHiddenCount } = useMemo(() => {
     if (registry === null) return { results: [], poolSize: 0, sourceHiddenCount: 0 };
@@ -121,7 +134,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
               onClick={() => setShowHiddenSources(true)}
               className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
             >
-              {sourceHiddenCount} hidden by your source settings. Show them anyway
+              {hiddenSourcesLabel(sourceHiddenCount, scope)}
             </button>
           )}
           {showHiddenSources && (
@@ -130,7 +143,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
               onClick={() => setShowHiddenSources(false)}
               className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
             >
-              Back to your chosen sources
+              {backToSourcesLabel(scope)}
             </button>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -362,7 +375,10 @@ export function Component() {
         </div>
       </section>
 
-      <AddItemDrawer onAdd={(entry) => update((d) => void d.equipment.push(entry))} />
+      <AddItemDrawer
+        sources={doc.allowedSources}
+        onAdd={(entry) => update((d) => void d.equipment.push(entry))}
+      />
 
       <section className="flex flex-col gap-1.5">
         <h2 className="text-sm font-semibold text-ink-muted">Currency</h2>

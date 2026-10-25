@@ -4,6 +4,7 @@
 // and nothing is written until Confirm.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EntityRegistry } from '@/data5e/normalize';
 import type { CharacterDoc, ChoicePrompt, DerivedSheet } from '@/engine/types';
 import { OriginChoices } from './OriginChoices';
 
@@ -137,5 +138,47 @@ describe('OriginChoices dependent choices', () => {
     fireEvent.click(confirmBtn());
 
     expect(doc.choices[`${asi.id}:feat`]).toEqual(['tough|phb']);
+  });
+});
+
+describe("OriginChoices under a character's own sources (GAME-005)", () => {
+  const registry = new EntityRegistry();
+  registry.addAll('feat', [
+    { name: 'Alert', source: 'PHB' },
+    { name: 'Telekinetic', source: 'TCE' },
+  ]);
+  const featPick: ChoicePrompt = {
+    id: 'class:fighter|phb:asi:4:feat',
+    origin,
+    kind: 'feat',
+    label: 'Feat',
+    count: 1,
+    options: [
+      { id: 'alert|phb', label: 'Alert' },
+      { id: 'telekinetic|tce', label: 'Telekinetic' },
+    ],
+  };
+
+  function renderFeats(allowedSources: string[]) {
+    const doc = { rulesVersion: '2014', choices: {}, allowedSources } as unknown as CharacterDoc;
+    const sheet = { pending: [featPick], resolvedChoices: [] } as unknown as DerivedSheet;
+    render(
+      <OriginChoices
+        sheet={sheet}
+        doc={doc}
+        update={vi.fn()}
+        match={() => true}
+        registry={registry}
+      />,
+    );
+  }
+
+  it("offers only the character's books, and every book when it has no list", () => {
+    renderFeats(['PHB']);
+    expect(screen.queryByText('Alert')).not.toBeNull();
+    expect(screen.queryByText('Telekinetic')).toBeNull();
+    cleanup();
+    renderFeats([]);
+    expect(screen.queryByText('Telekinetic')).not.toBeNull();
   });
 });

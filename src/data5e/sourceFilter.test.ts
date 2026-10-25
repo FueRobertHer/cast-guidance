@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   ALLOW_ALL,
   applySourcePolicy,
+  backToSourcesLabel,
+  characterPolicy,
+  characterSourceList,
+  hiddenSourcesLabel,
   isPolicyNarrowed,
   parsePolicy,
+  pickPolicy,
   policyAllows,
   policyForSearch,
   SOURCE_PRESETS,
@@ -11,6 +16,7 @@ import {
   sourcesInGroups,
   withSource,
 } from './sourceFilter';
+import { setHomebrewSourceNames } from './sourceNames';
 
 const spells = [
   { name: 'Fireball', source: 'PHB' },
@@ -181,5 +187,52 @@ describe('parsePolicy', () => {
 
     // An explicitly empty list is a real (if odd) user choice, so it survives.
     expect(parsePolicy({ mode: 'only', sources: [] })).toEqual({ mode: 'only', sources: [] });
+  });
+});
+
+describe("a character's own sources (GAME-005)", () => {
+  const device: SourcePolicy = { mode: 'only', sources: ['XPHB'] };
+
+  it('reads an empty, missing or junk list as no restriction', () => {
+    for (const raw of [[], undefined, null, 'PHB', [1, null, ''], ['  ']]) {
+      expect(characterSourceList(raw)).toEqual([]);
+      expect(characterPolicy(raw)).toBeUndefined();
+      expect(pickPolicy(device, raw)).toEqual({ policy: device, scope: 'device' });
+    }
+  });
+
+  it('replaces the device policy with the character list, never intersecting', () => {
+    // Intersecting "2024 core only" with a 2014 table would empty every picker.
+    const picked = pickPolicy(device, ['PHB', 'XGE']);
+    expect(picked).toEqual({
+      policy: { mode: 'only', sources: ['PHB', 'XGE'] },
+      scope: 'character',
+    });
+    expect(policyAllows(picked.policy, 'XGE')).toBe(true);
+    expect(policyAllows(picked.policy, 'XPHB')).toBe(false);
+  });
+
+  it('respells ids the way the dataset does, keeping ones it does not know', () => {
+    setHomebrewSourceNames(new Map([['MyBrew', 'My Brew']]));
+    try {
+      expect(characterSourceList([' phb', 'Xge', 'PHB', 'mybrew', 'FriendsBook'])).toEqual([
+        'PHB',
+        'XGE',
+        'MyBrew',
+        'FriendsBook',
+      ]);
+    } finally {
+      setHomebrewSourceNames(new Map());
+    }
+  });
+
+  it('words the reveal offer for whose list is narrowing', () => {
+    expect(hiddenSourcesLabel(3, 'device')).toBe(
+      '3 hidden by your source settings. Show them anyway',
+    );
+    expect(hiddenSourcesLabel(3, 'character', 'spells')).toBe(
+      "3 spells outside this character's sources. Show them anyway",
+    );
+    expect(backToSourcesLabel('character')).toBe("Back to this character's sources");
   });
 });

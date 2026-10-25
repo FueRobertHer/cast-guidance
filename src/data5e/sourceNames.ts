@@ -283,6 +283,25 @@ export function isKnownSource(source: string): boolean {
   return entryFor(source) !== undefined;
 }
 
+/** Lowercased code to the code as the table spells it. */
+const CANONICAL: ReadonlyMap<string, string> = new Map(
+  Object.keys(SOURCES).map((s) => [s.toLowerCase(), s]),
+);
+
+/**
+ * The code as the dataset spells it, for a code typed or stored in some other
+ * case ("phb" for "PHB"). Published books first, then homebrew known on this
+ * device; anything else comes back exactly as given, so an id for a book this
+ * device has never seen is kept rather than mangled.
+ */
+export function canonicalSource(source: string): string {
+  const lower = source.toLowerCase();
+  const known = CANONICAL.get(lower);
+  if (known !== undefined) return known;
+  for (const id of homebrewNames.keys()) if (id.toLowerCase() === lower) return id;
+  return source;
+}
+
 /** Category a source belongs to; unrecognized codes are grouped as 'other'. */
 export function sourceGroup(source: string): SourceGroup {
   return entryFor(source)?.[1] ?? 'other';

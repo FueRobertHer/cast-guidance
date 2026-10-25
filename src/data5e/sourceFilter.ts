@@ -17,11 +17,18 @@
  *   shape that can honestly mean "core rules only": a block list would have to
  *   name every book that exists, including the ones this device hasn't
  *   downloaded yet, and would quietly spring a leak the first time one arrived.
+ *
+ * A character can also carry its own list (`allowedSources`): the books its
+ * table allows. When that list is non-empty it replaces this device policy in
+ * that character's pickers, because it is the more specific setting and it
+ * travels with the character. An empty list means "no restriction", so the
+ * device policy applies as usual. The library and search never look at a
+ * character's list. See {@link pickPolicy}.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import type { SearchSourceFilter } from './search/protocol';
-import { knownSources, type SourceGroup, sourceGroup } from './sourceNames';
+import { canonicalSource, knownSources, type SourceGroup, sourceGroup } from './sourceNames';
 
 export type SourcePolicy =
   | { mode: 'all'; except: readonly string[] }
@@ -174,6 +181,73 @@ export async function ensureSourcesVisible(sources: readonly string[]): Promise<
   await updateSourcePolicy((current) =>
     sources.reduce((policy, source) => withSource(policy, source, true), current),
   );
+}
+
+// ---------------------------------------------------------------------------
+// A character's own sources
+
+/** Whose list a picker is narrowing by, which decides how it explains itself. */
+export type PolicyScope = 'device' | 'character';
+
+/**
+ * A character's `allowedSources`, cleaned up once as it is read: strings only,
+ * trimmed, empties dropped, each id respelled the way the dataset spells it
+ * ("phb" reads as "PHB"), and duplicates removed. An id this device does not
+ * know is kept as written, so a friend's homebrew book survives the round trip.
+ * The guards only check that the field is an array, so this has to tolerate
+ * anything inside it.
+ */
+export function characterSourceList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const id = v.trim();
+    if (id !== '') out.add(canonicalSource(id));
+  }
+  return [...out];
+}
+
+/** The character's list as a policy, or `undefined` when it restricts nothing. */
+export function characterPolicy(raw: unknown): SourcePolicy | undefined {
+  const sources = characterSourceList(raw);
+  return sources.length > 0 ? { mode: 'only', sources } : undefined;
+}
+
+/**
+ * The policy a character's picker should use. A non-empty character list
+ * replaces the device policy rather than intersecting with it: a device set to
+ * "2024 core only" and a table allowing "PHB, XGE" would otherwise leave every
+ * picker empty, and the table's list is the one that says what this character
+ * may take.
+ */
+export function pickPolicy(
+  device: SourcePolicy,
+  characterRaw: unknown,
+): { policy: SourcePolicy; scope: PolicyScope } {
+  const own = characterPolicy(characterRaw);
+  return own !== undefined
+    ? { policy: own, scope: 'character' }
+    : { policy: device, scope: 'device' };
+}
+
+/** Text cue for a pick outside the character's list. Text, so it never relies on colour. */
+export const OUTSIDE_CHARACTER_SOURCES = "Not in this character's sources";
+
+/** The same cue as an advisory line on a choice option. */
+export const OUTSIDE_CHARACTER_ADVISORY = "From a book outside this character's sources";
+
+/** "12 hidden by your source settings" or "12 outside this character's sources". */
+export function hiddenSourcesLabel(count: number, scope: PolicyScope, noun?: string): string {
+  const what = noun !== undefined ? `${count} ${noun}` : String(count);
+  return scope === 'character'
+    ? `${what} outside this character's sources. Show them anyway`
+    : `${what} hidden by your source settings. Show them anyway`;
+}
+
+/** Label for the toggle that hides the revealed books again. */
+export function backToSourcesLabel(scope: PolicyScope): string {
+  return scope === 'character' ? "Back to this character's sources" : 'Back to your chosen sources';
 }
 
 /**

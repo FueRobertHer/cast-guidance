@@ -51,6 +51,32 @@ transactional:
 5. **Id collision** — if the character id already exists locally, a fresh id is
    assigned (the import is a copy, never a silent overwrite).
 
+## The character's source list (`allowedSources`)
+
+`character.allowedSources` is the list of books this character's table allows,
+set on its Build page. It travels inside `character`, so the envelope and
+`schemaVersion` are unchanged.
+
+- **Empty, missing, or no usable strings** means no restriction. Exports made
+  before the list was editable read this way, and so does any entry that is not
+  a string (the guards only check that the field is an array).
+- **A non-empty list** narrows this character's pickers (classes, species,
+  backgrounds, feats, optional features, spells to learn, item search) to those
+  books. It replaces the importing device's own source settings for this
+  character rather than combining with them, so an imported character shows its
+  own table's options. The library and search keep using the device settings.
+- **Ids are 5etools source ids** ("PHB", "XGE"). They are respelled to the
+  dataset's casing when read, so `"phb"` works; an id the device does not know
+  is kept as written and shown as "Not on this device" instead of being dropped.
+- **A list is fixed.** Books added to the dataset later, and homebrew imported
+  afterwards, are not on it until someone adds them.
+- **It is a permission, not a dependency.** Listing a homebrew source does not
+  pull that homebrew into an export; only the homebrew the character's picks
+  actually use is embedded.
+- **It never removes anything.** Picks already on the character from books
+  outside the list stay and derive as before; the Build page names them.
+- **Import never touches the importing device's source settings.**
+
 ## Compatibility policy
 
 - Older exports (same or lower `schemaVersion`, `@1` envelope) import and

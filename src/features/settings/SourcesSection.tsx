@@ -113,7 +113,8 @@ export function SourcesSection() {
       <p className="text-xs text-ink-muted">
         Narrow what you pick from when building a character, and what the library and search show. A
         shorter list is a much easier list. This only affects what you browse: characters already
-        built on a book you hide keep working exactly as they are.
+        built on a book you hide keep working exactly as they are. A character with its own sources
+        (set on its Build page) uses those instead.
       </p>
 
       <div className="flex flex-wrap gap-1.5">

@@ -70,6 +70,34 @@ describe('filterEntityPrompt', () => {
     expect(idsOf(out)).toHaveLength(4);
   });
 
+  it("labels a kept pick from outside a character's own list, after its prereq cue", () => {
+    const policy: SourcePolicy = { mode: 'only', sources: ['XPHB'] };
+    const prompt: ChoicePrompt = {
+      ...featPrompt,
+      options: featPrompt.options.map((o) =>
+        o.id === 'telekinetic|tce' ? { ...o, advisory: 'You may not meet this prerequisite.' } : o,
+      ),
+    };
+    const out = filterEntityPrompt(
+      prompt,
+      registry,
+      '2024',
+      policy,
+      ['telekinetic|tce', 'alert|xphb'],
+      'character',
+    );
+    expect(idsOf(out)).toEqual(['alert|xphb', 'lucky|xphb', 'telekinetic|tce']);
+    const advisory = (id: string) => out.options.find((o) => o.id === id)?.advisory;
+    expect(advisory('telekinetic|tce')).toBe(
+      "You may not meet this prerequisite. From a book outside this character's sources.",
+    );
+    expect(advisory('alert|xphb')).toBeUndefined();
+
+    // The device settings are only a browsing preference: nothing to label.
+    const device = filterEntityPrompt(featPrompt, registry, '2024', policy, ['telekinetic|tce']);
+    expect(device.options.every((o) => o.advisory === undefined)).toBe(true);
+  });
+
   it('keeps options it cannot resolve to an entity', () => {
     const policy: SourcePolicy = { mode: 'only', sources: ['XPHB'] };
     const prompt = promptOf('feat', ['alert|xphb', 'homebrew thing|unknownbook']);

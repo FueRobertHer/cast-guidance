@@ -1,9 +1,16 @@
 import { Info } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
-import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
+import {
+  applySourcePolicy,
+  backToSourcesLabel,
+  hiddenSourcesLabel,
+  policyAllows,
+} from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
+import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { SourceBadge } from '@/ui/SourceBadge';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -52,6 +59,7 @@ export function EntityCardList({
   infoType,
   infoEntries,
   fill = false,
+  sources,
 }: {
   entities: readonly Entity[];
   selectedUid?: string;
@@ -84,12 +92,18 @@ export function EntityCardList({
    * with the remaining entries behind a second, nested scroll.
    */
   fill?: boolean;
+  /**
+   * The character's own `allowedSources`. A non-empty list replaces this
+   * device's source settings for this list; empty or absent leaves them in
+   * charge. Omit it outside a character (nothing to narrow by).
+   */
+  sources?: readonly string[];
 }) {
   const [filter, setFilter] = useState('');
   const blurbId = useId();
   const [showAll, setShowAll] = useState(false);
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const policy = useSourcePolicy();
+  const { policy, scope } = usePickSourcePolicy(sources);
 
   const { list, hiddenCount, sourceHiddenCount } = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -158,9 +172,14 @@ export function EntityCardList({
       >
         {list.map((e, i) => {
           const blurb = describe?.(e);
-          // The aria-label hides the blurb from the name, so it is the description.
-          const describedBy = blurb !== undefined ? `${blurbId}-${i}` : undefined;
           const selected = selectedUid === uidOf(e);
+          const outside = scope === 'character' && !policyAllows(policy, sourceOf(e));
+          // The aria-label hides the blurb and the out-of-sources cue from the
+          // name, so they are the description.
+          const blurbFor = blurb !== undefined ? `${blurbId}-${i}` : undefined;
+          const outsideFor = outside ? `${blurbId}-${i}-outside` : undefined;
+          const describedBy =
+            [blurbFor, outsideFor].filter((id) => id !== undefined).join(' ') || undefined;
           return (
             <div
               key={uidOf(e)}
@@ -193,10 +212,11 @@ export function EntityCardList({
                   )}
                 </span>
                 {blurb !== undefined && (
-                  <span id={describedBy} className="text-xs leading-snug text-ink-muted">
+                  <span id={blurbFor} className="text-xs leading-snug text-ink-muted">
                     {blurb}
                   </span>
                 )}
+                {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
               <div className="flex shrink-0 items-center gap-1 py-2.5 pr-2">
                 <SourceBadge source={sourceOf(e)} />
@@ -247,7 +267,7 @@ export function EntityCardList({
           onClick={() => setShowHiddenSources(true)}
           className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
         >
-          {sourceHiddenCount} hidden by your source settings. Show them anyway
+          {hiddenSourcesLabel(sourceHiddenCount, scope)}
         </button>
       )}
       {showHiddenSources && (
@@ -256,7 +276,7 @@ export function EntityCardList({
           onClick={() => setShowHiddenSources(false)}
           className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
         >
-          Back to your chosen sources
+          {backToSourcesLabel(scope)}
         </button>
       )}
     </div>
