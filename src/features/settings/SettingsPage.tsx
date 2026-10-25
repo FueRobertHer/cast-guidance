@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import { getRevision, subscribeRevision } from '@/data5e/landing';
 import {
@@ -17,9 +17,11 @@ import { storageErrorText } from '@/lib/storageErrors';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce } from '@/stores/announcer';
 import { useDataStatus } from '@/stores/dataStatus';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { errorText } from '@/stores/notices';
 import { onboardingStore } from '@/stores/onboarding';
 import { askConfirm } from '@/ui/dialogs';
+import { offlineReadyAnnounced } from '../onboarding/OfflineReadyNotice';
 import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
 
@@ -63,6 +65,9 @@ export function Component() {
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
   const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
+  const dataFailedTag = useDataStatus((s) => s.failedTag);
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
+  const queueId = useId();
   const [offline, setOffline] = useState<{ cached: number; total: number }>();
   /** Set when the offline inventory itself could not be read. */
   const [offlineError, setOfflineError] = useState<string>();
@@ -136,6 +141,15 @@ export function Component() {
   const offlineReady = offline !== undefined && offline.cached === offline.total;
   /** Non-undefined only when the last install attempt failed, and it names it. */
   const failedInstallTag = updateMsg?.failedTag;
+  /**
+   * Whether the shell's DataBanner is alerting this very failure (A11Y-002).
+   * Then the line here is a visual, so one failure is not two alerts read back
+   * to back; any failure the banner is not showing stays an alert here.
+   */
+  const bannerAlerts = dbOpen && phase === 'error';
+  const bannerHasInstall =
+    bannerAlerts && failedInstallTag !== undefined && dataFailedTag === failedInstallTag;
+  const bannerHasDownload = bannerAlerts && dataFailedTag === undefined;
 
   /**
    * The install itself, without the confirmation. Retrying is agreeing to the
@@ -185,11 +199,15 @@ export function Component() {
   const downloadEverything = async () => {
     setDownloading(true);
     setDownloadFailed(undefined);
+    // Read before the download: finishing it is what fires the one-time
+    // "Ready to use offline" notice, and then that is the one thing said.
+    const noticeSpent = offlineReadyAnnounced();
     try {
       await downloadAllPacks();
-      // The button that was pressed retires with the download, so focus
-      // has nothing left to say; this is the one word that it finished.
-      announce(OFFLINE_DOWNLOADED_TEXT, { key: 'download' });
+      // The button that was pressed retires with the download, so focus has
+      // nothing left to say; this is the one word that it finished, unless
+      // the offline-ready notice is saying it.
+      if (noticeSpent) announce(OFFLINE_DOWNLOADED_TEXT, { key: 'download' });
     } catch (err) {
       setDownloadFailed(storageErrorText(err));
     } finally {
@@ -214,7 +232,7 @@ export function Component() {
               ` (went back from ${rolledBackFrom}, which could not start)`}
           </dd>
           <dt className="text-ink-muted">Download queue</dt>
-          <dd className="capitalize">
+          <dd id={queueId} className="capitalize">
             {phase}
             {/* Clamped like the banner's bar: the counters are shared, so a run
                 that starts while another is finishing can pass its own total. */}
@@ -306,13 +324,11 @@ export function Component() {
           (updateMsg.failed !== true ? (
             <p className="text-xs text-ink-muted">{updateMsg.text}</p>
           ) : (
-            // A failed install is also the shell's DataBanner alert ("Update
-            // to … failed"), so only a failed version check, which nothing else
-            // reports, is an alert here. Two alerts for one failure were read
-            // back to back (A11Y-002).
+            // An alert unless the shell's DataBanner is alerting this same
+            // install failure ("Update to … failed"); see `bannerHasInstall`.
             <div
               className="flex flex-wrap items-center gap-2"
-              role={failedInstallTag === undefined ? 'alert' : undefined}
+              role={bannerHasInstall ? undefined : 'alert'}
             >
               <p className="text-xs text-amber-300">
                 {updateMsg.text}
@@ -338,6 +354,11 @@ export function Component() {
             <button
               type="button"
               disabled={downloading || updating}
+              // Busy while it runs, and described by the queue line that
+              // counts the files, so the count is there to read on demand
+              // rather than spoken as each file lands.
+              aria-busy={downloading}
+              aria-describedby={queueId}
               onClick={() => void downloadEverything()}
               className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >
@@ -347,10 +368,12 @@ export function Component() {
                   ? 'Make available offline'
                   : 'Retry download'}
             </button>
-            {/* Visual only: the shell's DataBanner alerts the same failure
-                ("Game data download failed"), and one alert is enough. */}
+            {/* An alert unless the shell's DataBanner is alerting the same
+                failure ("Game data download failed"); one alert is enough. */}
             {downloadFailed !== undefined && !downloading && (
-              <p className="text-xs text-amber-300">Download failed: {downloadFailed}</p>
+              <p className="text-xs text-amber-300" role={bannerHasDownload ? undefined : 'alert'}>
+                Download failed: {downloadFailed}
+              </p>
             )}
           </div>
         )}

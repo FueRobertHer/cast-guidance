@@ -8,12 +8,14 @@ import {
   withNextRelease,
 } from '../fixtures/mirror.ts';
 import {
+  announcements,
   dataFailureBanner,
   dataProgress,
   dataUpdateToast,
   expectDataSettled,
   gotoRaces,
   libraryEntry,
+  onScreen,
   settingsValue,
   startDataInstall,
 } from '../support/app.ts';
@@ -151,7 +153,7 @@ test.describe('data installs', () => {
 
     await startDataInstall(page, NEXT_TAG);
     await expect(
-      page.getByText(`Now on ${NEXT_TAG}. Characters re-derive automatically.`),
+      page.getByText(`Now on ${NEXT_TAG}. Characters re-derive automatically.`).and(onScreen(page)),
     ).toBeVisible();
     await expect(settingsValue(page, 'Dataset version')).toHaveText(NEXT_TAG);
     expect(await getSetting(page, 'dataTag')).toBe(NEXT_TAG);
@@ -184,13 +186,21 @@ test.describe('data installs', () => {
     mirror.setFail((tag, path) => (tag === NEXT_TAG && path === LAST_FILE ? 500 : undefined));
 
     await startDataInstall(page, NEXT_TAG);
-    // Reported twice: in Settings, and in the banner every page shows.
-    const inSettings = page.getByRole('alert').filter({ hasText: 'Update failed:' });
+    // Shown twice, said once (A11Y-002): the line in Settings beside its
+    // Retry install, and the banner every page shows, whose alert is the one
+    // thing a screen reader hears about it.
+    const inSettings = page.getByRole('main').getByText(/^Update failed:/);
     await expect(inSettings).toContainText(`failed to fetch "${LAST_FILE}"`);
     await expect(inSettings).toContainText('Your current version is untouched.');
-    await expect(inSettings.getByRole('button', { name: 'Retry install' })).toBeVisible();
+    await expect(
+      page.getByRole('main').getByRole('button', { name: 'Retry install' }),
+    ).toBeVisible();
     const banner = dataFailureBanner(page, `Update to ${NEXT_TAG} failed`);
     await expect(banner).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(1);
+    // The alert is the speaker; the announcer does not say it a second time.
+    await expect(announcements(page, 'assertive').filter({ hasText: 'failed' })).toHaveCount(0);
+    await expect(announcements(page, 'polite').filter({ hasText: 'failed' })).toHaveCount(0);
 
     // Nothing moved: the old release is the one in use and still whole, and
     // everything the attempt had staged was pruned.
@@ -284,8 +294,12 @@ test.describe('data installs', () => {
 
     await startDataInstall(again, NEXT_TAG);
     await expect(
-      again.getByText(`Now on ${NEXT_TAG}. Characters re-derive automatically.`),
+      again
+        .getByText(`Now on ${NEXT_TAG}. Characters re-derive automatically.`)
+        .and(onScreen(again)),
     ).toBeVisible();
+    // The install was waited on in Settings, so its outcome is said too.
+    await expect(announcements(again).filter({ hasText: `Now on ${NEXT_TAG}.` })).toHaveCount(1);
     await expect(toast).toHaveCount(0);
     await gotoRaces(again, NEXT_ONLY_RACE);
     await expectConfirmedOn(again, NEXT_TAG, PINNED_TAG);
@@ -344,10 +358,11 @@ test.describe('data installs', () => {
     await putSetting(page, ROLLBACK, { prev: PINNED_TAG, to: NEXT_TAG, starts: 2 });
 
     await page.goto('/library/race');
-    const notice = page.getByRole('status').filter({
-      hasText: `Game data ${NEXT_TAG} could not start, so the app went back to ${PINNED_TAG}.`,
-    });
+    // A plain visual, said through the announcer (A11Y-002).
+    const rollback = `Game data ${NEXT_TAG} could not start, so the app went back to ${PINNED_TAG}.`;
+    const notice = page.getByText(rollback).and(onScreen(page)).locator('xpath=..');
     await expect(notice).toBeVisible();
+    await expect(announcements(page).filter({ hasText: rollback })).toHaveCount(1);
     await expect(libraryEntry(page, SHARED_RACE)).toBeVisible();
     await expect(libraryEntry(page, NEXT_ONLY_RACE)).toHaveCount(0);
     expect(await getSetting(page, 'dataTag')).toBe(PINNED_TAG);

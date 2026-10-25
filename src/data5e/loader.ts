@@ -399,7 +399,16 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | undefined
 let tagReady: Promise<void> | undefined;
 
 function ensureTagReady(): Promise<void> {
-  tagReady ??= restoreActiveTag();
+  if (tagReady === undefined) {
+    const attempt = restoreActiveTag();
+    tagReady = attempt;
+    // A failed resolution (the settings row could not be read or written) is
+    // not cached: the next caller, a Retry among them, tries again instead of
+    // getting the same rejection for the life of the page.
+    attempt.catch(() => {
+      if (tagReady === attempt) tagReady = undefined;
+    });
+  }
   return tagReady;
 }
 
@@ -949,9 +958,26 @@ export async function checkForDataUpdate(): Promise<void> {
  */
 export async function updateToTag(newTag: string): Promise<void> {
   const status = dataStatusStore.getState();
+  /**
+   * Record a failed install where the banner and Settings read it. `setPhase`
+   * clears the tag, so it is re-armed after, and only for a tag a retry could
+   * actually install: a version this build cannot read never will.
+   */
+  const recordFailure = (err: unknown): void => {
+    status.setPhase('error', storageErrorText(err));
+    if (isCompatibleTag(newTag)) status.setFailedTag(newTag);
+  };
   // So `activeTag` is the installed release rather than the build's default,
   // and any probation it is on has been read, before anything is compared.
-  await ensureTagReady();
+  // A failure here is a failed install like any other: it used to reject
+  // before anything was recorded, so nothing on screen said the install
+  // the user had just confirmed had not happened.
+  try {
+    await ensureTagReady();
+  } catch (err) {
+    recordFailure(err);
+    throw err;
+  }
   if (newTag === activeTag) {
     // Already installed, by this call or another route, so the recorded
     // failure for it is over: leaving it up would show an error about a
@@ -1081,11 +1107,8 @@ export async function updateToTag(newTag: string): Promise<void> {
     // The old data is still live and still works; what is broken is this
     // install. Recording which tag failed is what lets the banner offer to
     // retry the install instead of re-arming the background queue, which
-    // would report success while leaving the update undone. `setPhase` clears
-    // the tag, so it is re-armed after, and only for a tag a retry could
-    // actually install: a version this build cannot read never will.
-    status.setPhase('error', storageErrorText(err));
-    if (isCompatibleTag(newTag)) status.setFailedTag(newTag);
+    // would report success while leaving the update undone.
+    recordFailure(err);
     throw err;
   } finally {
     // Whether we swapped or bailed, `activeTag` is now the one to keep, and

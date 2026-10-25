@@ -81,9 +81,9 @@ export function dataProgress(page: Page): Locator {
   return page.getByRole('progressbar', { name: 'Downloading game data' });
 }
 
-/** The toast that offers a newer data release found at boot. */
+/** The toast that offers a newer data release found at boot (not its spoken copy). */
 export function dataUpdateToast(page: Page, tag: string): Locator {
-  return page.getByText(`Game data ${tag} is available`).locator('xpath=..');
+  return page.getByText(`Game data ${tag} is available`).and(onScreen(page)).locator('xpath=..');
 }
 
 /**

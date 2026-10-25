@@ -25,6 +25,7 @@ vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
 import { flushLanded, noteFileLanded } from '@/data5e/landing';
+import { OFFLINE_ANNOUNCED_KEY } from '@/features/onboarding/OfflineReadyNotice';
 import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -257,13 +258,64 @@ describe('SettingsPage data announcements', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Could not list versions');
   });
 
-  it('says once that a requested download finished', async () => {
+  it('says once that a requested download finished, on a device past its offline notice', async () => {
+    localStorage.setItem(OFFLINE_ANNOUNCED_KEY, 'earlier');
     loader.verifyFullOffline.mockResolvedValueOnce({ cached: 31, total: 48 });
     render(<SettingsPage />);
     loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
     fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
     await screen.findByText('ready ✓');
     expect(getAnnouncerState().messages.map((m) => m.text)).toEqual([OFFLINE_DOWNLOADED_TEXT]);
+    localStorage.removeItem(OFFLINE_ANNOUNCED_KEY);
+  });
+
+  it('leaves the news to the one-time offline notice when that is still to come', async () => {
+    // Finishing the download is what fires "Ready to use offline"; saying
+    // "Game data downloaded" as well would be two lines for one event.
+    localStorage.removeItem(OFFLINE_ANNOUNCED_KEY);
+    loader.verifyFullOffline.mockResolvedValueOnce({ cached: 31, total: 48 });
+    render(<SettingsPage />);
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    await screen.findByText('ready ✓');
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('marks the download control busy while it runs, described by the queue count', async () => {
+    let finish: () => void = () => undefined;
+    loader.downloadAllPacks.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    render(<SettingsPage />);
+    const button = await screen.findByRole('button', { name: 'Make available offline' });
+    expect(button.getAttribute('aria-busy')).toBe('false');
+    const queue = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(queue?.previousElementSibling?.textContent).toBe('Download queue');
+    fireEvent.click(button);
+    expect(screen.getByRole('button', { name: 'Downloading…' }).getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    await act(async () => finish());
+  });
+
+  it('keeps a failed install an alert when the banner is not showing it', async () => {
+    // Rejected with nothing recorded where the banner reads, as a failure
+    // outside the loader's own catch would be.
+    loader.updateToTag.mockRejectedValueOnce(new Error('HTTP 500'));
+    renderInShell();
+    await installVersion('v2.33.0');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Update failed: HTTP 500');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('keeps a failed download an alert when the banner is not showing it', async () => {
+    loader.downloadAllPacks.mockRejectedValueOnce(new Error('offline'));
+    renderInShell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Download failed: offline');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 
   it('says once that an install finished', async () => {

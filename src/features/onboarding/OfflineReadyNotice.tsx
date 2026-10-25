@@ -12,6 +12,11 @@ import {
 
 export const OFFLINE_ANNOUNCED_KEY = 'cast-guidance:offline-ready-announced';
 
+/** Whether this device has had its one "Ready to use offline" notice (or skipped it). */
+export function offlineReadyAnnounced(): boolean {
+  return announced();
+}
+
 function announced(): boolean {
   try {
     return localStorage.getItem(OFFLINE_ANNOUNCED_KEY) !== null;

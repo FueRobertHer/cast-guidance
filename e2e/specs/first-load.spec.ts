@@ -1,5 +1,6 @@
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
 import {
+  announcements,
   emptyRosterLine,
   expectDataSettled,
   gettingStartedDismiss,
@@ -60,6 +61,10 @@ test.describe('first load', () => {
     await page.removeLocatorHandler(offlineReadyNotice(page));
     await page.goto('/settings');
     await expect(offlineReadyNotice(page)).toContainText('Ready to use offline next time');
+    // Said once, through the announcer's polite region (A11Y-002).
+    await expect(
+      announcements(page).filter({ hasText: 'Ready to use offline next time' }),
+    ).toHaveCount(1);
     await expect(offlineReadyNotice(page)).toBeHidden();
 
     expect(
