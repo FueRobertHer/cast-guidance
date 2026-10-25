@@ -52,7 +52,17 @@ export async function scanState(page: Page, state: string, options: ScanOptions 
   let builder = new AxeBuilder({ page }).withTags(AXE_TAGS);
   if (options.include !== undefined) builder = builder.include(options.include);
   for (const selector of Object.keys(options.exclude ?? {})) builder = builder.exclude(selector);
+  // vaul draws a drawer's drag overshoot as `[data-vaul-drawer]::after`,
+  // a strip below the sheet with `background: inherit`. axe cannot see
+  // through a pseudo-element that covers nothing, so it marked every text
+  // node in an open drawer "incomplete" for color-contrast, and a failing
+  // label in a drawer passed the gate. The strip is off screen while the
+  // sheet rests, so hiding it for the scan changes nothing a person sees.
+  const unmask = await page.addStyleTag({
+    content: '[data-vaul-drawer]::after { display: none !important; }',
+  });
   const results = await builder.analyze();
+  await unmask.evaluate((el) => (el as Element).remove());
 
   const rules = countViolations(results.violations);
   const info = test.info();
@@ -65,15 +75,17 @@ export async function scanState(page: Page, state: string, options: ScanOptions 
     } satisfies ScanRecord),
   });
   // Every node, for whoever has to fix one; the counts above are the contract.
+  const nodes = (list: typeof results.violations) =>
+    list.map((v) => ({
+      rule: v.id,
+      impact: v.impact,
+      help: v.help,
+      nodes: v.nodes.map((n) => ({ target: n.target, summary: n.failureSummary })),
+    }));
   await info.attach(`axe-${state}.json`, {
     contentType: 'application/json',
     body: JSON.stringify(
-      results.violations.map((v) => ({
-        rule: v.id,
-        impact: v.impact,
-        help: v.help,
-        nodes: v.nodes.map((n) => ({ target: n.target, summary: n.failureSummary })),
-      })),
+      { violations: nodes(results.violations), incomplete: nodes(results.incomplete) },
       null,
       2,
     ),
