@@ -357,6 +357,52 @@ describe('deriveSheet — optional-feature prerequisites', () => {
     expect(defense?.disabled).toBeUndefined();
     expect(defense?.description).not.toContain('Prereq');
   });
+
+  // An option whose prerequisite is "level 10 OR level 3": the gate opens at
+  // the lowest alternative, not the highest. Added locally so testWorld's
+  // option counts stay as they are.
+  const stance = {
+    name: 'Versatile Stance',
+    source: 'PHB',
+    featureType: ['FS:T'],
+    prerequisite: [{ level: 10 }, { level: 3 }],
+    entries: ['Either path works.'],
+  };
+  const orCtx: typeof ctx = {
+    get: (type, name, source) =>
+      type === 'optionalfeature' &&
+      name.toLowerCase() === 'versatile stance' &&
+      (source === undefined || source.toLowerCase() === 'phb')
+        ? stance
+        : ctx.get(type, name, source),
+    byType: (type) =>
+      type === 'optionalfeature' ? [...ctx.byType(type), stance] : ctx.byType(type),
+  };
+
+  function stanceOption(levels: number) {
+    const doc = warriorDoc();
+    const cls = doc.classes[0];
+    if (cls !== undefined) {
+      cls.levels = levels;
+      cls.hp = Array.from({ length: levels }, () => 'avg' as const);
+    }
+    delete doc.choices['class:warrior|tst:optfeature:FS:T'];
+    const prompt = deriveSheet(doc, orCtx).pending.find(
+      (p) => p.id === 'class:warrior|tst:optfeature:FS:T',
+    );
+    return prompt?.options.find((o) => o.id === 'versatile stance|phb');
+  }
+
+  it('opens an OR-set level gate at the lowest alternative level', () => {
+    const option = stanceOption(5);
+    expect(option).toBeDefined();
+    expect(option?.disabled).toBeUndefined();
+    expect(option?.description).toContain('level 10 or level 3');
+  });
+
+  it('still disables below the lowest alternative level', () => {
+    expect(stanceOption(2)?.disabled?.reason).toBe('Requires level 3');
+  });
 });
 
 describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {

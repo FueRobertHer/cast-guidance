@@ -101,7 +101,14 @@ export function summarizePrerequisite(raw: unknown): string {
     .join(' or ');
 }
 
-/** Highest numeric level prerequisite (used to gate optional-feature picks). */
+/**
+ * Lowest level at which some alternative prerequisite set can be met (used to
+ * gate optional-feature picks). The array is OR across sets, so the gate is the
+ * minimum, not the maximum: `[{level: 10}, {level: 3}]` opens at level 3. A set
+ * with no numeric level has no level gate at all, so it makes the whole result
+ * `undefined`. Other fields stay advisory (`meetsPrerequisite`) and never raise
+ * this hard gate.
+ */
 export function requiredLevel(raw: unknown): number | undefined {
   if (!Array.isArray(raw)) return undefined;
   let need: number | undefined;
@@ -112,9 +119,10 @@ export function requiredLevel(raw: unknown): number | undefined {
       typeof lvRaw === 'number'
         ? lvRaw
         : lvRaw !== null && typeof lvRaw === 'object'
-          ? (lvRaw as { level?: number }).level
+          ? (lvRaw as { level?: unknown }).level
           : undefined;
-    if (typeof lv === 'number') need = need === undefined ? lv : Math.max(need, lv);
+    if (typeof lv !== 'number') return undefined;
+    need = need === undefined ? lv : Math.min(need, lv);
   }
   return need;
 }
