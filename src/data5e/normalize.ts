@@ -340,7 +340,9 @@ type CopyIndex = (uid: string) => Entity | undefined;
  * only known once its copy resolves, so those few are searched as they stand
  * at lookup time, as the scan did. The one difference: if such an entry comes
  * to share a uid with a named entry later in the list, the named one is found
- * first, where the scan found the earlier one.
+ * first, where the scan found the earlier one. Likewise a named entry whose
+ * `_copy._mod` sets its own name or source is keyed under the name it starts
+ * with, so a copy of it by its new name is not found.
  */
 function copyIndex(list: readonly Entity[]): CopyIndex {
   const byUid = new Map<string, Entity>();
