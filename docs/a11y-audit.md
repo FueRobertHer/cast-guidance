@@ -64,6 +64,38 @@ drawer open and close and a die is rolled: with `reducedMotion: 'reduce'` none
 runs longer than 0.01 ms, and the same flow without the preference (the
 canary) does animate.
 
+### Touch target sizes
+
+[`e2e/a11y/target-size.spec.ts`](../e2e/a11y/target-size.spec.ts)
+([#113](https://github.com/FueRobertHer/cast-guidance/issues/113), A11Y-002)
+measures the boxes the browser lays out, on the suite's phone. It measures
+the element's own box, as axe's `target-size` rule does, so a hit area drawn
+by a pseudo-element would not count. Two checks:
+
+- **Inventoried controls, 44 by 44:** the HP steppers, the exhaustion and
+  point-pool steppers, the death saves, Build's level and ability steppers,
+  the creator's ability steppers, the sheet's and the creator's back links,
+  and Homebrew's row actions (enable, edit, download, delete). Pips are held
+  to 32 wide by 44 tall (the decision below). Each check also counts the
+  controls it found, so a renamed one cannot drop out unseen.
+- **Everything else, 24 by 24 (WCAG 2.5.8):** every visible button, link,
+  `summary` and `role="button"`. The one exemption is 2.5.8's inline one: a
+  roll chip in rules text, which `renderEntries` draws with `RollChip`'s
+  `inline` (marked `data-inline-target`) only when there are words around
+  it. A marked chip with no sentence beside it fails the check, so the mark
+  cannot hide a stray control; a chip alone, in a table cell say, is a full
+  24 by 24 target.
+
+States: the Play tab of a caster (Sorcerer 13 and Cleric 2, from homebrew
+the character file carries, since the suite's data release has no caster:
+spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
+exhaustion), the same at 0 HP (the death saves), Build with every section
+and picker open, Homebrew with one file of your own, and the creator's
+abilities step on point buy. Not measured yet: spell rows on Play (the
+caster knows no spells), the Stats, Items, Spells and More tabs, the
+library, Settings, and the creator's other steps. axe's `target-size` still
+runs on every scanned state.
+
 ### Unit guards
 
 - `src/styles/contrast.test.ts`: the button fill (`accent-fill`) clears 4.5:1
@@ -73,7 +105,8 @@ canary) does animate.
   lines. A token in a conditional or a variable counts too, and moving one
   from a mark onto a label in the same file fails.
 - `src/features/sheet/tabs/targetSize.test.tsx`: the sheet's small controls,
-  the Stats ability scores included, carry a thumb-sized class.
+  the Stats ability scores and the death saves included, carry a thumb-sized
+  class. The E2E spec above is the real guard; this one only fails fast.
 - `e2e/a11y/baseline.test.ts`: the baseline policy below.
 
 ### Not automated here
@@ -148,16 +181,19 @@ screen-reader and zoom passes below look at them on a device.
 | 2026-10-25 | `color-contrast`: #169's import preview drew its Import button white on `bg-accent`, 3.8:1. | Moved to `accent-fill`, like every labelled red button; both preview states fail without it. |
 | 2026-10-25 | `color-contrast`, found once drawers were unmasked: a destructive choice (the roster's Delete) drew its label in `accent` on a surface-2 button, 4.0:1, and 2.8:1 on the hover step. | A new `accent-ink` token (red-300) for red words on a raised control: 7.8:1 and 5.5:1. |
 | 2026-10-25 | `target-size`: the Stats tab's ability scores (the breakdown buttons) were 13 by 16 px. | Now 44 by 44 targets (`tap`), the card's bottom padding absorbing part of the growth. |
+| 2026-10-25 | Target sizes, measured (#113): the death-save circles on Play (shown at 0 HP) were 20 by 20, under 44 and under 24. | 44 by 44 targets around the same 20 px circle. Successes sit over failures, with Roll save beside them (below them on a phone narrower than about 360 px). |
+| 2026-10-25 | Homebrew's row actions: download, delete and edit were 27 by 27, the enable toggle 63 by 22. | All four 44 tall (`tap`), the icons 44 by 44; a negative margin keeps the row its height, and the toggle keeps its pill inside the target. Below 360 px the name takes the row's first line and the toggle and actions the second, or the name would get about 66 px. |
+| 2026-10-25 | The creator: the abilities step's steppers were 32 by 32, its back link 20 by 20. | 44 by 44 targets around the same 32 px circle, with the gap between them dropped so a card still fits half of a 320 px screen; the back link as on the sheet. |
+| 2026-10-25 | Under 24 on Play: the "temp HP" and "breakdown" links (16 tall), the resource names that open their rules (20 tall), the attack row's roll chips (24 by 18 and 17 by 18). | At least 24 tall, the chips 24 by 24. A roll chip in rules text keeps the size of its line (`RollChip`'s `inline`). Action names and weapon names, which open rules the same way, got the same 24 px height. |
+| 2026-10-25 | Under 24 on Build: the pickers' summaries ("Add a class (multiclass)", "Pick a species to start" and the like) were 16 tall. | 24 tall (`py-1`), keeping the disclosure marker. |
 | 2026-10-25 | No reduced-motion handling beyond the roll toast and the roster. | App-wide block in `app.css`, plus the script-driven smooth scroll. See above. |
-| 2026-10-25 (from #163) | Resource pips are 44 px tall and 32 px wide around a 16 px dot, not 44 by 44: a 12-use row at 44 px a pip wraps onto a third line at 320 px. | Owner decision: keep 44x32. The height is what a thumb misses by; 32 px is above WCAG 2.5.8's 24 px floor, and axe's `target-size` passes it. Revisit if the manual passes find mis-taps. |
+| 2026-10-25 (from #163) | Resource pips are 44 px tall and 32 px wide around a 16 px dot, not 44 by 44: a 12-use row at 44 px a pip wraps onto a third line at 320 px. | Owner decision: keep 44x32. The height is what a thumb misses by; 32 px is above WCAG 2.5.8's 24 px floor, and axe's `target-size` passes it. Revisit if the manual passes find mis-taps. `e2e/a11y/target-size.spec.ts` holds slot and resource pips to 32 by 44. |
 
 Open findings, for follow-up issues:
 
 - The library's virtualized list (`src/ui/VirtualList.tsx`) has no arrow-key
   navigation; rows are reachable by Tab only. Whether a screen reader
   announces the list's size and position is a manual item below.
-- The death-save circles on Play (shown at 0 HP) are 20 px targets, under 44
-  and under axe's 24. No scanned state reaches 0 HP yet.
 - The builder's "This homebrew file is no longer on this device." page has no
   heading (axe's `page-has-heading-one`, a best-practice rule, so not gated).
 - Not scanned yet, for want of a hermetic setup: the data banner's rollback

@@ -51,6 +51,9 @@ the binary outright, as an escape hatch when the two drift.
   test at teardown. `setTags` and `setBodies` publish a new release
   (`NEXT_TAG` and `withNextRelease` serve one with an extra species, so a page
   shows which release it reads).
+- **Caster** (`fixtures/caster.ts`): the release has no caster, so a
+  character file built on a stored blank character carries a homebrew
+  Sorcerer and Cleric (slots, a point pool past twelve, a pool of pips).
 - **Network guard**: every other host is aborted and fails the test.
 - **Below the routing layer** (`support/launch.ts`): some sockets never pass
   through `context.route` (a `<link rel="preconnect">`, a WebSocket, the
@@ -140,8 +143,10 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 |---|---|
 | `a11y/axe` | axe on every main route, the sheet's tabs, the dialogs, drawers and info sheets, the banners and toasts (the app update toast from the variant server), and four routes at a desktop size; see `docs/a11y-audit.md` for the list of states. |
 | `a11y/reduced-motion` | With `reducedMotion: 'reduce'`, no animation or transition runs longer than 0.01 ms while sheets open and close and a die is rolled; the same flow animates without it. |
+| `a11y/target-size` | Measured boxes on a phone: the inventoried controls (HP, exhaustion and pool steppers, death saves, Build's and the creator's steppers, the back links, Homebrew's row actions) at least 44 by 44, pips 32 by 44, and every other visible control (button, link, `summary`, `role="button"`) at least 24 by 24, a roll chip in a sentence excepted; on a caster's Play tab (and at 0 HP), Build, Homebrew with one file and the creator's abilities step. |
 | `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
+| `multi-tab` | One character in two pages of one context (real IndexedDB and BroadcastChannel): both warn that it is open in another tab; an HP edit in one and a rename in the other, each saved, end in last-writer-wins (the rename's tab wrote the HP it had loaded), as `characterSession.multitab.indexeddb.test.ts` documents; closing one tab clears the other's warning within `STALE_MS`, and a crashed one, which sends no goodbye, ages out. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
 | `import-export` | Export file shape, import back (through the preview), a duplicate import gets a new id, refused files change nothing and open no preview, export offline. |
 | `import-preview` | IMP-002: a homebrew file is previewed (contents, size, source, a missing dependency, an official clash and its winner), Cancel writes nothing and returns focus, Import stores it, the same file again offers to keep the existing one; a character import previews as a copy and lands as one. |
