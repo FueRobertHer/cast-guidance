@@ -135,7 +135,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
     expect(fighterCard()?.textContent).not.toContain('2014 content');
   });
 
-  it('offers the 2024 printing of a reprinted spell, and the 2014 one again on the way back', async () => {
+  it('offers the 2024 printing of a known spell, and keeps the known one listed', async () => {
     const doc = sorcerer();
     doc.spellcasting['sorcerer|tst']?.known.push({ name: 'Guidance', source: 'TST' });
     const sheet = await renderSheet(doc, { extra: WORLD, lists: LISTS, path: 'spells' });
@@ -148,7 +148,12 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
 
     await switchTo(sheet, '2024');
     await sheet.tab('Spells');
-    expect(rows()).toContainEqual({ source: 'XPHB', known: false });
+    // The 2024 printing is what the list offers now. The 2014 one the
+    // character knows stays listed, so it can still be seen and unlearned.
+    expect(rows()).toEqual([
+      { source: 'TST', known: true },
+      { source: 'XPHB', known: false },
+    ]);
 
     await switchTo(sheet, '2014', { expectPrompt: false });
     await sheet.tab('Spells');

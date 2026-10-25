@@ -148,14 +148,15 @@ function ClassSpells({
   const { byLevel, sourceHiddenCount } = useMemo(() => {
     const empty = { byLevel: new Map<number, Entity[]>(), sourceHiddenCount: 0 };
     if (registry === null || classUids === null) return empty;
-    const spells = filterByRulesVersion([...registry.byType('spell')], doc.rulesVersion).filter(
-      (s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)),
-    );
-    // Hidden sources drop out of the list to learn from, but a spell this
-    // character already knows or prepares stays put, or the sheet would
-    // show a count it can't account for.
+    // Hidden sources and the other edition's printings drop out of the list to
+    // learn from, but a spell this character already knows or prepares stays
+    // put, or the sheet would show a count it can't account for and offer no
+    // way to unlearn it (a 2014 pick after a switch to 2024, say).
     const onSheet = new Set(onSheetKey === '' ? [] : onSheetKey.split(','));
     const isOnSheet = (s: Entity) => onSheet.has(uidOf(s));
+    const spells = filterByRulesVersion([...registry.byType('spell')], doc.rulesVersion, {
+      keep: isOnSheet,
+    }).filter((s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)));
     const allowed = showHiddenSources
       ? spells
       : applySourcePolicy(spells, policy, sourceOf, isOnSheet);
