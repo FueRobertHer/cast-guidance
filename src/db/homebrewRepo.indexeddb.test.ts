@@ -100,6 +100,32 @@ describe('homebrewRepo editable files (IndexedDB-backed)', () => {
   });
 });
 
+describe('homebrewRepo.enabledSafe merge order', () => {
+  // The registry merges homebrew in this order and keeps the first entity per
+  // name|source, so this order is the precedence between homebrew files.
+  it('returns the oldest import first, whatever the ids sort to', async () => {
+    const put = (id: string, addedAt: number, enabled = true) =>
+      db.homebrewFiles.put({
+        id,
+        fileName: `${id}.json`,
+        json: {},
+        enabled,
+        editable: false,
+        sourceIds: [],
+        counts: {},
+        addedAt,
+      });
+    await put('a', 9);
+    await put('z', 1);
+    await put('m', 5);
+    await put('d', 5);
+    await put('b', 2, false);
+
+    const { files } = await homebrewRepo.enabledSafe();
+    expect(files.map((f) => f.id)).toEqual(['z', 'd', 'm', 'a']);
+  });
+});
+
 describe('the homebrew read boundary against the real database', () => {
   // importJson validates what it stores, but the row read back is whatever
   // IndexedDB holds. A direct write is the only way to reproduce that.

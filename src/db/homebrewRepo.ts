@@ -5,6 +5,7 @@ import {
   sha256Hex,
 } from '@/lib/guards';
 import { db, type HomebrewFileRow } from './db';
+import { compareMergeOrder } from './homebrewOrder';
 
 /**
  * Build a content-hashed homebrew row from a raw 5etools homebrew file object.
@@ -137,10 +138,17 @@ export const homebrewRepo = {
     return result;
   },
 
-  /** The enabled files only, with the errors from the whole set. */
+  /**
+   * The enabled files only, with the errors from the whole set.
+   *
+   * Oldest import first. This is the merge order, and so the precedence: the
+   * earliest import wins a `name|source` tie with another homebrew file, and
+   * official data always wins (see {@link compareMergeOrder}). A row whose
+   * `addedAt` was lost reads as 0, so it sorts first rather than moving.
+   */
   async enabledSafe(): Promise<HomebrewListResult> {
     const { files, errors } = partitionHomebrewRows(await db.homebrewFiles.toArray());
-    return { files: files.filter((r) => r.enabled), errors };
+    return { files: files.filter((r) => r.enabled).sort(compareMergeOrder), errors };
   },
 
   /**
