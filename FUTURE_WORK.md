@@ -61,9 +61,9 @@ CI, gated on coverage floors and a bundle budget.
 | Unit + integration tests | Pass: 194 files, 2,134 tests |
 | Coverage gate | `bun run test:coverage`: 81.09% statements, 71.82% branches, 72.65% functions, 82.92% lines. CI fails below the `vite.config.ts` floors of 80 / 70 / 71 / 81. |
 | Production/PWA build | Pass: 58 unique precache entries |
-| Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 394,833 B raw, 124,725 B gzip (budget 420,000 / 132,000); initial JS 554,326 B raw, 177,958 B gzip (586,000 / 188,000); total JS 1,007,259 B (1,108,000); largest chunk 394,833 B (420,000); CSS 45,039 B (47,000); precache 1,096,981 B (1,155,000). The total JS budget was rebaselined to about 10% over this measurement with PWA-001: total JS grew about 40 KB since the last baseline (IMP-002's import preview, A11Y-002's announcer and PWA-001), reaching 99.9% of the old 1,008,000, while the entry and initial budgets still have headroom. The precache budget was rebaselined the same way with PWA-002, when the raster icons added 41,411 B. |
+| Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 401,962 B raw, 126,963 B gzip (budget 420,000 / 132,000); initial JS 561,463 B raw, 180,201 B gzip (586,000 / 188,000); total JS 1,019,227 B (1,108,000); largest chunk 401,962 B (420,000); CSS 45,591 B (47,000); precache 1,109,501 B (1,155,000), measured with REL-007's revision check (#98). The total JS budget was rebaselined to about 10% over this measurement with PWA-001: total JS grew about 40 KB since the last baseline (IMP-002's import preview, A11Y-002's announcer and PWA-001), reaching 99.9% of the old 1,008,000, while the entry and initial budgets still have headroom. The precache budget was rebaselined the same way with PWA-002, when the raster icons added 41,411 B. |
 | Real pinned-dataset audit | `bun run data:audit`, run 2026-10-25 against v2.32.0 (jsDelivr refused, the raw.githubusercontent fallback answered): 48 files; 8,141 entities, 936 spells; 40 versioned `replaceArr` warnings; 0 unresolved `_copy`; 402 spells with dice, every generated roll parses; all 53 `{@tag}`s rendered; 17 multi-name `additionalSpells` blocks, 4 of them without choice wording and allowed by verdict. Every check is within the `scripts/data-audit-budget.json` entry. The `Data audit` workflow re-runs it weekly and on data-pipeline PRs. |
-| Browser E2E | Chromium, in the `e2e` CI job: 17 spec files and a setup file, 188 tests (41 of them the accessibility specs in `e2e/a11y`, 107 the PWA-001 offline route matrix), all passing. The reload data loss the suite found is fixed by the save journal (#123), and data installs, updates, rollback and their failures have specs of their own (`data-install`). |
+| Browser E2E | Chromium, in the `e2e` CI job: 17 spec files and a setup file, 193 tests (42 of them the accessibility specs in `e2e/a11y`, 107 the PWA-001 offline route matrix), all passing. The reload data loss the suite found is fixed by the save journal (#123), and data installs, updates, rollback and their failures have specs of their own (`data-install`). |
 | Automated accessibility (axe) | `e2e/a11y`, in the `e2e` job: 47 states (every main route, the sheet's tabs, dialogs, drawers, info sheets, banners and toasts, four at desktop size), WCAG 2.x A and AA, held to `e2e/a11y/axe-baseline.json` by a one-sided ratchet that also fails a baseline state no longer scanned. The baseline is empty: the 16 serious nodes found are fixed; 22 nodes axe cannot decide are listed, not gated. Reduced motion is checked too, and touch target sizes are measured (44 by 44 for the inventoried controls, 24 by 24 for every other control), and so are keyboard operation (focus trap and return on every dialog and drawer, Tab and Enter through the roster, library and sheet tabs, a 150-row list) and layout (320 px reflow, 200% text, landscape with focus never hidden behind the bars). See `docs/a11y-audit.md`. |
 
 Priority meanings:
@@ -233,6 +233,12 @@ work:
 - Define service-worker cache, activation, stale-chunk, corruption, deferral,
   rollback, and SPA-fallback policy; expose app-shell, essentials, and full-data
   readiness separately.
+- The save journal keeps one entry per character, shared by every tab: a
+  second tab that goes away holding unsaved edits to the same character
+  replaces the first tab's entry before the next boot can replay it, and the
+  first tab's snapshot then rests on its own `pagehide` save landing. The
+  replay itself is checked (REL-007, #98). Key entries by tab, with a sweep of
+  abandoned ones, if this proves to lose edits.
 
 ### Homebrew and import maturity
 
