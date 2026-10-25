@@ -449,6 +449,13 @@ function applyCopy(e: Entity, target: Entity, warnings: CopyModWarning[], label:
  * (subraces match on raceName/raceSource too, subclasses on className, …).
  * Copy-of-copy chains resolve via fixed-point iteration; cycles and missing
  * targets end up as warnings with `_copy` stripped.
+ *
+ * An entry whose target has its own `_copy` waits for that copy. If the
+ * target's copy never resolves, the entry stays unresolved as well, rather
+ * than copying a half-built target. `mergeHomebrew` resolves every homebrew
+ * file of a type in one call, so this now holds across files too: a file that
+ * copies another file's broken entry is reported as unresolved, where it used
+ * to copy that entry as it stood when the copying file came later.
  */
 export function resolveCopies(
   entities: Entity[],

@@ -326,6 +326,36 @@ export function mergeHomebrew(
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
 }
 
+/** Finds the entity a lowercased `name|source` names in one list, or undefined. */
+type CopyIndex = (uid: string) => Entity | undefined;
+
+/**
+ * Index a list for `_copy` lookups: the same answer as {@link byNameSource}
+ * (the first entity in list order with that uid), in constant time instead of
+ * a scan that computes every entity's uid on every lookup.
+ *
+ * An entity with a string name and source keeps that identity through
+ * resolution (its own fields win over what it copies), so it is keyed once,
+ * up front. One without them takes its identity from what it copies, which is
+ * only known once its copy resolves, so those few are searched as they stand
+ * at lookup time, as the scan did. The one difference: if such an entry comes
+ * to share a uid with a named entry later in the list, the named one is found
+ * first, where the scan found the earlier one.
+ */
+function copyIndex(list: readonly Entity[]): CopyIndex {
+  const byUid = new Map<string, Entity>();
+  const unsettled: Entity[] = [];
+  for (const e of list) {
+    if (typeof e.name !== 'string' || typeof e.source !== 'string') {
+      unsettled.push(e);
+      continue;
+    }
+    const uid = uidOf(e);
+    if (!byUid.has(uid)) byUid.set(uid, e);
+  }
+  return (uid) => byUid.get(uid) ?? unsettled.find((e) => uidOf(e) === uid);
+}
+
 /**
  * Two passes per type, so a file's `_copy` reaches every enabled file, not only
  * the ones merged before it (IMP-002).
@@ -344,6 +374,9 @@ export function mergeHomebrew(
  * resolver's own fixed-point passes, and a cycle ends as unresolved warnings,
  * as it does within one file. Race `_versions` are still expanded after
  * resolution, so a copy cannot target another file's expanded version.
+ *
+ * This runs on every registry rebuild, so each lookup is a map hit rather
+ * than a scan of the type's list (see {@link copyIndex}).
  */
 function mergeHomebrewFiles(
   reg: EntityRegistry,
@@ -361,13 +394,20 @@ function mergeHomebrewFiles(
     const all = perFile.flat();
     if (all.length === 0) continue;
     // Official only: this type's homebrew is added below, after resolution.
-    const official = [...reg.byType(type)];
-    const fileOf = new Map<Entity, Entity[]>();
-    for (const list of perFile) for (const e of list) fileOf.set(e, list);
+    const official = copyIndex(reg.byType(type));
+    const everyFile = copyIndex(all);
+    const fileOf = new Map<Entity, CopyIndex>();
+    for (const list of perFile) {
+      const own = copyIndex(list);
+      for (const e of list) fileOf.set(e, own);
+    }
     reg.warnings.push(
       ...resolveCopies(
         all,
-        (copy, self) => byNameSource(fileOf.get(self) ?? [], official, all)(copy),
+        (copy, self) => {
+          const uid = `${String(copy.name)}|${String(copy.source)}`.toLowerCase();
+          return fileOf.get(self)?.(uid) ?? official(uid) ?? everyFile(uid);
+        },
         `homebrew ${type}`,
       ),
     );
