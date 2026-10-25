@@ -252,3 +252,27 @@ describe('public/_headers', () => {
     );
   });
 });
+
+describe('vercel.json SPA fallback', () => {
+  // Vercel serves a file when one matches and only then applies a rewrite, so
+  // this sends a cold deep link such as /c/abc/spells to the app shell
+  // instead of a 404, while a missing hashed asset still 404s.
+  function fallback(): RegExp {
+    const config = JSON.parse(rawFiles['/vercel.json'] ?? '{}') as {
+      rewrites?: { source: string; destination: string }[];
+    };
+    const rule = config.rewrites?.find((r) => r.destination === '/index.html');
+    if (rule === undefined) throw new Error('vercel.json has no rewrite to /index.html');
+    return new RegExp(`^${rule.source}$`);
+  }
+
+  it('sends client routes to the app shell', () => {
+    for (const path of ['/', '/create', '/c/abc/spells', '/library/race', '/settings']) {
+      expect(fallback().test(path)).toBe(true);
+    }
+  });
+
+  it('leaves missing build assets to 404', () => {
+    expect(fallback().test('/assets/index-abc123.js')).toBe(false);
+  });
+});
