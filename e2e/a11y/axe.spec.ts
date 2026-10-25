@@ -26,7 +26,7 @@ import {
   skipOfflineReadyNotice,
   startDataInstall,
 } from '../support/app.ts';
-import { getCharacter, putSetting } from '../support/idb.ts';
+import { getCharacter, putCharacterRow, putSetting } from '../support/idb.ts';
 import { triggerSwUpdate, waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
 import { scanState } from './scan.ts';
@@ -408,6 +408,27 @@ test.describe('axe: banners and toasts', () => {
     await expect(failed).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'banner-save-error');
+  });
+
+  test('the banner for a save another tab got ahead of', async ({ page }) => {
+    await skipOfflineReadyNotice(page);
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+    await gotoSheetTab(page, id, 'Play');
+    await expect(page.getByRole('banner').locator('[data-save-indicator]')).not.toHaveText(
+      /Unsaved|Saving/,
+    );
+    // Another tab's save (REL-007): a new name under a revision of its own,
+    // written raw so this tab does not refresh from it first.
+    const stored = await getCharacter(page, id);
+    if (stored === undefined) throw new Error('The character was not stored');
+    await putCharacterRow(page, { ...stored, name: 'Renamed elsewhere', revision: 'other-tab' });
+    await page.getByRole('button', { name: 'Inspiration' }).click();
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'changed in another tab' }),
+    ).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'banner-save-conflict');
   });
 
   test('the banner for a database another tab deleted', async ({ page }) => {
