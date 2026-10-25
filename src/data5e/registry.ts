@@ -148,8 +148,10 @@ async function readRegistry(): Promise<EntityRegistry> {
     // A release just installed that cannot even be built goes back to the
     // one it replaced, and the caller gets that release's registry instead of
     // an error. Only once: the rollback spends the record, so a build that
-    // fails again under the restored release is reported as it stands.
-    if (await noteRegistryBuildFailed(tag)) return readRegistry();
+    // fails again under the restored release is reported as it stands. A
+    // concurrent build that lost the race to roll back finds the tag already
+    // moved and builds the restored release too.
+    if ((await noteRegistryBuildFailed(tag)) || getActiveTag() !== tag) return readRegistry();
     throw err;
   }
   // The official build is what an install is judged on, so this is where its

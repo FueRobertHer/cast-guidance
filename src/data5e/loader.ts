@@ -176,7 +176,8 @@ async function checkPendingTag(): Promise<void> {
  *
  * `reject` records the release as one this device went back from, so the
  * update check stops offering it and the notice outlives a reload; it is for
- * a release that failed, not one that was merely evicted.
+ * a release that failed, not one that was merely evicted. Only a rejected
+ * release raises the rollback notice.
  */
 async function rollBack(
   rollback: RollbackRecord,
@@ -217,7 +218,9 @@ async function rollBack(
   pendingTag = undefined;
   activeTag = prev;
   source = new GithubTagSource(prev);
-  dataStatusStore.getState().setRolledBackFrom(to);
+  // The notice says the release could not start, which is untrue of one
+  // whose files were evicted; that one is simply offered again.
+  if (reject) dataStatusStore.getState().setRolledBackFrom(to);
   return true;
 }
 

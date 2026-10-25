@@ -275,7 +275,8 @@ describe('phase E: installed, not yet confirmed', () => {
     const reg = await next.registry.getRegistry();
     expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
     expect(next.loader.getActiveTag()).toBe(DATA_TAG);
-    expect(next.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+    // No "could not start" notice: it did not fail to start.
+    expect(next.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
     const kept = await next.dataCacheRepo.cachedPaths(DATA_TAG);
     expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
     expect(fetchFile).not.toHaveBeenCalled();
@@ -307,6 +308,23 @@ describe('phase E: installed, not yet confirmed', () => {
     expect(await storedTag(started)).toBe(DATA_TAG);
     expect(await rollbackRecord(started)).toBeUndefined();
     expect(started.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+  });
+
+  it('answers every concurrent build of a release that cannot be built from the one it went back to', async () => {
+    fetchFile.mockImplementation(
+      releases({ [NEXT]: { 'races.json': { race: [{ name: 'Crash' }] } } }),
+    );
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+
+    const regs = await Promise.all([
+      started.registry.getRegistry(),
+      started.registry.getRegistry(),
+    ]);
+    for (const reg of regs) {
+      expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
+    }
+    expect(started.loader.getActiveTag()).toBe(DATA_TAG);
   });
 
   /** Save an enabled homebrew file holding `json`, through the module set in use now. */
