@@ -9,7 +9,6 @@ import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { characterRepo } from '@/db/characterRepo';
-import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
 import {
@@ -35,17 +34,16 @@ import { notifyFailure } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { UndoBar } from '@/ui/UndoBar';
+import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
+import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
 import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
   backgroundBlurb,
-  classAbilityHint,
   classBlurb,
   makeSubclassBlurb,
   makeSubclassEntries,
-  pointBuyFocusFor,
   raceBlurb,
-  standardArrayFor,
 } from './pickerHints';
 import {
   bundleGoldCp,
@@ -457,7 +455,6 @@ export function Component() {
   };
 
   const undoShown = undo.pending !== null || undo.undone !== null;
-  const abilitiesUntouched = ABILITIES.every((a) => doc.abilities.base[a] === 10);
 
   // Prompts the player can see now, so "N picks cleared" counts only those.
   const activeChoices = new Set(sheet?.resolvedChoices.map((r) => r.prompt.id) ?? []);
@@ -637,6 +634,30 @@ export function Component() {
       (before, after) => !sameDraft(before, after) && (before.doc.background !== undefined || kit),
     );
   };
+
+  /**
+   * Switching method never moves a score, except into point buy from scores
+   * it cannot price: a legal spread (the standard array costs exactly 27)
+   * carries over, anything else starts again from 8s. That reset offers undo,
+   * unless it reset the untouched all-10 state, which loses nothing.
+   */
+  const setMethod = (m: ShownMethod) =>
+    undoable(
+      ({ doc: d }) => {
+        // Re-selecting the current method is a no-op: otherwise re-tapping
+        // "Point buy" re-zeroes allocated scores.
+        if (d.abilities.method === m) return;
+        d.abilities.method = m;
+        if (m === 'pointbuy' && !keepsOnPointBuySwitch(d.abilities.base)) {
+          d.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+        }
+      },
+      (before) => ({
+        title: 'Point buy: every score back to 8',
+        detail: `was ${scoresText(before.doc)}`,
+      }),
+      (before, after) => scoresChanged(before, after) && !allAt(before.doc.abilities.base, 10),
+    );
 
   const stepBody = () => {
     switch (step) {
@@ -827,180 +848,23 @@ export function Component() {
           </div>
         );
 
-      case 'abilities': {
-        const cost = pointBuyCost(doc.abilities.base);
-        const className = doc.classes[0]?.ref.name;
-        const hint = className !== undefined ? classAbilityHint(className) : undefined;
-        const autoArray = className !== undefined ? standardArrayFor(className) : undefined;
+      case 'abilities':
         return (
-          <div className="flex flex-col gap-4">
-            {hint !== undefined && (
-              <p className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
-                💡 As a <strong className="text-ink">{className}</strong>, put your highest score in{' '}
-                <strong className="text-ink">{hint}</strong> — they power your attacks and key
-                features.
-              </p>
-            )}
-            {autoArray !== undefined && (
-              <button
-                type="button"
-                onClick={() =>
-                  undoable(
-                    (d) => void (d.doc.abilities.base = { ...autoArray }),
-                    (before) => ({
-                      title: `Applied the standard array for a ${className}`,
-                      detail: `was ${scoresText(before.doc)}`,
-                    }),
-                    scoresChanged,
-                  )
-                }
-                className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
-              >
-                Auto-assign the standard array for a {className}
-              </button>
-            )}
-            {abilitiesUntouched && (
-              <p className="rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm text-amber-200">
-                Scores aren't assigned yet — every ability is still 10. Tap auto-assign or set them
-                below.
-              </p>
-            )}
-            <div className="flex gap-1.5">
-              {(['standard', 'pointbuy', 'manual'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={doc.abilities.method === m}
-                  onClick={() =>
-                    undoable(
-                      ({ doc: d }) => {
-                        // Re-selecting the current method is a no-op: otherwise
-                        // re-tapping "Point buy" re-zeroes allocated scores.
-                        if (d.abilities.method === m) return;
-                        d.abilities.method = m;
-                        if (m === 'pointbuy')
-                          d.abilities.base = {
-                            str: 8,
-                            dex: 8,
-                            con: 8,
-                            int: 8,
-                            wis: 8,
-                            cha: 8,
-                          };
-                      },
-                      (before) => ({
-                        title: 'Point buy: every score back to 8',
-                        detail: `was ${scoresText(before.doc)}`,
-                      }),
-                      scoresChanged,
-                    )
-                  }
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    doc.abilities.method === m
-                      ? 'border-accent bg-accent-deep/40 font-semibold'
-                      : 'border-surface-2 text-ink-muted'
-                  }`}
-                >
-                  {m === 'standard' ? 'Standard array' : m === 'pointbuy' ? 'Point buy' : 'Manual'}
-                </button>
-              ))}
-            </div>
-            {doc.abilities.method === 'pointbuy' && (
-              <div className="flex flex-col gap-2">
-                <p
-                  className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? 'text-accent' : 'text-ink-muted'}`}
-                >
-                  Points: {cost ?? '—'} / {POINT_BUY_BUDGET}
-                  {cost === undefined && ' (scores must stay 8–15)'}
-                </p>
-                {(() => {
-                  const focus = className !== undefined ? pointBuyFocusFor(className) : undefined;
-                  if (focus === undefined) return null;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        undoable(
-                          (d) => void (d.doc.abilities.base = { ...focus }),
-                          (before) => ({
-                            title: `Focused a ${className}`,
-                            detail: `was ${scoresText(before.doc)}`,
-                          }),
-                          scoresChanged,
-                        )
-                      }
-                      className="self-start rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Focus a {className} (15/15/15 in key abilities)
-                    </button>
-                  );
-                })()}
-              </div>
-            )}
-            {doc.abilities.method === 'standard' && (
-              <p className="text-sm text-ink-muted">
-                Assign {STANDARD_ARRAY.join(' / ')} across your abilities.
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {ABILITIES.map((a) => {
-                const final = sheet?.abilities[a];
-                return (
-                  <div
-                    key={a}
-                    className="flex flex-col items-center gap-1 rounded-lg bg-surface p-3"
-                  >
-                    <span className="text-xs font-semibold uppercase text-ink-muted">{a}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={`Decrease ${a.toUpperCase()}`}
-                        onClick={() =>
-                          update(
-                            (d) =>
-                              void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
-                          )
-                        }
-                        className="h-8 w-8 rounded-full bg-surface-2"
-                      >
-                        <span aria-hidden="true">−</span>
-                      </button>
-                      <span className="w-7 text-center text-lg font-bold">
-                        {doc.abilities.base[a]}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Increase ${a.toUpperCase()}`}
-                        onClick={() =>
-                          update(
-                            (d) =>
-                              void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
-                          )
-                        }
-                        className="h-8 w-8 rounded-full bg-surface-2"
-                      >
-                        <span aria-hidden="true">+</span>
-                      </button>
-                    </div>
-                    {final !== undefined && final.value !== doc.abilities.base[a] && (
-                      <span className="text-xs text-emerald-300">
-                        → {final.value} ({final.mod >= 0 ? '+' : ''}
-                        {final.mod})
-                      </span>
-                    )}
-                    {final !== undefined && final.value === doc.abilities.base[a] && (
-                      <span className="text-xs text-ink-muted">
-                        mod {final.mod >= 0 ? '+' : ''}
-                        {final.mod}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <AbilitiesStep
+            abilities={doc.abilities}
+            finals={sheet?.abilities}
+            className={doc.classes[0]?.ref.name}
+            onMethod={setMethod}
+            onScores={(base) => update((d) => void (d.abilities.base = { ...base }))}
+            onReplace={(base, title) =>
+              undoable(
+                (d) => void (d.doc.abilities.base = { ...base }),
+                (before) => ({ title, detail: `was ${scoresText(before.doc)}` }),
+                scoresChanged,
+              )
+            }
+          />
         );
-      }
 
       case 'background':
         return (
@@ -1214,12 +1078,9 @@ export function Component() {
         if (doc.classes.length === 0) {
           issues.push({ key: 'class', text: 'No class picked yet', step: 'class' });
         }
-        if (abilitiesUntouched) {
-          issues.push({
-            key: 'abilities',
-            text: 'Ability scores not assigned (all still 10)',
-            step: 'abilities',
-          });
+        const abilityProblem = abilityIssue(doc.abilities);
+        if (abilityProblem !== undefined) {
+          issues.push({ key: 'abilities', text: abilityProblem, step: 'abilities' });
         }
         if (allEqGroups.length > 0 && doc.equipment.length === 0) {
           issues.push({ key: 'equipment', text: 'No starting equipment', step: 'equipment' });

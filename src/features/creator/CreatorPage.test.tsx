@@ -4,7 +4,7 @@
 // creator with its draft already spent, one tap from a second, empty
 // character. The creator also had no way out while game data loaded, and its
 // way out elsewhere was an icon with no name.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -599,6 +599,154 @@ describe('changes that take something away', () => {
       tap('Manual');
       expect(saved().abilities.method).toBe('manual');
       expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+    });
+  });
+
+  // UX-001: the standard array was six free steppers under a sentence, point
+  // buy flagged a bad spread only by colour, and switching to point buy always
+  // threw the scores away.
+  describe('the abilities step', () => {
+    const monk = (d: CharacterDoc) => {
+      d.classes = [{ ref: { name: 'Monk', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    };
+    const scores = () => Object.values(saved().abilities.base).join('/');
+    const inOrder = { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 };
+    const pick = (label: string, value: number) =>
+      fireEvent.change(screen.getByLabelText(label), { target: { value: String(value) } });
+
+    describe('standard array', () => {
+      it('assigns by picking a value, and swaps with the ability that held it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        expect(namelessControls()).toEqual([]);
+        // Labelled by what it says on screen, with the swap spelled out.
+        const dex = screen.getByLabelText('Dexterity (DEX)');
+        expect(within(dex).getByRole('option', { name: '15 (swap with STR)' })).toBeTruthy();
+        expect(within(dex).getByRole('option', { name: '14' })).toBeTruthy();
+        pick('Dexterity (DEX)', 15);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        expect((dex as HTMLSelectElement).value).toBe('15');
+        expect(screen.getByText(/Standard array: each value used once/)).toBeTruthy();
+        // No steppers to walk a score off the array.
+        expect(screen.queryByRole('button', { name: 'Increase STR' })).toBeNull();
+      });
+
+      it('works out each change from the scores the select was focused on', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        // Arrowing through the options fires a change for each one.
+        for (const v of [14, 13, 12, 8]) pick('Strength (STR)', v);
+        fireEvent.blur(str);
+        // Only STR and the ability that held 8 moved, not a chain of swaps.
+        expect(scores()).toBe('8/14/13/12/10/15');
+      });
+
+      it('seeds an unassigned draft in order, ready to swap', () => {
+        renderDraft('abilities', monk);
+        expect(screen.getByText(/Assign each of 15, 14, 13, 12, 10, 8 once/)).toBeTruthy();
+        expect(screen.queryByLabelText('Strength (STR)')).toBeNull();
+        tap(/^Place 15 down to 8 in order/);
+        expect(scores()).toBe('15/14/13/12/10/8');
+        expect(screen.getByLabelText('Strength (STR)')).toBeTruthy();
+      });
+
+      it('shows scores off the array as they are, and keeps them as Manual on request', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { str: 12, dex: 16, con: 14, int: 10, wis: 15, cha: 8 };
+        });
+        expect(
+          screen.getByText("Your scores (12/16/14/10/15/8) aren't the standard array."),
+        ).toBeTruthy();
+        tap('Keep these as Manual scores');
+        expect(saved().abilities.method).toBe('manual');
+        expect(scores()).toBe('12/16/14/10/15/8');
+        expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+    });
+
+    it('still lets Manual go anywhere from 3 to 18', () => {
+      renderDraft('abilities', (d) => {
+        d.abilities.method = 'manual';
+        d.abilities.base = { str: 17, dex: 4, con: 10, int: 10, wis: 10, cha: 10 };
+      });
+      tap('Increase STR');
+      tap('Increase STR');
+      tap('Decrease DEX');
+      tap('Decrease DEX');
+      expect(scores()).toBe('18/3/10/10/10/10');
+      expect(screen.getByText(/No budget or array checks/)).toBeTruthy();
+    });
+
+    describe('point buy', () => {
+      const pointBuy = (base: CharacterDoc['abilities']['base']) => (d: CharacterDoc) => {
+        monk(d);
+        d.abilities.method = 'pointbuy';
+        d.abilities.base = base;
+      };
+
+      it('names a score out of range in words and offers to keep it as Manual', () => {
+        renderDraft('abilities', pointBuy({ ...inOrder }));
+        expect(screen.getByText('All 27 points spent.')).toBeTruthy();
+        tap('Increase STR');
+        expect(scores()).toBe('16/14/13/12/10/8');
+        expect(screen.getAllByText(/STR 16 is above 15/).length).toBeGreaterThan(0);
+        expect(
+          screen.getByRole('button', { name: 'Decrease STR', description: /Above 15/ }),
+        ).toBeTruthy();
+        tap('Keep as Manual scores');
+        expect(saved().abilities.method).toBe('manual');
+        expect(scores()).toBe('16/14/13/12/10/8');
+      });
+
+      it('says how far over budget a spread is', () => {
+        renderDraft('abilities', pointBuy({ str: 15, dex: 15, con: 14, int: 12, wis: 10, cha: 8 }));
+        expect(screen.getByText(/Over budget: 31 of 27 points \(4 over\)/)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Keep as Manual scores' })).toBeTruthy();
+      });
+
+      it('says what is left to spend, and what the next point costs', () => {
+        renderDraft('abilities', pointBuy({ str: 15, dex: 14, con: 13, int: 10, wis: 10, cha: 8 }));
+        expect(screen.getByText('25 of 27 points spent, 2 left to spend.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Keep as Manual scores' })).toBeNull();
+        expect(
+          screen.getByRole('button', { name: 'Increase DEX', description: '+1 costs 2 more' }),
+        ).toBeTruthy();
+        expect(screen.getAllByText('7 pts').length).toBe(1);
+      });
+
+      it('keeps the standard array when switching to point buy, with nothing to undo', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        tap('Point buy');
+        expect(saved().abilities.method).toBe('pointbuy');
+        expect(scores()).toBe('15/14/13/12/10/8');
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+
+      it('starts untouched scores from 8 without offering to undo it', () => {
+        renderDraft('abilities', monk);
+        tap('Point buy');
+        expect(scores()).toBe('8/8/8/8/8/8');
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+
+      it('lists an over-budget spread on Review, one tap from its fix', async () => {
+        renderDraft('review', pointBuy({ str: 15, dex: 15, con: 14, int: 12, wis: 10, cha: 8 }));
+        tap(/^Point buy over budget \(31 of 27\)/);
+        await waitFor(() =>
+          expect(screen.getByRole('heading', { name: 'Abilities' })).toBeTruthy(),
+        );
+      });
     });
   });
 
