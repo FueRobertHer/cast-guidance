@@ -3,12 +3,17 @@ import { jsonFile } from '../fixtures/characterFile.ts';
 import { MIRROR_PATHS, NEXT_TAG, PINNED_TAG, withNextRelease } from '../fixtures/mirror.ts';
 import {
   animationsSettled,
+  answerImportPreview,
   createBlankCharacter,
   dataFailureBanner,
+  exportCharacter,
   gettingStartedDismiss,
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
+  importCharacterFile,
+  importHomebrewFile,
+  importPreview,
   offlineReadyNotice,
   openCharacterActions,
   renameCharacter,
@@ -113,6 +118,14 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'delete-confirm');
     await confirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(confirm).toBeHidden();
+
+    // Importing a character file opens its preview first (IMP-002).
+    const { json } = await exportCharacter(page, NAME);
+    await importCharacterFile(page, jsonFile('brin.json', json));
+    const preview = importPreview(page, `Import ${NAME}?`);
+    await opened(page, preview);
+    await scanState(page, 'character-import-preview');
+    await answerImportPreview(page, `Import ${NAME}?`, 'Cancel');
   });
 
   test('character sheet: every tab', async ({ page }) => {
@@ -186,9 +199,12 @@ test.describe('axe: pages and overlays', () => {
     await gotoHeading(page, '/homebrew', 'Homebrew');
     await scanState(page, 'homebrew-empty');
 
-    const choosing = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Import file', exact: true }).click();
-    await (await choosing).setFiles(HOMEBREW);
+    // A file is previewed before anything is written (IMP-002).
+    await importHomebrewFile(page, HOMEBREW);
+    const preview = importPreview(page, 'Import "axe-brew.json"?');
+    await opened(page, preview);
+    await scanState(page, 'homebrew-import-preview');
+    await answerImportPreview(page, 'Import "axe-brew.json"?');
     await expect(page.getByText(/^Imported "axe-brew\.json"/)).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'homebrew');
