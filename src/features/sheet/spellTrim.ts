@@ -192,7 +192,25 @@ export function applySpellTrim(
   sc.prepared = lists.prepared;
 }
 
-const names = (refs: readonly EntityRef[]) => refs.map((r) => r.name).join(', ');
+/**
+ * "Bless, Shield". A name listed twice (two copies of one entry) shows once,
+ * and two entries sharing a name from different books carry their source.
+ */
+const names = (refs: readonly EntityRef[]) => {
+  const uids = new Set<string>();
+  const unique = refs.filter((r) => {
+    const uid = refUid(r);
+    if (uids.has(uid)) return false;
+    uids.add(uid);
+    return true;
+  });
+  const count = new Map<string, number>();
+  for (const r of unique)
+    count.set(r.name.toLowerCase(), (count.get(r.name.toLowerCase()) ?? 0) + 1);
+  return unique
+    .map((r) => ((count.get(r.name.toLowerCase()) ?? 0) > 1 ? `${r.name} (${r.source})` : r.name))
+    .join(', ');
+};
 
 /** One plain line per kind of removal, for the confirm. */
 export function describeTrim(plan: SpellTrimPlan, mode: SpellcastingMode): string[] {

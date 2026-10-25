@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classSpellcastingMode } from './slots';
+import { classSpellcastingMode, preparedFromFormula } from './slots';
 
 // Field shapes mirror the real 5etools PHB class data (confirmed against the
 // pinned dataset).
@@ -7,7 +7,7 @@ const CLASSES = {
   sorcerer: { casterProgression: 'full', spellsKnownProgression: [2, 3] },
   bard: { casterProgression: 'full', spellsKnownProgression: [4, 5] },
   cleric: { casterProgression: 'full', preparedSpells: '<$level$> + <$wis_mod$>' },
-  paladin: { casterProgression: '1/2', preparedSpells: '<$level$> + <$cha_mod$>' },
+  paladin: { casterProgression: '1/2', preparedSpells: '<$level$> / 2 + <$cha_mod$>' },
   wizard: {
     casterProgression: 'full',
     preparedSpells: '<$level$> + <$int_mod$>',
@@ -49,5 +49,22 @@ describe('classSpellcastingMode', () => {
     expect(classSpellcastingMode({ casterProgression: 'full', preparedSpells: 'x' })).toBe(
       'prepared',
     );
+  });
+});
+
+describe('preparedFromFormula', () => {
+  it('adds the whole level for a full caster', () => {
+    expect(preparedFromFormula('<$level$> + <$wis_mod$>', 5, 3)).toBe(8);
+  });
+
+  it('halves the level, rounded down, for the paladin and artificer', () => {
+    expect(preparedFromFormula('<$level$> / 2 + <$cha_mod$>', 5, 3)).toBe(5);
+    expect(preparedFromFormula('<$level$> / 2 + <$int_mod$>', 2, 1)).toBe(2);
+  });
+
+  it('never goes below one, and reads nothing without a level term', () => {
+    expect(preparedFromFormula('<$level$> / 2 + <$cha_mod$>', 1, -1)).toBe(1);
+    expect(preparedFromFormula('x', 5, 3)).toBeUndefined();
+    expect(preparedFromFormula(undefined, 5, 3)).toBeUndefined();
   });
 });

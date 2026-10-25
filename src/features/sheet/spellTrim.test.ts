@@ -151,6 +151,21 @@ describe('planSpellTrim (GAME-007)', () => {
 });
 
 describe('describeTrim (GAME-007)', () => {
+  it('lists a doubled entry once, and tells same-named spells apart by book', () => {
+    const plan = {
+      ...emptyPlan,
+      unprepare: [
+        { name: 'Bless', source: 'PHB' },
+        { name: 'Bless', source: 'PHB' },
+        { name: 'Shield', source: 'PHB' },
+        { name: 'Shield', source: 'XPHB' },
+      ],
+    };
+    expect(describeTrim(plan, 'prepared')).toEqual([
+      'Unprepare Bless, Shield (PHB), Shield (XPHB) (still known)',
+    ]);
+  });
+
   it('names every spell the trim removes, one line per kind', () => {
     const plan = {
       forgetCantrips: refs('Light'),

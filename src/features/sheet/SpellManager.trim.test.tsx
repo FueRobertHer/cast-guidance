@@ -146,7 +146,7 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
     renderSpells([wizard], {
       'wizard|phb': { known: refs('Light', 'Shield', 'Sleep'), prepared: refs('Shield', 'Sleep') },
     });
-    expect(screen.queryByRole('button', { name: 'Trim to limit…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Trim to limit/ })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
     cleanup();
 
@@ -156,7 +156,7 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
         prepared: refs('Shield', 'Sleep', 'Magic Missile'),
       },
     });
-    const button = screen.getByRole('button', { name: 'Trim to limit…' });
+    const button = screen.getByRole('button', { name: /^Trim to limit/ });
     // A sibling of the live cue, so the cue's announcement never reads the button.
     expect(screen.getByRole('status').contains(button)).toBe(false);
   });
@@ -170,7 +170,7 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
       },
     };
     const live = renderSpells([{ ...wizard, cantripsKnown: 2 }], structuredClone(spellcasting));
-    fireEvent.click(screen.getByRole('button', { name: 'Trim to limit…' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Trim to limit/ }));
     await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalledTimes(1));
     const req = dialogs.askConfirm.mock.calls[0]?.[0];
     expect(req?.title).toBe('Trim Wizard spells to your limits?');
@@ -190,13 +190,13 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
       },
     });
     expect(screen.getByRole('status').textContent).toContain('2 over your prepared limit');
-    fireEvent.click(screen.getByRole('button', { name: 'Trim to limit…' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Trim to limit/ }));
     await waitFor(() => expect(live.labels).toEqual(['Trimmed Wizard spells to limit']));
     const sc = live.doc.spellcasting['wizard|phb'];
     expect(sc?.prepared).toEqual(refs('Shield', 'Sleep'));
     expect(sc?.known).toEqual(refs('Shield', 'Sleep', 'Magic Missile', 'Bless'));
     expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Trim to limit…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Trim to limit/ })).toBeNull();
   });
 
   it('forgets over-limit known spells for a known caster', async () => {
@@ -211,7 +211,7 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
       'bard|phb': { known: refs('Sleep', 'Bless', 'Cure Wounds'), prepared: [] },
     });
     expect(screen.getByRole('status').textContent).toContain('1 over your spells-known limit');
-    fireEvent.click(screen.getByRole('button', { name: 'Trim to limit…' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Trim to limit/ }));
     await waitFor(() => expect(live.labels).toHaveLength(1));
     expect(live.doc.spellcasting['bard|phb']?.known).toEqual(refs('Sleep', 'Bless'));
     expect(screen.queryByRole('status')).toBeNull();
@@ -231,12 +231,35 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
       // The grant names no source, so it matches by name.
       [{ name: 'Bless', source: '', usage: 'prepared', origin: 'Life Domain' }],
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Trim to limit…' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Trim to limit/ }));
     await waitFor(() => expect(live.labels).toHaveLength(1));
     expect(dialogs.askConfirm.mock.calls[0]?.[0].detail).toContain(
       'Unprepare Bless (always prepared anyway)',
     );
     expect(live.doc.spellcasting['cleric|phb']?.prepared).toEqual(refs('Sleep', 'Cure Wounds'));
+  });
+
+  it("names each block's trim after its class, and lands focus on the heading after", async () => {
+    dialogs.askConfirm.mockResolvedValueOnce(true);
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    renderSpells([wizard], {
+      'wizard|phb': {
+        known: refs('Shield', 'Sleep', 'Magic Missile'),
+        prepared: refs('Shield', 'Sleep', 'Magic Missile'),
+      },
+    });
+    const button = screen.getByRole('button', { name: 'Trim to limit, Wizard spells' });
+    button.focus();
+    fireEvent.click(button);
+    // The button leaves with the overage; focus goes to the class heading, not <body>.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^Trim to limit/ })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: /Wizard spells/ }));
+    raf.mockRestore();
   });
 
   it('trims one class block without touching the other', async () => {
@@ -261,7 +284,7 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
       // jump the queue: the Wizard trim takes its most recent pick instead.
       [{ name: 'Bless', source: 'PHB', usage: 'prepared', origin: 'Blessed' }],
     );
-    fireEvent.click(blockFor('Wizard').getByRole('button', { name: 'Trim to limit…' }));
+    fireEvent.click(blockFor('Wizard').getByRole('button', { name: /^Trim to limit/ }));
     await waitFor(() => expect(live.labels).toEqual(['Trimmed Wizard spells to limit']));
     expect(live.doc.spellcasting['wizard|phb']?.prepared).toEqual(refs('Bless', 'Shield'));
     expect(live.doc.spellcasting['cleric|phb']).toEqual(clericLists);
@@ -269,6 +292,6 @@ describe('SpellManager "Trim to limit" (GAME-007)', () => {
     expect(blockFor('Cleric').getByRole('status').textContent).toContain(
       '1 over your prepared limit',
     );
-    expect(blockFor('Cleric').getByRole('button', { name: 'Trim to limit…' })).toBeTruthy();
+    expect(blockFor('Cleric').getByRole('button', { name: /^Trim to limit/ })).toBeTruthy();
   });
 });

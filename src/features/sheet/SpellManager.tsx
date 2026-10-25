@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
@@ -260,6 +260,7 @@ function ClassSpells({
   const overKnown = knownMax !== undefined && knownLeveled > knownMax;
   const over = overPrepared || overCantrips || overKnown;
 
+  const heading = useRef<HTMLHeadingElement>(null);
   // Offered, never done for the player: the confirm lists exactly what goes,
   // and only this class's entry changes.
   const trim = async () => {
@@ -267,7 +268,11 @@ function ClassSpells({
     if (isEmptyTrim(plan)) return;
     const ok = await askConfirm({
       title: `Trim ${block.className} spells to your limits?`,
-      detail: `${describeTrim(plan, block.mode).join('. ')}. The most recently added go first. Over-limit is allowed, so this is optional.`,
+      detail: `${describeTrim(plan, block.mode).join('. ')}. ${
+        plan.unprepareRedundant.length > 0
+          ? 'Otherwise the most recently added go first.'
+          : 'The most recently added go first.'
+      } Over-limit is allowed, so this is optional.`,
       confirmLabel: 'Trim',
     });
     if (!ok) return;
@@ -275,12 +280,15 @@ function ClassSpells({
       const sc = d.spellcasting[block.classUid];
       if (sc !== undefined) applySpellTrim(sc, plan);
     }, `Trimmed ${block.className} spells to limit`);
+    // The button goes away with the overage, so the dialog cannot hand focus
+    // back to it. Land on this class's heading rather than the top of the page.
+    requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
   };
 
   return (
     <section className="flex flex-col gap-2">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-baseline gap-2 text-sm font-semibold">
+        <h2 ref={heading} tabIndex={-1} className="flex items-baseline gap-2 text-sm font-semibold">
           {block.className} spells
           {MODE_LABEL[block.mode] !== undefined && (
             <span
@@ -336,6 +344,7 @@ function ClassSpells({
           onClick={() => {
             void trim();
           }}
+          aria-label={`Trim to limit, ${block.className} spells`}
           className="self-start rounded-lg border border-surface-2 px-3 py-1 text-xs text-ink-muted hover:text-ink"
         >
           Trim to limit…
