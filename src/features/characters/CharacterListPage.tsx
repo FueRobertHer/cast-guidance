@@ -286,7 +286,9 @@ export function Component() {
     const name = await askText({ title: 'Rename hero', initial: c.name });
     if (name === null || name.trim() === '') return;
     try {
-      await characterRepo.put({ ...c, name: name.trim(), updatedAt: new Date().toISOString() });
+      // The name alone: writing this list's copy of the whole character would
+      // undo anything a tab with it open saved since the list last read it.
+      await characterRepo.rename(c.id, name.trim());
     } catch (err) {
       notifyFailure('Rename', err);
     }

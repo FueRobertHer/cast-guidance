@@ -1108,8 +1108,11 @@ export function Component() {
           if (final.name.trim() === '') final.name = 'Unnamed hero';
           final.play.currentHp = sheet?.maxHp.value ?? 0;
           setOpening(final.name);
+          let created: CharacterDoc;
           try {
-            await characterRepo.put(final);
+            // Never over another character: a duplicated tab carries this
+            // draft's id too, and the second to create gets a fresh one.
+            created = await characterRepo.create(final);
           } catch (err) {
             creating.current = false;
             setOpening(null);
@@ -1123,7 +1126,7 @@ export function Component() {
           await replaceWizardWith(
             navigate,
             wizardDepth(live.current.location.state),
-            `/c/${final.id}`,
+            `/c/${created.id}`,
           );
         };
         // Everything a new player might have missed, each one tap from its fix.

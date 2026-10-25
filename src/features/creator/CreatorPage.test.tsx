@@ -12,7 +12,7 @@ import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
-const { registry, put, dialogs } = vi.hoisted(() => ({
+const { registry, create, dialogs } = vi.hoisted(() => ({
   /**
    * What `useRegistryState` returns: `loading` stands for game data still on
    * its way, `error` for game data that could not be had.
@@ -30,7 +30,8 @@ const { registry, put, dialogs } = vi.hoisted(() => ({
     },
     classRetry: vi.fn(),
   },
-  put: vi.fn(),
+  /** `characterRepo.create`, which resolves with the character as stored. */
+  create: vi.fn<(doc: CharacterDoc) => Promise<CharacterDoc>>(),
   dialogs: {
     askConfirm: vi.fn<(req: { title: string; detail?: string }) => Promise<boolean>>(),
   },
@@ -50,7 +51,7 @@ vi.mock('@/data5e/hooks', () => ({
   }),
 }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
-vi.mock('@/db/characterRepo', () => ({ characterRepo: { put } }));
+vi.mock('@/db/characterRepo', () => ({ characterRepo: { create } }));
 vi.mock('@/ui/dialogs', () => ({
   askConfirm: dialogs.askConfirm,
   askNumber: () => Promise.resolve(null),
@@ -87,7 +88,7 @@ afterEach(() => {
   registry.retry.mockReset();
   registry.classPacks = { status: 'ready', error: null, offline: false };
   registry.classRetry.mockReset();
-  put.mockReset();
+  create.mockReset();
   dialogs.askConfirm.mockReset();
   registry.current = makeTestContext();
   noticeStore.setState({ notice: null, seq: 0 });
@@ -180,12 +181,12 @@ describe('stepping through the creator', () => {
 describe('creating a character', () => {
   it('leaves the wizard behind, so Back from the sheet goes to the roster', async () => {
     seedDraft();
-    put.mockResolvedValue(undefined);
+    create.mockImplementation(async (doc) => doc);
     const router = renderCreator(walkedToReview);
 
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
-    expect(put).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
     expect(readDraft()).toBeNull();
 
     await act(() => router.navigate(-1));
@@ -196,15 +197,17 @@ describe('creating a character', () => {
   it('creates once and unwinds once, however many times Create is pressed', async () => {
     seedDraft();
     let finish: () => void = () => undefined;
-    put.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+    create.mockImplementation(
+      (doc) => new Promise<CharacterDoc>((resolve) => (finish = () => resolve(doc))),
+    );
     const router = renderCreator(walkedToReview);
 
     // Both taps inside one batch, so the second runs before the re-render
     // that takes the button away.
-    const create = screen.getByRole('button', { name: /Create character/ });
+    const button = screen.getByRole('button', { name: /Create character/ });
     act(() => {
-      create.click();
-      create.click();
+      button.click();
+      button.click();
     });
     // The wizard is spent the moment Create is pressed: nothing on it can be
     // pressed again, and a save that settles quickly offers no way off it.
@@ -214,14 +217,14 @@ describe('creating a character', () => {
 
     finish();
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
-    expect(put).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
     await act(() => router.navigate(-1));
     expect(router.state.location.pathname).toBe('/');
   });
 
   it('just replaces its own entry when the depth it holds is from before a reload', async () => {
     seedDraft();
-    put.mockResolvedValue(undefined);
+    create.mockImplementation(async (doc) => doc);
     // History state outlives a reload; the entries it counted do not.
     const router = renderCreator([
       '/',
@@ -239,7 +242,9 @@ describe('creating a character', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     seedDraft();
     let finish: () => void = () => undefined;
-    put.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)));
+    create.mockImplementation(
+      (doc) => new Promise<CharacterDoc>((resolve) => (finish = () => resolve(doc))),
+    );
     const router = renderCreator(walkedToReview);
 
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
@@ -247,14 +252,14 @@ describe('creating a character', () => {
     fireEvent.click(screen.getByRole('link', { name: /Back to characters/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     await act(async () => finish());
-    expect(put).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
     expect(router.state.location.pathname).toBe('/');
     expect(screen.getByText('Roster')).toBeTruthy();
   });
 
   it('keeps the wizard and says so when the save is refused', async () => {
     seedDraft();
-    put.mockRejectedValue(new Error('QuotaExceededError'));
+    create.mockRejectedValue(new Error('QuotaExceededError'));
     const router = renderCreator(walkedToReview);
 
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));

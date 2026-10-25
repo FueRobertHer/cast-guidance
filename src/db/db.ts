@@ -60,6 +60,18 @@ export interface RollLogRow {
   result: unknown;
 }
 
+/**
+ * A character as stored. `revision` is an opaque token every write replaces
+ * (REL-007, #98), so a tab can tell whether the row is still the one it last
+ * read before it writes over it. It is storage bookkeeping only: the
+ * repository strips it from every read, so no document in memory, export,
+ * history snapshot or journal entry carries it. Not indexed, so adding it
+ * needed no schema version; a row written before it has none.
+ */
+export interface CharacterRow extends CharacterDoc {
+  revision?: string;
+}
+
 /** One point-in-time snapshot of a character (version history). */
 export interface CharacterHistoryRow {
   id: string;
@@ -72,7 +84,7 @@ export interface CharacterHistoryRow {
 export const db = new Dexie('cast-guidance') as Dexie & {
   dataFiles: EntityTable<DataFileRow, 'key'>;
   dataMeta: EntityTable<DataMetaRow, 'id'>;
-  characters: EntityTable<CharacterDoc, 'id'>;
+  characters: EntityTable<CharacterRow, 'id'>;
   homebrewFiles: EntityTable<HomebrewFileRow, 'id'>;
   searchIndexes: EntityTable<SearchIndexRow, 'key'>;
   settings: EntityTable<SettingRow, 'key'>;
