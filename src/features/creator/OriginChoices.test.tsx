@@ -51,7 +51,8 @@ describe('OriginChoices editing a made pick', () => {
       resolvedSkills,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    // A11Y-001: every made pick's button read "change"; the name says which.
+    fireEvent.click(screen.getByRole('button', { name: 'Change Class skill proficiency' }));
 
     // The regression this guards: "change" must not clear the stored value.
     expect(update).not.toHaveBeenCalled();
@@ -69,7 +70,7 @@ describe('OriginChoices editing a made pick', () => {
 
   it('swaps one pick and keeps the other', () => {
     const { doc } = harness({ [skillPrompt.id]: ['Acrobatics', 'Stealth'] }, resolvedSkills);
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Stealth' }));
     expect(confirmBtn().hasAttribute('disabled')).toBe(true);
@@ -84,7 +85,7 @@ describe('OriginChoices editing a made pick', () => {
       { [skillPrompt.id]: ['Acrobatics', 'Stealth'] },
       resolvedSkills,
     );
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Stealth' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -97,7 +98,7 @@ describe('OriginChoices editing a made pick', () => {
 
   it('re-confirming an unchanged pick writes nothing at all', () => {
     const { update } = harness({ [skillPrompt.id]: ['Acrobatics', 'Stealth'] }, resolvedSkills);
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
     fireEvent.click(confirmBtn());
 
     // No save, and no blank history entry for a no-op.
@@ -122,7 +123,7 @@ describe('OriginChoices dependent choices', () => {
 
   it('clears follow-up picks when the answer they hang off changes', () => {
     const { doc } = harness({ [asi.id]: 'feat', [`${asi.id}:feat`]: ['tough|phb'] }, resolvedAsi);
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Ability Score Improvement' }));
     fireEvent.click(confirmBtn());
 
@@ -132,7 +133,7 @@ describe('OriginChoices dependent choices', () => {
 
   it('keeps follow-up picks when the answer is re-confirmed unchanged', () => {
     const { doc } = harness({ [asi.id]: 'feat', [`${asi.id}:feat`]: ['tough|phb'] }, resolvedAsi);
-    fireEvent.click(screen.getByRole('button', { name: /change/ }));
+    fireEvent.click(screen.getByRole('button', { name: /change/i }));
     fireEvent.click(confirmBtn());
 
     expect(doc.choices[`${asi.id}:feat`]).toEqual(['tough|phb']);

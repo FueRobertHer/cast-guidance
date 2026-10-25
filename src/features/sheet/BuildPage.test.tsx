@@ -7,6 +7,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from './BuildPage';
 import type { CharacterSheetState } from './useCharacterSheet';
@@ -288,5 +289,36 @@ describe('BuildPage subclass picker (GAME-009)', () => {
     expect(screen.getByRole('button', { name: 'Path of Tests' })).toBeTruthy();
     fireEvent.click(cards[0] as HTMLElement);
     expect(getDoc().classes[0]?.subclass).toEqual({ name: 'Path of Old', source: 'TST' });
+  });
+});
+
+// A11Y-001: the banner's dismiss, a class's level "−" and the HP roll were
+// glyphs or icons named only by tooltips, and the HP inputs only by "?".
+describe('BuildPage accessible names', () => {
+  it('names every control, with rolled HP and the stat-change banner showing', () => {
+    renderBuild((d) => {
+      d.hpMethod = 'rolled';
+    });
+    // Two steps, so the modifier moves and the banner (and its dismiss) shows.
+    fireEvent.click(screen.getByRole('button', { name: 'Increase STR' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase STR' }));
+    expect(screen.getByRole('button', { name: 'Dismiss stat changes' })).toBeTruthy();
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Remove a Warrior level' })).toBeTruthy();
+  });
+
+  it('reports the rules version and HP method that are set as pressed', () => {
+    renderBuild();
+    expect(screen.getByRole('button', { name: '2014', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '2024', pressed: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Rolled', pressed: false }));
+    expect(screen.getByRole('button', { name: 'Rolled', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Average', pressed: false })).toBeTruthy();
+  });
+
+  it('says the score on an ability swap button, and which one is picked up', () => {
+    renderBuild();
+    fireEvent.click(screen.getByRole('button', { name: /^STR 14: swap/, pressed: false }));
+    expect(screen.getByRole('button', { name: /^STR 14: swap/, pressed: true })).toBeTruthy();
   });
 });

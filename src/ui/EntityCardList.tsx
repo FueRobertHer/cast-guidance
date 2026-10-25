@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
@@ -86,6 +86,7 @@ export function EntityCardList({
   fill?: boolean;
 }) {
   const [filter, setFilter] = useState('');
+  const blurbId = useId();
   const [showAll, setShowAll] = useState(false);
   const [showHiddenSources, setShowHiddenSources] = useState(false);
   const policy = useSourcePolicy();
@@ -145,6 +146,7 @@ export function EntityCardList({
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filter the list"
           placeholder="Filter…"
           className="rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
         />
@@ -154,8 +156,10 @@ export function EntityCardList({
           fill ? '' : 'max-h-96 overflow-y-auto'
         }`}
       >
-        {list.map((e) => {
+        {list.map((e, i) => {
           const blurb = describe?.(e);
+          // The aria-label hides the blurb from the name, so it is the description.
+          const describedBy = blurb !== undefined ? `${blurbId}-${i}` : undefined;
           const selected = selectedUid === uidOf(e);
           return (
             <div
@@ -169,6 +173,8 @@ export function EntityCardList({
               <button
                 type="button"
                 aria-label={nameOf(e)}
+                aria-pressed={selected}
+                aria-describedby={describedBy}
                 onClick={() => {
                   // Re-tapping the current pick must never re-fire onSelect:
                   // race/background re-run pruneChoicesFor and the class picker
@@ -187,7 +193,9 @@ export function EntityCardList({
                   )}
                 </span>
                 {blurb !== undefined && (
-                  <span className="text-xs leading-snug text-ink-muted">{blurb}</span>
+                  <span id={describedBy} className="text-xs leading-snug text-ink-muted">
+                    {blurb}
+                  </span>
                 )}
               </button>
               <div className="flex shrink-0 items-center gap-1 py-2.5 pr-2">

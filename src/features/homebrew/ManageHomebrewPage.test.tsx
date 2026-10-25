@@ -4,6 +4,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 
 const { read, remove } = vi.hoisted(() => ({
   read: { current: undefined as unknown },
@@ -106,5 +107,34 @@ describe('ManageHomebrewPage read errors', () => {
 
     expect(screen.getByText('No homebrew imported yet.')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+// A11Y-001: every row action was an icon named only by its tooltip, and the
+// URL import button had no name at all.
+describe('ManageHomebrewPage accessible names', () => {
+  it('names every control, with the file each row action acts on', () => {
+    read.current = {
+      files: [file({ editable: true }), file({ id: 'c', fileName: 'off.json', enabled: false })],
+      errors: [{ id: 'b', fileName: 'broken.json', message: 'not a JSON object' }],
+    };
+    renderPage();
+
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Import from URL' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Edit good.json in the builder' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download good.json' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete broken.json' })).toBeTruthy();
+  });
+
+  it('reports whether each file is enabled as a pressed state', () => {
+    read.current = {
+      files: [file(), file({ id: 'c', fileName: 'off.json', enabled: false })],
+      errors: [],
+    };
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'Enable good.json', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Enable off.json', pressed: false })).toBeTruthy();
   });
 });

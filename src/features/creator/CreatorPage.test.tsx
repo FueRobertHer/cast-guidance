@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newCharacterDoc } from '@/engine/types';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
 const { registry, put } = vi.hoisted(() => ({
@@ -216,5 +217,47 @@ describe('the way out', () => {
     renderCreator(['/', '/create']);
     expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('heading', { name: 'Basics' })).toBeTruthy();
+  });
+});
+
+// A11Y-001: the point-buy and level steppers were bare "−" and "+" glyphs (the
+// level pair sat in a <label> that named the minus "Level" and left the plus
+// nameless), and the segmented picks showed their state only by colour.
+describe('accessible names and states', () => {
+  /** A draft with a class picked and point buy chosen, opened on `step`. */
+  function renderStep(step: string) {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    doc.abilities.method = 'pointbuy';
+    doc.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(doc));
+    renderCreator(['/', { pathname: '/create', search: `?step=${step}`, state: wizardState(1) }]);
+  }
+
+  it('names the level steppers apart from the label beside them', () => {
+    renderStep('class');
+    expect(namelessControls()).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Increase level' }));
+    expect(
+      screen.getByText('Level', { selector: '[aria-live] *' }).parentElement?.textContent,
+    ).toBe('Level 2');
+    expect(screen.getByRole('button', { name: 'Decrease level' })).toBeTruthy();
+  });
+
+  it('names the point-buy steppers and says which method is in use', () => {
+    renderStep('abilities');
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: /^\d+ pending decisions?: go to the Choices step$/ }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Point buy', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Manual', pressed: false })).toBeTruthy();
+  });
+
+  it('says which rules version is picked', () => {
+    renderStep('basics');
+    expect(screen.getByRole('button', { name: /^Classic/, pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Revised/, pressed: false })).toBeTruthy();
   });
 });

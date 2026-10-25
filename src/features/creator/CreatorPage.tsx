@@ -318,6 +318,7 @@ export function Component() {
                 <button
                   key={v}
                   type="button"
+                  aria-pressed={doc.rulesVersion === v}
                   onClick={() =>
                     update((d) => {
                       // Re-selecting the current version must be a no-op — otherwise
@@ -379,11 +380,17 @@ export function Component() {
             />
             {entry !== undefined && (
               <>
-                <label className="flex items-center justify-between rounded-lg bg-surface px-3 py-2.5">
-                  <span className="text-sm font-semibold">Level</span>
+                {/* Not a <label>: that handed the steppers' "Level" name to the
+                    minus alone (and a tap on the word to it), leaving plus nameless.
+                    The value says "Level N" itself, and announces each change. */}
+                <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2.5">
+                  <span aria-hidden="true" className="text-sm font-semibold">
+                    Level
+                  </span>
                   <span className="flex items-center gap-3">
                     <button
                       type="button"
+                      aria-label="Decrease level"
                       onClick={() =>
                         update((d) => {
                           const c = d.classes[0];
@@ -394,11 +401,14 @@ export function Component() {
                       }
                       className="h-9 w-9 rounded-full bg-surface-2 text-lg"
                     >
-                      −
+                      <span aria-hidden="true">−</span>
                     </button>
-                    <span className="w-8 text-center text-lg font-bold">{entry.levels}</span>
+                    <span aria-live="polite" className="w-8 text-center text-lg font-bold">
+                      <span className="sr-only">Level</span> {entry.levels}
+                    </span>
                     <button
                       type="button"
+                      aria-label="Increase level"
                       onClick={() =>
                         update((d) => {
                           const c = d.classes[0];
@@ -409,10 +419,10 @@ export function Component() {
                       }
                       className="h-9 w-9 rounded-full bg-surface-2 text-lg"
                     >
-                      +
+                      <span aria-hidden="true">+</span>
                     </button>
                   </span>
-                </label>
+                </div>
                 {subclasses.length > 0 && entry.levels < unlockLevel && (
                   <p className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
                     Subclass unlocks at level {unlockLevel} — you'll pick one when you get there.
@@ -567,6 +577,7 @@ export function Component() {
                 <button
                   key={m}
                   type="button"
+                  aria-pressed={doc.abilities.method === m}
                   onClick={() =>
                     update((d) => {
                       // Re-selecting the current method is a no-op — otherwise
@@ -634,6 +645,7 @@ export function Component() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        aria-label={`Decrease ${a.toUpperCase()}`}
                         onClick={() =>
                           update(
                             (d) =>
@@ -642,13 +654,14 @@ export function Component() {
                         }
                         className="h-8 w-8 rounded-full bg-surface-2"
                       >
-                        −
+                        <span aria-hidden="true">−</span>
                       </button>
                       <span className="w-7 text-center text-lg font-bold">
                         {doc.abilities.base[a]}
                       </span>
                       <button
                         type="button"
+                        aria-label={`Increase ${a.toUpperCase()}`}
                         onClick={() =>
                           update(
                             (d) =>
@@ -657,7 +670,7 @@ export function Component() {
                         }
                         className="h-8 w-8 rounded-full bg-surface-2"
                       >
-                        +
+                        <span aria-hidden="true">+</span>
                       </button>
                     </div>
                     {final !== undefined && final.value !== doc.abilities.base[a] && (
@@ -739,6 +752,7 @@ export function Component() {
                     <button
                       key={b.key}
                       type="button"
+                      aria-pressed={current === b.key}
                       onClick={() => pickBundle(key, b.key)}
                       className={`rounded-lg border px-3 py-2 text-left text-sm ${
                         current === b.key ? 'border-accent bg-accent-deep/30' : 'border-surface-2'
@@ -1063,9 +1077,10 @@ export function Component() {
               type="button"
               onClick={() => navStep('choices')}
               className="text-amber-300 underline decoration-dotted underline-offset-2"
+              aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: go to the Choices step`}
               title="Decisions like skills and languages are waiting on the Choices step"
             >
-              {sheet.pending.length} pending →
+              {sheet.pending.length} pending <span aria-hidden="true">→</span>
             </button>
           )}
         </div>

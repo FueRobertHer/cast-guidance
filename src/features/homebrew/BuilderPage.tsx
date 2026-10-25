@@ -925,6 +925,7 @@ export function Component() {
                 const remove = (
                   <button
                     type="button"
+                    aria-label={`Delete ${name ?? `unnamed ${lower}`}`}
                     title="Delete"
                     disabled={busy}
                     onClick={() => void deleteEntity(type, ref)}
@@ -973,6 +974,7 @@ export function Component() {
                       {name !== undefined && (
                         <Link
                           to={`/library/${type}/${encodeURIComponent(`${name}|${sourceId}`.toLowerCase())}`}
+                          aria-label={`View ${name} in the library`}
                           className="shrink-0 text-xs text-ink-muted hover:text-ink"
                         >
                           view

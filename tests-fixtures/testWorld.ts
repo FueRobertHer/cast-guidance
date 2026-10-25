@@ -191,6 +191,8 @@ const spell: DataEntity[] = [
     level: 1,
     school: 'V',
     time: [{ number: 1, unit: 'action' }],
+    // Verbal, so a character who cannot speak gets the Play tab's warning.
+    components: { v: true, s: true },
     entries: ['A bolt deals {@damage 2d6} fire damage.'],
     // Scales with the slot, so an upcast choice visibly changes the dice a roll
     // chip offers, which is what choose-then-roll has to get right.
@@ -721,6 +723,8 @@ const WORLD: Record<string, DataEntity[]> = {
   item,
   itemGroup: [],
   spell,
+  // Rules text the Play tab offers for an active condition.
+  condition: [{ name: 'Stunned', source: 'TST', entries: ['You are stunned.'] }],
 };
 
 export function makeTestContext(): EngineContext {

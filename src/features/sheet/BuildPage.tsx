@@ -131,9 +131,10 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
         type="button"
         onClick={() => setDiff([])}
         className="ml-auto text-xs text-ink-muted"
+        aria-label="Dismiss stat changes"
         title="Dismiss"
       >
-        ✕
+        <span aria-hidden="true">✕</span>
       </button>
     </div>
   );
@@ -332,6 +333,7 @@ export function Component() {
             <button
               key={v}
               type="button"
+              aria-pressed={doc.rulesVersion === v}
               onClick={() => void switchRulesVersion(v)}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
                 doc.rulesVersion === v
@@ -377,6 +379,7 @@ export function Component() {
               <button
                 key={m}
                 type="button"
+                aria-pressed={hpMethod === m}
                 onClick={() => update((d) => void (d.hpMethod = m))}
                 className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
                   hpMethod === m
@@ -438,9 +441,14 @@ export function Component() {
                       });
                     }}
                     className="h-8 w-8 rounded-full bg-surface-2 text-lg"
+                    aria-label={
+                      entry.levels <= 1
+                        ? `Remove ${entry.ref.name}`
+                        : `Remove a ${entry.ref.name} level`
+                    }
                     title={entry.levels <= 1 ? 'Remove this class' : 'Remove a level'}
                   >
-                    −
+                    <span aria-hidden="true">−</span>
                   </button>
                   <button
                     type="button"
@@ -480,6 +488,7 @@ export function Component() {
                         <input
                           inputMode="numeric"
                           value={typeof v === 'number' ? v : ''}
+                          aria-label={`${entry.ref.name} level ${i + 1} hit points`}
                           placeholder="?"
                           onChange={(e) => {
                             const n = Number.parseInt(e.target.value, 10);
@@ -492,6 +501,7 @@ export function Component() {
                         />
                         <button
                           type="button"
+                          aria-label={`Roll ${entry.ref.name} level ${i + 1} hit points (d${faces})`}
                           title={`Roll 1d${faces}`}
                           onClick={() => {
                             const r = roll(`1d${faces}`, {
@@ -749,7 +759,7 @@ export function Component() {
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    aria-label={`Decrease ${a}`}
+                    aria-label={`Decrease ${a.toUpperCase()}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
@@ -761,7 +771,8 @@ export function Component() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Swap ${a} with another ability`}
+                    aria-label={`${a.toUpperCase()} ${doc.abilities.base[a]}: swap with another ability`}
+                    aria-pressed={swapFrom === a}
                     onClick={() => {
                       if (swapFrom === null) setSwapFrom(a);
                       else {
@@ -783,7 +794,7 @@ export function Component() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Increase ${a}`}
+                    aria-label={`Increase ${a.toUpperCase()}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),

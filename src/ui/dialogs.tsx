@@ -45,7 +45,21 @@ type DialogRequest =
 
 const dialogStore = createStore<{ req: DialogRequest | null }>(() => ({ req: null }));
 
-const open = (req: DialogRequest) => dialogStore.setState({ req });
+/**
+ * Where focus was when a dialog opened. The sheets here have no trigger, and
+ * Radix returns focus to the trigger on close, so without this a keyboard or
+ * screen-reader user is dropped at the top of the page after every answer.
+ * Kept across a chain of dialogs (one opening as another closes), so the
+ * element restored is the one the first dialog was opened from.
+ */
+let returnFocus: HTMLElement | null = null;
+
+const open = (req: DialogRequest) => {
+  if (returnFocus === null && document.activeElement instanceof HTMLElement) {
+    returnFocus = document.activeElement;
+  }
+  dialogStore.setState({ req });
+};
 const close = () => dialogStore.setState({ req: null });
 
 export function askText(opts: {
@@ -128,6 +142,7 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
         inputMode={req.kind === 'number' ? 'numeric' : undefined}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        aria-label={req.title}
         placeholder={req.kind === 'text' ? req.placeholder : undefined}
         className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2.5 text-sm outline-none placeholder:text-ink-muted"
       />
@@ -144,6 +159,13 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
 /** Mount once (AppShell). Renders the active ask* request as a bottom sheet. */
 export function DialogHost() {
   const req = useStore(dialogStore, (s) => s.req);
+  useEffect(() => {
+    if (req !== null) return;
+    const target = returnFocus;
+    returnFocus = null;
+    // vaul restores the page's scroll position itself; don't scroll first.
+    if (target?.isConnected === true) target.focus({ preventScroll: true });
+  }, [req]);
   if (req === null) return null;
 
   const dismiss = () => {
@@ -155,6 +177,11 @@ export function DialogHost() {
   return (
     <Sheet.Root
       open
+      // vaul turns Radix's open-time focus off by default, which left focus on
+      // the (now aria-hidden) opener and the answers at the end of the page.
+      // This moves it to the first control: Cancel, the first option, or the
+      // input.
+      autoFocus
       onOpenChange={(o) => {
         if (!o) dismiss();
       }}

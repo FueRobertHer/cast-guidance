@@ -491,6 +491,7 @@ export function Component() {
               <button
                 key={die}
                 type="button"
+                aria-label={`Spend a ${die} hit die, ${total - (play.hitDiceSpent[die] ?? 0)} left`}
                 title={`Spend a hit die (${die})`}
                 onClick={() =>
                   update((d) => {
@@ -540,7 +541,8 @@ export function Component() {
                   <button
                     key={n}
                     type="button"
-                    aria-label={`${kind} ${n}`}
+                    aria-label={`Death save ${kind} ${n}`}
+                    aria-pressed={play.deathSaves[kind] >= n}
                     onClick={() =>
                       update((d) => {
                         d.play.deathSaves[kind] = d.play.deathSaves[kind] >= n ? n - 1 : n;
@@ -588,7 +590,7 @@ export function Component() {
               className="rounded-lg bg-accent-deep px-3 py-1.5 text-xs font-semibold"
               title="Roll a death save — successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
             >
-              🎲 Roll save
+              <span aria-hidden="true">🎲</span> Roll save
             </button>
           </div>
         </section>
@@ -625,7 +627,9 @@ export function Component() {
           className="rounded-lg bg-surface p-3"
         >
           <div className="text-2xl font-bold">{fmt(sheet.initiative.value)}</div>
-          <div className="text-xs text-ink-muted">Initiative 🎲</div>
+          <div className="text-xs text-ink-muted">
+            Initiative <span aria-hidden="true">🎲</span>
+          </div>
         </button>
         <div className="rounded-lg bg-surface p-3">
           <div className="text-2xl font-bold">
@@ -646,6 +650,7 @@ export function Component() {
       <section className="flex gap-2">
         <button
           type="button"
+          aria-pressed={play.inspiration}
           onClick={() => update((d) => void (d.play.inspiration = !d.play.inspiration))}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${
             play.inspiration
@@ -654,10 +659,11 @@ export function Component() {
           }`}
           title="Heroic Inspiration — reroll a d20"
         >
-          {play.inspiration ? '★' : '☆'} Inspiration
+          <span aria-hidden="true">{play.inspiration ? '★' : '☆'}</span> Inspiration
         </button>
         <button
           type="button"
+          aria-pressed={play.concentratingOn !== undefined}
           onClick={async () => {
             if (play.concentratingOn !== undefined) {
               update((d) => void (d.play.concentratingOn = undefined));
@@ -678,9 +684,17 @@ export function Component() {
           }`}
           title="Concentration — tap to set or clear"
         >
-          {play.concentratingOn !== undefined
-            ? `◈ ${play.concentratingOn.label}`
-            : '◇ Concentration'}
+          {/* The visible label is the spell alone; the prefix says what it means. */}
+          {play.concentratingOn !== undefined ? (
+            <>
+              <span aria-hidden="true">◈</span>
+              <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
+            </>
+          ) : (
+            <>
+              <span aria-hidden="true">◇</span> Concentration
+            </>
+          )}
         </button>
       </section>
 
@@ -698,6 +712,7 @@ export function Component() {
             <button
               key={key}
               type="button"
+              aria-pressed={used}
               onClick={() =>
                 update((d) => {
                   const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
@@ -760,6 +775,7 @@ export function Component() {
               <button
                 key={c}
                 type="button"
+                aria-pressed={active !== undefined}
                 onClick={() =>
                   update((d) => {
                     const idx = d.play.conditions.findIndex((x) => x.id === c);
@@ -847,6 +863,7 @@ export function Component() {
                   trigger={
                     <button
                       type="button"
+                      aria-label={`What ${c.id} does`}
                       className="rounded-full border border-surface-2 px-2.5 py-1 text-xs text-ink-muted underline decoration-dashed underline-offset-2"
                     >
                       {c.id}
@@ -1146,6 +1163,12 @@ export function Component() {
                         } ${economyLabel}`}
                       >
                         <AlertTriangle size={11} />
+                        {/* lucide hides the icon, so without this nothing is read. */}
+                        <span className="sr-only">
+                          {`${blocked.join(', ')}: you normally can't take ${
+                            a.economy === 'action' ? 'an' : 'a'
+                          } ${economyLabel}`}
+                        </span>
                       </span>
                     )}
                     {a.roll !== undefined ? (
@@ -1153,6 +1176,7 @@ export function Component() {
                     ) : (
                       <button
                         type="button"
+                        aria-label={`Use ${a.label}`}
                         onClick={trigger}
                         disabled={depleted}
                         className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
@@ -1345,6 +1369,9 @@ export function Component() {
                           title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
                         >
                           <AlertTriangle size={12} />
+                          <span className="sr-only">
+                            {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
+                          </span>
                         </span>
                       )}
                       <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -1383,6 +1410,7 @@ export function Component() {
                         {!hasAttack && rolls.length === 0 && (
                           <button
                             type="button"
+                            aria-label={`Cast ${ref.name}`}
                             onClick={cast}
                             className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
                             title={
@@ -1523,6 +1551,9 @@ export function Component() {
                       title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
                     >
                       <AlertTriangle size={12} />
+                      <span className="sr-only">
+                        {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
+                      </span>
                     </span>
                   )}
                   <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -1563,6 +1594,7 @@ export function Component() {
                     {!hasAttack && rolls.length === 0 && (
                       <button
                         type="button"
+                        aria-label={`Cast ${g.name}`}
                         onClick={cast}
                         disabled={depleted}
                         className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"

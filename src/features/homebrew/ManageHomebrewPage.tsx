@@ -160,10 +160,16 @@ export function Component() {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            aria-label="Homebrew JSON URL"
             placeholder="…or paste a raw JSON URL (GitHub raw, gist)"
             className="min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
           />
-          <button type="submit" className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold">
+          <button
+            type="submit"
+            aria-label="Import from URL"
+            title="Import from URL"
+            className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
+          >
             <LinkIcon size={16} />
           </button>
         </form>
@@ -185,8 +191,12 @@ export function Component() {
           // library, and its controls, keep working.
           <DecodeBoundary key={r.id} label="This file">
             <div className="flex items-center gap-2 rounded-lg bg-surface p-3">
+              {/* A stable verb for the name, so the state is announced once: by
+                  aria-pressed, not again by the flipping visible text. */}
               <button
                 type="button"
+                aria-label={`Enable ${r.fileName}`}
+                aria-pressed={r.enabled}
                 onClick={() => {
                   // The label reads from the row, so a rejected write leaves the
                   // badge saying what is actually stored; the toast is what says
@@ -211,6 +221,7 @@ export function Component() {
               {r.editable && (
                 <Link
                   to={`/homebrew/edit/${r.id}`}
+                  aria-label={`Edit ${r.fileName} in the builder`}
                   title="Edit in the builder"
                   className="shrink-0 rounded p-1.5 text-purple-300 hover:text-purple-200"
                 >
@@ -219,6 +230,7 @@ export function Component() {
               )}
               <button
                 type="button"
+                aria-label={`Download ${r.fileName}`}
                 title="Download"
                 onClick={() => {
                   try {
@@ -233,6 +245,7 @@ export function Component() {
               </button>
               <button
                 type="button"
+                aria-label={`Delete ${r.fileName}`}
                 title="Delete"
                 onClick={() => void remove(r.id, r.fileName)}
                 className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
@@ -260,6 +273,7 @@ export function Component() {
               {id !== undefined && (
                 <button
                   type="button"
+                  aria-label={`Delete ${e.fileName ?? 'this unreadable file'}`}
                   title="Delete"
                   onClick={() => void remove(id, e.fileName ?? 'this file')}
                   className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"

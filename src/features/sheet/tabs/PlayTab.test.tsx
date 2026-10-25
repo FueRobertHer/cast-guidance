@@ -4,10 +4,11 @@
 // combo double-fired: a "double-tap −5" applied −6 and rolled up to three saves.)
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
+import { namelessControls } from '../../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
@@ -451,5 +452,102 @@ describe('PlayTab pick lifecycle (GAME-001)', () => {
     fireEvent.click(screen.getByRole('button', { name: '2d6' }));
     expect(getDoc().play.slotsSpent[0]).toBe(1);
     expect(getDoc().play.slotsSpent[2]).toBe(0);
+  });
+});
+
+// A11Y-001: toggles that showed their state only by colour or a strike-through,
+// warning icons that lucide hides and nothing else named, and repeated "Use"
+// and "Cast" buttons that did not say what they act on.
+describe('PlayTab accessible names and states (A11Y-001)', () => {
+  // jsdom has no matchMedia and the breakdown drawer asks for one on mount.
+  beforeAll(() => {
+    window.matchMedia = (query: string) =>
+      ({
+        matches: false,
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        onchange: null,
+        dispatchEvent: () => false,
+      }) as MediaQueryList;
+  });
+
+  it('names every control while dying, concentrating and stunned, and in an open sheet', async () => {
+    const { sheet } = renderPlay((d) => {
+      d.play.currentHp = 0;
+      d.play.concentratingOn = { label: 'Bless' };
+      d.play.conditions = [{ id: 'Stunned' }];
+    });
+    expect(namelessControls()).toEqual([]);
+
+    const [die, total] = Object.entries(sheet.hitDice)[0] ?? [];
+    expect(
+      screen.getByRole('button', { name: `Spend a ${die} hit die, ${total} left` }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'What Stunned does' })).toBeTruthy();
+
+    // Portaled sheet content renders outside the tab, so sweep it once open.
+    fireEvent.click(screen.getByRole('button', { name: 'breakdown' }));
+    expect(await screen.findByRole('textbox', { name: 'Override Max HP' })).toBeTruthy();
+    expect(namelessControls()).toEqual([]);
+  });
+
+  it('reads out the warnings a hidden icon carries, and names Cast after its spell', () => {
+    renderSorcerer(
+      (d) => {
+        d.play.conditions = [{ id: 'Stunned' }];
+      },
+      (d) => {
+        d.classes = [
+          {
+            ref: { name: 'Warrior', source: 'TST' },
+            subclass: { name: 'Path of Tests', source: 'TST' },
+            levels: 3,
+            hp: ['avg', 'avg', 'avg'],
+          },
+          ...d.classes,
+        ];
+      },
+    );
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Cast bless' })).toBeTruthy();
+    expect(
+      screen.getAllByText(/^Stunned: you can't speak, and this spell has a verbal component$/)
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('reports each toggle as not pressed on a fresh sheet', () => {
+    renderPlay();
+    expect(screen.getByRole('button', { name: 'Inspiration', pressed: false })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Concentration', pressed: false })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Action', pressed: false })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Poisoned', pressed: false })).toBeTruthy();
+  });
+
+  it('reports each toggle that is on as pressed', () => {
+    renderPlay((d) => {
+      d.play.inspiration = true;
+      d.play.concentratingOn = { label: 'Bless' };
+      d.play.turn = { action: true, bonus: false, reaction: false };
+      d.play.conditions = [{ id: 'Poisoned' }];
+      d.play.currentHp = 0;
+      d.play.deathSaves = { success: 1, fail: 0 };
+    });
+    expect(screen.getByRole('button', { name: 'Inspiration', pressed: true })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Concentrating on Bless', pressed: true }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Action', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bonus', pressed: false })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Poisoned', pressed: true })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Death save success 1', pressed: true }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Death save success 2', pressed: false }),
+    ).toBeTruthy();
   });
 });

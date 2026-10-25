@@ -49,12 +49,17 @@ export function DiceTray() {
 
   return (
     <Sheet.Root>
+      {/* Hidden by scroll, it is still in the tab order: focus brings it back
+          rather than leaving the keyboard on an invisible button. */}
       <Sheet.Trigger asChild>
         <button
           type="button"
+          aria-label="Dice tray"
           title="Dice tray"
           className={`fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-all duration-200 lg:bottom-6 ${
-            hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
+            hidden
+              ? 'pointer-events-none translate-x-20 opacity-0 focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100'
+              : ''
           }`}
         >
           <Dices size={22} />
@@ -72,6 +77,7 @@ export function DiceTray() {
               <button
                 key={mode}
                 type="button"
+                aria-pressed={advMode === mode}
                 onClick={() => {
                   setAdvMode(mode);
                 }}
@@ -113,6 +119,7 @@ export function DiceTray() {
             <input
               value={expr}
               onChange={(e) => setExpr(e.target.value)}
+              aria-label="Dice expression"
               placeholder="e.g. 4d6dl1+2"
               className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm outline-none placeholder:text-ink-muted"
             />
@@ -177,11 +184,12 @@ export function DiceTray() {
                     </span>
                     <button
                       type="button"
+                      aria-label={`Remove ${r.label ?? r.expr} roll (${r.total})`}
                       title="Remove roll (accidental click?)"
                       onClick={() => r.id !== undefined && rollLogStore.getState().remove(r.id)}
                       className="rounded px-1 text-ink-muted/60 hover:text-accent"
                     >
-                      ✕
+                      <span aria-hidden="true">✕</span>
                     </button>
                   </div>
                 </div>

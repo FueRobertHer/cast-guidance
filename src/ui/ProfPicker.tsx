@@ -49,7 +49,7 @@ export function ProfPicker({
                 : 'border-surface-2 text-ink-muted'
             }`}
           >
-            <ProfDot level={level} />
+            <ProfDot level={level} decorative />
             {label}
           </button>
         ))}

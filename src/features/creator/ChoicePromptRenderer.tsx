@@ -155,6 +155,7 @@ export function ChoicePromptRenderer({
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label={`Filter ${prompt.label}`}
           placeholder="Filter…"
           className="rounded bg-surface-2 px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted"
         />

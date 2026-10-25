@@ -191,6 +191,7 @@ export function OriginChoices({
             </div>
             <button
               type="button"
+              aria-label={`Change ${prompt.label}`}
               title="Change this pick"
               onClick={() => setEditing(prompt.id)}
               className="flex shrink-0 items-center gap-1 rounded border border-surface-2 px-2 py-1 text-xs text-ink-muted hover:text-ink"
