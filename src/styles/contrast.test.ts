@@ -41,28 +41,78 @@ function sources(dir: string): string[] {
 }
 
 /**
- * Every bare `bg-accent` the app is allowed, per file, and what each one is.
- * None carries a label: they are marks and icon-only fills, which need 3:1
- * (WCAG 1.4.11) and get 3.8:1. Anything with words on it uses
- * `bg-accent-fill`. A new use has to be added here on purpose, which is the
- * point: a class list can be split across a conditional, a variable or a prop
- * where no per-attribute check would see it.
+ * Every bare `bg-accent` the app is allowed, and what each one is. None
+ * carries a label: they are marks and icon-only fills, which need 3:1 (WCAG
+ * 1.4.11) and get 3.8:1. Anything with words on it uses `bg-accent-fill`.
+ *
+ * Each entry names the source line by a piece of it, so the list pins the
+ * lines rather than a count per file: moving the token from a mark onto a
+ * label in the same file leaves the mark's entry unused and the label's
+ * line unlisted, and both fail. A new use has to be added here on purpose,
+ * which is the point: a class list split across a conditional, a variable
+ * or a prop is out of reach of any per-attribute check.
  */
-const MARKS: Readonly<Record<string, { count: number; what: string }>> = {
-  'app/AppNav.tsx': { count: 1, what: 'the current tab bar' },
-  'features/sheet/SheetLayout.tsx': { count: 1, what: "the sheet's current tab bar" },
-  'features/characters/CharacterListPage.tsx': { count: 1, what: 'the low HP bar' },
-  'features/sheet/tabs/PlayTab.tsx': {
-    count: 3,
-    what: 'the low HP bar, a failed death save, resource pips',
+const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
+  { file: 'app/AppNav.tsx', line: 'h-0.5 rounded-full bg-accent', what: 'the current tab bar' },
+  {
+    file: 'features/sheet/SheetLayout.tsx',
+    line: 'h-0.5 rounded-full bg-accent',
+    what: "the sheet's current tab bar",
   },
-  'features/dice/DiceTray.tsx': { count: 1, what: 'the icon-only dice button' },
-  'ui/DataBanner.tsx': { count: 1, what: "the download bar's fill" },
-  'ui/ProfDot.tsx': { count: 1, what: 'the proficiency dot' },
-};
+  {
+    file: 'features/characters/CharacterListPage.tsx',
+    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
+    what: 'the low HP bar',
+  },
+  {
+    file: 'features/sheet/tabs/PlayTab.tsx',
+    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
+    what: 'the low HP bar',
+  },
+  {
+    file: 'features/sheet/tabs/PlayTab.tsx',
+    line: ": 'border-accent bg-accent'",
+    what: 'a failed death save',
+  },
+  {
+    file: 'features/sheet/tabs/PlayTab.tsx',
+    line: 'tone="border-accent bg-accent"',
+    what: 'resource pips',
+  },
+  {
+    file: 'features/dice/DiceTray.tsx',
+    line: 'h-12 w-12 items-center justify-center rounded-full bg-accent',
+    what: 'the icon-only dice button',
+  },
+  {
+    file: 'ui/DataBanner.tsx',
+    line: 'h-full bg-accent transition-all',
+    what: "the download bar's fill",
+  },
+  { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
+];
 
-/** Bare `bg-accent` class tokens (not `bg-accent-deep`, `-fill`, or `/40`). */
-const BARE = /(?<![\w-])bg-accent(?![\w/-])/g;
+/**
+ * Bare `bg-accent` class tokens, opacity variants (`bg-accent/90`) included:
+ * those are the same light red. Not `bg-accent-deep` or `bg-accent-fill`.
+ */
+const BARE = /(?<![\w-])bg-accent(?![\w-])/;
+
+/** Every source line holding a bare token, as `file: line`, matched to MARKS. */
+function bareLines(): { unlisted: string[]; unused: string[] } {
+  const unused = new Set(MARKS);
+  const unlisted: string[] = [];
+  for (const file of sources(SRC)) {
+    const rel = path.relative(SRC, file).split(path.sep).join('/');
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!BARE.test(line)) continue;
+      const mark = [...unused].find((m) => m.file === rel && line.includes(m.line));
+      if (mark === undefined) unlisted.push(`${rel}: ${line.trim()}`);
+      else unused.delete(mark);
+    }
+  }
+  return { unlisted, unused: [...unused].map((m) => `${m.file}: ${m.what}`) };
+}
 
 describe('label contrast on the accent fill (A11Y-003)', () => {
   it('accent-fill clears 4.5:1 with white and with ink', () => {
@@ -84,20 +134,16 @@ describe('label contrast on the accent fill (A11Y-003)', () => {
     expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
   });
 
-  it('uses the lighter bg-accent only for the listed marks', () => {
-    const seen: Record<string, number> = {};
-    for (const file of sources(SRC)) {
-      const n = readFileSync(file, 'utf8').match(BARE)?.length ?? 0;
-      if (n > 0) seen[path.relative(SRC, file).split(path.sep).join('/')] = n;
-    }
-    const allowed = Object.fromEntries(Object.entries(MARKS).map(([f, m]) => [f, m.count]));
-    expect(seen).toEqual(allowed);
+  it('uses the lighter bg-accent only on the listed marks', () => {
+    expect(bareLines()).toEqual({ unlisted: [], unused: [] });
   });
 
-  it('sees a token inside a conditional, which a class-list check would miss', () => {
+  it('sees a token inside a conditional or with an opacity, and not the other reds', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is source text to scan, not a template
-    const source = "className={`text-sm ${danger ? 'bg-accent-deep' : 'bg-accent'}`}";
-    expect(source.match(BARE)).toEqual(['bg-accent']);
-    expect('bg-accent-fill bg-accent-deep bg-accent/40 border-accent'.match(BARE)).toBeNull();
+    expect(BARE.test("className={`text-sm ${danger ? 'bg-accent-deep' : 'bg-accent'}`}")).toBe(
+      true,
+    );
+    expect(BARE.test('rounded bg-accent/90 text-white')).toBe(true);
+    expect(BARE.test('bg-accent-fill bg-accent-deep bg-accent-deep/40 border-accent')).toBe(false);
   });
 });
