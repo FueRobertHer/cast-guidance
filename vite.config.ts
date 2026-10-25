@@ -43,7 +43,7 @@ export default defineConfig({
     // up test copies under `.claude/worktrees/`, which import the root `src`
     // through the `@/` alias and skew both the test count and coverage.
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
-    // Headroom for a loaded 2-vCPU runner with coverage on: component tests
+    // Headroom for a loaded 4-vCPU runner with coverage on: component tests
     // that take a second locally ran past the 5 s default there.
     testTimeout: 15_000,
     coverage: {
@@ -56,14 +56,14 @@ export default defineConfig({
       // Bootstrap, ambient types, and test files aren't meaningful to cover.
       exclude: ['src/main.tsx', 'src/vite-env.d.ts', 'src/**/*.d.ts', 'src/**/*.test.{ts,tsx}'],
       // A ratchet, not a target: each floor is one point under the measured
-      // total rounded down (81.09 / 71.82 / 72.65 / 82.92 at the last
+      // total rounded down (87.79 / 79.37 / 82.94 / 89.48 at the last
       // measure), so `test:coverage` fails when coverage falls. Raise them as
       // coverage grows; do not use `autoUpdate`, which rewrites this file.
       thresholds: {
-        statements: 80,
-        branches: 70,
-        functions: 71,
-        lines: 81,
+        statements: 86,
+        branches: 78,
+        functions: 81,
+        lines: 88,
       },
     },
     // No `passWithNoTests`: the suite has real tests, so a run that matches
