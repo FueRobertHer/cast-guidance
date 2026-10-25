@@ -9,18 +9,30 @@ import type { UndoNotice } from '@/lib/useUndoOffer';
  * screen reader hears each offer as it is inserted. It is also where focus
  * goes after Undo: the button disappears with the offer, and focus left on it
  * would fall to the page body. The region then says what was undone.
+ *
+ * A change whose own control goes away with it (a line that hides, a card
+ * that unmounts) bumps `focusRequest`, and focus moves to the new offer's
+ * Undo button instead of falling to the page body.
  */
 export function UndoBar({
   pending,
   undone,
   onUndo,
+  focusRequest = 0,
 }: {
   pending: UndoNotice | null;
   undone: string | null;
   onUndo: () => void;
+  /** Bump to move focus to the Undo button once the offer shows. */
+  focusRequest?: number;
 }) {
   const region = useRef<HTMLDivElement>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
   const focusAfterUndo = useRef(false);
+  useLayoutEffect(() => {
+    if (focusRequest === 0) return;
+    undoButton.current?.focus();
+  }, [focusRequest]);
   // Only once the region says what was undone: focusing it in the click
   // handler, before React re-renders, had a screen reader read the stale offer
   // first and then announce again.
@@ -45,6 +57,7 @@ export function UndoBar({
             )}
           </span>
           <button
+            ref={undoButton}
             type="button"
             aria-label={`Undo: ${pending.title}`}
             onClick={() => {

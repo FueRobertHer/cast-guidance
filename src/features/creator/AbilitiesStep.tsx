@@ -92,6 +92,7 @@ export function AbilitiesStep({
   const hint = className !== undefined ? classAbilityHint(className) : undefined;
   const autoArray = className !== undefined ? standardArrayFor(className) : undefined;
   const focus = className !== undefined ? pointBuyFocusFor(className) : undefined;
+  const status = method === 'pointbuy' ? pointBuyStatus(base) : undefined;
 
   const step = (a: Ability, delta: 1 | -1) => {
     const next = { ...base, [a]: Math.min(18, Math.max(3, base[a] + delta)) };
@@ -179,15 +180,11 @@ export function AbilitiesStep({
         </div>
       )}
 
-      {method === 'pointbuy' && (
+      {status !== undefined && (
         <div className="flex flex-col gap-2">
-          <PointBuySummary status={pointBuyStatus(base)} />
-          {(() => {
-            const kind = pointBuyStatus(base).kind;
-            return kind === 'range' || kind === 'over'
-              ? keepAsManual('Keep as Manual scores')
-              : null;
-          })()}
+          <PointBuySummary status={status} />
+          {(status.kind === 'range' || status.kind === 'over') &&
+            keepAsManual('Keep as Manual scores')}
           {focus !== undefined && (
             <button
               type="button"
@@ -275,11 +272,14 @@ function FinalLine({ score, final }: { score: number; final?: DerivedAbility }) 
  * One select per ability, each listing the six array values. A value another
  * ability holds reads "14 (swap with DEX)", and picking it swaps the two.
  *
- * A native select fires a change per option as it is arrowed through (Windows
- * does), so each change is worked out from the scores as they were when the
- * select took focus, not from the last change: arrowing STR through every
+ * A closed native select fires a change per option as it is arrowed through
+ * (Windows does), so those changes are worked out from the scores as they were
+ * when that run began, not from the last change: arrowing STR through every
  * value moves only STR and whichever ability held the value it lands on. The
- * option labels read from that snapshot too, and blur lets it go.
+ * option labels read from that snapshot too. A run begins on focus, and again
+ * whenever the list is opened (a press, or Space, Enter, Alt+Arrow or F4), so
+ * a pick made from the open list is kept as the base of the next one; blur
+ * ends it.
  */
 function StandardAllocator({
   base,
@@ -298,6 +298,10 @@ function StandardAllocator({
   // reads, since two changes can land before a render.
   const [shown, setShown] = useState<Scores | null>(null);
   const labels = shown ?? base;
+  const begin = () => {
+    snapshot.current = { ...base };
+    setShown(snapshot.current);
+  };
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {ABILITIES.map((a) => (
@@ -308,9 +312,15 @@ function StandardAllocator({
           <select
             id={`${id}-${a}`}
             value={base[a]}
-            onFocus={() => {
-              snapshot.current = { ...base };
-              setShown(snapshot.current);
+            onFocus={begin}
+            onPointerDown={begin}
+            onKeyDown={(e) => {
+              const opens =
+                e.key === ' ' ||
+                e.key === 'Enter' ||
+                e.key === 'F4' ||
+                (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp'));
+              if (opens) begin();
             }}
             onBlur={() => {
               snapshot.current = null;
@@ -320,7 +330,9 @@ function StandardAllocator({
               const from = snapshot.current ?? base;
               const next = swapStandard(from, a, Number(e.target.value));
               onScores(next);
-              const moved = ABILITIES.filter((b) => next[b] !== from[b]);
+              // Said against the scores just before this change, which is
+              // what the player last heard.
+              const moved = ABILITIES.filter((b) => next[b] !== base[b]);
               onAnnounce(
                 (moved.length > 0 ? moved : [a])
                   .map((b) => `${b.toUpperCase()} ${next[b]}`)
@@ -378,10 +390,14 @@ function StepperCard({
         : `Below ${POINT_BUY_MIN}`
       : undefined;
   const next = stepCost(score);
+  // From below 8, one up can land back in range: say so, with what it costs.
+  const landing = POINT_BUY_COSTS[score + 1];
   const upNote =
     next !== undefined
       ? `+1 costs ${next} more`
-      : `${label} ${score + 1} is outside point buy (${POINT_BUY_MIN} to ${POINT_BUY_MAX})`;
+      : landing !== undefined
+        ? `+1 brings ${label} back into point-buy range at ${score + 1}, costing ${landing}`
+        : `${label} ${score + 1} is outside point buy (${POINT_BUY_MIN} to ${POINT_BUY_MAX})`;
   const badgeId = `${id}-badge`;
   const upId = `${id}-up`;
   return (

@@ -81,8 +81,11 @@ describe('the unfinished draft card', () => {
     expect(readDraft()).toBeNull();
     expect(screen.queryByText(/Unfinished character/)).toBeNull();
     expect(screen.getByRole('status').textContent).toContain('Discarded draft Aria');
+    // Discard went with its card; focus goes to the undo, not the page body.
+    const undoButton = screen.getByRole('button', { name: 'Undo: Discarded draft Aria' });
+    expect(document.activeElement).toBe(undoButton);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo: Discarded draft Aria' }));
+    fireEvent.click(undoButton);
     expect(readDraft()).toEqual(before);
     expect(screen.getByText('Unfinished character: Aria (Fighter 3, Elf)')).toBeTruthy();
   });

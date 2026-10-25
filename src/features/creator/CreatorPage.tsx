@@ -159,6 +159,7 @@ export function Component() {
       // Entered afresh (not a step of this load, nor the roster's Resume) on
       // a draft with something in it: say it is being continued, and offer
       // to start over. A line, not a gate: the step is right there.
+      // Tied to the draft entered with (see `continuing` below).
       continuing:
         stored !== null &&
         !isBlankDraft(stored) &&
@@ -190,11 +191,22 @@ export function Component() {
     return { before, after };
   };
   // Before any early return: hooks run in the same order on every render.
+  // The step a Start over took the draft from, so its undo puts back the
+  // step to resume as well as the draft.
+  const stepBeforeStartOver = useRef<{ id: string; step: Step | undefined } | null>(null);
   const undo = useUndoOffer<Draft>({
     current: draft,
     same: sameDraft,
-    restore: (before) => setDraft(before),
+    restore: (before) => {
+      setDraft(before);
+      const kept = stepBeforeStartOver.current;
+      stepBeforeStartOver.current = null;
+      if (kept?.id === before.doc.id && kept.step !== undefined) saveDraftStep(kept.step);
+    },
   });
+  // Bumped when a change's own control goes away with it, so focus moves to
+  // the Undo button instead of falling to the page body.
+  const [undoFocus, setUndoFocus] = useState(0);
 
   // The fixed block at the bottom (undo line plus step nav) is measured, and
   // the page ends in a spacer that tall, so nothing it covers is out of reach.
@@ -668,6 +680,7 @@ export function Component() {
    * brings the whole draft back, kit rows included.
    */
   const startOver = () => {
+    stepBeforeStartOver.current = { id: latest.current.doc.id, step: readDraft()?.step };
     undoable(
       (d) => Object.assign(d, freshDraft()),
       (before) => ({
@@ -675,8 +688,14 @@ export function Component() {
         detail: `was ${draftSummary(before.doc)}`,
       }),
     );
+    setUndoFocus((n) => n + 1);
     if (step !== 'basics') setParams({ step: 'basics' }, { replace: true, state: location.state });
   };
+
+  // The line stays with the draft it was shown for: Start over begins a new
+  // doc (a new id) and hides it for good, and its undo brings both back.
+  const continuing =
+    entry.continuing && draft.doc.id === entry.draft.doc.id && !isBlankDraft(draft);
 
   const stepBody = () => {
     switch (step) {
@@ -1240,7 +1259,7 @@ export function Component() {
     <main className="flex flex-1 flex-col gap-4 p-4">
       {header}
 
-      {entry.continuing && !isBlankDraft(draft) && (
+      {continuing && (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface px-3 py-2 text-sm text-ink-muted">
           <History size={16} aria-hidden className="shrink-0" />
           <span>
@@ -1298,7 +1317,12 @@ export function Component() {
           step scrolls. */}
       <div ref={setBottomBlock} className="fixed inset-x-0 bottom-0 flex flex-col">
         <div className={undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : undefined}>
-          <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
+          <UndoBar
+            pending={undo.pending}
+            undone={undo.undone}
+            onUndo={() => void undo.run()}
+            focusRequest={undoFocus}
+          />
         </div>
         {/* Step navigation */}
         <nav className="flex gap-2 border-t border-surface-2 bg-surface p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">

@@ -2,7 +2,7 @@
 // UX-001: the creator kept only the doc of its draft, so the equipment rows
 // picked for a kit were lost on a reload, and it read the doc back with a bare
 // cast, so any stored value was trusted as a character.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CHARACTER_SCHEMA_VERSION, type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import {
   clearDraft,
@@ -64,6 +64,11 @@ describe('readDraft', () => {
       (d) => void (d.play = { ...aria().play, currency: null }),
       (d) => void delete d.equipment,
       (d) => void (d.schemaVersion = CHARACTER_SCHEMA_VERSION + 1),
+      // The draft card and the wizard read these without checking.
+      (d) => void (d.classes = [{}]),
+      (d) => void (d.classes = [{ ref: { name: 'Monk', source: 'TST' }, levels: '3', hp: [] }]),
+      (d) => void (d.race = {}),
+      (d) => void (d.background = 'Sage'),
     ];
     for (const breakIt of cases) {
       const doc = aria() as unknown as Record<string, unknown>;
@@ -89,6 +94,27 @@ describe('readDraft', () => {
       bundleChoices: { 'class:0': 'b' },
       slotPicks: {},
     });
+  });
+});
+
+describe('when storage throws', () => {
+  it('reads no draft, and writing, saving a step or clearing do not throw', () => {
+    const fail = () => {
+      throw new DOMException('denied', 'SecurityError');
+    };
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(fail);
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(fail);
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(fail);
+    try {
+      expect(readDraft()).toBeNull();
+      expect(() =>
+        writeDraft({ doc: aria(), bundleChoices: {}, slotPicks: {} }, 'class'),
+      ).not.toThrow();
+      expect(() => saveDraftStep('abilities')).not.toThrow();
+      expect(() => clearDraft()).not.toThrow();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

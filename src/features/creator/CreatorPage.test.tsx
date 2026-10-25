@@ -678,6 +678,39 @@ describe('changes that take something away', () => {
         expect(scores()).toBe('8/14/13/12/10/15');
       });
 
+      it('says each arrowed change against the scores just before it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        fireEvent.focus(screen.getByLabelText('Strength (STR)'));
+        pick('Strength (STR)', 14);
+        expect(screen.getByText('STR 14, DEX 15')).toBeTruthy();
+        pick('Strength (STR)', 13);
+        // DEX gave 15 back as STR moved on: that is said too.
+        expect(screen.getByText('STR 13, DEX 14, CON 15')).toBeTruthy();
+      });
+
+      it('builds a pick from the open list on the pick before it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        fireEvent.pointerDown(str);
+        pick('Strength (STR)', 14);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        // Still focused, the list opened again: by a press, then by a key.
+        fireEvent.pointerDown(str);
+        expect(within(str).getByRole('option', { name: '15 (swap with DEX)' })).toBeTruthy();
+        pick('Strength (STR)', 13);
+        expect(scores()).toBe('13/15/14/12/10/8');
+        fireEvent.keyDown(str, { key: 'Enter' });
+        pick('Strength (STR)', 12);
+        expect(scores()).toBe('12/15/14/13/10/8');
+      });
+
       it('seeds an unassigned draft in order, ready to swap', () => {
         renderDraft('abilities', monk);
         expect(screen.getByText(/Assign each of 15, 14, 13, 12, 10, 8 once/)).toBeTruthy();
@@ -722,6 +755,22 @@ describe('changes that take something away', () => {
         d.abilities.method = 'pointbuy';
         d.abilities.base = base;
       };
+
+      it('says one up from 7 lands back in range, and what it costs', () => {
+        renderDraft('abilities', pointBuy({ ...inOrder, cha: 7 }));
+        expect(
+          screen.getByRole('button', {
+            name: 'Increase CHA',
+            description: /^Below 8 \+1 brings CHA back into point-buy range at 8, costing 0$/,
+          }),
+        ).toBeTruthy();
+        expect(
+          screen.getByRole('button', {
+            name: 'Increase STR',
+            description: 'STR 16 is outside point buy (8 to 15)',
+          }),
+        ).toBeTruthy();
+      });
 
       it('names a score out of range in words and offers to keep it as Manual', () => {
         renderDraft('abilities', pointBuy({ ...inOrder }));
@@ -869,9 +918,30 @@ describe('an unfinished draft', () => {
       'Started a new character · was Aria (Warrior 3, Testfolk)',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo: Started a new character' }));
+    // The line held the Start over button; focus goes to the undo, not the body.
+    const undoButton = screen.getByRole('button', { name: 'Undo: Started a new character' });
+    expect(document.activeElement).toBe(undoButton);
+
+    fireEvent.click(undoButton);
     expect(nameInput().value).toBe('Aria');
     expect(saved().classes[0]?.levels).toBe(3);
+    expect(continuing()?.textContent).toContain('Aria (Warrior 3, Testfolk)');
+  });
+
+  it('does not say the character begun after Start over is being continued', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    fireEvent.change(nameInput(), { target: { value: 'Bram' } });
+    expect(continuing()).toBeNull();
+  });
+
+  it('puts back the step to resume when Start over is undone', () => {
+    seedAria('abilities');
+    renderCreator(['/', '/create']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo: Started a new character' }));
+    expect(readDraft()?.step).toBe('abilities');
   });
 
   it('goes back to Basics to start over', async () => {

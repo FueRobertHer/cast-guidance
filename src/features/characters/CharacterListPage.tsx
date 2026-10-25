@@ -153,6 +153,8 @@ export function Component() {
       setStored(before);
     },
   });
+  // Discard unmounts the card it sits on, so focus moves to the Undo button.
+  const [undoFocus, setUndoFocus] = useState(0);
   const discardDraft = () => {
     const before = stored;
     if (before.draft === null) return;
@@ -160,6 +162,7 @@ export function Component() {
     const after = { draft: null };
     setStored(after);
     draftUndo.offer(before, after, `Discarded draft ${draftName(before.draft.doc)}`);
+    setUndoFocus((n) => n + 1);
   };
   const unfinished = stored.draft;
 
@@ -376,6 +379,7 @@ export function Component() {
             pending={draftUndo.pending}
             undone={draftUndo.undone}
             onUndo={() => void draftUndo.run()}
+            focusRequest={undoFocus}
           />
         )}
         <div className="grid grid-cols-2 gap-2">

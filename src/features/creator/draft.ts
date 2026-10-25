@@ -47,9 +47,17 @@ function rowsOf(v: unknown): Record<string, string> {
   );
 }
 
+/** A `{name, source}` reference, as a class, species or background is. */
+const isRef = (v: unknown): boolean =>
+  isRecord(v) && typeof v.name === 'string' && typeof v.source === 'string';
+
+/** Absent, or a reference. */
+const isOptionalRef = (v: unknown): boolean => v === undefined || isRef(v);
+
 /**
- * The doc, if it is one the creator can work on: the import guard, then
- * migration, then the fields the creator itself reads without checking.
+ * The doc, if it is one the creator (and the roster's draft card) can work
+ * on: the import guard, then migration, then the fields read without
+ * checking, down to each class entry and the species and background picked.
  */
 function docOf(raw: unknown): CharacterDoc | null {
   try {
@@ -68,6 +76,17 @@ function docOf(raw: unknown): CharacterDoc | null {
         return typeof v === 'number' && Number.isFinite(v);
       }) ||
       !Array.isArray(d.classes) ||
+      !d.classes.every(
+        (c: unknown) =>
+          isRecord(c) &&
+          isRef(c.ref) &&
+          typeof c.levels === 'number' &&
+          Array.isArray(c.hp) &&
+          isOptionalRef(c.subclass),
+      ) ||
+      !isOptionalRef(d.race) ||
+      !isOptionalRef(d.subrace) ||
+      !isOptionalRef(d.background) ||
       !Array.isArray(d.equipment) ||
       !isRecord(d.choices) ||
       !isRecord(d.spellcasting) ||
