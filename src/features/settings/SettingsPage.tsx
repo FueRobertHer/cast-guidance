@@ -12,6 +12,7 @@ import { invalidateRegistry } from '@/data5e/registry';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
 import { usePersistentStorage } from '@/lib/persistentStorage';
+import { storageErrorText } from '@/lib/storageErrors';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText } from '@/stores/notices';
@@ -131,7 +132,11 @@ export function Component() {
       setTags(null);
       measureOffline();
     } catch (err) {
-      setUpdateMsg({ text: `Update failed: ${errorText(err)}`, failed: true, failedTag: tag });
+      setUpdateMsg({
+        text: `Update failed: ${storageErrorText(err)}`,
+        failed: true,
+        failedTag: tag,
+      });
     } finally {
       setUpdating(false);
     }
@@ -159,7 +164,7 @@ export function Component() {
     try {
       await downloadAllPacks();
     } catch (err) {
-      setDownloadFailed(errorText(err));
+      setDownloadFailed(storageErrorText(err));
     } finally {
       setDownloading(false);
       measureOffline();
