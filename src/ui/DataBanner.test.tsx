@@ -141,6 +141,26 @@ describe('DataBanner', () => {
     expect(screen.getByRole('alert').textContent).toContain('Game data download failed: HTTP 503');
   });
 
+  it('picks the download back up by itself once the device is online again', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    render(<DataBanner />);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(retryDataLayer).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a failed version install to its own Retry when the network returns', () => {
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch', failedTag: 'v2.33.0' });
+    render(<DataBanner />);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(retryDataLayer).not.toHaveBeenCalled();
+    expect(updateToTag).not.toHaveBeenCalled();
+  });
+
   it('says why the version went backwards, over the drain that follows', () => {
     // A rollback is not an error: the app works, on the older release. But it
     // is the one change here nobody asked for, so it outranks the progress bar

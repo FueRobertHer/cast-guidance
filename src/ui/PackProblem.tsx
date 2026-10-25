@@ -1,4 +1,5 @@
 import type { TypePacksState } from '@/data5e/hooks';
+import { useOnReconnect } from '@/lib/useOnline';
 
 /**
  * Why a list that reads one download is short or empty, with Retry (PWA-001).
@@ -10,6 +11,10 @@ import type { TypePacksState } from '@/data5e/hooks';
  * console as an uncaught error.
  */
 export function PackProblem({ packs, what }: { packs: TypePacksState; what: string }) {
+  // Back online, a download the network stopped is tried again unasked.
+  useOnReconnect(() => {
+    if (packs.status === 'error') packs.retry();
+  });
   if (packs.status !== 'error') return null;
   const capitalized = what.charAt(0).toUpperCase() + what.slice(1);
   return (

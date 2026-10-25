@@ -2,7 +2,7 @@
 // PWA-001: a character opened before the essentials pack ever downloaded, and
 // offline, used to sit on "Deriving…" for good: the registry it derives from
 // rejected and nothing said so. The layout now says why, and offers Retry.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Component as SheetLayout } from './SheetLayout';
@@ -64,6 +64,15 @@ describe('SheetLayout without game data', () => {
     // The header still names the character.
     expect(screen.getByRole('heading', { level: 1, name: 'Hero' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('tries again by itself once the device is back online', () => {
+    loaded({ status: 'error', error: 'Failed to fetch', retry });
+    renderSheet();
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
     expect(retry).toHaveBeenCalledOnce();
   });
 

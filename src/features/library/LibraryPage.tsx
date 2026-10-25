@@ -17,6 +17,7 @@ import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
 import { useBack } from '@/lib/useBack';
+import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
@@ -284,15 +285,24 @@ const DB_CLOSED_NOTE = 'rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted';
  */
 function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksState }) {
   const dbOpen = useDbLifecycle((s) => s.state === 'open');
-  // Another tab deleted or upgraded the database (TEST-002): the failure here
-  // is "Database has been closed" and a Retry cannot fix it. The shell's
-  // banner says what happened and offers the reload.
-  if (!dbOpen) return <p className={DB_CLOSED_NOTE}>Reload this tab to see this section.</p>;
   // `error`, not `status`: a registry already in hand keeps the status 'ready'
   // so pages that can still render do, but the failed rebuild behind it is
   // exactly what this panel exists to say.
   const regFailed = reg.error !== null;
   const packsFailed = packs.status === 'error';
+  const retry = () => {
+    if (regFailed) reg.retry();
+    if (packsFailed) packs.retry();
+  };
+  // "You're offline" is read at the moment of failure, so back online it
+  // would go on saying so; trying again then is what makes it true or gone.
+  useOnReconnect(() => {
+    if (dbOpen) retry();
+  });
+  // Another tab deleted or upgraded the database (TEST-002): the failure here
+  // is "Database has been closed" and a Retry cannot fix it. The shell's
+  // banner says what happened and offers the reload.
+  if (!dbOpen) return <p className={DB_CLOSED_NOTE}>Reload this tab to see this section.</p>;
   // Both can fail at once, and a retry that fixes one of them leaves the other
   // unmentioned: say both, and let one press attempt both.
   const lines = [
@@ -319,13 +329,7 @@ function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksSt
           </span>
         )}
       </p>
-      <Action
-        label="Retry"
-        onClick={() => {
-          if (regFailed) reg.retry();
-          if (packsFailed) packs.retry();
-        }}
-      />
+      <Action label="Retry" onClick={retry} />
     </div>
   );
 }

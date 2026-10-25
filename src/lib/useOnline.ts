@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 function subscribe(onChange: () => void): () => void {
   window.addEventListener('online', onChange);
@@ -25,4 +25,20 @@ export function isOnline(): boolean {
  */
 export function useOnline(): boolean {
   return useSyncExternalStore(subscribe, isOnline, () => true);
+}
+
+/**
+ * Runs `onReconnect` each time the browser reports it is back online. For a
+ * download the network stopped: the reason it failed is gone, so waiting for
+ * a press of Retry only leaves a failure on screen that is no longer true.
+ */
+export function useOnReconnect(onReconnect: () => void): void {
+  // Held in a ref so a caller's fresh closure each render does not resubscribe.
+  const latest = useRef(onReconnect);
+  latest.current = onReconnect;
+  useEffect(() => {
+    const handle = () => latest.current();
+    window.addEventListener('online', handle);
+    return () => window.removeEventListener('online', handle);
+  }, []);
 }

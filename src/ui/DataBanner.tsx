@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
-import { useOnline } from '@/lib/useOnline';
+import { useOnline, useOnReconnect } from '@/lib/useOnline';
 import { announce } from '@/stores/announcer';
-import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
+import { dataStatusStore, showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
 /** What the rollback notice says, on screen and to a screen reader. */
 export function rollbackText(from: string, to: string): string {
@@ -36,6 +36,14 @@ export function DataBanner() {
     if (rollbackShown) announce(rollbackText(rolledBackFrom, getActiveTag()), { key: 'data' });
   }, [rollbackShown, rolledBackFrom]);
   const online = useOnline();
+  // The queue stops at the first file it cannot fetch, so losing the network
+  // stops it for good. Back online, it picks up where it stopped. A failed
+  // version install is left to its own Retry: that is a download of several
+  // megabytes the user asked for once, not the queue the app runs anyway.
+  useOnReconnect(() => {
+    const s = dataStatusStore.getState();
+    if (s.phase === 'error' && s.failedTag === undefined) retryDataLayer();
+  });
 
   // The same predicate the update toast stands aside for, so neither can drift
   // into painting over the other.

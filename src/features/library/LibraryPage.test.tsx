@@ -3,7 +3,7 @@
 // an entity: "Loading…" forever if the compendium or the download failed, and
 // "Not found" if it did not. ERR-001 is about telling those apart, and giving
 // each one something to press.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -181,6 +181,17 @@ describe('the detail view when this section will not download', () => {
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain("You're offline");
     expect(alert.textContent).toContain('already downloaded is still here');
+  });
+
+  it('tries the section again by itself once the device is back online', () => {
+    // PWA-001: the offline line is read when the download fails, so without a
+    // retry it went on saying "You're offline" after the network returned.
+    packs.current = { ...packs.current, status: 'error', error: 'Failed to fetch', offline: true };
+    renderAt('/library/spell/nonesuch%7Cphb');
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(packs.current.retry).toHaveBeenCalledOnce();
   });
 });
 

@@ -1,4 +1,4 @@
-import { useOnline } from '@/lib/useOnline';
+import { useOnline, useOnReconnect } from '@/lib/useOnline';
 
 /**
  * Why a page that needs game data has none to show, and the way on (PWA-001).
@@ -9,7 +9,8 @@ import { useOnline } from '@/lib/useOnline';
  * outcome, so a first launch offline (or one whose first download failed)
  * left "Deriving…" or "Loading game data…" up for good.
  *
- * Offline, the reason and the remedy are the network. Online, it is a failed
+ * Offline, the reason and the remedy are the network, and the download is
+ * tried again as soon as the device is back online. Online, it is a failed
  * download, and the error says which file.
  */
 export function GameDataProblem({
@@ -23,6 +24,8 @@ export function GameDataProblem({
   note?: string;
 }) {
   const online = useOnline();
+  // Back online, the download that could not start is tried again unasked.
+  useOnReconnect(onRetry);
   return (
     <div
       className="flex flex-col items-start gap-2 rounded-lg bg-accent-deep px-3 py-2"

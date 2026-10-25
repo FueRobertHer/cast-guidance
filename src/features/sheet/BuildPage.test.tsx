@@ -662,6 +662,15 @@ describe('BuildPage class list without its download', () => {
     expect(classPacks.retry).toHaveBeenCalledOnce();
   });
 
+  it('tries the class download again by itself once back online', () => {
+    classPacks.current = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderBuild();
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(classPacks.retry).toHaveBeenCalledOnce();
+  });
+
   it('names a failed download online', () => {
     classPacks.current = { status: 'error', error: 'HTTP 503', offline: false };
     renderBuild();
@@ -672,6 +681,10 @@ describe('BuildPage class list without its download', () => {
 
   it('says nothing while the class files are fine', () => {
     renderBuild();
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(classPacks.retry).not.toHaveBeenCalled();
     expect(screen.queryByText(/class list/)).toBeNull();
   });
 });
