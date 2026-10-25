@@ -9,8 +9,9 @@ import { characterRepo, type ImportSummary } from '@/db/characterRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
-import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
@@ -338,7 +339,9 @@ export function Component() {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f !== undefined) {
-            f.text()
+            // Refused by size before it is read: the text-length check in
+            // `importFromText` only runs once the whole file is in memory.
+            readFileTextBounded(f, IMPORT_LIMITS.maxImportBytes)
               .then((text) => characterRepo.importFromText(text))
               .then((summary) => setImportStatus(importSummaryMessage(summary)))
               .catch((err: unknown) =>

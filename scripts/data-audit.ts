@@ -7,13 +7,22 @@
  *
  * Network-gated by design — no game data ever lands in the repo.
  */
-import { DATA_TAG } from '../src/data5e/config';
+import { DATA_TAG, MAX_DATA_FILE_BYTES } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { GithubTagSource } from '../src/data5e/source';
 import { parseDice } from '../src/dice/parse';
 import { spellRollActions } from '../src/features/sheet/spellRolls';
 
-const source = new GithubTagSource(DATA_TAG);
+/** Decoded size of every file fetched, by URL, for the size check below. */
+const fileBytes = new Map<string, number>();
+
+const source = new GithubTagSource(DATA_TAG, {
+  fetchImpl: async (input, init) => {
+    const res = await fetch(input, init);
+    if (res.ok) fileBytes.set(String(input), (await res.clone().arrayBuffer()).byteLength);
+    return res;
+  },
+});
 
 const STATIC_FILES = [
   'races.json',
@@ -58,6 +67,21 @@ await fetchInto([
   ...Object.values(spellsIndex).map((f) => `spells/${f}`),
 ]);
 console.log(`fetched ${files.size} files\n`);
+
+// The app refuses any file over MAX_DATA_FILE_BYTES unparsed. Half of it is
+// the line for planning a bump: a release that crosses it is still served, but
+// the next few might not be.
+console.log('## file sizes');
+const sizeBudget = MAX_DATA_FILE_BYTES / 2;
+const largest = [...fileBytes.entries()].sort((a, b) => b[1] - a[1]);
+for (const [url, size] of largest.slice(0, 5)) console.log(`- ${size} bytes ${url}`);
+const oversized = largest.filter(([, size]) => size > sizeBudget);
+if (oversized.length > 0) {
+  console.log(`files over half of MAX_DATA_FILE_BYTES (${sizeBudget} bytes): ${oversized.length}`);
+  process.exitCode = 1;
+} else {
+  console.log(`all files under half of MAX_DATA_FILE_BYTES (${sizeBudget} bytes)\n`);
+}
 
 const reg = normalizeDataset(files);
 

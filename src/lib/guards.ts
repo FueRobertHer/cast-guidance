@@ -78,6 +78,16 @@ export function homebrewEntityCounts(json: Record<string, unknown>): Record<stri
 // Structural limits (adversarial-payload defense for anything we import)
 // ---------------------------------------------------------------------------
 
+/** Structural bounds for a parsed JSON tree; see {@link assertJsonWithinLimits}. */
+export interface JsonLimits {
+  /** Total JSON values (objects, arrays, primitives) anywhere in the tree. */
+  maxNodes: number;
+  /** Object/array nesting depth. */
+  maxDepth: number;
+  /** Any single string value. */
+  maxStringLength: number;
+}
+
 /**
  * Bounds applied to every import before it is trusted. A hostile or corrupted
  * file that exceeds any of these is rejected before it can be migrated,
@@ -95,26 +105,50 @@ export const IMPORT_LIMITS = {
   maxStringLength: 200_000,
   /** Embedded homebrew files per export. */
   maxHomebrewFiles: 64,
+  /**
+   * Bytes read from an imported file or URL before it is parsed at all. The
+   * text and tree limits above only run on a parsed value, which is too late
+   * for a body large enough to exhaust memory on the way in.
+   */
+  maxImportBytes: 8 * 1024 * 1024,
 } as const;
 
 /**
- * Walk a parsed JSON value enforcing {@link IMPORT_LIMITS}. Throws on the first
- * breach. Recursion is bounded by `maxDepth`, so it cannot itself overflow the
- * stack on adversarial input.
+ * Bounds for an official data file, checked before it is cached, normalized
+ * or indexed. Measured against v2.32.0: at most 61,948 values, 13 levels and
+ * 1,227 characters in one string (all in items.json). These leave roughly
+ * eight times the values and twenty-six times the string length, so a release
+ * that grows is accepted and a body that is not game data is not.
  */
-export function assertJsonWithinLimits(raw: unknown, limits = IMPORT_LIMITS): void {
+export const DATA_FILE_LIMITS: JsonLimits = {
+  maxNodes: 500_000,
+  maxDepth: 64,
+  maxStringLength: 32_768,
+};
+
+/**
+ * Walk a parsed JSON value enforcing `limits` ({@link IMPORT_LIMITS} unless
+ * given). Throws on the first breach, naming the value as `label` so a data
+ * file's refusal does not read as an import's. Recursion is bounded by
+ * `maxDepth`, so it cannot itself overflow the stack on adversarial input.
+ */
+export function assertJsonWithinLimits(
+  raw: unknown,
+  limits: JsonLimits = IMPORT_LIMITS,
+  label = 'import',
+): void {
   let nodes = 0;
   const walk = (value: unknown, depth: number): void => {
     if (depth > limits.maxDepth) {
-      throw new ValidationError(`import nests deeper than ${limits.maxDepth} levels`);
+      throw new ValidationError(`${label} nests deeper than ${limits.maxDepth} levels`);
     }
     nodes += 1;
     if (nodes > limits.maxNodes) {
-      throw new ValidationError(`import has more than ${limits.maxNodes} values`);
+      throw new ValidationError(`${label} has more than ${limits.maxNodes} values`);
     }
     if (typeof value === 'string') {
       if (value.length > limits.maxStringLength) {
-        throw new ValidationError(`import has a string longer than ${limits.maxStringLength}`);
+        throw new ValidationError(`${label} has a string longer than ${limits.maxStringLength}`);
       }
       return;
     }
