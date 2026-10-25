@@ -286,8 +286,9 @@ class SupersededError extends Error {
  * notice, and the app serves a stale corpus until the data tag moves.
  *
  * Dropping is what keeps serializing affordable. The signature is the sorted
- * list of cached paths, so a background drain moves it once per file that
- * lands: without this, a install queued a full corpus build per file and every
+ * list of cached paths, so a background drain moves it with every batch of
+ * files that lands (once per file, before DATA-003 batched them): without
+ * this, an install queued a full corpus build per change and every
  * one of them ran, each walking the registry, cloning the whole doc set to the
  * worker and writing a serialized index back to IndexedDB, with search staying
  * unready until the last of them drained. Only the newest signature can

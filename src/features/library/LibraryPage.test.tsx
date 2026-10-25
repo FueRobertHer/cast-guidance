@@ -10,7 +10,10 @@ import { namelessControls } from '../../../tests-fixtures/a11y';
 
 type TestPolicy = { mode: 'all'; except: string[] } | { mode: 'only'; sources: string[] };
 
-const { reg, refreshing, packs, policy } = vi.hoisted(() => ({
+const { reg, refreshing, packs, policy, search, searchAll } = vi.hoisted(() => ({
+  /** The search index state, settable per test. */
+  search: { current: { status: 'ready', error: null, retry: () => undefined, indexVersion: 1 } },
+  searchAll: vi.fn(),
   reg: {
     current: {
       registry: null as unknown,
@@ -48,7 +51,7 @@ const { reg, refreshing, packs, policy } = vi.hoisted(() => ({
 vi.mock('@/data5e/hooks', () => ({
   useRegistryState: () => reg.current,
   useRegistryRefreshing: () => refreshing.current,
-  useSearchState: () => ({ status: 'ready', error: null, retry: vi.fn() }),
+  useSearchState: () => search.current,
   useTypePacks: (type: string, onRepaired?: () => void) => {
     packs.lastType = type;
     packs.lastOnRepaired = onRepaired;
@@ -63,9 +66,7 @@ vi.mock('@/data5e/sourceFilter', () => ({
       : list.filter((e) => p.sources.includes(sourceOf(e))),
   policyForSearch: () => undefined,
 }));
-vi.mock('@/data5e/search/client', () => ({
-  searchAll: () => Promise.resolve({ hits: [], hiddenCount: 0 }),
-}));
+vi.mock('@/data5e/search/client', () => ({ searchAll }));
 
 import { Component as LibraryPage } from './LibraryPage';
 
@@ -119,6 +120,8 @@ beforeEach(() => {
     retry: vi.fn(),
   };
   refreshing.current = false;
+  search.current = { status: 'ready', error: null, retry: () => undefined, indexVersion: 1 };
+  searchAll.mockReset().mockResolvedValue({ hits: [], hiddenCount: 0 });
   policy.current = { mode: 'all', except: [] };
   packs.current = {
     status: 'ready',
@@ -554,5 +557,31 @@ describe('accessible names', () => {
     renderAt('/library/spell');
     expect(namelessControls()).toEqual([]);
     expect(screen.getByRole('textbox', { name: 'Filter spells' })).toBeTruthy();
+  });
+});
+
+describe('the library search while a download lands files', () => {
+  it('asks its query again when the index behind it is rebuilt', async () => {
+    // The index rebuilds behind a ready search box as files arrive. Results
+    // left from the query as first asked would miss everything that has
+    // landed since, with nothing on screen to say so.
+    // A fresh element each time, or React skips re-rendering the same one.
+    const tree = () => (
+      <MemoryRouter initialEntries={['/library']}>
+        <Routes>
+          <Route path="/library/:type?/:uid?" element={<LibraryPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const view = render(tree());
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search everything' }), {
+      target: { value: 'fire' },
+    });
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(1));
+
+    search.current = { ...search.current, indexVersion: 2 };
+    view.rerender(tree());
+    await waitFor(() => expect(searchAll).toHaveBeenCalledTimes(2));
+    expect(searchAll).toHaveBeenLastCalledWith('fire', expect.anything());
   });
 });

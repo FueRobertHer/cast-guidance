@@ -30,6 +30,12 @@ function setRefreshing(value: boolean): void {
 }
 
 vi.mock('./loader', () => ({ ensureTypePacks, repairTypePacks }));
+// Landings are flushed by hand here, never by the timer, so what a test sees
+// does not depend on how fast the runner is.
+vi.mock('./config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./config')>()),
+  LANDING_FLUSH_MS: 60_000,
+}));
 vi.mock('./registry', () => ({
   getRegistry,
   ensureRegistry: getRegistry,
@@ -56,6 +62,7 @@ vi.mock('./search/client', () => ({
 
 import { dataStatusStore } from '@/stores/dataStatus';
 import { useRegistryRefreshing, useRegistryState, useSearchState, useTypePacks } from './hooks';
+import { flushLanded, getRevision, noteFileLanded } from './landing';
 
 const fakeRegistry = { byType: () => [], get: () => undefined } as never;
 
@@ -102,13 +109,26 @@ describe('useRegistryState', () => {
 });
 
 describe('useRegistryState refresh triggers', () => {
-  it('rebuilds as the drain reports progress', async () => {
+  it('rebuilds when landed files are flushed, not on every file', async () => {
+    // Every file a drain downloads ticks the progress counter, and each tick
+    // used to re-read and rebuild the registry in every mounted consumer:
+    // hundreds of full rebuilds for one cold install. Only a flush of the
+    // landings, which comes once per batch, asks for a read now.
     getRegistry.mockResolvedValue(fakeRegistry);
     const { result } = renderHook(() => useRegistryState());
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(getRegistry).toHaveBeenCalledTimes(1);
 
-    act(() => dataStatusStore.getState().fileDone());
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        noteFileLanded();
+        dataStatusStore.getState().fileDone();
+      });
+    }
+    await act(async () => undefined);
+    expect(getRegistry).toHaveBeenCalledTimes(1);
+
+    act(() => flushLanded());
     await waitFor(() => expect(getRegistry).toHaveBeenCalledTimes(2));
   });
 
@@ -168,6 +188,68 @@ describe('useSearchState', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
   });
 
+  it('stays ready while the index rebuilds for a newer registry', async () => {
+    // A download lands files, the registry is rebuilt, and each new registry
+    // rebuilds the index. Dropping to `building` for every one cleared the
+    // library's results and put "Preparing search…" back over a search box
+    // that had been answering all along.
+    let finishRebuild = (): void => undefined;
+    ensureSearchIndex.mockResolvedValueOnce(undefined).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishRebuild = resolve;
+      }),
+    );
+    const statuses: string[] = [];
+    const { result, rerender } = renderHook(
+      ({ registry }: { registry: never }) => {
+        const state = useSearchState(registry);
+        statuses.push(state.status);
+        return state;
+      },
+      { initialProps: { registry: fakeRegistry } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const firstVersion = result.current.indexVersion;
+    const from = statuses.length;
+
+    const newer = { byType: () => [], get: () => undefined } as never;
+    rerender({ registry: newer });
+    await waitFor(() => expect(ensureSearchIndex).toHaveBeenCalledTimes(2));
+    expect(result.current.status).toBe('ready');
+    // Still the old index until the rebuild resolves...
+    expect(result.current.indexVersion).toBe(firstVersion);
+
+    await act(async () => finishRebuild());
+    // ...and then a new version, so a view showing results asks again.
+    expect(result.current.indexVersion).toBe(firstVersion + 1);
+    expect(statuses.slice(from)).not.toContain('building');
+  });
+
+  it('still reports a rebuild that fails behind a ready index', async () => {
+    ensureSearchIndex
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('timed out'));
+    const { result, rerender } = renderHook(
+      ({ registry }: { registry: never }) => useSearchState(registry),
+      { initialProps: { registry: fakeRegistry } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    rerender({ registry: { byType: () => [], get: () => undefined } as never });
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.error).toBe('timed out');
+  });
+
+  it('shows building again on a retry after a failure', async () => {
+    ensureSearchIndex.mockRejectedValueOnce(new Error('worker died'));
+    const { result } = renderHook(() => useSearchState(fakeRegistry));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+
+    ensureSearchIndex.mockReturnValue(new Promise(() => undefined));
+    act(() => result.current.retry());
+    expect(result.current.status).toBe('building');
+  });
+
   it('stops listening for that loss once it is unmounted', async () => {
     ensureSearchIndex.mockResolvedValue(undefined);
     const { result, unmount } = renderHook(() => useSearchState(fakeRegistry));
@@ -199,8 +281,8 @@ describe('useRegistryRefreshing', () => {
   });
 
   it('is not something useRegistryState subscribes to on its behalf', async () => {
-    // The whole reason this is a hook of its own. The registry rebuilds once
-    // per file a background drain lands, so the flag moves hundreds of times
+    // The whole reason this is a hook of its own. The registry rebuilds many
+    // times while a background drain lands files, so the flag moves many times
     // during an install, and it used to be state inside the shared hook: every
     // page reading the registry re-rendered for a value only the library looks
     // at, and `useRegistry` discarded it at ten call sites. A subscription
@@ -230,7 +312,10 @@ describe('useRegistryState refresh reporting', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     getRegistry.mockRejectedValue(new Error('QuotaExceededError'));
-    act(() => dataStatusStore.getState().fileDone());
+    act(() => {
+      noteFileLanded();
+      flushLanded();
+    });
 
     // Still usable, and the failure is still reported rather than swallowed:
     // the pages that cannot render without it read `error`.
@@ -347,10 +432,13 @@ describe('useTypePacks', () => {
     const { result } = renderHook(() => useTypePacks('spell', onRepaired));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
+    const before = getRevision();
     act(() => result.current.repair());
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(invalidateRegistry).toHaveBeenCalledOnce();
     expect(onRepaired).toHaveBeenCalledOnce();
+    // Every other mounted consumer hears of it too, not only this page.
+    expect(getRevision()).toBeGreaterThan(before);
   });
 
   it('does not invalidate anything for an ordinary retry', async () => {

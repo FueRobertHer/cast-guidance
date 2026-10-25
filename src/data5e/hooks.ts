@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDataStatus } from '@/stores/dataStatus';
+import { getRevision, markDataChanged, subscribeRevision } from './landing';
 import { ensureTypePacks, repairTypePacks } from './loader';
 import type { EntityRegistry } from './normalize';
 import type { PackId } from './packs';
@@ -27,11 +28,11 @@ export interface RegistryState {
 /**
  * Whether a registry rebuild is running (see {@link isRegistryRefreshing}).
  *
- * Separate from {@link useRegistryState} on purpose. The registry rebuilds
- * once per file a background drain lands, so this flips hundreds of times
- * during an install, and it used to be React state inside the shared hook:
- * every page reading the registry re-rendered twice per file for a value only
- * the library looks at. Asking for it is now what costs something.
+ * Separate from {@link useRegistryState} on purpose. It moves every time the
+ * registry catches up with a batch of landed files, many times during an
+ * install, and it used to be React state inside the shared hook: every page
+ * reading the registry re-rendered for a value only the library looks at.
+ * Asking for it is now what costs something.
  */
 export function useRegistryRefreshing(): boolean {
   return useSyncExternalStore(subscribeRegistryRefreshing, isRegistryRefreshing, () => false);
@@ -48,15 +49,20 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const phase = useDataStatus((s) => s.phase);
-  const filesDone = useDataStatus((s) => s.filesDone);
+  // The landing revision, not the per-file progress counter: that one ticks
+  // for every file a drain downloads, and each tick re-read and rebuilt the
+  // registry in every mounted consumer. The revision moves once per batch of
+  // landed files (see `landing.ts`), which bounds the rebuilds a download of
+  // any size can cause.
+  const revision = useSyncExternalStore(subscribeRevision, getRevision, getRevision);
   const key = packs.join(',');
 
-  // filesDone/phase retrigger a registry check; nonce is the manual retry
+  // revision/phase retrigger a registry check; nonce is the manual retry
   // trigger. Deliberately NOT triggered on pack readiness: files only reach
-  // IndexedDB via a fetch that already ticks filesDone, so a pack flipping to
-  // 'ready' adds nothing to read, while every extra run costs a full
+  // IndexedDB via a write that already counts as a landing, so a pack flipping
+  // to 'ready' adds nothing to read, while every extra run costs a full
   // filesByTag() deserialization of the whole cached compendium.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/filesDone/nonce are refresh triggers
+  // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/revision/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
     // Released in the same synchronous block as `setRegistry`, so React
@@ -83,7 +89,7 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
       // the flag: leaving it held would strand the pages that do read it.
       release();
     };
-  }, [key, phase, filesDone, nonce]);
+  }, [key, phase, revision, nonce]);
 
   // A registry already in hand outranks a failed refresh: the pages reading it
   // are still correct, and replacing a working screen with an error because a
@@ -115,17 +121,32 @@ export interface SearchState {
   status: SearchStatus;
   error: string | null;
   retry: () => void;
+  /**
+   * Moves each time an index build resolves, including the rebuilds that run
+   * behind a `ready` status. A view showing results depends on it to ask its
+   * query again, so what it shows comes from the newest index rather than the
+   * one that was current when the query was typed.
+   */
+  indexVersion: number;
 }
 
 /**
  * Registry + global search readiness with explicit status (ERR-001). The index
  * is built off-thread and persisted; a failure surfaces as `status: 'error'`
  * with a `retry` rather than an indefinite "preparing" state.
+ *
+ * Only the first build reports `building`. The registry is rebuilt as a
+ * download lands files, and each new registry rebuilds the index; dropping out
+ * of `ready` for every one of those cleared the library's results and put
+ * "Preparing search…" back over a search box that had been working. The index
+ * already in the worker keeps answering meanwhile, and a query sent during a
+ * rebuild waits for it (`searchAll` awaits the newest build).
  */
 export function useSearchState(registry: EntityRegistry | null): SearchState {
   const [status, setStatus] = useState<SearchStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [indexVersion, setIndexVersion] = useState(0);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: nonce is the manual retry trigger
   useEffect(() => {
@@ -134,12 +155,13 @@ export function useSearchState(registry: EntityRegistry | null): SearchState {
       return;
     }
     let alive = true;
-    setStatus('building');
+    setStatus((s) => (s === 'ready' ? 'ready' : 'building'));
     ensureSearchIndex(registry, registrySignature())
       .then(() => {
         if (alive) {
           setStatus('ready');
           setError(null);
+          setIndexVersion((v) => v + 1);
         }
       })
       .catch((e: unknown) => {
@@ -169,6 +191,7 @@ export function useSearchState(registry: EntityRegistry | null): SearchState {
   return {
     status,
     error,
+    indexVersion,
     retry: () => {
       setError(null);
       setNonce((n) => n + 1);
@@ -270,6 +293,9 @@ export function useTypePacks(
           // is still watching, and a registry left holding the old bodies would
           // serve them to every other page.
           invalidateRegistry();
+          // A repair writes outside the landing count, so every mounted
+          // consumer, not only this page, re-reads the repaired bodies.
+          markDataChanged();
           onRepairedRef.current?.();
         });
     }

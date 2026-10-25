@@ -17,6 +17,7 @@ import {
   TAG_LIST_TTL_MS,
   TAGS_API_URL,
 } from './config';
+import { flushLanded, markDataChanged, noteFileLanded } from './landing';
 import {
   classPackId,
   ESSENTIALS_FILES,
@@ -218,6 +219,10 @@ async function rollBack(
   pendingTag = undefined;
   activeTag = prev;
   source = new GithubTagSource(prev);
+  // Every consumer reads again, and the registry reports itself behind until
+  // they have: a page holding a registry (or an error) from the release just
+  // left would otherwise keep it until something else happened to land.
+  markDataChanged();
   // The notice says the release could not start, which is untrue of one
   // whose files were evicted; that one is simply offered again.
   if (reject) dataStatusStore.getState().setRolledBackFrom(to);
@@ -473,6 +478,9 @@ export async function getFile(path: string): Promise<unknown> {
           bytes: jsonByteSize(json),
           fetchedAt: Date.now(),
         });
+        // After the write has committed, so a read that counts this landing
+        // also finds the row. Consumers hear about it on the next flush.
+        noteFileLanded();
       }
       return json;
     }),
@@ -643,9 +651,13 @@ export async function initDataLayer(): Promise<void> {
     // answer, and the toast appears whenever it lands.
     void checkForDataUpdate();
     await ensurePack('essentials');
+    // The first screen is waiting on these, so they reach the registry now
+    // rather than when the landing timer next fires.
+    flushLanded();
     const done = await completedPacks();
     const packs = (await allPackIds()).filter((p) => p !== 'essentials' && !done.has(p));
     const finish = () => {
+      flushLanded();
       dataStatusStore.getState().setPhase('done');
       void navigator.storage?.persist?.().catch(() => undefined);
       void pruneStaleTags();
@@ -670,6 +682,8 @@ export async function initDataLayer(): Promise<void> {
       void ensurePack(next, onDisk)
         .then(() => runWhenIdle(drainNext))
         .catch((err: unknown) => {
+          // What did land before the failure is still worth showing.
+          flushLanded();
           dataStatusStore
             .getState()
             .setPhase('error', err instanceof Error ? err.message : String(err));
@@ -677,6 +691,7 @@ export async function initDataLayer(): Promise<void> {
     };
     runWhenIdle(drainNext);
   } catch (err) {
+    flushLanded();
     status.setPhase('error', err instanceof Error ? err.message : String(err));
   }
 }
@@ -708,8 +723,10 @@ export async function downloadAllPacks(): Promise<void> {
     for (const pack of (await allPackIds()).filter((p) => p !== 'essentials')) {
       await ensurePack(pack);
     }
+    flushLanded();
     status.setPhase('done');
   } catch (err) {
+    flushLanded();
     status.setPhase('error', err instanceof Error ? err.message : String(err));
     throw err;
   }
@@ -732,15 +749,22 @@ export async function packsForType(type: string): Promise<PackId[]> {
 
 /** Ensure every pack an entity type draws from. */
 export async function ensureTypePacks(type: string): Promise<void> {
-  // Essentials first and alone: the dynamic pack lists are read out of the
-  // indexes it carries, so the rest cannot be resolved until it is here.
-  await ensurePack('essentials');
-  const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
-  // Taken after essentials, so it sees what that just fetched, and shared by
-  // the fan-out below: a spell screen ensures every spell pack there is, and
-  // each of those used to scan the cache's keys for itself.
-  const onDisk = await dataCacheRepo.cachedPaths(activeTag);
-  await Promise.all(packs.map((p) => ensurePack(p, onDisk)));
+  try {
+    // Essentials first and alone: the dynamic pack lists are read out of the
+    // indexes it carries, so the rest cannot be resolved until it is here.
+    await ensurePack('essentials');
+    const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
+    // Taken after essentials, so it sees what that just fetched, and shared by
+    // the fan-out below: a spell screen ensures every spell pack there is, and
+    // each of those used to scan the cache's keys for itself.
+    const onDisk = await dataCacheRepo.cachedPaths(activeTag);
+    await Promise.all(packs.map((p) => ensurePack(p, onDisk)));
+  } finally {
+    // A page is waiting on this type, so what landed for it reaches the
+    // registry before the page hears the download is over, not up to a flush
+    // interval later. Failed or not: whatever did land is worth showing.
+    flushLanded();
+  }
 }
 
 /** Fetch one file again and overwrite what is cached, cache hit or not. */
@@ -1045,6 +1069,8 @@ export async function updateToTag(newTag: string): Promise<void> {
     source = newSource;
     pendingTag = newTag;
     startDecision = undefined;
+    // A whole release changed at once: every consumer reads again now.
+    markDataChanged();
     status.setRolledBackFrom(undefined);
     // The offer is spent whichever route took it: only the toast's own button
     // used to clear this, so installing from the settings picker left the
