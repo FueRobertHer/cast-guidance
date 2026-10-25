@@ -3,7 +3,7 @@
 // roster it waits below the ways to make a character, so New character stays
 // above the fold on a phone; above an existing roster it comes first. Hiding
 // it returns focus to the page heading rather than dropping it to the body.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newCharacterDoc } from '@/engine/types';
@@ -74,7 +74,12 @@ describe('CharacterListPage getting-started card', () => {
   it('hands focus to the page heading when hidden', async () => {
     renderRoster();
     fireEvent.click(await screen.findByRole('button', { name: 'Got it, hide this' }));
-    expect(screen.queryByRole('region', { name: 'Getting started' })).toBeNull();
+    // Waited for, not read at once: the card that appeared inside `findByRole`
+    // can be clicked before its store subscription is in place (its effects
+    // ran outside act), and it then hides a scheduler task later.
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Getting started' })).toBeNull(),
+    );
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Characters' }));
   });
 });
