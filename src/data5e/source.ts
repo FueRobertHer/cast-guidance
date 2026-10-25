@@ -32,6 +32,9 @@ export class DataFetchError extends Error {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Only an explicit `false` counts: Bun (the data audit) has no `onLine` at all. */
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
 /** Fetches files of a pinned 5etools release tag with endpoint failover + retry. */
 export class GithubTagSource implements DataSource {
   readonly id: string;
@@ -77,10 +80,16 @@ export class GithubTagSource implements DataSource {
           // retry only spends another download on it. The mirror is worth
           // asking: one CDN copy gone wrong is not the release gone wrong.
           if (err instanceof ResponseTooLargeError) break;
+          // A device that says it is offline will not have a network a moment
+          // from now either, so the backoff retries only make the page that is
+          // waiting wait longer for the same answer. The next endpoint still
+          // gets its one try: `onLine` can be wrong (a captive portal, a
+          // blocked CDN), and the failover is what reaches the mirror then.
+          if (isOffline()) break;
           if (attempt < this.triesPerEndpoint) await sleep(this.backoffMs * attempt);
         }
       }
     }
-    throw new DataFetchError(path, failures);
+    throw new DataFetchError(path, isOffline() ? [...failures, 'the device is offline'] : failures);
   }
 }
