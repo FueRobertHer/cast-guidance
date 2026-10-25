@@ -1,6 +1,6 @@
 // IndexedDB-backed coverage for the homebrew repository (TEST-002 harness).
 import 'fake-indexeddb/auto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ValidationError } from '@/lib/guards';
 import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
@@ -18,7 +18,10 @@ beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
 });
 
-afterEach(removeIdbFaults);
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await removeIdbFaults();
+});
 
 describe('homebrewRepo.importJson (IndexedDB-backed)', () => {
   it('stores a file under a content-hash id with recomputed metadata', async () => {
@@ -60,6 +63,34 @@ describe('homebrewRepo.importJson (IndexedDB-backed)', () => {
     await fault();
     await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
     expect(await db.homebrewFiles.count()).toBe(1);
+  });
+});
+
+describe('homebrewRepo.prepare and commit (IndexedDB-backed)', () => {
+  it('prepares a row without writing anything', async () => {
+    const row = await homebrewRepo.prepare(file('BREW', ['Zap']), 'brew.json', 'https://x/y');
+    expect(row).toMatchObject({ fileName: 'brew.json', url: 'https://x/y', sourceIds: ['BREW'] });
+    expect(await db.homebrewFiles.count()).toBe(0);
+  });
+
+  it('commits a new row, stamped with the time it lands', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const prepared = await homebrewRepo.prepare(file('BREW', ['Zap']), 'brew.json');
+    now.mockReturnValue(5_000);
+    const { row, duplicate } = await homebrewRepo.commit(prepared);
+    expect(duplicate).toBe(false);
+    expect(row.addedAt).toBe(5_000);
+    expect((await db.homebrewFiles.get(prepared.id))?.addedAt).toBe(5_000);
+  });
+
+  it('reports a duplicate and writes nothing', async () => {
+    const first = await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
+    const again = await homebrewRepo.prepare(file('BREW', ['Zap']), 'renamed.json');
+    const result = await homebrewRepo.commit({ ...again, addedAt: first.addedAt + 10 });
+    expect(result.duplicate).toBe(true);
+    expect(result.row.fileName).toBe('brew.json');
+    expect(await db.homebrewFiles.count()).toBe(1);
+    expect(await db.homebrewFiles.get(first.id)).toEqual(first);
   });
 });
 

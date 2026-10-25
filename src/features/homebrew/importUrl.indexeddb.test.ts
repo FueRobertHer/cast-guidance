@@ -4,7 +4,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/db';
 import { ResponseTooLargeError } from '@/lib/boundedRead';
-import { HomebrewUrlRefusedError, importHomebrewFromUrl } from './importUrl';
+import { fetchHomebrewFromUrl, HomebrewUrlRefusedError, importHomebrewFromUrl } from './importUrl';
 
 const brew = {
   _meta: { sources: [{ json: 'BREW', abbreviation: 'BREW', full: 'Brew' }] },
@@ -103,6 +103,23 @@ describe('importHomebrewFromUrl', () => {
         serve(() => new Response('nope', { status: 404 })),
       ),
     ).rejects.toThrow('HTTP 404');
+    expect(await db.homebrewFiles.count()).toBe(0);
+  });
+});
+
+describe('fetchHomebrewFromUrl', () => {
+  it('fetches and parses a file without writing anything', async () => {
+    const body = JSON.stringify(brew);
+    const fetched = await fetchHomebrewFromUrl(
+      'https://github.com/me/brews/blob/main/my%20brew.json',
+      serve(() => new Response(body)),
+    );
+    expect(fetched).toEqual({
+      raw: brew,
+      fileName: 'my brew.json',
+      url: 'https://raw.githubusercontent.com/me/brews/main/my%20brew.json',
+      bytes: new TextEncoder().encode(body).byteLength,
+    });
     expect(await db.homebrewFiles.count()).toBe(0);
   });
 });

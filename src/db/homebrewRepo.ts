@@ -163,13 +163,37 @@ export const homebrewRepo = {
     return { file: files[0], error: errors[0] };
   },
 
+  /**
+   * Validate a homebrew JSON file into the row an import would store, writing
+   * nothing. The first half of an import: a preview reads this row, and
+   * {@link homebrewRepo.commit} stores it once the player says so.
+   */
+  prepare(raw: unknown, fileName: string, url?: string): Promise<HomebrewFileRow> {
+    return buildHomebrewRow(raw, fileName, url);
+  },
+
+  /**
+   * Store a prepared row unless the same content is already here
+   * (content-hash keyed, so this is idempotent). `duplicate` says which
+   * happened, and `row` is what the database holds either way.
+   *
+   * The row is stamped with the time of the commit, not of the prepare: the
+   * merge order counts imports from when they land, so a preview left open
+   * cannot jump ahead of a file imported while it was showing.
+   */
+  async commit(prepared: HomebrewFileRow): Promise<{ row: HomebrewFileRow; duplicate: boolean }> {
+    return db.transaction('rw', db.homebrewFiles, async () => {
+      const existing = await db.homebrewFiles.get(prepared.id);
+      if (existing !== undefined) return { row: existing, duplicate: true };
+      const row: HomebrewFileRow = { ...prepared, addedAt: Date.now() };
+      await db.homebrewFiles.put(row);
+      return { row, duplicate: false };
+    });
+  },
+
   /** Validate + store a homebrew JSON file; content-hash keyed (idempotent). */
   async importJson(raw: unknown, fileName: string, url?: string): Promise<HomebrewFileRow> {
-    const row = await buildHomebrewRow(raw, fileName, url);
-    const existing = await db.homebrewFiles.get(row.id);
-    if (existing !== undefined) return existing;
-    await db.homebrewFiles.put(row);
-    return row;
+    return (await homebrewRepo.commit(await homebrewRepo.prepare(raw, fileName, url))).row;
   },
 
   async setEnabled(id: string, enabled: boolean): Promise<void> {
