@@ -251,7 +251,12 @@ export function Component() {
           <dt className="text-ink-muted">Offline compendium</dt>
           <dd>
             {offlineError !== undefined
-              ? 'could not be read'
+              ? // The inventory is counted against the class and spell indexes,
+                // which arrive with the first download. With nothing on disk
+                // there is nothing to count, and that is not a read failure.
+                cachedBytes === 0
+                ? 'not downloaded yet'
+                : 'could not be read'
               : offline === undefined
                 ? '…'
                 : offlineReady
