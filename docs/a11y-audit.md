@@ -32,11 +32,11 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 
 | Area | States |
 |---|---|
-| Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm` |
+| Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
 | Character sheet | `sheet-play`, `sheet-stats`, `sheet-items`, `sheet-spells`, `sheet-more`, `sheet-build` |
 | Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
-| Homebrew | `homebrew-empty`, `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
+| Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
 | Other routes | `settings`, `creator` (step 1), `not-found` |
 | Sheet confirm | `long-rest-confirm` (a confirm that is not destructive, so its button is the red fill) |
 | Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
@@ -69,8 +69,9 @@ canary) does animate.
 - `src/styles/contrast.test.ts`: the button fill (`accent-fill`) clears 4.5:1
   with white and with the ink colour, `accent-ink` clears it on a raised
   control and its hover step, and every bare `bg-accent` token in the source
-  is one of a listed set of unlabelled marks (counted per file, so a token in
-  a conditional or a variable counts too).
+  (opacity variants included) is on one of a listed set of unlabelled mark
+  lines. A token in a conditional or a variable counts too, and moving one
+  from a mark onto a label in the same file fails.
 - `src/features/sheet/tabs/targetSize.test.tsx`: the sheet's small controls,
   the Stats ability scores included, carry a thumb-sized class.
 - `e2e/a11y/baseline.test.ts`: the baseline policy below.
@@ -96,15 +97,18 @@ every selector would be a false change.
   never turns the build red, and the gain is banked by updating the file.
 - **Not gated:** nodes axe could not decide (`incomplete`, contrast over a
   translucent layer, say). The CI summary lists them under "Needs review".
-- **Stale states fail:** when the run is complete (no grep, inverted grep,
-  shard, last-failed, changed-files, test-list or `file:line` filter, and
-  every axe test ran and passed), a baseline state no scan covered fails the
-  run: a renamed or removed state must leave the baseline too. A narrowed run
-  only lists such states.
+- **Stale states fail:** when the run is not narrowed (no grep, inverted
+  grep, shard, last-failed, changed-files, test-list or `file:line` filter)
+  and every axe test ran to an end, passed or skipped, a baseline state no
+  scan covered fails the run: a renamed or removed state must leave the
+  baseline too, and a skipped test does not switch the check off (its own
+  states fail it, until the test is unskipped or its states are taken out).
+  A narrowed run, or one in which an axe test failed, only lists such
+  states.
 - **Updating:** `bun run e2e:a11y:update` (after `bun run build`) reruns the
   axe spec with `A11Y_BASELINE_UPDATE=1` and rewrites the file from the
-  states that passed. States it did not scan are kept, unless the run was
-  complete, when they are pruned. Commit the diff with the reason. A rule
+  states that passed. States it did not scan are kept, unless every axe test
+  passed in an un-narrowed run, when they are pruned. Commit the diff with the reason. A rule
   kept on purpose can carry a `note` (an issue link), which updates preserve.
   An update is refused when `CI` is set: CI only checks the baseline.
 - **CI:** the `e2e` job's step summary carries the axe table (regressions,
@@ -113,14 +117,14 @@ every selector would be a false change.
 The first run found 14 serious nodes across 9 states. Unmasking the drawers
 found one more (a destructive choice's red label in the actions sheet). All
 are fixed, so the baseline is empty: axe reports no violation in any of the
-41 states. That is not the same as every node passing. Some nodes are
+43 states. That is not the same as every node passing. Some nodes are
 undecided, and those are listed, not gated:
 
 | Undecided `color-contrast` | Nodes | States |
 |---|---:|---:|
 | Before hiding vaul's overshoot strip | 59 | 15 |
 | After it, same 37 states | 16 | 9 |
-| After it, with the 4 states added since | 22 | 12 |
+| After it, with the 6 states added since (the two import previews add none) | 22 | 12 |
 
 What is left is of two kinds. Most are symbols with no text (the Inspiration
 star, the toast icon), which have no contrast requirement: in `sheet-play`,
@@ -132,14 +136,16 @@ under the fixed bottom nav or the update toast (`settings`,
 (`toast-offline-ready`), and one line each in `history-drawer` and
 `breakdown-sheet`. None is ratcheted: they move with scroll position and
 which layer sits on top, and a count that moves would be a flaky gate. The
-colours involved all pass on paper (ink and ink-muted on surface, 7:1 or
-more), and the screen-reader and zoom passes below look at them on a device.
+colours involved all pass on paper (ink-muted, the dimmest text, is 6.91:1 on
+surface and 5.81:1 on surface-2; ink is far above both), and the
+screen-reader and zoom passes below look at them on a device.
 
 ## Fixes and decisions
 
 | Date | Finding | Resolution |
 |---|---|---|
 | 2026-10-25 | `color-contrast`: white or ink labels on the red fill (red-500) were 3.6 to 3.8:1, under 4.5:1. Hit every filled button axe reached (Import file, the creator's Next, dialog OK, the update toasts, the download retry). | A new `accent-fill` token (red-600) for labelled controls: 4.8:1 with white, 4.6:1 with ink. `accent` stays for text and marks on the page, and icon-only fills, which need 3:1. After #166 landed, its database-closed banner's Reload and the save-error banner's Retry moved to `accent-fill` too; the unit guard has no allowlist for labels. |
+| 2026-10-25 | `color-contrast`: #169's import preview drew its Import button white on `bg-accent`, 3.8:1. | Moved to `accent-fill`, like every labelled red button; both preview states fail without it. |
 | 2026-10-25 | `color-contrast`, found once drawers were unmasked: a destructive choice (the roster's Delete) drew its label in `accent` on a surface-2 button, 4.0:1, and 2.8:1 on the hover step. | A new `accent-ink` token (red-300) for red words on a raised control: 7.8:1 and 5.5:1. |
 | 2026-10-25 | `target-size`: the Stats tab's ability scores (the breakdown buttons) were 13 by 16 px. | Now 44 by 44 targets (`tap`), the card's bottom padding absorbing part of the growth. |
 | 2026-10-25 | No reduced-motion handling beyond the roll toast and the roster. | App-wide block in `app.css`, plus the script-driven smooth scroll. See above. |

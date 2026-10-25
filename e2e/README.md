@@ -119,7 +119,7 @@ axe (WCAG 2.x A and AA) on the page as it is and holds the result to
 - a lower count, or a rule gone, never fails: it adds a "please update the
   baseline" annotation;
 - in a complete run (no grep, shard or `file:line` filter, and every axe test
-  passed), a baseline state no scan covered fails the run;
+  passed or was skipped), a baseline state no scan covered fails the run;
 - `bun run e2e:a11y:update` rewrites the baseline from the states that passed
   (others are kept, or pruned after a complete run). Commit the diff, with the
   reason. It refuses to run with `CI` set.
