@@ -10,10 +10,11 @@ import {
   Swords,
   Wrench,
 } from 'lucide-react';
-import { type CSSProperties, useLayoutEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useLayoutEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useResolvedPath } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { announce } from '@/stores/announcer';
 import { AdvToggle } from '@/ui/AdvToggle';
 import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
@@ -87,6 +88,10 @@ export function useHeaderHeight() {
  * the same one. Sharing a module between the two pulled the data registry
  * chunk into the entry bundle (+140 KB), so each keeps its own copy.
  */
+/** The warning when the same character is open in another tab, shown and said. */
+export const OPEN_ELSEWHERE_TEXT =
+  'This character is open in another tab, so edits in one can overwrite the other.';
+
 function ActiveTabBar() {
   return (
     <span
@@ -102,6 +107,11 @@ export function Component() {
   const headerHeight = useHeaderHeight();
   const state = useCharacterSheet(id);
   const openElsewhere = useOpenElsewhere(id);
+  // Said through the announcer when it starts (A11Y-002): the banner mounts
+  // with its text, and a status region that does that is heard unreliably.
+  useEffect(() => {
+    if (openElsewhere) announce(OPEN_ELSEWHERE_TEXT, { key: 'open-elsewhere' });
+  }, [openElsewhere]);
   const tab = sheetTab(useResolvedPath('.').pathname, useLocation().pathname);
   const rollsHere = tabRolls(tab);
   // The layout owns the title for every tab (see usePageTitle): the tabs are
@@ -197,8 +207,8 @@ export function Component() {
         {id !== undefined && <HistoryDrawer charId={id} />}
       </header>
       {openElsewhere && (
-        <div className="bg-amber-400/10 px-4 py-1.5 text-xs text-amber-200 lg:pl-40" role="status">
-          This character is open in another tab — edits in one can overwrite the other.
+        <div className="bg-amber-400/10 px-4 py-1.5 text-xs text-amber-200 lg:pl-40">
+          {OPEN_ELSEWHERE_TEXT}
         </div>
       )}
       <main className="flex-1 px-4 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4 lg:pl-40">

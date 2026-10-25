@@ -39,7 +39,10 @@ function SaveErrorBanner() {
   const failing = entries.length > 0;
   const wasFailing = useRef(false);
   useEffect(() => {
-    if (wasFailing.current && !failing) announce(SAVE_RECOVERED_TEXT, { key: 'save' });
+    // Each recovery is its own event: a second failure and recovery inside the
+    // de-duplication window still deserves its "saved".
+    if (wasFailing.current && !failing)
+      announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
     wasFailing.current = failing;
   }, [failing]);
   if (!failing) return null;

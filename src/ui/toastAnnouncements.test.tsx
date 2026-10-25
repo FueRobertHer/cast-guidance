@@ -6,10 +6,10 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RollResult } from '@/dice/types';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
-import { noticeStore, notify } from '@/stores/notices';
+import { noticeStore, notify, notifyFailure } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { NoticeToast } from './NoticeToast';
-import { RollToast } from './RollToast';
+import { RollToast, rollAnnouncement } from './RollToast';
 
 const LIVE = '[aria-live],[role="status"],[role="alert"],output';
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
@@ -47,7 +47,7 @@ describe('RollToast', () => {
     expect(toast).not.toBeNull();
     expect(toast?.closest(LIVE)).toBeNull();
     expect(toast?.querySelector(LIVE)).toBeNull();
-    expect(spoken()).toEqual(['Initiative, Nat 20!: 25 ([20] +5)']);
+    expect(spoken()).toEqual(['Initiative, natural 20: 25. Rolled 20, plus 5']);
   });
 
   it('says the same result twice when it is rolled twice', () => {
@@ -55,7 +55,10 @@ describe('RollToast', () => {
     act(() => rollLogStore.getState().append(roll(15)));
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     act(() => rollLogStore.getState().append(roll(15)));
-    expect(spoken()).toEqual(['Initiative: 15 ([10] +5)', 'Initiative: 15 ([10] +5)']);
+    expect(spoken()).toEqual([
+      'Initiative: 15. Rolled 10, plus 5',
+      'Initiative: 15. Rolled 10, plus 5',
+    ]);
   });
 
   it('does not say an older roll again when the newest is removed from the log', () => {
@@ -77,7 +80,8 @@ describe('NoticeToast', () => {
   it('shows a notice without a region of its own and says it through the announcer', () => {
     render(<NoticeToast />);
     act(() => notify({ title: 'Short rest', detail: 'Restored Second Wind', tone: 'good' }));
-    const toast = screen.getByText('Short rest').closest('div.fixed');
+    const toast = screen.getByTestId('notice-toast');
+    expect(toast.textContent).toContain('Short rest');
     expect(toast).not.toBeNull();
     expect(toast?.closest(LIVE)).toBeNull();
     expect(toast?.querySelector(LIVE)).toBeNull();
@@ -89,5 +93,65 @@ describe('NoticeToast', () => {
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     act(() => notify({ title: 'Short rest', detail: 'Nothing to restore', tone: 'info' }));
     expect(getAnnouncerState().emitted).toBe(2);
+  });
+});
+
+describe('rollAnnouncement', () => {
+  it('says kept and dropped dice in words, not brackets', () => {
+    const advantage: RollResult = {
+      expr: '2d20kh1+5',
+      label: 'Attack',
+      total: 18,
+      at: 0,
+      terms: [
+        {
+          kind: 'dice',
+          sign: 1,
+          sides: 20,
+          rolls: [
+            { v: 13, kept: true },
+            { v: 4, kept: false },
+          ],
+        },
+        { kind: 'mod', value: 5 },
+      ],
+    };
+    expect(rollAnnouncement(advantage)).toBe('Attack: 18. Rolled 13, dropped 4, plus 5');
+  });
+
+  it('says a penalty and a second die group with their signs', () => {
+    const result: RollResult = {
+      expr: '1d8+1d6-1',
+      total: 7,
+      at: 0,
+      terms: [
+        { kind: 'dice', sign: 1, sides: 8, rolls: [{ v: 5, kept: true }] },
+        { kind: 'dice', sign: 1, sides: 6, rolls: [{ v: 3, kept: true }] },
+        { kind: 'mod', value: -1 },
+      ],
+      meta: { d20: { natural: 1 } },
+    };
+    expect(rollAnnouncement(result)).toBe('1d8+1d6-1, natural 1: 7. Rolled 5, plus 3, minus 1');
+  });
+});
+
+// Failures are assertive and on their own key: the shared polite throttle
+// would let the second and third in a burst replace each other.
+describe('failure notices', () => {
+  it('says every failure in a burst, at once, in the assertive region', () => {
+    act(() => {
+      notify({ title: 'Long rest complete', detail: 'Already at full', tone: 'good' });
+      notifyFailure('Rename', new Error('disk full'));
+      notifyFailure('Delete', new Error('disk full'));
+      notifyFailure('Rename', new Error('disk full'));
+    });
+    const assertive = getAnnouncerState().messages.filter((m) => m.politeness === 'assertive');
+    expect(assertive.map((m) => m.text)).toEqual([
+      'Rename failed. disk full',
+      'Delete failed. disk full',
+      'Rename failed. disk full',
+    ]);
+    // The polite notice was not held back or replaced by them either.
+    expect(spoken()).toContain('Long rest complete. Already at full');
   });
 });

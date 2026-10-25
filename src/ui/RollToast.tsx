@@ -23,11 +23,39 @@ export function rollTone(result: RollResult): keyof typeof TONE {
   return nat === 20 ? 'crit' : nat === 1 ? 'fumble' : 'plain';
 }
 
-/** A roll as a screen reader hears it: what, the total, then the dice. */
+type Term = RollResult['terms'][number];
+
+/** One die group in words: the kept faces, then any dropped ones. */
+function diceSpeech(rolls: Array<{ v: number; kept: boolean }>): string {
+  const kept = rolls.filter((r) => r.kept).map((r) => r.v);
+  const dropped = rolls.filter((r) => !r.kept).map((r) => r.v);
+  const said = kept.length > 0 ? kept.join(', ') : 'none kept';
+  return dropped.length > 0 ? `${said}, dropped ${dropped.join(', ')}` : said;
+}
+
+/** One term in words, signed as "plus" or "minus" after the first. */
+function termSpeech(term: Term, first: boolean): string {
+  if (term.kind === 'multiplier') {
+    const by = term.detail.kind === 'dice' ? diceSpeech(term.detail.rolls) : String(term.value);
+    return `times ${by}`;
+  }
+  const negative = term.kind === 'dice' ? term.sign < 0 : term.value < 0;
+  const body = term.kind === 'dice' ? diceSpeech(term.rolls) : String(Math.abs(term.value));
+  if (first) return negative ? `minus ${body}` : body;
+  return `${negative ? 'minus' : 'plus'} ${body}`;
+}
+
+/**
+ * A roll as a screen reader hears it: what, the total, then the dice in words
+ * ("Initiative: 18. Rolled 13, dropped 4, plus 5"). The on-screen detail is
+ * brackets and parentheses, which a reader spells out symbol by symbol.
+ */
 export function rollAnnouncement(result: RollResult): string {
   const nat = result.meta?.d20?.natural;
-  const flag = nat === 20 ? ', Nat 20!' : nat === 1 ? ', Nat 1' : '';
-  return `${result.label ?? result.expr}${flag}: ${result.total} (${rollDetail(result)})`;
+  const flag = nat === 20 ? ', natural 20' : nat === 1 ? ', natural 1' : '';
+  const dice = result.terms.map((t, i) => termSpeech(t, i === 0)).join(', ');
+  const rolled = dice === '' ? '' : `. Rolled ${dice}`;
+  return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}`;
 }
 
 /**

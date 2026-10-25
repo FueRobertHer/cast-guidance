@@ -44,10 +44,18 @@ export function noticeText({ title, detail }: Notice): string {
  * mounts with its text is announced unreliably, so the words go through the
  * announcer (A11Y-002). Each notice is an event, so the same words twice are
  * said twice; a burst is cut to its first and last by the key's throttle.
+ *
+ * A warning (a failed write, from `notifyFailure`) is assertive and on a key
+ * of its own: the shared throttle would hold it behind a rest summary, or let
+ * the next failure in a burst replace it, and each failure is something lost.
  */
 export function notify(notice: Notice): void {
   noticeStore.getState().push(notice);
-  announce(noticeText(notice), { key: 'notice', repeat: true });
+  if (notice.tone === 'warn') {
+    announce(noticeText(notice), { key: 'notice-failure', politeness: 'assertive', repeat: true });
+  } else {
+    announce(noticeText(notice), { key: 'notice', repeat: true });
+  }
 }
 
 /**
