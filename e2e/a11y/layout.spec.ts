@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { manySpells } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
   characterLink,
@@ -234,8 +235,9 @@ interface DOMRectLike {
  * Tabs forward through every control in `region`, then back with Shift+Tab,
  * and returns each one that had focus while no part of it could be seen:
  * every point sampled across its box hits something else (a fixed bar).
+ * Fails if the walk took fewer than `minSteps` presses in all.
  */
-async function hiddenWhileFocused(page: Page, region: Locator): Promise<string[]> {
+async function hiddenWhileFocused(page: Page, region: Locator, minSteps = 1): Promise<string[]> {
   const controls = region.locator(
     'a[href], button:not([disabled]), input:not([disabled]), select, textarea',
   );
@@ -268,9 +270,12 @@ async function hiddenWhileFocused(page: Page, region: Locator): Promise<string[]
     }
     if (key === 'Tab') await page.keyboard.press('Shift+Tab');
   }
-  expect(steps, 'the walk moved through the region').toBeGreaterThan(0);
+  expect(steps, 'the walk moved through the region').toBeGreaterThanOrEqual(minSteps);
   return hidden;
 }
+
+/** Spells in the landscape walk of a long list, enough that most are not rendered at once. */
+const LONG_LIST = 150;
 
 test.describe('landscape on a phone', () => {
   test.use({ viewport: { width: 851, height: 393 } });
@@ -306,13 +311,33 @@ test.describe('landscape on a phone', () => {
     });
   }
 
-  test('the roster, a library list and Settings: focus clears the app nav', async ({ page }) => {
+  test('the roster and Settings: focus clears the app nav', async ({ page }) => {
     await setUp(page);
-    for (const url of ['/', '/library/spell', '/settings']) {
+    for (const url of ['/', '/settings']) {
       await page.goto(url);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await animationsSettled(page);
       expect(await hiddenWhileFocused(page, page.getByRole('main')), url).toEqual([]);
     }
+  });
+
+  test('a long library list: focus clears the app nav, all the way down and back', async ({
+    page,
+    mirror,
+  }) => {
+    // About 310 presses, each with a check in the page.
+    test.slow();
+    // Rows the window has not reached yet are rendered as Tab arrives, and
+    // drawn by transform: the html scroll padding must still keep the row
+    // Tab scrolls to clear of the bottom nav.
+    mirror.setBodies(() => manySpells(LONG_LIST));
+    await setUp(page);
+    await page.goto('/library/spell');
+    const main = page.getByRole('main');
+    await expect(main.getByText(String(LONG_LIST), { exact: true })).toBeVisible();
+    await animationsSettled(page);
+    // Every row down and every row back up, so the walk provably reached
+    // the end of the list rather than stopping where the rendered rows did.
+    expect(await hiddenWhileFocused(page, main, 2 * LONG_LIST)).toEqual([]);
   });
 });
