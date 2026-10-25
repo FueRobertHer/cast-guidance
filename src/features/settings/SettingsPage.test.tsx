@@ -23,6 +23,7 @@ vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
+import { onboardingStore } from '@/stores/onboarding';
 import { Component as SettingsPage } from './SettingsPage';
 
 /** Walk the version picker as a user does, up to the install attempt. */
@@ -110,5 +111,34 @@ describe('SettingsPage data section', () => {
     dataStatusStore.setState({ rolledBackFrom: 'v2.33.0' });
     render(<SettingsPage />);
     expect(screen.getByText(/went back from v2\.33\.0, which could not start/)).toBeTruthy();
+  });
+});
+
+describe('SettingsPage data and privacy', () => {
+  afterEach(() => {
+    onboardingStore.setState({ dismissed: false });
+    Reflect.deleteProperty(navigator, 'storage');
+  });
+
+  it('brings the getting-started guide back and says where it went', () => {
+    // UX-002: reopened in place, with no navigation and no focus jump.
+    onboardingStore.setState({ dismissed: true });
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show the getting-started guide' }));
+    expect(onboardingStore.getState().dismissed).toBe(false);
+    expect(screen.getByText('Shown on the Characters page.')).toBeTruthy();
+  });
+
+  it('shows whether storage is persistent and asks from a click', async () => {
+    const persist = vi.fn(() => Promise.resolve(true));
+    Object.defineProperty(navigator, 'storage', {
+      value: { persisted: () => Promise.resolve(false), persist },
+      configurable: true,
+    });
+    render(<SettingsPage />);
+    expect(await screen.findByText('Not protected yet')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Ask the browser to keep my data' }));
+    expect(await screen.findByText('Protected')).toBeTruthy();
+    expect(persist).toHaveBeenCalledOnce();
   });
 });

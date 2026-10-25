@@ -10,10 +10,13 @@ import {
 import { invalidateRegistry } from '@/data5e/registry';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { resetAppData } from '@/db/reset';
+import { usePersistentStorage } from '@/lib/persistentStorage';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useDataStatus } from '@/stores/dataStatus';
 import { errorText } from '@/stores/notices';
+import { onboardingStore } from '@/stores/onboarding';
 import { askConfirm } from '@/ui/dialogs';
+import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
 
 /**
@@ -73,6 +76,8 @@ export function Component() {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string>();
   const { estimate, cachedBytes } = useStorageUsage(phase);
+  const persist = usePersistentStorage();
+  const [guideShown, setGuideShown] = useState(false);
 
   const resetAll = async () => {
     const ok = await askConfirm({
@@ -320,16 +325,49 @@ export function Component() {
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold">Your data &amp; privacy</h2>
         <p className="text-xs text-ink-muted">
-          Everything — your characters, homebrew, dice history, and the downloaded compendium —
-          lives only in this browser on this device. Nothing is sent to a server and there are no
-          accounts. Back a character up any time with its Export button; that file is the only copy
-          that leaves the device.
+          Everything (your characters, homebrew, dice history, and the downloaded compendium) lives
+          only in this browser on this device. Nothing is sent to a server and there are no
+          accounts. Back a character up any time from its ⋯ menu on Characters, then Export; that
+          file is the only copy that leaves the device.
         </p>
         <p className="text-xs text-ink-muted">
           Because it&rsquo;s browser storage, clearing site data or heavy storage pressure can evict
           it. Export characters you care about, and use “Make available offline” above so the
           compendium is cached.
         </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sm text-ink-muted">Persistent storage</span>
+          <PersistStatus state={persist.state} />
+          {persist.state === 'best-effort' && (
+            <button
+              type="button"
+              disabled={persist.requesting}
+              onClick={() => void persist.request()}
+              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
+            >
+              Ask the browser to keep my data
+            </button>
+          )}
+        </div>
+        {persist.state === 'denied' && (
+          <p className="text-xs text-ink-muted">{PERSIST_DENIED_TEXT} Export to keep a copy.</p>
+        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              onboardingStore.getState().reopen();
+              setGuideShown(true);
+            }}
+            className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold"
+          >
+            Show the getting-started guide
+          </button>
+          {/* Mounted empty so the confirmation is announced when it arrives. */}
+          <p aria-live="polite" className="text-xs text-ink-muted">
+            {guideShown ? 'Shown on the Characters page.' : ''}
+          </p>
+        </div>
         <button
           type="button"
           disabled={resetting}
