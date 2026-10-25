@@ -63,8 +63,8 @@ CI, gated on coverage floors and a bundle budget.
 | Production/PWA build | Pass: 58 unique precache entries |
 | Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 386,217 B raw, 121,616 B gzip (budget 420,000 / 132,000); initial JS 543,021 B raw, 173,871 B gzip (586,000 / 188,000); total JS 964,260 B (1,008,000); largest chunk 386,217 B (420,000); CSS 42,842 B (47,000); precache 1,051,785 B (1,155,000). The precache budget was rebaselined to about 10% over this measurement with PWA-002: the app had grown to about 95% of the old 1,058,000, and the raster icons add 41,411 B. |
 | Real pinned-dataset audit | `bun run data:audit`, run 2026-10-25 against v2.32.0 (jsDelivr refused, the raw.githubusercontent fallback answered): 48 files; 8,141 entities, 936 spells; 40 versioned `replaceArr` warnings; 0 unresolved `_copy`; 402 spells with dice, every generated roll parses; all 53 `{@tag}`s rendered; 17 multi-name `additionalSpells` blocks, 4 of them without choice wording and allowed by verdict. Every check is within the `scripts/data-audit-budget.json` entry. The `Data audit` workflow re-runs it weekly and on data-pipeline PRs. |
-| Browser E2E | Chromium, in the `e2e` CI job: 6 spec files, 23 tests, all passing (the reload data loss the suite found is fixed by the save journal, #123). Data-install specs are still to come. |
-| Automated accessibility (axe) | Not yet |
+| Browser E2E | Chromium, in the `e2e` CI job: 8 spec files, 36 tests, all passing (the reload data loss the suite found is fixed by the save journal, #123). Data-install specs are still to come. |
+| Automated accessibility (axe) | `e2e/a11y`, in the `e2e` job: 37 states (every main route, the sheet's tabs, dialogs, drawers, info sheets, banners and toasts, four at desktop size), WCAG 2.x A and AA, held to `e2e/a11y/axe-baseline.json` by a one-sided ratchet. The baseline is empty: the 14 serious nodes the first run found are fixed. Reduced motion is checked too. See `docs/a11y-audit.md`. |
 
 Priority meanings:
 
@@ -149,7 +149,7 @@ shipped; a one-click full backup is tracked under P2 product experience.)
 |---|---|---|
 | A11Y-001 | [#112](https://github.com/FueRobertHer/cast-guidance/issues/112) | Accessible names for the ~15 icon-only controls that carry only a `title`; semantic states on the remaining toggles. |
 | A11Y-002 | [#113](https://github.com/FueRobertHer/cast-guidance/issues/113) | Touch targets below 44px, non-color state, restrained live regions, real progress semantics. |
-| A11Y-003 | [#114](https://github.com/FueRobertHer/cast-guidance/issues/114) | Axe plus manual VoiceOver/TalkBack, focus-trap, virtual-list, zoom, landscape, and reduced-motion passes. |
+| A11Y-003 | [#114](https://github.com/FueRobertHer/cast-guidance/issues/114) | The axe gate and reduced-motion handling have shipped. Remaining: automated keyboard (focus trap and return) and layout (reflow, 200% text, landscape) specs, and the manual VoiceOver, TalkBack, Dynamic Type, safe-area, keyboard and virtual-list passes recorded in `docs/a11y-audit.md`. |
 
 ### Creator and navigation
 
