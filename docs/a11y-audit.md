@@ -109,11 +109,55 @@ runs on every scanned state.
   class. The E2E spec above is the real guard; this one only fails fast.
 - `e2e/a11y/baseline.test.ts`: the baseline policy below.
 
-### Not automated here
+### Keyboard, focus trap and focus return
 
-Keyboard operation (focus traps, focus return, tab order) and layout checks
-(320px reflow, 200% text, landscape) are the next PR's specs. Until then they
-are manual items below.
+[`e2e/a11y/keyboard.spec.ts`](../e2e/a11y/keyboard.spec.ts), at a desktop size
+(no touch, the app nav and the sheet's tabs in a side rail):
+
+- **Dialogs and drawers:** the roster's actions sheet, Rename, the Delete
+  confirm, the character import preview, the homebrew import preview, the dice
+  tray, the history drawer, the long rest confirm, a number's breakdown (STR)
+  and an entity's info sheet (Fighter, a sheet deferred until first used).
+  Each is opened by Enter on its trigger, and must take focus; Tab and
+  Shift+Tab, each pressed two more times than the dialog has controls, keep
+  focus inside and visit every control; Escape closes it and focus is back on
+  the trigger (for Rename and Delete, which open from the actions sheet, the
+  row's Actions button the chain started from).
+- **Pages by Tab and Enter:** the roster (the character, its Actions, the
+  blank sheet and wizard options and Import, in that order; Enter creates a
+  character and opens one), the library (search, a result, a type tile, the
+  list's filter, a row, each opening with Enter), and the sheet's tab bar
+  (each tab the next Tab stop after the one before, Enter opening it).
+- **The library's long list:** 150 generated spells, tabbed through first to
+  last and 30 back with Shift+Tab: every press lands on the next row, which
+  is rendered and inside both the list's box and the window. Arrow keys are
+  not checked, because the list has none (see the open findings).
+
+### Zoom, text size and landscape
+
+[`e2e/a11y/layout.spec.ts`](../e2e/a11y/layout.spec.ts), on the suite's phone:
+
+- **Reflow (1.4.10):** at 320 by 640 CSS px, no main route scrolls sideways
+  (`scrollWidth <= clientWidth`): the roster, library index, a type list, a
+  detail page, homebrew, settings, the creator, not-found and the six sheet
+  tabs.
+- **Text at 200% (1.4.4):** the root font set to 200% through
+  `page.addStyleTag`, so everything sized in rem grows as with the browser's
+  text-size setting: the same routes do not scroll sideways, and each one's
+  primary controls (the roster's create and import buttons, the library's
+  search and filter, Settings' update check, the creator's Next, the sheet's
+  tab and Back link, the dice tray and Long rest) are whole on screen once
+  scrolled to.
+- **Landscape (851 by 393):** on every sheet tab the character name is whole
+  on screen and clear of the bottom tab bar, the content starts below the
+  sticky header with more than half the screen between the bars, and no
+  control in the page is entirely hidden behind the header, the build page's
+  bar or the tab bar when Tab or Shift+Tab moves to it (2.4.11). The same
+  walk runs on the roster, a library list and Settings, under the app nav.
+
+Not automated: the real OS text settings (iOS Larger Text, Android font and
+display size, which also scale media queries, unlike a root font size), safe
+areas on a notched device, and the installed app. Those stay manual below.
 
 ## Baseline policy
 
@@ -188,12 +232,29 @@ screen-reader and zoom passes below look at them on a device.
 | 2026-10-25 | Under 24 on Build: the pickers' summaries ("Add a class (multiclass)", "Pick a species to start" and the like) were 16 tall. | 24 tall (`py-1`), keeping the disclosure marker. |
 | 2026-10-25 | No reduced-motion handling beyond the roll toast and the roster. | App-wide block in `app.css`, plus the script-driven smooth scroll. See above. |
 | 2026-10-25 (from #163) | Resource pips are 44 px tall and 32 px wide around a 16 px dot, not 44 by 44: a 12-use row at 44 px a pip wraps onto a third line at 320 px. | Owner decision: keep 44x32. The height is what a thumb misses by; 32 px is above WCAG 2.5.8's 24 px floor, and axe's `target-size` passes it. Revisit if the manual passes find mis-taps. `e2e/a11y/target-size.spec.ts` holds slot and resource pips to 32 by 44. |
+| 2026-10-25 | Focus left behind on opening: every drawer but the ask* dialogs (the dice tray, history, the info and breakdown sheets, Add item) kept focus on its opener, by then `aria-hidden` behind the overlay. vaul turns Radix's open-time focus off unless asked. | `Sheet.Root` turns `autoFocus` on by default (a sheet can still opt out), so focus moves to the sheet's first control, or the sheet itself, as it opens. With focus inside, Radix's own trap and its return to the trigger on close pass unchanged. Pinned in `src/ui/sheet.test.tsx`; `keyboard.spec.ts` fails without it. Add item's first control is its search box, so an on-screen keyboard may now open with that sheet (Android shows one for a focus right after a tap; the manual pass should judge it). |
+| 2026-10-25 | Focus not obscured (2.4.11): in landscape, Tab scrolled a control just into view under the bottom tab bar (the Play tab's turn tracker, Stats' skills, Build's sections), and Shift+Tab under the sheet header and the build page's bar, entirely hidden. | The page's scroll padding clears the bars: 4rem at the bottom below `lg` (app.css), and at the top the sheet header's and the build bar's measured heights (`useStickyHeight`, which now also publishes `--sheet-header-h` from the root). |
+| 2026-10-25 | Reflow at 320 px: the Play tab's turn tracker (Action, Bonus, Reaction, End turn) was 5 px wider than the screen. | The row wraps, End turn kept at the right, only when it cannot fit. |
+| 2026-10-25 | Text at 200%: a library tile's one-word label (Backgrounds, Languages) ran past its card and the screen; the Play tab's HP row (the damage and heal pairs around the total) was 121 px wider than the phone. | The tile label breaks inside a long word (`break-words`). The HP row wraps, the heal pair kept at the right; the total has a zero flex basis, so a three-digit total at 320 px still breaks onto two lines in place, as before, and the row wraps only where it would have overflowed. |
 
 Open findings, for follow-up issues:
 
 - The library's virtualized list (`src/ui/VirtualList.tsx`) has no arrow-key
-  navigation; rows are reachable by Tab only. Whether a screen reader
-  announces the list's size and position is a manual item below.
+  navigation; rows are reachable by Tab only (one stop per row, which
+  `keyboard.spec.ts` checks end to end). Whether a screen reader announces the
+  list's size and position is a manual item below.
+- That list does not virtualize in the library today: its scroll box is
+  `flex-1` in a shell that is only `min-h-dvh`, so it grows to the full height
+  of its rows, the window scrolls instead, and every row is rendered (150 of
+  150 in the keyboard spec). Tab and focus work, but a full compendium
+  renders thousands of rows, and Tab presses there cost tens of milliseconds
+  each. A performance follow-up rather than an accessibility one: bound the
+  list's height or use a window virtualizer, then rerun the keyboard spec,
+  which checks the focused row stays rendered either way.
+- At 200% text, the Play tab's Concentration toggle truncates its label
+  ("oncentr") beside Inspiration. Nothing scrolls sideways and the control
+  keeps its full accessible name, but the visible text is cut; the manual
+  Dynamic Type pass should judge it.
 - The builder's "This homebrew file is no longer on this device." page has no
   heading (axe's `page-has-heading-one`, a best-practice rule, so not gated).
 - Not scanned yet, for want of a hermetic setup: the data banner's rollback
@@ -202,7 +263,8 @@ Open findings, for follow-up issues:
   scanned), and the "open in another tab" line on the sheet.
 - With a dialog or drawer open, axe cannot decide `aria-hidden-focus` for a
   few controls left behind the overlay (3 to 8 per state, under "Needs
-  review" in the CI summary). The focus-trap check below is what settles it.
+  review" in the CI summary). `keyboard.spec.ts` settles it: with each
+  dialog open, Tab and Shift+Tab never reach a control outside it.
 
 ## Manual checklist
 
@@ -215,16 +277,19 @@ Flows: roster (create, rename, delete, import, export); creator; sheet tabs
 homebrew import and builder; settings (data, update, reset); dialogs and
 drawers; the dice tray; toasts and banners.
 
-| Check | What to look for |
-|---|---|
-| VoiceOver (iOS Safari, and the installed app) | Every control has a spoken name and role; dialogs and drawers announce themselves and keep the swipe order inside; toasts and banners are announced once, not repeatedly; the HP meter reads its value; pip state (spent or available) is spoken. |
-| TalkBack (Android Chrome, and the installed app) | The same as VoiceOver, with TalkBack's linear navigation and explore by touch. |
-| Dynamic Type and zoom | iOS Larger Text at the largest size, Android font size and display size at maximum, and browser zoom to 200%: no text clipped or overlapping, no horizontal scrolling for prose, primary buttons still on screen. |
-| Safe area and landscape | On a notched phone, portrait and landscape: the sheet header, tab bar, dice button and toasts clear the notch, the home indicator and rounded corners; nothing sits under the system bars in the installed app. |
-| External keyboard | Every action reachable with Tab and Shift+Tab in a sensible order; Enter and Space activate; Escape closes dialogs and drawers; focus is visible throughout. |
-| Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. |
-| Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable. |
-| Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. |
+The automated column says what CI already holds in Chromium (passing on
+2026-10-25); the manual pass is still needed for what it leaves out.
+
+| Check | What to look for | Automated |
+|---|---|---|
+| VoiceOver (iOS Safari, and the installed app) | Every control has a spoken name and role; dialogs and drawers announce themselves and keep the swipe order inside; toasts and banners are announced once, not repeatedly; the HP meter reads its value; pip state (spent or available) is spoken. | Names, roles and states only, through axe. |
+| TalkBack (Android Chrome, and the installed app) | The same as VoiceOver, with TalkBack's linear navigation and explore by touch. | As for VoiceOver. |
+| Dynamic Type and zoom | iOS Larger Text at the largest size, Android font size and display size at maximum, and browser zoom to 200%: no text clipped or overlapping, no horizontal scrolling for prose, primary buttons still on screen. | `layout.spec.ts`: no sideways scrolling at 320 px or with a 200% root font, primary controls whole on screen. Not clipping or overlap, and not the OS settings. |
+| Safe area and landscape | On a notched phone, portrait and landscape: the sheet header, tab bar, dice button and toasts clear the notch, the home indicator and rounded corners; nothing sits under the system bars in the installed app. | `layout.spec.ts` at 851 by 393: the header and tab bar leave the name and content in sight, and no focused control is hidden behind them. No safe-area insets (none in an emulated viewport). |
+| External keyboard | Every action reachable with Tab and Shift+Tab in a sensible order; Enter and Space activate; Escape closes dialogs and drawers; focus is visible throughout. | `keyboard.spec.ts`: the roster, the library and the sheet's tabs by Tab and Enter; Escape on every listed dialog. Not Space, every page, or how visible focus is. |
+| Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the ten dialogs and drawers listed above. |
+| Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable. | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view. Not announcement or length. |
+| Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. | `reduced-motion.spec.ts`. |
 
 ### Results
 
