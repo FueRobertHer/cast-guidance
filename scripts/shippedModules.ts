@@ -14,13 +14,21 @@ import type { Plugin } from 'vite';
  * The same collector is registered in `plugins` and in `worker.plugins`; both
  * halves share one record. Vite bundles a worker while it transforms the
  * importing module, so every worker chunk is recorded before the main bundle
- * is generated.
+ * is generated, and by then the worker's file is also in the main bundle, as
+ * an asset.
+ *
+ * The record lives as long as the collector, across `vite build --watch`
+ * rebuilds: a rebuild that does not touch the worker does not bundle it
+ * again, so clearing the record at the start of each build would drop the
+ * worker's entry. Instead the main build prunes, after recording its own
+ * chunks, every entry whose file is not in this bundle (an old chunk hash, a
+ * worker that was removed).
  *
  * In the main build's `generateBundle`, ordered after every other plugin's
  * (Vite's license plugin included), the collector takes Vite's
  * `.vite/licenses.json` out of the bundle, so it is never written to `dist/`,
  * and writes it with its own record to `RECORDS_DIR`, under
- * `node_modules/.cache`. Each main build first clears that directory, so a
+ * `node_modules/.cache`. Each main build first deletes the files there, so a
  * failed build leaves no records behind for the notices to read.
  *
  * Module ids under `node_modules` are kept relative to the project root, so
@@ -91,9 +99,8 @@ export function shippedModulesCollector(root: string): {
       apply: 'build',
       enforce: 'post',
       buildStart() {
-        // A fresh record per build: nothing from an earlier build (or an
-        // earlier watch rebuild) may leak into this one's notices.
-        chunks.clear();
+        // Only the files: the in-memory record keeps the worker entries a
+        // watch rebuild does not regenerate (see the module comment).
         rmSync(recordsDir, { recursive: true, force: true });
       },
       generateBundle: {
@@ -113,6 +120,9 @@ export function shippedModulesCollector(root: string): {
           delete bundle[VITE_LICENSES_ASSET];
 
           record('main', bundle as BundleLike);
+          for (const fileName of [...chunks.keys()]) {
+            if (!(fileName in bundle)) chunks.delete(fileName);
+          }
           const sorted = [...chunks.values()].sort((a, b) =>
             a.fileName < b.fileName ? -1 : a.fileName > b.fileName ? 1 : 0,
           );

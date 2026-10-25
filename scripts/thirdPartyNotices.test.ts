@@ -225,6 +225,72 @@ describe('collectInventory', () => {
     );
   });
 
+  describe('service worker markers', () => {
+    const SW_EXTRAS: Extra[] = [
+      ...EXTRAS,
+      { name: 'sw-loader', why: 'loader', swMarker: 'if(!self.define)' },
+      { name: 'workbox-build', why: 'template', swMarker: 'SKIP_WAITING' },
+    ];
+    const SW_PACKAGES: Record<string, PackageRecord> = {
+      ...PACKAGES,
+      'node_modules/sw-loader': {
+        name: 'sw-loader',
+        version: '3.0.0',
+        identifier: 'Apache-2.0',
+        licenseText: 'Apache License text',
+        noticeText: 'Loader NOTICE',
+      },
+      'node_modules/workbox-build': {
+        name: 'workbox-build',
+        version: '7.4.1',
+        identifier: 'MIT',
+        licenseText: MIT,
+      },
+    };
+    const SW_TEXT =
+      'if(!self.define){let s;self.define=()=>{}}define(["./workbox-1"],function(s){self.addEventListener("message",s=>{s.data&&"SKIP_WAITING"===s.data.type&&self.skipWaiting()})});';
+    const withSw = (text: string, extras: Extra[] = SW_EXTRAS) =>
+      input({
+        extras,
+        jsFiles: input().jsFiles.map((file) => (file.path === 'sw.js' ? { ...file, text } : file)),
+      });
+
+    it('lists the loader and the template glue as service worker code, NOTICE included', () => {
+      const output = renderNotices(
+        buildNotices(collectInventory(withSw(SW_TEXT), fakeSource(SW_PACKAGES)), {}),
+      );
+      expect(output).toContain('| sw-loader | 3.0.0 | Apache-2.0 | service worker |');
+      expect(output).toContain('| workbox-build | 7.4.1 | MIT | service worker |');
+      expect(output).toContain('Loader NOTICE');
+    });
+
+    // Catches: an extra dropped from the list while its code still ships.
+    it('fails on a marker in sw.js that no listed extra claims', () => {
+      const extras = SW_EXTRAS.filter((extra) => extra.name !== 'sw-loader');
+      expect(() => collectInventory(withSw(SW_TEXT, extras), fakeSource(SW_PACKAGES))).toThrow(
+        /sw\.js contains "if\(!self\.define\)" .* but no extra .* claims it/,
+      );
+    });
+
+    // Catches: an extra that stays listed after its code stopped shipping.
+    it('fails on an extra whose marker is missing from sw.js', () => {
+      const text = SW_TEXT.replace('SKIP_WAITING', 'OTHER');
+      expect(() => collectInventory(withSw(text), fakeSource(SW_PACKAGES))).toThrow(
+        /Extra workbox-build has no trace/,
+      );
+    });
+
+    it('looks for the markers in sw.js only', () => {
+      const data = withSw('');
+      data.jsFiles = data.jsFiles.map((file) =>
+        file.path === 'workbox-1.js' ? { ...file, text: `${file.text}${SW_TEXT}` } : file,
+      );
+      expect(() => collectInventory(data, fakeSource(SW_PACKAGES))).toThrow(
+        /Extra sw-loader has no trace/,
+      );
+    });
+  });
+
   it("fails when Vite's list and the module record disagree about the main bundle", () => {
     const missing = input({
       viteLicenses: [{ name: 'react', version: '19.0.0', identifier: 'MIT', text: MIT }],
@@ -321,6 +387,29 @@ describe('buildNotices', () => {
     expect(output).toContain('Vite MIT');
     expect(output).not.toContain('lots more');
     expect(() => generate(input(), PACKAGES, cut)).toThrow(/cutBefore line is no longer/);
+  });
+
+  // Catches: Windows line endings leaking into the output, which would make
+  // the file differ by platform.
+  it('normalises CRLF and CR line endings in license and NOTICE texts', () => {
+    const packages = {
+      ...PACKAGES,
+      'node_modules/dexie': {
+        ...PACKAGES['node_modules/dexie'],
+        licenseText: 'Line one\r\nLine two\rLine three',
+        noticeText: 'Notice one\r\nNotice two',
+      },
+    } as Record<string, PackageRecord>;
+    const data = input({
+      viteLicenses: [
+        { name: 'dexie', version: '4.0.0', identifier: 'Apache-2.0' },
+        { name: 'react', version: '19.0.0', identifier: 'MIT', text: MIT },
+      ],
+    });
+    const output = generate(data, packages);
+    expect(output).not.toMatch(/\r/);
+    expect(output).toContain('Line one\nLine two\nLine three');
+    expect(output).toContain('Notice one\nNotice two');
   });
 
   it('fails on an override that matches no shipped package', () => {
@@ -436,33 +525,43 @@ describe('shippedModulesCollector', () => {
     fn.call({}, ...args);
   }
 
-  function build(withLicenses = true) {
+  const nm = (rel: string) => path.join(root ?? '', 'node_modules', rel);
+
+  function setup() {
     root = mkdtempSync(path.join(tmpdir(), 'collector-'));
-    const collector = shippedModulesCollector(root);
-    const nm = (rel: string) => path.join(root ?? '', 'node_modules', rel);
-    call(collector.main.buildStart);
-    // Vite bundles the worker while it transforms the importing module,
-    // before the main bundle is generated.
+    return shippedModulesCollector(root);
+  }
+
+  /** Vite bundles the worker while it transforms its importer, before the main bundle. */
+  function buildWorker(collector: ReturnType<typeof shippedModulesCollector>) {
     call(
       collector.worker().generateBundle,
       {},
       {
         'assets/search.worker-b.js': {
           type: 'chunk',
-          moduleIds: [nm('minisearch/dist/es/index.js'), path.join(root, 'src/workers/w.ts')],
+          moduleIds: [nm('minisearch/dist/es/index.js'), path.join(root ?? '', 'src/workers/w.ts')],
         },
       },
     );
+  }
+
+  /** The main bundle at the collector's turn: the worker's file is in it as an asset. */
+  function buildMain(
+    collector: ReturnType<typeof shippedModulesCollector>,
+    { entry = 'assets/index-a.js', withWorker = true, withLicenses = true } = {},
+  ) {
     const bundle: Record<string, unknown> = {
-      'assets/index-a.js': {
+      [entry]: {
         type: 'chunk',
         moduleIds: [
           nm('react/index.js'),
           '\0vite/preload-helper.js',
-          path.join(root, 'src/main.tsx'),
+          path.join(root ?? '', 'src/main.tsx'),
         ],
       },
       'assets/index-a.css': { type: 'asset', source: 'a{}' },
+      ...(withWorker ? { 'assets/search.worker-b.js': { type: 'asset', source: '' } } : {}),
       ...(withLicenses
         ? { '.vite/licenses.json': { type: 'asset', source: '[{"name":"react"}]' } }
         : {}),
@@ -471,9 +570,33 @@ describe('shippedModulesCollector', () => {
     return bundle;
   }
 
+  function build(options: Parameters<typeof buildMain>[1] = {}) {
+    const collector = setup();
+    call(collector.main.buildStart);
+    buildWorker(collector);
+    return { collector, bundle: buildMain(collector, options) };
+  }
+
+  function readRecord(): ShippedModules {
+    return JSON.parse(
+      readFileSync(path.join(root ?? '', RECORDS_DIR, 'shipped-modules.json'), 'utf8'),
+    ) as ShippedModules;
+  }
+
+  const MAIN_MODULES = ['\0vite/preload-helper.js', 'node_modules/react/index.js'];
+  const WORKER_CHUNK = {
+    fileName: 'assets/search.worker-b.js',
+    kind: 'worker',
+    moduleIds: ['node_modules/minisearch/dist/es/index.js'],
+  };
+
   it("takes Vite's license list out of the bundle and writes both records outside dist/", () => {
-    const bundle = build();
-    expect(Object.keys(bundle).sort()).toEqual(['assets/index-a.css', 'assets/index-a.js']);
+    const { bundle } = build();
+    expect(Object.keys(bundle).sort()).toEqual([
+      'assets/index-a.css',
+      'assets/index-a.js',
+      'assets/search.worker-b.js',
+    ]);
     const dir = path.join(root ?? '', RECORDS_DIR);
     expect(readFileSync(path.join(dir, 'licenses.json'), 'utf8')).toBe('[{"name":"react"}]');
   });
@@ -481,36 +604,48 @@ describe('shippedModulesCollector', () => {
   // Catches: the worker half recording into a separate, lost record.
   it("merges the worker build's chunks into the main record", () => {
     build();
-    const record = JSON.parse(
-      readFileSync(path.join(root ?? '', RECORDS_DIR, 'shipped-modules.json'), 'utf8'),
-    ) as ShippedModules;
-    expect(record.chunks).toEqual([
-      {
-        fileName: 'assets/index-a.js',
-        kind: 'main',
-        moduleIds: ['\0vite/preload-helper.js', 'node_modules/react/index.js'],
-      },
-      {
-        fileName: 'assets/search.worker-b.js',
-        kind: 'worker',
-        moduleIds: ['node_modules/minisearch/dist/es/index.js'],
-      },
+    expect(readRecord().chunks).toEqual([
+      { fileName: 'assets/index-a.js', kind: 'main', moduleIds: MAIN_MODULES },
+      WORKER_CHUNK,
     ]);
   });
 
-  it('fails the build when Vite emitted no license list', () => {
-    expect(() => build(false)).toThrow(/did not emit \.vite\/licenses\.json/);
+  // Catches: clearing the record per build (a watch rebuild that does not
+  // touch the worker then loses it), and not pruning (an old chunk lingers).
+  it('keeps the worker across a watch rebuild and prunes files no longer emitted', () => {
+    const { collector } = build();
+    call(collector.main.buildStart);
+    buildMain(collector, { entry: 'assets/index-c.js' });
+    expect(readRecord().chunks).toEqual([
+      { fileName: 'assets/index-c.js', kind: 'main', moduleIds: MAIN_MODULES },
+      WORKER_CHUNK,
+    ]);
+
+    // A rebuild in which the worker is gone drops it.
+    call(collector.main.buildStart);
+    buildMain(collector, { entry: 'assets/index-c.js', withWorker: false });
+    expect(readRecord().chunks.map((chunk) => chunk.fileName)).toEqual(['assets/index-c.js']);
   });
 
-  it('clears the records at the start of every build', () => {
-    build();
-    const collector = shippedModulesCollector(root ?? '');
+  it('fails the build when Vite emitted no license list', () => {
+    expect(() => build({ withLicenses: false })).toThrow(/did not emit \.vite\/licenses\.json/);
+  });
+
+  it('deletes the record files at the start of every build', () => {
+    const { collector } = build();
     call(collector.main.buildStart);
     expect(() => readFileSync(path.join(root ?? '', RECORDS_DIR, 'licenses.json'))).toThrow();
   });
 });
 
 describe('run (the CLI against a project on disk)', () => {
+  // toMatchObject does not test a RegExp against a string (any message would
+  // pass), so the message is matched explicitly.
+  function expectFailure(result: { exitCode: number; message: string }, message: RegExp) {
+    expect(result.exitCode).toBe(1);
+    expect(result.message).toMatch(message);
+  }
+
   let dir: string | undefined;
   afterEach(() => {
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -549,7 +684,14 @@ describe('run (the CLI against a project on disk)', () => {
       JSON.stringify({ name: 'workbox-core', version: '7.4.1', license: 'MIT' }),
     );
     write('node_modules/workbox-core/LICENSE', MIT);
-    for (const name of ['rolldown', 'tailwindcss', 'vite', 'vite-plugin-pwa']) {
+    for (const name of [
+      '@trickfilm400/rollup-plugin-off-main-thread',
+      'rolldown',
+      'tailwindcss',
+      'vite',
+      'vite-plugin-pwa',
+      'workbox-build',
+    ]) {
       write(
         `node_modules/${name}/package.json`,
         JSON.stringify({ name, version: '1.0.0', license: 'MIT' }),
@@ -560,7 +702,10 @@ describe('run (the CLI against a project on disk)', () => {
     write('dist/assets/index-a.js', '');
     write('dist/assets/search.worker-b.js', '');
     write('dist/assets/index-a.css', '/*! tailwindcss v4 */');
-    write('dist/sw.js', 'self["workbox:core:7.4.1"]');
+    write(
+      'dist/sw.js',
+      'if(!self.define){}define([],function(){"SKIP_WAITING";self["workbox:core:7.4.1"]})',
+    );
     writeRecords();
     return dir;
   }
@@ -617,7 +762,7 @@ describe('run (the CLI against a project on disk)', () => {
     const good = readFileSync(noticesPath, 'utf8');
 
     writeFileSync(noticesPath, good.replace('| worker |', '| workers |'));
-    expect(run(root, true)).toMatchObject({ exitCode: 1, message: /out of date/ });
+    expectFailure(run(root, true), /out of date/);
 
     writeFileSync(noticesPath, good);
     expect(run(root, true).exitCode).toBe(0);
@@ -627,22 +772,28 @@ describe('run (the CLI against a project on disk)', () => {
   it('fails when dist/.vite exists', () => {
     const root = project();
     write('dist/.vite/licenses.json', '[]');
-    expect(run(root, true)).toMatchObject({ exitCode: 1, message: /dist\/\.vite\/ exists/ });
+    expectFailure(run(root, true), /dist\/\.vite\/ exists/);
   });
 
   it('asks for a build when the records are missing', () => {
     const root = project();
     rmSync(path.join(root, RECORDS_DIR), { recursive: true });
-    expect(run(root, true)).toMatchObject({ exitCode: 1, message: /Run `bun run build` first/ });
+    expectFailure(run(root, true), /Run `bun run build` first/);
+  });
+
+  it('fails instead of inventing a version for a package that has none', () => {
+    const root = project();
+    write('node_modules/minisearch/package.json', JSON.stringify({ name: 'minisearch' }));
+    expectFailure(
+      run(root, true),
+      /node_modules\/minisearch\/package\.json \(minisearch\) has no version/,
+    );
   });
 
   it('fails, without writing, when a shipped package has no license text', () => {
     const root = project();
     rmSync(path.join(root, 'node_modules/minisearch/LICENSE.txt'));
-    expect(run(root, false)).toMatchObject({
-      exitCode: 1,
-      message: /minisearch@7\.0\.0 ships no license text/,
-    });
+    expectFailure(run(root, false), /minisearch@7\.0\.0 ships no license text/);
     expect(() => readFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'))).toThrow();
   });
 });

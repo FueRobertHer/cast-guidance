@@ -446,11 +446,14 @@ describe('SettingsPage about', () => {
     }));
     const blob = 'https://github.com/FueRobertHer/cast-guidance/blob/main';
     const opens = { target: '_blank', rel: 'noreferrer noopener' };
+    // Said after each name, since each link opens a new tab.
+    const tab = ' (opens in a new tab)';
     expect(links).toEqual([
-      { name: 'License', href: `${blob}/LICENSE`, ...opens },
-      { name: 'Third-party notices', href: `${blob}/THIRD_PARTY_NOTICES.md`, ...opens },
-      { name: 'Content notice', href: `${blob}/docs/content-notice.md`, ...opens },
+      { name: `License${tab}`, href: `${blob}/LICENSE`, ...opens },
+      { name: `Third-party notices${tab}`, href: `${blob}/THIRD_PARTY_NOTICES.md`, ...opens },
+      { name: `Content notice${tab}`, href: `${blob}/docs/content-notice.md`, ...opens },
     ]);
+    expect(screen.getByRole('link', { name: `License${tab}` })).toBeTruthy();
   });
 
   // Catches: a link that 404s on GitHub because its file was renamed or never added.

@@ -38,7 +38,7 @@ const LICENSE_FILE = /^(licen[cs]e|copying)/i;
 const NOTICE_FILE = /^notice/i;
 
 function readText(file: string): string {
-  return readFileSync(file, 'utf8').replace(/^﻿/, '');
+  return readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
 }
 
 /** The first matching file in `dir`, in sorted order so the pick is stable. */
@@ -60,11 +60,15 @@ export function fileSystemSource(root: string): PackageSource {
     if (existsSync(manifestPath)) {
       const manifest = JSON.parse(readText(manifestPath)) as Record<string, unknown>;
       if (typeof manifest.name === 'string') {
+        // No made-up version: the notices name exactly what ships.
+        if (typeof manifest.version !== 'string' || manifest.version === '') {
+          throw new Error(`${dir}/package.json (${manifest.name}) has no version.`);
+        }
         const licenseFile = findFile(full, LICENSE_FILE);
         const noticeFile = findFile(full, NOTICE_FILE);
         record = {
           name: manifest.name,
-          version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
+          version: manifest.version,
           ...(typeof manifest.license === 'string' ? { identifier: manifest.license.trim() } : {}),
           ...(licenseFile ? { licenseText: readText(licenseFile).trim() } : {}),
           ...(noticeFile ? { noticeText: readText(noticeFile).trim() } : {}),

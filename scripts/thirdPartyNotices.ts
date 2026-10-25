@@ -14,10 +14,12 @@
  * - the Workbox runtime modules in the generated service worker, from the
  *   `workbox:<module>:` markers each one leaves in `sw.js` and `workbox-*.js`;
  * - a short allowlist of extras whose code ships without a module under
- *   `node_modules` (plugin virtual modules and the Tailwind stylesheet).
+ *   `node_modules`: plugin virtual modules, the Tailwind stylesheet, and the
+ *   code workbox-build writes into `sw.js` around the Workbox runtime calls.
  *
  * Every rule fails loudly. A JS file the record does not cover, a virtual
- * module no extra claims, an extra with no trace in the build, a package with
+ * module or service worker marker no extra claims, an extra with no trace in
+ * the build, a package with
  * no license text, a license identifier outside the allowlist and an unused
  * override all throw, because each would otherwise produce a notices file that
  * quietly leaves something out.
@@ -38,8 +40,8 @@ export type ShipsIn = 'app' | 'worker' | 'service worker' | 'stylesheet';
 /**
  * Code that ships without a module under `node_modules`, so neither Vite's
  * license list nor the module record names its package. Each extra must leave
- * a trace in the build (a virtual module id or a CSS banner); an extra without
- * one fails, so the list cannot go stale.
+ * a trace in the build (a virtual module id, a CSS banner or a service worker
+ * marker); an extra without one fails, so the list cannot go stale.
  */
 export interface Extra {
   name: string;
@@ -49,9 +51,36 @@ export interface Extra {
   moduleIdPrefix?: string;
   /** Text the package writes into the built CSS. */
   cssMarker?: string;
+  /** One of `SW_MARKERS`: code the package puts in `dist/sw.js` (checked in that file only). */
+  swMarker?: string;
 }
 
+/**
+ * Code that workbox-build writes straight into `dist/sw.js`, outside any
+ * Workbox runtime module, with the package it comes from. A marker found in
+ * `sw.js` must be claimed by an extra with that `swMarker`, so dropping one of
+ * those extras fails rather than leaving the code unlisted.
+ */
+export const SW_MARKERS: readonly { marker: string; from: string }[] = [
+  {
+    // The AMD loader that starts the minified sw.js: `if(!self.define){...}`.
+    marker: 'if(!self.define)',
+    from: 'the AMD loader (loader.ejs of @trickfilm400/rollup-plugin-off-main-thread, which workbox-build bundles with)',
+  },
+  {
+    // The message listener from workbox-build's templates/sw-template.js
+    // that lets the update prompt activate a waiting worker.
+    marker: 'SKIP_WAITING',
+    from: "workbox-build's templates/sw-template.js",
+  },
+];
+
 export const EXTRAS: readonly Extra[] = [
+  {
+    name: '@trickfilm400/rollup-plugin-off-main-thread',
+    why: 'the AMD loader at the top of sw.js that loads the Workbox runtime chunk',
+    swMarker: 'if(!self.define)',
+  },
   {
     name: 'rolldown',
     why: 'runtime helpers the bundler injects into the chunks',
@@ -71,6 +100,11 @@ export const EXTRAS: readonly Extra[] = [
     name: 'vite-plugin-pwa',
     why: 'the virtual:pwa-register/react module behind the update prompt',
     moduleIdPrefix: '/@vite-plugin-pwa/',
+  },
+  {
+    name: 'workbox-build',
+    why: 'the service worker template code in sw.js: the SKIP_WAITING listener and the precache and route calls',
+    swMarker: 'SKIP_WAITING',
   },
 ];
 
@@ -321,6 +355,17 @@ export function collectInventory(
     }
   }
 
+  // Code workbox-build writes into sw.js itself: each known marker found
+  // there must be claimed by an extra.
+  const swText = input.jsFiles.find((file) => file.path === 'sw.js')?.text ?? '';
+  for (const { marker, from } of SW_MARKERS) {
+    if (swText.includes(marker) && !extras.some((extra) => extra.swMarker === marker)) {
+      errors.push(
+        `sw.js contains ${JSON.stringify(marker)} from ${from}, but no extra in scripts/thirdPartyNotices.ts claims it.`,
+      );
+    }
+  }
+
   // Extras, which must each leave a trace.
   for (const extra of extras) {
     const seen = extraSeen.get(extra.name) ?? new Set<ShipsIn>();
@@ -330,6 +375,7 @@ export function collectInventory(
     ) {
       seen.add('stylesheet');
     }
+    if (extra.swMarker && swText.includes(extra.swMarker)) seen.add('service worker');
     if (seen.size === 0) {
       errors.push(`Extra ${extra.name} has no trace in the build; remove it from EXTRAS.`);
       continue;

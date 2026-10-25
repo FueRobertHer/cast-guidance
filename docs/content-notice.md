@@ -34,7 +34,7 @@ downloaded at runtime, on the user's device:
   version as the build's `DATA_TAG`, see `isCompatibleTag` in
   `src/data5e/config.ts`). If the list does not arrive within
   `BOOT_TAG_RESOLVE_TIMEOUT_MS` (3 seconds), it installs `DATA_TAG` itself
-  (`v2.32.0` today), which is the fallback and the floor, not a fixed pin. Later
+  (`v2.32.0` today), which is the fallback, not a fixed pin. Later
   releases are offered as updates the user can accept or decline.
 - **How.** Files come through jsDelivr
   (`cdn.jsdelivr.net/gh/5etools-mirror-3/5etools-src@<tag>/data/`), with
@@ -118,6 +118,8 @@ an explicit user choice; that is a product decision as much as a legal one.
 Open on #111 until the owner signs off:
 
 - [ ] Legal review of this notice and of the trademark disclaimer wording.
+- [ ] Approve the short trademark line in the README ("Game data & copyright"),
+      which is marked as draft wording until then.
 - [ ] Choose the content approach: Fan Content Policy, SRD only, or the mirror as
       it is (or a combination).
 - [ ] Decide whether the shipped book titles (`sourceNames.ts`) and curated
@@ -135,4 +137,9 @@ Open on #111 until the owner signs off:
       from the GitHub account FueRobertHer).
 - [ ] Confirm the repository is public: the About links in Settings point at
       GitHub blob URLs, which only open for a public repository.
+- [ ] Decide whether `THIRD_PARTY_NOTICES.md` should also carry esbuild's MIT
+      license text (Copyright (c) 2020 Evan Wallace) for Rolldown's runtime
+      helpers. Rolldown's own THIRD-PARTY-LICENSE credits esbuild and Rollup,
+      and its LICENSE points there; the notices list only Rolldown's MIT
+      license today. (Not added in this draft.)
 - [ ] Approve the final wording of this page, then drop the DRAFT banner.

@@ -46,8 +46,8 @@ pipeline. A `DATA_TAG` bump needs a budget entry, or `bun run test` fails.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the
-frozen install, lint, typecheck, tests with coverage floors, the build, the
-third-party notices check, and a bundle budget on every push and PR, and fails
+frozen install, lint, typecheck, tests with coverage floors, the build, a bundle
+budget, and the third-party notices check on every push and PR, and fails
 when coverage drops below the floors in `vite.config.ts`, the build outgrows
 `scripts/bundle-budget.json`, or `THIRD_PARTY_NOTICES.md` no longer matches
 what the build ships.
@@ -69,7 +69,7 @@ for how the harness works, debugging, and writing specs.
 
 **This repository contains no compendium.** On a fresh install the app downloads the
 5etools dataset at runtime from the community mirror (via CDN): the newest release
-compatible with the build, with the build's `DATA_TAG` as the fallback and floor. It
+compatible with the build, with the build's `DATA_TAG` as the fallback. It
 caches the data in the browser's IndexedDB, entirely on the user's device. Test fixtures
 are synthetic entities that only mimic the JSON schema. Homebrew files use the standard
 5etools homebrew format.
@@ -81,6 +81,7 @@ text beyond the SRD. How all of this sits with Wizards of the Coast's policies i
 under review; [`docs/content-notice.md`](docs/content-notice.md) is the draft notice,
 with the options and the open questions.
 
+Draft wording, pending the owner's approval (see the checklist in the content notice):
 Cast Guidance is unofficial and is not affiliated with or endorsed by Wizards of the
 Coast. Dungeons & Dragons and D&D are trademarks of Wizards of the Coast LLC.
 

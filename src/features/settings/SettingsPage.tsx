@@ -65,11 +65,11 @@ function useStorageUsage(phase: string) {
 const NOT_DOWNLOADED = 'not downloaded';
 
 /**
- * The About section links the repository's own copies, so they always match
- * the code on main. Offline they do not open, which is acceptable for
- * reference documents.
+ * The About section links the copies on the repository's main branch, which
+ * can be ahead of the deployed build. Offline they do not open, which is
+ * acceptable for reference documents.
  */
-export const REPO_BLOB_URL = 'https://github.com/FueRobertHer/cast-guidance/blob/main';
+const REPO_BLOB_URL = 'https://github.com/FueRobertHer/cast-guidance/blob/main';
 export const ABOUT_LINKS = [
   { label: 'License', path: 'LICENSE' },
   { label: 'Third-party notices', path: 'THIRD_PARTY_NOTICES.md' },
@@ -499,6 +499,9 @@ export function Component() {
               className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold"
             >
               {label}
+              {/* The space sits outside the span: some name computations
+                  trim a child's leading space, which ran the words together. */}{' '}
+              <span className="sr-only">(opens in a new tab)</span>
             </a>
           ))}
         </div>
