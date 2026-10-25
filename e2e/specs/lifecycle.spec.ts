@@ -64,14 +64,11 @@ test.describe('character lifecycle', () => {
     await expect(rosterHeading(page)).toBeVisible();
   });
 
-  test.fixme('an edit made just before a reload survives it (tracks the reload data loss)', async ({
-    page,
-  }) => {
-    // Known gap found by this suite: the pagehide flush starts its IndexedDB
-    // write, but the reload tears the document down before the transaction
-    // commits, so an edit inside the 400 ms debounce is lost (5 of 5 runs).
-    // Fixing it needs a synchronous journal (or similar) in characterSession;
-    // drop the fixme when that lands.
+  test('an edit made just before a reload survives it', async ({ page }) => {
+    // The reload tears the document down before the pagehide flush's
+    // IndexedDB write commits (this was lost 5 of 5 runs). The session now
+    // journals the unsaved snapshot to localStorage at pagehide and replays
+    // it before the sheet loads again (#123).
     await gotoRoster(page);
     const id = await createBlankCharacter(page);
     await page.goto(`/c/${id}`);

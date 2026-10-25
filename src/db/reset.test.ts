@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./db', () => ({ db: { close: vi.fn(), delete: vi.fn(() => Promise.resolve()) } }));
 
+import { journalKey } from '@/stores/saveJournal';
 import { resetAppData } from './reset';
 
 function stubServiceWorker(sw: Partial<ServiceWorkerContainer> | undefined) {
@@ -34,6 +35,12 @@ describe('resetAppData', () => {
     expect(sessionStorage.getItem('cast-guidance:creator-draft')).toBeNull();
     expect(localStorage.getItem('someone-else')).toBe('keep');
     expect(sessionStorage.getItem('other')).toBe('keep');
+  });
+
+  it("clears the session's journal of unsaved edits (#123)", async () => {
+    localStorage.setItem(journalKey('c1'), '{}');
+    await resetAppData();
+    expect(localStorage.getItem(journalKey('c1'))).toBeNull();
   });
 
   it('unregisters every service worker', async () => {
