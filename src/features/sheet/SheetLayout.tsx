@@ -173,11 +173,10 @@ export function Component() {
           <h1 className="truncate text-lg font-bold">{state.doc?.name ?? '…'}</h1>
           <p className="truncate text-xs text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
         </div>
-        <span
-          className="flex items-center gap-1 text-xs text-ink-muted"
-          role="status"
-          aria-live="polite"
-        >
+        {/* Visual only (A11Y-002). As a live region it said "Unsaved, Saving,
+            Saved" for every HP tap. A failure is announced by the app shell's
+            save banner, and the recovery after one by the announcer. */}
+        <span data-save-indicator="" className="flex items-center gap-1 text-xs text-ink-muted">
           {state.saveStatus === 'pending' && 'Unsaved'}
           {state.saveStatus === 'saving' && (
             <>

@@ -48,7 +48,7 @@ test.describe('character lifecycle', () => {
     await expect(page).toHaveTitle('Play · Aria · Cast Guidance');
     await inspiration(page).click();
     await expect(inspiration(page)).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('banner').getByRole('status')).toHaveText('Saved');
+    await expect(page.getByRole('banner').locator('[data-save-indicator]')).toHaveText('Saved');
 
     await page.reload();
     await expect(inspiration(page)).toHaveAttribute('aria-pressed', 'true');
