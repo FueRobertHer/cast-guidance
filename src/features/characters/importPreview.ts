@@ -1,7 +1,8 @@
 /**
  * What importing a character export would do, worked out before anything is
- * written (IMP-002). Pure, and only type imports, so the roster can load it on
- * demand without growing the entry chunk.
+ * written (IMP-002). Pure, and its one runtime import is the small
+ * `collectCharacterSources` helper (everything else is type-only), so the
+ * roster can load it on demand without growing the entry chunk.
  *
  * The commit decides again inside its transaction (`characterRepo.commitImport`),
  * so this is a forecast for the player, not a promise: another tab may change
@@ -21,9 +22,12 @@ export type EmbeddedFileStatus =
   /** The same content is already here; importing skips it. */
   | 'already-here'
   /**
-   * A local file declares the same source id with different content. Both
-   * end up here, and the local one was imported first, so it keeps winning
-   * any entry the two share.
+   * An enabled local file declares the same source id with different
+   * content. Both end up here, and the local one was imported first, so it
+   * keeps winning any entry the two share. A turned-off local file with the
+   * source does not make this status (the import is `new`); it is still
+   * listed in `localFiles` with `enabled: false`, because it wins again if
+   * it is turned back on.
    */
   | 'other-version';
 
@@ -32,8 +36,11 @@ export interface EmbeddedFilePreview {
   status: EmbeddedFileStatus;
   counts: Record<string, number>;
   sourceIds: string[];
-  /** For `other-version`: the local files that keep precedence. */
-  localFiles: { id: string; fileName: string }[];
+  /**
+   * Local files (different content) declaring one of this file's sources.
+   * Enabled ones keep precedence now; disabled ones regain it if turned on.
+   */
+  localFiles: { id: string; fileName: string; enabled: boolean }[];
 }
 
 export interface CharacterPreview {
@@ -79,12 +86,12 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
       ? []
       : existing
           .filter((f) => f.sourceIds.some((s) => own.has(lower(s))))
-          .map((f) => ({ id: f.id, fileName: f.fileName }));
+          .map((f) => ({ id: f.id, fileName: f.fileName, enabled: f.enabled }));
     files.push({
       fileName: row.fileName,
       status: existingIds.has(row.id)
         ? 'already-here'
-        : localFiles.length > 0
+        : localFiles.some((f) => f.enabled)
           ? 'other-version'
           : 'new',
       counts: row.counts,

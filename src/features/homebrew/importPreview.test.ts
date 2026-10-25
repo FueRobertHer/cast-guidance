@@ -5,6 +5,7 @@ import type { HomebrewFile } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import {
+  clashKey,
   describeCollision,
   MAX_LISTED_COLLISIONS,
   type OfficialIndex,
@@ -54,7 +55,9 @@ function official(entries: Partial<Record<EntityType, string[]>>, complete = tru
     uids.set(type, new Set(list.map((u) => u.toLowerCase())));
     for (const u of list) sources.add(u.split('|')[1]?.toLowerCase() ?? '');
   }
-  return { uids, sources, complete };
+  // For these types the clash key is the uid; feature types build theirs
+  // through officialIndexFrom in their own tests.
+  return { uids, clashKeys: uids, sources, complete };
 }
 
 const NO_OFFICIAL = official({});
@@ -308,6 +311,170 @@ describe('officialIndexFrom', () => {
     expect([...index.sources].sort()).toEqual(['phb', 'xge']);
     expect(index.complete).toBe(true);
     expect(officialIndexFrom(reg, { complete: false }).complete).toBe(false);
+  });
+
+  it('builds once per registry instance', () => {
+    const reg = new EntityRegistry();
+    reg.addAll('spell', [spell('Fire Bolt', 'PHB')]);
+    const first = officialIndexFrom(reg);
+    const again = officialIndexFrom(reg, { complete: false });
+    expect(again.uids).toBe(first.uids);
+    expect(again.complete).toBe(false);
+    const other = new EntityRegistry();
+    other.addAll('spell', [spell('Fire Bolt', 'PHB')]);
+    expect(officialIndexFrom(other).uids).not.toBe(first.uids);
+  });
+});
+
+describe('class and subclass feature clashes', () => {
+  const feature = (extra: Json) => ({ name: 'Rage', source: 'HB', level: 1, ...extra });
+  const sub = (extra: Json) => ({
+    name: 'Frenzy',
+    source: 'HB',
+    className: 'Barbarian',
+    subclassShortName: 'Berserker',
+    subclassSource: 'PHB',
+    level: 3,
+    ...extra,
+  });
+
+  it('keys them the way the class builder looks them up', () => {
+    const cf = feature({ className: 'Barbarian', classSource: 'PHB' });
+    expect(clashKey('classFeature', cf)).toBe('rage|barbarian|phb|1|hb');
+    expect(clashKey('classFeature', { name: 'Rage', source: 'HB' })).toBeUndefined();
+    // The builder does not look at a subclass feature's own source.
+    expect(clashKey('subclassFeature', sub({ source: 'OTHER' }))).toBe(
+      'frenzy|barbarian|berserker|phb|3',
+    );
+    expect(clashKey('subclassFeature', sub({ level: undefined }))).toBeUndefined();
+    expect(clashKey('spell', spell('Zap', 'HB'))).toBe('zap|hb');
+  });
+
+  it('reports only features the engine would actually confuse', () => {
+    const reg = new EntityRegistry();
+    reg.addAll('classFeature', [feature({ className: 'Barbarian', classSource: 'PHB' })]);
+    reg.addAll('subclassFeature', [sub({})]);
+    const p = preview(
+      {
+        _meta: meta(['HB']),
+        classFeature: [
+          // Same name and source, another class or level: no clash.
+          feature({ className: 'Fighter', classSource: 'PHB' }),
+          feature({ className: 'Barbarian', classSource: 'PHB', level: 2 }),
+          // Every field the builder matches on: a clash.
+          feature({ className: 'Barbarian', classSource: 'PHB' }),
+        ],
+        subclassFeature: [sub({ subclassShortName: 'Zealot' }), sub({ source: 'ELSE' })],
+      },
+      { official: officialIndexFrom(reg) },
+    );
+    expect(p.entityCollisions.map((c) => [c.type, c.name, c.source])).toEqual([
+      ['classFeature', 'Rage', 'HB'],
+      ['subclassFeature', 'Frenzy', 'ELSE'],
+    ]);
+  });
+
+  it('keys clashes with homebrew here the same way', () => {
+    const p = preview(
+      {
+        _meta: meta(['HB2']),
+        classFeature: [feature({ className: 'Fighter', classSource: 'PHB' })],
+      },
+      {
+        existing: [
+          local('older', {
+            _meta: meta(['HB']),
+            classFeature: [feature({ className: 'Barbarian', classSource: 'PHB' })],
+          }),
+        ],
+      },
+    );
+    expect(p.entityCollisions).toEqual([]);
+    expect(p.notes).toEqual([]);
+  });
+});
+
+describe('clashes with a turned-off file', () => {
+  it('says the older file wins again if it is turned back on', () => {
+    const p = preview(
+      { _meta: meta(['HB']), spell: [spell('Zap', 'HB'), spell('Other', 'HB')] },
+      {
+        existing: [
+          local('off', { _meta: meta(['HB']), spell: [spell('Zap', 'HB')] }, { enabled: false }),
+        ],
+      },
+    );
+    expect(p.entityCollisions).toEqual([]);
+    expect(p.disabledClashes).toEqual([
+      { type: 'spell', name: 'Zap', source: 'HB', against: { id: 'off', fileName: 'off.json' } },
+    ]);
+    expect(p.disabledClashTotal).toBe(1);
+    expect(p.notes).toEqual([expect.stringContaining('wins again if it is turned back on')]);
+  });
+
+  it('caps the list but keeps the real total', () => {
+    const names = Array.from({ length: MAX_LISTED_COLLISIONS + 5 }, (_, i) => `Spell ${i}`);
+    const spells = names.map((n) => spell(n, 'HB'));
+    const p = preview(
+      { _meta: meta(['HB']), spell: spells },
+      { existing: [local('off', { _meta: meta(['HB']), spell: spells }, { enabled: false })] },
+    );
+    expect(p.disabledClashes).toHaveLength(MAX_LISTED_COLLISIONS);
+    expect(p.disabledClashTotal).toBe(MAX_LISTED_COLLISIONS + 5);
+  });
+});
+
+describe('copies elsewhere that this file fixes', () => {
+  const child = spell('Child', 'AAA', { _copy: { name: 'Base', source: 'BBB' } });
+
+  it('names enabled files whose broken _copy it supplies', () => {
+    const p = preview(
+      { _meta: meta(['BBB']), spell: [spell('Base', 'BBB', { level: 3 })] },
+      {
+        existing: [
+          local('needs-it', { _meta: meta(['AAA']), spell: [child] }),
+          local('off', { _meta: meta(['CCC']), spell: [child] }, { enabled: false }),
+          local('unrelated', { _meta: meta(['DDD']), spell: [spell('Nope', 'DDD')] }),
+        ],
+      },
+    );
+    expect(p.satisfiesCopies).toEqual([
+      {
+        file: { id: 'needs-it', fileName: 'needs-it.json' },
+        entries: [{ type: 'spell', name: 'Child', target: 'Base|BBB' }],
+      },
+    ]);
+  });
+
+  it('claims nothing a copy already finds elsewhere', () => {
+    const base = spell('Base', 'BBB', { level: 3 });
+    const json = { _meta: meta(['BBB']), spell: [base] };
+    // Found in its own file.
+    expect(
+      preview(json, {
+        existing: [local('self', { _meta: meta(['AAA']), spell: [child, base] })],
+      }).satisfiesCopies,
+    ).toEqual([]);
+    // Found in official data.
+    expect(
+      preview(json, {
+        existing: [local('a', { _meta: meta(['AAA']), spell: [child] })],
+        official: official({ spell: ['Base|BBB'] }),
+      }).satisfiesCopies,
+    ).toEqual([]);
+    // Found in another enabled file.
+    expect(
+      preview(json, {
+        existing: [local('a', { _meta: meta(['AAA']), spell: [child] }), local('b', json)],
+        id: 'new-version',
+      }).satisfiesCopies,
+    ).toEqual([]);
+    // An exact duplicate writes nothing, so it fixes nothing.
+    expect(
+      preview(json, {
+        existing: [local('a', { _meta: meta(['AAA']), spell: [child] }), local('new-file', json)],
+      }).satisfiesCopies,
+    ).toEqual([]);
   });
 });
 

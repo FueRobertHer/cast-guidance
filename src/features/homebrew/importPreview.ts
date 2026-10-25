@@ -5,9 +5,15 @@
  *
  * It answers the questions the issue lists: is this file already here, what
  * does it depend on and is that available, what does it clash with and which
- * side wins, which `_copy` references will not resolve, how big is it, and
- * which characters use its sources. None of it blocks an import (guidance,
- * not gatekeeping); it is what the preview shows before the player decides.
+ * side wins, which `_copy` references will not resolve (and which broken ones
+ * elsewhere it fixes), how big is it, and which characters use its sources.
+ * None of it blocks an import (guidance, not gatekeeping); it is what the
+ * preview shows before the player decides.
+ *
+ * The rules mirror the registry (`mergeHomebrew`): homebrew merges oldest
+ * import first and the first entity per identity wins, while a `_copy` looks
+ * in its own file, then official data, then every other enabled file, so
+ * whether a copy resolves does not depend on import order.
  */
 import { type Entity, uidOf } from '@/data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
@@ -28,7 +34,7 @@ export const WINNER_POLICY =
   'the one imported first wins. Entries with the same name and source count as one, so a ' +
   'character that picks either gets the winning version.';
 
-/** The most entity clashes a preview lists; `collisionTotal` keeps the full count. */
+/** The most clashes a preview lists per kind; the totals keep the full counts. */
 export const MAX_LISTED_COLLISIONS = 50;
 
 /**
@@ -37,12 +43,61 @@ export const MAX_LISTED_COLLISIONS = 50;
  * something not found yet may only be in a pack that has not arrived.
  */
 export interface OfficialIndex {
-  /** Lowercased `name|source` per type. */
+  /** Lowercased `name|source` per type: what a `_copy` resolves against. */
   uids: Map<EntityType, Set<string>>;
+  /** {@link clashKey} per type: what decides which entry a character gets. */
+  clashKeys: Map<EntityType, Set<string>>;
   /** Lowercased source ids. */
   sources: Set<string>;
   complete: boolean;
 }
+
+/**
+ * The identity the engine looks an entry up by, lowercased, or undefined for
+ * an entry that cannot be looked up that way (so it cannot clash).
+ *
+ * Most types resolve by `name|source`. Class and subclass features do not:
+ * the class builder finds them by the fields their references carry
+ * (`findClassFeature` and `findSubclassFeature` in
+ * `src/engine/effects/class.ts`), taking the first match in list order. Two
+ * features that share a name and source but belong to different classes or
+ * levels never shadow each other, so they are keyed the same way here. A
+ * class feature reference may leave its source out and then matches any
+ * source; keying on the source anyway means every clash reported is one every
+ * reference sees, at the cost of not flagging the looser case.
+ */
+export function clashKey(type: EntityType, e: Entity): string | undefined {
+  const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+  const name = text(e.name);
+  if (name === undefined) return undefined;
+  if (type === 'classFeature') {
+    const parts = [name, text(e.className), text(e.classSource), e.level, text(e.source)];
+    return typeof e.level === 'number' && parts.every((p) => p !== undefined)
+      ? parts.join('|').toLowerCase()
+      : undefined;
+  }
+  if (type === 'subclassFeature') {
+    const parts = [
+      name,
+      text(e.className),
+      text(e.subclassShortName),
+      text(e.subclassSource),
+      e.level,
+    ];
+    return typeof e.level === 'number' && parts.every((p) => p !== undefined)
+      ? parts.join('|').toLowerCase()
+      : undefined;
+  }
+  return text(e.source) === undefined ? undefined : uidOf(e);
+}
+
+/**
+ * One index per registry instance. A registry is only handed out once its
+ * homebrew is merged (`getRegistry` merges before it publishes), so its
+ * official part never changes afterwards and the index can be reused by every
+ * preview that registry serves.
+ */
+const indexCache = new WeakMap<EntityRegistry, Omit<OfficialIndex, 'complete'>>();
 
 /**
  * Build the official index from a registry. Only the front of each type's
@@ -55,19 +110,29 @@ export function officialIndexFrom(
   reg: EntityRegistry,
   { complete = true }: { complete?: boolean } = {},
 ): OfficialIndex {
-  const uids = new Map<EntityType, Set<string>>();
-  const sources = new Set<string>();
-  for (const type of ENTITY_TYPES) {
-    const official = reg.byType(type).slice(0, reg.officialCount(type));
-    if (official.length === 0) continue;
-    const set = new Set<string>();
-    for (const e of official) {
-      set.add(uidOf(e));
-      if (typeof e.source === 'string' && e.source !== '') sources.add(e.source.toLowerCase());
+  let index = indexCache.get(reg);
+  if (index === undefined) {
+    const uids = new Map<EntityType, Set<string>>();
+    const clashKeys = new Map<EntityType, Set<string>>();
+    const sources = new Set<string>();
+    for (const type of ENTITY_TYPES) {
+      const official = reg.byType(type).slice(0, reg.officialCount(type));
+      if (official.length === 0) continue;
+      const ids = new Set<string>();
+      const keys = new Set<string>();
+      for (const e of official) {
+        ids.add(uidOf(e));
+        const key = clashKey(type, e);
+        if (key !== undefined) keys.add(key);
+        if (typeof e.source === 'string' && e.source !== '') sources.add(e.source.toLowerCase());
+      }
+      uids.set(type, ids);
+      clashKeys.set(type, keys);
     }
-    uids.set(type, set);
+    index = { uids, clashKeys, sources };
+    indexCache.set(reg, index);
   }
-  return { uids, sources, complete };
+  return { ...index, complete };
 }
 
 export interface FileRef {
@@ -82,6 +147,17 @@ export interface EntityCollision {
   against: 'official' | FileRef;
   /** Which side a character picking this entry gets. The new file never wins. */
   winner: 'official' | 'existing';
+}
+
+/**
+ * A clash with a file that is turned off. This file's entry is used for now,
+ * but the older file wins again if it is turned back on.
+ */
+export interface DisabledClash {
+  type: EntityType;
+  name: string;
+  source: string;
+  against: FileRef;
 }
 
 export type DependencyStatus =
@@ -111,6 +187,12 @@ export interface CopyIssue {
   target: string;
 }
 
+/** An enabled file here whose broken `_copy` entries this file would fix. */
+export interface SatisfiedCopies {
+  file: FileRef;
+  entries: CopyIssue[];
+}
+
 export interface HomebrewPreview {
   fileName: string;
   counts: Record<string, number>;
@@ -124,8 +206,12 @@ export interface HomebrewPreview {
   /** At most {@link MAX_LISTED_COLLISIONS}; `collisionTotal` is the real count. */
   entityCollisions: EntityCollision[];
   collisionTotal: number;
+  /** At most {@link MAX_LISTED_COLLISIONS}; `disabledClashTotal` is the real count. */
+  disabledClashes: DisabledClash[];
+  disabledClashTotal: number;
   dependencies: Dependency[];
   copyIssues: CopyIssue[];
+  satisfiesCopies: SatisfiedCopies[];
   affectedCharacters: { id: string; name: string }[];
   notes: string[];
 }
@@ -151,7 +237,7 @@ function entitiesOf(json: unknown, type: string): Entity[] {
   return Array.isArray(arr) ? arr.filter(isRecord) : [];
 }
 
-/** An entity with a usable name and source, which is what makes it collide. */
+/** An entity with a usable name and source: a `_copy` can reach it. */
 function named(e: Entity): { name: string; source: string } | undefined {
   return typeof e.name === 'string' && e.name !== '' && typeof e.source === 'string'
     ? { name: e.name, source: e.source }
@@ -196,13 +282,36 @@ function copyTarget(e: Entity): { name: string; source: string } | undefined {
 }
 
 const lower = (s: string) => s.toLowerCase();
+const targetUid = (t: { name: string; source: string }) => `${t.name}|${t.source}`.toLowerCase();
+
+/** Where each identity first appears across `files`, taken in the order given. */
+function firstFileBy(
+  files: readonly HomebrewFile[],
+  keyOf: (type: EntityType, e: Entity) => string | undefined,
+): Map<string, FileRef> {
+  const out = new Map<string, FileRef>();
+  for (const f of files) {
+    for (const type of HOMEBREW_ENTITY_KEYS) {
+      for (const e of entitiesOf(f.json, type)) {
+        const key = keyOf(type, e);
+        if (key === undefined) continue;
+        const k = `${type}:${key}`;
+        if (!out.has(k)) out.set(k, { id: f.id, fileName: f.fileName });
+      }
+    }
+  }
+  return out;
+}
+
+const uidKey = (_: EntityType, e: Entity) => (named(e) === undefined ? undefined : uidOf(e));
 
 export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPreview {
   const { row, existing, official } = input;
   const ownSources = new Set(row.sourceIds.map(lower));
   const others = existing.filter((f) => f.id !== row.id);
-  // Merge order, so the first file found for a uid is the one that wins it.
+  // Merge order, so the first file found for an identity is the one that wins it.
   const enabled = others.filter((f) => f.enabled).sort(compareMergeOrder);
+  const disabled = others.filter((f) => !f.enabled).sort(compareMergeOrder);
   const notes: string[] = [];
 
   const dup = existing.find((f) => f.id === row.id);
@@ -220,19 +329,15 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     }))
     .filter((c) => c.files.length > 0);
 
-  // First enabled file (in merge order) defining each uid, per type.
-  const homebrewUids = new Map<string, FileRef>();
-  for (const f of enabled) {
-    for (const type of HOMEBREW_ENTITY_KEYS) {
-      for (const e of entitiesOf(f.json, type)) {
-        if (named(e) === undefined) continue;
-        const key = `${type}:${uidOf(e)}`;
-        if (!homebrewUids.has(key)) homebrewUids.set(key, { id: f.id, fileName: f.fileName });
-      }
-    }
-  }
+  // Copy targets reachable in enabled files, and who wins each clash key.
+  const homebrewUids = firstFileBy(enabled, uidKey);
+  const enabledClashes = firstFileBy(enabled, clashKey);
+  const disabledClashMap = firstFileBy(disabled, clashKey);
+  const officialHas = (type: EntityType, key: string) =>
+    official?.clashKeys.get(type)?.has(key) === true;
 
   const collisions: EntityCollision[] = [];
+  const disabledClashes: DisabledClash[] = [];
   const ownUids = new Set<string>();
   const copies: { type: EntityType; name: string; target: { name: string; source: string } }[] = [];
   for (const type of HOMEBREW_ENTITY_KEYS) {
@@ -240,24 +345,31 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
       const target = copyTarget(e);
       const id = named(e);
       if (target !== undefined) copies.push({ type, name: id?.name ?? target.name, target });
-      if (id === undefined) continue;
-      const uid = uidOf(e);
-      ownUids.add(`${type}:${uid}`);
+      if (id !== undefined) ownUids.add(`${type}:${uidOf(e)}`);
+      const key = clashKey(type, e);
       // An exact duplicate writes nothing, so it clashes with nothing.
-      if (duplicateOf !== undefined) continue;
-      if (official?.uids.get(type)?.has(uid) === true) {
-        collisions.push({ type, ...id, against: 'official', winner: 'official' });
+      if (key === undefined || duplicateOf !== undefined) continue;
+      const what = {
+        type,
+        name: String(e.name),
+        source: typeof e.source === 'string' ? e.source : '',
+      };
+      if (officialHas(type, key)) {
+        collisions.push({ ...what, against: 'official', winner: 'official' });
         continue;
       }
-      const file = homebrewUids.get(`${type}:${uid}`);
-      if (file !== undefined) collisions.push({ type, ...id, against: file, winner: 'existing' });
+      const file = enabledClashes.get(`${type}:${key}`);
+      if (file !== undefined) {
+        collisions.push({ ...what, against: file, winner: 'existing' });
+        continue;
+      }
+      const off = disabledClashMap.get(`${type}:${key}`);
+      if (off !== undefined) disabledClashes.push({ ...what, against: off });
     }
   }
 
   const enabledSources = new Set(enabled.flatMap((f) => f.sourceIds.map(lower)));
-  const disabledSources = new Set(
-    others.filter((f) => !f.enabled).flatMap((f) => f.sourceIds.map(lower)),
-  );
+  const disabledSources = new Set(disabled.flatMap((f) => f.sourceIds.map(lower)));
   const officialKnown = official?.complete === true;
   const statusOf = (sourceId: string): DependencyStatus => {
     const s = lower(sourceId);
@@ -279,7 +391,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
 
   const copyIssues: CopyIssue[] = [];
   for (const { type, name, target } of copies) {
-    const uid = `${target.name}|${target.source}`.toLowerCase();
+    const uid = targetUid(target);
     if (ownUids.has(`${type}:${uid}`)) continue;
     const resolves =
       homebrewUids.has(`${type}:${uid}`) || official?.uids.get(type)?.has(uid) === true;
@@ -289,6 +401,38 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     // the file names under its own source never will.
     if (officialKnown || ownSources.has(lower(target.source))) {
       copyIssues.push({ type, name, target: `${target.name}|${target.source}` });
+    }
+  }
+
+  // Broken copies in enabled files that this file's entries would resolve:
+  // not found in their own file, official data, or any other enabled file.
+  const satisfiesCopies: SatisfiedCopies[] = [];
+  if (duplicateOf === undefined) {
+    for (const f of enabled) {
+      const elsewhere = firstFileBy(
+        enabled.filter((g) => g.id !== f.id),
+        uidKey,
+      );
+      const entries: CopyIssue[] = [];
+      for (const type of HOMEBREW_ENTITY_KEYS) {
+        const own = entitiesOf(f.json, type);
+        const ownIds = new Set(own.flatMap((e) => (named(e) === undefined ? [] : [uidOf(e)])));
+        for (const e of own) {
+          const target = copyTarget(e);
+          if (target === undefined) continue;
+          const uid = targetUid(target);
+          if (!ownUids.has(`${type}:${uid}`) || ownIds.has(uid)) continue;
+          if (official?.uids.get(type)?.has(uid) === true || elsewhere.has(`${type}:${uid}`))
+            continue;
+          entries.push({
+            type,
+            name: named(e)?.name ?? target.name,
+            target: `${target.name}|${target.source}`,
+          });
+        }
+      }
+      if (entries.length > 0)
+        satisfiesCopies.push({ file: { id: f.id, fileName: f.fileName }, entries });
     }
   }
 
@@ -309,12 +453,20 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     );
   }
   const clashingFiles = new Map<string, string>();
-  for (const c of collisions)
+  for (const c of collisions) {
     if (c.against !== 'official') clashingFiles.set(c.against.id, c.against.fileName);
+  }
   for (const fileName of clashingFiles.values()) {
     notes.push(
-      `Entries in this file that share a name and source with "${fileName}" are not used: ` +
+      `Entries in this file that match entries in "${fileName}" are not used: ` +
         `"${fileName}" was imported first, so it wins until it is disabled or deleted.`,
+    );
+  }
+  const dormantFiles = new Map(disabledClashes.map((c) => [c.against.id, c.against.fileName]));
+  for (const fileName of dormantFiles.values()) {
+    notes.push(
+      `Some entries in this file match entries in "${fileName}", which is turned off. ` +
+        `This file's entries are used for now; "${fileName}" wins again if it is turned back on.`,
     );
   }
 
@@ -328,8 +480,11 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     sourceCollisions,
     entityCollisions: collisions.slice(0, MAX_LISTED_COLLISIONS),
     collisionTotal: collisions.length,
+    disabledClashes: disabledClashes.slice(0, MAX_LISTED_COLLISIONS),
+    disabledClashTotal: disabledClashes.length,
     dependencies,
     copyIssues,
+    satisfiesCopies,
     affectedCharacters,
     notes,
   };

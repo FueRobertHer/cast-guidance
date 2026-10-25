@@ -26,6 +26,7 @@ function local(id: string, sourceIds: string[], enabled = true): HomebrewFile {
 
 const officialPhb = (complete = true): OfficialIndex => ({
   uids: new Map(),
+  clashKeys: new Map(),
   sources: new Set(['phb']),
   complete,
 });
@@ -62,7 +63,7 @@ describe('previewCharacterImport', () => {
         brew('fresh', ['NEW']),
       ]),
       characterExists: false,
-      existing: [local('same-content', ['SAME']), local('my-version', ['HB'], false)],
+      existing: [local('same-content', ['SAME']), local('my-version', ['HB'])],
       official: officialPhb(),
     });
     expect(p.files.map((f) => [f.fileName, f.status])).toEqual([
@@ -70,9 +71,25 @@ describe('previewCharacterImport', () => {
       ['fresh.json', 'new'],
       ['their-version.json', 'other-version'],
     ]);
-    expect(p.files[2]?.localFiles).toEqual([{ id: 'my-version', fileName: 'my-version.json' }]);
+    expect(p.files[2]?.localFiles).toEqual([
+      { id: 'my-version', fileName: 'my-version.json', enabled: true },
+    ]);
     expect(p.files[0]?.localFiles).toEqual([]);
     expect(p.files[1]?.counts).toEqual({ spell: 1 });
+  });
+
+  it('does not call a file another version when the only local one is turned off', () => {
+    const p = previewCharacterImport({
+      prepared: prepared([brew('their-version', ['HB'])]),
+      characterExists: false,
+      existing: [local('my-version', ['HB'], false)],
+      official: officialPhb(),
+    });
+    expect(p.files[0]?.status).toBe('new');
+    // Still listed, so the preview can say it wins again if turned back on.
+    expect(p.files[0]?.localFiles).toEqual([
+      { id: 'my-version', fileName: 'my-version.json', enabled: false },
+    ]);
   });
 
   it('sorts the sources nothing provides by why', () => {
