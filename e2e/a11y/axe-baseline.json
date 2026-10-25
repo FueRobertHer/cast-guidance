@@ -1,20 +1,8 @@
 {
   "banner-data-download": {},
-  "banner-data-error": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
+  "banner-data-error": {},
   "breakdown-sheet": {},
-  "creator": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
+  "creator": {},
   "delete-confirm": {},
   "desktop-library": {},
   "desktop-roster": {},
@@ -23,29 +11,11 @@
   "dice-tray": {},
   "entity-info-sheet": {},
   "history-drawer": {},
-  "homebrew": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
+  "homebrew": {},
   "homebrew-builder": {},
   "homebrew-builder-unknown": {},
-  "homebrew-empty": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
-  "homebrew-remove-confirm": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
+  "homebrew-empty": {},
+  "homebrew-remove-confirm": {},
   "library": {},
   "library-detail": {},
   "library-search": {},
@@ -68,26 +38,8 @@
       "help": "All touch targets must be 24px large, or leave sufficient space"
     }
   },
-  "text-prompt": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
-  "toast-app-update": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
-  "toast-data-update": {
-    "color-contrast": {
-      "count": 1,
-      "impact": "serious",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    }
-  },
+  "text-prompt": {},
+  "toast-app-update": {},
+  "toast-data-update": {},
   "toast-offline-ready": {}
 }

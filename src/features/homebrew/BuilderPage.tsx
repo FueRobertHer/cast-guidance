@@ -562,7 +562,7 @@ function EntityForm({
           type="button"
           onClick={() => void save()}
           disabled={name.trim() === '' || busy}
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -883,7 +883,7 @@ export function Component() {
               type="button"
               disabled={busy}
               onClick={() => void deleteEntity(retryDelete.type, retryDelete.ref)}
-              className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              className="shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
             >
               {busy ? 'Retrying…' : 'Retry'}
             </button>

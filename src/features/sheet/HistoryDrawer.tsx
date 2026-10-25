@@ -145,7 +145,7 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                           session.restore(row.doc);
                           onOpenChange(false);
                         }}
-                        className="mt-1 rounded bg-accent px-2.5 py-1 text-xs font-semibold text-white"
+                        className="mt-1 rounded bg-accent-fill px-2.5 py-1 text-xs font-semibold text-white"
                       >
                         Restore
                       </button>

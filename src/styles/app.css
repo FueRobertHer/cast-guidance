@@ -9,6 +9,14 @@
   --color-ink-muted: #a1a1aa; /* zinc-400 */
   --color-accent: #ef4444; /* red-500 */
   --color-accent-deep: #7f1d1d; /* red-900 */
+  /*
+   * The fill behind a button's label (A11Y-003). `accent` itself is tuned to
+   * read as text and marks on the near-black page, and white text on it is
+   * only 3.8:1, under the 4.5:1 that labels this size need. One step darker
+   * gives 4.8:1 with white and 4.6:1 with ink. Icon-only fills and marks
+   * (the dice button, pips, the tab bar) keep `accent`: they need 3:1.
+   */
+  --color-accent-fill: #dc2626; /* red-600 */
 
   /*
    * A roll result has to announce itself: it appears while the player is

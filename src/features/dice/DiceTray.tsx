@@ -125,7 +125,7 @@ export function DiceTray() {
             />
             <button
               type="submit"
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white"
+              className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold text-white"
             >
               Roll
             </button>

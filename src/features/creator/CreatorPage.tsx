@@ -1244,7 +1244,7 @@ export function Component() {
             <button
               type="button"
               onClick={() => void create()}
-              className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 font-semibold text-white"
+              className="flex items-center justify-center gap-2 rounded-lg bg-accent-fill px-4 py-3 font-semibold text-white"
             >
               <Check size={18} /> Create character
               {issues.length > 0 ? ' anyway' : ''}
@@ -1344,7 +1344,7 @@ export function Component() {
                 const next = STEPS[stepIdx + 1];
                 if (next !== undefined) navStep(next);
               }}
-              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white"
             >
               Next <ArrowRight size={16} />
             </button>

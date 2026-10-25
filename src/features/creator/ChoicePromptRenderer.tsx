@@ -300,7 +300,7 @@ export function ChoicePromptRenderer({
             disabled={!canConfirm}
             aria-label={`Confirm ${prompt.label}`}
             aria-describedby={status.text === '' ? undefined : statusId}
-            className="flex items-center gap-1 rounded-lg bg-accent px-4 py-2 text-sm font-semibold disabled:opacity-40"
+            className="flex items-center gap-1 rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold disabled:opacity-40"
           >
             <Check size={14} /> Confirm
           </button>

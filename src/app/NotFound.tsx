@@ -69,7 +69,7 @@ export function NotFound() {
         {nearest !== null && (
           <Link
             to={nearest.to}
-            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white"
+            className="rounded-lg bg-accent-fill px-3 py-1.5 text-sm font-semibold text-white"
           >
             {nearest.label}
           </Link>

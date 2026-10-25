@@ -560,7 +560,7 @@ export function Component() {
                     type="button"
                     onClick={() => levelUpClass(idx)}
                     disabled={totalLevels >= 20}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                    className="rounded-lg bg-accent-fill px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                   >
                     Level up
                   </button>

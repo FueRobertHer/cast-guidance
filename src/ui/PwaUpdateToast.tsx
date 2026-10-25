@@ -42,7 +42,7 @@ export function PwaUpdateToast() {
         <button
           type="button"
           onClick={() => void updateServiceWorker(true)}
-          className="rounded bg-accent px-3 py-1 text-sm font-semibold text-white"
+          className="rounded bg-accent-fill px-3 py-1 text-sm font-semibold text-white"
         >
           Update
         </button>
