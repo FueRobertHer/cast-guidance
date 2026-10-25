@@ -23,6 +23,10 @@ export type HomebrewUrlCheck = { ok: true; url: string } | { ok: false; reason: 
 export const REFUSED_HOST_REASON =
   'Cast Guidance fetches homebrew directly only from GitHub (raw files or gists) and jsDelivr.';
 
+/** Why a GitHub page that is not a single file (a repo, folder, or gist page) is refused. */
+export const GITHUB_PAGE_REASON =
+  'That GitHub page is not a single file. Open the file on GitHub and copy the link from its Raw button.';
+
 /**
  * Turn a GitHub page URL into the raw URL for the same file, or return the URL
  * unchanged. Covers `github.com/{owner}/{repo}/blob|raw/{ref}/{path}` and
@@ -70,6 +74,10 @@ export function checkHomebrewUrl(raw: string): HomebrewUrlCheck {
     return { ok: false, reason: 'Only https URLs are fetched.' };
   }
   const target = rewriteGithubPage(parsed);
+  // Still on a GitHub page origin: the URL named no file the rewrite knows.
+  if (target.origin === GITHUB_ORIGIN || target.origin === GIST_ORIGIN) {
+    return { ok: false, reason: GITHUB_PAGE_REASON };
+  }
   const allowed: readonly string[] = HOMEBREW_FETCH_ORIGINS;
   if (!allowed.includes(target.origin)) return { ok: false, reason: REFUSED_HOST_REASON };
   return { ok: true, url: target.href };

@@ -1,11 +1,14 @@
 // @vitest-environment node
 // A header change has to reach installed copies, which the service worker
 // serves from the precached index.html: only a changed file gets refetched.
-import type { HtmlTagDescriptor, IndexHtmlTransformContext } from 'vite';
+import type { HtmlTagDescriptor, IndexHtmlTransformContext, Plugin } from 'vite';
 import { describe, expect, it } from 'vitest';
 import { headersDigest, headersMetaPlugin } from './headersMeta';
 
-const viteConfigRaw = import.meta.glob('/vite.config.ts', {
+// Loaded lazily and untyped: the Vite config is Node code outside this
+// tsconfig, but running it is the only way to see which headers it hashes.
+const viteConfigModule = import.meta.glob('/vite.config.ts');
+const vercelRaw = import.meta.glob('/vercel.json', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -15,15 +18,17 @@ const headers = [
   { source: '/(.*)', headers: [{ key: 'Content-Security-Policy', value: "default-src 'self'" }] },
 ];
 
-/** Runs the plugin's index.html hook the way Vite would, returning its tags. */
-async function injectedTags(h: unknown): Promise<HtmlTagDescriptor[]> {
-  const hook = headersMetaPlugin(h).transformIndexHtml;
+/** Runs a plugin's index.html hook the way Vite would, returning its tags. */
+async function tagsOf(plugin: Plugin): Promise<HtmlTagDescriptor[]> {
+  const hook = plugin.transformIndexHtml;
   const fn = typeof hook === 'function' ? hook : hook?.handler;
   if (fn === undefined) throw new Error('the plugin has no transformIndexHtml hook');
   const out = await fn.call({} as never, '<html></html>', {} as IndexHtmlTransformContext);
   if (!Array.isArray(out)) throw new Error('expected the hook to return tags');
   return out;
 }
+
+const injectedTags = (h: unknown) => tagsOf(headersMetaPlugin(h));
 
 describe('headersDigest', () => {
   it('is a short, stable hex digest', async () => {
@@ -57,11 +62,18 @@ describe('headersMetaPlugin', () => {
     expect(await injectedTags(other)).not.toEqual(await injectedTags(headers));
   });
 
-  it('is fed the headers of vercel.json by the Vite config', () => {
+  it('is fed the headers of vercel.json by the Vite config', async () => {
     // vercel.json is what Vercel serves; hashing anything else would let the
     // live headers change without index.html changing.
-    const config = viteConfigRaw['/vite.config.ts'] ?? '';
-    expect(config).toContain("readFileSync(path.resolve(__dirname, 'vercel.json')");
-    expect(config).toContain('headersMetaPlugin(vercelConfig.headers)');
+    const load = viteConfigModule['/vite.config.ts'];
+    if (load === undefined) throw new Error('vite.config.ts is missing');
+    const mod = (await load()) as { default: { plugins?: unknown[] } };
+    const plugin = (mod.default.plugins ?? [])
+      .flat(Infinity)
+      .find((p): p is Plugin => (p as Plugin | null)?.name === 'cg-headers-meta');
+    if (plugin === undefined) throw new Error('the Vite config does not use headersMetaPlugin');
+    const vercel = JSON.parse(vercelRaw['/vercel.json'] ?? '{}') as { headers?: unknown };
+    expect(vercel.headers).toBeDefined();
+    expect(await tagsOf(plugin)).toEqual(await injectedTags(vercel.headers));
   });
 });

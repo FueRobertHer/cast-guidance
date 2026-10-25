@@ -133,17 +133,89 @@ describe('vercel.json security headers', () => {
   });
 });
 
+/**
+ * Comment text, dropped before the scan so a URL in documentation does not
+ * count as one the app contacts. Only comments that start a line are dropped
+ * (`// ...` lines and `/* ... *\/` blocks opened at the start of a line): a
+ * looser pattern could start inside a string and swallow real code. A URL in
+ * a trailing comment is still scanned; move it to its own comment line.
+ */
+function stripComments(text: string): string {
+  return text.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+/** URLs in `text` the policy does not account for, as `origin` or a description. */
+function unaccountedUrls(text: string): string[] {
+  const code = stripComments(text);
+  const out: string[] = [];
+  // A host the scan cannot read, built at runtime from a template or a
+  // concatenation, could be anything: every fetch host must be a literal.
+  for (const m of code.matchAll(/['"`](?:https?|wss?):\/\/(?:\$\{|['"`])/g)) {
+    out.push(`runtime-built host: ${m[0]}`);
+  }
+  for (const m of code.matchAll(/\b(?:https?|wss?):\/\/[A-Za-z0-9.-]+(?::\d+)?/g)) {
+    const origin = new URL(m[0]).origin;
+    if (!CONNECT_ORIGINS.has(origin) && !(origin in NON_CONNECT_ORIGINS)) out.push(origin);
+  }
+  return out;
+}
+
+describe('the source scan', () => {
+  it('flags a literal URL whose origin is not accounted for', () => {
+    expect(unaccountedUrls("fetch('https://example.org/x.json');")).toEqual([
+      'https://example.org',
+    ]);
+    expect(unaccountedUrls("const u = 'https://cdn.jsdelivr.net:8443/x';")).toEqual([
+      'https://cdn.jsdelivr.net:8443',
+    ]);
+  });
+
+  it('flags websocket URLs too', () => {
+    expect(unaccountedUrls("new WebSocket('wss://example.org/live');")).toEqual([
+      'wss://example.org',
+    ]);
+    expect(unaccountedUrls("new WebSocket('ws://example.org');")).toEqual(['ws://example.org']);
+  });
+
+  it('flags a host built at runtime', () => {
+    // The text fetch(`https://${host}/x.json`), written without a placeholder.
+    expect(unaccountedUrls(`fetch(\`https://${'$'}{host}/x.json\`);`)).toHaveLength(1);
+    expect(unaccountedUrls("fetch('https://' + host + '/x.json');")).toHaveLength(1);
+    expect(unaccountedUrls('fetch("wss://" + host);')).toHaveLength(1);
+  });
+
+  it('passes origins the policy allows or lists as never fetched', () => {
+    expect(unaccountedUrls("fetch('https://raw.githubusercontent.com/a/b/c.json');")).toEqual([]);
+    expect(unaccountedUrls("const page = 'https://github.com';")).toEqual([]);
+  });
+
+  it('ignores URLs in comments that start a line', () => {
+    const text = [
+      '// See https://example.org/docs for the format.',
+      '/**',
+      ' * Spec: https://example.net/spec',
+      ' */',
+      '  /* https://example.com */',
+      "const ok = 'https://cdn.jsdelivr.net/x';",
+    ].join('\n');
+    expect(unaccountedUrls(text)).toEqual([]);
+  });
+
+  it('still scans code after a comment and in trailing comments', () => {
+    const text = [
+      '/* a comment */',
+      "fetch('https://example.org/x.json');",
+      'const a = 1; // https://example.net',
+    ].join('\n');
+    expect(unaccountedUrls(text)).toEqual(['https://example.org', 'https://example.net']);
+  });
+});
+
 describe('production source', () => {
   it('names no URL origin the policy does not account for', () => {
-    const unaccounted: string[] = [];
-    for (const [path, text] of productionSources) {
-      for (const m of text.matchAll(/https?:\/\/[A-Za-z0-9.-]+(?::\d+)?/g)) {
-        const origin = new URL(m[0]).origin;
-        if (!CONNECT_ORIGINS.has(origin) && !(origin in NON_CONNECT_ORIGINS)) {
-          unaccounted.push(`${path}: ${origin}`);
-        }
-      }
-    }
+    const unaccounted = productionSources.flatMap(([path, text]) =>
+      unaccountedUrls(text).map((u) => `${path}: ${u}`),
+    );
     expect(unaccounted).toEqual([]);
   });
 

@@ -172,6 +172,33 @@ describe('ManageHomebrewPage URL import', () => {
     expect(importJson).not.toHaveBeenCalled();
   });
 
+  it('gives a malformed or http URL its own fix, not the other-sites advice', async () => {
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('not a url');
+    let guidance = await screen.findByRole('status');
+    expect(guidance.textContent).toContain('That is not a complete URL.');
+    expect(guidance.textContent).not.toContain('For other sites');
+
+    submitUrl('http://raw.githubusercontent.com/me/brews/main/brew.json');
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('Only https URLs are fetched.'),
+    );
+    guidance = screen.getByRole('status');
+    expect(guidance.textContent).not.toContain('For other sites');
+  });
+
+  it('sends a GitHub folder page to the Raw button', async () => {
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('https://github.com/me/brews/tree/main/dir');
+    const guidance = await screen.findByRole('status');
+    expect(guidance.textContent).toContain('Raw button');
+    expect(guidance.textContent).not.toContain('For other sites');
+  });
+
   it('links nothing for a refused URL that is not http(s)', async () => {
     read.current = { files: [], errors: [] };
     renderPage();

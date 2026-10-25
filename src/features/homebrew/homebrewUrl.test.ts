@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { checkHomebrewUrl, HOMEBREW_FETCH_ORIGINS, REFUSED_HOST_REASON } from './homebrewUrl';
+import {
+  checkHomebrewUrl,
+  GITHUB_PAGE_REASON,
+  HOMEBREW_FETCH_ORIGINS,
+  REFUSED_HOST_REASON,
+} from './homebrewUrl';
 
 const ok = (url: string) => ({ ok: true, url });
 
@@ -28,14 +33,14 @@ describe('checkHomebrewUrl', () => {
     );
   });
 
-  it('refuses github.com pages that do not name a file', () => {
+  it('points github.com pages that do not name a file at the Raw button', () => {
     for (const url of [
       'https://github.com/me/brews',
       'https://github.com/me/brews/tree/main/dir',
       'https://github.com/me/brews/blob/main',
       'https://gist.github.com/me/abc123',
     ]) {
-      expect(checkHomebrewUrl(url)).toEqual({ ok: false, reason: REFUSED_HOST_REASON });
+      expect(checkHomebrewUrl(url)).toEqual({ ok: false, reason: GITHUB_PAGE_REASON });
     }
   });
 

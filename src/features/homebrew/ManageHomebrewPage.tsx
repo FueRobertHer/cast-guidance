@@ -13,6 +13,7 @@ import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
+import { REFUSED_HOST_REASON } from './homebrewUrl';
 import { HomebrewUrlRefusedError, importHomebrewFromUrl } from './importUrl';
 
 export function Component() {
@@ -198,8 +199,11 @@ export function Component() {
         {refused !== undefined && (
           <div className="flex flex-col gap-1.5 text-xs text-amber-300" role="status">
             <p>
-              {refused.reason} For other sites, open the file, save it to this device, and use
-              Import file.
+              {refused.reason}
+              {/* The other-sites advice answers a host refusal only; a malformed
+                  or http URL, or a GitHub folder page, has its own fix. */}
+              {refused.reason === REFUSED_HOST_REASON &&
+                ' For other sites, open the file, save it to this device, and use Import file.'}
             </p>
             <div className="flex gap-3">
               {refusedHref !== undefined && (

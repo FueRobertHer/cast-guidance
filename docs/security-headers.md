@@ -36,7 +36,7 @@ script-src 'self';
 worker-src 'self';                   /* the search worker and the service worker */
 manifest-src 'self';
 connect-src 'self'
-  https://cdn.jsdelivr.net https://raw.githubusercontent.com   /* data mirror */
+  https://cdn.jsdelivr.net https://raw.githubusercontent.com   /* data mirror and homebrew URL import */
   https://api.github.com                                       /* release list */
   https://gist.githubusercontent.com                           /* homebrew URL import */
 ```
@@ -61,7 +61,7 @@ What each directive was checked against in the built `dist/`:
 
 | Origin | Used by |
 |---|---|
-| `https://cdn.jsdelivr.net` | data mirror, first choice (`ENDPOINTS` in `src/data5e/config.ts`) |
+| `https://cdn.jsdelivr.net` | data mirror, first choice (`ENDPOINTS` in `src/data5e/config.ts`), and homebrew URL import |
 | `https://raw.githubusercontent.com` | data mirror fallback, and homebrew URL import |
 | `https://api.github.com` | compatible release list (`TAGS_API_URL`) |
 | `https://gist.githubusercontent.com` | homebrew URL import |
@@ -72,7 +72,8 @@ It checks a URL before making any request (https only, no credentials, origin
 compared exactly), rewrites `github.com/.../blob/...` and `.../raw/...` page
 links and `gist.github.com/.../raw/...` links to the raw host, and answers any
 other URL with guidance: a link to open the file, and the file import, which
-works for any source.
+works for any source. A GitHub page that is not a single file (a repository,
+folder, or gist page) is answered with a pointer to the file's Raw button.
 
 ### Adding a host
 
@@ -81,8 +82,18 @@ works for any source.
 2. Add it to `connect-src` in `vercel.json` **and** `public/_headers`.
 3. Run `bunx vitest run src/app/securityHeaders.test.ts`. It compares
    `connect-src` exactly against the origins built from those constants, and
-   scans production source for any `http(s)://` URL that is neither in
-   `connect-src` nor listed, with a reason, as never fetched.
+   scans production source for literal `http(s)://` and `ws(s)://` URLs that
+   are neither in `connect-src` nor listed in `NON_CONNECT_ORIGINS`, with a
+   reason, as never fetched.
+
+The scan reads literal URLs only, so **every host the app contacts must appear
+in the source as a literal** (`'https://host/...'` or `` `https://host/${path}` ``).
+A scheme followed directly by a template placeholder or a closing quote, as in
+`` `https://${host}` `` or `'https://' + host`, fails the scan, because the
+host could be anything. Comments that start a line (`// ...`, and `/* ... */`
+blocks opened at the start of a line) are skipped, so documentation can cite
+URLs freely; a URL in a trailing comment after code is still scanned, so move
+it to its own comment line.
 
 ## Why the policy is shaped this way
 
