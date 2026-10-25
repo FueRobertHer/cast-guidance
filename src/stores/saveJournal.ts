@@ -189,7 +189,10 @@ function parseEntry(id: string, text: string): StoredJournalEntry {
     throw new NotYetReadable('journaled character is from a newer version');
   }
   assertCharacterDoc(doc);
-  const migrated = migrateCharacter(doc);
+  // An older build kept the stored row's revision in the document; it is
+  // storage bookkeeping, never part of a snapshot (REL-007, #98).
+  const { revision: _, ...plain } = doc as typeof doc & { revision?: unknown };
+  const migrated = migrateCharacter(plain);
   if (migrated.id !== id) throw new Error('journal entry belongs to another character');
   return {
     doc: migrated,

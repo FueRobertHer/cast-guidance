@@ -436,4 +436,15 @@ describe('characterRepo revisions (IndexedDB-backed)', () => {
     await characterRepo.put(doc);
     expect(listener).toHaveBeenCalledTimes(3);
   });
+
+  it('reports a page back from the back-forward cache, which may have missed writes', () => {
+    // Dexie's own notice for that case names no table, only `all`.
+    const listener = vi.fn();
+    const stop = characterRepo.onChange(listener);
+    Dexie.on.storagemutated.fire({ all: {} } as unknown as Parameters<
+      typeof Dexie.on.storagemutated.fire
+    >[0]);
+    stop();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });

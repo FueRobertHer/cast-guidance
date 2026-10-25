@@ -1,18 +1,20 @@
+import { useRef } from 'react';
 import { announce } from '@/stores/announcer';
 import {
   type CharacterSessionState,
+  type ConflictOutcome,
   characterSessionStore,
   type SaveConflict,
   useCharacterSession,
 } from '@/stores/characterSession';
 import { notifyFailure } from '@/stores/notices';
 
-/** What a screen reader hears once a conflict is resolved, by what was chosen. */
-export const CONFLICT_RESOLVED_TEXT = {
-  reload: 'Stored version loaded',
-  discard: 'Your edits were discarded',
-  overwrite: 'Your version saved',
-} as const;
+/** What a screen reader hears once a conflict is resolved, by what came of it. */
+export const CONFLICT_RESOLVED_TEXT: Readonly<Record<ConflictOutcome, string>> = {
+  reloaded: 'Stored version loaded',
+  discarded: 'Your edits were discarded',
+  kept: 'Your version saved',
+};
 
 /** The banner's words for one refused save. */
 export function conflictText({ kind, name }: SaveConflict, affected: number): string {
@@ -39,8 +41,8 @@ function focusHeading(): void {
 /**
  * A save this tab was refused because another tab changed or deleted the
  * character first (REL-007, #98), and the two ways out of it. Nothing is lost
- * either way: Reload puts this tab's edits in History, and Keep mine saves
- * them over the stored copy, which the other tab's save already put there.
+ * either way: Reload puts this tab's edits in History, and Keep mine puts the
+ * stored copy there (unless it already is) before saving over it.
  * Reload is the main action, since Keep mine replaces changes the person has
  * not seen.
  *
@@ -50,7 +52,9 @@ function focusHeading(): void {
  * appears, since the person may be mid-edit; edits made meanwhile are kept,
  * just not saved. The outcome is said once through the announcer, because the
  * banner that could say it is what goes away, and focus moves to the heading
- * for the same reason.
+ * for the same reason, whenever the banner goes, whatever came of the choice.
+ * While another refused save still waits, nothing is said over its alert and
+ * focus stays on the banner, which now asks about that one.
  */
 export function SaveConflictBanner({
   resolve = (id, choice) => characterSessionStore.getState().resolveConflict(id, choice),
@@ -58,26 +62,39 @@ export function SaveConflictBanner({
   resolve?: CharacterSessionState['resolveConflict'];
 }) {
   const conflicts = useCharacterSession((state) => state.saveConflicts);
+  const banner = useRef<HTMLDivElement>(null);
   const entries = Object.entries(conflicts);
   const [first] = entries;
   if (first === undefined) return null;
   const [id, conflict] = first;
   const deleted = conflict.kind === 'deleted';
 
+  /** After a choice settles, however it went. */
+  const settle = (outcome: ConflictOutcome | undefined) => {
+    if (Object.keys(characterSessionStore.getState().saveConflicts).length > 0) {
+      // A conflict still needs an answer (this one again, or the next): its
+      // alert is what is said, and focus stays with its buttons.
+      requestAnimationFrame(() => banner.current?.querySelector('button')?.focus());
+      return;
+    }
+    if (outcome !== undefined) {
+      announce(CONFLICT_RESOLVED_TEXT[outcome], { key: 'save-conflict', repeat: true });
+    }
+    focusHeading();
+  };
+
   const choose = (choice: 'reload' | 'overwrite') => {
-    void resolve(id, choice).then(
-      (resolved) => {
-        if (!resolved) return;
-        const said = choice === 'overwrite' ? 'overwrite' : deleted ? 'discard' : 'reload';
-        announce(CONFLICT_RESOLVED_TEXT[said], { key: 'save-conflict', repeat: true });
-        focusHeading();
-      },
-      (error: unknown) => notifyFailure(choice === 'overwrite' ? 'Keep mine' : 'Reload', error),
-    );
+    void resolve(id, choice).then(settle, (error: unknown) => {
+      notifyFailure(choice === 'overwrite' ? 'Keep mine' : 'Reload', error);
+      settle(undefined);
+    });
   };
 
   return (
+    // Keyed by character, so the next refused save is a new alert, said anew.
     <div
+      key={id}
+      ref={banner}
       className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-accent-deep px-3 py-1.5 text-xs"
       role="alert"
     >

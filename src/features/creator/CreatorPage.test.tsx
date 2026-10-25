@@ -179,6 +179,17 @@ describe('stepping through the creator', () => {
 });
 
 describe('creating a character', () => {
+  it("opens the character under the id it was stored with, not the draft's", async () => {
+    // Another tab (a duplicated one carries the draft) created this id first.
+    seedDraft();
+    create.mockImplementation(async (doc) => ({ ...doc, id: 'hero-1-elsewhere' }));
+    const router = renderCreator(walkedToReview);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1-elsewhere'));
+    expect(create.mock.calls[0]?.[0].id).toBe('hero-1');
+  });
+
   it('leaves the wizard behind, so Back from the sheet goes to the roster', async () => {
     seedDraft();
     create.mockImplementation(async (doc) => doc);

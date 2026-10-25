@@ -13,9 +13,11 @@ import {
   createCharacterSessionStore,
   KEPT_LABEL,
   NOT_SAVED_LABEL,
+  REPLACED_LABEL,
   SaveConflictError,
   type SessionCharacters,
 } from './characterSession';
+import { readJournal } from './saveJournal';
 
 /** The database's clock: both tabs share one machine. */
 let clock = 1_000_000;
@@ -140,7 +142,7 @@ describe('one character open in two tabs', () => {
     it("shows the stored copy, keeps this tab's edits in history, and saves the next edit", async () => {
       const { b } = await conflicted();
 
-      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe(true);
+      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe('reloaded');
 
       expect(pair(b.state().doc)).toEqual(['Wren', 3]);
       expect(b.state().saveConflicts).toEqual({});
@@ -174,7 +176,7 @@ describe('one character open in two tabs', () => {
       const { b } = await conflicted();
       await characterRepo.delete('c1');
 
-      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe(false);
+      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBeUndefined();
       expect(b.state().saveConflicts).toEqual({ c1: { kind: 'deleted', name: 'Wren the Bold' } });
       expect(pair(b.state().doc)).toEqual(['Wren the Bold', 10]);
     });
@@ -184,7 +186,7 @@ describe('one character open in two tabs', () => {
     it('saves this tab over the stored copy, as its own history entry', async () => {
       const { b } = await conflicted();
 
-      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe(true);
+      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe('kept');
 
       expect(await storedPair()).toEqual(['Wren the Bold', 10]);
       const [newest] = await historyRepo.list('c1');
@@ -199,7 +201,7 @@ describe('one character open in two tabs', () => {
       const { a, b } = await conflicted();
       await a.edit(hp(2));
 
-      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe(true);
+      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe('kept');
       expect(await storedPair()).toEqual(['Wren the Bold', 10]);
     });
 
@@ -219,7 +221,7 @@ describe('one character open in two tabs', () => {
       // Tab A saves between Keep mine's read and its write.
       interleave = () => a.edit(hp(2));
 
-      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe(false);
+      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBeUndefined();
       expect(await storedPair()).toEqual(['Wren', 2]);
       expect(b.state().saveConflicts.c1?.kind).toBe('changed');
     });
@@ -516,14 +518,14 @@ describe('one character open in two tabs', () => {
 
     it('comes back on Keep mine', async () => {
       const b = await deletedUnder();
-      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe(true);
+      await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe('kept');
       expect(await storedPair()).toEqual(['Wren the Bold', 10]);
       expect(b.state().saveConflicts).toEqual({});
     });
 
     it('stays deleted on Discard, and the sheet says it is not found', async () => {
       const b = await deletedUnder();
-      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe(true);
+      await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe('discarded');
       expect(await db.characters.get('c1')).toBeUndefined();
       expect(await historyRepo.list('c1')).toEqual([]);
       expect(b.state()).toMatchObject({ doc: null, loadStatus: 'missing', saveConflicts: {} });
@@ -555,5 +557,236 @@ describe('one character open in two tabs', () => {
     expect(rows.map((r) => r.doc.play.currentHp)).toEqual([9, 8, 6, 5]);
     expect(rows.map((r) => r.label)).toEqual(['HP 10→9', 'HP 9→8', 'HP 8→6', 'HP 6→5']);
     expectStrictlyIncreasing(rows.map((r) => r.at));
+  });
+});
+
+/** A Web Storage stand-in shared by the tabs (and the next boot) that use it. */
+function memoryJournal(): () => Storage {
+  const map = new Map<string, string>();
+  const area = {
+    get length() {
+      return map.size;
+    },
+    key: (i: number) => [...map.keys()][i] ?? null,
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      map.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      map.delete(k);
+    },
+  };
+  return () => area as unknown as Storage;
+}
+
+/** History that fails while `failing` is set, as a full device would. */
+function flakyHistory() {
+  const state = { failing: false };
+  const history: Pick<typeof historyRepo, 'record'> = {
+    record: async (doc, label, opts) => {
+      if (state.failing)
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      return historyRepo.record(doc, label, opts);
+    },
+  };
+  return { state, history };
+}
+
+describe('what resolving a refused save must never lose', () => {
+  it("keeps a person's edit refused under one of the sheet's own as theirs, through teardown and boot", async () => {
+    // An undo is being written when HP follows the maximum: the newer
+    // snapshot holds the undo too. Refused, it must stay the person's.
+    const journal = memoryJournal();
+    const tab = () =>
+      createCharacterSessionStore({ characters: characterRepo, history: historyRepo, journal });
+    const a = tab();
+    const b = tab();
+    await a.getState().load('c1');
+    await b.getState().load('c1');
+    a.getState().update(hp(3));
+    await a.getState().flush();
+
+    const undone = structuredClone(b.getState().doc) as CharacterDoc;
+    undone.name = 'Restored by undo';
+    b.getState().restore(undone, 'Undo rename');
+    b.getState().update(hp(12), undefined, { automatic: true });
+    await expect(b.getState().flush()).rejects.toBeInstanceOf(SaveConflictError);
+    expect(b.getState().saveConflicts.c1?.kind).toBe('changed');
+
+    b.getState().journalUnsaved();
+    expect(readJournal(journal).map((e) => [e.doc.name, e.automatic])).toEqual([
+      ['Restored by undo', undefined],
+    ]);
+    expect(await tab().getState().replayJournal()).toEqual(['Restored by undo']);
+    const [newest] = await historyRepo.list('c1');
+    expect([newest?.label, newest?.doc.name]).toEqual([NOT_SAVED_LABEL, 'Restored by undo']);
+  });
+
+  it('Reload keeps the conflict and the edits when their history row cannot be written', async () => {
+    const flaky = flakyHistory();
+    const { b } = await conflicted({ history: flaky.history });
+    b.state().update((doc) => {
+      doc.notes = 'precious notes';
+    });
+    flaky.state.failing = true;
+
+    await expect(b.state().resolveConflict('c1', 'reload')).rejects.toThrow('quota');
+    expect(b.state().saveConflicts.c1?.kind).toBe('changed');
+    expect(b.state().doc?.notes).toBe('precious notes');
+    flaky.state.failing = false;
+    await expect(b.state().resolveConflict('c1', 'reload')).resolves.toBe('reloaded');
+    const [newest] = await historyRepo.list('c1');
+    expect(newest?.doc.notes).toBe('precious notes');
+  });
+
+  it('Reload records an edit made while it writes the history row', async () => {
+    let typeDuring: (() => void) | undefined;
+    const { b } = await conflicted({
+      history: {
+        record: async (doc, label, opts) => {
+          const id = await historyRepo.record(doc, label, opts);
+          const step = typeDuring;
+          typeDuring = undefined;
+          step?.();
+          return id;
+        },
+      },
+    });
+    typeDuring = () =>
+      b.state().update((doc) => {
+        doc.notes = 'typed while history was written';
+      });
+
+    await b.state().resolveConflict('c1', 'reload');
+    const [newest] = await historyRepo.list('c1');
+    expect([newest?.label, newest?.doc.notes]).toEqual([
+      NOT_SAVED_LABEL,
+      'typed while history was written',
+    ]);
+  });
+
+  it('Keep mine puts the stored copy in history first, so a roster rename is not lost', async () => {
+    // A rename from the roster records no history row of its own.
+    const b = openTab();
+    await b.state().load('c1');
+    b.state().update(hp(4));
+    await characterRepo.rename('c1', 'Renamed on roster');
+    await expect(b.state().flush()).rejects.toBeInstanceOf(SaveConflictError);
+
+    await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBe('kept');
+    expect(await storedPair()).toEqual(['Wren', 4]);
+    const rows = await historyRepo.list('c1');
+    expect(rows.map((r) => [r.label, r.doc.name])).toEqual([
+      [KEPT_LABEL, 'Wren'],
+      [REPLACED_LABEL, 'Renamed on roster'],
+    ]);
+  });
+
+  it('Keep mine keeps the conflict and the edits when the stored copy cannot go into history', async () => {
+    const flaky = flakyHistory();
+    const { b } = await conflicted({ history: flaky.history });
+    await characterRepo.rename('c1', 'Renamed on roster');
+    flaky.state.failing = true;
+
+    await expect(b.state().resolveConflict('c1', 'overwrite')).rejects.toThrow('quota');
+    expect(await storedPair()).toEqual(['Renamed on roster', 3]);
+    expect(b.state().saveConflicts.c1?.kind).toBe('changed');
+    expect(pair(b.state().doc)).toEqual(['Wren the Bold', 10]);
+  });
+
+  it('Keep mine offers the deleted choices for a character deleted since, rather than bring it back', async () => {
+    const { b } = await conflicted();
+    await characterRepo.delete('c1');
+
+    await expect(b.state().resolveConflict('c1', 'overwrite')).resolves.toBeUndefined();
+    expect(await db.characters.get('c1')).toBeUndefined();
+    expect(b.state().saveConflicts).toEqual({ c1: { kind: 'deleted', name: 'Wren the Bold' } });
+  });
+
+  it('acts once on a double tap', async () => {
+    const { b } = await conflicted();
+    const [first, second] = await Promise.all([
+      b.state().resolveConflict('c1', 'reload'),
+      b.state().resolveConflict('c1', 'overwrite'),
+    ]);
+    expect([first, second]).toEqual(['reloaded', undefined]);
+    expect(await storedPair()).toEqual(['Wren', 3]);
+    expect((await historyRepo.list('c1')).map((r) => r.label)).toEqual([
+      NOT_SAVED_LABEL,
+      'HP 10→3',
+    ]);
+  });
+
+  it('Reload forgets the journal entry made while it waited, so the next boot keeps nothing twice', async () => {
+    // A phone hides the page (and journals) with the banner still up.
+    const journal = memoryJournal();
+    const tab = () =>
+      createCharacterSessionStore({ characters: characterRepo, history: historyRepo, journal });
+    const a = tab();
+    const b = tab();
+    await a.getState().load('c1');
+    await b.getState().load('c1');
+    a.getState().update(hp(3));
+    await a.getState().flush();
+    b.getState().update(rename);
+    await expect(b.getState().flush()).rejects.toBeInstanceOf(SaveConflictError);
+    b.getState().journalUnsaved();
+    expect(readJournal(journal)).toHaveLength(1);
+
+    await b.getState().resolveConflict('c1', 'reload');
+    expect(readJournal(journal)).toEqual([]);
+    expect(await tab().getState().replayJournal()).toEqual([]);
+    expect((await historyRepo.list('c1')).filter((r) => r.label === NOT_SAVED_LABEL)).toHaveLength(
+      1,
+    );
+  });
+
+  it("forgets the journal entry of the sheet's own edits it drops quietly", async () => {
+    const journal = memoryJournal();
+    const a = openTab();
+    const b = createCharacterSessionStore({
+      characters: characterRepo,
+      history: historyRepo,
+      debounceMs: 60_000,
+      journal,
+    });
+    await a.state().load('c1');
+    await b.getState().load('c1');
+    await a.edit(hp(3));
+    b.getState().update(hp(12), undefined, { automatic: true });
+    b.getState().journalUnsaved();
+    expect(readJournal(journal)).toHaveLength(1);
+
+    await b.getState().flush();
+    expect(readJournal(journal)).toEqual([]);
+  });
+
+  it("does not call a save error over when only the sheet's own edits were dropped", async () => {
+    // Its write failed, so it waits for Retry; Retry is then refused, and
+    // the stored copy taken quietly. Nothing was written: not "saved".
+    let failing = true;
+    const b = openTab({
+      characters: {
+        getWithRevision: (id) => characterRepo.getWithRevision(id),
+        save: async (doc, expectAt) => {
+          if (failing) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+          return characterRepo.save(doc, expectAt);
+        },
+      },
+    });
+    const a = openTab();
+    await b.state().load('c1');
+    await a.state().load('c1');
+    b.state().update(hp(12), undefined, { automatic: true });
+    await expect(b.state().flush()).rejects.toThrow();
+    expect(Object.keys(b.state().saveErrors)).toEqual(['c1']);
+    await a.edit(hp(3));
+    failing = false;
+
+    await b.state().retryFailedSaves();
+    expect(b.state().saveErrors).toEqual({});
+    expect(b.state().saveConflicts).toEqual({});
+    expect(b.state().saveStatus).toBe('idle');
+    expect(pair(b.state().doc)).toEqual(['Wren', 3]);
   });
 });

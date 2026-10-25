@@ -158,11 +158,14 @@ export const characterRepo = {
   /**
    * Call `listener` after any committed write to the characters table, by
    * this tab or another one (Dexie relays its own change events between tabs
-   * over a BroadcastChannel). Returns the unsubscribe.
+   * over a BroadcastChannel), and when Dexie says anything may have changed
+   * (its `all` part, sent when a page comes back from the back-forward cache,
+   * having missed whatever was written meanwhile). Returns the unsubscribe.
    */
   onChange(listener: () => void): () => void {
     const handler = (parts: ObservabilitySet) => {
-      if (Object.keys(parts).some((part) => part.startsWith(CHARACTERS_PART))) listener();
+      const keys = Object.keys(parts);
+      if (keys.some((part) => part === 'all' || part.startsWith(CHARACTERS_PART))) listener();
     };
     Dexie.on.storagemutated.subscribe(handler);
     return () => Dexie.on.storagemutated.unsubscribe(handler);

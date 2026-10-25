@@ -35,23 +35,25 @@ export const SAVE_RECOVERED_TEXT = 'Changes saved';
  * again. The recovery is said once through the announcer, because the banner
  * that could say it is the thing that goes away.
  *
- * Only a save that landed is a recovery. A failed save whose retry is then
- * refused because another tab changed the character leaves this list too,
- * for the conflict banner, and is not saved.
+ * Only a save that landed is a recovery. A failed save also leaves this list
+ * when its retry is refused because another tab changed the character (for
+ * the conflict banner), or when only the sheet's own edits were waiting and
+ * the stored copy was taken instead; neither wrote anything, so neither is
+ * "saved".
  */
 function SaveErrorBanner() {
   const errors = useCharacterSession((state) => state.saveErrors);
-  const conflicts = useCharacterSession((state) => state.saveConflicts);
+  const status = useCharacterSession((state) => state.saveStatus);
   const entries = Object.entries(errors);
   const failing = entries.length > 0;
-  const wasFailing = useRef<string[]>([]);
+  const wasFailing = useRef(false);
   useEffect(() => {
     // Each recovery is its own event: a second failure and recovery inside the
     // de-duplication window still deserves its "saved".
-    const recovered = wasFailing.current.some((id) => !(id in errors) && !(id in conflicts));
-    if (!failing && recovered) announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
-    wasFailing.current = Object.keys(errors);
-  }, [failing, errors, conflicts]);
+    if (wasFailing.current && !failing && status === 'saved')
+      announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
+    wasFailing.current = failing;
+  }, [failing, status]);
   if (!failing) return null;
   const [, message] = entries[0] ?? [];
   return (

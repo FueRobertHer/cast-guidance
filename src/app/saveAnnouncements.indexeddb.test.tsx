@@ -201,7 +201,7 @@ describe('save announcements', () => {
     listener.stop();
 
     expect(getAnnouncerState().emitted - before).toBe(1);
-    expect(aboutSaving(listener.heard).at(-1)).toBe(CONFLICT_RESOLVED_TEXT.reload);
+    expect(aboutSaving(listener.heard).at(-1)).toBe(CONFLICT_RESOLVED_TEXT.reloaded);
     expect(listener.heard).not.toContain(SAVE_RECOVERED_TEXT);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Hero of the other tab');
   });

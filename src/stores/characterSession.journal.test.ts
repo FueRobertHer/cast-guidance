@@ -687,6 +687,14 @@ describe('replaying the journal on boot', () => {
     ]);
   });
 
+  it('leaves out a stored revision an older build kept in the journaled document', () => {
+    const { area, storage } = memoryStorage();
+    area.map.set(journalKey('a'), entryText({ ...character('a', 'Edited'), revision: 'r1' }));
+    const [entry] = readJournal(storage);
+    expect(entry?.doc.name).toBe('Edited');
+    expect(entry?.doc).not.toHaveProperty('revision');
+  });
+
   it('loads normally when storage cannot be read at all', async () => {
     const { characters } = repo(character('a'));
     const session = createCharacterSessionStore({

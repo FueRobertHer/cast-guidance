@@ -12,7 +12,8 @@ import { SAVE_RECOVERED_TEXT, StorageBanners } from './AppShell';
 
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
 const fail = () => act(() => characterSessionStore.setState({ saveErrors: { c1: 'disk full' } }));
-const recover = () => act(() => characterSessionStore.setState({ saveErrors: {} }));
+const recover = () =>
+  act(() => characterSessionStore.setState({ saveErrors: {}, saveStatus: 'saved' }));
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -21,7 +22,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  characterSessionStore.setState({ saveErrors: {}, saveConflicts: {} });
+  characterSessionStore.setState({ saveErrors: {}, saveConflicts: {}, saveStatus: 'idle' });
   dbLifecycleStore.setState({ state: 'open' });
   resetAnnouncer();
   vi.useRealTimers();
@@ -54,11 +55,23 @@ describe('StorageBanners save recovery', () => {
       characterSessionStore.setState({
         saveErrors: {},
         saveConflicts: { c1: { kind: 'changed', name: 'Wren' } },
+        saveStatus: 'conflict',
       }),
     );
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     expect(spoken()).toEqual([]);
     expect(screen.getByRole('alert').textContent).toContain('changed in another tab');
+  });
+});
+
+describe('StorageBanners quiet recovery', () => {
+  it('says nothing when the failed save was only dropped, with nothing written', () => {
+    // Only the sheet's own edits were waiting, and the stored copy was taken.
+    render(<StorageBanners />);
+    fail();
+    act(() => characterSessionStore.setState({ saveErrors: {}, saveStatus: 'idle' }));
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    expect(spoken()).toEqual([]);
   });
 });
 

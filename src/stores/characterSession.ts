@@ -33,6 +33,15 @@ export interface SaveConflict {
 export const NOT_SAVED_LABEL = 'Not saved: the stored copy had changed';
 /** The history label for this tab's edits when they are kept over the stored copy. */
 export const KEPT_LABEL = "Kept this tab's version";
+/** The history label for the stored copy that Keep mine replaces. */
+export const REPLACED_LABEL = "Replaced: the other tab's version";
+
+/**
+ * How a refused save ended: the stored copy shown (`reloaded`), the edits
+ * dropped for a character that is gone (`discarded`), or the edits saved
+ * over the stored copy (`kept`).
+ */
+export type ConflictOutcome = 'reloaded' | 'discarded' | 'kept';
 
 /**
  * Why a flush did not write: the save is waiting on the person's choice
@@ -97,12 +106,15 @@ export interface CharacterSessionState {
   close(): Promise<void>;
   /**
    * End a refused save. `reload` keeps the stored copy and puts this tab's
-   * edits in history; `overwrite` saves them over whatever is stored at the
-   * moment of the choice (or brings a deleted character back). Resolves true
-   * once that is done, false if there was nothing to resolve or the save
-   * failed or was refused again (which the state then shows).
+   * edits in history; `overwrite` puts the stored copy in history and saves
+   * the edits over it as it is at the moment of the choice (or brings a
+   * deleted character back). Resolves with what happened, or undefined when
+   * nothing was resolved: no conflict, a character deleted meanwhile (the
+   * conflict then offers the deleted choices), or a save that failed or was
+   * refused again (which the state shows). Rejects, keeping the conflict and
+   * its edits, when the row or the history row cannot be read or written.
    */
-  resolveConflict(id: string, choice: 'reload' | 'overwrite'): Promise<boolean>;
+  resolveConflict(id: string, choice: 'reload' | 'overwrite'): Promise<ConflictOutcome | undefined>;
   /**
    * Take the stored copy if another tab saved since, but only while this tab
    * has nothing of its own waiting to be saved. Called when the characters
@@ -248,7 +260,9 @@ export function createCharacterSessionStore({
     const saveErrors = { ...previous.saveErrors };
     // Stored as text, so a full device is told what to do here, at the catch.
     if (error !== undefined) saveErrors[characterId] = storageErrorText(error);
-    else if (status === 'saved' || status === 'conflict') delete saveErrors[characterId];
+    // Saved, refused, or nothing left to write: the failure is over either way.
+    else if (status === 'saved' || status === 'conflict' || status === 'idle')
+      delete saveErrors[characterId];
     // The same object for as long as the conflict lasts, so the banner's text
     // (and its one announcement) does not change under it.
     const conflict = slots.get(characterId)?.conflict;
@@ -332,6 +346,18 @@ export function createCharacterSessionStore({
       return;
     }
     adopt(slot, id, read);
+  };
+
+  /**
+   * Keep a snapshot whose write failed or was refused, for Retry or the
+   * person's choice. A newer snapshot already waiting supersedes it, and was
+   * built on it, so it carries what the older one carried: if that was the
+   * person's edit, the newer one is no longer only automatic.
+   */
+  const retain = (slot: SaveSlot, failed: PendingSave): PendingSave => {
+    if (slot.pending === undefined) slot.pending = { ...failed, attempted: true };
+    else if (failed.automatic !== true) slot.pending.automatic = false;
+    return slot.pending;
   };
 
   /** Forget the journal entry this slot wrote, once what it held is settled another way. */
@@ -422,7 +448,7 @@ export function createCharacterSessionStore({
           slot.burst = undefined;
           // A newer edit supersedes a failed older snapshot. Otherwise retain the
           // failed snapshot so Retry can persist it without reconstructing state.
-          slot.pending ??= { ...pending, attempted: true };
+          retain(slot, pending);
           publishSave('error', characterId, error);
           throw error;
         }
@@ -438,13 +464,15 @@ export function createCharacterSessionStore({
           slot.pending = undefined;
           dropJournaled(slot, characterId);
           await adoptLatest(characterId, slot, true).catch(() => undefined);
-          if (slot.pending === undefined) publishSave('saved', characterId);
+          // Nothing was written, so not "saved": a save error this clears
+          // must not be followed by "Changes saved".
+          if (slot.pending === undefined) publishSave('idle', characterId);
           continue;
         }
-        slot.pending ??= { ...pending, attempted: true };
+        const kept = retain(slot, pending);
         slot.conflict = {
           kind: result.status === 'missing' ? 'deleted' : 'changed',
-          name: slot.pending.doc.name,
+          name: kept.doc.name,
         };
         publishSave('conflict', characterId);
         throw new SaveConflictError(characterId);
@@ -481,7 +509,9 @@ export function createCharacterSessionStore({
       doc: structuredClone(doc),
       label: label ?? carried,
       seq: ++saveSeq,
-      // One edit by the person makes the whole snapshot theirs.
+      // One edit by the person makes the whole snapshot theirs. One still
+      // being written is accounted for if that write fails or is refused
+      // (see `retain`): until then it may land, leaving this one automatic.
       automatic: automatic && allAutomatic(slot.pending),
     };
     clearTimeout(slot.timer);
@@ -716,40 +746,54 @@ export function createCharacterSessionStore({
     async resolveConflict(id, choice) {
       const slot = slots.get(id);
       const conflict = slot?.conflict;
-      if (slot === undefined || conflict === undefined || slot.resolving === true) return false;
+      if (slot === undefined || conflict === undefined || slot.resolving === true) return undefined;
       slot.resolving = true;
       try {
         // Read now rather than trusting the row as it was when the save was
         // refused: a third write may have landed since, and the choice is
         // between this tab's edits and what is stored at the moment of it.
         const read = await characters.getWithRevision(id);
+        if (read === undefined && conflict.kind === 'changed') {
+          // Deleted since the banner went up: there is no stored copy to load
+          // or to keep in history, so offer the choices that fit instead.
+          slot.conflict = { kind: 'deleted', name: conflict.name };
+          publishSave('conflict', id);
+          return undefined;
+        }
         if (choice === 'overwrite') {
+          // The copy being replaced goes into history first, so both versions
+          // are there whichever way the person chose: a rename from the
+          // roster, say, records none of its own. Skipped when it is already
+          // the newest row. A failed write keeps the conflict and the edits.
+          if (read !== undefined) await history.record(read.doc, REPLACED_LABEL);
           slot.stored = read?.doc;
           slot.revision = read?.revision;
           slot.conflict = undefined;
           if (slot.pending !== undefined) {
-            slot.pending = { ...slot.pending, label: KEPT_LABEL, attempted: undefined };
+            // The person's choice: never the quiet path if refused again.
+            slot.pending = {
+              ...slot.pending,
+              label: KEPT_LABEL,
+              attempted: undefined,
+              automatic: false,
+            };
           }
           publishSave(slot.pending === undefined ? 'saved' : 'pending', id);
           // A write landing between that read and this save refuses it again.
           await flushCharacter(id).catch(() => undefined);
-          return slot.conflict === undefined && get().saveErrors[id] === undefined;
-        }
-        if (read === undefined && conflict.kind === 'changed') {
-          // Deleted since the banner went up: there is no stored copy to load,
-          // so offer the choices that fit instead of discarding the edits.
-          slot.conflict = { kind: 'deleted', name: conflict.name };
-          publishSave('conflict', id);
-          return false;
+          return slot.conflict === undefined && get().saveErrors[id] === undefined
+            ? 'kept'
+            : undefined;
         }
         if (read !== undefined) {
           // Edits made while this waits are kept too: each snapshot recorded
-          // is the newest one at the time, until none is newer.
+          // is the newest one at the time, until none is newer. A failed
+          // history write keeps the conflict and the edits, and says so.
           let recorded: PendingSave | undefined;
           while (slot.pending !== undefined && slot.pending !== recorded) {
             recorded = slot.pending;
             if (!sameContent(recorded.doc, read.doc)) {
-              await history.record(recorded.doc, NOT_SAVED_LABEL).catch(() => undefined);
+              await history.record(recorded.doc, NOT_SAVED_LABEL);
             }
           }
         }
@@ -758,7 +802,7 @@ export function createCharacterSessionStore({
         dropJournaled(slot, id);
         adopt(slot, id, read);
         publishSave('saved', id);
-        return true;
+        return read === undefined ? 'discarded' : 'reloaded';
       } finally {
         slot.resolving = false;
       }
@@ -871,7 +915,11 @@ export function installCharacterSessionLifecycle(
     if (document.visibilityState === 'hidden') flush();
     else refresh();
   };
-  const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+  const onBeforeUnload = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+    // Older browsers ask only when this is set too.
+    event.returnValue = '';
+  };
   let guarding = false;
   const guard = (state: CharacterSessionState) => {
     const open = Object.keys(state.saveConflicts).length > 0;
