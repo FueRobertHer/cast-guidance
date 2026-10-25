@@ -24,7 +24,7 @@ import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
-import { announce } from '@/stores/announcer';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { UndoBar } from '@/ui/UndoBar';
@@ -169,6 +169,9 @@ export function Component() {
    */
   const setImportStatus = (text: string | undefined, key = 'import') => {
     setImportStatusText(text);
+    // An outcome replaces the check, so a check still waiting on its throttle
+    // is not heard after its own answer.
+    if (key !== 'import-check') cancelAnnouncement('import-check');
     if (text !== undefined) announce(text, { key, repeat: true });
   };
   const [pendingImport, setPendingImport] = useState<PendingImport>();
@@ -195,6 +198,8 @@ export function Component() {
       const preview = await flow.buildCharacterPreview(prepared);
       if (request !== latestImport.current) return;
       setImportStatus(undefined);
+      // The dialog's title answers the check.
+      cancelAnnouncement('import-check');
       setPendingImport({ prepared, preview, sourceSpellingOf: flow.spellingLookup(prepared) });
     } catch (err) {
       // Validation and the preview write nothing, so this is never a storage

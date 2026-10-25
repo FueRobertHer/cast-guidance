@@ -11,7 +11,7 @@ import { downloadJson } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
-import { announce } from '@/stores/announcer';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
@@ -67,10 +67,14 @@ export function Component() {
    */
   const setStatus = (text: string | undefined, key = 'import') => {
     setStatusText(text);
+    // An outcome replaces the check, so a check still waiting on its throttle
+    // is not heard after its own answer.
+    if (key !== 'import-check') cancelAnnouncement('import-check');
     if (text !== undefined) announce(text, { key, repeat: true });
   };
   const setRefused = (next: { url: string; reason: string } | undefined) => {
     setRefusedState(next);
+    if (next !== undefined) cancelAnnouncement('import-check');
     if (next !== undefined) announce(refusedText(next.reason), { key: 'import', repeat: true });
   };
   // An import validated and previewed, waiting for Import or Cancel. Nothing
@@ -102,6 +106,8 @@ export function Component() {
     const preview = await (await loadImportFlow()).buildHomebrewPreview(row, bytes);
     if (request !== latest.current) return;
     setStatus(undefined);
+    // The dialog's title answers the check.
+    cancelAnnouncement('import-check');
     setPending({ row, preview, source });
   };
 
