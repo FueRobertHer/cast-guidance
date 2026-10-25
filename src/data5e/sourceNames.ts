@@ -283,6 +283,44 @@ export function isKnownSource(source: string): boolean {
   return entryFor(source) !== undefined;
 }
 
+/** Lowercased code to the code as the table spells it. */
+const CANONICAL: ReadonlyMap<string, string> = new Map(
+  Object.keys(SOURCES).map((s) => [s.toLowerCase(), s]),
+);
+
+/**
+ * The code as the dataset spells it, for a code typed or stored in some other
+ * case ("phb" for "PHB"). Published books first, then homebrew known on this
+ * device; anything else comes back exactly as given, so an id for a book this
+ * device has never seen is kept rather than mangled.
+ */
+export function canonicalSource(source: string): string {
+  const lower = source.toLowerCase();
+  const known = CANONICAL.get(lower);
+  if (known !== undefined) return known;
+  for (const id of homebrewNames.keys()) if (id.toLowerCase() === lower) return id;
+  return source;
+}
+
+/**
+ * A character's `allowedSources`, cleaned up once as it is read: strings only,
+ * trimmed, empties dropped, each id respelled the way the dataset spells it
+ * ("phb" reads as "PHB"), and duplicates removed. An id this device does not
+ * know is kept as written, so a friend's homebrew book survives the round trip.
+ * The guards only check that the field is an array, so this has to tolerate
+ * anything inside it.
+ */
+export function characterSourceList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const id = v.trim();
+    if (id !== '') out.add(canonicalSource(id));
+  }
+  return [...out];
+}
+
 /** Category a source belongs to; unrecognized codes are grouped as 'other'. */
 export function sourceGroup(source: string): SourceGroup {
   return entryFor(source)?.[1] ?? 'other';

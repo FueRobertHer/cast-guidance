@@ -130,3 +130,61 @@ describe('EntityCardList source filtering', () => {
     expect(screen.queryByText(/hidden by your source settings/)).toBeNull();
   });
 });
+
+describe("EntityCardList under a character's own sources (GAME-005)", () => {
+  const mixed: Entity[] = [
+    { name: 'Human', source: 'PHB' },
+    { name: 'Elf', source: 'PHB' },
+    { name: 'Shadar-kai', source: 'XGE' },
+    { name: 'Goblin', source: 'XGE' },
+  ];
+  const OUTSIDE = "Not in this character's sources";
+
+  it("narrows to the character's list and says whose list it is", () => {
+    render(<EntityCardList entities={mixed} sources={['PHB']} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Human' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Goblin' })).toBeNull();
+    expect(screen.queryByText(/2 outside this character's sources/)).not.toBeNull();
+    expect(screen.queryByText(/hidden by your source settings/)).toBeNull();
+  });
+
+  it('replaces the device settings rather than narrowing them further', () => {
+    // The device hides PHB; the character's table allows it.
+    policyState.current = { mode: 'only', sources: ['XPHB'] };
+    render(<EntityCardList entities={mixed} sources={['PHB']} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Human' })).not.toBeNull();
+    cleanup();
+
+    // An empty list restricts nothing, so the device settings stay in charge.
+    policyState.current = { mode: 'only', sources: ['PHB'] };
+    render(<EntityCardList entities={mixed} sources={[]} onSelect={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Goblin' })).toBeNull();
+    expect(screen.queryByText(/2 hidden by your source settings/)).not.toBeNull();
+    expect(screen.queryByText(OUTSIDE)).toBeNull();
+  });
+
+  it('keeps a current pick from outside the list, labelled in words', () => {
+    render(
+      <EntityCardList
+        entities={mixed}
+        sources={['PHB']}
+        selectedUid="goblin|xge"
+        onSelect={vi.fn()}
+      />,
+    );
+    const goblin = screen.getByRole('button', { name: 'Goblin' });
+    // The aria-label hides the cue from the name, so it is the description.
+    expect(screen.getByText(OUTSIDE).id).toBe(goblin.getAttribute('aria-describedby'));
+    // Picks inside the list carry no such cue.
+    expect(screen.getAllByText(OUTSIDE)).toHaveLength(1);
+  });
+
+  it('reveals the rest on request, each one labelled', () => {
+    render(<EntityCardList entities={mixed} sources={['PHB']} onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByText(/outside this character's sources/));
+    expect(screen.queryByRole('button', { name: 'Goblin' })).not.toBeNull();
+    expect(screen.getAllByText(OUTSIDE)).toHaveLength(2);
+    fireEvent.click(screen.getByText("Back to this character's sources"));
+    expect(screen.queryByRole('button', { name: 'Goblin' })).toBeNull();
+  });
+});

@@ -110,7 +110,7 @@ that says `Closes #N` retires the item without anyone editing this file.
 |---|---|---|
 | GAME-001 | [#100](https://github.com/FueRobertHer/cast-guidance/issues/100) | Play-tab slot/upcast choice (a choose-then-roll redesign), and non-slot pools as cast sources. |
 | GAME-003 | [#101](https://github.com/FueRobertHer/cast-guidance/issues/101) | Edition compatibility beyond picker filtering: carry-overs, reprints, conflicts, change preview. |
-| GAME-005 | [#102](https://github.com/FueRobertHer/cast-guidance/issues/102) | Character-scoped `allowedSources` (still declared and read nowhere), and OR-set level gates on the satisfiable minimum. |
+| GAME-005 | [#102](https://github.com/FueRobertHer/cast-guidance/issues/102) | Creator wiring: edit a new character's own sources in the wizard and pass the draft's list to its card pickers. The Build page editor, every Build and sheet picker, and the OR-set level gate have shipped. |
 | GAME-007 | [#103](https://github.com/FueRobertHer/cast-guidance/issues/103) | Optional, opt-in "trim to limit" action for over-limit spell lists. |
 
 (All FIX-00x derivation/play defects from the 2026-07-14 review have shipped;
@@ -208,7 +208,7 @@ work:
 | Standalone feats | A sheet editor to add/remove feats directly (writing `doc.feats`), for feats gained outside a background or ASI grant (FIX-006 left this as future product scope; the engine already reads `doc.feats`). |
 | Inventory | Edit all modeled custom-item fields; add containers, location, currency transactions, carrying capacity, and table-rule encumbrance. |
 | Export and sharing | Print-friendly accessible sheet/PDF and dependency-minimal sharing. |
-| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. Remaining: make the character-scoped `allowedSources`, `dataTag`, and `homebrewDeps` meaningful in provenance, exports, and warnings. |
+| Source policy | A device-wide browsing `SourcePolicy` ships (allow-all-except / only-these, presets, full book names, homebrew sources named by their own title) and deliberately never touches the registry, so hiding a book cannot break an existing sheet. A character's own `allowedSources` (edited on its Build page) replaces the device policy in that character's pickers and labels earlier picks from other books without removing them. Remaining: make `dataTag` and `homebrewDeps` meaningful in provenance, exports, and warnings. |
 | Table rules | Configurable rest recovery, level cap, point-buy budget, attunement, encumbrance, HP method, and source policy. |
 | Usability research | Test create, level-up, damage/rest, prepare/cast, homebrew import, history recovery, and offline use with new and experienced players. |
 

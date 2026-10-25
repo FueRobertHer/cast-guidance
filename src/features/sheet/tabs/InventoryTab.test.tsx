@@ -192,3 +192,41 @@ describe('InventoryTab rows', () => {
     expect(screen.getByRole('button', { name: 'Attune Longsword', pressed: true })).toBeTruthy();
   });
 });
+
+// GAME-005: the item search follows the character's own source list.
+describe("InventoryTab item search under a character's own sources", () => {
+  it("searches only the character's books, and says whose list hid the rest", () => {
+    const pool = [
+      { name: 'Longsword', source: 'PHB' },
+      { name: 'Sword of Answering', source: 'XGE' },
+    ] as Entity[];
+    registryRef.current = { byType: (t) => (t === 'baseitem' ? pool : []) };
+    const doc = newCharacterDoc('i2', 'Hero', 't');
+    doc.allowedSources = ['PHB'];
+    const ctx = {
+      doc,
+      sheet: deriveSheet(doc, makeTestContext()),
+      update: () => undefined,
+    } as unknown as CharacterSheetState;
+    const router = createMemoryRouter([
+      {
+        path: '/',
+        element: <Outlet context={ctx} />,
+        children: [{ index: true, element: <InventoryTab /> }],
+      },
+    ]);
+    render(<RouterProvider router={router} />);
+    fireEvent.change(search(), { target: { value: 'sword' } });
+
+    expect(screen.getByRole('button', { name: /Longsword/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Sword of Answering/ })).toBeNull();
+    expect(screen.getByText(/1 outside this character's sources/)).toBeTruthy();
+    expect(screen.queryByText("Not in this character's sources")).toBeNull();
+
+    // Shown anyway on request, and labelled as outside the list.
+    fireEvent.click(screen.getByText(/1 outside this character's sources/));
+    const revealed = screen.getByRole('button', { name: /Sword of Answering/ });
+    expect(revealed.textContent).toContain("Not in this character's sources");
+    expect(screen.getByRole('button', { name: /Longsword/ }).textContent).not.toContain('Not in');
+  });
+});

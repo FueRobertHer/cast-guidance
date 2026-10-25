@@ -82,10 +82,19 @@ describe('summarizePrerequisite', () => {
 });
 
 describe('requiredLevel', () => {
-  it('returns the highest numeric level prerequisite', () => {
+  it('returns the numeric level prerequisite', () => {
     expect(requiredLevel([{ level: 3 }])).toBe(3);
     expect(requiredLevel([{ level: { level: 7 } }])).toBe(7);
-    expect(requiredLevel([{ level: 3 }, { level: 9 }])).toBe(9);
+  });
+
+  it('takes the lowest level across alternative sets (OR)', () => {
+    expect(requiredLevel([{ level: 3 }, { level: 9 }])).toBe(3);
+    expect(requiredLevel([{ level: { level: 7 } }, { level: 4 }])).toBe(4);
+    expect(requiredLevel([{ level: 2 }, 'junk'])).toBe(2);
+  });
+
+  it('has no gate when some alternative set has no level', () => {
+    expect(requiredLevel([{ level: 5 }, { pact: 'Blade' }])).toBeUndefined();
   });
 
   it('is undefined without a level requirement', () => {

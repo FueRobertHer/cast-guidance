@@ -40,6 +40,7 @@ import { EntityCardList } from '@/ui/EntityCardList';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
 import { UndoBar } from '@/ui/UndoBar';
+import { CharacterSourcesSection } from './CharacterSourcesSection';
 import {
   cueKey,
   type EditionCue,
@@ -483,6 +484,8 @@ export function Component() {
         )}
       </Section>
 
+      <CharacterSourcesSection doc={doc} sheet={sheet} update={update} />
+
       <Section
         title="Classes"
         summary={doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / ') || 'none'}
@@ -643,6 +646,7 @@ export function Component() {
                   </summary>
                   <div className="pt-2">
                     <EntityCardList
+                      sources={doc.allowedSources}
                       entities={subclasses}
                       describe={subclassBlurb}
                       infoType="subclass"
@@ -685,6 +689,7 @@ export function Component() {
           </summary>
           <div className="pt-2">
             <EntityCardList
+              sources={doc.allowedSources}
               dedupe
               describe={classBlurb}
               infoType="class"
@@ -722,6 +727,7 @@ export function Component() {
           </summary>
           <div className="pt-2">
             <EntityCardList
+              sources={doc.allowedSources}
               dedupe
               describe={raceBlurb}
               infoType="race"
@@ -764,6 +770,7 @@ export function Component() {
             </summary>
             <div className="pt-2">
               <EntityCardList
+                sources={doc.allowedSources}
                 entities={subraces}
                 describe={raceBlurb}
                 infoType="subrace"
@@ -943,6 +950,7 @@ export function Component() {
           </summary>
           <div className="pt-2">
             <EntityCardList
+              sources={doc.allowedSources}
               dedupe
               describe={backgroundBlurb}
               infoType="background"

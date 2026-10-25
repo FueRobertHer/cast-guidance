@@ -179,6 +179,41 @@ describe('diffDocs', () => {
     expect(lines(from, to)).toEqual(['Species: Elf (PHB) → Elf (XPHB)']);
   });
 
+  it("says a character's book list was turned on or off, not every book on it", () => {
+    // An empty list means no restriction, so turning one on writes every
+    // allowed book at once: "+PHB, +XGE, +TCE +79 more" says nothing useful.
+    const many = Array.from({ length: 82 }, (_, i) => `B${String(i)}`);
+    const limited = edited((d) => {
+      d.allowedSources = many;
+    });
+    expect(lines(base(), limited)).toEqual(['Sources: limited to 82 books']);
+    expect(lines(limited, base())).toEqual(['Sources: book restriction removed']);
+    const one = edited((d) => {
+      d.allowedSources = ['PHB'];
+    });
+    expect(lines(base(), one)).toEqual(['Sources: limited to 1 book']);
+    // Editing a list that stays on still names what moved.
+    const two = edited((d) => {
+      d.allowedSources = ['PHB', 'XGE'];
+    });
+    expect(lines(one, two)).toEqual(['Sources: +XGE']);
+  });
+
+  it('reads a book list the way the pickers do', () => {
+    // A respelling is not a swap, and junk entries count for nothing.
+    const typed = edited((d) => {
+      d.allowedSources = ['phb', 7 as unknown as string];
+    });
+    const fixed = edited((d) => {
+      d.allowedSources = ['PHB', 'XGE'];
+    });
+    expect(lines(typed, fixed)).toEqual(['Sources: +XGE']);
+    const junk = edited((d) => {
+      d.allowedSources = [7 as unknown as string, ''];
+    });
+    expect(lines(junk, fixed)).toEqual(['Sources: limited to 2 books']);
+  });
+
   it('names a field it does not describe rather than reporting no difference', () => {
     const from = edited((d) => {
       d.classes = [wizard(1), { ...wizard(1), ref: { name: 'Fighter', source: 'PHB' } }];

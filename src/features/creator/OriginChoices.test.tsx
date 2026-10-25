@@ -4,6 +4,7 @@
 // and nothing is written until Confirm.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EntityRegistry } from '@/data5e/normalize';
 import type { CharacterDoc, ChoicePrompt, DerivedSheet } from '@/engine/types';
 import { OriginChoices } from './OriginChoices';
 
@@ -137,5 +138,58 @@ describe('OriginChoices dependent choices', () => {
     fireEvent.click(confirmBtn());
 
     expect(doc.choices[`${asi.id}:feat`]).toEqual(['tough|phb']);
+  });
+});
+
+describe("OriginChoices under a character's own sources (GAME-005)", () => {
+  const registry = new EntityRegistry();
+  registry.addAll('feat', [
+    { name: 'Alert', source: 'PHB' },
+    { name: 'Telekinetic', source: 'TCE' },
+  ]);
+  const featPick: ChoicePrompt = {
+    id: 'class:fighter|phb:asi:4:feat',
+    origin,
+    kind: 'feat',
+    label: 'Feat',
+    count: 1,
+    options: [
+      // Described, as the engine's feat options are, so they render as the
+      // readable list that carries advisories.
+      { id: 'alert|phb', label: 'Alert', description: 'Always on the lookout.' },
+      { id: 'telekinetic|tce', label: 'Telekinetic', description: 'Move things with your mind.' },
+    ],
+  };
+
+  function renderFeats(allowedSources: string[], choices: CharacterDoc['choices'] = {}) {
+    const doc = { rulesVersion: '2014', choices, allowedSources } as unknown as CharacterDoc;
+    const sheet = { pending: [featPick], resolvedChoices: [] } as unknown as DerivedSheet;
+    render(
+      <OriginChoices
+        sheet={sheet}
+        doc={doc}
+        update={vi.fn()}
+        match={() => true}
+        registry={registry}
+      />,
+    );
+  }
+
+  it("offers only the character's books, and every book when it has no list", () => {
+    renderFeats(['PHB']);
+    expect(screen.queryByText('Alert')).not.toBeNull();
+    expect(screen.queryByText('Telekinetic')).toBeNull();
+    cleanup();
+    renderFeats([]);
+    expect(screen.queryByText('Telekinetic')).not.toBeNull();
+  });
+
+  it('keeps a chosen feat from outside the list, and says where it is from', () => {
+    renderFeats(['PHB'], { [featPick.id]: ['telekinetic|tce'] });
+    const kept = screen.getByText('Telekinetic').closest('button');
+    expect(kept?.getAttribute('aria-pressed')).toBe('true');
+    expect(kept?.textContent).toContain("From a book outside this character's sources.");
+    // A feat from a listed book carries no such cue.
+    expect(screen.getByText('Alert').closest('button')?.textContent).not.toContain('outside');
   });
 });

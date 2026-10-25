@@ -6,6 +6,7 @@
  * Lines read "from → to", neutral about direction, so the same helper serves a
  * restore preview (current → snapshot) and an undo (now → before).
  */
+import { characterSourceList } from '@/data5e/sourceNames';
 import { ABILITIES, type CharacterDoc, type EntityRef } from '@/engine/types';
 
 export type ChangeKind =
@@ -187,6 +188,25 @@ function refName(ref: EntityRef | undefined): string {
 function signedNames(added: string[], removed: string[]): string {
   const all = [...added.map((n) => `+${n}`), ...removed.map((n) => `−${n}`)];
   return all.length > 3 ? `${all.slice(0, 3).join(', ')} +${all.length - 3} more` : all.join(', ');
+}
+
+/**
+ * The character's own book list. An empty list means no restriction, so going
+ * to or from one is a change of kind, not a diff of names: turning a list on
+ * writes every allowed book at once, and "+PHB +81 more" says nothing useful.
+ */
+function sourcesLine(from: unknown, to: unknown): string {
+  // Read the way the pickers read it, so junk entries count for nothing and
+  // a respelling ("phb" to "PHB") is not reported as a swap.
+  const prev = characterSourceList(from);
+  const next = characterSourceList(to);
+  if (prev.length === 0 && next.length > 0)
+    return `Sources: limited to ${next.length} book${next.length === 1 ? '' : 's'}`;
+  if (prev.length > 0 && next.length === 0) return 'Sources: book restriction removed';
+  const { added, removed } = nameDiff(prev, next);
+  return added.length > 0 || removed.length > 0
+    ? `Sources: ${signedNames(added, removed)}`
+    : 'Source order';
 }
 
 function refChange(
@@ -417,13 +437,9 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
   if (from.name !== to.name)
     out.push({ kind: 'name', line: `Name: "${from.name}" → "${to.name}"`, structural: false });
   if (!same(from.allowedSources, to.allowedSources)) {
-    const { added, removed } = nameDiff(from.allowedSources, to.allowedSources);
     out.push({
       kind: 'sources',
-      line:
-        added.length > 0 || removed.length > 0
-          ? `Sources: ${signedNames(added, removed)}`
-          : 'Source order',
+      line: sourcesLine(from.allowedSources, to.allowedSources),
       structural: false,
     });
   }

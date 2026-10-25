@@ -5,7 +5,12 @@ import type { Entity } from '@/data5e/copyMod';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
-import { applySourcePolicy, policyAllows, useSourcePolicy } from '@/data5e/sourceFilter';
+import {
+  applySourcePolicy,
+  backToSourcesLabel,
+  hiddenSourcesLabel,
+  policyAllows,
+} from '@/data5e/sourceFilter';
 import {
   classSpellUids,
   classSpellUidsFromEntities,
@@ -19,8 +24,10 @@ import type {
   SpellcastingBlock,
   SpellcastingMode,
 } from '@/engine/types';
+import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import type { DocUpdater } from '@/stores/characterSession';
 import { askChoice, askConfirm } from '@/ui/dialogs';
+import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { SourceBadge } from '@/ui/SourceBadge';
 import {
   availableCastResources,
@@ -108,7 +115,7 @@ function ClassSpells({
   const [classUids, setClassUids] = useState<Set<string> | null>(null);
   const [filter, setFilter] = useState('');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
-  const policy = useSourcePolicy();
+  const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
 
   useEffect(() => {
     void ensureTypePacks('spell');
@@ -382,7 +389,11 @@ function ClassSpells({
           onClick={() => setShowHiddenSources(true)}
           className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
         >
-          {sourceHiddenCount} spells hidden by your source settings. Show them anyway
+          {hiddenSourcesLabel(
+            sourceHiddenCount,
+            scope,
+            sourceHiddenCount === 1 ? 'spell' : 'spells',
+          )}
         </button>
       )}
       {showHiddenSources && (
@@ -391,7 +402,7 @@ function ClassSpells({
           onClick={() => setShowHiddenSources(false)}
           className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
         >
-          Back to your chosen sources
+          {backToSourcesLabel(scope)}
         </button>
       )}
       {[...byLevel.entries()]
@@ -433,6 +444,9 @@ function ClassSpells({
                         )}
                         {nameOf(s)}
                       </Link>
+                      {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
+                        <OutsideSourcesChip />
+                      )}
                       <SourceBadge source={sourceOf(s)} />
                       {/* Stable verbs for the names, so aria-pressed alone says the state. */}
                       <button
