@@ -24,6 +24,9 @@ function renderPips(total: number, spent: number) {
   return { onChange, pips };
 }
 
+/** The visible dot inside a pip button, which carries the fill. */
+const dot = (pip: HTMLElement) => pip.firstElementChild as HTMLElement;
+
 const pressed = (pips: HTMLElement[]) => pips.map((p) => p.getAttribute('aria-pressed') === 'true');
 
 describe('Pips', () => {
@@ -37,8 +40,24 @@ describe('Pips', () => {
     // the former would pass with the colours inverted, which is the exact bug
     // this component exists to fix.
     const { pips } = renderPips(3, 1);
-    expect(pips.map((p) => p.className.includes('bg-accent'))).toEqual([true, true, false]);
-    expect(pips.map((p) => p.className.includes('bg-surface-2'))).toEqual([false, false, true]);
+    const dots = pips.map(dot);
+    expect(dots.map((d) => d.className.includes('bg-accent'))).toEqual([true, true, false]);
+    expect(dots.map((d) => d.dataset.state)).toEqual(['available', 'available', 'spent']);
+  });
+
+  it('draws a spent use as a dashed ring, so the state is not colour alone (A11Y-002)', () => {
+    const { pips } = renderPips(2, 1);
+    const [available, spent] = pips.map(dot);
+    expect(spent?.className).toContain('border-dashed');
+    expect(spent?.className).toContain('bg-transparent');
+    expect(available?.className).not.toContain('border-dashed');
+  });
+
+  it('gives each pip a 44px tall, 32px wide target around the dot (A11Y-002)', () => {
+    // Class level only: the E2E target-size check measures the real box.
+    const { pips } = renderPips(2, 0);
+    for (const pip of pips)
+      expect(pip.className.split(' ')).toEqual(expect.arrayContaining(['h-11', 'min-w-8']));
   });
 
   it('empties from the right, leaving what remains on the left', () => {
