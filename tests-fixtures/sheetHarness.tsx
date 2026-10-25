@@ -242,7 +242,7 @@ export async function renderSheet(
 
 /**
  * A test timeout for files built on this harness. Each case mounts the app's
- * routes over IndexedDB and walks several screens, which on a loaded 2-vCPU
+ * routes over IndexedDB and walks several screens, which on a loaded 4-vCPU
  * runner with coverage on can pass the suite-wide 15 seconds without anything
  * being wrong. Set it with `vi.setConfig({ testTimeout: HARNESS_TIMEOUT })`.
  */
@@ -252,7 +252,7 @@ export const HARNESS_TIMEOUT = 60_000;
  * How long a route may take to appear. The route modules load lazily, and a
  * cold transform of one can take seconds on a loaded runner.
  */
-const LOAD_MS = 30_000;
+const LOAD_MS = 15_000;
 
 /** The sheet header has the character, and the open tab has its sheet. */
 async function sheetReady(name: string): Promise<void> {
@@ -339,9 +339,13 @@ export function concentratingOn(): string | undefined {
     : undefined;
 }
 
-/** The notice toast on screen, as `title: detail`, or undefined. */
+/**
+ * The notice toast on screen, as `title: detail`, or undefined when none is
+ * showing. Found by its `data-testid`, so a change to the toast's element or
+ * live-region attributes cannot quietly turn this into "no notice".
+ */
 export function notice(): string | undefined {
-  const toast = document.querySelector('output[aria-live]');
+  const toast = screen.queryByTestId('notice-toast');
   if (toast === null) return undefined;
   const [title, detail] = [...toast.querySelectorAll('div > div')].map((d) => d.textContent);
   return detail === undefined ? (title ?? undefined) : `${title}: ${detail}`;

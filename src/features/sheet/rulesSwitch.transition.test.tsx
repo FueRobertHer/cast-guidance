@@ -154,10 +154,20 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
       { source: 'TST', known: true },
       { source: 'XPHB', known: false },
     ]);
+    // Unlearning it there works, and only then does the 2014 printing leave.
+    const tst = screen
+      .getAllByRole('button', { name: 'Learn Guidance' })
+      .find((b) => badgeBeside(b) === 'TST');
+    if (tst === undefined) throw new Error('no TST Guidance row');
+    fireEvent.click(tst);
+    expect(rows()).toEqual([{ source: 'XPHB', known: false }]);
+    expect((await sheet.saved()).spellcasting['sorcerer|tst']?.known).toEqual([
+      { name: 'Searing Bolt', source: 'TST' },
+    ]);
 
     await switchTo(sheet, '2014', { expectPrompt: false });
     await sheet.tab('Spells');
-    expect(rows()).toEqual([{ source: 'TST', known: true }]);
+    expect(rows()).toEqual([{ source: 'TST', known: false }]);
   });
 
   it("follows the version in the Play tab's exhaustion rules", async () => {

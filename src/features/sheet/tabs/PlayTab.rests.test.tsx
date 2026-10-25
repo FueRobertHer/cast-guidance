@@ -108,6 +108,10 @@ describe('long rest (TEST-003)', () => {
     expect(left('Level 1 slot')).toBe(3);
     expect(notice()).toBeUndefined();
     expect(await sheet.history()).not.toContain('Long rest');
+    // The toast is findable: the next rest's notice does appear, so the
+    // undefined above means no notice rather than a toast the helper missed.
+    press('Short rest');
+    expect(notice()).toBe('Short rest: Nothing to restore');
   });
 
   it('restores HP, slots and pools, takes an exhaustion level and regains half the hit dice', async () => {
