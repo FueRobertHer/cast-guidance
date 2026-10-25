@@ -13,7 +13,7 @@ import {
   uidOf,
   withReplaceBudget,
 } from './copyMod';
-import { mergeHomebrew, normalizeDataset } from './normalize';
+import { EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 
 const noWarn = (message: string) => {
   throw new Error(`unexpected warning: ${message}`);
@@ -284,6 +284,115 @@ describe('resolveCopies', () => {
 });
 
 describe('mergeHomebrew', () => {
+  it('takes a target found in several other files from the earliest one', () => {
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(
+      reg,
+      new Map([
+        ['older', { feat: [{ name: 'Base', source: 'HB', tag: 'older' }] }],
+        ['newer', { feat: [{ name: 'Base', source: 'HB', tag: 'newer' }] }],
+        ['user', { feat: [{ name: 'Child', source: 'U', _copy: { name: 'Base', source: 'HB' } }] }],
+      ]),
+    );
+    expect(reg.get('feat', 'Child', 'U')?.tag).toBe('older');
+  });
+
+  it('finds an entry that took its name from its own copy', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB', tag: 'official' }] }]]),
+    );
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              // No name of its own: it becomes Alert|HB once its copy resolves.
+              { source: 'HB', _copy: { name: 'Alert', source: 'PHB' } },
+              { name: 'Kid', source: 'HB', _copy: { name: 'Alert', source: 'HB' } },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.get('feat', 'Kid', 'HB')?.tag).toBe('official');
+  });
+
+  it('looks copy targets up by index, not by scanning official data per copy', () => {
+    // Runs on every registry rebuild. Counting reads of the official entries'
+    // names is a timing-free guard: a scan reads every name per lookup, an
+    // index reads each once to build plus once per copy (the clone).
+    let reads = 0;
+    const officialCount = 1000;
+    const official = Array.from({ length: officialCount }, (_, i) => {
+      const e: Entity = { source: 'PHB', level: 1 };
+      Object.defineProperty(e, 'name', {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return `Spell ${i}`;
+        },
+      });
+      return e;
+    });
+    const reg = new EntityRegistry();
+    reg.addAll('spell', official);
+    reads = 0;
+    const copies = 200;
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            spell: Array.from({ length: copies }, (_, i) => ({
+              name: `Copy ${i}`,
+              source: 'HB',
+              _copy: { name: `Spell ${officialCount - 1}`, source: 'PHB' },
+            })),
+          },
+        ],
+      ]),
+    );
+    expect(reg.get('spell', 'Copy 0', 'HB')?.level).toBe(1);
+    expect(reads).toBeLessThan(3 * (officialCount + copies));
+  });
+
+  it('resolves a copy from its own file before official data or another file', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB', tag: 'official' }] }]]),
+    );
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'older',
+          {
+            feat: [
+              { name: 'Base', source: 'HB', tag: 'older file' },
+              { name: 'Alert', source: 'PHB', tag: 'older file' },
+            ],
+          },
+        ],
+        [
+          'newer',
+          {
+            feat: [
+              { name: 'Base', source: 'HB', tag: 'own file' },
+              { name: 'Child', source: 'HB2', _copy: { name: 'Base', source: 'HB' } },
+              { name: 'Kid', source: 'HB2', _copy: { name: 'Alert', source: 'PHB' } },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.get('feat', 'Child', 'HB2')?.tag).toBe('own file');
+    expect(reg.get('feat', 'Kid', 'HB2')?.tag).toBe('official');
+    // Precedence is still merge order: the older file keeps Base|HB.
+    expect(reg.get('feat', 'Base', 'HB')?.tag).toBe('older file');
+  });
+
   it('keeps the registry when a homebrew entity carries a null _copy', () => {
     const reg = normalizeDataset(
       new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] }]]),

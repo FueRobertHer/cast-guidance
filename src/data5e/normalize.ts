@@ -326,24 +326,95 @@ export function mergeHomebrew(
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
 }
 
+/** Finds the entity a lowercased `name|source` names in one list, or undefined. */
+type CopyIndex = (uid: string) => Entity | undefined;
+
+/**
+ * Index a list for `_copy` lookups: the same answer as {@link byNameSource}
+ * (the first entity in list order with that uid), in constant time instead of
+ * a scan that computes every entity's uid on every lookup.
+ *
+ * An entity with a string name and source keeps that identity through
+ * resolution (its own fields win over what it copies), so it is keyed once,
+ * up front. One without them takes its identity from what it copies, which is
+ * only known once its copy resolves, so those few are searched as they stand
+ * at lookup time, as the scan did. The one difference: if such an entry comes
+ * to share a uid with a named entry later in the list, the named one is found
+ * first, where the scan found the earlier one. Likewise a named entry whose
+ * `_copy._mod` sets its own name or source is keyed under the name it starts
+ * with, so a copy of it by its new name is not found.
+ */
+function copyIndex(list: readonly Entity[]): CopyIndex {
+  const byUid = new Map<string, Entity>();
+  const unsettled: Entity[] = [];
+  for (const e of list) {
+    if (typeof e.name !== 'string' || typeof e.source !== 'string') {
+      unsettled.push(e);
+      continue;
+    }
+    const uid = uidOf(e);
+    if (!byUid.has(uid)) byUid.set(uid, e);
+  }
+  return (uid) => byUid.get(uid) ?? unsettled.find((e) => uidOf(e) === uid);
+}
+
+/**
+ * Two passes per type, so a file's `_copy` reaches every enabled file, not only
+ * the ones merged before it (IMP-002).
+ *
+ * Files arrive oldest import first (`homebrewRepo.enabledSafe()`), and that
+ * order is the precedence: the registry keeps the first entity per uid. When
+ * each file resolved its copies before the next one was added, a file could
+ * copy only from files imported earlier, so importing a file before the one
+ * it depends on left its copies broken until it was imported again. Resolving
+ * every file's copies over all of them first, then adding them in order,
+ * keeps precedence purely by import time and makes copies independent of it.
+ *
+ * A copy looks in its own file first, then official data, then the other
+ * homebrew in merge order: the same preference as before for every target
+ * that used to resolve. Copy chains across files resolve through the
+ * resolver's own fixed-point passes, and a cycle ends as unresolved warnings,
+ * as it does within one file. Race `_versions` are still expanded after
+ * resolution, so a copy cannot target another file's expanded version.
+ *
+ * This runs on every registry rebuild, so each lookup is a map hit rather
+ * than a scan of the type's list (see {@link copyIndex}).
+ */
 function mergeHomebrewFiles(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
 ): void {
   reg.sealOfficial();
-  for (const [, json] of homebrew) {
-    for (const type of HOMEBREW_TYPES) {
+  const files = [...homebrew.values()];
+  for (const type of HOMEBREW_TYPES) {
+    const perFile = files.map((json) => {
       const arr = json[type];
-      if (!Array.isArray(arr)) continue;
-      const entities = arr.filter((e): e is Entity => typeof e === 'object' && e !== null);
+      return Array.isArray(arr)
+        ? arr.filter((e): e is Entity => typeof e === 'object' && e !== null)
+        : [];
+    });
+    const all = perFile.flat();
+    if (all.length === 0) continue;
+    // Official only: this type's homebrew is added below, after resolution.
+    const official = copyIndex(reg.byType(type));
+    const everyFile = copyIndex(all);
+    const fileOf = new Map<Entity, CopyIndex>();
+    for (const list of perFile) {
+      const own = copyIndex(list);
+      for (const e of list) fileOf.set(e, own);
+    }
+    reg.warnings.push(
+      ...resolveCopies(
+        all,
+        (copy, self) => {
+          const uid = `${String(copy.name)}|${String(copy.source)}`.toLowerCase();
+          return fileOf.get(self)?.(uid) ?? official(uid) ?? everyFile(uid);
+        },
+        `homebrew ${type}`,
+      ),
+    );
+    for (const entities of perFile) {
       if (entities.length === 0) continue;
-      reg.warnings.push(
-        ...resolveCopies(
-          entities,
-          byNameSource(entities, [...reg.byType(type)]),
-          `homebrew ${type}`,
-        ),
-      );
       if (type === 'race' || type === 'subrace') {
         const versions = entities.flatMap((e) => expandVersions(e, reg.warnings));
         reg.addAll(type, [...entities, ...versions]);

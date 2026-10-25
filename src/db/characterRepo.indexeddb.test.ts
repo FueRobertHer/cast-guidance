@@ -9,6 +9,7 @@ import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { characterRepo } from './characterRepo';
 import { db, type HomebrewFileRow } from './db';
+import { homebrewRepo } from './homebrewRepo';
 
 function brewFile(sourceId: string, spellName: string) {
   return {
@@ -170,6 +171,42 @@ describe('characterRepo.importExport (IndexedDB-backed)', () => {
 
     expect(await db.characters.count()).toBe(1); // only the pre-existing one
     expect((await db.characters.toArray())[0]?.id).toBe('existing');
+  });
+});
+
+describe('characterRepo.prepareImport and commitImport (IndexedDB-backed)', () => {
+  const text = () =>
+    exportText(newCharacterDoc('hero-1', 'Imported', 'tag'), [
+      { fileName: 'b.json', json: brewFile('BREW', 'Zap') },
+    ]);
+
+  it('prepares without writing to any table', async () => {
+    const prepared = await characterRepo.prepareImport(text());
+    expect(prepared.doc.id).toBe('hero-1');
+    expect(prepared.homebrew.map((r) => r.sourceIds)).toEqual([['BREW']]);
+    expect(prepared.bytes).toBe(new TextEncoder().encode(text()).byteLength);
+    for (const table of db.tables) expect(await table.count()).toBe(0);
+  });
+
+  it('decides again at commit, so a file another tab added meanwhile is skipped', async () => {
+    const prepared = await characterRepo.prepareImport(text());
+    // Another tab imports the same homebrew and a character with the same id.
+    await homebrewRepo.importJson(brewFile('BREW', 'Zap'), 'mine.json');
+    await db.characters.put(newCharacterDoc('hero-1', 'Theirs', 'tag'));
+
+    const summary = await characterRepo.commitImport(prepared);
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewSkipped: 1, renamed: true });
+    expect(await db.homebrewFiles.count()).toBe(1);
+    expect((await db.homebrewFiles.toArray())[0]?.fileName).toBe('mine.json');
+    expect(await db.characters.count()).toBe(2);
+  });
+
+  it('stamps embedded homebrew with the time of the commit', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const prepared = await characterRepo.prepareImport(text());
+    now.mockReturnValue(5_000);
+    await characterRepo.commitImport(prepared);
+    expect((await db.homebrewFiles.toArray()).map((r) => r.addedAt)).toEqual([5_000]);
   });
 });
 

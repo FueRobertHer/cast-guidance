@@ -40,6 +40,17 @@ function declaredLength(res: Response): number | undefined {
  * memory and parse time, so it is the right thing to limit.
  */
 export async function readTextBounded(res: Response, maxBytes: number): Promise<string> {
+  return (await readTextBoundedSized(res, maxBytes)).text;
+}
+
+/**
+ * {@link readTextBounded}, plus the UTF-8 byte count it metered on the way, so
+ * a caller that reports the size does not encode the text a second time.
+ */
+export async function readTextBoundedSized(
+  res: Response,
+  maxBytes: number,
+): Promise<{ text: string; bytes: number }> {
   // An early refusal before a byte is read. Content-Length is CORS-safelisted,
   // so cross-origin mirrors expose it. With a Content-Encoding it is the
   // compressed size. Gzip or Brotli can only grow text that does not compress
@@ -59,7 +70,7 @@ export async function readTextBounded(res: Response, maxBytes: number): Promise<
     const text = await res.text();
     const bytes = new TextEncoder().encode(text).byteLength;
     if (bytes > maxBytes) throw new ResponseTooLargeError(maxBytes, bytes);
-    return text;
+    return { text, bytes };
   }
 
   const reader = body.getReader();
@@ -79,7 +90,7 @@ export async function readTextBounded(res: Response, maxBytes: number): Promise<
     parts.push(decoder.decode(value, { stream: true }));
   }
   parts.push(decoder.decode());
-  return parts.join('');
+  return { text: parts.join(''), bytes: total };
 }
 
 /** {@link readTextBounded}, then parse. */

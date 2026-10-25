@@ -4,6 +4,7 @@ import {
   readFileTextBounded,
   readJsonBounded,
   readTextBounded,
+  readTextBoundedSized,
 } from './boundedRead';
 
 /**
@@ -113,6 +114,26 @@ describe('readTextBounded', () => {
     await expect(readTextBounded(big, 1000)).rejects.toBeInstanceOf(ResponseTooLargeError);
     const small = { ...big, text: () => Promise.resolve('ok') } as unknown as Response;
     await expect(readTextBounded(small, 1000)).resolves.toBe('ok');
+  });
+});
+
+describe('readTextBoundedSized', () => {
+  it('reports the UTF-8 bytes it metered from a stream', async () => {
+    const encoded = new TextEncoder().encode('café ✨');
+    const { stream } = meteredBody([encoded.slice(0, 4), encoded.slice(4)]);
+    await expect(readTextBoundedSized(new Response(stream), 100)).resolves.toEqual({
+      text: 'café ✨',
+      bytes: encoded.byteLength,
+    });
+  });
+
+  it('reports the bytes of a response with no stream', async () => {
+    const res = {
+      headers: new Headers(),
+      body: null,
+      text: () => Promise.resolve('✨ok'),
+    } as unknown as Response;
+    await expect(readTextBoundedSized(res, 100)).resolves.toEqual({ text: '✨ok', bytes: 5 });
   });
 });
 

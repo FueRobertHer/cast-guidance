@@ -61,54 +61,21 @@ export const characterRepo = {
   },
 
   /**
-   * Import an exported character + its embedded homebrew as one transaction.
-   * Everything is validated, migrated, and re-hashed *before* the transaction
-   * opens, so a malformed / future-version / oversized / adversarial file
-   * throws with the database untouched. Embedded homebrew identity and metadata
-   * are recomputed from content (see {@link buildHomebrewRow}), so a file
-   * cannot overwrite unrelated local homebrew by supplying its id.
+   * Import an exported character + its embedded homebrew as one transaction:
+   * {@link prepareExport}, then {@link characterRepo.commitImport}.
    */
   async importExport(exp: CharacterExport): Promise<ImportSummary> {
-    const doc = migrateCharacter(exp.character);
-    // Re-hash + re-derive metadata for every embedded file up front (async
-    // crypto cannot run inside a Dexie transaction without auto-committing it).
-    const prepared: HomebrewFileRow[] = [];
-    for (const brew of exp.homebrew) {
-      const b = (brew ?? {}) as Partial<HomebrewFileRow>;
-      const fileName =
-        typeof b.fileName === 'string' && b.fileName !== '' ? b.fileName : 'imported.json';
-      const url = typeof b.url === 'string' ? b.url : undefined;
-      prepared.push(await buildHomebrewRow(b.json, fileName, url));
-    }
-
-    const summary = await db.transaction('rw', db.characters, db.homebrewFiles, async () => {
-      const existingHomebrewIds = new Set(
-        await db.homebrewFiles
-          .where('id')
-          .anyOf(prepared.map((r) => r.id))
-          .primaryKeys(),
-      );
-      const characterExists = (await db.characters.get(doc.id)) !== undefined;
-      const plan = planCharacterImport(doc, prepared, {
-        characterExists,
-        existingHomebrewIds,
-        newId: () => crypto.randomUUID(),
-        now: () => new Date().toISOString(),
-      });
-      for (const row of plan.homebrewToAdd) await db.homebrewFiles.add(row);
-      await db.characters.put(plan.finalDoc);
-      return plan.summary;
-    });
-
-    if (prepared.length > 0) invalidateRegistry();
-    return summary;
+    return characterRepo.commitImport(await prepareExport(exp, 0));
   },
 
   /**
-   * Parse + validate raw exported text, then import it transactionally.
-   * The single entry point the UI should use.
+   * The first half of an import: size check, parse, validation, migration and
+   * re-hashing of every embedded homebrew file, writing nothing. A malformed,
+   * future-version, oversized or adversarial file throws here with the
+   * database untouched. A preview reads the result, and
+   * {@link characterRepo.commitImport} stores it.
    */
-  async importFromText(text: string): Promise<ImportSummary> {
+  async prepareImport(text: string): Promise<PreparedCharacterImport> {
     if (text.length > IMPORT_LIMITS.maxTextLength) {
       throw new ValidationError(`export is larger than ${IMPORT_LIMITS.maxTextLength} characters`);
     }
@@ -118,9 +85,86 @@ export const characterRepo = {
     } catch {
       throw new ValidationError('file is not valid JSON');
     }
-    return this.importExport(assertCharacterExport(raw));
+    return prepareExport(assertCharacterExport(raw), new TextEncoder().encode(text).byteLength);
+  },
+
+  /**
+   * Store a prepared import as one transaction. What to write is decided
+   * again inside the transaction, against the database as it is then, so the
+   * summary stays true even if another tab imported the same homebrew or a
+   * character with the same id after the preview was built.
+   */
+  async commitImport(prepared: PreparedCharacterImport): Promise<ImportSummary> {
+    const { doc, homebrew } = prepared;
+    const summary = await db.transaction('rw', db.characters, db.homebrewFiles, async () => {
+      const existingHomebrewIds = new Set(
+        await db.homebrewFiles
+          .where('id')
+          .anyOf(homebrew.map((r) => r.id))
+          .primaryKeys(),
+      );
+      const characterExists = (await db.characters.get(doc.id)) !== undefined;
+      const addedAt = Date.now();
+      const plan = planCharacterImport(doc, homebrew, {
+        characterExists,
+        existingHomebrewIds,
+        newId: () => crypto.randomUUID(),
+        now: () => new Date().toISOString(),
+      });
+      // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
+      // an import from when it lands.
+      for (const row of plan.homebrewToAdd) await db.homebrewFiles.add({ ...row, addedAt });
+      await db.characters.put(plan.finalDoc);
+      return plan.summary;
+    });
+
+    if (homebrew.length > 0) invalidateRegistry();
+    return summary;
+  },
+
+  /**
+   * Parse + validate raw exported text, then import it transactionally.
+   * The single entry point for an import with no preview.
+   */
+  async importFromText(text: string): Promise<ImportSummary> {
+    return characterRepo.commitImport(await characterRepo.prepareImport(text));
   },
 };
+
+/** A validated character import, ready to preview or commit; nothing written yet. */
+export interface PreparedCharacterImport {
+  /** The character, migrated to the current schema. */
+  doc: CharacterDoc;
+  /**
+   * Embedded homebrew, re-hashed and with metadata recomputed from content
+   * (see {@link buildHomebrewRow}), so a file cannot overwrite unrelated local
+   * homebrew by supplying its id.
+   */
+  homebrew: HomebrewFileRow[];
+  /** UTF-8 size of the export text (0 when it did not come from text). */
+  bytes: number;
+}
+
+/**
+ * Validate, migrate and re-hash an already-parsed export. The hashing is async
+ * crypto, which cannot run inside a Dexie transaction without auto-committing
+ * it, so it all happens here, before one opens.
+ */
+async function prepareExport(
+  exp: CharacterExport,
+  bytes: number,
+): Promise<PreparedCharacterImport> {
+  const doc = migrateCharacter(exp.character);
+  const homebrew: HomebrewFileRow[] = [];
+  for (const brew of exp.homebrew) {
+    const b = (brew ?? {}) as Partial<HomebrewFileRow>;
+    const fileName =
+      typeof b.fileName === 'string' && b.fileName !== '' ? b.fileName : 'imported.json';
+    const url = typeof b.url === 'string' ? b.url : undefined;
+    homebrew.push(await buildHomebrewRow(b.json, fileName, url));
+  }
+  return { doc, homebrew, bytes };
+}
 
 export interface CharacterReadError {
   id?: string;
