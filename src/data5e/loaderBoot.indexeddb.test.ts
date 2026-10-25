@@ -27,6 +27,10 @@ vi.mock('./config', async (importOriginal) => ({
 
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 
+// IndexedDB under fake-indexeddb is slow on a loaded runner: the default
+// one-second wait was enough locally and flaked in CI under the coverage gate.
+const WAIT = { timeout: 5000 };
+
 /** Every release list request the loader makes. */
 const tagsFetch = vi.fn();
 
@@ -156,7 +160,10 @@ describe('the boot-time update check', () => {
 
     void loader.initDataLayer();
 
-    await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
+    await vi.waitFor(
+      () => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+      WAIT,
+    );
     expect(dataStatusStore.getState().phase).toBe('working');
   });
 
@@ -170,9 +177,12 @@ describe('the boot-time update check', () => {
 
     void loader.initDataLayer();
 
-    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'));
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'), WAIT);
     // A download that failed says nothing about whether a newer release exists.
-    await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
+    await vi.waitFor(
+      () => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+      WAIT,
+    );
   });
 
   it('asks once on a fresh install and serves the check from the same answer', async () => {
@@ -183,8 +193,8 @@ describe('the boot-time update check', () => {
     // A fresh install takes the newest release there is, so there is nothing to
     // prompt about, and the check reads the list resolution just wrote rather
     // than asking for it again.
-    await vi.waitFor(() => expect(loader.getActiveTag()).toBe('v2.33.0'));
-    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(loader.getActiveTag()).toBe('v2.33.0'), WAIT);
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'), WAIT);
     expect(tagsFetch).toHaveBeenCalledOnce();
     expect(dataStatusStore.getState().updateAvailableTag).toBeUndefined();
     expect((await db.settings.get('dataTag'))?.value).toBe('v2.33.0');
@@ -193,14 +203,14 @@ describe('the boot-time update check', () => {
   it('does not re-read the whole cache once per pack on a warm boot', async () => {
     const first = await boot([{ key: 'dataTag', value: DATA_TAG }]);
     await first.loader.initDataLayer();
-    await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'), WAIT);
     fetchFile.mockClear();
 
     // Same device, second launch: everything is already on disk.
     const { dataCacheRepo, dataStatusStore, loader } = await reboot();
     const scan = vi.spyOn(dataCacheRepo, 'cachedPaths');
     await loader.initDataLayer();
-    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'), WAIT);
 
     expect(fetchFile).not.toHaveBeenCalled();
     // Working out what a pack is missing means scanning the cache's keys, and
@@ -222,7 +232,7 @@ describe('the boot-time update check', () => {
     );
     const first = await boot();
     await first.loader.initDataLayer();
-    await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(first.dataStatusStore.getState().phase).toBe('done'), WAIT);
     expect((await first.db.settings.get('dataTag'))?.value).toBe(DATA_TAG);
     // The list landed and was remembered, so the next launch has it for free.
     await vi.waitFor(() =>
@@ -232,7 +242,7 @@ describe('the boot-time update check', () => {
 
     const { dataStatusStore, loader } = await reboot();
     await loader.initDataLayer();
-    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'), WAIT);
 
     // Still on the release it installed, and still only offering the other one.
     expect(loader.getActiveTag()).toBe(DATA_TAG);
@@ -281,7 +291,10 @@ describe('the boot-time update check', () => {
   it('stops offering a release once it is installed', async () => {
     const { dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
     void loader.initDataLayer();
-    await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
+    await vi.waitFor(
+      () => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+      WAIT,
+    );
 
     await loader.updateToTag('v2.33.0');
 
@@ -329,13 +342,16 @@ describe('the boot-time update check', () => {
 
     void loader.initDataLayer();
 
-    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'));
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'), WAIT);
     // Installed the pin rather than waiting, and downloaded under it.
     expect(loader.getActiveTag()).toBe(DATA_TAG);
     expect(await db.dataFiles.get(`${DATA_TAG}:races.json`)).toBeDefined();
     // The list still lands, and the release it names is still offered: the
     // request the deadline gave up on is the same one the check is waiting for.
-    await vi.waitFor(() => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'));
+    await vi.waitFor(
+      () => expect(dataStatusStore.getState().updateAvailableTag).toBe('v2.33.0'),
+      WAIT,
+    );
     expect(tagsFetch).toHaveBeenCalledOnce();
   });
 });

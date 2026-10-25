@@ -327,8 +327,9 @@ drift is everything above and below it.
 
 - Re-run `bun run ci` and refresh the baseline table whenever it is quoted
   anywhere that matters. When coverage or bundle size improves, ratchet the
-  floors in `vite.config.ts` and the budgets in `scripts/bundle-budget.json`. It was two months and
-  thirteen points of coverage stale at the last review.
+  floors in `vite.config.ts` and the budgets in `scripts/bundle-budget.json`.
+  Before CI enforced them, the table drifted about 22 points of coverage out
+  of date between reviews.
 - When a P2 or P3 theme grows a stable id and an acceptance signal, it has
   become an issue. File it and leave a one-line pointer, rather than letting
   the theme quietly accumulate specifics that no PR can close.

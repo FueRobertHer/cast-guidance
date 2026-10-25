@@ -23,13 +23,17 @@ bun run test:coverage  # tests with a V8 coverage report
 bun run lint           # biome check (src, scripts, tests-fixtures)
 bun run typecheck      # tsc -b
 bun run build          # production / PWA build
-bun run check          # lint + typecheck + test (the full offline gate)
+bun run check          # lint + typecheck + test (the fast offline gate)
+bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget
+bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a build)
 bun run data:audit     # download the pinned dataset and audit normalization (network-gated)
 ```
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the
-frozen install, lint, typecheck, tests, and build on every push and PR.
+frozen install, lint, typecheck, tests with coverage floors, the build, and a
+bundle budget on every push and PR, and fails when coverage drops below the
+floors in `vite.config.ts` or the build outgrows `scripts/bundle-budget.json`.
 
 ## Game data & copyright
 

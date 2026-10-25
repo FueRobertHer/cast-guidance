@@ -19,6 +19,10 @@ const budgetPath = path.join(import.meta.dirname, 'bundle-budget.json');
 
 function fail(message: string): never {
   console.error(`bundle-budget: ${message}`);
+  // A structural failure belongs in the job summary too, not only the log.
+  const summary = process.env.GITHUB_STEP_SUMMARY;
+  if (summary)
+    appendFileSync(summary, `### Bundle budget\n\nCould not measure the build: ${message}\n`);
   process.exit(1);
 }
 

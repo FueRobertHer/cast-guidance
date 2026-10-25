@@ -39,6 +39,9 @@ export default defineConfig({
     // up test copies under `.claude/worktrees/`, which import the root `src`
     // through the `@/` alias and skew both the test count and coverage.
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
+    // Headroom for a loaded 2-vCPU runner with coverage on: component tests
+    // that take a second locally ran past the 5 s default there.
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       // `json-summary` writes coverage/coverage-summary.json, which CI turns
