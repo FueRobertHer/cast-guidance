@@ -664,15 +664,26 @@ describe('changes that take something away', () => {
         expect(screen.queryByRole('button', { name: 'Increase STR' })).toBeNull();
       });
 
-      it('works out each change from the scores the select was focused on', () => {
+      /** A navigation key on a closed select, and the change it fires in the same task. */
+      const step = (label: string, key: string, value: number) => {
+        fireEvent.keyDown(screen.getByLabelText(label), { key });
+        pick(label, value);
+      };
+      /** Let the task a key ran in end, as a person reaching for the list does. */
+      const nextTask = () => act(() => new Promise<void>((done) => setTimeout(done, 0)));
+
+      it('works out each arrowed change from the scores the run began on', () => {
         renderDraft('abilities', (d) => {
           monk(d);
           d.abilities.base = { ...inOrder };
         });
         const str = screen.getByLabelText('Strength (STR)');
         fireEvent.focus(str);
-        // Arrowing through the options fires a change for each one.
-        for (const v of [14, 13, 12, 8]) pick('Strength (STR)', v);
+        // Arrowing a closed select (Windows) fires a change for each option.
+        step('Strength (STR)', 'ArrowDown', 14);
+        step('Strength (STR)', 'ArrowDown', 13);
+        step('Strength (STR)', 'ArrowDown', 12);
+        step('Strength (STR)', 'End', 8);
         fireEvent.blur(str);
         // Only STR and the ability that held 8 moved, not a chain of swaps.
         expect(scores()).toBe('8/14/13/12/10/15');
@@ -684,9 +695,9 @@ describe('changes that take something away', () => {
           d.abilities.base = { ...inOrder };
         });
         fireEvent.focus(screen.getByLabelText('Strength (STR)'));
-        pick('Strength (STR)', 14);
+        step('Strength (STR)', 'ArrowDown', 14);
         expect(screen.getByText('STR 14, DEX 15')).toBeTruthy();
-        pick('Strength (STR)', 13);
+        step('Strength (STR)', 'ArrowDown', 13);
         // DEX gave 15 back as STR moved on: that is said too.
         expect(screen.getByText('STR 13, DEX 14, CON 15')).toBeTruthy();
       });
@@ -701,7 +712,7 @@ describe('changes that take something away', () => {
         fireEvent.pointerDown(str);
         pick('Strength (STR)', 14);
         expect(scores()).toBe('14/15/13/12/10/8');
-        // Still focused, the list opened again: by a press, then by a key.
+        // Still focused, the list opened again and a value picked from it.
         fireEvent.pointerDown(str);
         expect(within(str).getByRole('option', { name: '15 (swap with DEX)' })).toBeTruthy();
         pick('Strength (STR)', 13);
@@ -709,6 +720,25 @@ describe('changes that take something away', () => {
         fireEvent.keyDown(str, { key: 'Enter' });
         pick('Strength (STR)', 12);
         expect(scores()).toBe('12/15/14/13/10/8');
+      });
+
+      it('builds on the last pick when a plain arrow opens the list, as on a Mac', async () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        // The arrow opens the list and changes nothing; the pick comes later.
+        fireEvent.keyDown(str, { key: 'ArrowDown' });
+        await nextTask();
+        pick('Strength (STR)', 14);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        fireEvent.keyDown(str, { key: 'ArrowDown' });
+        await nextTask();
+        pick('Strength (STR)', 13);
+        // DEX keeps the 15 it took; CON gives up its 13.
+        expect(scores()).toBe('13/15/14/12/10/8');
       });
 
       it('seeds an unassigned draft in order, ready to swap', () => {

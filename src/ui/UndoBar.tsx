@@ -29,8 +29,12 @@ export function UndoBar({
   const region = useRef<HTMLDivElement>(null);
   const undoButton = useRef<HTMLButtonElement>(null);
   const focusAfterUndo = useRef(false);
+  // Starts at the value the bar mounts with, so a bar remounted under a
+  // request already served does not take focus again.
+  const focusHandled = useRef(focusRequest);
   useLayoutEffect(() => {
-    if (focusRequest === 0) return;
+    if (focusRequest === focusHandled.current) return;
+    focusHandled.current = focusRequest;
     undoButton.current?.focus();
   }, [focusRequest]);
   // Only once the region says what was undone: focusing it in the click

@@ -65,4 +65,23 @@ describe('UndoBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Undo/ }));
     expect(heardOnFocus).toBe('Undone: Species: Testfolk → Dragonborn');
   });
+
+  it('takes focus for a new focus request, and not again when remounted', () => {
+    const offer = { title: 'Discarded draft Aria' };
+    const bar = (request: number) => (
+      <UndoBar pending={offer} undone={null} onUndo={() => undefined} focusRequest={request} />
+    );
+    const { rerender, unmount } = render(bar(0));
+    rerender(bar(1));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Undo/ }));
+
+    unmount();
+    const elsewhere = document.createElement('input');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    // Mounted again under the request already served: focus stays put.
+    render(bar(1));
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
 });

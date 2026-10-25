@@ -269,6 +269,28 @@ function FinalLine({ score, final }: { score: number; final?: DerivedAbility }) 
 }
 
 /**
+ * Whether a key steps a closed select to another option: the arrows, Home,
+ * End, Page Up and Down, and type-ahead. Alt+Arrow, Space, Enter and F4 open
+ * the list instead.
+ */
+function isNavigationKey(e: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean }) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return false;
+  return (
+    [
+      'ArrowUp',
+      'ArrowDown',
+      'ArrowLeft',
+      'ArrowRight',
+      'Home',
+      'End',
+      'PageUp',
+      'PageDown',
+    ].includes(e.key) ||
+    (e.key.length === 1 && e.key !== ' ')
+  );
+}
+
+/**
  * One select per ability, each listing the six array values. A value another
  * ability holds reads "14 (swap with DEX)", and picking it swaps the two.
  *
@@ -276,10 +298,14 @@ function FinalLine({ score, final }: { score: number; final?: DerivedAbility }) 
  * (Windows does), so those changes are worked out from the scores as they were
  * when that run began, not from the last change: arrowing STR through every
  * value moves only STR and whichever ability held the value it lands on. The
- * option labels read from that snapshot too. A run begins on focus, and again
- * whenever the list is opened (a press, or Space, Enter, Alt+Arrow or F4), so
- * a pick made from the open list is kept as the base of the next one; blur
- * ends it.
+ * option labels read from that snapshot too.
+ *
+ * What opens the list differs by platform (on a Mac a plain arrow does), so
+ * the run is told apart by what caused the change, not by how the list was
+ * opened: a change in the same task as a navigation key on the select is a
+ * closed select stepping, and works from the snapshot; any other change is a
+ * pick from the open list, which works from the current scores and ends the
+ * run, so the next pick builds on it. Blur ends the run too.
  */
 function StandardAllocator({
   base,
@@ -298,9 +324,12 @@ function StandardAllocator({
   // reads, since two changes can land before a render.
   const [shown, setShown] = useState<Scores | null>(null);
   const labels = shown ?? base;
-  const begin = () => {
-    snapshot.current = { ...base };
-    setShown(snapshot.current);
+  // Set by a navigation key until the end of its task: a change that lands
+  // while it is set came from that key on a closed select.
+  const stepping = useRef(false);
+  const endRun = () => {
+    snapshot.current = null;
+    setShown(null);
   };
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -312,23 +341,23 @@ function StandardAllocator({
           <select
             id={`${id}-${a}`}
             value={base[a]}
-            onFocus={begin}
-            onPointerDown={begin}
             onKeyDown={(e) => {
-              const opens =
-                e.key === ' ' ||
-                e.key === 'Enter' ||
-                e.key === 'F4' ||
-                (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp'));
-              if (opens) begin();
+              if (!isNavigationKey(e)) return;
+              if (snapshot.current === null) {
+                snapshot.current = { ...base };
+                setShown(snapshot.current);
+              }
+              stepping.current = true;
+              setTimeout(() => {
+                stepping.current = false;
+              }, 0);
             }}
-            onBlur={() => {
-              snapshot.current = null;
-              setShown(null);
-            }}
+            onBlur={endRun}
             onChange={(e) => {
-              const from = snapshot.current ?? base;
+              const fromRun = stepping.current ? snapshot.current : null;
+              const from = fromRun ?? base;
               const next = swapStandard(from, a, Number(e.target.value));
+              if (fromRun === null) endRun();
               onScores(next);
               // Said against the scores just before this change, which is
               // what the player last heard.
