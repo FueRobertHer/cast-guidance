@@ -185,7 +185,9 @@ function Section({
 }) {
   return (
     <details id={id} open={defaultOpen} className="group scroll-mt-4 rounded-lg bg-surface">
-      <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
+      {/* Wraps so a long summary (six ability scores, no spaces) moves
+          under the title at large text instead of widening the page. */}
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-x-2 px-3 py-2.5">
         <span className="text-sm font-semibold">{title}</span>
         <span className="flex items-center gap-2 text-xs text-ink-muted">
           {summary}
