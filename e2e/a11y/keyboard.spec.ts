@@ -82,10 +82,11 @@ async function focusPageStart(page: Page): Promise<void> {
 
 /**
  * Where focus is relative to `dialog`: the index of the focused element among
- * the dialog's drawn tabbable elements, -1 for the dialog itself, or null when
- * focus is outside it. Also returns how many tabbable elements there are.
+ * the dialog's drawn tabbable elements, -1 for anything else inside it, or
+ * null when focus is outside it. Also whether the dialog element itself has
+ * focus, and how many tabbable elements there are.
  */
-function focusIn(dialog: Locator): Promise<{ at: number | null; count: number }> {
+function focusIn(dialog: Locator): Promise<{ at: number | null; self: boolean; count: number }> {
   return dialog.evaluate((root) => {
     const list = [
       ...root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'),
@@ -96,13 +97,14 @@ function focusIn(dialog: Locator): Promise<{ at: number | null; count: number }>
     const active = document.activeElement;
     const at =
       active === null || !root.contains(active) ? null : list.indexOf(active as HTMLElement);
-    return { at, count: list.length };
+    return { at, self: active === root, count: list.length };
   });
 }
 
 /**
  * Focus is inside `dialog`, and Tab and Shift+Tab, each pressed two more
  * times than it has tabbable elements, keep it there and visit every one.
+ * A dialog with nothing to tab to must hold focus on itself throughout.
  */
 async function expectTrapped(page: Page, dialog: Locator): Promise<void> {
   await expect
@@ -113,11 +115,16 @@ async function expectTrapped(page: Page, dialog: Locator): Promise<void> {
     const seen = new Set<number>();
     for (let i = 0; i < count + 2; i++) {
       await page.keyboard.press(key);
-      const { at } = await focusIn(dialog);
+      const { at, self } = await focusIn(dialog);
       if (at === null) {
         throw new Error(`${key} x${i + 1} left the dialog for ${await describeFocus(page)}`);
       }
-      if (at !== null && at >= 0) seen.add(at);
+      if (count === 0 && !self) {
+        throw new Error(
+          `${key} x${i + 1} moved off the empty dialog to ${await describeFocus(page)}`,
+        );
+      }
+      if (at >= 0) seen.add(at);
     }
     expect(seen.size, `${key} visits every control in the dialog`).toBe(count);
   }
@@ -131,15 +138,22 @@ async function escapeReturnsTo(page: Page, dialog: Locator, opener: Locator): Pr
 }
 
 /**
- * Opens `dialog` by pressing Enter on `opener`, checks the trap, closes it
- * with Escape and checks focus came back. `opener` is focused directly: how
- * Tab reaches it is the page tests' business.
+ * Opens `dialog` by pressing Enter on `opener`, runs `onOpen` (a check of
+ * where focus landed), checks the trap, closes it with Escape and checks
+ * focus came back. `opener` is focused directly: how Tab reaches it is the
+ * page tests' business.
  */
-async function checkDialog(page: Page, opener: Locator, dialog: Locator): Promise<void> {
+async function checkDialog(
+  page: Page,
+  opener: Locator,
+  dialog: Locator,
+  onOpen?: () => Promise<void>,
+): Promise<void> {
   await opener.focus();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeVisible();
   await animationsSettled(page);
+  await onOpen?.();
   await expectTrapped(page, dialog);
   await escapeReturnsTo(page, dialog, opener);
 }
@@ -200,7 +214,7 @@ test.describe('keyboard: dialogs and drawers', () => {
     await escapeReturnsTo(page, preview, importButton);
   });
 
-  test('the sheet: dice tray, history, long rest and the info sheets', async ({ page }) => {
+  test('the Play tab: dice tray, history and long rest', async ({ page }) => {
     await gotoRosterSettled(page);
     const id = await createBlankCharacter(page);
 
@@ -220,6 +234,11 @@ test.describe('keyboard: dialogs and drawers', () => {
       page.getByRole('button', { name: 'Long rest' }),
       page.getByRole('dialog', { name: 'Long rest' }),
     );
+  });
+
+  test('the info sheets, and Add item', async ({ page }) => {
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Stats');
     await checkDialog(
@@ -236,6 +255,15 @@ test.describe('keyboard: dialogs and drawers', () => {
       page.getByRole('button', { name: 'Fighter details' }),
       page.getByRole('dialog', { name: 'Fighter' }),
     );
+
+    // Its first control is the search box, and with a keyboard (a fine
+    // pointer) that is where focus lands. A touch screen focuses the sheet
+    // instead, so its keyboard does not cover the list (a unit test).
+    await gotoSheetTab(page, id, 'Items');
+    const addItem = page.getByRole('dialog', { name: 'Add item' });
+    await checkDialog(page, page.getByRole('button', { name: 'Add item' }), addItem, async () => {
+      await expect(addItem.getByRole('textbox', { name: 'Search items' })).toBeFocused();
+    });
   });
 
   test('homebrew: the import preview', async ({ page }) => {
@@ -329,6 +357,20 @@ test.describe('keyboard: pages', () => {
   });
 });
 
+/** Where focus was at one step of the list walk. */
+interface Step {
+  name: string;
+  inList: boolean;
+  inView: boolean;
+}
+
+declare global {
+  interface Window {
+    walk?: Step[];
+    recordFocus?: () => void;
+  }
+}
+
 /** Spells enough that, virtualized, most rows would not be rendered at once. */
 const MANY = 150;
 
@@ -346,6 +388,9 @@ test.describe('keyboard: the virtualized list', () => {
     page,
     mirror,
   }) => {
+    // 180 key presses on a page drawing every row (see below): the press
+    // itself is the cost, so this one gets the slow budget.
+    test.slow();
     // VirtualList is meant to render only the rows near the scroll position
     // (with an overscan of 10), so a row Tab is about to reach may not exist
     // yet. Each press must land on the next row, drawn and on screen: inside
@@ -362,36 +407,54 @@ test.describe('keyboard: the virtualized list', () => {
     const rows = main.locator('a[href^="/library/spell/"]');
 
     await tabTo(page, rows.first());
-    for (let i = 1; i <= MANY; i++) {
-      const state = await page.evaluate(() => {
+    // Each row is recorded in the page as the next Tab goes down, before
+    // focus moves on (so after the browser has scrolled it into view), and
+    // read back once: one round trip per press instead of two.
+    await page.evaluate(() => {
+      const seen: Step[] = [];
+      window.walk = seen;
+      const record = () => {
         const el = document.activeElement as HTMLElement;
         const list = el.closest('.overflow-y-auto');
         const row = el.getBoundingClientRect();
         const box = list?.getBoundingClientRect() ?? row;
         const top = Math.max(box.top, 0);
         const bottom = Math.min(box.bottom, window.innerHeight);
-        return {
+        seen.push({
           name: `${el.tagName.toLowerCase()} "${el.textContent ?? ''}"`,
           inList: list !== null,
           inView: row.top >= top - 1 && row.bottom <= bottom + 1,
-        };
-      });
-      const want = `Spell ${String(i).padStart(3, '0')}`;
-      expect(state.inList, `row ${want} has focus, not ${state.name}`).toBe(true);
-      expect(state.name.startsWith(`a "${want}`), `row ${want} has focus, not ${state.name}`).toBe(
-        true,
+        });
+      };
+      document.addEventListener(
+        'keydown',
+        (e) => {
+          if (e.key === 'Tab') record();
+        },
+        { capture: true },
       );
-      expect(state.inView, `${want} is scrolled into view`).toBe(true);
-      if (i < MANY) await page.keyboard.press('Tab');
-    }
-
+      window.recordFocus = record;
+    });
+    for (let i = 1; i < MANY; i++) await page.keyboard.press('Tab');
     // And back up a screenful and more with Shift+Tab.
-    for (let i = MANY - 1; i >= MANY - 30; i--) {
-      await page.keyboard.press('Shift+Tab');
-      const name = await page.evaluate(() => document.activeElement?.textContent ?? '');
-      expect(name.startsWith(`Spell ${String(i).padStart(3, '0')}`), `Shift+Tab to row ${i}`).toBe(
-        true,
-      );
-    }
+    for (let i = 0; i < 30; i++) await page.keyboard.press('Shift+Tab');
+    const walk = await page.evaluate(() => {
+      window.recordFocus?.();
+      return window.walk ?? [];
+    });
+
+    const order = [
+      ...Array.from({ length: MANY }, (_, i) => i + 1),
+      ...Array.from({ length: 30 }, (_, i) => MANY - 1 - i),
+    ];
+    expect(walk).toHaveLength(order.length);
+    order.forEach((n, step) => {
+      const want = `Spell ${String(n).padStart(3, '0')}`;
+      const at = walk[step] as Step;
+      const where = `step ${step + 1}: row ${want} has focus, not ${at.name}`;
+      expect(at.inList, where).toBe(true);
+      expect(at.name.startsWith(`a "${want}`), where).toBe(true);
+      expect(at.inView, `step ${step + 1}: ${want} is scrolled into view`).toBe(true);
+    });
   });
 });

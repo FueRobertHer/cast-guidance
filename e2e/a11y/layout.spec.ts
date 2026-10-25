@@ -129,43 +129,82 @@ async function setUp(page: Page): Promise<string> {
   return createBlankCharacter(page);
 }
 
-/** How far the page is wider than its viewport, in CSS px (0 when it is not). */
-function sidewaysOverflow(page: Page): Promise<number> {
+/**
+ * How far the page is wider than its viewport, in CSS px (0 when it is not),
+ * and the innermost elements that stick out past its right edge, for the
+ * failure message.
+ */
+function sidewaysOverflow(page: Page): Promise<{ by: number; culprits: string[] }> {
   return page.evaluate(() => {
     const root = document.documentElement;
-    return Math.max(0, root.scrollWidth - root.clientWidth);
+    const out = [...document.body.querySelectorAll('*')].filter(
+      (el) => el.getBoundingClientRect().right > root.clientWidth + 0.5,
+    );
+    const culprits = out
+      .filter((el) => !out.some((o) => o !== el && el.contains(o)))
+      .slice(0, 5)
+      .map((el) => `${el.tagName.toLowerCase()} "${el.textContent?.trim().slice(0, 30) ?? ''}"`);
+    return { by: Math.max(0, root.scrollWidth - root.clientWidth), culprits };
   });
 }
+
+/** Opens every fold (`<details>`), so what is collapsed by default is measured too. */
+async function openFolds(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const fold of document.querySelectorAll('details')) fold.open = true;
+  });
+}
+
+async function expectNoSidewaysScroll(page: Page, route: Route): Promise<void> {
+  const { by, culprits } = await sidewaysOverflow(page);
+  expect(by, `${route.name} scrolls sideways, past: ${culprits.join(', ')}`).toBe(0);
+}
+
+// In two tests each, so neither runs near the timeout under load.
+const SHEET = ROUTES.filter((r) => r.name.startsWith('sheet '));
+const PAGES = ROUTES.filter((r) => !SHEET.includes(r));
+const GROUPS = [
+  ['the main routes', PAGES],
+  ['the sheet tabs', SHEET],
+] as const;
 
 test.describe('reflow at 320 CSS px', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
-  test('no main route scrolls sideways', async ({ page }) => {
-    const id = await setUp(page);
-    for (const route of ROUTES) {
-      await route.open(page, id);
-      await animationsSettled(page);
-      expect(await sidewaysOverflow(page), `${route.name} scrolls sideways`).toBe(0);
-    }
-  });
+  for (const [group, routes] of GROUPS) {
+    test(`${group} do not scroll sideways, folds open`, async ({ page }) => {
+      const id = await setUp(page);
+      for (const route of routes) {
+        await route.open(page, id);
+        await openFolds(page);
+        await animationsSettled(page);
+        await expectNoSidewaysScroll(page, route);
+      }
+    });
+  }
 });
 
 test.describe('text at 200%', () => {
-  test('no route scrolls sideways, and its primary controls stay whole', async ({ page }) => {
-    const id = await setUp(page);
-    for (const route of ROUTES) {
-      await route.open(page, id);
-      // The browser's text-size setting, as a page sees it: a larger root
-      // font, so everything sized in rem grows with it.
-      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
-      await animationsSettled(page);
-      expect(await sidewaysOverflow(page), `${route.name} scrolls sideways`).toBe(0);
-      for (const control of route.primary(page)) {
-        await control.scrollIntoViewIfNeeded();
-        await expect(control, `${route.name}: ${control}`).toBeInViewport({ ratio: 1 });
+  for (const [group, routes] of GROUPS) {
+    test(`${group} do not scroll sideways, folds open, and keep primary controls whole`, async ({
+      page,
+    }) => {
+      const id = await setUp(page);
+      for (const route of routes) {
+        await route.open(page, id);
+        // The browser's text-size setting, as a page sees it: a larger root
+        // font, so everything sized in rem grows with it.
+        await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        await openFolds(page);
+        await animationsSettled(page);
+        await expectNoSidewaysScroll(page, route);
+        for (const control of route.primary(page)) {
+          await control.scrollIntoViewIfNeeded();
+          await expect(control, `${route.name}: ${control}`).toBeInViewport({ ratio: 1 });
+        }
       }
-    }
-  });
+    });
+  }
 });
 
 /** Where `locator` is drawn; fails if it is not. */
