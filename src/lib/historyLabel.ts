@@ -1,27 +1,6 @@
 /** Short human labels for character history snapshots. */
 import type { CharacterDoc } from '@/engine/types';
-
-/** Multiset difference of two display-name lists. */
-function nameDiff(prev: string[], next: string[]): { added: string[]; removed: string[] } {
-  const count = (list: string[]): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const n of list) m.set(n, (m.get(n) ?? 0) + 1);
-    return m;
-  };
-  const p = count(prev);
-  const n = count(next);
-  const added: string[] = [];
-  const removed: string[] = [];
-  for (const [name, c] of n) for (let i = 0; i < c - (p.get(name) ?? 0); i++) added.push(name);
-  for (const [name, c] of p) for (let i = 0; i < c - (n.get(name) ?? 0); i++) removed.push(name);
-  return { added, removed };
-}
-
-/** "Bless +2 more" style summary for a list of changed names. */
-function firstWithMore(names: string[]): string {
-  const first = names[0] ?? '';
-  return names.length > 1 ? `${first} +${names.length - 1} more` : first;
-}
+import { firstWithMore, humanKey, nameDiff, spellNames } from './docDiff';
 
 function equipmentLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
   const nameOf = (e: CharacterDoc['equipment'][number]) => e.ref?.name ?? e.custom?.name ?? 'item';
@@ -32,16 +11,6 @@ function equipmentLabel(prev: CharacterDoc, next: CharacterDoc): string | undefi
   // Same items — only qty/equipped/attuned/location changed.
   if (JSON.stringify(prev.equipment) !== JSON.stringify(next.equipment)) return 'Equipment';
   return undefined;
-}
-
-function spellNames(doc: CharacterDoc): { known: string[]; prepared: string[] } {
-  const known: string[] = [];
-  const prepared: string[] = [];
-  for (const block of Object.values(doc.spellcasting)) {
-    for (const s of block.known) known.push(s.name);
-    for (const s of block.prepared) prepared.push(s.name);
-  }
-  return { known, prepared };
 }
 
 function spellsLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
@@ -90,11 +59,6 @@ function playChanged(prev: CharacterDoc, next: CharacterDoc): boolean {
     return clone;
   };
   return JSON.stringify(strip(prev.play)) !== JSON.stringify(strip(next.play));
-}
-
-/** 'relentless-endurance' -> 'relentless endurance'. Resource keys are kebab-case. */
-function humanKey(key: string): string {
-  return key.replace(/-/g, ' ');
 }
 
 /** The first spell-slot level whose spent count moved, as a spent/regained label. */
