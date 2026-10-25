@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { Sheet } from './sheet';
@@ -175,6 +175,90 @@ export function DialogHost() {
   };
 
   return (
+    <DialogFrame title={req.title} onDismiss={dismiss}>
+      {req.kind === 'confirm' ? (
+        <div className="flex flex-col gap-3">
+          {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={dismiss}
+              className="flex-1 rounded-lg bg-surface-2 px-3 py-2.5 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                req.resolve(true);
+                close();
+              }}
+              className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-white ${
+                req.danger === true ? 'bg-accent-deep' : 'bg-accent'
+              }`}
+            >
+              {req.confirmLabel ?? 'Confirm'}
+            </button>
+          </div>
+        </div>
+      ) : req.kind === 'choice' ? (
+        <div className="flex flex-col gap-2">
+          {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
+          <div className="flex flex-col gap-1.5">
+            {req.options.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => {
+                  req.resolve(o.id);
+                  close();
+                }}
+                className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
+                  o.danger === true ? 'text-accent' : ''
+                }`}
+              >
+                <span className="min-w-0">{o.label}</span>
+                {/* Wraps rather than running off a phone screen: cast hints
+                        carry cost, turn, and edition notes, the last one last. */}
+                {o.hint !== undefined && (
+                  <span className="min-w-0 text-right text-xs font-normal text-ink-muted">
+                    {o.hint}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {req.kind === 'number' && req.hint !== undefined && (
+            <p className="text-xs text-ink-muted">{req.hint}</p>
+          )}
+          <InputForm key={req.title} req={req} />
+        </div>
+      )}
+    </DialogFrame>
+  );
+}
+
+/**
+ * The frame every dialog here is drawn in: a modal bottom sheet named by its
+ * title, with focus moved to its first control when it opens. Exported so a
+ * dialog with content of its own (the import previews) is the same dialog as
+ * the ask* ones, not a lookalike. Focus return stays with the caller:
+ * DialogHost keeps the first opener across a chain of dialogs, which a
+ * one-off dialog does not need.
+ */
+export function DialogFrame({
+  title,
+  onDismiss,
+  children,
+}: {
+  title: ReactNode;
+  onDismiss: () => void;
+  children: ReactNode;
+}) {
+  return (
     <Sheet.Root
       open
       // vaul turns Radix's open-time focus off by default, which left focus on
@@ -183,75 +267,15 @@ export function DialogHost() {
       // input.
       autoFocus
       onOpenChange={(o) => {
-        if (!o) dismiss();
+        if (!o) onDismiss();
       }}
     >
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
         <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-3 text-base font-semibold">{req.title}</Sheet.Title>
-          {req.kind === 'confirm' ? (
-            <div className="flex flex-col gap-3">
-              {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={dismiss}
-                  className="flex-1 rounded-lg bg-surface-2 px-3 py-2.5 text-sm font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    req.resolve(true);
-                    close();
-                  }}
-                  className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-white ${
-                    req.danger === true ? 'bg-accent-deep' : 'bg-accent'
-                  }`}
-                >
-                  {req.confirmLabel ?? 'Confirm'}
-                </button>
-              </div>
-            </div>
-          ) : req.kind === 'choice' ? (
-            <div className="flex flex-col gap-2">
-              {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
-              <div className="flex flex-col gap-1.5">
-                {req.options.map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    onClick={() => {
-                      req.resolve(o.id);
-                      close();
-                    }}
-                    className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
-                      o.danger === true ? 'text-accent' : ''
-                    }`}
-                  >
-                    <span className="min-w-0">{o.label}</span>
-                    {/* Wraps rather than running off a phone screen: cast hints
-                        carry cost, turn, and edition notes, the last one last. */}
-                    {o.hint !== undefined && (
-                      <span className="min-w-0 text-right text-xs font-normal text-ink-muted">
-                        {o.hint}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {req.kind === 'number' && req.hint !== undefined && (
-                <p className="text-xs text-ink-muted">{req.hint}</p>
-              )}
-              <InputForm key={req.title} req={req} />
-            </div>
-          )}
+          <Sheet.Title className="mb-3 text-base font-semibold">{title}</Sheet.Title>
+          {children}
         </Sheet.Content>
       </Sheet.Portal>
     </Sheet.Root>
