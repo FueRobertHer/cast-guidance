@@ -3,7 +3,8 @@ name: CI
 # Runs the local green baseline on every push and PR: frozen install, lint,
 # typecheck, unit tests with coverage thresholds, a production/PWA build, and a
 # bundle budget. Coverage floors live in vite.config.ts and byte budgets in
-# scripts/bundle-budget.json; `bun run ci` runs the same gates locally.
+# scripts/bundle-budget.json; `bun run ci` runs the same gates locally. The
+# `e2e` job runs the browser suite (`bun run e2e:ci` locally).
 on:
   push:
     branches: [main]
@@ -80,3 +81,83 @@ jobs:
           path: dist
           retention-days: 7
           if-no-files-found: warn
+
+  e2e:
+    # Browser E2E against the production build, in Chromium (see
+    # e2e/README.md). Runs beside `build`, not after it: one extra build buys
+    # feedback that does not wait on the coverage run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the exact Playwright version, which pins the browser build.
+      # System libraries are not cached; the install step adds them either way
+      # and skips the download on a hit.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Production / PWA build
+        run: bun run build
+
+      - name: E2E
+        run: bun run e2e
+        env:
+          CI: 'true'
+
+      - name: E2E summary
+        if: always()
+        run: |
+          report=test-results/e2e.json
+          {
+            echo "### E2E"
+            echo ""
+            if [ -f "$report" ] && jq -e . "$report" > /dev/null 2>&1; then
+              echo "| Passed | Failed | Flaky | Skipped | Duration |"
+              echo "| ---: | ---: | ---: | ---: | ---: |"
+              jq -r '.stats // {} | "| \(.expected // 0) | \(.unexpected // 0) | \(.flaky // 0) | \(.skipped // 0) | \((.duration // 0) / 1000 | floor) s |"' "$report"
+              # Errors outside any test (a global setup that threw, a spec that
+              # failed to load) leave the counts at zero on a red run.
+              errors=$(jq '.errors // [] | length' "$report")
+              if [ "$errors" -gt 0 ]; then
+                echo ""
+                echo "**${errors} error(s) outside the tests.** The first:"
+                echo ""
+                echo '```'
+                jq -r '.errors[0].message // "(no message)"' "$report" | head -n 20
+                echo '```'
+              fi
+            else
+              echo "_No E2E report: the run did not get far enough to write one._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore

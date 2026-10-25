@@ -9,7 +9,7 @@ initiative, attacks, spell slots) with manual overrides on top. Tracks a live se
 ## Stack
 
 Vite · React 19 · TypeScript (strict) · Tailwind CSS 4 · react-router · Zustand · Dexie
-(IndexedDB) · MiniSearch · vite-plugin-pwa · Vitest · Biome · Bun (package manager)
+(IndexedDB) · MiniSearch · vite-plugin-pwa · Vitest · Playwright · Biome · Bun (package manager)
 
 ## Development
 
@@ -20,13 +20,15 @@ bun install
 bun run dev            # dev server
 bun run test           # unit + integration tests (engine, dice, data, repos, components)
 bun run test:coverage  # tests with a V8 coverage report
-bun run lint           # biome check (src, scripts, tests-fixtures)
+bun run lint           # biome check (src, scripts, tests-fixtures, e2e)
 bun run typecheck      # tsc -b
 bun run build          # production / PWA build
 bun run check          # lint + typecheck + test (the fast offline gate)
 bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget
 bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
+bun run e2e            # browser E2E against dist/ (build first)
+bun run e2e:ci         # build, then browser E2E
 ```
 
 The data audit downloads the real pinned release, runs it through the app's
@@ -44,6 +46,18 @@ Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 frozen install, lint, typecheck, tests with coverage floors, the build, and a
 bundle budget on every push and PR, and fails when coverage drops below the
 floors in `vite.config.ts` or the build outgrows `scripts/bundle-budget.json`.
+
+### Browser E2E
+
+`e2e/` holds Playwright specs that run the production build in Chromium, as a
+phone, with the service worker on and every network host mocked: first load,
+offline reload and cold offline restart, service-worker updates (apply, defer,
+failed install), the character lifecycle and its save flushes, and import and
+export. The server copies `vercel.json`'s headers and rewrites, so the suite
+runs under the enforced CSP, and any console error or CSP violation fails a
+test. CI runs it as the separate `e2e` job. Install the pinned browser once
+with `bunx playwright install chromium`; see [`e2e/README.md`](e2e/README.md)
+for how the harness works, debugging, and writing specs.
 
 ## Game data & copyright
 

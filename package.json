@@ -10,12 +10,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "biome check src scripts tests-fixtures",
-    "lint:fix": "biome check --write src scripts tests-fixtures",
+    "lint": "biome check src scripts tests-fixtures e2e playwright.config.ts",
+    "lint:fix": "biome check --write src scripts tests-fixtures e2e playwright.config.ts",
     "typecheck": "tsc -b",
     "check": "bun run lint && bun run typecheck && bun run test",
     "ci": "bun run lint && bun run typecheck && bun run test:coverage && bun run build && bun run bundle:budget",
     "bundle:budget": "bun scripts/bundle-budget.ts",
+    "e2e": "playwright test",
+    "e2e:ci": "bun run build && playwright test",
     "data:audit": "bun scripts/data-audit.ts"
   },
   "dependencies": {
@@ -33,6 +35,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.13.2",
