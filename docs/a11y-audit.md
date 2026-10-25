@@ -132,8 +132,25 @@ runs on every scanned state.
   (each tab the next Tab stop after the one before, Enter opening it).
 - **The library's long list:** 150 generated spells, tabbed through first to
   last and 30 back with Shift+Tab: every press lands on the next row, which
-  is rendered and inside both the list's box and the window. Arrow keys are
-  not checked, because the list has none (see the open findings).
+  is rendered and inside both the list's box and the window, says its place
+  (`aria-posinset` n, `aria-setsize` 150), and the list still renders at most
+  60 rows. Arrow keys are not checked, because the list has none (see the
+  open findings).
+
+### The library at scale
+
+[`e2e/specs/library-scale.spec.ts`](../e2e/specs/library-scale.spec.ts), with
+1,000 generated spells on the suite's phone: at most 60 rows rendered, before
+and after filtering to 100; a row's estimated height equal to its rendered
+height at 16 px and at 200% text; and Back from a spell opened 500 rows down
+(reached a screenful at a time) returning to that row, within one; and row 4,
+focused, kept rendered with rows 3 and 5 ahead of the window's rows after a
+scroll far away, Tab then going to row 5 and Shift+Tab twice to row 3.
+`src/ui/VirtualList.test.tsx` holds the rest at unit level: the window, the
+focused row and its neighbours kept rendered through a scroll (also by key
+when the list changes under it, and while the window is in the background,
+and let go when its row is taken out), the list's start re-measured, and no
+list role while empty.
 
 ### Zoom, text size and landscape
 
@@ -157,7 +174,16 @@ runs on every scanned state.
   sticky header with more than half the screen between the bars, and no
   control in the page is entirely hidden behind the header, the build page's
   bar or the tab bar when Tab or Shift+Tab moves to it (2.4.11). The same
-  walk runs on the roster, a library list and Settings, under the app nav.
+  walk runs on the roster and Settings, and down and back up a 150-spell
+  library list, under the app nav.
+
+The reflow and 200% passes set the page's font to DejaVu Sans (and DejaVu
+Sans Mono for its monospace runs), installed on the CI runner and locally:
+the app asks for the system UI font, which each Linux machine resolves to its
+own fallback, and CI's (DejaVu Sans, the wider) made a route that fit locally
+scroll sideways there. They first check that both fonts draw text at a width
+their generic fallbacks do not, so a machine without them fails rather than
+quietly measuring its own.
 
 The two are checked apart, as WCAG asks: 320 px at the normal text size,
 and 200% text at the phone's own width (412 px). Both at once is not
@@ -249,21 +275,16 @@ screen-reader and zoom passes below look at them on a device.
 | 2026-10-25 | Reflow at 320 px: the Play tab's turn tracker (Action, Bonus, Reaction, End turn) was 5 px wider than the screen. | The row wraps, End turn kept at the right, only when it cannot fit. |
 | 2026-10-25 (#106) | A failure inside a modal sheet: the spell info sheet now says why it has no spell when the spell files failed to download. By the one-voice rule (A11Y-002) its panel would be a plain visual while the shell's data banner alerts the outage, but the open sheet's modal sets `aria-hidden` on the whole app behind it, banner and announcer included, so nothing would say it. Opened offline, a screen reader would read "Loading spell…" and then nothing as the failure landed. | The panel takes `alert="always"` (`PackProblem`), for in-modal use only: inside the modal it is the only voice, so it is not a second one. The same goes for its closed-database line ("Reload this tab to load this spell's description."), an alert in the modal because the database banner is hidden too. `useFailureAlert`'s contract is unchanged everywhere else. While no spell is shown, the sheet's `aria-describedby` points at the line saying why (not at the body, which holds Retry), so focus landing on Retry or the sheet as it opens reads the reason. Pinned in `SpellInfoSheet.test.tsx` and `PackProblem.test.tsx`; the offline route matrix expects exactly one alert inside the sheet below `full`, and axe scans the state as `spell-pack-problem`. |
 | 2026-10-25 | Text at 200%: a library tile's one-word label (Backgrounds, Languages) ran past its card and the screen; the Play tab's HP row (the damage and heal pairs around the total) was 121 px wider than the phone. | The tile label breaks inside a long word (`break-words`). The HP row wraps, the heal pair kept at the right; the total has a zero flex basis, so a three-digit total at 320 px still breaks onto two lines in place, as before, and the row wraps only where it would have overflowed. |
+| 2026-10-25 (#114) | P2, performance: the library list did not virtualize. `AppShell` is only `min-h-dvh`, so the VirtualList box (`flex-1`) grew to the full height of its rows, the window scrolled instead, and every row was rendered (1,000 of 1,000). | `VirtualList` windows on the window's scroll (`useWindowVirtualizer`), measured from where the list starts in the page, so Back's scroll restore, the mobile address bar and the html scroll padding work as before. Rows are keyed by entry, are a list labelled by the page heading with `aria-posinset` and `aria-setsize`, and the focused row and its neighbours stay rendered through a scroll. A row's estimate is its exact height (LibraryPage), so Back lands on the row it left; the first version scrolled the window to the top as it mounted, which `library-scale.spec.ts` caught. Measured with 1,000 spells at 1280 by 720, before then after (two or three runs each): rows rendered 1,000 then 22; opening the list from the library home 575 to 756 ms then 58 to 96 ms (3.0 to 3.7 s then about 200 ms at 4x CPU throttle); filtering with the whole query typed at once ("Spell 9", then cleared), median 67 to 112 ms then 23 to 27 ms, worst 229 to 251 then 25 to 32 (4x: median 159 to 190 then 50 to 61, worst 553 to 845 then 67 to 82); one keystroke, median 25 to 38 ms then 17 to 21, worst 51 to 176 then 31 to 36 (4x: 126 to 146 then 46 to 61, worst 289 to 689 then 77 to 82), with 4.6 to 5.1 s of long tasks over ten rounds at 4x, then 52 to 112 ms; a Tab press down the list 46 to 61 ms then 11 to 17 (4x: 204 to 288 then 37 to 50). The 150-row keyboard walk takes about 6 s either way, now without the slow budget. Each time runs from the key or input event to two frames after the count changes. The finding's first figure, 1.0 to 1.4 s a filter, did not reproduce this way on the machine measured. |
+| 2026-10-25 (#114) | Accepted trade-off: find in page (Ctrl+F, Safari's Find on Page) only sees the rendered rows of a library list. | Kept: the Filter box above the list does the same job, faster, and the library search covers every type. `content-visibility: auto` would keep find in page, but still renders every row, which is the cost being cut. |
+| 2026-10-25 (#114) | Accepted trade-off: NVDA's and JAWS's browse mode reads a library list only as far as its last rendered row, about ten past the screen. | Kept, for the same reasons: Tab, and a VoiceOver or TalkBack swipe, scroll the next rows in; every row says "n of total", so the list's length is never hidden; and the Filter box narrows the list. The manual "Virtual list" pass checks it. |
 
 Open findings, for follow-up issues:
 
 - The library's virtualized list (`src/ui/VirtualList.tsx`) has no arrow-key
   navigation; rows are reachable by Tab only (one stop per row, which
-  `keyboard.spec.ts` checks end to end). Whether a screen reader announces the
-  list's size and position is a manual item below.
-- P2, performance: that list does not virtualize in the library today.
-  `AppShell` is only `min-h-dvh`, so the VirtualList box (`flex-1`) grows to
-  the full height of its rows, the window scrolls instead, and every row is
-  rendered (150 of 150 in the keyboard spec). With 1,000 spells a filter
-  round trip takes 1.0 to 1.4 s, and each Tab press tens of milliseconds.
-  Tab and focus work. The follow-up: bound the list's height or use a
-  window virtualizer, then rerun the keyboard spec, which checks the focused
-  row stays rendered either way.
+  `keyboard.spec.ts` checks end to end). Each row carries its position and
+  the list's size; whether a screen reader says them is a manual item below.
 - At 200% text, the Play tab's Concentration toggle truncates its label
   ("oncentr") beside Inspiration. Nothing scrolls sideways and the control
   keeps its full accessible name, but the visible text is cut; the manual
@@ -301,7 +322,7 @@ The automated column says what CI already holds in Chromium (passing on
 | Safe area and landscape | On a notched phone, portrait and landscape: the sheet header, tab bar, dice button and toasts clear the notch, the home indicator and rounded corners; nothing sits under the system bars in the installed app. | `layout.spec.ts` at 851 by 393: the header and tab bar leave the name and content in sight, and no focused control is hidden behind them. No safe-area insets (none in an emulated viewport). |
 | External keyboard | Every action reachable with Tab and Shift+Tab in a sensible order; Enter and Space activate; Escape closes dialogs and drawers; focus is visible throughout. | `keyboard.spec.ts`: the roster, the library and the sheet's tabs by Tab and Enter; Escape on every listed dialog. Not Space, every page, or how visible focus is. |
 | Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the eleven dialogs and drawers listed above. |
-| Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable. | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view. Not announcement or length. |
+| Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable ("37 of 1000"). | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view, with the list windowed (at most 60 rows) and each row's `aria-posinset` and `aria-setsize` right. `library-scale.spec.ts`: 1,000 rows, the window, the filter and Back. `VirtualList.test.tsx`: a focused row kept rendered through a scroll. Not what is announced. |
 | Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. | `reduced-motion.spec.ts`. |
 | A failure inside a sheet | Offline, without the spell files, open a known spell's rules text from a caster's Play tab: the sheet is announced with its name, the reason ("You're offline, so this spell's description can't be downloaded yet.") is read once, whether the failure lands before or after focus moves into the sheet, and Retry is reachable. | `offline-routes.spec.ts`: one alert inside the sheet, none outside it; `SpellInfoSheet.test.tsx`: the sheet's description is the reason. Not the timing against a real screen reader. |
 
