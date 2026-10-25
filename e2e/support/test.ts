@@ -43,6 +43,12 @@ export interface Network {
 export interface ProfileOptions {
   /** Launch with the network off, as a phone in airplane mode would. */
   offline?: boolean;
+  /**
+   * Launch full Chromium in its new headless mode (`channel: 'chromium'`)
+   * instead of the headless shell. Only the full browser runs the install
+   * checks: the shell answers `Page.getInstallabilityErrors` with nothing.
+   */
+  newHeadless?: boolean;
 }
 
 interface WorkerFixtures {
@@ -231,6 +237,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(async (dir, options = {}) => {
       const context = await playwright[browserName].launchPersistentContext(dir, {
         ...launchOptions,
+        ...(options.newHeadless ? { channel: 'chromium' } : {}),
         ...DEVICE,
         baseURL: server.url,
         offline: options.offline ?? false,
