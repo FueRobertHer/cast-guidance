@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      Safari before 15.4 ignores the manifest's icons, and later versions still
+      prefer this link when it is present. See scripts/generate-icons.ts.
+    -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <meta name="apple-mobile-web-app-title" content="Cast Guidance" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!--
       Game data comes from this CDN, and the app asks for some on most boots, so

@@ -60,10 +60,10 @@ CI, gated on coverage floors and a bundle budget.
 | TypeScript | Pass (app, `vite.config.ts`, the bundle budget scripts, and the E2E harness) |
 | Unit + integration tests | Pass: 134 files, 1,328 tests |
 | Coverage gate | `bun run test:coverage`: 81.09% statements, 71.82% branches, 72.65% functions, 82.92% lines. CI fails below the `vite.config.ts` floors of 80 / 70 / 71 / 81. |
-| Production/PWA build | Pass: 48 unique precache entries |
-| Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 381,418 B raw, 119,846 B gzip (budget 420,000 / 132,000); initial JS 532,142 B raw, 170,740 B gzip (586,000 / 188,000); total JS 916,214 B (1,008,000); largest chunk 381,418 B (420,000); CSS 42,544 B (47,000); precache 961,244 B (1,058,000). |
+| Production/PWA build | Pass: 58 unique precache entries |
+| Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 386,217 B raw, 121,616 B gzip (budget 420,000 / 132,000); initial JS 543,021 B raw, 173,871 B gzip (586,000 / 188,000); total JS 964,260 B (1,008,000); largest chunk 386,217 B (420,000); CSS 42,842 B (47,000); precache 1,051,785 B (1,155,000). The precache budget was rebaselined to about 10% over this measurement with PWA-002: the app had grown to about 95% of the old 1,058,000, and the raster icons add 41,411 B. |
 | Real pinned-dataset audit | `bun run data:audit`, run 2026-10-25 against v2.32.0 (jsDelivr refused, the raw.githubusercontent fallback answered): 48 files; 8,141 entities, 936 spells; 40 versioned `replaceArr` warnings; 0 unresolved `_copy`; 402 spells with dice, every generated roll parses; all 53 `{@tag}`s rendered; 17 multi-name `additionalSpells` blocks, 4 of them without choice wording and allowed by verdict. Every check is within the `scripts/data-audit-budget.json` entry. The `Data audit` workflow re-runs it weekly and on data-pipeline PRs. |
-| Browser E2E | Chromium, in the `e2e` CI job: 5 spec files, 19 tests pass and 1 is `fixme` (an edit inside the save debounce is lost on reload). Data-install specs are still to come. |
+| Browser E2E | Chromium, in the `e2e` CI job: 6 spec files, 22 tests pass and 1 is `fixme` (an edit inside the save debounce is lost on reload). Data-install specs are still to come. |
 | Automated accessibility (axe) | Not yet |
 
 Priority meanings:
@@ -128,7 +128,7 @@ experience.)
 | DATA-002 | [#104](https://github.com/FueRobertHer/cast-guidance/issues/104) | Validate every required index/pack, retain a rollback tag past the swap, and put `updateToTag` behind the global fetch gate. Staging, resume, and stale-tag cleanup already ship. |
 | DATA-003 | [#105](https://github.com/FueRobertHer/cast-guidance/issues/105) | Batch registry hydration and search indexing instead of rebuilding per downloaded file. |
 | PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | Cold and offline launch for every route across essential, partial, and full caches. |
-| PWA-002 | [#107](https://github.com/FueRobertHer/cast-guidance/issues/107) | Validate install and update on iOS and Android; add raster 192/512 and maskable icons. |
+| PWA-002 | [#107](https://github.com/FueRobertHer/cast-guidance/issues/107) | Validate install and update on real iOS and Android devices with the checklist in `docs/pwa-device-validation.md`. The raster 192/512, maskable and Apple touch icons, the corrected manifest and their checks already ship. |
 
 ### Security, privacy, and imports
 

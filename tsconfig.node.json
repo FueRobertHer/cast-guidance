@@ -27,6 +27,10 @@
     "vite.config.ts",
     "scripts/bundleBudget.ts",
     "scripts/bundleBudget.test.ts",
-    "scripts/bundle-budget.ts"
+    "scripts/bundle-budget.ts",
+    "scripts/generate-icons.ts",
+    "scripts/iconSource.ts",
+    "scripts/pwaManifest.test.ts",
+    "pwa.manifest.ts"
   ]
 }

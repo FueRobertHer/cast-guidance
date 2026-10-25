@@ -29,6 +29,7 @@ bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
+bun run icons:generate # render public/icons/*.png from public/favicon.svg (commit the output)
 ```
 
 The data audit downloads the real pinned release, runs it through the app's

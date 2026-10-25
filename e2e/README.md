@@ -66,7 +66,9 @@ the binary outright, as an escape hatch when the two drift.
   download queue done and the compendium ready) is the usual one.
 - **Persistent profiles**: `launchProfile(dir, { offline })` launches a real
   browser profile wired to the same server, mirror and guards, for cold
-  restarts.
+  restarts. `newHeadless: true` launches full Chromium (`channel: 'chromium'`)
+  instead of the headless shell, which answers `Page.getInstallabilityErrors`
+  with an empty list whatever the page.
 - **Overlays** (`handleOverlays` in `support/app.ts`): locator handlers dismiss
   the roster's getting-started card and wait out the "Ready to use offline"
   notice whenever either is on screen before an action or assertion, so specs
@@ -98,3 +100,4 @@ role and accessible name).
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
 | `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
+| `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
