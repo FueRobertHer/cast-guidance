@@ -13,7 +13,20 @@ import {
 } from '@/stores/characterSession';
 import { noticeStore } from '@/stores/notices';
 import { listenForAnnouncements } from '../../tests-fixtures/announcements';
-import { CONFLICT_RESOLVED_TEXT, conflictText, SaveConflictBanner } from './SaveConflictBanner';
+import {
+  CONFLICT_RESOLVED_TEXT,
+  conflictText,
+  KEEP_REFUSED_TEXT,
+  SaveConflictBanner,
+} from './SaveConflictBanner';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const changed: SaveConflict = { kind: 'changed', name: 'Wren' };
 const deleted: SaveConflict = { kind: 'deleted', name: 'Wren' };
@@ -156,24 +169,75 @@ describe('SaveConflictBanner', () => {
     ]);
   });
 
-  it('keeps focus on its buttons, silently, when the choice did not go through', async () => {
-    // Refused again: the session raises the conflict anew, so the banner
-    // goes and comes back, and focus must not be left on the page body.
+  it('stays put, keeps focus where it was, and says once that Keep mine was refused again', async () => {
+    // The session clears the conflict to try the save, and another tab's save
+    // refuses it again: the banner must not go and come back meanwhile.
+    const gate = deferred<ConflictOutcome | undefined>();
+    renderBanner(vi.fn<Resolve>(() => gate.promise));
+    conflict({ c1: changed });
+    const alert = screen.getByRole('alert');
+    const button = screen.getByRole('button', { name: 'Keep mine (overwrite)' });
+    button.focus();
+    const listener = listenForAnnouncements();
+
+    act(() => {
+      fireEvent.click(button);
+    });
+    act(() => characterSessionStore.setState({ saveConflicts: {} }));
+    expect(screen.getByRole('alert')).toBe(alert);
+    act(() => characterSessionStore.setState({ saveConflicts: { c1: { ...changed } } }));
+    await act(async () => gate.resolve(undefined));
+    listener.stop();
+
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(document.activeElement).toBe(button);
+    expect(listener.heard).toEqual([KEEP_REFUSED_TEXT]);
+  });
+
+  it('says nothing of its own when the conflict turned into the deleted one', async () => {
     renderBanner(
       vi.fn<Resolve>(async () => {
-        characterSessionStore.setState({ saveConflicts: {} });
-        characterSessionStore.setState({ saveConflicts: { c1: { ...changed } } });
+        characterSessionStore.setState({ saveConflicts: { c1: deleted } });
         return undefined;
+      }),
+    );
+    conflict({ c1: changed });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep mine (overwrite)' }));
+    });
+    expect(getAnnouncerState().emitted).toBe(0);
+    expect(screen.getByRole('alert').textContent).toContain('deleted in another tab');
+  });
+
+  it('leaves focus on the button pressed when the choice fails, and says only the failure', async () => {
+    renderBanner(
+      vi.fn<Resolve>(async () => {
+        throw new Error('read failed');
       }),
     );
     conflict({ c1: changed });
     const button = screen.getByRole('button', { name: 'Keep mine (overwrite)' });
     button.focus();
+    const listener = listenForAnnouncements();
     await act(async () => {
       fireEvent.click(button);
     });
-    expect(getAnnouncerState().emitted).toBe(0);
-    expect(document.activeElement?.textContent).toBe('Reload stored version');
+    listener.stop();
+    expect(document.activeElement).toBe(button);
+    expect(listener.heard).toEqual(['Keep mine failed. read failed']);
+  });
+
+  it('acts once on a double tap', async () => {
+    const gate = deferred<ConflictOutcome | undefined>();
+    const resolve = renderBanner(vi.fn<Resolve>(() => gate.promise));
+    conflict({ c1: changed });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep mine (overwrite)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reload stored version' }));
+    });
+    await act(async () => gate.resolve(undefined));
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith('c1', 'overwrite');
   });
 
   it('moves focus to the heading when it goes away without a resolution', async () => {

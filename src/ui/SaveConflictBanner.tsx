@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { announce } from '@/stores/announcer';
 import {
   type CharacterSessionState,
@@ -15,6 +15,10 @@ export const CONFLICT_RESOLVED_TEXT: Readonly<Record<ConflictOutcome, string>> =
   discarded: 'Your edits were discarded',
   kept: 'Your version saved',
 };
+
+/** What a screen reader hears when Keep mine is refused in turn: another tab saved meanwhile. */
+export const KEEP_REFUSED_TEXT =
+  'Your version was not saved: the character changed again in another tab.';
 
 /** The banner's words for one refused save. */
 export function conflictText({ kind, name }: SaveConflict, affected: number): string {
@@ -55,6 +59,11 @@ function focusHeading(): void {
  * for the same reason, whenever the banner goes, whatever came of the choice.
  * While another refused save still waits, nothing is said over its alert and
  * focus stays on the banner, which now asks about that one.
+ *
+ * While a choice is under way the banner stays as it is, though the session
+ * clears the conflict to try Keep mine: if that is refused again, the same
+ * alert stays put rather than going and coming back, focus stays on the
+ * button pressed, and the refusal is said once through the announcer.
  */
 export function SaveConflictBanner({
   resolve = (id, choice) => characterSessionStore.getState().resolveConflict(id, choice),
@@ -63,18 +72,40 @@ export function SaveConflictBanner({
 }) {
   const conflicts = useCharacterSession((state) => state.saveConflicts);
   const banner = useRef<HTMLDivElement>(null);
+  /** The conflict a choice is under way for, shown until the choice settles. */
+  const [choosing, setChoosing] = useState<{ id: string; conflict: SaveConflict } | null>(null);
+  /** Set from the tap itself, so a second tap in the same render does nothing. */
+  const busy = useRef(false);
   const entries = Object.entries(conflicts);
-  const [first] = entries;
-  if (first === undefined) return null;
-  const [id, conflict] = first;
+  const shown = entries[0] ?? (choosing === null ? undefined : [choosing.id, choosing.conflict]);
+  if (shown === undefined) return null;
+  const [id, conflict] = shown;
   const deleted = conflict.kind === 'deleted';
 
   /** After a choice settles, however it went. */
-  const settle = (outcome: ConflictOutcome | undefined) => {
-    if (Object.keys(characterSessionStore.getState().saveConflicts).length > 0) {
-      // A conflict still needs an answer (this one again, or the next): its
-      // alert is what is said, and focus stays with its buttons.
-      requestAnimationFrame(() => banner.current?.querySelector('button')?.focus());
+  const settle = (
+    choice: 'reload' | 'overwrite',
+    outcome: ConflictOutcome | undefined,
+    failed: boolean,
+  ) => {
+    busy.current = false;
+    setChoosing(null);
+    const remaining = characterSessionStore.getState().saveConflicts;
+    if (Object.keys(remaining).length > 0) {
+      // Keep mine refused in turn: the same alert is still up, so it would
+      // say nothing new. A failure has its own notice, and a conflict that
+      // turned into another (deleted meanwhile) changes the alert's words.
+      if (!failed && choice === 'overwrite' && remaining[id]?.kind === conflict.kind) {
+        announce(KEEP_REFUSED_TEXT, { key: 'save-conflict', repeat: true });
+      }
+      // A conflict still needs an answer (this one again, or the next):
+      // focus stays with its buttons, and moves only if it was lost.
+      requestAnimationFrame(() => {
+        const here = banner.current;
+        if (here !== null && !here.contains(document.activeElement)) {
+          here.querySelector('button')?.focus();
+        }
+      });
       return;
     }
     if (outcome !== undefined) {
@@ -84,10 +115,17 @@ export function SaveConflictBanner({
   };
 
   const choose = (choice: 'reload' | 'overwrite') => {
-    void resolve(id, choice).then(settle, (error: unknown) => {
-      notifyFailure(choice === 'overwrite' ? 'Keep mine' : 'Reload', error);
-      settle(undefined);
-    });
+    // A second tap while the first is under way does nothing.
+    if (busy.current) return;
+    busy.current = true;
+    setChoosing({ id, conflict });
+    void resolve(id, choice).then(
+      (outcome) => settle(choice, outcome, false),
+      (error: unknown) => {
+        notifyFailure(choice === 'overwrite' ? 'Keep mine' : 'Reload', error);
+        settle(choice, undefined, true);
+      },
+    );
   };
 
   return (

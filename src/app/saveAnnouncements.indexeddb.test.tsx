@@ -13,7 +13,7 @@ import { deriveSheet } from '@/engine/derive';
 import { newCharacterDoc } from '@/engine/types';
 import { Component as SheetLayout } from '@/features/sheet/SheetLayout';
 import { Component as PlayTab } from '@/features/sheet/tabs/PlayTab';
-import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
+import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { characterSessionStore } from '@/stores/characterSession';
 import { LiveAnnouncer } from '@/ui/LiveAnnouncer';
 import { CONFLICT_RESOLVED_TEXT } from '@/ui/SaveConflictBanner';
@@ -167,6 +167,7 @@ describe('save announcements', () => {
   });
 
   it('says a refused retry as a conflict, never as saved, and its resolution once', async () => {
+    const said = { timeout: THROTTLE_MS + 2000 };
     // REL-007 (#98): a failed save leaves the error list when its retry is
     // refused because another tab saved first. That is not a recovery.
     const max = await seedWarrior();
@@ -188,8 +189,12 @@ describe('save announcements', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(saveStatus()).toBe('conflict'), SAVED_WAIT);
-    await act(async () => undefined);
-    expect(aboutSaving(listener.heard)).toHaveLength(2);
+    // Lines wait out the announcer's settle and throttle, and the second
+    // damage's HP line comes a second after its tap. Waiting for both (with
+    // room for a loaded machine) keeps them out of the window measured below,
+    // where the resolution must be the only thing said.
+    await waitFor(() => expect(aboutSaving(listener.heard)).toHaveLength(2), said);
+    await waitFor(() => expect(listener.heard).toContain(`${max - 2} of ${max} hit points`), said);
     expect(aboutSaving(listener.heard)[1]).toContain('changed in another tab');
     expect(listener.heard).not.toContain(SAVE_RECOVERED_TEXT);
     expect(await storedHp()).toBe(max - 1);
@@ -197,6 +202,10 @@ describe('save announcements', () => {
     const before = getAnnouncerState().emitted;
     fireEvent.click(screen.getByRole('button', { name: 'Reload stored version' }));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull(), SAVED_WAIT);
+    await waitFor(
+      () => expect(aboutSaving(listener.heard).at(-1)).toBe(CONFLICT_RESOLVED_TEXT.reloaded),
+      said,
+    );
     await act(async () => undefined);
     listener.stop();
 

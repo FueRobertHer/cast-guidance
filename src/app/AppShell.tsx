@@ -49,8 +49,12 @@ function SaveErrorBanner() {
   const wasFailing = useRef(false);
   useEffect(() => {
     // Each recovery is its own event: a second failure and recovery inside the
-    // de-duplication window still deserves its "saved".
-    if (wasFailing.current && !failing && status === 'saved')
+    // de-duplication window still deserves its "saved". The list empties only
+    // on saved, conflict or idle, and the status can have moved on by this
+    // render: an edit queued behind the save that landed is already
+    // "saving". Conflict and idle are never followed so at once, so anything
+    // else here is a save that landed.
+    if (wasFailing.current && !failing && status !== 'conflict' && status !== 'idle')
       announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
     wasFailing.current = failing;
   }, [failing, status]);

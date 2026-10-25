@@ -64,6 +64,21 @@ describe('StorageBanners save recovery', () => {
   });
 });
 
+describe('StorageBanners recovery with an edit queued behind it', () => {
+  it('says the recovery though the next save started in the same tick', () => {
+    // The save that lands clears the error, and the session goes straight on
+    // to the edit queued behind it: one render sees only "saving".
+    render(<StorageBanners />);
+    fail();
+    act(() => {
+      characterSessionStore.setState({ saveErrors: {}, saveStatus: 'saved' });
+      characterSessionStore.setState({ saveStatus: 'saving' });
+    });
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    expect(spoken()).toEqual([SAVE_RECOVERED_TEXT]);
+  });
+});
+
 describe('StorageBanners quiet recovery', () => {
   it('says nothing when the failed save was only dropped, with nothing written', () => {
     // Only the sheet's own edits were waiting, and the stored copy was taken.
