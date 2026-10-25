@@ -1,0 +1,93 @@
+{
+  "banner-data-download": {},
+  "banner-data-error": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "breakdown-sheet": {},
+  "creator": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "delete-confirm": {},
+  "desktop-library": {},
+  "desktop-roster": {},
+  "desktop-settings": {},
+  "desktop-sheet-play": {},
+  "dice-tray": {},
+  "entity-info-sheet": {},
+  "history-drawer": {},
+  "homebrew": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "homebrew-builder": {},
+  "homebrew-builder-unknown": {},
+  "homebrew-empty": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "homebrew-remove-confirm": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "library": {},
+  "library-detail": {},
+  "library-search": {},
+  "library-spells": {},
+  "not-found": {},
+  "rename-dialog": {},
+  "roster": {},
+  "roster-actions": {},
+  "roster-empty": {},
+  "settings": {},
+  "sheet-build": {},
+  "sheet-items": {},
+  "sheet-more": {},
+  "sheet-play": {},
+  "sheet-spells": {},
+  "sheet-stats": {
+    "target-size": {
+      "count": 6,
+      "impact": "serious",
+      "help": "All touch targets must be 24px large, or leave sufficient space"
+    }
+  },
+  "text-prompt": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "toast-app-update": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "toast-data-update": {
+    "color-contrast": {
+      "count": 1,
+      "impact": "serious",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    }
+  },
+  "toast-offline-ready": {}
+}

@@ -18,6 +18,8 @@
     "bundle:budget": "bun scripts/bundle-budget.ts",
     "e2e": "playwright test",
     "e2e:ci": "bun run build && playwright test",
+    "e2e:a11y": "playwright test e2e/a11y",
+    "e2e:a11y:update": "A11Y_BASELINE_UPDATE=1 playwright test e2e/a11y/axe.spec.ts",
     "data:audit": "bun scripts/data-audit.ts",
     "icons:generate": "bun scripts/generate-icons.ts"
   },
@@ -35,6 +37,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "^2.5.2",
     "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "^4.3.2",
