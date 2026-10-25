@@ -606,10 +606,12 @@ describe('2024 slot creation level (GAME-008)', () => {
     for (const hint of Object.values(hints([mage(9)]))) expect(hint).not.toContain('needs');
   });
 
-  it('treats an unreadable level as no levels rather than throwing', () => {
-    expect(hints([sorcerer(Number.NaN)])['pool-sorcery-points-1']).toBe(
-      '2 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 2',
-    );
+  it('says nothing when the Sorcerer level cannot be read', () => {
+    // A level from an imported doc can be anything; labelling every row from a
+    // guessed 0 would say more than the app knows.
+    for (const hint of Object.values(hints([sorcerer(Number.NaN)]))) {
+      expect(hint).not.toContain('needs');
+    }
   });
 
   it('keeps the turn note and the level note apart', () => {

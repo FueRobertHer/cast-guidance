@@ -104,9 +104,9 @@ function conversionLevelNote(key: string, slotLevel: number, ctx: CastContext): 
   const entry = ctx.classes.find(
     (c) => String(c.ref.name).toLowerCase() === gate.className.toLowerCase(),
   );
-  if (entry === undefined) return undefined;
-  const level = Number.isFinite(entry.levels) ? entry.levels : 0;
-  return level < needed ? `2024: needs ${gate.className} ${String(needed)}` : undefined;
+  // An unreadable level (an imported doc) is nothing to measure either.
+  if (entry === undefined || !Number.isFinite(entry.levels)) return undefined;
+  return entry.levels < needed ? `2024: needs ${gate.className} ${String(needed)}` : undefined;
 }
 
 /** Which slice of the turn a spell's own casting time uses (undefined for rituals). */

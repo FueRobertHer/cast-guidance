@@ -63,7 +63,7 @@ function defaultTargetType(holderType: EntityType): EntityType {
  * says which uid shape to expect and where the target lives; an entry's own
  * `tag` overrides that for the cross-type targets. Omitting `holderType` reads
  * every uid as `Name|SOURCE` and leaves the target type unset, which is what
- * the same-list picker filter wants.
+ * a picker filter that names no holder type wants.
  */
 export function reprintTargets(entity: Entity, holderType?: EntityType): EditionRef[] {
   const reprints = entity.reprintedAs;
