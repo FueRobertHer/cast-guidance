@@ -33,6 +33,7 @@ export function Component() {
               <button
                 type="button"
                 onClick={() => rollCheck(`${a.toUpperCase()} check`, ability.mod)}
+                aria-label={`Roll ${a.toUpperCase()} check (${fmt(ability.mod)})`}
                 className="text-xl font-bold hover:text-accent"
                 title={`Roll ${a.toUpperCase()} check`}
               >
@@ -42,7 +43,13 @@ export function Component() {
                 title={`${a.toUpperCase()} score`}
                 value={ability}
                 trigger={
-                  <button type="button" className="text-xs text-ink-muted">
+                  <button
+                    type="button"
+                    aria-label={`${a.toUpperCase()} score ${ability.value}${
+                      ability.overridden ? ' (set manually)' : ''
+                    }: breakdown`}
+                    className="text-xs text-ink-muted"
+                  >
                     {ability.value}
                     {ability.overridden ? '•' : ''}
                   </button>

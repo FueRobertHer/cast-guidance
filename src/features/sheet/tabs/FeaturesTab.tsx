@@ -69,6 +69,7 @@ export function Component() {
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filter features and traits"
           placeholder="Filter features & traits…"
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
         />
@@ -118,6 +119,7 @@ export function Component() {
           value={doc.notes}
           onChange={(e) => update((d) => void (d.notes = e.target.value))}
           rows={6}
+          aria-label="Notes"
           placeholder="Session notes, goals, contacts…"
           className="rounded-lg bg-surface p-3 text-sm outline-none placeholder:text-ink-muted"
         />

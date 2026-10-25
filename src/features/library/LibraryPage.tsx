@@ -107,6 +107,7 @@ function GlobalSearch() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          aria-label="Search everything"
           placeholder={placeholder}
           disabled={failed}
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:opacity-60"
@@ -388,6 +389,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}`}
           placeholder={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}…`}
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
         />

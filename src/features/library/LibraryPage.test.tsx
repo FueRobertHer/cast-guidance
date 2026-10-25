@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 
 type TestPolicy = { mode: 'all'; except: string[] } | { mode: 'only'; sources: string[] };
 
@@ -538,5 +539,20 @@ describe('titles and the way back', () => {
     expect(screen.getByRole('link', { name: 'Back to the library' }).getAttribute('href')).toBe(
       '/library',
     );
+  });
+});
+
+// A11Y-001: the search and filter fields were named only by their placeholders.
+describe('accessible names', () => {
+  it('names the library search', () => {
+    renderAt('/library');
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('textbox', { name: 'Search everything' })).toBeTruthy();
+  });
+
+  it('names a section filter after the section', () => {
+    renderAt('/library/spell');
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('textbox', { name: 'Filter spells' })).toBeTruthy();
   });
 });

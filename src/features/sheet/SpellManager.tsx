@@ -327,6 +327,7 @@ function ClassSpells({
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label={`Search ${block.className} spell list`}
           placeholder={`Search ${block.className} spell list…`}
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
         />
@@ -383,14 +384,18 @@ function ClassSpells({
                             className="mr-1 text-amber-300"
                             title={`Recommended first pick for ${block.className}`}
                           >
-                            ★
+                            <span aria-hidden="true">★</span>
+                            <span className="sr-only">Recommended:</span>
                           </span>
                         )}
                         {nameOf(s)}
                       </Link>
                       <SourceBadge source={sourceOf(s)} />
+                      {/* Stable verbs for the names, so aria-pressed alone says the state. */}
                       <button
                         type="button"
+                        aria-label={`Learn ${nameOf(s)}`}
+                        aria-pressed={known}
                         onClick={() => toggle(s, 'known')}
                         className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
                           known ? 'border-sky-300 text-sky-300' : 'border-surface-2 text-ink-muted'
@@ -401,6 +406,8 @@ function ClassSpells({
                       {lvl > 0 && (
                         <button
                           type="button"
+                          aria-label={`Prepare ${nameOf(s)}`}
+                          aria-pressed={prepared}
                           onClick={() => toggle(s, 'prepared')}
                           className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
                             prepared
@@ -418,6 +425,7 @@ function ClassSpells({
                         (lvl > 0 || spellNeedsConcentration(s)) && (
                           <button
                             type="button"
+                            aria-label={`Cast ${nameOf(s)}`}
                             onClick={() => {
                               void cast(lvl, s);
                             }}
