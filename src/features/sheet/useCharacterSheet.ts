@@ -6,6 +6,7 @@ import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import {
   type CharacterLoadStatus,
   type CharacterSaveStatus,
+  type CharacterSessionState,
   characterSessionStore,
   type DocUpdater,
   useCharacterSession,
@@ -19,6 +20,8 @@ export interface CharacterSheetState {
   error: string | null;
   saveStatus: CharacterSaveStatus;
   update: DocUpdater;
+  /** Put back an earlier snapshot as its own history entry (an undo, a restore). */
+  restore: CharacterSessionState['restore'];
   retryLoad: () => void;
 }
 
@@ -77,6 +80,7 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     error: requestedId === id ? error : null,
     saveStatus: saveCharacterId === id ? saveStatus : 'idle',
     update: characterSessionStore.getState().update,
+    restore: characterSessionStore.getState().restore,
     retryLoad: () => {
       if (id !== undefined) void characterSessionStore.getState().load(id);
     },
