@@ -326,24 +326,53 @@ export function mergeHomebrew(
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
 }
 
+/**
+ * Two passes per type, so a file's `_copy` reaches every enabled file, not only
+ * the ones merged before it (IMP-002).
+ *
+ * Files arrive oldest import first (`homebrewRepo.enabledSafe()`), and that
+ * order is the precedence: the registry keeps the first entity per uid. When
+ * each file resolved its copies before the next one was added, a file could
+ * copy only from files imported earlier, so importing a file before the one
+ * it depends on left its copies broken until it was imported again. Resolving
+ * every file's copies over all of them first, then adding them in order,
+ * keeps precedence purely by import time and makes copies independent of it.
+ *
+ * A copy looks in its own file first, then official data, then the other
+ * homebrew in merge order: the same preference as before for every target
+ * that used to resolve. Copy chains across files resolve through the
+ * resolver's own fixed-point passes, and a cycle ends as unresolved warnings,
+ * as it does within one file. Race `_versions` are still expanded after
+ * resolution, so a copy cannot target another file's expanded version.
+ */
 function mergeHomebrewFiles(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
 ): void {
   reg.sealOfficial();
-  for (const [, json] of homebrew) {
-    for (const type of HOMEBREW_TYPES) {
+  const files = [...homebrew.values()];
+  for (const type of HOMEBREW_TYPES) {
+    const perFile = files.map((json) => {
       const arr = json[type];
-      if (!Array.isArray(arr)) continue;
-      const entities = arr.filter((e): e is Entity => typeof e === 'object' && e !== null);
+      return Array.isArray(arr)
+        ? arr.filter((e): e is Entity => typeof e === 'object' && e !== null)
+        : [];
+    });
+    const all = perFile.flat();
+    if (all.length === 0) continue;
+    // Official only: this type's homebrew is added below, after resolution.
+    const official = [...reg.byType(type)];
+    const fileOf = new Map<Entity, Entity[]>();
+    for (const list of perFile) for (const e of list) fileOf.set(e, list);
+    reg.warnings.push(
+      ...resolveCopies(
+        all,
+        (copy, self) => byNameSource(fileOf.get(self) ?? [], official, all)(copy),
+        `homebrew ${type}`,
+      ),
+    );
+    for (const entities of perFile) {
       if (entities.length === 0) continue;
-      reg.warnings.push(
-        ...resolveCopies(
-          entities,
-          byNameSource(entities, [...reg.byType(type)]),
-          `homebrew ${type}`,
-        ),
-      );
       if (type === 'race' || type === 'subrace') {
         const versions = entities.flatMap((e) => expandVersions(e, reg.warnings));
         reg.addAll(type, [...entities, ...versions]);

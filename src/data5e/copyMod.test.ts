@@ -284,6 +284,40 @@ describe('resolveCopies', () => {
 });
 
 describe('mergeHomebrew', () => {
+  it('resolves a copy from its own file before official data or another file', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB', tag: 'official' }] }]]),
+    );
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'older',
+          {
+            feat: [
+              { name: 'Base', source: 'HB', tag: 'older file' },
+              { name: 'Alert', source: 'PHB', tag: 'older file' },
+            ],
+          },
+        ],
+        [
+          'newer',
+          {
+            feat: [
+              { name: 'Base', source: 'HB', tag: 'own file' },
+              { name: 'Child', source: 'HB2', _copy: { name: 'Base', source: 'HB' } },
+              { name: 'Kid', source: 'HB2', _copy: { name: 'Alert', source: 'PHB' } },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.get('feat', 'Child', 'HB2')?.tag).toBe('own file');
+    expect(reg.get('feat', 'Kid', 'HB2')?.tag).toBe('official');
+    // Precedence is still merge order: the older file keeps Base|HB.
+    expect(reg.get('feat', 'Base', 'HB')?.tag).toBe('older file');
+  });
+
   it('keeps the registry when a homebrew entity carries a null _copy', () => {
     const reg = normalizeDataset(
       new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] }]]),
