@@ -65,9 +65,12 @@ export const dataCacheRepo = {
     await db.dataFiles.where('tag').equals(tag).delete();
   },
 
-  /** Drop every cached file that doesn't belong to `tag` (stale-tag sweep). */
-  async deleteOtherTags(tag: string): Promise<number> {
-    return db.dataFiles.where('tag').notEqual(tag).delete();
+  /** Drop every cached file whose tag is not in `keep` (stale-tag sweep). */
+  async deleteTagsExcept(keep: readonly string[]): Promise<number> {
+    return db.dataFiles
+      .where('tag')
+      .noneOf([...keep])
+      .delete();
   },
 
   /**

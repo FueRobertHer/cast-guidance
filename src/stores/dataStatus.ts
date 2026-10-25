@@ -20,6 +20,14 @@ export interface DataStatusState {
    * drops it, so it never outlives the failure it describes.
    */
   failedTag?: string;
+  /**
+   * A data version that was installed but could not start, after the app went
+   * back to the version it replaced. Its own field rather than an error phase:
+   * the app is working, on the older data, and a run starting or finishing
+   * must not wipe the one notice that says why the version moved backwards.
+   * Cleared when dismissed or when an install succeeds.
+   */
+  rolledBackFrom?: string;
   beginRun(): void;
   setPack(pack: string, state: PackState): void;
   fileStarted(path: string): void;
@@ -28,6 +36,7 @@ export interface DataStatusState {
   setPhase(phase: DataStatusState['phase'], error?: string): void;
   setUpdateAvailableTag(tag?: string): void;
   setFailedTag(tag?: string): void;
+  setRolledBackFrom(tag?: string): void;
 }
 
 /** Vanilla store so the React-free data layer can drive it. */
@@ -63,6 +72,7 @@ export const dataStatusStore = createStore<DataStatusState>((set) => ({
   setPhase: (phase, error) => set({ phase, error, failedTag: undefined }),
   setUpdateAvailableTag: (tag) => set({ updateAvailableTag: tag }),
   setFailedTag: (tag) => set({ failedTag: tag }),
+  setRolledBackFrom: (tag) => set({ rolledBackFrom: tag }),
 }));
 
 export function useDataStatus<T>(selector: (s: DataStatusState) => T): T {
@@ -80,5 +90,9 @@ export function useDataStatus<T>(selector: (s: DataStatusState) => T): T {
  * two has to stand aside on purpose rather than by luck.
  */
 export function showsDataBanner(s: DataStatusState): boolean {
-  return s.phase === 'error' || (s.phase === 'working' && s.filesTotal > 0);
+  return (
+    s.phase === 'error' ||
+    s.rolledBackFrom !== undefined ||
+    (s.phase === 'working' && s.filesTotal > 0)
+  );
 }

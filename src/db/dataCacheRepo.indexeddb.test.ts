@@ -52,14 +52,14 @@ describe('dataCacheRepo files', () => {
     expect(await dataCacheRepo.filesByTag('v2')).toHaveLength(1);
   });
 
-  it('deleteOtherTags keeps only the active tag', async () => {
+  it('deleteTagsExcept keeps only the tags it is given', async () => {
     await dataCacheRepo.putFile(fileRow('v1', 'a.json'));
     await dataCacheRepo.putFile(fileRow('v2', 'a.json'));
     await dataCacheRepo.putFile(fileRow('v3', 'a.json'));
-    await dataCacheRepo.deleteOtherTags('v2');
+    await dataCacheRepo.deleteTagsExcept(['v2', 'v3']);
     expect(await dataCacheRepo.filesByTag('v1')).toHaveLength(0);
-    expect(await dataCacheRepo.filesByTag('v3')).toHaveLength(0);
     expect(await dataCacheRepo.filesByTag('v2')).toHaveLength(1);
+    expect(await dataCacheRepo.filesByTag('v3')).toHaveLength(1);
   });
 
   it('totalBytes sums every cached row, including duplicate sizes', async () => {
@@ -74,7 +74,7 @@ describe('dataCacheRepo files', () => {
   it('totalBytes drops as stale tags are swept', async () => {
     await dataCacheRepo.putFile(fileRow('v1', 'a.json', 'essentials', 300));
     await dataCacheRepo.putFile(fileRow('v2', 'a.json', 'essentials', 200));
-    await dataCacheRepo.deleteOtherTags('v2');
+    await dataCacheRepo.deleteTagsExcept(['v2']);
     expect(await dataCacheRepo.totalBytes()).toBe(200);
   });
 });

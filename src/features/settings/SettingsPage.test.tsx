@@ -22,6 +22,7 @@ vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
+import { dataStatusStore } from '@/stores/dataStatus';
 import { Component as SettingsPage } from './SettingsPage';
 
 /** Walk the version picker as a user does, up to the install attempt. */
@@ -37,6 +38,7 @@ afterEach(() => {
   loader.updateToTag.mockResolvedValue(undefined);
   loader.downloadAllPacks.mockResolvedValue(undefined);
   loader.verifyFullOffline.mockResolvedValue({ cached: 31, total: 48 });
+  dataStatusStore.setState({ rolledBackFrom: undefined });
 });
 
 describe('SettingsPage data section', () => {
@@ -100,5 +102,13 @@ describe('SettingsPage data section', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('offline');
     fireEvent.click(screen.getByRole('button', { name: 'Retry download' }));
     await waitFor(() => expect(loader.downloadAllPacks).toHaveBeenCalledTimes(2));
+  });
+
+  it('says when the installed version is one the app went back to', () => {
+    // The banner can be dismissed; the version line is where someone looking
+    // for why their update is gone will look next.
+    dataStatusStore.setState({ rolledBackFrom: 'v2.33.0' });
+    render(<SettingsPage />);
+    expect(screen.getByText(/went back from v2\.33\.0, which could not start/)).toBeTruthy();
   });
 });

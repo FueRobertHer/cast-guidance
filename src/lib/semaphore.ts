@@ -32,6 +32,11 @@ export class Semaphore {
     }
   }
 
+  /** How many callers are queued for a permit right now. */
+  get waiting(): number {
+    return this.waiters.length;
+  }
+
   /** Run `fn` while holding a permit; the permit is always released. */
   async run<T>(fn: () => Promise<T>): Promise<T> {
     await this.acquire();

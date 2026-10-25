@@ -1,4 +1,4 @@
-import { retryDataLayer, updateToTag } from '@/data5e/loader';
+import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
@@ -10,6 +10,7 @@ export function DataBanner() {
   const total = useDataStatus((s) => s.filesTotal);
   const error = useDataStatus((s) => s.error);
   const failedTag = useDataStatus((s) => s.failedTag);
+  const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
 
   // The same predicate the update toast stands aside for, so neither can drift
   // into painting over the other.
@@ -46,6 +47,28 @@ export function DataBanner() {
           className="shrink-0 rounded bg-accent px-2 py-0.5 font-semibold"
         >
           Retry
+        </button>
+      </div>
+    );
+  }
+  // Ahead of the progress bar: a version that moved backwards on its own is
+  // the one thing here the user did not ask for, and the drain that follows a
+  // rollback would otherwise cover the only explanation for it.
+  if (rolledBackFrom !== undefined) {
+    return (
+      <div
+        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
+        role="status"
+      >
+        <span>
+          Game data {rolledBackFrom} could not start, so the app went back to {getActiveTag()}.
+        </span>
+        <button
+          type="button"
+          onClick={() => void dismissRollbackNotice()}
+          className="shrink-0 rounded bg-surface-2 px-2 py-0.5 font-semibold"
+        >
+          Dismiss
         </button>
       </div>
     );

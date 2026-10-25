@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { DATA_TAG } from './config';
 import { getActiveTag } from './loader';
 import {
   getRegistry,
@@ -26,6 +27,9 @@ const spellNames = async () => (await getRegistry()).byType('spell').map((s) => 
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
+  // Pinned, so tag resolution (which the registry now waits for) reads it
+  // rather than asking the network for the latest release.
+  await db.settings.put({ key: 'dataTag', value: DATA_TAG });
   invalidateRegistry();
 });
 

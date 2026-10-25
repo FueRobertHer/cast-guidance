@@ -9,9 +9,11 @@ import {
   MAX_REPLACE_WORK,
   MAX_VERSIONS_PER_ENTITY,
   resolveCopies,
+  textOf,
   uidOf,
   withReplaceBudget,
 } from './copyMod';
+import { mergeHomebrew, normalizeDataset } from './normalize';
 
 const noWarn = (message: string) => {
   throw new Error(`unexpected warning: ${message}`);
@@ -250,9 +252,144 @@ describe('resolveCopies', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toContain('Ghost');
   });
+
+  it.each([null, 'A', ['A']])('skips a _copy of %j with a warning instead of throwing', (ref) => {
+    // Homebrew is anyone's JSON, and the lookup reads `copy.name`: a null ref
+    // used to throw out of here and take the whole registry with it.
+    const a: Entity = { name: 'A', source: 'S' };
+    const b: Entity = { name: 'B', source: 'S', speed: 25, _copy: ref };
+    const warnings = resolveCopies([a, b], byUid([a, b]), 'feat');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toMatch(/feat: malformed _copy/);
+    expect(b).toEqual({ name: 'B', source: 'S', speed: 25 });
+  });
+
+  it('costs one entity its copy, not the others theirs, when a lookup throws', () => {
+    const a: Entity = { name: 'A', source: 'S', speed: 30 };
+    const b: Entity = { name: 'B', source: 'S', _copy: { name: 'A', source: 'S' } };
+    const bad: Entity = { name: 'C', source: 'S', _copy: { name: 'boom', source: 'S' } };
+    const all = [a, b, bad];
+    const warnings = resolveCopies(
+      all,
+      (copy) => {
+        if (copy.name === 'boom') throw new Error('lookup failed');
+        return byUid(all)(copy);
+      },
+      't',
+    );
+    expect(b.speed).toBe(30);
+    expect(bad._copy).toBeUndefined();
+    expect(warnings.map((w) => w.message)).toEqual(['t: could not resolve _copy: lookup failed']);
+  });
+});
+
+describe('mergeHomebrew', () => {
+  it('keeps the registry when a homebrew entity carries a null _copy', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] }]]),
+    );
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: 'X', source: 'HB', _copy: null },
+              { name: 'Y', source: 'HB' },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.byType('feat').map((f) => f.name)).toEqual(['Alert', 'X', 'Y']);
+    expect(reg.warnings.some((w) => w.message.includes('malformed _copy'))).toBe(true);
+  });
+
+  it('keeps the registry when a name is something String() refuses', () => {
+    // `{"toString": 1}` is valid JSON. Turning it into an identity threw a
+    // TypeError out of the registry's index, and out of the warning written
+    // for the entity's malformed `_copy` on the way.
+    const odd = { toString: 1 };
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: odd, source: 'HB', _copy: null },
+              { name: 'Y', source: 'HB', _copy: { name: odd, source: 'HB' } },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.byType('feat')).toHaveLength(2);
+    expect(reg.warnings.map((w) => w.entity)).toContain('?|hb');
+  });
+});
+
+describe('resolveCopies with an unprintable target', () => {
+  it('still reports the unresolved copy', () => {
+    const a: Entity = { name: 'A', source: 'S', _copy: { name: { toString: 1 }, source: 'S' } };
+    const warnings = resolveCopies([a], () => undefined, 't');
+    expect(warnings.map((w) => w.message)).toEqual(['t: unresolved _copy target ?|S']);
+  });
+});
+
+describe('textOf', () => {
+  it('stringifies what String() can, and stands in for what it cannot', () => {
+    expect(textOf('a')).toBe('a');
+    expect(textOf(3)).toBe('3');
+    expect(textOf({ toString: 1 })).toBe('?');
+    expect(uidOf({ name: { toString: 1 }, source: 'HB' })).toBe('?|hb');
+  });
 });
 
 describe('expandVersions', () => {
+  it('substitutes a variable with a quote in it', () => {
+    // Spliced raw into the template's JSON, the quote ended the string early
+    // and the parse threw a SyntaxError out of the whole merge.
+    const base: Entity = {
+      name: 'Drake',
+      source: 'HB',
+      _versions: [
+        {
+          _abstract: { name: 'Drake ({{color}})', entries: ['A {{color}} \\\\ drake'] },
+          _implementations: [{ _variables: { color: 'Red "Classic"' } }],
+        },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const [v] = expandVersions(base, warnings);
+    expect(warnings).toEqual([]);
+    expect(v?.name).toBe('Drake (Red "Classic")');
+    expect(v?.entries).toEqual(['A Red "Classic" \\\\ drake']);
+  });
+
+  it('costs one version that cannot be built, not the others', () => {
+    const base: Entity = {
+      name: 'Drake',
+      source: 'HB',
+      entries: ['text'],
+      _versions: [
+        {
+          name: 'Bad',
+          _mod: { entries: { mode: 'replaceTxt', replace: { toString: 1 }, with: 'x' } },
+        },
+        { name: 'Good' },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const versions = expandVersions(base, warnings);
+    expect(versions.map((v) => v.name)).toEqual(['Good']);
+    expect(warnings.map((w) => w.message)).toEqual([
+      expect.stringMatching(/^versions: a version could not be built/),
+    ]);
+  });
+
   it('expands plain versions with overlay + mods and marks _versionOf', () => {
     const base: Entity = {
       name: 'Testfolk',

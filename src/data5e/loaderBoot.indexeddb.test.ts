@@ -25,6 +25,7 @@ vi.mock('./config', async (importOriginal) => ({
   BOOT_TAG_RESOLVE_TIMEOUT_MS: 20,
 }));
 
+import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 
 // IndexedDB under fake-indexeddb is slow on a loaded runner: the default
@@ -46,17 +47,8 @@ const tagList = (...names: string[]) =>
 const serveTags = (...names: string[]) =>
   tagsFetch.mockImplementation(() => Promise.resolve(tagList(...names)));
 
-/** A mirror complete enough to boot against, with one class and one spell pack. */
-const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
-  Promise.resolve(
-    path === 'races.json'
-      ? { race: [{ name: 'Elf' }] }
-      : path === 'class/index.json'
-        ? { Fighter: 'class-fighter.json' }
-        : path === 'spells/index.json'
-          ? { PHB: 'spells-phb.json' }
-          : {},
-  );
+/** A mirror complete enough to boot and install against, with one class and one spell pack. */
+const wholeMirror = validMirror();
 
 /**
  * A loader with no memory of the last test. Tag resolution, the release list
