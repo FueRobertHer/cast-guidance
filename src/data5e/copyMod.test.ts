@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   applyMod,
   type CopyModWarning,
+  compileModRegex,
   type Entity,
   expandVersions,
+  MAX_REPLACE_STRING_LENGTH,
+  MAX_REPLACE_TOTAL_CHARS,
+  MAX_VERSIONS_PER_ENTITY,
   resolveCopies,
   uidOf,
 } from './copyMod';
@@ -67,6 +71,78 @@ describe('applyMod', () => {
     const t: Entity = { entries: ['a dwarf walks', { name: 'X', entries: ['dwarf again'] }] };
     applyMod(t, { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } }, noWarn);
     expect(t.entries).toEqual(['a gnome walks', { name: 'X', entries: ['gnome again'] }]);
+  });
+
+  it('replaceTxt is always global, as in 5etools, with the file flags added', () => {
+    // The one official pattern: `{ replace: 'Goblins', flags: 'i' }`. 5etools
+    // builds it as `new RegExp(replace, 'g' + flags)`, so every match changes.
+    const t: Entity = { entries: ['goblins and GOBLINS'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'Goblins', flags: 'i', with: 'Kobolds' } },
+      noWarn,
+    );
+    expect(t.entries).toEqual(['Kobolds and Kobolds']);
+  });
+
+  it('replaceTxt keeps a doubled g from making the pattern invalid', () => {
+    const t: Entity = { entries: ['a-a'] };
+    applyMod(t, { entries: { mode: 'replaceTxt', replace: 'a', flags: 'gg', with: 'b' } }, noWarn);
+    expect(t.entries).toEqual(['b-b']);
+  });
+
+  it('replaceTxt refuses a pattern that backtracks catastrophically', () => {
+    const warnings: string[] = [];
+    const t: Entity = { entries: ['aaa'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: '(a+)+$', with: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['aaa']);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/replaceTxt unsafe regex/);
+  });
+
+  it('replaceTxt refuses a backreference', () => {
+    const warnings: string[] = [];
+    const t: Entity = { entries: ['aa'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: '(a)\\1', with: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['aa']);
+    expect(warnings[0]).toMatch(/backreference/);
+  });
+
+  it('replaceTxt leaves strings past the length cap alone, and says so', () => {
+    const warnings: string[] = [];
+    const long = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH)}`;
+    const t: Entity = { entries: ['a dwarf', long] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['a gnome', long]);
+    expect(warnings[0]).toMatch(/skipped 1 string/);
+  });
+
+  it('replaceTxt stops once one operation has searched its budget', () => {
+    const warnings: string[] = [];
+    const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
+    const count = Math.ceil(MAX_REPLACE_TOTAL_CHARS / chunk.length) + 2;
+    const t: Entity = { entries: Array.from({ length: count }, () => chunk) };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } },
+      (m) => void warnings.push(m),
+    );
+    const out = t.entries as string[];
+    expect(out[0]?.startsWith('gnome')).toBe(true);
+    expect(out[count - 1]?.startsWith('dwarf')).toBe(true);
+    expect(warnings[0]).toMatch(/stopped after/);
   });
 
   it('sets scalar and object props without a mode', () => {
@@ -225,5 +301,88 @@ describe('expandVersions', () => {
 
   it('returns [] when there are no versions', () => {
     expect(expandVersions({ name: 'X', source: 'S' }, [])).toEqual([]);
+  });
+
+  it('caps how many entities one base expands into', () => {
+    const base: Entity = {
+      name: 'Manyfolk',
+      source: 'TST',
+      _versions: [
+        {
+          _abstract: { name: 'Manyfolk ({{n}})', source: 'TST' },
+          _implementations: Array.from({ length: MAX_VERSIONS_PER_ENTITY + 10 }, (_, n) => ({
+            _variables: { n },
+          })),
+        },
+        { name: 'Manyfolk; Extra', source: 'TST' },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const versions = expandVersions(base, warnings);
+    expect(versions).toHaveLength(MAX_VERSIONS_PER_ENTITY);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toMatch(/more than 64 versions/);
+  });
+});
+
+describe('compileModRegex', () => {
+  const refused = (pattern: string) => !(compileModRegex(pattern) instanceof RegExp);
+
+  it('accepts the patterns real data uses', () => {
+    for (const p of [
+      'Goblins',
+      'dwarf',
+      '\\(\\d+\\)',
+      '[()+*]+',
+      'a|b',
+      '(?:the )?goblin',
+      'x{2,5}',
+    ]) {
+      expect(refused(p), p).toBe(false);
+    }
+  });
+
+  it('refuses nested and alternating quantified groups', () => {
+    for (const p of ['(a+)+', '(a*)*b', '(a|aa)+', '(?:a+)*', '((a)+)+', '(a+){2}', '(a{1,3})+']) {
+      expect(refused(p), p).toBe(true);
+    }
+  });
+
+  it('allows a group that cannot repeat around a quantifier', () => {
+    expect(refused('(\\d+)?')).toBe(false);
+    expect(refused('(a+){1}')).toBe(false);
+  });
+
+  it('refuses backreferences, numbered and named', () => {
+    expect(refused('(a)\\1')).toBe(true);
+    expect(refused('(?<x>a)\\k<x>')).toBe(true);
+  });
+
+  it('caps unbounded quantifiers at three', () => {
+    expect(refused('a+b*c+')).toBe(false);
+    expect(refused('a+b*c+d{2,}')).toBe(true);
+  });
+
+  it('refuses an overlong pattern', () => {
+    expect(refused('a'.repeat(256))).toBe(false);
+    expect(refused('a'.repeat(257))).toBe(true);
+  });
+
+  it('reads escapes and classes as atoms, not syntax', () => {
+    // An escaped paren is a literal, and a quantifier inside a class is a
+    // character: neither opens or quantifies a group.
+    expect(refused('\\(a+\\)+')).toBe(false);
+    expect(refused('[(]a+[)]+')).toBe(false);
+  });
+
+  it('refuses a pattern that does not compile, with the reason', () => {
+    const out = compileModRegex('(a');
+    expect(out).not.toBeInstanceOf(RegExp);
+  });
+
+  it('keeps only usable flags, always global', () => {
+    const re = compileModRegex('a', 'gixdgv');
+    expect(re).toBeInstanceOf(RegExp);
+    expect((re as RegExp).flags).toBe('gi');
   });
 });

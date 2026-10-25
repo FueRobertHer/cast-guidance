@@ -5,7 +5,14 @@ import type {
   SearchWorkerRequest,
   SearchWorkerResponse,
 } from '@/data5e/search/protocol';
-import { pageAllowedHits, SEARCH_FIELDS, STORE_FIELDS } from '@/data5e/search/protocol';
+import {
+  clampDocs,
+  clampLimit,
+  clampQuery,
+  pageAllowedHits,
+  SEARCH_FIELDS,
+  STORE_FIELDS,
+} from '@/data5e/search/protocol';
 
 const options = {
   fields: [...SEARCH_FIELDS],
@@ -27,16 +34,17 @@ self.onmessage = (ev: MessageEvent<SearchWorkerRequest>) => {
         break;
       case 'build':
         index = new MiniSearch<SearchDoc>(options);
-        index.addAll(msg.docs);
+        // The client already clamps; this is the second line, see protocol.ts.
+        index.addAll(clampDocs(msg.docs));
         post({ kind: 'ready', serialized: JSON.stringify(index) });
         break;
       case 'query': {
         const ranked =
           index === null
             ? []
-            : (index.search(msg.q) as unknown as Array<SearchDoc & { score: number }>);
+            : (index.search(clampQuery(msg.q)) as unknown as Array<SearchDoc & { score: number }>);
         // Filters the whole ranked list before taking a page; see pageAllowedHits.
-        const { hits, hiddenCount } = pageAllowedHits(ranked, msg.sources, msg.limit ?? 30);
+        const { hits, hiddenCount } = pageAllowedHits(ranked, msg.sources, clampLimit(msg.limit));
         post({ kind: 'results', id: msg.id, hits, hiddenCount });
         break;
       }

@@ -6,7 +6,15 @@
 // still there, so nothing about the user's data is lost by throwing the cache
 // away and building it again.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol';
+import {
+  MAX_DOC_NAME_LENGTH,
+  MAX_INDEX_DOCS,
+  MAX_QUERY_LENGTH,
+  MAX_QUERY_LIMIT,
+  MAX_QUERY_TERMS,
+  type SearchWorkerRequest,
+  type SearchWorkerResponse,
+} from './protocol';
 
 const { indexes } = vi.hoisted(() => ({
   indexes: {
@@ -72,7 +80,7 @@ class FakeWorker {
   }
 }
 
-const registry = { byType: () => [], get: () => undefined } as never;
+const registry = { byType: () => [], get: () => undefined, officialCount: () => 0 } as never;
 const KEY = 'tag1|official|';
 
 /** Settle the client's own awaits (the Dexie reads) without advancing timers. */
@@ -386,6 +394,7 @@ describe('two builds asked for at once', () => {
         walks++;
         return [];
       },
+      officialCount: () => 0,
       get: () => undefined,
     } as never;
 
@@ -535,5 +544,46 @@ describe('a query the worker refuses', () => {
       ],
       hiddenCount: 0,
     });
+  });
+});
+
+describe('the work the client hands the worker', () => {
+  it('sends only a bounded query', async () => {
+    const w = await buildReady();
+    void client.searchAll('fire bolt '.repeat(1000), { limit: 10_000 });
+    await tick();
+    const sent = w.last;
+    expect(sent?.kind).toBe('query');
+    if (sent?.kind !== 'query') return;
+    expect(sent.q.length).toBeLessThanOrEqual(MAX_QUERY_LENGTH);
+    expect(sent.q.split(' ').length).toBeLessThanOrEqual(MAX_QUERY_TERMS);
+    expect(sent.limit).toBe(MAX_QUERY_LIMIT);
+  });
+
+  it('builds from at most the doc cap, official entries first, with names cut', async () => {
+    // Sixty thousand homebrew races ahead of the official items in walk order:
+    // a plain walk to the cap would leave items out of search entirely.
+    const races = [
+      { name: 'Elf', source: 'PHB' },
+      ...Array.from({ length: 60_000 }, (_, n) => ({ name: `Brewfolk ${n}`, source: 'BREW' })),
+    ];
+    const items = [{ name: `Longsword${'!'.repeat(500)}`, source: 'PHB' }];
+    const big = {
+      byType: (type: string) => (type === 'race' ? races : type === 'item' ? items : []),
+      officialCount: (type: string) => (type === 'race' || type === 'item' ? 1 : 0),
+      get: () => undefined,
+    } as never;
+    void client.ensureSearchIndex(big, 'big');
+    await flush();
+    const sent = (FakeWorker.instances[0] as FakeWorker).last;
+    expect(sent?.kind).toBe('build');
+    if (sent?.kind !== 'build') return;
+    expect(sent.docs).toHaveLength(MAX_INDEX_DOCS);
+    expect(sent.docs.every((d) => d.name.length <= MAX_DOC_NAME_LENGTH)).toBe(true);
+    const sword = sent.docs.find((d) => d.type === 'item');
+    expect(sword?.name).toHaveLength(MAX_DOC_NAME_LENGTH);
+    // The uid stays whole: it is what a hit navigates by.
+    expect(sword?.uid).toBe(`longsword${'!'.repeat(500)}|phb`);
+    expect(sent.docs.slice(0, 2).map((d) => d.name)).toEqual(['Elf', sword?.name]);
   });
 });

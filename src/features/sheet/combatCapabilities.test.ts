@@ -9,6 +9,11 @@ describe('capabilityKey', () => {
     expect(capabilityKey('Sneak Attack (3d6)')).toBe('sneak attack');
   });
 
+  it('stays linear on a homebrew name full of "("', () => {
+    // The budget is the test timeout; the old regex took about eleven seconds.
+    expect(capabilityKey(`${'('.repeat(120_000)}X`)).toBe(`${'('.repeat(120_000)}x`);
+  }, 2000);
+
   it('produces keys that match the curated capability map', () => {
     expect(COMBAT_CAPABILITIES[capabilityKey('Extra Attack (2)')]).toBeDefined();
     expect(COMBAT_CAPABILITIES[capabilityKey('Cunning Action')]).toBeDefined();

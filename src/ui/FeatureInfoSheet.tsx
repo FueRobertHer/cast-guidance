@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import type { FeatureCard } from '@/engine/types';
+import { stripTrailingParenthetical } from '@/lib/trailingParenthetical';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 
 /**
@@ -14,10 +15,7 @@ export function findFeatureInfo(
   origin?: string,
 ): { title: string; entries: unknown } | undefined {
   // "Sneak Attack (+1d6 once/turn)" → "sneak attack"
-  const base = label
-    .replace(/\s*\(.*\)\s*$/, '')
-    .trim()
-    .toLowerCase();
+  const base = stripTrailingParenthetical(label).trim().toLowerCase();
 
   const findNamed = (node: unknown): { title: string; entries: unknown } | undefined => {
     if (Array.isArray(node)) {
