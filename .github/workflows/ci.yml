@@ -1,10 +1,11 @@
 name: CI
 
 # Runs the local green baseline on every push and PR: frozen install, lint,
-# typecheck, unit tests with coverage thresholds, a production/PWA build, and a
-# bundle budget. Coverage floors live in vite.config.ts and byte budgets in
-# scripts/bundle-budget.json; `bun run ci` runs the same gates locally. The
-# `e2e` job runs the browser suite (`bun run e2e:ci` locally).
+# typecheck, unit tests with coverage thresholds, a production/PWA build, a
+# bundle budget, and a third-party notices check. Coverage floors live in
+# vite.config.ts and byte budgets in scripts/bundle-budget.json; `bun run ci`
+# runs the same gates locally. The `e2e` job runs the browser suite
+# (`bun run e2e:ci` locally).
 on:
   push:
     branches: [main]
@@ -72,6 +73,15 @@ jobs:
         # Fails when any metric in scripts/bundle-budget.json is exceeded, or
         # when dist/ cannot be measured. Also writes its table to the summary.
         run: bun run bundle:budget
+
+      - name: Third-party notices are current
+        # Regenerates THIRD_PARTY_NOTICES.md from what the build ships and
+        # fails when the committed file differs, or when a shipped package has
+        # no license text or a license outside the allowlist. The fix is
+        # `bun run build && bun run notices`. It also fails when dist/.vite/
+        # exists: the build keeps its license records in node_modules/.cache
+        # so no deploy serves them.
+        run: bun run notices:check
 
       - name: Upload build artifact
         if: always()

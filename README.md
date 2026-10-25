@@ -24,8 +24,10 @@ bun run lint           # biome check (src, scripts, tests-fixtures, e2e)
 bun run typecheck      # tsc -b
 bun run build          # production / PWA build
 bun run check          # lint + typecheck + test (the fast offline gate)
-bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget
+bun run ci             # what CI runs: lint, typecheck, coverage gate, build, bundle budget, notices check
 bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a build)
+bun run notices        # regenerate THIRD_PARTY_NOTICES.md from dist/ (after a build)
+bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
@@ -44,9 +46,11 @@ pipeline. A `DATA_TAG` bump needs a budget entry, or `bun run test` fails.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the
-frozen install, lint, typecheck, tests with coverage floors, the build, and a
-bundle budget on every push and PR, and fails when coverage drops below the
-floors in `vite.config.ts` or the build outgrows `scripts/bundle-budget.json`.
+frozen install, lint, typecheck, tests with coverage floors, the build, a bundle
+budget, and the third-party notices check on every push and PR, and fails
+when coverage drops below the floors in `vite.config.ts`, the build outgrows
+`scripts/bundle-budget.json`, or `THIRD_PARTY_NOTICES.md` no longer matches
+what the build ships.
 
 ### Browser E2E
 
@@ -63,10 +67,38 @@ for how the harness works, debugging, and writing specs.
 
 ## Game data & copyright
 
-**This repository contains no D&D game content.** The app downloads the 5etools dataset at
-runtime from a pinned release tag of the community mirror (via CDN) and caches it in the
-browser's IndexedDB, entirely on the user's device. Test fixtures are synthetic entities
-that only mimic the JSON schema. Homebrew files use the standard 5etools homebrew format.
+**This repository contains no compendium.** On a fresh install the app downloads the
+5etools dataset at runtime from the community mirror (via CDN): the newest release
+compatible with the build, with the build's `DATA_TAG` as the fallback. It
+caches the data in the browser's IndexedDB, entirely on the user's device. Test fixtures
+are synthetic entities that only mimic the JSON schema. Homebrew files use the standard
+5etools homebrew format.
+
+Two small pieces of game-related material do ship with the app: the book titles behind
+the source badges (`src/data5e/sourceNames.ts`) and a few dozen hand-coded feature
+mechanics (`src/engine/curated/curatedEffects.ts`). The mirror itself republishes book
+text beyond the SRD. How all of this sits with Wizards of the Coast's policies is still
+under review; [`docs/content-notice.md`](docs/content-notice.md) is the draft notice,
+with the options and the open questions.
+
+Draft wording, pending the owner's approval (see the checklist in the content notice):
+Cast Guidance is unofficial and is not affiliated with or endorsed by Wizards of the
+Coast. Dungeons & Dragons and D&D are trademarks of Wizards of the Coast LLC.
+
+## License
+
+Cast Guidance's own code is released under the [MIT License](LICENSE). The license
+covers the original code only: not the book titles, names, terms or rules text in
+`sourceNames.ts` and `curatedEffects.ts`, not the game data the app downloads, and not
+any trademark.
+
+The production build bundles open source packages under their own licenses, listed with
+their full texts in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). That file is
+generated from what the build actually ships (app bundle, search worker, service worker
+and stylesheet). After a dependency change, regenerate it with
+`bun run build && bun run notices`; `bun run notices:check` (part of `bun run ci` and
+CI) fails when it is out of date, when a shipped package has no license text, or when a
+license is outside the allowlist in `scripts/thirdPartyNotices.ts`.
 
 ## Architecture (short version)
 
@@ -84,6 +116,7 @@ recomputed on read and individually overridable.
 
 - [`docs/export-format.md`](docs/export-format.md): the character export envelope, homebrew DTO, and import/migration guarantees.
 - [`docs/security-headers.md`](docs/security-headers.md): deployment security headers, the enforced CSP, and how to add a host.
+- [`docs/content-notice.md`](docs/content-notice.md): DRAFT content and attribution notice for the owner's legal review: where game data comes from, what ships, and the options.
 - [`FUTURE_WORK.md`](FUTURE_WORK.md): the product principle, the measured
   baseline, the delivery order, and the P2/P3 themes. Release-quality (P1) work
   is tracked as [GitHub issues](https://github.com/FueRobertHer/cast-guidance/issues?q=is%3Aissue+is%3Aopen+label%3AP1);

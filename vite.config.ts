@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { pwaManifest } from './pwa.manifest.ts';
+import { shippedModulesCollector } from './scripts/shippedModules.ts';
 import { headersMetaPlugin } from './src/app/headersMeta.ts';
 
 // vercel.json is the source of truth for the response headers. Their digest
@@ -15,7 +16,20 @@ const vercelConfig: { headers?: unknown } = JSON.parse(
   readFileSync(path.resolve(__dirname, 'vercel.json'), 'utf8'),
 );
 
+// Third-party notices (LEGAL-001): `build.license` lists the packages in the
+// main bundle, and the collector records every chunk's modules, workers
+// included, since `build.license` skips worker builds. The collector moves
+// both records out of the bundle to node_modules/.cache, so dist/ never holds
+// them, and `bun run notices` turns them into THIRD_PARTY_NOTICES.md.
+const shippedModules = shippedModulesCollector(__dirname);
+
 export default defineConfig({
+  build: {
+    license: { fileName: '.vite/licenses.json' },
+  },
+  worker: {
+    plugins: () => [shippedModules.worker()],
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -33,6 +47,7 @@ export default defineConfig({
       },
       manifest: pwaManifest,
     }),
+    shippedModules.main,
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },

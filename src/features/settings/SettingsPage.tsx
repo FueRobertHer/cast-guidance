@@ -64,6 +64,18 @@ function useStorageUsage(phase: string) {
  */
 const NOT_DOWNLOADED = 'not downloaded';
 
+/**
+ * The About section links the copies on the repository's main branch, which
+ * can be ahead of the deployed build. Offline they do not open, which is
+ * acceptable for reference documents.
+ */
+const REPO_BLOB_URL = 'https://github.com/FueRobertHer/cast-guidance/blob/main';
+export const ABOUT_LINKS = [
+  { label: 'License', path: 'LICENSE' },
+  { label: 'Third-party notices', path: 'THIRD_PARTY_NOTICES.md' },
+  { label: 'Content notice', path: 'docs/content-notice.md' },
+] as const;
+
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 export function Component() {
@@ -468,6 +480,31 @@ export function Component() {
           reloads. This cannot be undone. Export anything you want to keep first.
         </p>
         {resetMsg !== undefined && <p className="text-xs text-amber-300">{resetMsg}</p>}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-semibold">About</h2>
+        <p className="text-xs text-ink-muted">
+          Cast Guidance is open source under the MIT License.
+        </p>
+        {/* Button-sized links: they meet the target size that inline text-xs
+            links would not, and they wrap on a narrow screen. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {ABOUT_LINKS.map(({ label, path }) => (
+            <a
+              key={path}
+              href={`${REPO_BLOB_URL}/${path}`}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold"
+            >
+              {label}
+              {/* The space sits outside the span: some name computations
+                  trim a child's leading space, which ran the words together. */}{' '}
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          ))}
+        </div>
       </section>
     </main>
   );
