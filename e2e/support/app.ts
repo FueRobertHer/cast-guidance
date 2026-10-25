@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { type Download, expect, type Locator, type Page } from '@playwright/test';
 import type { FilePayload } from '../fixtures/characterFile.ts';
+import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
+import { countDataFiles } from './idb.ts';
+
+/** `OFFLINE_ANNOUNCED_KEY` in `src/features/onboarding/OfflineReadyNotice.tsx`. */
+const OFFLINE_ANNOUNCED_KEY = 'cast-guidance:offline-ready-announced';
 
 /**
  * UI flows shared by the specs. Locators are roles and accessible names only,
@@ -39,7 +44,9 @@ export function announcements(
  * screen that hides itself after a few seconds.
  */
 export function offlineReadyNotice(page: Page): Locator {
-  return page.getByText('Ready to use offline').and(onScreen(page));
+  // The notice toast only: the getting-started card has a lasting line with
+  // the same words, which would hold the overlay handler waiting forever.
+  return page.getByTestId('notice-toast').filter({ hasText: 'Ready to use offline' });
 }
 
 /**
@@ -221,6 +228,68 @@ export async function importHomebrewFile(page: Page, file: FilePayload): Promise
   await page.getByRole('button', { name: 'Import file', exact: true }).click();
   const chooser = await choosing;
   await chooser.setFiles(file);
+}
+
+/**
+ * Opens the roster and waits for the data install to finish: every file of
+ * the release stored and the download banner gone. A page scanned or measured
+ * before this can still change under the check.
+ */
+export async function gotoRosterSettled(page: Page): Promise<void> {
+  await gotoRoster(page);
+  await expect.poll(() => countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
+  await expect(page.getByRole('progressbar', { name: 'Downloading game data' })).toBeHidden();
+}
+
+/**
+ * Waits until no finite animation or transition is running: a sheet has slid
+ * in, a toast has settled. Infinite ones (a spinner) are left out, since they
+ * never end. A check made mid-animation sees half-faded colours and moving
+ * boxes.
+ */
+export async function animationsSettled(page: Page): Promise<void> {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .filter((a) => a.effect?.getTiming().iterations !== Number.POSITIVE_INFINITY)
+      .every((a) => a.playState !== 'running'),
+  );
+}
+
+/**
+ * Marks the one-time "Ready to use offline" notice as already shown, before
+ * any page script runs, so it cannot appear part way through a check. A spec
+ * about the notice itself does not call this.
+ */
+export async function skipOfflineReadyNotice(page: Page): Promise<void> {
+  await page.addInitScript((key) => {
+    localStorage.setItem(key, 'e2e');
+  }, OFFLINE_ANNOUNCED_KEY);
+}
+
+/** The sheet's tabs, by their label in the tab bar, and their paths. */
+export const SHEET_TABS = {
+  Play: '',
+  Stats: '/stats',
+  Items: '/inventory',
+  Spells: '/spells',
+  More: '/features',
+  Build: '/build',
+} as const;
+export type SheetTab = keyof typeof SHEET_TABS;
+
+/**
+ * Opens a character sheet tab by its label in the tab bar, and waits for it:
+ * the tab marked current (the router renders a lazy route only once its
+ * module is in) and the character loaded into the header.
+ */
+export async function gotoSheetTab(page: Page, id: string, label: SheetTab): Promise<void> {
+  await page.goto(`/c/${id}${SHEET_TABS[label]}`);
+  const tab = page
+    .getByRole('navigation', { name: 'Character sheet' })
+    .getByRole('link', { name: label, exact: true });
+  await expect(tab).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('…');
 }
 
 function escapeRegExp(text: string): string {

@@ -242,7 +242,7 @@ export function Component() {
           onClick={chooseFile}
           aria-disabled={checking}
           aria-busy={checking}
-          className="tap gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white aria-disabled:opacity-60"
+          className="tap gap-2 rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white aria-disabled:opacity-60"
         >
           <FileUp size={16} /> Import file
         </button>

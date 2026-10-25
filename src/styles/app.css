@@ -9,6 +9,20 @@
   --color-ink-muted: #a1a1aa; /* zinc-400 */
   --color-accent: #ef4444; /* red-500 */
   --color-accent-deep: #7f1d1d; /* red-900 */
+  /*
+   * The fill behind a button's label (A11Y-003). `accent` itself is tuned to
+   * read as text and marks on the near-black page, and white text on it is
+   * only 3.8:1, under the 4.5:1 that labels this size need. One step darker
+   * gives 4.8:1 with white and 4.6:1 with ink. Icon-only fills and marks
+   * (the dice button, pips, the tab bar) keep `accent`: they need 3:1.
+   */
+  --color-accent-fill: #dc2626; /* red-600 */
+  /*
+   * Red words on a raised control (a destructive choice in a sheet). `accent`
+   * is 4.7:1 on a sheet but 4.0:1 on surface-2 and 2.8:1 on its hover step;
+   * this lighter red keeps 7.8:1 and 5.5:1.
+   */
+  --color-accent-ink: #fca5a5; /* red-300 */
 
   /*
    * A roll result has to announce itself: it appears while the player is
@@ -162,3 +176,32 @@ a {
   align-items: center;
   justify-content: center;
 }
+
+/*
+ * Reduced motion, app-wide (A11Y-003). Someone who asks their device for less
+ * motion gets none: sheets and dialogs appear in place instead of sliding,
+ * toasts land without moving, and nothing spins or fades. The roll toast and
+ * the roster already guard their own keyframes with `motion-safe:`; this
+ * covers what they cannot, chiefly vaul's sheet slide (its own stylesheet)
+ * and the inline transitions it sets while a sheet is dragged.
+ *
+ * Durations go to a hair above zero rather than `none`, so `animationend`
+ * and `transitionend` still fire: Radix unmounts a closing dialog on the end
+ * of its exit animation, and code waiting on one must not wait forever.
+ * Unlayered and `!important`, so it beats Tailwind's utilities and inline
+ * styles alike. e2e/a11y/reduced-motion.spec.ts checks it in the browser.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: only !important outranks inline styles and Tailwind's utilities */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: see above */

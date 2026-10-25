@@ -11,6 +11,8 @@ bun run e2e -- e2e/specs/sw-update.spec.ts   # one file
 bun run e2e -- -g "offline"                  # by title
 bun run e2e -- --headed --workers=1          # watch it
 bun run e2e -- --debug                       # step through with the inspector
+bun run e2e:a11y                             # the accessibility specs only
+bun run e2e:a11y:update                      # rewrite the axe baseline from a run
 ```
 
 A failing test keeps a trace in `test-results/e2e/`; open it with
@@ -106,10 +108,38 @@ flows by role and accessible name).
 - No retries: a flaky spec is a bug. Fix it, or mark a genuine product gap
   with `test.fixme` and a reason.
 
+## Accessibility (`a11y/`)
+
+The axe gate (A11Y-003). `scanState(page, 'state-id')` in `a11y/scan.ts` runs
+axe (WCAG 2.x A and AA) on the page as it is and holds the result to
+`a11y/axe-baseline.json`, which counts violating nodes per (state, rule):
+
+- a rule the baseline does not list for that state, or a higher count, fails
+  the test, with every offending node in the message;
+- a lower count, or a rule gone, never fails: it adds a "please update the
+  baseline" annotation;
+- in a complete run (no grep, shard or `file:line` filter, and every axe test
+  passed or was skipped), a baseline state no scan covered fails the run;
+- `bun run e2e:a11y:update` rewrites the baseline from the states that passed
+  (others are kept, or pruned after a complete run). Commit the diff, with the
+  reason. It refuses to run with `CI` set.
+
+`scanState` hides vaul's off-screen drag strip for the scan, or axe cannot
+judge contrast inside an open drawer. Scan a state only once it is settled, or
+its counts will move between runs:
+`gotoRosterSettled` (data install done), `skipOfflineReadyNotice` (before the
+first navigation), the overlay visible and `animationsSettled`. The reporter
+(`a11y/reporter.ts`) writes `test-results/a11y-summary.md`, which CI puts in
+the `e2e` job's step summary. `a11y/baseline.test.ts` (a Vitest unit test, run
+by `bun run test`) covers the policy. The record of results, decisions and the
+manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
+
 ## Specs
 
 | Spec | Covers |
 |---|---|
+| `a11y/axe` | axe on every main route, the sheet's tabs, the dialogs, drawers and info sheets, the banners and toasts (the app update toast from the variant server), and four routes at a desktop size; see `docs/a11y-audit.md` for the list of states. |
+| `a11y/reduced-motion` | With `reducedMotion: 'reduce'`, no animation or transition runs longer than 0.01 ms while sheets open and close and a die is rolled; the same flow animates without it. |
 | `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |

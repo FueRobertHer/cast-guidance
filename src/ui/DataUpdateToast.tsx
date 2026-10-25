@@ -56,7 +56,7 @@ export function DataUpdateToast() {
         <button
           type="button"
           onClick={install}
-          className="rounded bg-accent px-2 py-0.5 font-semibold"
+          className="rounded bg-accent-fill px-2 py-0.5 font-semibold"
         >
           Update
         </button>

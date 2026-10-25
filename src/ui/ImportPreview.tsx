@@ -85,7 +85,7 @@ export function ImportPreviewDialog({
               key={a.label}
               type="button"
               onClick={a.onClick}
-              className={`${BUTTON} ${a.primary === true ? 'bg-accent text-white' : 'bg-surface-2'}`}
+              className={`${BUTTON} ${a.primary === true ? 'bg-accent-fill text-white' : 'bg-surface-2'}`}
             >
               {a.label}
             </button>

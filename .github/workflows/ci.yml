@@ -149,6 +149,17 @@ jobs:
             else
               echo "_No E2E report: the run did not get far enough to write one._"
             fi
+            # The axe gate's own table (e2e/a11y/reporter.ts): regressions,
+            # improvements to bank in the baseline, and what it still allows.
+            echo ""
+            a11y=test-results/a11y-summary.md
+            if [ -f "$a11y" ]; then
+              cat "$a11y"
+            else
+              echo "### Accessibility (axe)"
+              echo ""
+              echo "_No axe summary: the a11y specs did not run._"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload E2E report

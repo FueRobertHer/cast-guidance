@@ -91,7 +91,7 @@ function BreakdownSheetContent({
               />
               <button
                 type="submit"
-                className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white"
+                className="rounded-lg bg-accent-fill px-3 py-2 text-sm font-semibold text-white"
               >
                 Set
               </button>

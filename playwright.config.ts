@@ -12,8 +12,9 @@ const CI = process.env.CI !== undefined && process.env.CI !== '';
  * See e2e/README.md.
  */
 export default defineConfig({
-  testDir: './e2e/specs',
-  testMatch: '**/*.spec.ts',
+  testDir: './e2e',
+  // The flows in specs/, and the accessibility gate in a11y/ (A11Y-003).
+  testMatch: ['specs/**/*.spec.ts', 'a11y/**/*.spec.ts'],
   outputDir: './test-results/e2e',
   // Traces, screenshots and persistent profiles are kept for failures only.
   preserveOutput: 'failures-only',
@@ -26,14 +27,17 @@ export default defineConfig({
   workers: CI ? 3 : undefined,
   timeout: 30_000,
   expect: { timeout: 10_000 },
+  // The a11y reporter writes test-results/a11y-summary.md from the axe scans,
+  // and rewrites the axe baseline under A11Y_BASELINE_UPDATE=1.
   reporter: CI
     ? [
         ['github'],
         ['list'],
         ['html', { open: 'never', outputFolder: 'playwright-report' }],
         ['json', { outputFile: 'test-results/e2e.json' }],
+        ['./e2e/a11y/reporter.ts'],
       ]
-    : [['list']],
+    : [['list'], ['./e2e/a11y/reporter.ts']],
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

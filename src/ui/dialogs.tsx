@@ -148,7 +148,7 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
       />
       <button
         type="submit"
-        className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+        className="rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white"
       >
         OK
       </button>
@@ -194,7 +194,7 @@ export function DialogHost() {
                 close();
               }}
               className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-white ${
-                req.danger === true ? 'bg-accent-deep' : 'bg-accent'
+                req.danger === true ? 'bg-accent-deep' : 'bg-accent-fill'
               }`}
             >
               {req.confirmLabel ?? 'Confirm'}
@@ -214,7 +214,7 @@ export function DialogHost() {
                   close();
                 }}
                 className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
-                  o.danger === true ? 'text-accent' : ''
+                  o.danger === true ? 'text-accent-ink' : ''
                 }`}
               >
                 <span className="min-w-0">{o.label}</span>

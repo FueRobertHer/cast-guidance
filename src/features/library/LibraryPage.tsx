@@ -181,7 +181,7 @@ function GlobalSearch() {
               if (regStatus === 'error') retryRegistry();
               else retrySearch();
             }}
-            className="shrink-0 rounded bg-accent px-2 py-0.5 font-semibold"
+            className="shrink-0 rounded bg-accent-fill px-2 py-0.5 font-semibold"
           >
             Retry
           </button>
@@ -264,7 +264,7 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white"
+      className="shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-white"
     >
       {label}
     </button>

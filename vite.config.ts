@@ -42,7 +42,7 @@ export default defineConfig({
     // Explicit roots so local runs match CI: without this, Vitest also picks
     // up test copies under `.claude/worktrees/`, which import the root `src`
     // through the `@/` alias and skew both the test count and coverage.
-    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts', 'e2e/a11y/*.test.ts'],
     // Headroom for a loaded 4-vCPU runner with coverage on: component tests
     // that take a second locally ran past the 5 s default there.
     testTimeout: 15_000,
