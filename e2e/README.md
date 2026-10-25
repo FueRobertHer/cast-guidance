@@ -46,7 +46,9 @@ the binary outright, as an escape hatch when the two drift.
   (`abort` or a status), hold and offline rules. A request it cannot answer
   and no test asked to fail (a URL shape the app should never build, a file
   the release does not have) gets a 404, as from a real mirror, and fails the
-  test at teardown.
+  test at teardown. `setTags` and `setBodies` publish a new release
+  (`NEXT_TAG` and `withNextRelease` serve one with an extra species, so a page
+  shows which release it reads).
 - **Network guard**: every other host is aborted and fails the test.
 - **Console guard**: any console error or uncaught page error fails the test,
   with two exceptions. "Failed to load resource" is expected for a mirror
@@ -76,8 +78,9 @@ the binary outright, as an escape hatch when the two drift.
   removes its handler first (`page.removeLocatorHandler`).
 
 Helpers: `support/sw.ts` (`waitForSwControl`, `triggerSwUpdate`, `swState`),
-`support/idb.ts` (raw IndexedDB reads), `support/app.ts` (roster flows by
-role and accessible name).
+`support/idb.ts` (raw IndexedDB reads, and `putSetting` for state the UI cannot
+reach in reasonable time), `support/app.ts` (roster, Settings and data-banner
+flows by role and accessible name).
 
 ## Writing specs
 
@@ -88,6 +91,9 @@ role and accessible name).
   installed only after the page has booted.
 - The first load is never controlled by the service worker (prompt mode, no
   `clientsClaim`). Call `waitForSwControl` before anything offline.
+- Settings counts the cached files once, when it mounts, so open it with
+  `expectDataSettled` only after an install has finished (poll
+  `countDataFiles` first), or the count it shows is stale.
 - No retries: a flaky spec is a bug. Fix it, or mark a genuine product gap
   with `test.fixme` and a reason.
 
@@ -101,3 +107,12 @@ role and accessible name).
 | `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
+| `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); an update from Settings (the old release swept once a registry builds, the new one active after a reload); a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
+
+The rollback spec seeds the start counter (`dataTagRollback.starts`) instead of
+crashing two launches for real. The normalizer is built to contain malformed
+entries (it skips them or warns), so there is no known release the installer
+accepts that makes the official build throw, and a build that starts and never
+finishes cannot be timed from outside the page. The immediate
+rollback of a build that throws stays covered by
+`src/data5e/installRollback.indexeddb.test.ts`, which mocks the normalizer.
