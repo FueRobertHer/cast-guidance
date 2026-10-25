@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { EXPORT_FORMAT, invalidImports, jsonFile } from '../fixtures/characterFile.ts';
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
 import {
+  answerImportPreview,
   characterLink,
   createBlankCharacter,
   deleteCharacter,
@@ -44,6 +45,7 @@ test.describe('import and export', () => {
     expect(await listCharacters(page)).toEqual([]);
 
     await importCharacterFile(page, jsonFile('brin.json', json));
+    await answerImportPreview(page, `Import ${NAME}?`);
     await expect(importStatus(page)).toHaveText(`Imported ${NAME}`);
     await characterLink(page, NAME).click();
     await expect(page).toHaveURL(new RegExp(`/c/${id}$`));
@@ -55,7 +57,8 @@ test.describe('import and export', () => {
     const { json } = await exportCharacter(page, NAME);
 
     await importCharacterFile(page, jsonFile('brin.json', json));
-    await expect(importStatus(page)).toHaveText(/^Imported .*renamed/);
+    await answerImportPreview(page, `Import ${NAME}?`);
+    await expect(importStatus(page)).toHaveText(/^Imported .* as a copy/);
     await expect.poll(async () => (await listCharacters(page)).length).toBe(2);
     const ids = (await listCharacters(page)).map((c) => c.id);
     expect(ids).toContain(id);

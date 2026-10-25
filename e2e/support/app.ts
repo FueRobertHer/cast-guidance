@@ -174,6 +174,33 @@ export async function importCharacterFile(page: Page, file: FilePayload | string
   await chooser.setFiles(file);
 }
 
+/**
+ * The import preview a file opens before anything is written (IMP-002): a
+ * dialog titled with what it would import.
+ */
+export function importPreview(page: Page, title: string): Locator {
+  return page.getByRole('dialog', { name: title });
+}
+
+/** Answers an open import preview with Import (or Cancel) and waits for it to close. */
+export async function answerImportPreview(
+  page: Page,
+  title: string,
+  answer: 'Import' | 'Cancel' = 'Import',
+): Promise<void> {
+  const dialog = importPreview(page, title);
+  await dialog.getByRole('button', { name: answer, exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
+
+/** Imports a homebrew file through the Homebrew page's "Import file" button. */
+export async function importHomebrewFile(page: Page, file: FilePayload): Promise<void> {
+  const choosing = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import file', exact: true }).click();
+  const chooser = await choosing;
+  await chooser.setFiles(file);
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

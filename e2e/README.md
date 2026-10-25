@@ -113,7 +113,8 @@ flows by role and accessible name).
 | `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
-| `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
+| `import-export` | Export file shape, import back (through the preview), a duplicate import gets a new id, refused files change nothing and open no preview, export offline. |
+| `import-preview` | IMP-002: a homebrew file is previewed (contents, size, source, a missing dependency, an official clash and its winner), Cancel writes nothing and returns focus, Import stores it, the same file again offers to keep the existing one; a character import previews as a copy and lands as one. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
 | `harness` | A socket the routes cannot see (a WebSocket to jsDelivr) fails to resolve, from the default context and from a persistent profile, so it never reaches a real host. |
