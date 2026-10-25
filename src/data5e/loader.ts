@@ -583,7 +583,7 @@ async function refetchFile(path: string): Promise<void> {
   // The tag and its source are captured together, before the fetch, so the
   // body written always matches the row it is written into however long the
   // fetch takes. The check after it is about a tag that has been left behind:
-  // `updateToTag` sweeps the old tag's rows once it has swapped, and a late
+  // the old tag's rows are swept once the new one is confirmed, and a late
   // repair would otherwise put one back, stranded under a version nothing
   // reads until the next boot cleans it up again.
   const tag = activeTag;

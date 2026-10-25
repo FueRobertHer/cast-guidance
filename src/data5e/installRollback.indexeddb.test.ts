@@ -148,6 +148,27 @@ describe('phase C: validating what was staged', () => {
   });
 });
 
+describe('phase C: validating a resumed install', () => {
+  it('holds a file found already staged to the same check as a download', async () => {
+    const started = await installedDevice();
+    // Left by an earlier attempt or an older build: nothing re-fetches a
+    // staged row, so the check on the download path alone never saw it.
+    await started.db.dataFiles.put({
+      key: `${NEXT}:races.json`,
+      tag: NEXT,
+      path: 'races.json',
+      pack: 'essentials',
+      json: { race: [] },
+      bytes: 11,
+      fetchedAt: 1,
+    });
+
+    await expect(started.loader.updateToTag(NEXT)).rejects.toThrow('failed validation');
+    expect(started.loader.getActiveTag()).toBe(DATA_TAG);
+    expect(await storedTag(started)).toBe(DATA_TAG);
+  });
+});
+
 describe('phase D: the swap', () => {
   it('commits the tag and its bookkeeping together or not at all', async () => {
     const started = await installedDevice();
