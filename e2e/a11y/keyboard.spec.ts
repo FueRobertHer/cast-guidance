@@ -1,6 +1,6 @@
 import { devices, type Locator, type Page } from '@playwright/test';
-import { VALID_BODIES } from '../../tests-fixtures/dataMirror.ts';
 import { jsonFile } from '../fixtures/characterFile.ts';
+import { manySpells, spellName } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
   characterLink,
@@ -362,6 +362,11 @@ interface Step {
   name: string;
   inList: boolean;
   inView: boolean;
+  /** Rows the list had rendered at that step. */
+  rendered: number;
+  /** The focused row's `aria-posinset` and `aria-setsize`. */
+  posinset: string | null;
+  setsize: string | null;
 }
 
 declare global {
@@ -371,34 +376,28 @@ declare global {
   }
 }
 
-/** Spells enough that, virtualized, most rows would not be rendered at once. */
+/** Spells enough that, virtualized, most rows are not rendered at once. */
 const MANY = 150;
 
-function manySpells(): Readonly<Record<string, unknown>> {
-  const spell = Array.from({ length: MANY }, (_, i) => ({
-    name: `Spell ${String(i + 1).padStart(3, '0')}`,
-    source: 'PHB',
-    level: i % 10,
-  }));
-  return { ...VALID_BODIES, 'spells/spells-phb.json': { spell } };
-}
+/**
+ * At most this many rows rendered at any step: a desktop window holds about
+ * 15 rows, the overscan adds 10 on each side, and the focused row and its
+ * neighbours can be pinned on top. Every row (150) means it does not window.
+ */
+const ROW_CAP = 60;
 
 test.describe('keyboard: the virtualized list', () => {
   test('Tab walks a long list end to end, each row rendered and in view', async ({
     page,
     mirror,
   }) => {
-    // 180 key presses on a page drawing every row (see below): the press
-    // itself is the cost, so this one gets the slow budget.
-    test.slow();
-    // VirtualList is meant to render only the rows near the scroll position
+    // VirtualList renders only the rows near the window's scroll position
     // (with an overscan of 10), so a row Tab is about to reach may not exist
-    // yet. Each press must land on the next row, drawn and on screen: inside
-    // the list's own box and the window's. Today the list is not height
-    // bounded and draws every row (a finding in docs/a11y-audit.md), which
-    // this check does not depend on. The list has no arrow-key navigation,
-    // also recorded there.
-    mirror.setBodies(manySpells);
+    // yet. Each press must land on the next row, drawn and on screen (inside
+    // the list's box and the window), with the list still windowed and the
+    // row saying its place in the whole list. The list has no arrow-key
+    // navigation, which docs/a11y-audit.md records.
+    mirror.setBodies(() => manySpells(MANY));
     await skipOfflineReadyNotice(page);
     await gotoRosterSettled(page);
     await page.goto('/library/spell');
@@ -415,7 +414,8 @@ test.describe('keyboard: the virtualized list', () => {
       window.walk = seen;
       const record = () => {
         const el = document.activeElement as HTMLElement;
-        const list = el.closest('.overflow-y-auto');
+        const list = el.closest('[data-virtual-list]');
+        const item = el.closest('[data-virtual-list] > li');
         const row = el.getBoundingClientRect();
         const box = list?.getBoundingClientRect() ?? row;
         const top = Math.max(box.top, 0);
@@ -424,6 +424,9 @@ test.describe('keyboard: the virtualized list', () => {
           name: `${el.tagName.toLowerCase()} "${el.textContent ?? ''}"`,
           inList: list !== null,
           inView: row.top >= top - 1 && row.bottom <= bottom + 1,
+          rendered: list?.querySelectorAll(':scope > li').length ?? 0,
+          posinset: item?.getAttribute('aria-posinset') ?? null,
+          setsize: item?.getAttribute('aria-setsize') ?? null,
         });
       };
       document.addEventListener(
@@ -449,12 +452,17 @@ test.describe('keyboard: the virtualized list', () => {
     ];
     expect(walk).toHaveLength(order.length);
     order.forEach((n, step) => {
-      const want = `Spell ${String(n).padStart(3, '0')}`;
+      const want = spellName(n);
       const at = walk[step] as Step;
       const where = `step ${step + 1}: row ${want} has focus, not ${at.name}`;
       expect(at.inList, where).toBe(true);
       expect(at.name.startsWith(`a "${want}`), where).toBe(true);
       expect(at.inView, `step ${step + 1}: ${want} is scrolled into view`).toBe(true);
+      expect(at.rendered, `step ${step + 1}: rows rendered`).toBeLessThanOrEqual(ROW_CAP);
+      expect([at.posinset, at.setsize], `step ${step + 1}: ${want} is ${n} of ${MANY}`).toEqual([
+        String(n),
+        String(MANY),
+      ]);
     });
   });
 });

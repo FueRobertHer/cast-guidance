@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { manySpells } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
   characterLink,
@@ -168,6 +169,56 @@ const GROUPS = [
   ['the sheet tabs', SHEET],
 ] as const;
 
+/**
+ * One font for the width checks, so every machine measures the same text.
+ * The app asks for the system UI font, which a Linux runner without one
+ * resolves to whatever sans serif it has: CI's DejaVu Sans is wider than
+ * the fallback on some local machines, and a route that fit by a few px
+ * locally scrolled sideways on CI. DejaVu Sans is installed on both, and is
+ * the wider of the two, so it is the stricter check.
+ */
+const MEASURED_FONT = [
+  'html { font-family: "DejaVu Sans" !important; }',
+  // The few monospace runs (`font-mono`, and code by default) likewise.
+  '.font-mono, code, kbd, samp, pre { font-family: "DejaVu Sans Mono" !important; }',
+].join(' ');
+
+/**
+ * A missing font is silently replaced by the next one, so without this the
+ * checks would quietly go back to measuring each machine's own fallback.
+ * Each forced font must draw a string at a width its generic fallback does
+ * not.
+ */
+async function expectMeasuredFontInstalled(page: Page): Promise<void> {
+  const widths = await page.evaluate(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    const width = (font: string) => {
+      if (ctx === null) return 0;
+      ctx.font = `40px ${font}`;
+      return ctx.measureText('mmmmmmmmmmlllllliiiiWW').width;
+    };
+    return {
+      sans: [width('"DejaVu Sans", monospace'), width('monospace')],
+      mono: [width('"DejaVu Sans Mono", serif'), width('serif')],
+    };
+  });
+  for (const [name, [forced, fallback]] of [
+    ['DejaVu Sans', widths.sans],
+    ['DejaVu Sans Mono', widths.mono],
+  ] as const) {
+    expect(
+      forced,
+      `${name} must be installed for the layout spec's width checks (fonts-dejavu-core on Debian and Ubuntu)`,
+    ).not.toBe(fallback);
+  }
+}
+
+/** Sets {@link MEASURED_FONT} on the page, once it is known to be there. */
+async function applyMeasuredFont(page: Page, extra = ''): Promise<void> {
+  await expectMeasuredFontInstalled(page);
+  await page.addStyleTag({ content: `${extra} ${MEASURED_FONT}` });
+}
+
 test.describe('reflow at 320 CSS px', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
@@ -176,6 +227,7 @@ test.describe('reflow at 320 CSS px', () => {
       const id = await setUp(page);
       for (const route of routes) {
         await route.open(page, id);
+        await applyMeasuredFont(page);
         await openFolds(page);
         await animationsSettled(page);
         await expectNoSidewaysScroll(page, route);
@@ -193,8 +245,9 @@ test.describe('text at 200%', () => {
       for (const route of routes) {
         await route.open(page, id);
         // The browser's text-size setting, as a page sees it: a larger root
-        // font, so everything sized in rem grows with it.
-        await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        // font, so everything sized in rem grows with it. In the one font
+        // every machine measures with (see MEASURED_FONT).
+        await applyMeasuredFont(page, 'html { font-size: 200% !important; }');
         await openFolds(page);
         await animationsSettled(page);
         await expectNoSidewaysScroll(page, route);
@@ -234,8 +287,9 @@ interface DOMRectLike {
  * Tabs forward through every control in `region`, then back with Shift+Tab,
  * and returns each one that had focus while no part of it could be seen:
  * every point sampled across its box hits something else (a fixed bar).
+ * Fails if the walk took fewer than `minSteps` presses in all.
  */
-async function hiddenWhileFocused(page: Page, region: Locator): Promise<string[]> {
+async function hiddenWhileFocused(page: Page, region: Locator, minSteps = 1): Promise<string[]> {
   const controls = region.locator(
     'a[href], button:not([disabled]), input:not([disabled]), select, textarea',
   );
@@ -268,9 +322,12 @@ async function hiddenWhileFocused(page: Page, region: Locator): Promise<string[]
     }
     if (key === 'Tab') await page.keyboard.press('Shift+Tab');
   }
-  expect(steps, 'the walk moved through the region').toBeGreaterThan(0);
+  expect(steps, 'the walk moved through the region').toBeGreaterThanOrEqual(minSteps);
   return hidden;
 }
+
+/** Spells in the landscape walk of a long list, enough that most are not rendered at once. */
+const LONG_LIST = 150;
 
 test.describe('landscape on a phone', () => {
   test.use({ viewport: { width: 851, height: 393 } });
@@ -306,13 +363,33 @@ test.describe('landscape on a phone', () => {
     });
   }
 
-  test('the roster, a library list and Settings: focus clears the app nav', async ({ page }) => {
+  test('the roster and Settings: focus clears the app nav', async ({ page }) => {
     await setUp(page);
-    for (const url of ['/', '/library/spell', '/settings']) {
+    for (const url of ['/', '/settings']) {
       await page.goto(url);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await animationsSettled(page);
       expect(await hiddenWhileFocused(page, page.getByRole('main')), url).toEqual([]);
     }
+  });
+
+  test('a long library list: focus clears the app nav, all the way down and back', async ({
+    page,
+    mirror,
+  }) => {
+    // About 310 presses, each with a check in the page.
+    test.slow();
+    // Rows the window has not reached yet are rendered as Tab arrives, and
+    // drawn by transform: the html scroll padding must still keep the row
+    // Tab scrolls to clear of the bottom nav.
+    mirror.setBodies(() => manySpells(LONG_LIST));
+    await setUp(page);
+    await page.goto('/library/spell');
+    const main = page.getByRole('main');
+    await expect(main.getByText(String(LONG_LIST), { exact: true })).toBeVisible();
+    await animationsSettled(page);
+    // Every row down and every row back up, so the walk provably reached
+    // the end of the list rather than stopping where the rendered rows did.
+    expect(await hiddenWhileFocused(page, main, 2 * LONG_LIST)).toEqual([]);
   });
 });

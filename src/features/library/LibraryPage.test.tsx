@@ -3,7 +3,7 @@
 // an entity: "Loading…" forever if the compendium or the download failed, and
 // "Not found" if it did not. ERR-001 is about telling those apart, and giving
 // each one something to press.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -71,7 +71,7 @@ vi.mock('@/data5e/search/client', () => ({ searchAll }));
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
-import { Component as LibraryPage, SEARCH_SETTLE_MS } from './LibraryPage';
+import { entityRowHeight, Component as LibraryPage, SEARCH_SETTLE_MS } from './LibraryPage';
 
 /** A registry holding one spell, which is all the detail view reads. */
 const registryWith = (entities: Array<Record<string, unknown>>) => ({
@@ -133,10 +133,14 @@ beforeEach(() => {
     retry: vi.fn(),
     repair: vi.fn(),
   };
+  // The type list scrolls with the window, and its virtualizer sets the
+  // window's offset as it mounts, which jsdom does not implement.
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
 });
 
 afterEach(() => {
   cleanup();
+  vi.mocked(window.scrollTo).mockRestore();
   dbLifecycleStore.setState({ state: 'open' });
 });
 
@@ -334,6 +338,41 @@ describe('the type list', () => {
 
     expect(screen.getByText('Downloading this section…')).toBeTruthy();
     expect(screen.queryByText('Nothing here yet.')).toBeNull();
+  });
+
+  it('is a list named by its heading, each row a link to the entry', () => {
+    renderAt('/library/spell');
+
+    const list = screen.getByRole('list', { name: 'Spells' });
+    const row = within(list).getByRole('listitem');
+    expect(row.getAttribute('aria-posinset')).toBe('1');
+    expect(row.getAttribute('aria-setsize')).toBe('1');
+    expect(
+      within(row)
+        .getByRole('link', { name: /Fireball/ })
+        .getAttribute('href'),
+    ).toBe('/library/spell/fireball%7Cphb');
+  });
+});
+
+describe("a row's estimated height", () => {
+  afterEach(() => {
+    document.documentElement.style.fontSize = '';
+  });
+
+  // The rendered height of a row (py-3, a 1.5rem line, a 1 px border), which
+  // the list's scroll restore depends on: library-scale.spec.ts checks it
+  // against a real row at 16 px and 200%.
+  it('follows the root font size, rounded as a measured height is', () => {
+    document.documentElement.style.fontSize = '32px';
+    expect(entityRowHeight()).toBe(97);
+    document.documentElement.style.fontSize = '17.6px';
+    expect(entityRowHeight()).toBe(54);
+  });
+
+  it('assumes 16 px when the root font size is not in px', () => {
+    // As jsdom reports it, "medium".
+    expect(entityRowHeight()).toBe(49);
   });
 });
 
