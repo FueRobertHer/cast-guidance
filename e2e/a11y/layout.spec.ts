@@ -169,6 +169,56 @@ const GROUPS = [
   ['the sheet tabs', SHEET],
 ] as const;
 
+/**
+ * One font for the width checks, so every machine measures the same text.
+ * The app asks for the system UI font, which a Linux runner without one
+ * resolves to whatever sans serif it has: CI's DejaVu Sans is wider than
+ * the fallback on some local machines, and a route that fit by a few px
+ * locally scrolled sideways on CI. DejaVu Sans is installed on both, and is
+ * the wider of the two, so it is the stricter check.
+ */
+const MEASURED_FONT = [
+  'html { font-family: "DejaVu Sans" !important; }',
+  // The few monospace runs (`font-mono`, and code by default) likewise.
+  '.font-mono, code, kbd, samp, pre { font-family: "DejaVu Sans Mono" !important; }',
+].join(' ');
+
+/**
+ * A missing font is silently replaced by the next one, so without this the
+ * checks would quietly go back to measuring each machine's own fallback.
+ * Each forced font must draw a string at a width its generic fallback does
+ * not.
+ */
+async function expectMeasuredFontInstalled(page: Page): Promise<void> {
+  const widths = await page.evaluate(() => {
+    const ctx = document.createElement('canvas').getContext('2d');
+    const width = (font: string) => {
+      if (ctx === null) return 0;
+      ctx.font = `40px ${font}`;
+      return ctx.measureText('mmmmmmmmmmlllllliiiiWW').width;
+    };
+    return {
+      sans: [width('"DejaVu Sans", monospace'), width('monospace')],
+      mono: [width('"DejaVu Sans Mono", serif'), width('serif')],
+    };
+  });
+  for (const [name, [forced, fallback]] of [
+    ['DejaVu Sans', widths.sans],
+    ['DejaVu Sans Mono', widths.mono],
+  ] as const) {
+    expect(
+      forced,
+      `${name} must be installed for the layout spec's width checks (fonts-dejavu-core on Debian and Ubuntu)`,
+    ).not.toBe(fallback);
+  }
+}
+
+/** Sets {@link MEASURED_FONT} on the page, once it is known to be there. */
+async function applyMeasuredFont(page: Page, extra = ''): Promise<void> {
+  await expectMeasuredFontInstalled(page);
+  await page.addStyleTag({ content: `${extra} ${MEASURED_FONT}` });
+}
+
 test.describe('reflow at 320 CSS px', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
@@ -177,6 +227,7 @@ test.describe('reflow at 320 CSS px', () => {
       const id = await setUp(page);
       for (const route of routes) {
         await route.open(page, id);
+        await applyMeasuredFont(page);
         await openFolds(page);
         await animationsSettled(page);
         await expectNoSidewaysScroll(page, route);
@@ -194,8 +245,9 @@ test.describe('text at 200%', () => {
       for (const route of routes) {
         await route.open(page, id);
         // The browser's text-size setting, as a page sees it: a larger root
-        // font, so everything sized in rem grows with it.
-        await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        // font, so everything sized in rem grows with it. In the one font
+        // every machine measures with (see MEASURED_FONT).
+        await applyMeasuredFont(page, 'html { font-size: 200% !important; }');
         await openFolds(page);
         await animationsSettled(page);
         await expectNoSidewaysScroll(page, route);
