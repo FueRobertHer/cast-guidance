@@ -13,8 +13,16 @@ const VERSION = 1;
 
 export interface OnboardingState {
   dismissed: boolean;
+  /**
+   * How many getting-started cards are on screen right now. Not persisted: it
+   * is what lets the offline notice stay quiet only while a card is there to
+   * say the same thing, rather than whenever the card has not been hidden.
+   */
+  cardsShown: number;
   dismiss(): void;
   reopen(): void;
+  /** Count a card as on screen; call the returned function when it leaves. */
+  cardShown(): () => void;
 }
 
 /**
@@ -40,6 +48,11 @@ function readDismissed(): boolean {
 export function createOnboardingStore() {
   return createStore<OnboardingState>((set) => ({
     dismissed: readDismissed(),
+    cardsShown: 0,
+    cardShown: () => {
+      set((s) => ({ cardsShown: s.cardsShown + 1 }));
+      return () => set((s) => ({ cardsShown: s.cardsShown - 1 }));
+    },
     dismiss: () => {
       set({ dismissed: true });
       try {

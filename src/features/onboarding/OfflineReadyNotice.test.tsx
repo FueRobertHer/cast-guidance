@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // UX-002: "Ready to use offline" is said once per device, when it becomes
-// true, to someone who is not looking at the card that already says so. A
-// device that was ready before this visit hears nothing, and a notice that is
-// still on screen is not replaced.
+// true, to someone who is not looking at a card that already says so. A
+// device that was ready before this visit hears nothing, a tab the worker
+// does not control is told the truth (next time, or after a reload), and a
+// notice that is still on screen is not replaced.
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -12,6 +13,7 @@ import { swStatusStore } from '@/stores/swStatus';
 import { OFFLINE_ANNOUNCED_KEY, OfflineReadyNotice } from './OfflineReadyNotice';
 
 const READY_TITLE = 'Ready to use offline';
+const NEXT_TIME_TITLE = 'Ready to use offline next time';
 
 function stubController(controller: object | null) {
   Object.defineProperty(navigator, 'serviceWorker', {
@@ -31,8 +33,9 @@ function finishDownload() {
 
 beforeEach(() => {
   vi.stubEnv('DEV', false);
-  stubController(null);
-  onboardingStore.setState({ dismissed: true });
+  // Controlled, as every visit after the first is.
+  stubController({});
+  onboardingStore.setState({ cardsShown: 0 });
   swStatusStore.setState({ state: 'ready' });
   dataStatusStore.setState({ phase: 'working', filesDone: 0, filesTotal: 0 });
   noticeStore.setState({ notice: null, seq: 0 });
@@ -48,7 +51,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
   localStorage.clear();
-  onboardingStore.setState({ dismissed: false });
+  onboardingStore.setState({ dismissed: false, cardsShown: 0 });
   swStatusStore.setState({ state: 'pending' });
   dataStatusStore.setState({ phase: 'idle', filesDone: 0, filesTotal: 0 });
   Reflect.deleteProperty(navigator, 'serviceWorker');
@@ -82,8 +85,36 @@ describe('OfflineReadyNotice', () => {
     expect(pushed).toEqual([READY_TITLE]);
   });
 
+  it('tells an uncontrolled first visit it works next time, or after a reload', () => {
+    stubController(null);
+    render(<OfflineReadyNotice />);
+    finishDownload();
+    expect(pushed).toEqual([NEXT_TIME_TITLE]);
+    expect(noticeStore.getState().notice?.detail).toMatch(/Reload now/);
+  });
+
+  it('treats a worker API that throws as uncontrolled rather than crashing', () => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      get: () => {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
+    render(<OfflineReadyNotice />);
+    finishDownload();
+    expect(pushed).toEqual([NEXT_TIME_TITLE]);
+  });
+
+  it('speaks to someone who left the roster without hiding the card', () => {
+    // Not dismissed, but not on screen either: nothing else will tell them.
+    onboardingStore.setState({ dismissed: false, cardsShown: 0 });
+    render(<OfflineReadyNotice />);
+    finishDownload();
+    expect(pushed).toEqual([READY_TITLE]);
+  });
+
   it('stays quiet while the getting-started card is showing Ready itself', () => {
-    onboardingStore.setState({ dismissed: false });
+    onboardingStore.setState({ dismissed: true, cardsShown: 1 });
     render(<OfflineReadyNotice />);
     finishDownload();
     expect(pushed).toEqual([]);

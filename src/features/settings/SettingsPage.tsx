@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import {
   downloadAllPacks,
   getActiveTag,
@@ -139,7 +140,7 @@ export function Component() {
   const runUpdate = async (tag: string) => {
     const ok = await askConfirm({
       title: `Install data version ${tag}?`,
-      detail: 'The current version stays until the new one downloads and passes checks (~2.5 MB).',
+      detail: `The current version stays until the new one downloads and passes checks (about ${GAME_DATA_DOWNLOAD_SIZE}).`,
       confirmLabel: 'Install',
     });
     if (!ok) return;
@@ -337,13 +338,13 @@ export function Component() {
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-sm text-ink-muted">Persistent storage</span>
-          <PersistStatus state={persist.state} />
+          <PersistStatus state={persist.state} ref={persist.statusRef} />
           {persist.state === 'best-effort' && (
             <button
               type="button"
-              disabled={persist.requesting}
+              aria-disabled={persist.requesting}
               onClick={() => void persist.request()}
-              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
+              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold aria-disabled:opacity-40"
             >
               Ask the browser to keep my data
             </button>
@@ -378,7 +379,7 @@ export function Component() {
         </button>
         <p className="text-xs text-ink-muted">
           Permanently deletes all characters, homebrew, and cached data on this device, then
-          reloads. This cannot be undone — export anything you want to keep first.
+          reloads. This cannot be undone. Export anything you want to keep first.
         </p>
         {resetMsg !== undefined && <p className="text-xs text-amber-300">{resetMsg}</p>}
       </section>

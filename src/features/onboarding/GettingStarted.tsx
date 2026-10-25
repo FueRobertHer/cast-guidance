@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { Link } from 'react-router';
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import { usePersistentStorage } from '@/lib/persistentStorage';
 import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 import { onboardingStore, useOnboarding } from '@/stores/onboarding';
+import type { OfflineReadiness } from '@/stores/swStatus';
 import { PERSIST_DENIED_TEXT, PersistStatus, Status, type Tone } from './Status';
 import { type CompendiumState, type ShellStatus, useOfflineReadiness } from './useOfflineReadiness';
 
@@ -15,12 +16,19 @@ function Item({
 }: {
   lead: string;
   status?: ReactNode;
-  /** Announce changes politely, lead included so the update says what it is about. */
+  /**
+   * Announce changes politely, and atomically so the lead is read with the
+   * update and it says what it is about.
+   */
   live?: boolean;
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-col gap-1" aria-live={live ? 'polite' : undefined}>
+    <li
+      className="flex flex-col gap-1"
+      aria-live={live ? 'polite' : undefined}
+      aria-atomic={live ? true : undefined}
+    >
       <div className="flex flex-wrap items-center justify-between gap-x-2">
         <h3 className="text-sm font-semibold">{lead}</h3>
         {status}
@@ -30,7 +38,7 @@ function Item({
   );
 }
 
-const DOWNLOAD_STATUS: Record<CompendiumState, [Tone, string]> = {
+const DOWNLOAD_STATUS: Record<Exclude<CompendiumState, 'checking'>, [Tone, string]> = {
   complete: ['good', 'Done'],
   downloading: ['wait', 'In progress'],
   stopped: ['warn', 'Stopped'],
@@ -40,9 +48,19 @@ const DOWNLOAD_STATUS: Record<CompendiumState, [Tone, string]> = {
 function offlineLine(
   shell: ShellStatus,
   compendium: CompendiumState,
-  ready: boolean,
+  offline: OfflineReadiness,
 ): [Tone, string, string] {
-  if (ready) return ['good', 'Ready', 'You can open Cast Guidance without a connection.'];
+  if (offline === 'now')
+    return ['good', 'Ready', 'You can open Cast Guidance without a connection.'];
+  // Everything is cached, but this tab was loaded before the worker took
+  // over, so a screen it has not opened yet would still need the network.
+  if (offline === 'next-launch') {
+    return [
+      'good',
+      'Ready next time',
+      'Ready to use offline next time you open the app. Reload now to use it offline in this tab.',
+    ];
+  }
   if (shell === 'unsupported') {
     return [
       'off',
@@ -77,14 +95,17 @@ function offlineLine(
  */
 export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
   const dismissed = useOnboarding((s) => s.dismissed);
-  const { shell, compendium, ready } = useOfflineReadiness();
+  const { shell, compendium, offline, settled } = useOfflineReadiness();
   const bannerShowing = useDataStatus(showsDataBanner);
   const persist = usePersistentStorage();
 
+  // On screen, so the offline notice leaves the news to this card.
+  useEffect(() => (dismissed ? undefined : onboardingStore.getState().cardShown()), [dismissed]);
+
   if (dismissed) return null;
 
-  const [downloadTone, downloadLabel] = DOWNLOAD_STATUS[compendium];
-  const [offlineTone, offlineLabel, offlineText] = offlineLine(shell, compendium, ready);
+  const download = compendium === 'checking' ? undefined : DOWNLOAD_STATUS[compendium];
+  const [offlineTone, offlineLabel, offlineText] = offlineLine(shell, compendium, offline);
 
   return (
     <section
@@ -110,7 +131,10 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
 
         {/* The phase only: the count and the bar are the banner's job, and two
             progress readouts for one download would disagree within a frame. */}
-        <Item lead="Game data" status={<Status tone={downloadTone} label={downloadLabel} />}>
+        <Item
+          lead="Game data"
+          status={download && <Status tone={download[0]} label={download[1]} />}
+        >
           <p>
             A one-time download of about {GAME_DATA_DOWNLOAD_SIZE}, kept on this device.
             {compendium === 'downloading' &&
@@ -121,20 +145,30 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
         </Item>
 
         {/* Live, but polite and not role="status": it changes rarely (Not yet
-            to Ready), and the roster's undo bar owns the status role. */}
-        <Item lead="Works offline" live status={<Status tone={offlineTone} label={offlineLabel} />}>
-          <p>{offlineText}</p>
+            to Ready), and the roster's undo bar owns the status role. Until
+            both sides have answered it shows no state at all and is not yet
+            live, so a warm boot neither flashes "Not yet" nor announces on
+            every launch. */}
+        <Item
+          lead="Works offline"
+          live={settled}
+          status={settled && <Status tone={offlineTone} label={offlineLabel} />}
+        >
+          {settled && <p>{offlineText}</p>}
         </Item>
 
-        <Item lead="Protect your data" status={<PersistStatus state={persist.state} />}>
+        <Item
+          lead="Protect your data"
+          status={<PersistStatus state={persist.state} ref={persist.statusRef} />}
+        >
           <p>Browsers can clear site data when storage runs low or when you clear browsing data.</p>
           {persist.state === 'best-effort' && (
             <>
               <button
                 type="button"
-                disabled={persist.requesting}
+                aria-disabled={persist.requesting}
                 onClick={() => void persist.request()}
-                className="w-fit rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                className="w-fit rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold text-ink aria-disabled:opacity-40"
               >
                 Ask the browser to keep my data
               </button>
@@ -144,8 +178,10 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
               </p>
             </>
           )}
-          {persist.state === 'denied' && <p>{PERSIST_DENIED_TEXT} Back up instead:</p>}
-          <p>Back up a character any time: open its ⋯ menu and choose Export.</p>
+          <p>
+            {persist.state === 'denied' && `${PERSIST_DENIED_TEXT} `}
+            Back up a character any time: open its ⋯ menu and choose Export.
+          </p>
           <p>
             On iPhone and iPad, Safari can clear a site&rsquo;s data after about a week without a
             visit. Add Cast Guidance to your Home Screen before you build characters. The Home

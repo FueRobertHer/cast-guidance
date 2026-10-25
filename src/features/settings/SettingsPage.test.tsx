@@ -141,4 +141,19 @@ describe('SettingsPage data and privacy', () => {
     expect(await screen.findByText('Protected')).toBeTruthy();
     expect(persist).toHaveBeenCalledOnce();
   });
+
+  it('keeps focus on the ask while it runs, then moves it to the answer', async () => {
+    Object.defineProperty(navigator, 'storage', {
+      value: { persisted: () => Promise.resolve(false), persist: () => Promise.resolve(false) },
+      configurable: true,
+    });
+    render(<SettingsPage />);
+    const ask = await screen.findByRole('button', { name: 'Ask the browser to keep my data' });
+    ask.focus();
+    fireEvent.click(ask);
+    expect(ask.getAttribute('aria-disabled')).toBe('true');
+    expect(ask.hasAttribute('disabled')).toBe(false);
+    const status = await screen.findByText('Not protected');
+    await waitFor(() => expect(document.activeElement).toBe(status));
+  });
 });

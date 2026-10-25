@@ -1,6 +1,5 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import type { DataStatusState } from './dataStatus';
 
 /**
  * Whether the service worker has the app shell cached, so the app itself can
@@ -49,14 +48,37 @@ export function shellReadiness(s: SwStatusState): ShellReadiness {
 }
 
 /**
- * Safe to open with no connection: the shell is cached and so is every pack
- * (`done` is set only once the whole compendium has drained). Here rather than
- * beside the card's hooks so the shell's offline notice can use it without
- * pulling those hooks into the entry chunk.
+ * Whether this tab was loaded through the worker. Without `clientsClaim` (the
+ * prompt-to-update flow needs it off) the first visit stays uncontrolled even
+ * after the install finishes, so a lazy route chunk fetched later in that tab
+ * still goes to the network. Guarded because reading `navigator.serviceWorker`
+ * throws a SecurityError in Firefox when site storage is blocked.
  */
-export function isOfflineReady(
-  shell: ShellReadiness | 'stalled',
-  phase: DataStatusState['phase'],
-): boolean {
-  return shell === 'ready' && phase === 'done';
+export function pageControlled(): boolean {
+  try {
+    return 'serviceWorker' in navigator && navigator.serviceWorker.controller !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * - `now`: opens with no connection, in this tab as well.
+ * - `next-launch`: everything is cached, but this tab was not loaded through
+ *   the worker, so it works offline after a reload or the next time the app opens.
+ * - `no`: the shell or the compendium is not there yet.
+ */
+export type OfflineReadiness = 'now' | 'next-launch' | 'no';
+
+/**
+ * Here rather than beside the card's hooks so the shell's offline notice can
+ * use it without pulling those hooks into the entry chunk.
+ */
+export function offlineReadiness(
+  shell: ShellReadiness | 'checking' | 'stalled',
+  compendiumComplete: boolean,
+  controlled: boolean,
+): OfflineReadiness {
+  if (shell !== 'ready' || !compendiumComplete) return 'no';
+  return controlled ? 'now' : 'next-launch';
 }

@@ -625,7 +625,8 @@ async function pruneStaleTags(): Promise<void> {
 
 /**
  * Boot entry: make essentials available, then drain every remaining pack in
- * idle time so the app becomes fully offline-capable (~2.3 MB total wire).
+ * idle time so the app becomes fully offline-capable (about
+ * `GAME_DATA_DOWNLOAD_SIZE` on disk, a little less on the wire).
  */
 export async function initDataLayer(): Promise<void> {
   if (backgroundStarted) return;

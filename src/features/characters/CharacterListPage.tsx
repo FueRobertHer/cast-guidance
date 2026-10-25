@@ -286,7 +286,7 @@ export function Component() {
       {characters.length > 0 && <GettingStarted onDismiss={() => heading.current?.focus()} />}
 
       {characters.length === 0 && result !== undefined && readErrors.length === 0 && (
-        <p className="text-sm text-ink-muted">No characters yet — create your first hero.</p>
+        <p className="text-sm text-ink-muted">No characters yet. Create your first hero.</p>
       )}
 
       {readErrors.length > 0 && (
