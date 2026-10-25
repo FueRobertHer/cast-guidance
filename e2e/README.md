@@ -214,7 +214,15 @@ Every cell also checks the title, the page's frame (the app nav, the sheet's
 tab bar, or the focused flow's way back), that no spinner text is left, that
 the route did not throw (`RouteError`), that the page is controlled by the
 worker, and (below `full`) that the data banner says the device is offline,
-with Retry. Never a blank screen, an endless spinner or a raw error.
+with Retry. The download failure is said once (A11Y-002): the banner is the
+only alert about it, the page's own panels are plain visuals while it alerts,
+and the announcer does not say it again (every line it added during the visit
+is recorded by an init script, `heardLines`, so a line said late or already
+gone is still caught). With no banner to say it, a repair pressed offline at
+`full`, the section panel is the one alert; online, with every mirror failing,
+the banner and the section end as one alert whichever failed first. Panels
+are found by their words and their Retry (`failurePanel`), not by role. Never a blank screen, an endless spinner
+or a raw error.
 
 | Route | none | essential | partial | full |
 |---|---|---|---|---|
@@ -245,7 +253,7 @@ not found, a link to the nearest page; a corrupted section, "Download this
 section again".
 
 Run it alone with `bun run e2e -- --project=offline-routes` (the levels are
-built first). It is 96 tests, roughly 1.5 minutes on 3 workers.
+built first). It is 97 tests, roughly 1.5 minutes on 3 workers.
 
 The offline short circuit in the data source (no backoff retries while the
 device reports offline, one try per endpoint) is covered by unit tests only:

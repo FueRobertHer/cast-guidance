@@ -99,6 +99,7 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog; profileDirs
         baseURL: origin,
         offline,
       });
+      await context.addInitScript(recordAnnouncements);
       launched.push(context);
       profileDirs.push(dir);
       await networkGuard.attach(context);
@@ -130,6 +131,29 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog; profileDirs
     });
   },
 });
+
+/**
+ * Runs in every page before the app: keeps every line the announcer adds, so
+ * a spec can ask what was said during the whole visit, not only what is still
+ * on screen when it looks (lines leave the regions after a few seconds).
+ */
+function recordAnnouncements(): void {
+  const lines: string[] = [];
+  (window as { e2eAnnounced?: string[] }).e2eAnnounced = lines;
+  new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        const region = node.parentElement?.closest('[data-announcer]');
+        if (region != null && node.textContent !== null) lines.push(node.textContent);
+      }
+    }
+  }).observe(document, { childList: true, subtree: true });
+}
+
+/** Every line the announcer has said in this page since it loaded. */
+export function heardLines(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...((window as { e2eAnnounced?: string[] }).e2eAnnounced ?? [])]);
+}
 
 /** Failed cells in a run whose profile is kept, for a look by hand. */
 const KEEP_FAILED_PROFILES = 3;

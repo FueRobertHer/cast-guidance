@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { MIRROR_PATHS } from '../fixtures/mirror.ts';
-import { characterLink, dataFailureBanner, libraryEntry, settingsValue } from './app.ts';
+import { characterLink, dataFailureBanner, libraryEntry, onScreen, settingsValue } from './app.ts';
 import {
   type CacheLevel,
   CHARACTER_NAME,
@@ -52,18 +52,32 @@ export interface RouteCase {
 const APP = 'Cast Guidance';
 const title = (...parts: string[]) => [...parts, APP].join(' · ');
 
+/**
+ * A page's failure panel, by its words and its Retry. Not by role: offline a
+ * panel is a plain visual, since the data banner's alert says the failure
+ * (A11Y-002, one voice per failure). The innermost block holding both.
+ */
+export function failurePanel(page: Page, text: string): Locator {
+  return page
+    .locator('div')
+    .filter({ has: page.getByText(text).and(onScreen(page)) })
+    .filter({ has: page.getByRole('button', { name: 'Retry' }) })
+    .last();
+}
+
+/** Alerts about game data downloads: each failure must be exactly one (A11Y-002). */
+export function downloadAlerts(page: Page): Locator {
+  return page.getByRole('alert').filter({ hasText: /offline|download/i });
+}
+
 /** The library's panel for a section it cannot download while offline. */
 export function offlineSection(page: Page): Locator {
-  return page
-    .getByRole('alert')
-    .filter({ hasText: "You're offline, so the rest of this section can't be downloaded yet." });
+  return failurePanel(page, "You're offline, so the rest of this section can't be downloaded yet.");
 }
 
 /** The panel a page shows when the game data it needs is not on the device and cannot be fetched offline. */
 export function offlineData(page: Page): Locator {
-  return page
-    .getByRole('alert')
-    .filter({ hasText: "You're offline, and the game data this needs isn't downloaded yet." });
+  return failurePanel(page, "You're offline, and the game data this needs isn't downloaded yet.");
 }
 
 /** The data banner's offline state, on every route while the download is incomplete. */
@@ -73,9 +87,7 @@ export function offlineBanner(page: Page): Locator {
 
 /** The class pickers' panel for a class list it cannot download while offline. */
 export function offlineClassList(page: Page): Locator {
-  return page
-    .getByRole('alert')
-    .filter({ hasText: "You're offline, so the class list can't be downloaded yet." });
+  return failurePanel(page, "You're offline, so the class list can't be downloaded yet.");
 }
 
 const appNav = (page: Page) => page.getByRole('navigation', { name: 'Main' });
@@ -88,7 +100,9 @@ const link = (name: string) => (page: Page) => page.getByRole('link', { name, ex
 const button = (name: string) => (page: Page) => page.getByRole('button', { name, exact: true });
 const heading = (name: string) => (page: Page) =>
   page.getByRole('heading', { level: 1, name, exact: true });
-const text = (value: string) => (page: Page) => page.getByText(value, { exact: true });
+// On screen only, so a line the announcer happens to say never stands in for the page.
+const text = (value: string) => (page: Page) =>
+  page.getByText(value, { exact: true }).and(onScreen(page));
 
 const content = (pageTitle: string, shows: Cell['shows'], action?: Cell['action']): Cell => ({
   state: 'content',
@@ -193,7 +207,7 @@ export const ROUTES: readonly RouteCase[] = [
         ? offlineLibrary(title('Species / Races', 'Library'))
         : notFound(
             title('Not found', 'Species / Races', 'Library'),
-            (page) => page.getByText(/^Nothing in species \/ races is called/),
+            (page) => page.getByText(/^Nothing in species \/ races is called/).and(onScreen(page)),
             link('Browse species / races'),
           ),
   },
@@ -204,7 +218,7 @@ export const ROUTES: readonly RouteCase[] = [
     at: () =>
       notFound(
         title('No such section', 'Library'),
-        (page) => page.getByText(/^There is no bogus section in the library/),
+        (page) => page.getByText(/^There is no bogus section in the library/).and(onScreen(page)),
         link('Back to the library'),
       ),
   },

@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { PINNED_TAG } from '../fixtures/mirror.ts';
-import { libraryEntry, settingsValue } from '../support/app.ts';
+import { dataFailureBanner, libraryEntry, settingsValue } from '../support/app.ts';
 import {
   CACHE_LEVELS,
   type CacheLevel,
@@ -10,12 +10,15 @@ import {
 } from '../support/cacheLevels.ts';
 import {
   expect,
+  heardLines,
   type StableLaunch,
   type StableLaunchOptions,
   test,
 } from '../support/coldLaunch.ts';
 import {
   type Cell,
+  downloadAlerts,
+  failurePanel,
   offlineBanner,
   offlineData,
   offlineSection,
@@ -56,15 +59,24 @@ async function expectCell(page: Page, route: RouteCase, cell: Cell, level: Cache
   await expect(route.frame(page)).toBeVisible();
   await expect(page).toHaveTitle(cell.title);
   // An incomplete download says why it stopped, on every page, with a way on.
-  if (level === 'full') {
-    await expect(page.getByRole('alert').filter({ hasText: /Game data/ })).toHaveCount(0);
-  } else {
+  if (level !== 'full') {
     await expect(offlineBanner(page).getByRole('button', { name: 'Retry' })).toBeVisible();
   }
+  // One voice (A11Y-002): offline the banner is the only alert about the
+  // download, whatever panels the page shows, and the announcer does not say
+  // it again. (A page's own alert about something else, such as a homebrew
+  // file that is gone, is a different outcome and stays.)
+  await expect(downloadAlerts(page)).toHaveCount(level === 'full' ? 0 : 1);
   await expect(page.getByText(SPINNERS)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: ROUTE_ERROR })).toHaveCount(0);
   expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  // Last, so a line said late is caught too: everything the announcer added
+  // during the visit, including lines that have already left its regions.
+  expect((await heardLines(page)).filter((line) => SAYS_FAILURE.test(line))).toEqual([]);
 }
+
+/** Words that would repeat a download failure the banner already alerts. */
+const SAYS_FAILURE = /offline|couldn't be downloaded|download failed/i;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -176,6 +188,27 @@ test.describe('essentials that only partly landed', () => {
   });
 });
 
+test.describe('a failure with no banner to say it', () => {
+  test('a repair pressed offline at full is said once, by the section panel', async ({
+    launchStable,
+  }, testInfo) => {
+    // The whole release with one corrupt file. The queue is done, so the
+    // banner is hidden: the panel is the only thing that can say the repair
+    // could not run.
+    const prepare = await openLevel(launchStable, testInfo, 'full', { offline: false });
+    await prepare.page.goto('/');
+    await editDataFile(prepare.page, 'spells/spells-phb.json', { spell: [] });
+    await prepare.context.close();
+
+    const { page } = await launchStable(testInfo.outputPath('profile'), { offline: true });
+    await page.goto('/library/spell/fireball%7Cphb');
+    await page.getByRole('button', { name: 'Download this section again' }).click();
+    await expect(offlineSection(page)).toBeVisible();
+    await expect(downloadAlerts(page)).toHaveCount(1);
+    await expect(offlineSection(page)).toHaveAttribute('role', 'alert');
+  });
+});
+
 test.describe('online, the failures are told apart', () => {
   test('a section that failed to download is not called offline', async ({
     launchStable,
@@ -183,11 +216,16 @@ test.describe('online, the failures are told apart', () => {
   }, testInfo) => {
     mirror.setFail(() => 'abort');
     const { page } = await openLevel(launchStable, testInfo, 'essential', { offline: false });
-    await page.goto('/library/spell');
-    const failed = page
-      .getByRole('alert')
-      .filter({ hasText: "This section couldn't be downloaded" });
-    await expect(failed).toBeVisible();
+    const banner = dataFailureBanner(page, 'Game data download failed');
+    const failed = failurePanel(page, "This section couldn't be downloaded: ");
+    // One outage, two pages that see it: the banner's queue and the section
+    // both fail, in either order. Once both have, it is one alert (A11Y-002).
+    for (const path of ['/library/spell/fireball%7Cphb', '/library/spell']) {
+      await page.goto(path);
+      await expect(banner).toBeVisible();
+      await expect(failed).toBeVisible();
+      await expect(downloadAlerts(page)).toHaveCount(1);
+    }
     await expect(offlineSection(page)).toHaveCount(0);
     mirror.setFail(undefined);
     await failed.getByRole('button', { name: 'Retry' }).click();
