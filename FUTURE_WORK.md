@@ -127,7 +127,7 @@ experience.)
 |---|---|---|
 | DATA-002 | [#104](https://github.com/FueRobertHer/cast-guidance/issues/104) | Validate every required index/pack, retain a rollback tag past the swap, and put `updateToTag` behind the global fetch gate. Staging, resume, and stale-tag cleanup already ship. |
 | DATA-003 | [#105](https://github.com/FueRobertHer/cast-guidance/issues/105) | Batch registry hydration and search indexing instead of rebuilding per downloaded file. |
-| PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | Cold and offline launch for every route across essential, partial, and full caches. |
+| PWA-001 | [#106](https://github.com/FueRobertHer/cast-guidance/issues/106) | The Chromium route matrix ships (`e2e/specs/offline-routes.spec.ts`: every route, cold and offline, at none, essential, partial and full caches, each landing on content, an offline state with Retry, or not found with a link, plus online failed-download and corrupted-section cells). Remaining: the sheet's spell picker and spell info sheet still start the spell download with a bare `void` (a caster's Spells tab without spell files shows an empty list or waits), which the matrix's blank character cannot reach; and the same matrix on WebKit. |
 | PWA-002 | [#107](https://github.com/FueRobertHer/cast-guidance/issues/107) | Validate install and update on real iOS and Android devices with the checklist in `docs/pwa-device-validation.md`. The raster 192/512, maskable and Apple touch icons, the corrected manifest and their checks already ship. |
 
 ### Security, privacy, and imports

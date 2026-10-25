@@ -37,6 +37,13 @@ the binary outright, as an escape hatch when the two drift.
   It stubs the Vercel analytics script and logs every request.
 - **Down switch**: `server.setDown(true)` destroys every connection
   unanswered, as an unreachable host would.
+- **Stable origin** (`support/stableOrigin.ts`): one more server, started in
+  `global-setup.ts` for the whole run, on any free port (`E2E_PORT` picks
+  one). A profile is bound to the origin it was built on (its worker
+  registration, IndexedDB and caches are keyed by host and port), so a profile
+  built in one worker and opened in another needs an address both can reach.
+  It has no down switch, since other tests share it: an offline launch is cut
+  off from it in the browser instead (airplane mode, below).
 - **Build variants** (`server/swVariants.ts`): `test.use({ privateServer: true })`
   gives a test its own server whose `setVariant('v2')` serves a new build (a
   new `index.html` revision and an `e2e-build` meta tag) and `'v2-broken'` one
@@ -67,6 +74,15 @@ the binary outright, as an escape hatch when the two drift.
   127.0.0.1, which needs no lookup, such as WebRTC over UDP. The app uses no
   WebRTC and names every host it talks to. Launch with
   `hermeticLaunchOptions` if you add another launch path.
+- **Airplane mode** (`airplaneLaunchOptions` in `support/launch.ts`): the same
+  flags without the loopback exclusions, so nothing resolves, our own servers
+  included. `offline: true` alone fails the page's and the worker's fetches,
+  but the browser's own update check for the worker still reaches the origin.
+  `launchStable(dir, { offline: true })` (`support/coldLaunch.ts`) uses it,
+  with the mirror refusing, and checks at teardown that the mirror fulfilled
+  nothing and no origin response came from anywhere but the worker.
+  `backOnline(launch)` ends the offline stretch (the origin stays unreachable,
+  which the precache makes no difference to).
 - **Console guard**: any console error or uncaught page error fails the test,
   with two exceptions. "Failed to load resource" is expected for a mirror
   request the test failed on purpose (`setFail`, or the mirror offline), and,
@@ -88,6 +104,17 @@ the binary outright, as an escape hatch when the two drift.
   restarts. `newHeadless: true` launches full Chromium (`channel: 'chromium'`)
   instead of the headless shell, which answers `Page.getInstallabilityErrors`
   with an empty list whatever the page.
+- **Cache levels** (`support/cacheLevels.ts`, built by
+  `specs/cache-levels.setup.ts`): one persistent profile per level of
+  downloaded game data, built once per run at the stable origin, closed, and
+  published in one rename. `none` is the app shell only, `essential` the
+  essentials pack, `partial` everything up to the spell packs (classes and
+  items, no spells or books), `full` the whole release. The mirror fails what
+  a level leaves out while it is built; the drain stops at the first failure,
+  so each is a real place for an install to stop. Each also holds a character
+  and an editable homebrew file (`level.json` has their ids). `copyLevel`
+  copies one for a cell without the browser's caches, so the precache alone
+  must serve the app.
 - **Overlays** (`handleOverlays` in `support/app.ts`): locator handlers dismiss
   the roster's getting-started card and wait out the "Ready to use offline"
   notice whenever either is on screen before an action or assertion, so specs
@@ -101,7 +128,8 @@ flows by role and accessible name).
 
 ## Writing specs
 
-- Import `test` and `expect` from `support/test.ts`, not from `@playwright/test`.
+- Import `test` and `expect` from `support/test.ts`, not from `@playwright/test`. A spec
+  that launches at the stable origin imports them from `support/coldLaunch.ts`.
 - Locate by role and accessible name, and keep page flows in `support/app.ts`.
 - Never sleep. Use web-first assertions, `expect.poll` on IndexedDB, and
   events (`statechange`, `download`, `load`). Fake time with `page.clock`,
@@ -152,6 +180,8 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 | `import-preview` | IMP-002: a homebrew file is previewed (contents, size, source, a missing dependency, an official clash and its winner), Cancel writes nothing and returns focus, Import stores it, the same file again offers to keep the existing one; a character import previews as a copy and lands as one. |
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
+| `cache-levels.setup` | Builds the four cache-level profiles (the `cache-levels` project). |
+| `offline-routes` | PWA-001: every route, cold and offline, at every cache level (below); an airplane-mode canary (the worker's update check cannot reach the origin); the offline states recovering once back online (the sheet, the creator, a library section, the banner's download); online, a failed download told apart from offline, and a corrupted section repaired by "Download this section again". |
 | `harness` | A socket the routes cannot see (a WebSocket to jsDelivr) fails to resolve, from the default context and from a persistent profile, so it never reaches a real host. |
 | `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); a first install interrupted by a reload (finished on the next launch under the tag pinned once); an update from Settings (the old release swept once a registry builds, the new one active after a reload); a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
 
@@ -162,3 +192,48 @@ accepts that makes the official build throw, and a build that starts and never
 finishes cannot be timed from outside the page. The immediate
 rollback of a build that throws stays covered by
 `src/data5e/installRollback.indexeddb.test.ts`, which mocks the normalizer.
+
+## The offline route matrix (PWA-001)
+
+`offline-routes.spec.ts` runs in the `offline-routes` project, which depends on
+`cache-levels`; the rest of the suite runs beside both. Every cell is a cold
+launch: a copy of the level's profile in a new browser process, in airplane
+mode. The routes and what each cell expects are in `support/routeMatrix.ts`.
+Every cell lands in one of three states:
+
+- **content**: the page itself;
+- **offline**: what the page needs is not downloaded and cannot be while
+  offline; it says so and offers Retry, and retries by itself once the device
+  is back online;
+- **not found**: there is no such thing, with a link to the nearest page.
+
+Every cell also checks the title, that no spinner text is left, that the
+route did not throw (`RouteError`), that the page is controlled by the
+worker, and (below `full`) that the data banner says the device is offline,
+with Retry. Never a blank screen, an endless spinner or a raw error.
+
+| Route | none | essential | partial | full |
+|---|---|---|---|---|
+| `/` roster | content | content | content | content |
+| `/library` | content | content | content | content |
+| `/library/race` | offline | content | content | content |
+| `/library/spell` | offline | offline | offline | content |
+| `/library/spell/fireball%7Cphb` (entity) | offline | offline | offline | content |
+| `/library/race/nope%7Cx` | offline | not found | not found | not found |
+| `/library/bogus` | not found | not found | not found | not found |
+| `/homebrew` | content | content | content | content |
+| `/homebrew/edit/<id>` (homebrew file) | content | content | content | content |
+| `/homebrew/edit/missing` | not found | not found | not found | not found |
+| `/settings` | content ("not downloaded yet", Make available offline) | content (count, Make available offline) | content (count, Make available offline) | content (ready) |
+| `/create` | offline | content | content | content |
+| `/c/<id>` and its `stats`, `inventory`, `spells`, `features`, `build` tabs | offline | content | content | content |
+| `/c/missing`, `/c/missing/spells` | not found | not found | not found | not found |
+| `/nope` | not found | not found | not found | not found |
+
+Recovery actions per state: offline, Retry (and on its own once back online);
+not downloaded while online, "This section couldn't be downloaded" with Retry;
+not found, a link to the nearest page; a corrupted section, "Download this
+section again".
+
+Run it alone with `bun run e2e -- --project=offline-routes` (the levels are
+built first). It is about 95 tests, roughly 1.5 minutes on 3 workers.
