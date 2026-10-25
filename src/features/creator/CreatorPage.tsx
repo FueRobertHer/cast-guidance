@@ -1,7 +1,6 @@
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, History } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
-import { DATA_TAG } from '@/data5e/config';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
@@ -9,7 +8,6 @@ import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { characterRepo } from '@/db/characterRepo';
-import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
 import {
@@ -17,7 +15,6 @@ import {
   type CharacterDoc,
   type EffectOrigin,
   type EntityRef,
-  newCharacterDoc,
   refUid,
 } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
@@ -35,17 +32,27 @@ import { notifyFailure } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { UndoBar } from '@/ui/UndoBar';
+import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
+import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
+import {
+  clearDraft,
+  type Draft,
+  draftSummary,
+  freshDraft,
+  isBlankDraft,
+  isResumeState,
+  readDraft,
+  saveDraftStep,
+  writeDraft,
+} from './draft';
 import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
   backgroundBlurb,
-  classAbilityHint,
   classBlurb,
   makeSubclassBlurb,
   makeSubclassEntries,
-  pointBuyFocusFor,
   raceBlurb,
-  standardArrayFor,
 } from './pickerHints';
 import {
   bundleGoldCp,
@@ -59,31 +66,6 @@ import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState 
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
-
-const DRAFT_KEY = 'cast-guidance:creator-draft';
-
-/**
- * The wizard's working state: the character, plus the equipment rows picked
- * for its kit. The rows are not on the doc (and not kept over a reload), but
- * an undo has to put them back with it, or the kit regranted afterwards would
- * not be the one taken away.
- */
-interface Draft {
-  doc: CharacterDoc;
-  bundleChoices: Record<string, string>;
-  /** Concrete picks for "any martial weapon"-style slots, keyed `${group}:${idx}`. */
-  slotPicks: Record<string, string>;
-}
-
-function loadDraftDoc(): CharacterDoc {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (raw !== null) return JSON.parse(raw) as CharacterDoc;
-  } catch {
-    // corrupted draft, start fresh
-  }
-  return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
-}
 
 const rowsKey = (rows: Record<string, string>) => JSON.stringify(Object.entries(rows).sort());
 
@@ -168,12 +150,27 @@ export function Component() {
   const [params, setParams] = useSearchParams();
   const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
-  // The in-progress draft survives reloads via sessionStorage.
-  const [draft, setDraftState] = useState<Draft>(() => ({
-    doc: loadDraftDoc(),
-    bundleChoices: {},
-    slotPicks: {},
-  }));
+  // The in-progress draft survives reloads and trips to the roster via
+  // sessionStorage, kit rows included.
+  const [entry] = useState(() => {
+    const stored = readDraft();
+    return {
+      draft: stored ?? freshDraft(),
+      // Entered afresh (not a step of this load, nor the roster's Resume) on
+      // a draft with something in it: say it is being continued, and offer
+      // to start over. A line, not a gate: the step is right there.
+      // Tied to the draft entered with (see `continuing` below).
+      continuing:
+        stored !== null &&
+        !isBlankDraft(stored) &&
+        wizardDepth(location.state) === 0 &&
+        !isResumeState(location.state),
+    };
+  });
+  const [draft, setDraftState] = useState<Draft>(() => {
+    const { doc, bundleChoices, slotPicks } = entry.draft;
+    return { doc, bundleChoices, slotPicks };
+  });
   const { doc, bundleChoices, slotPicks } = draft;
   // The draft as last set, which a change builds on before React renders it:
   // two changes in one handler must see each other, and a change is worked out
@@ -183,11 +180,7 @@ export function Component() {
   const setDraft = (next: Draft) => {
     latest.current = next;
     setDraftState(next);
-    try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next.doc));
-    } catch {
-      // storage full/unavailable: the draft just won't survive a reload
-    }
+    writeDraft(next, step);
   };
   /** Apply `recipe` to a copy of the draft, once, and keep both sides. */
   const change = (recipe: (d: Draft) => void) => {
@@ -198,11 +191,22 @@ export function Component() {
     return { before, after };
   };
   // Before any early return: hooks run in the same order on every render.
+  // The step a Start over took the draft from, so its undo puts back the
+  // step to resume as well as the draft.
+  const stepBeforeStartOver = useRef<{ id: string; step: Step | undefined } | null>(null);
   const undo = useUndoOffer<Draft>({
     current: draft,
     same: sameDraft,
-    restore: (before) => setDraft(before),
+    restore: (before) => {
+      setDraft(before);
+      const kept = stepBeforeStartOver.current;
+      stepBeforeStartOver.current = null;
+      if (kept?.id === before.doc.id && kept.step !== undefined) saveDraftStep(kept.step);
+    },
   });
+  // Bumped when a change's own control goes away with it, so focus moves to
+  // the Undo button instead of falling to the page body.
+  const [undoFocus, setUndoFocus] = useState(0);
 
   // The fixed block at the bottom (undo line plus step nav) is measured, and
   // the page ends in a spacer that tall, so nothing it covers is out of reach.
@@ -224,6 +228,16 @@ export function Component() {
     void ensureTypePacks('class');
     void ensureTypePacks('item');
   }, []);
+
+  // The step the roster's Resume returns to. Recorded only once the player
+  // moves, never for the step the page opened on: a deep link or a plain
+  // /create must not overwrite where the draft was left before it is used.
+  const openedOn = useRef(step);
+  useEffect(() => {
+    if (openedOn.current === step) return;
+    openedOn.current = step;
+    saveDraftStep(step);
+  }, [step]);
 
   // Set once Create is pressed: the name of the character being opened. From
   // then on the wizard is spent, and its history entries are being unwound.
@@ -457,7 +471,6 @@ export function Component() {
   };
 
   const undoShown = undo.pending !== null || undo.undone !== null;
-  const abilitiesUntouched = ABILITIES.every((a) => doc.abilities.base[a] === 10);
 
   // Prompts the player can see now, so "N picks cleared" counts only those.
   const activeChoices = new Set(sheet?.resolvedChoices.map((r) => r.prompt.id) ?? []);
@@ -637,6 +650,52 @@ export function Component() {
       (before, after) => !sameDraft(before, after) && (before.doc.background !== undefined || kit),
     );
   };
+
+  /**
+   * Switching method never moves a score, except into point buy from scores
+   * it cannot price: a legal spread (the standard array costs exactly 27)
+   * carries over, anything else starts again from 8s. That reset offers undo,
+   * unless it reset the untouched all-10 state, which loses nothing.
+   */
+  const setMethod = (m: ShownMethod) =>
+    undoable(
+      ({ doc: d }) => {
+        // Re-selecting the current method is a no-op: otherwise re-tapping
+        // "Point buy" re-zeroes allocated scores.
+        if (d.abilities.method === m) return;
+        d.abilities.method = m;
+        if (m === 'pointbuy' && !keepsOnPointBuySwitch(d.abilities.base)) {
+          d.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+        }
+      },
+      (before) => ({
+        title: 'Point buy: every score back to 8',
+        detail: `was ${scoresText(before.doc)}`,
+      }),
+      (before, after) => scoresChanged(before, after) && !allAt(before.doc.abilities.base, 10),
+    );
+
+  /**
+   * Begin a new character in place of the draft, from the Basics step. Undo
+   * brings the whole draft back, kit rows included.
+   */
+  const startOver = () => {
+    stepBeforeStartOver.current = { id: latest.current.doc.id, step: readDraft()?.step };
+    undoable(
+      (d) => Object.assign(d, freshDraft()),
+      (before) => ({
+        title: 'Started a new character',
+        detail: `was ${draftSummary(before.doc)}`,
+      }),
+    );
+    setUndoFocus((n) => n + 1);
+    if (step !== 'basics') setParams({ step: 'basics' }, { replace: true, state: location.state });
+  };
+
+  // The line stays with the draft it was shown for: Start over begins a new
+  // doc (a new id) and hides it for good, and its undo brings both back.
+  const continuing =
+    entry.continuing && draft.doc.id === entry.draft.doc.id && !isBlankDraft(draft);
 
   const stepBody = () => {
     switch (step) {
@@ -827,180 +886,23 @@ export function Component() {
           </div>
         );
 
-      case 'abilities': {
-        const cost = pointBuyCost(doc.abilities.base);
-        const className = doc.classes[0]?.ref.name;
-        const hint = className !== undefined ? classAbilityHint(className) : undefined;
-        const autoArray = className !== undefined ? standardArrayFor(className) : undefined;
+      case 'abilities':
         return (
-          <div className="flex flex-col gap-4">
-            {hint !== undefined && (
-              <p className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
-                💡 As a <strong className="text-ink">{className}</strong>, put your highest score in{' '}
-                <strong className="text-ink">{hint}</strong> — they power your attacks and key
-                features.
-              </p>
-            )}
-            {autoArray !== undefined && (
-              <button
-                type="button"
-                onClick={() =>
-                  undoable(
-                    (d) => void (d.doc.abilities.base = { ...autoArray }),
-                    (before) => ({
-                      title: `Applied the standard array for a ${className}`,
-                      detail: `was ${scoresText(before.doc)}`,
-                    }),
-                    scoresChanged,
-                  )
-                }
-                className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
-              >
-                Auto-assign the standard array for a {className}
-              </button>
-            )}
-            {abilitiesUntouched && (
-              <p className="rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm text-amber-200">
-                Scores aren't assigned yet — every ability is still 10. Tap auto-assign or set them
-                below.
-              </p>
-            )}
-            <div className="flex gap-1.5">
-              {(['standard', 'pointbuy', 'manual'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={doc.abilities.method === m}
-                  onClick={() =>
-                    undoable(
-                      ({ doc: d }) => {
-                        // Re-selecting the current method is a no-op: otherwise
-                        // re-tapping "Point buy" re-zeroes allocated scores.
-                        if (d.abilities.method === m) return;
-                        d.abilities.method = m;
-                        if (m === 'pointbuy')
-                          d.abilities.base = {
-                            str: 8,
-                            dex: 8,
-                            con: 8,
-                            int: 8,
-                            wis: 8,
-                            cha: 8,
-                          };
-                      },
-                      (before) => ({
-                        title: 'Point buy: every score back to 8',
-                        detail: `was ${scoresText(before.doc)}`,
-                      }),
-                      scoresChanged,
-                    )
-                  }
-                  className={`rounded-full border px-3 py-1.5 text-sm ${
-                    doc.abilities.method === m
-                      ? 'border-accent bg-accent-deep/40 font-semibold'
-                      : 'border-surface-2 text-ink-muted'
-                  }`}
-                >
-                  {m === 'standard' ? 'Standard array' : m === 'pointbuy' ? 'Point buy' : 'Manual'}
-                </button>
-              ))}
-            </div>
-            {doc.abilities.method === 'pointbuy' && (
-              <div className="flex flex-col gap-2">
-                <p
-                  className={`text-sm ${cost !== undefined && cost > POINT_BUY_BUDGET ? 'text-accent' : 'text-ink-muted'}`}
-                >
-                  Points: {cost ?? '—'} / {POINT_BUY_BUDGET}
-                  {cost === undefined && ' (scores must stay 8–15)'}
-                </p>
-                {(() => {
-                  const focus = className !== undefined ? pointBuyFocusFor(className) : undefined;
-                  if (focus === undefined) return null;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        undoable(
-                          (d) => void (d.doc.abilities.base = { ...focus }),
-                          (before) => ({
-                            title: `Focused a ${className}`,
-                            detail: `was ${scoresText(before.doc)}`,
-                          }),
-                          scoresChanged,
-                        )
-                      }
-                      className="self-start rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Focus a {className} (15/15/15 in key abilities)
-                    </button>
-                  );
-                })()}
-              </div>
-            )}
-            {doc.abilities.method === 'standard' && (
-              <p className="text-sm text-ink-muted">
-                Assign {STANDARD_ARRAY.join(' / ')} across your abilities.
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {ABILITIES.map((a) => {
-                const final = sheet?.abilities[a];
-                return (
-                  <div
-                    key={a}
-                    className="flex flex-col items-center gap-1 rounded-lg bg-surface p-3"
-                  >
-                    <span className="text-xs font-semibold uppercase text-ink-muted">{a}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={`Decrease ${a.toUpperCase()}`}
-                        onClick={() =>
-                          update(
-                            (d) =>
-                              void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
-                          )
-                        }
-                        className="h-8 w-8 rounded-full bg-surface-2"
-                      >
-                        <span aria-hidden="true">−</span>
-                      </button>
-                      <span className="w-7 text-center text-lg font-bold">
-                        {doc.abilities.base[a]}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Increase ${a.toUpperCase()}`}
-                        onClick={() =>
-                          update(
-                            (d) =>
-                              void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
-                          )
-                        }
-                        className="h-8 w-8 rounded-full bg-surface-2"
-                      >
-                        <span aria-hidden="true">+</span>
-                      </button>
-                    </div>
-                    {final !== undefined && final.value !== doc.abilities.base[a] && (
-                      <span className="text-xs text-emerald-300">
-                        → {final.value} ({final.mod >= 0 ? '+' : ''}
-                        {final.mod})
-                      </span>
-                    )}
-                    {final !== undefined && final.value === doc.abilities.base[a] && (
-                      <span className="text-xs text-ink-muted">
-                        mod {final.mod >= 0 ? '+' : ''}
-                        {final.mod}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <AbilitiesStep
+            abilities={doc.abilities}
+            finals={sheet?.abilities}
+            className={doc.classes[0]?.ref.name}
+            onMethod={setMethod}
+            onScores={(base) => update((d) => void (d.abilities.base = { ...base }))}
+            onReplace={(base, title) =>
+              undoable(
+                (d) => void (d.doc.abilities.base = { ...base }),
+                (before) => ({ title, detail: `was ${scoresText(before.doc)}` }),
+                scoresChanged,
+              )
+            }
+          />
         );
-      }
 
       case 'background':
         return (
@@ -1199,7 +1101,7 @@ export function Component() {
             notifyFailure('Create', err);
             return;
           }
-          sessionStorage.removeItem(DRAFT_KEY);
+          clearDraft();
           // Left while the save was in flight: the character is saved, and
           // the page the player went to is not this flow's to replace.
           if (!live.current.mounted) return;
@@ -1214,12 +1116,9 @@ export function Component() {
         if (doc.classes.length === 0) {
           issues.push({ key: 'class', text: 'No class picked yet', step: 'class' });
         }
-        if (abilitiesUntouched) {
-          issues.push({
-            key: 'abilities',
-            text: 'Ability scores not assigned (all still 10)',
-            step: 'abilities',
-          });
+        const abilityProblem = abilityIssue(doc.abilities);
+        if (abilityProblem !== undefined) {
+          issues.push({ key: 'abilities', text: abilityProblem, step: 'abilities' });
         }
         if (allEqGroups.length > 0 && doc.equipment.length === 0) {
           issues.push({ key: 'equipment', text: 'No starting equipment', step: 'equipment' });
@@ -1360,6 +1259,24 @@ export function Component() {
     <main className="flex flex-1 flex-col gap-4 p-4">
       {header}
 
+      {continuing && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface px-3 py-2 text-sm text-ink-muted">
+          <History size={16} aria-hidden className="shrink-0" />
+          <span>
+            Continuing your unfinished character,{' '}
+            <strong className="text-ink">{draftSummary(doc)}</strong>
+          </span>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={startOver}
+            className="font-semibold text-ink underline underline-offset-2"
+          >
+            Start over
+          </button>
+        </p>
+      )}
+
       {/* Live summary bar — the "like a game" feedback loop */}
       {sheet !== null && doc.classes.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
@@ -1400,7 +1317,12 @@ export function Component() {
           step scrolls. */}
       <div ref={setBottomBlock} className="fixed inset-x-0 bottom-0 flex flex-col">
         <div className={undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : undefined}>
-          <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
+          <UndoBar
+            pending={undo.pending}
+            undone={undo.undone}
+            onUndo={() => void undo.run()}
+            focusRequest={undoFocus}
+          />
         </div>
         {/* Step navigation */}
         <nav className="flex gap-2 border-t border-surface-2 bg-surface p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">

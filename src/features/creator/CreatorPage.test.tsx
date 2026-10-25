@@ -4,7 +4,7 @@
 // creator with its draft already spent, one tap from a second, empty
 // character. The creator also had no way out while game data loaded, and its
 // way out elsewhere was an icon with no name.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -35,11 +35,22 @@ vi.mock('@/ui/dialogs', () => ({
 
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
+import { LEGACY_DRAFT_KEY, RESUME_STATE, readDraft, writeDraft } from './draft';
 import { wizardState } from './steps';
 
 registry.current = makeTestContext();
 
-const DRAFT_KEY = 'cast-guidance:creator-draft';
+/** Store `doc` as the draft the creator opens on. */
+function seedDoc(doc: CharacterDoc) {
+  writeDraft({ doc, bundleChoices: {}, slotPicks: {} });
+}
+
+/** The draft as the wizard last saved it. */
+function saved(): CharacterDoc {
+  const stored = readDraft();
+  if (stored === null) throw new Error('no draft stored');
+  return stored.doc;
+}
 
 afterEach(() => {
   cleanup();
@@ -79,7 +90,7 @@ const walkedToReview: Entry[] = [
 ];
 
 function seedDraft() {
-  sessionStorage.setItem(DRAFT_KEY, JSON.stringify(newCharacterDoc('hero-1', 'Aria', 't')));
+  seedDoc(newCharacterDoc('hero-1', 'Aria', 't'));
 }
 
 describe('stepping through the creator', () => {
@@ -137,7 +148,7 @@ describe('creating a character', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
     expect(put).toHaveBeenCalledOnce();
-    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(readDraft()).toBeNull();
 
     await act(() => router.navigate(-1));
     expect(router.state.location.pathname).toBe('/');
@@ -211,7 +222,7 @@ describe('creating a character', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
     await waitFor(() => expect(noticeStore.getState().notice?.title).toBe('Create failed'));
     expect(router.state.location.search).toBe('?step=review');
-    expect(sessionStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    expect(readDraft()).not.toBeNull();
     // And Create can be pressed again.
     expect(screen.getByRole('button', { name: /Create character/ })).toBeTruthy();
   });
@@ -242,7 +253,7 @@ describe('accessible names and states', () => {
     doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
     doc.abilities.method = 'pointbuy';
     doc.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(doc));
+    seedDoc(doc);
     renderCreator(['/', { pathname: '/create', search: `?step=${step}`, state: wizardState(1) }]);
   }
 
@@ -331,7 +342,7 @@ describe('changes that take something away', () => {
   function renderDraft(step: string, build: (doc: CharacterDoc) => void) {
     const doc = newCharacterDoc('hero-1', 'Aria', 't');
     build(doc);
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(doc));
+    seedDoc(doc);
     const router = createMemoryRouter(
       [
         { path: '/', element: <p>Roster</p> },
@@ -355,8 +366,6 @@ describe('changes that take something away', () => {
     return { goto };
   }
 
-  /** The draft as the wizard last saved it. */
-  const saved = () => JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? 'null') as CharacterDoc;
   const tap = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }));
   const pressed = (name: string) =>
     screen.getByRole('button', { name }).getAttribute('aria-pressed');
@@ -602,6 +611,255 @@ describe('changes that take something away', () => {
     });
   });
 
+  // UX-001: only the doc was kept, so a reload lost the rows picked for the
+  // kit, and the Equipment step showed row (A) pressed over the (B) kit held.
+  it('keeps the kit rows picked over a reload', () => {
+    withExtras();
+    renderDraft('equipment', (d) => {
+      d.classes = [{ ref: { name: 'Blade', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    });
+    tap('(B) Dagger, 5 gp');
+    cleanup();
+    // The same entry in the next page load: its state is from the one before.
+    renderCreator([
+      '/',
+      {
+        pathname: '/create',
+        search: '?step=equipment',
+        state: { creatorDepth: 1, creatorLoad: 'x' },
+      },
+    ]);
+    expect(pressed('(B) Dagger, 5 gp')).toBe('true');
+    expect(pressed('(A) Longsword')).toBe('false');
+  });
+
+  // UX-001: the standard array was six free steppers under a sentence, point
+  // buy flagged a bad spread only by colour, and switching to point buy always
+  // threw the scores away.
+  describe('the abilities step', () => {
+    const monk = (d: CharacterDoc) => {
+      d.classes = [{ ref: { name: 'Monk', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    };
+    const scores = () => Object.values(saved().abilities.base).join('/');
+    const inOrder = { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 };
+    const pick = (label: string, value: number) =>
+      fireEvent.change(screen.getByLabelText(label), { target: { value: String(value) } });
+
+    describe('standard array', () => {
+      it('assigns by picking a value, and swaps with the ability that held it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        expect(namelessControls()).toEqual([]);
+        // Labelled by what it says on screen, with the swap spelled out.
+        const dex = screen.getByLabelText('Dexterity (DEX)');
+        expect(within(dex).getByRole('option', { name: '15 (swap with STR)' })).toBeTruthy();
+        expect(within(dex).getByRole('option', { name: '14' })).toBeTruthy();
+        pick('Dexterity (DEX)', 15);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        expect((dex as HTMLSelectElement).value).toBe('15');
+        expect(screen.getByText(/Standard array: each value used once/)).toBeTruthy();
+        // No steppers to walk a score off the array.
+        expect(screen.queryByRole('button', { name: 'Increase STR' })).toBeNull();
+      });
+
+      /** A navigation key on a closed select, and the change it fires in the same task. */
+      const step = (label: string, key: string, value: number) => {
+        fireEvent.keyDown(screen.getByLabelText(label), { key });
+        pick(label, value);
+      };
+      /** Let the task a key ran in end, as a person reaching for the list does. */
+      const nextTask = () => act(() => new Promise<void>((done) => setTimeout(done, 0)));
+
+      it('works out each arrowed change from the scores the run began on', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        // Arrowing a closed select (Windows) fires a change for each option.
+        step('Strength (STR)', 'ArrowDown', 14);
+        step('Strength (STR)', 'ArrowDown', 13);
+        step('Strength (STR)', 'ArrowDown', 12);
+        step('Strength (STR)', 'End', 8);
+        fireEvent.blur(str);
+        // Only STR and the ability that held 8 moved, not a chain of swaps.
+        expect(scores()).toBe('8/14/13/12/10/15');
+      });
+
+      it('says each arrowed change against the scores just before it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        fireEvent.focus(screen.getByLabelText('Strength (STR)'));
+        step('Strength (STR)', 'ArrowDown', 14);
+        expect(screen.getByText('STR 14, DEX 15')).toBeTruthy();
+        step('Strength (STR)', 'ArrowDown', 13);
+        // DEX gave 15 back as STR moved on: that is said too.
+        expect(screen.getByText('STR 13, DEX 14, CON 15')).toBeTruthy();
+      });
+
+      it('builds a pick from the open list on the pick before it', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        fireEvent.pointerDown(str);
+        pick('Strength (STR)', 14);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        // Still focused, the list opened again and a value picked from it.
+        fireEvent.pointerDown(str);
+        expect(within(str).getByRole('option', { name: '15 (swap with DEX)' })).toBeTruthy();
+        pick('Strength (STR)', 13);
+        expect(scores()).toBe('13/15/14/12/10/8');
+        fireEvent.keyDown(str, { key: 'Enter' });
+        pick('Strength (STR)', 12);
+        expect(scores()).toBe('12/15/14/13/10/8');
+      });
+
+      it('builds on the last pick when a plain arrow opens the list, as on a Mac', async () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        const str = screen.getByLabelText('Strength (STR)');
+        fireEvent.focus(str);
+        // The arrow opens the list and changes nothing; the pick comes later.
+        fireEvent.keyDown(str, { key: 'ArrowDown' });
+        await nextTask();
+        pick('Strength (STR)', 14);
+        expect(scores()).toBe('14/15/13/12/10/8');
+        fireEvent.keyDown(str, { key: 'ArrowDown' });
+        await nextTask();
+        pick('Strength (STR)', 13);
+        // DEX keeps the 15 it took; CON gives up its 13.
+        expect(scores()).toBe('13/15/14/12/10/8');
+      });
+
+      it('seeds an unassigned draft in order, ready to swap', () => {
+        renderDraft('abilities', monk);
+        expect(screen.getByText(/Assign each of 15, 14, 13, 12, 10, 8 once/)).toBeTruthy();
+        expect(screen.queryByLabelText('Strength (STR)')).toBeNull();
+        tap(/^Place 15 down to 8 in order/);
+        expect(scores()).toBe('15/14/13/12/10/8');
+        expect(screen.getByLabelText('Strength (STR)')).toBeTruthy();
+      });
+
+      it('shows scores off the array as they are, and keeps them as Manual on request', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { str: 12, dex: 16, con: 14, int: 10, wis: 15, cha: 8 };
+        });
+        expect(
+          screen.getByText("Your scores (12/16/14/10/15/8) aren't the standard array."),
+        ).toBeTruthy();
+        tap('Keep these as Manual scores');
+        expect(saved().abilities.method).toBe('manual');
+        expect(scores()).toBe('12/16/14/10/15/8');
+        expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+    });
+
+    it('still lets Manual go anywhere from 3 to 18', () => {
+      renderDraft('abilities', (d) => {
+        d.abilities.method = 'manual';
+        d.abilities.base = { str: 17, dex: 4, con: 10, int: 10, wis: 10, cha: 10 };
+      });
+      tap('Increase STR');
+      tap('Increase STR');
+      tap('Decrease DEX');
+      tap('Decrease DEX');
+      expect(scores()).toBe('18/3/10/10/10/10');
+      expect(screen.getByText(/No budget or array checks/)).toBeTruthy();
+    });
+
+    describe('point buy', () => {
+      const pointBuy = (base: CharacterDoc['abilities']['base']) => (d: CharacterDoc) => {
+        monk(d);
+        d.abilities.method = 'pointbuy';
+        d.abilities.base = base;
+      };
+
+      it('says one up from 7 lands back in range, and what it costs', () => {
+        renderDraft('abilities', pointBuy({ ...inOrder, cha: 7 }));
+        expect(
+          screen.getByRole('button', {
+            name: 'Increase CHA',
+            description: /^Below 8 \+1 brings CHA back into point-buy range at 8, costing 0$/,
+          }),
+        ).toBeTruthy();
+        expect(
+          screen.getByRole('button', {
+            name: 'Increase STR',
+            description: 'STR 16 is outside point buy (8 to 15)',
+          }),
+        ).toBeTruthy();
+      });
+
+      it('names a score out of range in words and offers to keep it as Manual', () => {
+        renderDraft('abilities', pointBuy({ ...inOrder }));
+        expect(screen.getByText('All 27 points spent.')).toBeTruthy();
+        tap('Increase STR');
+        expect(scores()).toBe('16/14/13/12/10/8');
+        expect(screen.getAllByText(/STR 16 is above 15/).length).toBeGreaterThan(0);
+        expect(
+          screen.getByRole('button', { name: 'Decrease STR', description: /Above 15/ }),
+        ).toBeTruthy();
+        tap('Keep as Manual scores');
+        expect(saved().abilities.method).toBe('manual');
+        expect(scores()).toBe('16/14/13/12/10/8');
+      });
+
+      it('says how far over budget a spread is', () => {
+        renderDraft('abilities', pointBuy({ str: 15, dex: 15, con: 14, int: 12, wis: 10, cha: 8 }));
+        expect(screen.getByText(/Over budget: 31 of 27 points \(4 over\)/)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Keep as Manual scores' })).toBeTruthy();
+      });
+
+      it('says what is left to spend, and what the next point costs', () => {
+        renderDraft('abilities', pointBuy({ str: 15, dex: 14, con: 13, int: 10, wis: 10, cha: 8 }));
+        expect(screen.getByText('25 of 27 points spent, 2 left to spend.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Keep as Manual scores' })).toBeNull();
+        expect(
+          screen.getByRole('button', { name: 'Increase DEX', description: '+1 costs 2 more' }),
+        ).toBeTruthy();
+        expect(screen.getAllByText('7 pts').length).toBe(1);
+      });
+
+      it('keeps the standard array when switching to point buy, with nothing to undo', () => {
+        renderDraft('abilities', (d) => {
+          monk(d);
+          d.abilities.base = { ...inOrder };
+        });
+        tap('Point buy');
+        expect(saved().abilities.method).toBe('pointbuy');
+        expect(scores()).toBe('15/14/13/12/10/8');
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+
+      it('starts untouched scores from 8 without offering to undo it', () => {
+        renderDraft('abilities', monk);
+        tap('Point buy');
+        expect(scores()).toBe('8/8/8/8/8/8');
+        expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+      });
+
+      it('lists an over-budget spread on Review, one tap from its fix', async () => {
+        renderDraft('review', pointBuy({ str: 15, dex: 15, con: 14, int: 12, wis: 10, cha: 8 }));
+        tap(/^Point buy over budget \(31 of 27\)/);
+        await waitFor(() =>
+          expect(screen.getByRole('heading', { name: 'Abilities' })).toBeTruthy(),
+        );
+      });
+    });
+  });
+
   describe('switching rules version', () => {
     /** A draft with a kitted class, a background with picks, a spell and a kit row. */
     async function builtDraft() {
@@ -656,5 +914,110 @@ describe('changes that take something away', () => {
       expect(dialogs.askConfirm).not.toHaveBeenCalled();
       expect(saved().rulesVersion).toBe('2024');
     });
+  });
+});
+
+// UX-001: entering the creator resumed a draft without a word, with nowhere to
+// start over but the roster's blank sheet, and a corrupt draft was trusted.
+describe('an unfinished draft', () => {
+  /** Aria, a level 3 Warrior of the Testfolk, stored as the draft. */
+  function seedAria(step?: 'abilities') {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+    ];
+    doc.race = { name: 'Testfolk', source: 'TST' };
+    writeDraft({ doc, bundleChoices: {}, slotPicks: {} }, step);
+  }
+  const continuing = () => screen.queryByText(/Continuing your unfinished character/);
+  const nameInput = () =>
+    screen.getByRole('textbox', { name: 'Character name' }) as HTMLInputElement;
+
+  it('says it is continuing one entered afresh, and Start over can be undone', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    expect(continuing()?.textContent).toContain('Aria (Warrior 3, Testfolk)');
+    // A line, not a gate: the step is right there to work on.
+    expect(nameInput().value).toBe('Aria');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(nameInput().value).toBe('');
+    expect(saved().classes).toEqual([]);
+    expect(continuing()).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain(
+      'Started a new character · was Aria (Warrior 3, Testfolk)',
+    );
+
+    // The line held the Start over button; focus goes to the undo, not the body.
+    const undoButton = screen.getByRole('button', { name: 'Undo: Started a new character' });
+    expect(document.activeElement).toBe(undoButton);
+
+    fireEvent.click(undoButton);
+    expect(nameInput().value).toBe('Aria');
+    expect(saved().classes[0]?.levels).toBe(3);
+    expect(continuing()?.textContent).toContain('Aria (Warrior 3, Testfolk)');
+  });
+
+  it('does not say the character begun after Start over is being continued', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    fireEvent.change(nameInput(), { target: { value: 'Bram' } });
+    expect(continuing()).toBeNull();
+  });
+
+  it('puts back the step to resume when Start over is undone', () => {
+    seedAria('abilities');
+    renderCreator(['/', '/create']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo: Started a new character' }));
+    expect(readDraft()?.step).toBe('abilities');
+  });
+
+  it('goes back to Basics to start over', async () => {
+    seedAria();
+    const router = renderCreator(['/', '/create?step=abilities']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=basics'));
+    expect(nameInput().value).toBe('');
+  });
+
+  it('says nothing for a blank draft, a step of this load, or the roster Resume', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    expect(continuing()).not.toBeNull();
+    cleanup();
+
+    renderCreator(['/', { pathname: '/create', search: '?step=class', state: wizardState(1) }]);
+    expect(continuing()).toBeNull();
+    cleanup();
+
+    renderCreator(['/', { pathname: '/create', search: '?step=class', state: RESUME_STATE }]);
+    expect(continuing()).toBeNull();
+    cleanup();
+
+    seedDoc(newCharacterDoc('hero-1', '', 't'));
+    renderCreator(['/', '/create']);
+    expect(continuing()).toBeNull();
+    // Nor once a name goes in: this is the character just begun.
+    fireEvent.change(nameInput(), { target: { value: 'Bram' } });
+    expect(continuing()).toBeNull();
+  });
+
+  it('records the step to resume once the player moves, not the one it opened on', async () => {
+    seedAria('abilities');
+    const router = renderCreator(['/', '/create']);
+    expect(readDraft()?.step).toBe('abilities');
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    expect(readDraft()?.step).toBe('class');
+  });
+
+  it('starts fresh from a stored value that is not a character', () => {
+    sessionStorage.setItem(LEGACY_DRAFT_KEY, JSON.stringify({ id: 'x', classes: 'x' }));
+    renderCreator(['/', '/create']);
+    expect(screen.getByRole('heading', { name: 'Basics' })).toBeTruthy();
+    expect(nameInput().value).toBe('');
+    expect(continuing()).toBeNull();
   });
 });
