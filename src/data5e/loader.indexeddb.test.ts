@@ -19,7 +19,7 @@ vi.mock('./source', () => ({
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
-import { validMirror } from '../../tests-fixtures/dataMirror';
+import { VALID_PATHS, validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG } from './config';
 import {
   CompendiumNotDownloadedError,
@@ -307,11 +307,22 @@ describe('verifyFullOffline', () => {
     expect(fetchFile).not.toHaveBeenCalled();
   });
 
+  it('never fetches an index that goes missing while it counts', async () => {
+    // The key listing still names both indexes, but the spell index's row is
+    // gone by the time it is read (evicted in between): nothing is fetched.
+    await cache(['races.json', 'class/index.json']);
+    const listed = new Set(['races.json', 'class/index.json', 'spells/index.json']);
+    vi.spyOn(dataCacheRepo, 'cachedPaths').mockResolvedValue(listed);
+    await expect(verifyFullOffline()).rejects.toBeInstanceOf(CompendiumNotDownloadedError);
+    expect(fetchFile).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   it('counts against the indexes once both are on disk', async () => {
     await cache(['class/index.json', 'spells/index.json', 'races.json']);
     const counted = await verifyFullOffline();
-    expect(counted.cached).toBe(3);
-    expect(counted.total).toBeGreaterThan(3);
+    // The whole release, as the cached indexes list it.
+    expect(counted).toEqual({ cached: 3, total: VALID_PATHS.length });
     expect(fetchFile).not.toHaveBeenCalled();
   });
 });
