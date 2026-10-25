@@ -4,12 +4,12 @@
  *   bun scripts/third-party-notices.ts           # writes THIRD_PARTY_NOTICES.md
  *   bun scripts/third-party-notices.ts --check   # fails when it is out of date
  *
- * Reads Vite's `dist/.vite/licenses.json`, the module record
- * `dist/.vite/shipped-modules.json` (see `scripts/shippedModules.ts`), the
- * emitted scripts and stylesheets, and each shipped package's files under
- * `node_modules/`. The rules live in `thirdPartyNotices.ts`. Both build
- * records are deleted once read, so they are not deployed; run the build
- * again before running this a second time.
+ * Reads the two build records that `scripts/shippedModules.ts` writes to
+ * `node_modules/.cache/cast-guidance/notices/` (Vite's `build.license` list
+ * and the per-chunk module record), the emitted scripts and stylesheets in
+ * `dist/`, and each shipped package's files under `node_modules/`. The rules
+ * live in `thirdPartyNotices.ts`. It also fails when `dist/.vite/` exists:
+ * the records must never reach the deployed output.
  *
  * `--root <dir>` points it at another project directory (the tests use it).
  */
@@ -18,12 +18,11 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
-  rmdirSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
+import { LICENSES_FILE, RECORDS_DIR, SHIPPED_MODULES_FILE } from './shippedModules.ts';
 import {
   type BuildFile,
   buildNotices,
@@ -109,33 +108,34 @@ export interface RunResult {
 
 export function run(root: string, check: boolean): RunResult {
   const distDir = path.join(root, 'dist');
-  const viteDir = path.join(distDir, '.vite');
-  const licensesPath = path.join(viteDir, 'licenses.json');
-  const modulesPath = path.join(viteDir, 'shipped-modules.json');
+  const recordsDir = path.join(root, RECORDS_DIR);
+  const licensesPath = path.join(recordsDir, LICENSES_FILE);
+  const modulesPath = path.join(recordsDir, SHIPPED_MODULES_FILE);
   const noticesPath = path.join(root, 'THIRD_PARTY_NOTICES.md');
   const overridesPath = path.join(root, 'scripts', 'third-party-notices.overrides.json');
 
-  if (!existsSync(licensesPath) || !existsSync(modulesPath)) {
+  // Deployed as is, so a leaked record would be public. The collector takes
+  // Vite's license list out of the bundle; this catches it coming back.
+  if (existsSync(path.join(distDir, '.vite'))) {
     return {
       exitCode: 1,
       message:
-        'dist/.vite/licenses.json or dist/.vite/shipped-modules.json is missing. Run `bun run build` first (this script deletes both after reading them).',
+        'dist/.vite/ exists, so build records would be deployed. The collector in scripts/shippedModules.ts should keep them out of dist/.',
+    };
+  }
+  if (!existsSync(licensesPath) || !existsSync(modulesPath)) {
+    return {
+      exitCode: 1,
+      message: `${RECORDS_DIR}/${LICENSES_FILE} or ${SHIPPED_MODULES_FILE} is missing. Run \`bun run build\` first.`,
     };
   }
 
   let generated: string;
   try {
-    const viteLicenses: unknown = JSON.parse(readText(licensesPath));
-    const shippedModules: unknown = JSON.parse(readText(modulesPath));
-    // Consumed: keep them out of the deployed dist/.
-    rmSync(licensesPath);
-    rmSync(modulesPath);
-    if (readdirSync(viteDir).length === 0) rmdirSync(viteDir);
-
     const inventory = collectInventory(
       {
-        viteLicenses,
-        shippedModules,
+        viteLicenses: JSON.parse(readText(licensesPath)),
+        shippedModules: JSON.parse(readText(modulesPath)),
         jsFiles: walk(distDir, ['.js']),
         cssFiles: walk(distDir, ['.css']),
       },
@@ -144,11 +144,7 @@ export function run(root: string, check: boolean): RunResult {
     const overrides = parseOverrides(JSON.parse(readText(overridesPath)));
     generated = renderNotices(buildNotices(inventory, overrides));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      exitCode: 1,
-      message: `${message}\n(The build records were consumed; run \`bun run build\` again before retrying.)`,
-    };
+    return { exitCode: 1, message: error instanceof Error ? error.message : String(error) };
   }
 
   if (check) {

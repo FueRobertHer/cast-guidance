@@ -114,9 +114,9 @@ export interface BuildFile {
 }
 
 export interface InventoryInput {
-  /** Parsed `dist/.vite/licenses.json` (Vite `build.license`). */
+  /** Parsed `licenses.json`, Vite's `build.license` list (see `scripts/shippedModules.ts`). */
   viteLicenses: unknown;
-  /** Parsed `dist/.vite/shipped-modules.json` (`scripts/shippedModules.ts`). */
+  /** Parsed `shipped-modules.json`, the per-chunk module record (`scripts/shippedModules.ts`). */
   shippedModules: unknown;
   /** Every `.js` file in `dist/`. */
   jsFiles: BuildFile[];

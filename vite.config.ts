@@ -18,8 +18,9 @@ const vercelConfig: { headers?: unknown } = JSON.parse(
 
 // Third-party notices (LEGAL-001): `build.license` lists the packages in the
 // main bundle, and the collector records every chunk's modules, workers
-// included, since `build.license` skips worker builds. `bun run notices`
-// turns both into THIRD_PARTY_NOTICES.md and deletes them from dist/.
+// included, since `build.license` skips worker builds. The collector moves
+// both records out of the bundle to node_modules/.cache, so dist/ never holds
+// them, and `bun run notices` turns them into THIRD_PARTY_NOTICES.md.
 const shippedModules = shippedModulesCollector(__dirname);
 
 export default defineConfig({

@@ -73,8 +73,9 @@ jobs:
         # Regenerates THIRD_PARTY_NOTICES.md from what the build ships and
         # fails when the committed file differs, or when a shipped package has
         # no license text or a license outside the allowlist. The fix is
-        # `bun run build && bun run notices`. It also deletes the build's
-        # license records from dist/.
+        # `bun run build && bun run notices`. It also fails when dist/.vite/
+        # exists: the build keeps its license records in node_modules/.cache
+        # so no deploy serves them.
         run: bun run notices:check
 
       - name: Bundle budget
