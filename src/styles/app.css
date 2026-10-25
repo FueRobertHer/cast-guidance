@@ -78,6 +78,24 @@ body,
   height: 100%;
 }
 
+/*
+ * Keyboard focus clears the fixed and sticky bars (A11Y-003, WCAG 2.4.11).
+ * Tab scrolls a control just into view, which below `lg` put it under the
+ * bottom tab bar, and Shift+Tab under the sheet's sticky header and the build
+ * page's bar beneath it: entirely hidden in landscape. The tab bars are about
+ * 3.3rem tall, and from `lg` a side rail. The sticky bars publish their
+ * measured heights (useStickyHeight), unset when not on screen.
+ */
+html {
+  scroll-padding-top: calc(var(--sheet-header-h, 0px) + var(--sheet-bar-h, 0px));
+  scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+}
+@media (width >= 64rem) {
+  html {
+    scroll-padding-bottom: 0;
+  }
+}
+
 body {
   background-color: #09090b; /* zinc-950 */
   color: var(--color-ink);

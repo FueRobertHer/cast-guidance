@@ -10,10 +10,11 @@ import {
   Swords,
   Wrench,
 } from 'lucide-react';
-import { type CSSProperties, useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useResolvedPath } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useStickyHeight } from '@/lib/useStickyHeight';
 import { announce } from '@/stores/announcer';
 import { AdvToggle } from '@/ui/AdvToggle';
 import { GameDataProblem } from '@/ui/GameDataProblem';
@@ -60,29 +61,6 @@ export function tabTitle(tab: string): string | undefined {
 }
 
 /**
- * The sticky header's height, published as `--sheet-header-h` so a tab's own
- * sticky bar can sit under it instead of behind it. Both stick to the
- * viewport, and the header draws on top, so a bar at `top-0` was hidden behind
- * it once the page scrolled (the build page's Undo was out of reach on a
- * phone). Measured, because the class line under the name can be empty.
- */
-export function useHeaderHeight() {
-  // A callback ref: the header only mounts once the character has loaded.
-  const [el, header] = useState<HTMLElement | null>(null);
-  const [height, setHeight] = useState(0);
-  useLayoutEffect(() => {
-    if (el === null) return;
-    const measure = () => setHeight(el.offsetHeight);
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [el]);
-  return { header, style: { '--sheet-header-h': `${height}px` } as CSSProperties };
-}
-
-/**
  * Marks the open tab with a bar along its top edge (bottom bar) or its left
  * edge (side rail), so it is not told apart by colour alone (A11Y-002).
  * Decorative: NavLink reports the page through `aria-current`. AppNav draws
@@ -105,7 +83,9 @@ function ActiveTabBar() {
 
 export function Component() {
   const { id } = useParams();
-  const headerHeight = useHeaderHeight();
+  // Published for a tab's own sticky bar to sit under, and for the scroll
+  // padding that keeps a focused control out from behind the header.
+  const header = useStickyHeight('--sheet-header-h');
   const state = useCharacterSheet(id);
   const openElsewhere = useOpenElsewhere(id);
   // Said through the announcer when it starts (A11Y-002): the banner mounts
@@ -168,9 +148,9 @@ export function Component() {
   }
 
   return (
-    <div className="flex flex-1 flex-col" style={headerHeight.style}>
+    <div className="flex flex-1 flex-col">
       <header
-        ref={headerHeight.header}
+        ref={header}
         className="sticky top-0 z-20 flex items-center gap-2 bg-zinc-950/90 px-4 py-3 backdrop-blur lg:pl-40"
       >
         <Link

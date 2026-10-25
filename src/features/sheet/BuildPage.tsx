@@ -32,6 +32,7 @@ import {
 import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -200,6 +201,8 @@ export function Component() {
   const { sheet, doc, update, restore } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry(['essentials']);
   const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
+  // Under the sheet header, so the scroll padding counts it too (A11Y-003).
+  const bar = useStickyHeight('--sheet-bar-h');
   // Tap-to-swap for ability scores (tap one value, then another).
   const [swapFrom, setSwapFrom] = useState<(typeof ABILITIES)[number] | null>(null);
 
@@ -422,7 +425,7 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
+      <div ref={bar} className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
         <ChangeBar sheet={sheet} />
         <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
       </div>
