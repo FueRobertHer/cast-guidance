@@ -6,18 +6,35 @@ import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
-import { filterByRulesVersion } from '@/data5e/rulesVersion';
+import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { characterRepo } from '@/db/characterRepo';
 import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
-import { ABILITIES, type CharacterDoc, type EffectOrigin, newCharacterDoc } from '@/engine/types';
+import {
+  ABILITIES,
+  type CharacterDoc,
+  type EffectOrigin,
+  type EntityRef,
+  newCharacterDoc,
+  refUid,
+} from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
-import { pruneChoicesFor } from '@/lib/pruneChoices';
+import {
+  classRemovalParts,
+  listJoin,
+  pickCount,
+  picksCleared,
+  plural,
+} from '@/lib/describeRemoval';
+import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
+import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { UndoBar } from '@/ui/UndoBar';
 import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
@@ -45,6 +62,110 @@ const sourceOf = (e: Entity) => String(e.source ?? '?');
 
 const DRAFT_KEY = 'cast-guidance:creator-draft';
 
+/**
+ * The wizard's working state: the character, plus the equipment rows picked
+ * for its kit. The rows are not on the doc (and not kept over a reload), but
+ * an undo has to put them back with it, or the kit regranted afterwards would
+ * not be the one taken away.
+ */
+interface Draft {
+  doc: CharacterDoc;
+  bundleChoices: Record<string, string>;
+  /** Concrete picks for "any martial weapon"-style slots, keyed `${group}:${idx}`. */
+  slotPicks: Record<string, string>;
+}
+
+function loadDraftDoc(): CharacterDoc {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (raw !== null) return JSON.parse(raw) as CharacterDoc;
+  } catch {
+    // corrupted draft, start fresh
+  }
+  return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
+}
+
+const rowsKey = (rows: Record<string, string>) => JSON.stringify(Object.entries(rows).sort());
+
+const sameDraft = (a: Draft, b: Draft) =>
+  sameForUndo(a.doc, b.doc) &&
+  rowsKey(a.bundleChoices) === rowsKey(b.bundleChoices) &&
+  rowsKey(a.slotPicks) === rowsKey(b.slotPicks);
+
+const hasCoin = (doc: CharacterDoc) => Object.values(doc.play.currency).some((v) => v !== 0);
+
+/**
+ * Take back the kit when the class or background it was granted for changes
+ * (UX-004): the gear, the coin, and the rows picked for that source, which
+ * would otherwise pick a row of the new one's kit by position. The gear has to
+ * go rather than wait as a leftover: it is equipped and counts toward AC. With
+ * the doc's equipment empty again, leaving the Equipment step and Review's
+ * "No starting equipment" lead the player to the new kit; the other source's
+ * rows stay picked for it. Says whether a granted kit went.
+ */
+function clearKit(d: Draft, source: 'class' | 'bg'): boolean {
+  for (const rows of [d.bundleChoices, d.slotPicks]) {
+    for (const key of Object.keys(rows)) if (key.startsWith(`${source}:`)) delete rows[key];
+  }
+  if (d.doc.equipment.length === 0 && !hasCoin(d.doc)) return false;
+  d.doc.equipment = [];
+  d.doc.play.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+  return true;
+}
+
+const KIT_CLEARED = 'starting equipment cleared, pick it again on the Equipment step';
+
+/** An undo line's detail from its parts, or nothing when none apply. */
+const detailOf = (...parts: Array<string | undefined>) => {
+  const kept = parts.filter((p): p is string => p !== undefined);
+  return kept.length > 0 ? kept.join(' · ') : undefined;
+};
+
+const scoresText = (d: CharacterDoc) => ABILITIES.map((a) => d.abilities.base[a]).join('/');
+/** Ability overwrites offer undo only when a score moved, not for the method alone. */
+const scoresChanged = (before: Draft, after: Draft) =>
+  scoresText(before.doc) !== scoresText(after.doc);
+
+/**
+ * What a rules-version switch would clear from this draft, for its confirm:
+ * only what is there, so an empty draft switches without asking.
+ */
+function rulesSwitchClears(d: Draft, active: ReadonlySet<string>): string[] {
+  const { doc } = d;
+  const parts: string[] = [];
+  if (doc.classes.length > 0) {
+    parts.push(
+      `class ${listJoin(
+        doc.classes.map(
+          (c) => `${c.ref.name}${c.subclass !== undefined ? ` (${c.subclass.name})` : ''}`,
+        ),
+      )}`,
+    );
+  }
+  if (doc.race !== undefined) {
+    parts.push(
+      `species ${doc.race.name}${doc.subrace !== undefined ? ` (${doc.subrace.name})` : ''}`,
+    );
+  }
+  if (doc.background !== undefined) parts.push(`background ${doc.background.name}`);
+  const picks = pickCount(doc, Object.keys(doc.choices), active);
+  if (picks > 0) parts.push(plural(picks, 'pick'));
+  const spells = new Set(
+    Object.values(doc.spellcasting).flatMap((sc) =>
+      [...sc.known, ...sc.prepared].map((r) => refUid(r)),
+    ),
+  );
+  if (spells.size > 0) parts.push(plural(spells.size, 'spell'));
+  if (
+    doc.equipment.length > 0 ||
+    hasCoin(doc) ||
+    Object.keys(d.bundleChoices).length + Object.keys(d.slotPicks).length > 0
+  ) {
+    parts.push('starting equipment');
+  }
+  return parts;
+}
+
 export function Component() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,18 +173,40 @@ export function Component() {
   const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
   // The in-progress draft survives reloads via sessionStorage.
-  const [doc, setDoc] = useState<CharacterDoc>(() => {
+  const [draft, setDraftState] = useState<Draft>(() => ({
+    doc: loadDraftDoc(),
+    bundleChoices: {},
+    slotPicks: {},
+  }));
+  const { doc, bundleChoices, slotPicks } = draft;
+  // The draft as last set, which a change builds on before React renders it:
+  // two changes in one handler must see each other, and a change is worked out
+  // once, here, not in a state updater that StrictMode runs twice (which would
+  // also leave an undo with two different "before"s to pick from).
+  const latest = useRef(draft);
+  const setDraft = (next: Draft) => {
+    latest.current = next;
+    setDraftState(next);
     try {
-      const raw = sessionStorage.getItem(DRAFT_KEY);
-      if (raw !== null) return JSON.parse(raw) as CharacterDoc;
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next.doc));
     } catch {
-      // corrupted draft — start fresh
+      // storage full/unavailable: the draft just won't survive a reload
     }
-    return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
+  };
+  /** Apply `recipe` to a copy of the draft, once, and keep both sides. */
+  const change = (recipe: (d: Draft) => void) => {
+    const before = latest.current;
+    const after = structuredClone(before);
+    recipe(after);
+    setDraft(after);
+    return { before, after };
+  };
+  // Before any early return: hooks run in the same order on every render.
+  const undo = useUndoOffer<Draft>({
+    current: draft,
+    same: sameDraft,
+    restore: (before) => setDraft(before),
   });
-  const [bundleChoices, setBundleChoices] = useState<Record<string, string>>({});
-  // Concrete picks for "any martial weapon"-style slots, keyed `${group}:${idx}`.
-  const [slotPicks, setSlotPicks] = useState<Record<string, string>>({});
 
   useEffect(() => {
     void ensureTypePacks('class');
@@ -110,16 +253,23 @@ export function Component() {
   const sheet = useMemo(() => (ctx !== null ? deriveSheet(doc, ctx) : null), [doc, ctx]);
 
   const update = (recipe: (d: CharacterDoc) => void) => {
-    setDoc((d) => {
-      const draft = structuredClone(d);
-      recipe(draft);
-      try {
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-      } catch {
-        // storage full/unavailable — draft just won't survive a reload
-      }
-      return draft;
-    });
+    change((d) => recipe(d.doc));
+  };
+
+  /**
+   * Make a change that takes something away, then offer to put it back
+   * (UX-004). The undo restores the whole draft, kit rows included. A change
+   * that changed nothing (or nothing `worthUndo` cares about) offers nothing.
+   */
+  const undoable = (
+    recipe: (d: Draft) => void,
+    describe: (before: Draft, after: Draft) => UndoNotice,
+    worthUndo: (before: Draft, after: Draft) => boolean = (b, a) => !sameDraft(b, a),
+  ) => {
+    const { before, after } = change(recipe);
+    if (!worthUndo(before, after)) return;
+    const { title, detail } = describe(before, after);
+    undo.offer(before, after, title, detail);
   };
 
   const goto = (s: Step) => {
@@ -221,64 +371,62 @@ export function Component() {
     })),
   ];
 
-  /** Rebuild doc.equipment from the current bundle + slot selections. */
-  const applyEquipment = (choices: Record<string, string>, picks: Record<string, string>) => {
-    update((d) => {
-      const chosen: (typeof d.equipment)[number][] = [];
-      let goldCp = 0;
-      for (const g of allEqGroups) {
-        const key = `${g.source}:${g.groupIdx}`;
-        const pick = choices[key] ?? g.bundles[0]?.key;
-        const bundle = g.bundles.find((b) => b.key === pick);
-        if (bundle === undefined) continue;
-        const slotForBundle: Record<number, string> = {};
-        bundle.items.forEach((item, idx) => {
-          const v = picks[`${key}:${idx}`];
-          if (item.equipmentType !== undefined && v !== undefined) slotForBundle[idx] = v;
-        });
-        chosen.push(...bundleToEquipment(bundle, slotForBundle));
-        goldCp += bundleGoldCp(bundle);
+  /** Rebuild doc.equipment from the draft's bundle + slot selections. */
+  const grantKit = ({ doc: d, bundleChoices: choices, slotPicks: picks }: Draft) => {
+    const chosen: (typeof d.equipment)[number][] = [];
+    let goldCp = 0;
+    for (const g of allEqGroups) {
+      const key = `${g.source}:${g.groupIdx}`;
+      const pick = choices[key] ?? g.bundles[0]?.key;
+      const bundle = g.bundles.find((b) => b.key === pick);
+      if (bundle === undefined) continue;
+      const slotForBundle: Record<number, string> = {};
+      bundle.items.forEach((item, idx) => {
+        const v = picks[`${key}:${idx}`];
+        if (item.equipmentType !== undefined && v !== undefined) slotForBundle[idx] = v;
+      });
+      chosen.push(...bundleToEquipment(bundle, slotForBundle));
+      goldCp += bundleGoldCp(bundle);
+    }
+    d.equipment = chosen;
+    // A "gold instead of gear" pick becomes real starting currency to spend.
+    d.play.currency = {
+      cp: goldCp % 10,
+      sp: Math.floor((goldCp % 100) / 10),
+      ep: 0,
+      gp: Math.floor(goldCp / 100),
+      pp: 0,
+    };
+    // Auto-equip armor, shield, and weapons so AC/attacks reflect the kit.
+    for (const item of d.equipment) {
+      if (item.ref === undefined) continue;
+      const e =
+        registry.get('item', item.ref.name, item.ref.source || undefined) ??
+        registry.get('baseitem', item.ref.name, item.ref.source || undefined);
+      if (e === undefined) continue;
+      const type = String(e.type ?? '').split('|')[0];
+      if (
+        type === 'LA' ||
+        type === 'MA' ||
+        type === 'HA' ||
+        type === 'S' ||
+        e.weaponCategory !== undefined
+      ) {
+        item.equipped = true;
       }
-      d.equipment = chosen;
-      // A "gold instead of gear" pick becomes real starting currency to spend.
-      d.play.currency = {
-        cp: goldCp % 10,
-        sp: Math.floor((goldCp % 100) / 10),
-        ep: 0,
-        gp: Math.floor(goldCp / 100),
-        pp: 0,
-      };
-      // Auto-equip armor, shield, and weapons so AC/attacks reflect the kit.
-      for (const item of d.equipment) {
-        if (item.ref === undefined) continue;
-        const e =
-          registry.get('item', item.ref.name, item.ref.source || undefined) ??
-          registry.get('baseitem', item.ref.name, item.ref.source || undefined);
-        if (e === undefined) continue;
-        const type = String(e.type ?? '').split('|')[0];
-        if (
-          type === 'LA' ||
-          type === 'MA' ||
-          type === 'HA' ||
-          type === 'S' ||
-          e.weaponCategory !== undefined
-        ) {
-          item.equipped = true;
-        }
-      }
-    });
+    }
   };
 
-  const pickBundle = (groupKey: string, bundleKey: string) => {
-    const next = { ...bundleChoices, [groupKey]: bundleKey };
-    setBundleChoices(next);
-    applyEquipment(next, slotPicks);
-  };
-  const pickSlot = (slotKey: string, uid: string) => {
-    const next = { ...slotPicks, [slotKey]: uid };
-    setSlotPicks(next);
-    applyEquipment(bundleChoices, next);
-  };
+  const pickBundle = (groupKey: string, bundleKey: string) =>
+    change((d) => {
+      d.bundleChoices[groupKey] = bundleKey;
+      grantKit(d);
+    });
+  const pickSlot = (slotKey: string, uid: string) =>
+    change((d) => {
+      d.slotPicks[slotKey] = uid;
+      grantKit(d);
+    });
 
   /**
    * Step navigation that never loses work: walking off the equipment step
@@ -286,12 +434,182 @@ export function Component() {
    */
   const navStep = (s: Step) => {
     if (step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
-      applyEquipment(bundleChoices, slotPicks);
+      change(grantKit);
     }
     goto(s);
   };
 
+  const undoShown = undo.pending !== null || undo.undone !== null;
   const abilitiesUntouched = ABILITIES.every((a) => doc.abilities.base[a] === 10);
+
+  // Prompts the player can see now, so "N picks cleared" counts only those.
+  const activeChoices = new Set(sheet?.resolvedChoices.map((r) => r.prompt.id) ?? []);
+
+  /**
+   * Switching rules version starts the build over: every class, species,
+   * background, pick, spell and kit came from the other edition's list. So it
+   * says first what goes, and asks only when something would.
+   */
+  const switchRulesVersion = async (v: RulesVersion) => {
+    // Re-selecting the current version must be a no-op: an accidental tap
+    // must never wipe the in-progress build.
+    if (doc.rulesVersion === v) return;
+    const clears = rulesSwitchClears(latest.current, activeChoices);
+    if (clears.length > 0) {
+      const ok = await askConfirm({
+        title: `Switch to ${v} rules?`,
+        detail: `Clears your ${listJoin(clears)}, since they come from the other rules. Your name and ability scores stay.`,
+        confirmLabel: `Switch to ${v}`,
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    change((d) => {
+      if (d.doc.rulesVersion === v) return;
+      d.doc.rulesVersion = v;
+      d.doc.classes = [];
+      d.doc.race = undefined;
+      d.doc.subrace = undefined;
+      d.doc.background = undefined;
+      d.doc.choices = {};
+      d.doc.spellcasting = {};
+      d.doc.equipment = [];
+      d.doc.play.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+      d.bundleChoices = {};
+      d.slotPicks = {};
+    });
+  };
+
+  /**
+   * Picking a different class swaps out only what belonged to the old one: its
+   * picks, subclass, ASI feats, spell list and kit. Species and background
+   * picks stay; this used to clear every choice in the build.
+   */
+  const selectClass = (next: EntityRef) => {
+    let kit = false;
+    undoable(
+      (d) => {
+        const old = d.doc.classes[0];
+        if (old !== undefined && refUid(old.ref) === refUid(next)) return;
+        d.doc.classes = [{ ref: next, levels: old?.levels ?? 1, hp: old?.hp ?? ['avg'] }];
+        if (old !== undefined) pruneClass(d.doc, old);
+        kit = clearKit(d, 'class');
+      },
+      (before) => {
+        const old = before.doc.classes[0];
+        const parts = old !== undefined ? classRemovalParts(before.doc, old, activeChoices) : [];
+        return {
+          title: `Class: ${old?.ref.name ?? 'none'} → ${next.name}`,
+          detail: detailOf(
+            parts.length > 0 ? `${listJoin(parts)} cleared` : undefined,
+            kit ? KIT_CLEARED : undefined,
+          ),
+        };
+      },
+    );
+  };
+
+  /** One level off. A rolled HP for that level would go with it. */
+  const levelDown = () =>
+    undoable(
+      (d) => {
+        const c = d.doc.classes[0];
+        if (c === undefined || c.levels <= 1) return;
+        c.levels -= 1;
+        c.hp = c.hp.slice(0, c.levels);
+      },
+      (before) => {
+        const c = before.doc.classes[0];
+        const lost = c?.hp[c.levels - 1];
+        return {
+          title: `${c?.ref.name ?? 'Class'} level ${c?.levels ?? 0} → ${(c?.levels ?? 1) - 1}`,
+          detail: typeof lost === 'number' ? `rolled ${lost} HP for that level cleared` : undefined,
+        };
+      },
+    );
+
+  /** Swap or clear the subclass; the old one's picks go with it. */
+  const setSubclass = (next: EntityRef | undefined) => {
+    const removed: string[] = [];
+    undoable(
+      (d) => {
+        const c = d.doc.classes[0];
+        if (c === undefined) return;
+        if (c.subclass !== undefined)
+          removed.push(...pruneChoicesFor(d.doc, 'subclass', c.subclass));
+        c.subclass = next;
+      },
+      (before) => {
+        const c = before.doc.classes[0];
+        return {
+          title: `Subclass: ${c?.subclass?.name ?? 'none'} → ${next?.name ?? 'none'}`,
+          detail: picksCleared(before.doc, removed, c?.subclass?.name, activeChoices),
+        };
+      },
+    );
+  };
+
+  const selectRace = (next: EntityRef) => {
+    const removed: string[] = [];
+    undoable(
+      (d) => {
+        if (d.doc.race !== undefined) removed.push(...pruneOrigin(d.doc, 'race', d.doc.race));
+        if (d.doc.subrace !== undefined) {
+          removed.push(...pruneOrigin(d.doc, 'subrace', d.doc.subrace));
+        }
+        d.doc.race = next;
+        d.doc.subrace = undefined;
+      },
+      (before) => ({
+        title: `Species: ${before.doc.race?.name ?? 'none'} → ${next.name}`,
+        detail: picksCleared(
+          before.doc,
+          removed,
+          before.doc.subrace?.name ?? before.doc.race?.name,
+          activeChoices,
+        ),
+      }),
+    );
+  };
+
+  /** Swap or clear the subrace; the old one's picks go with it. */
+  const setSubrace = (next: EntityRef | undefined) => {
+    const removed: string[] = [];
+    undoable(
+      (d) => {
+        if (d.doc.subrace !== undefined) {
+          removed.push(...pruneOrigin(d.doc, 'subrace', d.doc.subrace));
+        }
+        d.doc.subrace = next;
+      },
+      (before) => ({
+        title: `Subrace: ${before.doc.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
+        detail: picksCleared(before.doc, removed, before.doc.subrace?.name, activeChoices),
+      }),
+    );
+  };
+
+  /** A new background takes the old one's picks, its feats' picks, and its kit. */
+  const selectBackground = (next: EntityRef) => {
+    const removed: string[] = [];
+    let kit = false;
+    undoable(
+      (d) => {
+        const old = d.doc.background;
+        if (old !== undefined && refUid(old) === refUid(next)) return;
+        if (old !== undefined) removed.push(...pruneOrigin(d.doc, 'background', old));
+        d.doc.background = next;
+        kit = clearKit(d, 'bg');
+      },
+      (before) => ({
+        title: `Background: ${before.doc.background?.name ?? 'none'} → ${next.name}`,
+        detail: detailOf(
+          picksCleared(before.doc, removed, before.doc.background?.name, activeChoices),
+          kit ? KIT_CLEARED : undefined,
+        ),
+      }),
+    );
+  };
 
   const stepBody = () => {
     switch (step) {
@@ -319,19 +637,7 @@ export function Component() {
                   key={v}
                   type="button"
                   aria-pressed={doc.rulesVersion === v}
-                  onClick={() =>
-                    update((d) => {
-                      // Re-selecting the current version must be a no-op — otherwise
-                      // an accidental tap wipes the whole in-progress build.
-                      if (d.rulesVersion === v) return;
-                      d.rulesVersion = v;
-                      d.classes = [];
-                      d.race = undefined;
-                      d.subrace = undefined;
-                      d.background = undefined;
-                      d.choices = {};
-                    })
-                  }
+                  onClick={() => void switchRulesVersion(v)}
                   className={`rounded-lg border px-3 py-2.5 text-left text-sm ${
                     doc.rulesVersion === v
                       ? 'border-accent bg-accent-deep/40 font-semibold'
@@ -365,18 +671,7 @@ export function Component() {
                   ? `${entry.ref.name}|${entry.ref.source}`.toLowerCase()
                   : undefined
               }
-              onSelect={(e) =>
-                update((d) => {
-                  d.classes = [
-                    {
-                      ref: { name: nameOf(e), source: sourceOf(e) },
-                      levels: d.classes[0]?.levels ?? 1,
-                      hp: d.classes[0]?.hp ?? ['avg'],
-                    },
-                  ];
-                  d.choices = {};
-                })
-              }
+              onSelect={(e) => selectClass({ name: nameOf(e), source: sourceOf(e) })}
             />
             {entry !== undefined && (
               <>
@@ -391,14 +686,7 @@ export function Component() {
                     <button
                       type="button"
                       aria-label="Decrease level"
-                      onClick={() =>
-                        update((d) => {
-                          const c = d.classes[0];
-                          if (c === undefined || c.levels <= 1) return;
-                          c.levels -= 1;
-                          c.hp = c.hp.slice(0, c.levels);
-                        })
-                      }
+                      onClick={levelDown}
                       className="h-9 w-9 rounded-full bg-surface-2 text-lg"
                     >
                       <span aria-hidden="true">−</span>
@@ -441,22 +729,8 @@ export function Component() {
                           ? `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase()
                           : undefined
                       }
-                      onSelect={(e) =>
-                        update((d) => {
-                          const c = d.classes[0];
-                          if (c !== undefined)
-                            c.subclass = {
-                              name: nameOf(e),
-                              source: sourceOf(e),
-                            };
-                        })
-                      }
-                      onDeselect={() =>
-                        update((d) => {
-                          const c = d.classes[0];
-                          if (c !== undefined) c.subclass = undefined;
-                        })
-                      }
+                      onSelect={(e) => setSubclass({ name: nameOf(e), source: sourceOf(e) })}
+                      onDeselect={() => setSubclass(undefined)}
                     />
                   </div>
                 )}
@@ -495,14 +769,7 @@ export function Component() {
                   ? `${doc.race.name}|${doc.race.source}`.toLowerCase()
                   : undefined
               }
-              onSelect={(e) =>
-                update((d) => {
-                  if (d.race !== undefined) pruneChoicesFor(d, 'race', d.race);
-                  if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                  d.race = { name: nameOf(e), source: sourceOf(e) };
-                  d.subrace = undefined;
-                })
-              }
+              onSelect={(e) => selectRace({ name: nameOf(e), source: sourceOf(e) })}
             />
             {subraces.length > 0 && (
               <div className="flex flex-col gap-2">
@@ -516,18 +783,8 @@ export function Component() {
                       ? `${doc.subrace.name}|${doc.subrace.source}`.toLowerCase()
                       : undefined
                   }
-                  onSelect={(e) =>
-                    update((d) => {
-                      if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                      d.subrace = { name: nameOf(e), source: sourceOf(e) };
-                    })
-                  }
-                  onDeselect={() =>
-                    update((d) => {
-                      if (d.subrace !== undefined) pruneChoicesFor(d, 'subrace', d.subrace);
-                      d.subrace = undefined;
-                    })
-                  }
+                  onSelect={(e) => setSubrace({ name: nameOf(e), source: sourceOf(e) })}
+                  onDeselect={() => setSubrace(undefined)}
                 />
               </div>
             )}
@@ -560,7 +817,16 @@ export function Component() {
             {autoArray !== undefined && (
               <button
                 type="button"
-                onClick={() => update((d) => void (d.abilities.base = { ...autoArray }))}
+                onClick={() =>
+                  undoable(
+                    (d) => void (d.doc.abilities.base = { ...autoArray }),
+                    (before) => ({
+                      title: `Applied the standard array for a ${className}`,
+                      detail: `was ${scoresText(before.doc)}`,
+                    }),
+                    scoresChanged,
+                  )
+                }
                 className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
               >
                 Auto-assign the standard array for a {className}
@@ -579,21 +845,28 @@ export function Component() {
                   type="button"
                   aria-pressed={doc.abilities.method === m}
                   onClick={() =>
-                    update((d) => {
-                      // Re-selecting the current method is a no-op — otherwise
-                      // re-tapping "Point buy" re-zeroes allocated scores.
-                      if (d.abilities.method === m) return;
-                      d.abilities.method = m;
-                      if (m === 'pointbuy')
-                        d.abilities.base = {
-                          str: 8,
-                          dex: 8,
-                          con: 8,
-                          int: 8,
-                          wis: 8,
-                          cha: 8,
-                        };
-                    })
+                    undoable(
+                      ({ doc: d }) => {
+                        // Re-selecting the current method is a no-op: otherwise
+                        // re-tapping "Point buy" re-zeroes allocated scores.
+                        if (d.abilities.method === m) return;
+                        d.abilities.method = m;
+                        if (m === 'pointbuy')
+                          d.abilities.base = {
+                            str: 8,
+                            dex: 8,
+                            con: 8,
+                            int: 8,
+                            wis: 8,
+                            cha: 8,
+                          };
+                      },
+                      (before) => ({
+                        title: 'Point buy: every score back to 8',
+                        detail: `was ${scoresText(before.doc)}`,
+                      }),
+                      scoresChanged,
+                    )
                   }
                   className={`rounded-full border px-3 py-1.5 text-sm ${
                     doc.abilities.method === m
@@ -619,7 +892,16 @@ export function Component() {
                   return (
                     <button
                       type="button"
-                      onClick={() => update((d) => void (d.abilities.base = { ...focus }))}
+                      onClick={() =>
+                        undoable(
+                          (d) => void (d.doc.abilities.base = { ...focus }),
+                          (before) => ({
+                            title: `Focused a ${className}`,
+                            detail: `was ${scoresText(before.doc)}`,
+                          }),
+                          scoresChanged,
+                        )
+                      }
                       className="self-start rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
                     >
                       Focus a {className} (15/15/15 in key abilities)
@@ -707,12 +989,7 @@ export function Component() {
                   ? `${doc.background.name}|${doc.background.source}`.toLowerCase()
                   : undefined
               }
-              onSelect={(e) =>
-                update((d) => {
-                  if (d.background !== undefined) pruneChoicesFor(d, 'background', d.background);
-                  d.background = { name: nameOf(e), source: sourceOf(e) };
-                })
-              }
+              onSelect={(e) => selectBackground({ name: nameOf(e), source: sourceOf(e) })}
             />
             {sheet !== null && (
               <OriginChoices
@@ -1053,7 +1330,13 @@ export function Component() {
   };
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]">
+    <main
+      className={`flex flex-1 flex-col gap-4 p-4 ${
+        undoShown
+          ? 'pb-[calc(8rem+max(env(safe-area-inset-bottom),0.75rem))]'
+          : 'pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]'
+      }`}
+    >
       {header}
 
       {/* Live summary bar — the "like a game" feedback loop */}
@@ -1088,32 +1371,40 @@ export function Component() {
 
       {stepBody()}
 
-      {/* Step navigation */}
-      <nav className="fixed inset-x-0 bottom-0 flex gap-2 border-t border-surface-2 bg-surface p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-        <button
-          type="button"
-          disabled={stepIdx === 0}
-          onClick={() => {
-            const prev = STEPS[stepIdx - 1];
-            if (prev !== undefined) navStep(prev);
-          }}
-          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-        {stepIdx < STEPS.length - 1 && (
+      {/* The undo line rides on top of the step navigation, in the same fixed
+          block, so the bar never covers it and it stays in reach while the
+          step scrolls. The page pads its bottom by both while the line shows. */}
+      <div className="fixed inset-x-0 bottom-0 flex flex-col">
+        <div className={undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : undefined}>
+          <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
+        </div>
+        {/* Step navigation */}
+        <nav className="flex gap-2 border-t border-surface-2 bg-surface p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
           <button
             type="button"
+            disabled={stepIdx === 0}
             onClick={() => {
-              const next = STEPS[stepIdx + 1];
-              if (next !== undefined) navStep(next);
+              const prev = STEPS[stepIdx - 1];
+              if (prev !== undefined) navStep(prev);
             }}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
           >
-            Next <ArrowRight size={16} />
+            <ArrowLeft size={16} /> Back
           </button>
-        )}
-      </nav>
+          {stepIdx < STEPS.length - 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = STEPS[stepIdx + 1];
+                if (next !== undefined) navStep(next);
+              }}
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Next <ArrowRight size={16} />
+            </button>
+          )}
+        </nav>
+      </div>
     </main>
   );
 }
