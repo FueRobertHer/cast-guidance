@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { computeAccessibleDescription } from 'dom-accessibility-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { SpellInfoSheet } from './SpellInfoSheet';
 
 // vaul reads this on close and jsdom does not provide it.
@@ -66,6 +67,7 @@ vi.mock('@/data5e/hooks', () => ({
 
 afterEach(() => {
   cleanup();
+  dbLifecycleStore.setState({ state: 'open' });
   dataStatusStore.setState({ phase: 'idle', error: undefined, failedTag: undefined });
   packs.current = { status: 'loading', error: null, offline: false };
   packs.retry.mockReset();
@@ -84,6 +86,14 @@ function renderRow(name: string, source = 'PHB') {
 }
 
 const OFFLINE = "You're offline, so this spell's description can't be downloaded yet.";
+
+/** Closes the open sheet with Escape, presses its row again, and returns it. */
+async function reopen(dialog: HTMLElement, name: string): Promise<HTMLElement> {
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name }));
+  return waitFor(() => screen.getByRole('dialog'));
+}
 
 describe('SpellInfoSheet without the spell files', () => {
   it('downloads nothing until the row is pressed', () => {
@@ -137,11 +147,30 @@ describe('SpellInfoSheet without the spell files', () => {
     const dialog = await renderRow('Lost Spell', 'XYZ')();
     // Opening the first time is the download itself, not a retry.
     expect(packs.retry).not.toHaveBeenCalled();
-    fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Lost Spell' }));
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await reopen(dialog, 'Lost Spell');
     expect(packs.retry).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    'ready',
+    'loading',
+  ] as const)('does not download again when it is opened again %s', async (status) => {
+    packs.current = { status, error: null, offline: false };
+    const dialog = await renderRow('Lost Spell', 'XYZ')();
+    await reopen(dialog, 'Lost Spell');
+    expect(packs.retry).not.toHaveBeenCalled();
+  });
+
+  it('does not retry on reopening with the database closed', async () => {
+    packs.current = { status: 'error', error: 'Database has been closed', offline: false };
+    const dialog = await renderRow('Lost Spell', 'XYZ')();
+    dbLifecycleStore.setState({ state: 'deleted' });
+    const again = await reopen(dialog, 'Lost Spell');
+    expect(packs.retry).not.toHaveBeenCalled();
+    // The database banner is hidden behind the modal, so the line is the alert.
+    expect(within(again).getByRole('alert').textContent).toBe(
+      "Reload this tab to load this spell's description.",
+    );
   });
 
   it('shows a spell it has, whatever the download says', async () => {

@@ -115,6 +115,37 @@ function panelSaying(text: string | RegExp): HTMLElement {
 }
 
 const OFFLINE = "You're offline, so the spell list can't be downloaded yet.";
+const LISTS_UNREAD = /class spell lists couldn't be read/;
+
+/**
+ * The words of every alert that appears from now on: a panel that mounts
+ * and goes again between two assertions still counts.
+ */
+function recordAlerts(): { said: () => string[]; stop: () => void } {
+  const said: string[] = [];
+  const take = (records: MutationRecord[]) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        const alerts = [
+          ...(node.getAttribute('role') === 'alert' ? [node] : []),
+          ...node.querySelectorAll('[role="alert"]'),
+        ];
+        // The message, without its Retry.
+        for (const alert of alerts) said.push(alert.querySelector('p')?.textContent ?? '');
+      }
+    }
+  };
+  const observer = new MutationObserver(take);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return {
+    said: () => {
+      take(observer.takeRecords());
+      return said;
+    },
+    stop: () => observer.disconnect(),
+  };
+}
 
 describe('SpellManager without the spell files', () => {
   it('says the device is offline once for every casting class, with Retry', async () => {
@@ -217,7 +248,7 @@ describe('SpellManager without the spell files', () => {
     );
     renderSpells();
     const panel = await waitFor(() =>
-      panelSaying("The class spell lists couldn't be downloaded: UnknownError"),
+      panelSaying("The class spell lists couldn't be read on this device: UnknownError"),
     );
     // Nothing else says this one, so it is the alert.
     expect(panel.getAttribute('role')).toBe('alert');
@@ -225,10 +256,101 @@ describe('SpellManager without the spell files', () => {
     expect(screen.getByText('Brew Bolt')).toBeTruthy();
     fireEvent.click(within(panel).getByRole('button', { name: 'Retry' }));
     // Read again, it waits as a retried download does, not under the old failure.
-    await waitFor(() => expect(screen.queryByText(/couldn't be downloaded/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/couldn't be read/)).toBeNull());
     expect(screen.getAllByText('Loading spell list…')).toHaveLength(2);
     act(() => answer(ON_WIZARD_LIST));
     await waitFor(() => expect(screen.getByText('Shield')).toBeTruthy());
     expect(packs.retry).not.toHaveBeenCalled();
+  });
+
+  it('never calls an index read offline, since it is this device that failed', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    lookup.read.mockRejectedValue(new Error('UnknownError'));
+    renderSpells();
+    await waitFor(() => expect(screen.getByText(LISTS_UNREAD)).toBeTruthy());
+    expect(screen.queryByText(/offline/)).toBeNull();
+    expect(screen.queryByText(/downloaded/)).toBeNull();
+    onLine.mockRestore();
+  });
+
+  it('says one outage once when the index read fails before the download does', async () => {
+    // Online, with the banner quiet, either panel would be an alert.
+    lookup.read.mockRejectedValue(new Error('Failed to fetch'));
+    packs.current = { status: 'loading', error: null, offline: false };
+    const alerts = recordAlerts();
+    const { rerender } = renderSpells();
+    await waitFor(() => expect(screen.getByText('Brew Bolt')).toBeTruthy());
+    // The spell files are still coming: their panel will speak for both.
+    expect(screen.queryByText(LISTS_UNREAD)).toBeNull();
+    packs.current = { status: 'error', error: 'Failed to fetch', offline: false };
+    rerender();
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(alerts.said()).toEqual(["The spell list couldn't be downloaded: Failed to fetch"]);
+    alerts.stop();
+  });
+
+  it('says one outage once while a Retry from a double failure runs', async () => {
+    lookup.read.mockRejectedValue(new Error('Failed to fetch'));
+    packs.current = { status: 'error', error: 'Failed to fetch', offline: false };
+    const { rerender } = renderSpells();
+    await waitFor(() => expect(screen.getByText('Brew Bolt')).toBeTruthy());
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    const alerts = recordAlerts();
+    // Retry: the download goes back to loading, and the index is read again
+    // (and fails again) while it does.
+    packs.current = { status: 'loading', error: null, offline: false };
+    rerender();
+    await waitFor(() => expect(lookup.read).toHaveBeenCalledTimes(2));
+    await act(async () => undefined);
+    expect(screen.queryByText(LISTS_UNREAD)).toBeNull();
+    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+    packs.current = { status: 'error', error: 'Failed to fetch', offline: false };
+    rerender();
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(alerts.said()).toEqual(["The spell list couldn't be downloaded: Failed to fetch"]);
+    alerts.stop();
+  });
+
+  it('keeps a newer failed read over an older one that answers late', async () => {
+    let late: (value: SpellClassLookup) => void = () => undefined;
+    lookup.read.mockReturnValueOnce(
+      new Promise((resolve) => {
+        late = resolve;
+      }),
+    );
+    lookup.read.mockRejectedValue(new Error('UnknownError'));
+    packs.current = { status: 'loading', error: null, offline: false };
+    const { rerender } = renderSpells();
+    // The download lands: the index is asked for again, and that read fails.
+    packs.current = { status: 'ready', error: null, offline: false };
+    rerender();
+    await waitFor(() => expect(screen.getByText(LISTS_UNREAD)).toBeTruthy());
+    act(() => late(ON_WIZARD_LIST));
+    await act(async () => undefined);
+    expect(screen.getByText(LISTS_UNREAD)).toBeTruthy();
+    expect(screen.queryByText('Shield')).toBeNull();
+  });
+});
+
+describe('SpellManager with everything in', () => {
+  it("says a class's list is empty rather than showing a bare heading", async () => {
+    lookup.read.mockResolvedValue(ON_WIZARD_LIST);
+    renderSpells();
+    await waitFor(() => expect(screen.getByText('Shield')).toBeTruthy());
+    // The index names no Cleric spell, and no homebrew spell joins it.
+    expect(screen.getByText('No spells on the Cleric list to show.')).toBeTruthy();
+    expect(screen.queryByText('No spells on the Wizard list to show.')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search Wizard spell list' }), {
+      target: { value: 'zzz' },
+    });
+    expect(screen.getByText('No Wizard spells match “zzz”.')).toBeTruthy();
+  });
+
+  it('does not call a list empty while the spell files are missing', async () => {
+    lookup.read.mockResolvedValue(ON_WIZARD_LIST);
+    packs.current = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderSpells();
+    await waitFor(() => expect(screen.getByText('Shield')).toBeTruthy());
+    expect(screen.queryByText(/list to show/)).toBeNull();
   });
 });

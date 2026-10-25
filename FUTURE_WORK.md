@@ -58,7 +58,7 @@ CI, gated on coverage floors and a bundle budget.
 | Frozen dependency install | Pass: 556 packages |
 | Lint/format | Pass: 292 files |
 | TypeScript | Pass (app, `vite.config.ts`, the bundle budget scripts, and the E2E harness) |
-| Unit + integration tests | Pass: 194 files, 2,123 tests |
+| Unit + integration tests | Pass: 194 files, 2,134 tests |
 | Coverage gate | `bun run test:coverage`: 81.09% statements, 71.82% branches, 72.65% functions, 82.92% lines. CI fails below the `vite.config.ts` floors of 80 / 70 / 71 / 81. |
 | Production/PWA build | Pass: 58 unique precache entries |
 | Bundle budget | `bun run bundle:budget` against `scripts/bundle-budget.json` (about 10% headroom). Entry chunk 394,833 B raw, 124,725 B gzip (budget 420,000 / 132,000); initial JS 554,326 B raw, 177,958 B gzip (586,000 / 188,000); total JS 1,007,259 B (1,108,000); largest chunk 394,833 B (420,000); CSS 45,039 B (47,000); precache 1,096,981 B (1,155,000). The total JS budget was rebaselined to about 10% over this measurement with PWA-001: total JS grew about 40 KB since the last baseline (IMP-002's import preview, A11Y-002's announcer and PWA-001), reaching 99.9% of the old 1,008,000, while the entry and initial budgets still have headroom. The precache budget was rebaselined the same way with PWA-002, when the raster icons added 41,411 B. |

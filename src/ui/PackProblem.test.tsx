@@ -42,6 +42,27 @@ describe('PackProblem', () => {
       window.dispatchEvent(new Event('online'));
     });
     expect(retry).not.toHaveBeenCalled();
+    // Outside a modal the database banner says it; this line is a visual.
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('asks for the reload as the alert inside a modal, where the banner is hidden', () => {
+    dbLifecycleStore.setState({ state: 'deleted' });
+    render(<PackProblem packs={failed(vi.fn())} what="the spell list" alert="always" />);
+    expect(screen.getByRole('alert').textContent).toBe('Reload this tab to load the spell list.');
+  });
+
+  it('says a failure in its own words when given them', () => {
+    render(
+      <PackProblem
+        packs={failed(vi.fn())}
+        what="the class spell lists"
+        message="The class spell lists couldn't be read on this device."
+      />,
+    );
+    expect(screen.getByText("The class spell lists couldn't be read on this device.")).toBeTruthy();
+    expect(screen.queryByText(/offline/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
 
   it('is a visual while the banner alerts the outage', () => {

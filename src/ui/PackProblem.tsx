@@ -16,6 +16,11 @@ interface PackProblemProps {
   alert?: 'auto' | 'always';
   /** For the message, so a dialog can name it as its description. */
   messageId?: string;
+  /**
+   * The failure in other words, for one that is not a download: a file read
+   * from this device, which neither the network nor "offline" explains.
+   */
+  message?: string;
 }
 
 /**
@@ -28,7 +33,7 @@ interface PackProblemProps {
  * console as an uncaught error. The spell list and the spell info sheet did
  * the same with the spell files (#106).
  */
-export function PackProblem({ packs, what, alert = 'auto', messageId }: PackProblemProps) {
+export function PackProblem({ packs, what, alert = 'auto', messageId, message }: PackProblemProps) {
   const dbOpen = useDbLifecycle((s) => s.state === 'open');
   // Back online, a download the network stopped is tried again unasked. Not
   // with the database closed (another tab deleted or upgraded it): no download
@@ -38,18 +43,32 @@ export function PackProblem({ packs, what, alert = 'auto', messageId }: PackProb
   });
   if (packs.status !== 'error') return null;
   // The failure is then "Database has been closed", which a Retry cannot fix.
+  // Outside a modal the shell's database banner says what happened; inside
+  // one it is hidden, so this line is the alert.
   if (!dbOpen) {
     return (
-      <p id={messageId} className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
+      <p
+        id={messageId}
+        role={alert === 'always' ? 'alert' : undefined}
+        className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted"
+      >
         Reload this tab to load {what}.
       </p>
     );
   }
-  return <PackProblemPanel packs={packs} what={what} alert={alert} messageId={messageId} />;
+  return (
+    <PackProblemPanel
+      packs={packs}
+      what={what}
+      alert={alert}
+      messageId={messageId}
+      message={message}
+    />
+  );
 }
 
 /** The panel itself, mounted with the failure so its alert role is decided then. */
-function PackProblemPanel({ packs, what, alert, messageId }: PackProblemProps) {
+function PackProblemPanel({ packs, what, alert, messageId, message }: PackProblemProps) {
   const alerts = useFailureAlert() || alert === 'always';
   const capitalized = what.charAt(0).toUpperCase() + what.slice(1);
   return (
@@ -58,9 +77,11 @@ function PackProblemPanel({ packs, what, alert, messageId }: PackProblemProps) {
       role={alerts ? 'alert' : undefined}
     >
       <p id={messageId} className="min-w-0 flex-1 text-xs">
-        {packs.offline
-          ? `You're offline, so ${what} can't be downloaded yet.`
-          : `${capitalized} couldn't be downloaded${packs.error === null ? '.' : `: ${packs.error}`}`}
+        {message !== undefined
+          ? message
+          : packs.offline
+            ? `You're offline, so ${what} can't be downloaded yet.`
+            : `${capitalized} couldn't be downloaded${packs.error === null ? '.' : `: ${packs.error}`}`}
       </p>
       <button
         type="button"

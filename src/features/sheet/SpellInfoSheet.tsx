@@ -4,6 +4,7 @@ import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { PackProblem } from '@/ui/PackProblem';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from '@/ui/sheet';
 
@@ -52,16 +53,18 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
   // download failed (#106).
   const packs = useTypePacks('spell');
   const messageId = useId();
-  // Opened again after a failure, try again. Once armed this stays mounted
-  // through a close, and its panel, which retries on reconnect, only while
-  // the sheet is open, so a sheet closed offline would otherwise reopen online
-  // still saying the device is offline. Not on the first opening, which is
-  // the download itself, however quickly it failed.
+  // Opened again after a failure, try again. Closing the sheet does not
+  // unmount this component, so the failure is kept, but it does unmount the
+  // panel, the part that retries on reconnect. Without this, a sheet closed
+  // offline and reopened online would still say the device is offline. Not
+  // on the first opening, which is the download itself however quickly it
+  // failed, and not with the database closed, where no retry can work.
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
   const openedBefore = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only an opening asks
   useEffect(() => {
     if (!open) return;
-    if (openedBefore.current && packs.status === 'error') packs.retry();
+    if (openedBefore.current && dbOpen && packs.status === 'error') packs.retry();
     openedBefore.current = true;
   }, [open]);
 

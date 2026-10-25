@@ -97,6 +97,7 @@ function ClassSpells({
   block,
   lookup,
   waiting,
+  complete,
   doc,
   update,
   allowCasting,
@@ -109,6 +110,8 @@ function ClassSpells({
   lookup: SpellClassLookup | null;
   /** Whether the list is still on its way, rather than failed and said above. */
   waiting: boolean;
+  /** Whether everything the list reads is in, so an empty list is the answer. */
+  complete: boolean;
   doc: CharacterDoc;
   update: DocUpdater;
   allowCasting: boolean;
@@ -390,6 +393,16 @@ function ClassSpells({
       {classUids === null && waiting && (
         <p className="text-sm text-ink-muted">Loading spell list…</p>
       )}
+      {/* Said, not left as a bare heading: a homebrew class with no list, or a
+          search or sources that leave nothing (the offer below then says how
+          many are hidden). */}
+      {complete && classUids !== null && byLevel.size === 0 && (
+        <p className="text-sm text-ink-muted">
+          {filter.trim() === ''
+            ? `No spells on the ${block.className} list to show.`
+            : `No ${block.className} spells match “${filter.trim()}”.`}
+        </p>
+      )}
       {sourceHiddenCount > 0 && (
         <button
           type="button"
@@ -527,14 +540,15 @@ const NO_LOOKUP: SpellClassLookup = {};
  * IndexedDB refused the read. That used to be a rejection nothing caught, and
  * the list said "Loading spell list…" for good. Until it is in hand it is read
  * again whenever the spell download's status moves, so the Retry on the spell
- * list's panel, the one on screen while both are failing, retries this too.
+ * list's panel, the only one on screen until the spell files are in, retries
+ * this too.
  */
 function useClassLookup(
   enabled: boolean,
   packsStatus: TypePacksState['status'],
 ): { lookup: SpellClassLookup | null; problem: TypePacksState } {
   const [lookup, setLookup] = useState<SpellClassLookup | null>(null);
-  const [failure, setFailure] = useState<{ error: string; offline: boolean } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   // Read once: in hand, a later status change has nothing to fix.
   const settled = lookup !== null;
@@ -552,11 +566,7 @@ function useClassLookup(
       },
       (e: unknown) => {
         if (!alive) return;
-        setFailure({
-          error: e instanceof Error ? e.message : String(e),
-          // Read at the moment of failure, as `useTypePacks` does.
-          offline: typeof navigator !== 'undefined' && navigator.onLine === false,
-        });
+        setFailure(e instanceof Error ? e.message : String(e));
       },
     );
     return () => {
@@ -569,8 +579,11 @@ function useClassLookup(
     lookup: lookup ?? (failure !== null ? NO_LOOKUP : null),
     problem: {
       status: failure !== null ? 'error' : lookup !== null ? 'ready' : 'loading',
-      error: failure?.error ?? null,
-      offline: failure?.offline ?? false,
+      error: failure,
+      // Never "offline": the read is normally local, so a failure is this
+      // device's storage far more often than the network, and the panel is
+      // given words that say so instead.
+      offline: false,
       retry: () => setAttempt((n) => n + 1),
       repair: () => undefined,
     },
@@ -607,14 +620,25 @@ export function SpellManager({
   return (
     <div className="flex flex-col gap-5">
       <PackProblem packs={packs} what="the spell list" />
-      {/* One failure at a time: the spell list's Retry reads the index again too. */}
-      {packs.status !== 'error' && <PackProblem packs={problem} what="the class spell lists" />}
+      {/* Only with the spell files in: while they are failing or being
+          retried, the spell list's panel speaks for both (its Retry reads
+          the index again too), so one outage is one alert. */}
+      {packs.status === 'ready' && (
+        <PackProblem
+          packs={problem}
+          what="the class spell lists"
+          message={`The class spell lists couldn't be read on this device${
+            problem.error === null ? '.' : `: ${problem.error}`
+          }`}
+        />
+      )}
       {sheet.spellcasting.map((block) => (
         <ClassSpells
           key={block.classUid}
           block={block}
           lookup={lookup}
           waiting={packs.status !== 'error'}
+          complete={packs.status === 'ready' && problem.status === 'ready'}
           doc={doc}
           update={update}
           allowCasting={allowCasting}
