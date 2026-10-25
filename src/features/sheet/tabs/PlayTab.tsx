@@ -422,10 +422,13 @@ export function Component() {
           </div>
           {/* Zero basis: the row wraps only when the HP's narrowest layout
               cannot fit, never just because a long total would rather not
-              break onto two lines. */}
+              break onto two lines. The 3.25rem floor is what fits between
+              the pairs at 320px; with large text it no longer fits beside
+              a pair, so the total gets a line of its own rather than split
+              "0 / 0" in two. */}
           <button
             type="button"
-            className="grow basis-0 text-center"
+            className="min-w-13 grow basis-0 text-center"
             onClick={async () => {
               const n = await askNumber({
                 title: 'Set current HP',
@@ -460,10 +463,15 @@ export function Component() {
             }}
           >
             {/* One size down under 360px: three-digit HP between two 94px
-                button pairs has about 50px there (A11Y-002). */}
+                button pairs has about 50px there (A11Y-002). The total may
+                break before "/ max" and nowhere else: kept on one line
+                whole, even a two-digit total would push the heal pair onto
+                a line of its own at 320px. */}
             <div className="text-3xl font-bold min-[360px]:text-4xl">
-              {play.currentHp}
-              <span className="text-xl text-ink-muted"> / {sheet.maxHp.value}</span>
+              {play.currentHp}{' '}
+              <span className="text-xl whitespace-nowrap text-ink-muted">
+                / {sheet.maxHp.value}
+              </span>
             </div>
             <div className="text-xs text-ink-muted">
               hit points{play.tempHp > 0 ? ` · +${play.tempHp} temp` : ''}
@@ -869,9 +877,12 @@ export function Component() {
         </div>
         {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
         <div className="flex flex-col gap-2 border-t border-surface-2/40 p-3">
-          <div className="flex items-center justify-between gap-2">
+          {/* Wraps the stepper under the name, at the right, where both do not
+              fit (large text), and the count grows with its text rather than
+              push the + out of the card (A11Y-003). */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold">Exhaustion</span>
-            <div className="-my-2 flex items-center">
+            <div className="-my-2 ml-auto flex items-center">
               <button
                 type="button"
                 aria-label="Decrease exhaustion"
@@ -883,7 +894,9 @@ export function Component() {
                   −
                 </span>
               </button>
-              <span className="w-10 text-center text-sm font-bold">{exLevel} / 6</span>
+              <span className="min-w-10 text-center text-sm font-bold whitespace-nowrap">
+                {exLevel} / 6
+              </span>
               <button
                 type="button"
                 aria-label="Increase exhaustion"
