@@ -42,6 +42,14 @@ import { scanState } from './scan.ts';
  * at a desktop size, where the layout changes.
  */
 
+/*
+ * A test here walks through up to seven states, each with a full axe pass
+ * (about a second at rest), so the busiest ones take 15 s on an idle machine
+ * and twice that on a loaded one: one ran past the suite's 30 s on a box busy
+ * with another run. They get 60 s, which is headroom, not a retry.
+ */
+test.describe.configure({ timeout: 60_000 });
+
 const NAME = 'Brin Ashdown';
 
 /** Waits for a dialog to be open and done animating. */
