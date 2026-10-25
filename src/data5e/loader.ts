@@ -6,6 +6,7 @@ import { assertJsonWithinLimits, DATA_FILE_LIMITS, ValidationError } from '@/lib
 import { runWhenIdle } from '@/lib/idle';
 import { Semaphore } from '@/lib/semaphore';
 import { singleFlight } from '@/lib/singleFlight';
+import { storageErrorText } from '@/lib/storageErrors';
 import { dataStatusStore } from '@/stores/dataStatus';
 import {
   BOOT_TAG_RESOLVE_TIMEOUT_MS,
@@ -684,15 +685,13 @@ export async function initDataLayer(): Promise<void> {
         .catch((err: unknown) => {
           // What did land before the failure is still worth showing.
           flushLanded();
-          dataStatusStore
-            .getState()
-            .setPhase('error', err instanceof Error ? err.message : String(err));
+          dataStatusStore.getState().setPhase('error', storageErrorText(err));
         });
     };
     runWhenIdle(drainNext);
   } catch (err) {
     flushLanded();
-    status.setPhase('error', err instanceof Error ? err.message : String(err));
+    status.setPhase('error', storageErrorText(err));
   }
 }
 
@@ -727,7 +726,7 @@ export async function downloadAllPacks(): Promise<void> {
     status.setPhase('done');
   } catch (err) {
     flushLanded();
-    status.setPhase('error', err instanceof Error ? err.message : String(err));
+    status.setPhase('error', storageErrorText(err));
     throw err;
   }
 }
@@ -1085,7 +1084,7 @@ export async function updateToTag(newTag: string): Promise<void> {
     // would report success while leaving the update undone. `setPhase` clears
     // the tag, so it is re-armed after, and only for a tag a retry could
     // actually install: a version this build cannot read never will.
-    status.setPhase('error', err instanceof Error ? err.message : String(err));
+    status.setPhase('error', storageErrorText(err));
     if (isCompatibleTag(newTag)) status.setFailedTag(newTag);
     throw err;
   } finally {

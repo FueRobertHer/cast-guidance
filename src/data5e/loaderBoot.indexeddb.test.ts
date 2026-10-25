@@ -4,7 +4,7 @@ import 'fake-indexeddb/auto';
 // so it waited for the whole compendium to finish arriving and never ran at
 // all if one pack failed on the way. These tests hold the queue open, or break
 // it, and expect the answer anyway.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fetchFile } = vi.hoisted(() => ({ fetchFile: vi.fn() }));
 vi.mock('./source', () => ({
@@ -32,7 +32,9 @@ vi.mock('./config', async (importOriginal) => ({
 /** How long a "slow" release list takes: well past the mocked deadline. */
 const SLOW_LIST_MS = 2_000;
 
+import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { validMirror } from '../../tests-fixtures/dataMirror';
+import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 import { ESSENTIALS_FILES } from './packs';
 
@@ -504,5 +506,61 @@ describe('telling the registry what landed (DATA-003)', () => {
     // the whole release changed anyway.
     expect(landing.getRevision()).toBeGreaterThan(before);
     expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+});
+
+// The banner and the settings page show `error` as stored, so a full device
+// has to be put into words where the loader catches it (TEST-002). Each of the
+// four places that record a failure is driven here by a real refused write.
+describe('a full device while game data downloads', () => {
+  afterEach(removeIdbFaults);
+
+  it('says what to do when essentials cannot be stored at boot', async () => {
+    const { db, dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    const fault = await injectIdbFault(db, { tables: ['dataFiles'] });
+
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'), WAIT);
+
+    expect(fault.hits).toBeGreaterThan(0);
+    expect(dataStatusStore.getState().packs.essentials).not.toBe('ready');
+    expect(dataStatusStore.getState().error).toBe(QUOTA_GUIDANCE);
+  });
+
+  it('says what to do when a later pack cannot be stored in the background drain', async () => {
+    const { db, dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    // Essentials go in; the first file of the drain is refused.
+    const fault = await injectIdbFault(db, { tables: ['dataFiles'], skip: VALID_ESSENTIALS });
+
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'), WAIT);
+
+    expect(fault.hits).toBeGreaterThan(0);
+    expect(dataStatusStore.getState().packs.essentials).toBe('ready');
+    expect(dataStatusStore.getState().error).toBe(QUOTA_GUIDANCE);
+  });
+
+  it('says what to do when a requested full download cannot be stored', async () => {
+    const { db, dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    await injectIdbFault(db, { tables: ['dataFiles'] });
+
+    await expect(loader.downloadAllPacks()).rejects.toMatchObject({ name: 'QuotaExceededError' });
+
+    expect(dataStatusStore.getState().error).toBe(QUOTA_GUIDANCE);
+  });
+
+  it('says what to do when a new release cannot be stored', async () => {
+    const { db, dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    await injectIdbFault(db, { tables: ['dataFiles'] });
+
+    await expect(loader.updateToTag('v2.33.0')).rejects.toMatchObject({
+      name: 'QuotaExceededError',
+    });
+
+    expect(dataStatusStore.getState()).toMatchObject({
+      phase: 'error',
+      error: QUOTA_GUIDANCE,
+      failedTag: 'v2.33.0',
+    });
   });
 });
