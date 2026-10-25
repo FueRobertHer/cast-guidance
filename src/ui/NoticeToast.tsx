@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Notice, useNotices } from '@/stores/notices';
+import { NOTICE_MS, type Notice, useNotices } from '@/stores/notices';
 
 const TONE: Record<Notice['tone'], string> = {
   info: 'border-surface-2',
@@ -23,7 +23,7 @@ export function NoticeToast() {
     if (seq === 0 || notice === null) return;
     setVisible(notice);
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setVisible(null), 3600);
+    timer.current = setTimeout(() => setVisible(null), NOTICE_MS);
     return () => clearTimeout(timer.current);
   }, [seq, notice]);
 

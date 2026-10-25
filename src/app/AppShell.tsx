@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { useEffect } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
+import { OfflineReadyNotice } from '@/features/onboarding/OfflineReadyNotice';
 import {
   characterSessionStore,
   installCharacterSessionLifecycle,
@@ -70,6 +71,7 @@ export function AppShell() {
       <NoticeToast />
       <RollToast />
       <PwaUpdateToast />
+      <OfflineReadyNotice />
       <Analytics />
     </div>
   );

@@ -1,11 +1,25 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { swStatusStore } from '@/stores/swStatus';
 
-/** Shows when a new app version is waiting; also confirms offline readiness once. */
+/**
+ * Shows when a new app version is waiting. It also owns the app's only
+ * service worker registration, so it reports what that registration learns
+ * to `swStatus` for the offline-readiness line and notice.
+ */
 export function PwaUpdateToast() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    // A warm boot never fires `onOfflineReady`: the worker installed on an
+    // earlier visit, so an active one in the registration is the answer.
+    onRegisteredSW: (_url, registration) => {
+      if (registration?.active) swStatusStore.getState().markReady();
+    },
+    // The first install finishing, which is when the shell is cached.
+    onOfflineReady: () => swStatusStore.getState().markReady(),
+    onRegisterError: () => swStatusStore.getState().markError(),
+  });
 
   if (!needRefresh) return null;
   return (
