@@ -1,6 +1,14 @@
 import { CHARACTER_SCHEMA_VERSION, type CharacterDoc } from './types';
 
-/** Ordered migrations; index N migrates schemaVersion N -> N+1. */
+/**
+ * Ordered migrations; index N migrates schemaVersion N -> N+1.
+ *
+ * The save journal (src/stores/saveJournal.ts) matches a stored row to the
+ * snapshot it journaled by a hash of the row's content, computed by the app
+ * that wrote it. A step that changes the content of an existing row makes
+ * those hashes miss after the update reload, so an edit cut off by that one
+ * reload is dropped instead of replayed. Safe, but worth knowing.
+ */
 const MIGRATIONS: Array<(doc: Record<string, unknown>) => Record<string, unknown>> = [
   // v1 is current — future steps append here.
 ];

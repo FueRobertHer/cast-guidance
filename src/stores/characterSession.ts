@@ -3,8 +3,17 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { characterRepo } from '@/db/characterRepo';
 import { historyRepo } from '@/db/historyRepo';
 import type { CharacterDoc } from '@/engine/types';
-import { burstKey, diffDocs } from '@/lib/docDiff';
+import { burstKey, diffDocs, sameContent } from '@/lib/docDiff';
 import { historyLabel } from '@/lib/historyLabel';
+import {
+  contentHash,
+  type JournalBase,
+  type JournalStorage,
+  readJournal,
+  removeJournalEntry,
+  type StoredJournalEntry,
+  writeJournalEntry,
+} from './saveJournal';
 
 export type CharacterLoadStatus = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 export type CharacterSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
@@ -47,6 +56,17 @@ export interface CharacterSessionState {
   flushAll(): Promise<void>;
   retryFailedSaves(): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Copy every snapshot not yet written to IndexedDB into the synchronous
+   * journal. Called only as the page goes away; see {@link installCharacterSessionLifecycle}.
+   */
+  journalUnsaved(): void;
+  /**
+   * Save, through the normal path, any journaled snapshot whose stored row
+   * still holds what the snapshot was built on. Runs once per session; `load` waits for it, so a character
+   * is never shown without its last edits.
+   */
+  replayJournal(): Promise<void>;
 }
 
 interface SessionDependencies {
@@ -61,11 +81,15 @@ interface SessionDependencies {
    * old, so a long stretch of typing still leaves a checkpoint now and then.
    */
   coalesce?: { idleMs: number; maxSpanMs: number };
+  /** Where unsaved snapshots are journaled at page teardown; omitted, nothing is. */
+  journal?: JournalStorage;
 }
 
 interface PendingSave {
   doc: CharacterDoc;
   label?: string;
+  /** Orders snapshots, so a landed write knows whether it covers the journaled one. */
+  seq: number;
   /**
    * Set once a write for this snapshot has been tried and failed. Such a
    * snapshot is retained for Retry with no time bound, so its label must not be
@@ -95,6 +119,16 @@ interface SaveSlot {
   /** Bumps whenever the run must end regardless of saves still in flight. */
   epoch: number;
   pending?: PendingSave;
+  /** The snapshot whose IndexedDB put has been issued and has not resolved. */
+  writing?: PendingSave;
+  /**
+   * What the stored row holds as far as this session knows: the row it read,
+   * or the last snapshot whose put resolved. Unlike `baseline`, which history
+   * moves only once the entry is recorded, this moves as soon as the put lands.
+   */
+  stored?: CharacterDoc;
+  /** The entry this session wrote, until a write at least that new lands. */
+  journaled?: { seq: number; text: string };
   timer?: ReturnType<typeof setTimeout>;
   inFlight?: Promise<void>;
 }
@@ -110,9 +144,12 @@ export function createCharacterSessionStore({
   debounceMs = 400,
   now = Date.now,
   coalesce = { idleMs: 10_000, maxSpanMs: 120_000 },
+  journal,
 }: SessionDependencies): StoreApi<CharacterSessionState> {
   const slots = new Map<string, SaveSlot>();
   let loadGeneration = 0;
+  let saveSeq = 0;
+  let replay: Promise<void> | undefined;
   let store: StoreApi<CharacterSessionState>;
 
   const slotFor = (id: string): SaveSlot => {
@@ -193,11 +230,23 @@ export function createCharacterSessionStore({
         slot.pending = undefined;
         publishSave('saving', characterId);
         try {
+          slot.writing = pending;
           await characters.put(pending.doc);
+          slot.writing = undefined;
+          slot.stored = pending.doc;
+          if (
+            journal !== undefined &&
+            slot.journaled !== undefined &&
+            pending.seq >= slot.journaled.seq
+          ) {
+            removeJournalEntry(journal, characterId, slot.journaled.text);
+            slot.journaled = undefined;
+          }
           await recordHistory(slot, pending);
           slot.baseline = structuredClone(pending.doc);
           publishSave('saved', characterId);
         } catch (error) {
+          slot.writing = undefined;
           slot.burst = undefined;
           // A newer edit supersedes a failed older snapshot. Otherwise retain the
           // failed snapshot so Retry can persist it without reconstructing state.
@@ -222,7 +271,7 @@ export function createCharacterSessionStore({
     // A label from a snapshot whose write already failed is not inherited: that
     // one waits for Retry indefinitely, so the next edit may be unrelated.
     const carried = slot.pending?.attempted === true ? undefined : slot.pending?.label;
-    slot.pending = { doc: structuredClone(doc), label: label ?? carried };
+    slot.pending = { doc: structuredClone(doc), label: label ?? carried, seq: ++saveSeq };
     clearTimeout(slot.timer);
     publishSave('pending', doc.id);
     if (immediate) {
@@ -243,6 +292,37 @@ export function createCharacterSessionStore({
       .map((result) => result.reason);
     if (failures.length > 0)
       throw new AggregateError(failures, 'One or more characters failed to save');
+  };
+
+  /**
+   * Replay one journaled snapshot, only over a stored row that still holds
+   * one of the bases it was built on. Anything else means a later write (from
+   * another tab, or after a failed save was left for Retry) and wins; content
+   * the row already has needs no replay.
+   */
+  const replayEntry = async (storage: JournalStorage, entry: StoredJournalEntry): Promise<void> => {
+    const id = entry.doc.id;
+    // The check and the write below are separate transactions, so a save by
+    // another visible window that lands between them is overwritten. That
+    // needs two windows editing this character while a third boots with an
+    // entry for it; accepted rather than holding a transaction across the
+    // history write.
+    const stored = await characters.get(id);
+    const base =
+      stored === undefined ? undefined : entry.bases.find((b) => b.hash === contentHash(stored));
+    if (stored === undefined || base === undefined || sameContent(stored, entry.doc)) {
+      removeJournalEntry(storage, id, entry.text);
+      return;
+    }
+    const slot = slotFor(id);
+    // The stored row is what this snapshot changed, so history labels the
+    // replayed edit as the interrupted save would have.
+    slot.baseline = structuredClone(stored);
+    slot.stored = stored;
+    slot.pending = { doc: structuredClone(entry.doc), label: base.label, seq: ++saveSeq };
+    slot.journaled = { seq: slot.pending.seq, text: entry.text };
+    // A failed write stays queued and visible for Retry, and journaled.
+    await flushCharacter(id);
   };
 
   store = createStore<CharacterSessionState>((set, get) => ({
@@ -276,6 +356,7 @@ export function createCharacterSessionStore({
         // snapshot and visible error remain available for a later Retry.
         await flushCharacter(previousId).catch(() => undefined);
       }
+      if (journal !== undefined) await get().replayJournal();
 
       try {
         const persisted = await characters.get(id);
@@ -290,6 +371,7 @@ export function createCharacterSessionStore({
           return false;
         }
         if (slot.pending === undefined) slot.baseline = structuredClone(doc);
+        if (persisted !== undefined) slot.stored = persisted;
         // A return visit starts a fresh entry rather than extending the run
         // left behind last time, even one whose last save is still landing.
         slot.burst = undefined;
@@ -375,6 +457,43 @@ export function createCharacterSessionStore({
       });
       if (id !== undefined) await flushCharacter(id);
     },
+
+    journalUnsaved() {
+      if (journal === undefined) return;
+      for (const slot of slots.values()) {
+        // A put already issued may not commit before teardown either, and a
+        // newer pending snapshot would only drain after it.
+        const { pending, writing, stored } = slot;
+        const unsaved = pending ?? writing;
+        if (unsaved === undefined) continue;
+        const bases: JournalBase[] = [];
+        // If the in-flight write is lost too, the replay stands for it as well,
+        // so a named action it carried ("Long rest") keeps its name.
+        if (stored !== undefined) {
+          bases.push({ hash: contentHash(stored), label: unsaved.label ?? writing?.label });
+        }
+        if (pending !== undefined && writing !== undefined) {
+          bases.push({ hash: contentHash(writing.doc), label: pending.label });
+        }
+        // With no known stored row there is nothing it could safely replay over.
+        if (bases.length === 0) continue;
+        const text = writeJournalEntry(journal, { doc: unsaved.doc, bases });
+        if (text !== undefined) slot.journaled = { seq: unsaved.seq, text };
+      }
+    },
+
+    replayJournal() {
+      const storage = journal;
+      if (storage === undefined) return Promise.resolve();
+      replay ??= (async () => {
+        for (const entry of readJournal(storage)) {
+          // One entry that cannot be checked or saved must not block the rest,
+          // nor the load waiting on this. It stays journaled for next time.
+          await replayEntry(storage, entry).catch(() => undefined);
+        }
+      })();
+      return replay;
+    },
   }));
 
   return store;
@@ -383,18 +502,26 @@ export function createCharacterSessionStore({
 export const characterSessionStore = createCharacterSessionStore({
   characters: characterRepo,
   history: historyRepo,
+  journal: () => localStorage,
 });
 
-/** Flush pending writes on lifecycle transitions where IndexedDB can still run. */
+/**
+ * Flush pending writes on lifecycle transitions where IndexedDB can still run.
+ * A teardown can cut that write off before it commits, so the same moment
+ * journals every unsaved snapshot synchronously first, and installing starts
+ * the replay of anything the last page journaled.
+ */
 export function installCharacterSessionLifecycle(
   session: StoreApi<CharacterSessionState> = characterSessionStore,
 ): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => undefined;
+  void session.getState().replayJournal();
   const flush = () => {
-    void session
-      .getState()
-      .flushAll()
-      .catch(() => undefined);
+    const state = session.getState();
+    // Journal first: the flush moves the pending snapshot into flight, and
+    // the entry must know the row that snapshot was built on.
+    state.journalUnsaved();
+    void state.flushAll().catch(() => undefined);
   };
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') flush();

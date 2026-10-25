@@ -146,6 +146,11 @@ function sortedJson(value: unknown): string {
  *
  * `hpInitialized` stays in: it decides whether current HP keeps following the
  * maximum, so a snapshot that differs there is not the same character.
+ *
+ * The save journal hashes this to recognise the stored row a snapshot was
+ * built on (see `contentHash` in src/stores/saveJournal.ts). Hashes written by
+ * the previous app are compared by the next one, so changing what this key
+ * includes makes an edit cut off by the update reload drop instead of replay.
  */
 export function contentKey(doc: CharacterDoc): string {
   const clone: Record<string, unknown> = { ...doc };
