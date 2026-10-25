@@ -52,10 +52,13 @@ export function filesAt(level: CacheLevel): number {
 export interface LevelManifest {
   level: CacheLevel;
   characterId: string;
+  /** The caster (fixtures/caster.ts), who knows Fireball. */
+  casterId: string;
   homebrewId: string;
 }
 
 export const CHARACTER_NAME = 'New hero';
+export const CASTER_NAME = 'Vela Quill';
 export const HOMEBREW_NAME = 'Table Brews';
 
 const MANIFEST = 'level.json';

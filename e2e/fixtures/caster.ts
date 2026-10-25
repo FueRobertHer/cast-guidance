@@ -57,15 +57,25 @@ export const CASTER_BREW = {
   ],
 };
 
+/** A spell by name and source, as a character file lists it. */
+export interface SpellRef {
+  name: string;
+  source: string;
+}
+
 /**
  * A character file for the caster, built on a stored blank character (read
  * from IndexedDB, so the document is whatever this build writes) with a new
  * id, the two classes, one level of exhaustion, and the homebrew embedded.
+ * `known` puts spells on the Sorcerer's list, which the Play tab then lists
+ * (each a button that opens its rules text) whether or not the spell files
+ * are on the device; without it the caster knows none.
  */
 export function casterFile(
   blank: Record<string, unknown>,
   id: string,
   name: string,
+  { known = [] }: { known?: readonly SpellRef[] } = {},
 ): { file: FilePayload; previewTitle: string } {
   const play = blank.play as Record<string, unknown>;
   const character = {
@@ -76,6 +86,12 @@ export function casterFile(
       { ref: { name: 'Sorcerer', source: 'E2EC' }, levels: 13, hp: Array(13).fill('avg') },
       { ref: { name: 'Cleric', source: 'E2EC' }, levels: 2, hp: ['avg', 'avg'] },
     ],
+    ...(known.length > 0 && {
+      spellcasting: {
+        ...(blank.spellcasting as Record<string, unknown> | undefined),
+        'sorcerer|e2ec': { known: [...known], prepared: [] },
+      },
+    }),
     play: { ...play, conditions: [{ id: 'exhaustion', level: 1 }] },
   };
   return {

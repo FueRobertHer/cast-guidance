@@ -1,4 +1,4 @@
-import type { Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 import { PINNED_TAG } from '../fixtures/mirror.ts';
 import { dataFailureBanner, libraryEntry, settingsValue } from '../support/app.ts';
 import {
@@ -19,12 +19,15 @@ import {
   type Cell,
   downloadAlerts,
   failurePanel,
+  OFFLINE_SPELL_LIST,
   offlineBanner,
   offlineData,
   offlineSection,
+  offlineSpellList,
   ROUTE_ERROR,
   ROUTES,
   type RouteCase,
+  type SheetCell,
   SPINNERS,
 } from '../support/routeMatrix.ts';
 
@@ -55,7 +58,8 @@ async function openLevel(
 async function expectCell(page: Page, route: RouteCase, cell: Cell, level: CacheLevel) {
   await expect(cell.shows(page)).toBeVisible();
   if (cell.action !== undefined) await expect(cell.action(page)).toBeVisible();
-  if (cell.also !== undefined) await expect(cell.also(page)).toBeVisible();
+  for (const also of [cell.also?.(page) ?? []].flat()) await expect(also).toBeVisible();
+  if (cell.absent !== undefined) await expect(cell.absent(page)).toHaveCount(0);
   await expect(route.frame(page)).toBeVisible();
   await expect(page).toHaveTitle(cell.title);
   // An incomplete download says why it stopped, on every page, with a way on.
@@ -70,9 +74,26 @@ async function expectCell(page: Page, route: RouteCase, cell: Cell, level: Cache
   await expect(page.getByText(SPINNERS)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: ROUTE_ERROR })).toHaveCount(0);
   expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  if (cell.sheet !== undefined && route.open !== undefined) {
+    await expectSheet(page, await route.open(page), cell.sheet, level);
+  }
   // Last, so a line said late is caught too: everything the announcer added
   // during the visit, including lines that have already left its regions.
   expect((await heardLines(page)).filter((line) => SAYS_FAILURE.test(line))).toEqual([]);
+}
+
+/**
+ * A sheet opened over the cell. The modal hides the rest of the app from
+ * assistive tech, banner included, so inside it the sheet's own panel is the
+ * one alert about the download: one while anything is missing, none at full.
+ */
+async function expectSheet(page: Page, dialog: Locator, sheet: SheetCell, level: CacheLevel) {
+  await expect(sheet.shows(dialog)).toBeVisible();
+  if (sheet.absent !== undefined) await expect(sheet.absent(dialog)).toHaveCount(0);
+  await expect(dialog.getByText(SPINNERS)).toHaveCount(0);
+  await expect(dialog.getByRole('alert')).toHaveCount(level === 'full' ? 0 : 1);
+  // Nothing outside the sheet is heard over it.
+  await expect(downloadAlerts(page)).toHaveCount(level === 'full' ? 0 : 1);
 }
 
 /** Words that would repeat a download failure the banner already alerts. */
@@ -150,6 +171,22 @@ test.describe('back online, each offline state recovers', () => {
     await expect(offlineSection(launch.page)).toBeVisible();
     await backOnline(launch);
     await expect(launch.page).toHaveTitle('Fireball · Spells · Library · Cast Guidance');
+  });
+
+  test('caster spells at partial: the spell list arrives once online', async ({
+    launchStable,
+    backOnline,
+  }, testInfo) => {
+    // The banner's drain can land Fireball by itself, but only the panel's
+    // own reconnect retry clears the spell download's error and the panel.
+    const launch = await openLevel(launchStable, testInfo, 'partial');
+    const { page, manifest } = launch;
+    await page.goto(`/c/${manifest.casterId}/spells`);
+    await expect(offlineSpellList(page)).toBeVisible();
+    await backOnline(launch);
+    await expect(page.getByRole('link', { name: 'Fireball', exact: true })).toBeVisible();
+    await expect(page.getByText(OFFLINE_SPELL_LIST)).toHaveCount(0);
+    await expect(page.getByText(SPINNERS)).toHaveCount(0);
   });
 
   test('banner at essential: the download finishes once online', async ({
@@ -230,6 +267,23 @@ test.describe('online, the failures are told apart', () => {
     mirror.setFail(undefined);
     await failed.getByRole('button', { name: 'Retry' }).click();
     await expect(libraryEntry(page, 'Fireball')).toBeVisible();
+  });
+
+  test("a caster's spell list that failed to download is not called offline", async ({
+    launchStable,
+    mirror,
+  }, testInfo) => {
+    mirror.setFail(() => 'abort');
+    const { page, manifest } = await openLevel(launchStable, testInfo, 'essential', {
+      offline: false,
+    });
+    await page.goto(`/c/${manifest.casterId}/spells`);
+    await expect(dataFailureBanner(page, 'Game data download failed')).toBeVisible();
+    await expect(failurePanel(page, "The spell list couldn't be downloaded: ")).toBeVisible();
+    // One outage, said once (A11Y-002), whichever failed first.
+    await expect(downloadAlerts(page)).toHaveCount(1);
+    await expect(offlineSpellList(page)).toHaveCount(0);
+    await expect(page.getByText(SPINNERS)).toHaveCount(0);
   });
 
   test('a corrupted section offers to download it again, and that repairs it', async ({

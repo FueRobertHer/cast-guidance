@@ -1,4 +1,5 @@
 import { devices, type Locator, type Page } from '@playwright/test';
+import { casterFile } from '../fixtures/caster.ts';
 import { jsonFile } from '../fixtures/characterFile.ts';
 import { MIRROR_PATHS, NEXT_TAG, PINNED_TAG, withNextRelease } from '../fixtures/mirror.ts';
 import {
@@ -25,7 +26,7 @@ import {
   skipOfflineReadyNotice,
   startDataInstall,
 } from '../support/app.ts';
-import { putSetting } from '../support/idb.ts';
+import { getCharacter, putSetting } from '../support/idb.ts';
 import { triggerSwUpdate, waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
 import { scanState } from './scan.ts';
@@ -69,6 +70,32 @@ async function gotoHeading(page: Page, url: string, heading: string | RegExp): P
   await page.goto(url);
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
   await animationsSettled(page);
+}
+
+/**
+ * Stores the caster (fixtures/caster.ts), knowing Fireball, built on a blank
+ * character, and returns its id.
+ */
+async function importCaster(page: Page): Promise<string> {
+  const blank = await getCharacter(page, await createBlankCharacter(page));
+  if (blank === undefined) throw new Error('The blank character was not stored');
+  const id = 'axe-caster';
+  const { file, previewTitle } = casterFile(blank, id, 'Vela Quill', {
+    known: [{ name: 'Fireball', source: 'PHB' }],
+  });
+  await gotoRoster(page);
+  await importCharacterFile(page, file);
+  await answerImportPreview(page, previewTitle);
+  return id;
+}
+
+/** Opens Fireball's rules text from the caster's Play tab and waits for it. */
+async function openFireball(page: Page, id: string): Promise<Locator> {
+  await gotoSheetTab(page, id, 'Play');
+  await page.getByRole('button', { name: 'Fireball', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Fireball' });
+  await opened(page, sheet);
+  return sheet;
 }
 
 /** One homebrew collection holding one spell, as a file to import. */
@@ -181,6 +208,36 @@ test.describe('axe: pages and overlays', () => {
     await opened(page, info);
     await scanState(page, 'entity-info-sheet');
     await closeWithEscape(page, info);
+  });
+
+  test("a caster's spell list and a spell's rules text", async ({ page }) => {
+    await gotoRosterSettled(page);
+    const id = await importCaster(page);
+
+    await gotoSheetTab(page, id, 'Spells');
+    await expect(page.getByRole('link', { name: 'Fireball', exact: true })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-spells-caster');
+
+    const sheet = await openFireball(page, id);
+    await expect(sheet.getByText('Level:', { exact: true })).toBeVisible();
+    await scanState(page, 'spell-info-sheet');
+  });
+
+  test("a spell's rules text when the spell files failed to download", async ({ page, mirror }) => {
+    mirror.setFail((_tag, path) => (path.startsWith('spells/spells-') ? 500 : undefined));
+    await gotoRoster(page);
+    await expect(dataFailureBanner(page, 'Game data download failed')).toBeVisible();
+    const id = await importCaster(page);
+    // Inside the modal the banner is hidden, so the sheet's panel is the alert.
+    const sheet = await openFireball(page, id);
+    await expect(
+      sheet
+        .getByRole('alert')
+        .filter({ hasText: "This spell's description couldn't be downloaded" }),
+    ).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'spell-pack-problem');
   });
 
   test('library: index, a list, a detail page and search results', async ({ page }) => {

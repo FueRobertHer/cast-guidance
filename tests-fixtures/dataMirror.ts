@@ -19,7 +19,10 @@ export const VALID_BODIES: Readonly<Record<string, unknown>> = {
   'conditionsdiseases.json': { condition: [{ name: 'Blinded', source: 'PHB' }] },
   'class/index.json': { Fighter: 'class-fighter.json' },
   'spells/index.json': { PHB: 'spells-phb.json' },
-  'generated/gendata-spell-source-lookup.json': { phb: { fireball: {} } },
+  // Fireball on the Sorcerer list, so a caster's spell list has a spell to show.
+  'generated/gendata-spell-source-lookup.json': {
+    phb: { fireball: { class: { PHB: { Sorcerer: true } } } },
+  },
   'items.json': { item: [{ name: 'Bag of Holding', source: 'DMG' }] },
   'magicvariants.json': { magicvariant: [{ name: '+1 Weapon', source: 'DMG' }] },
   'variantrules.json': { variantrule: [{ name: 'Flanking', source: 'DMG' }] },
