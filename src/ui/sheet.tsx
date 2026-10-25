@@ -33,17 +33,23 @@ import { type DialogProps, Drawer } from 'vaul';
  *
  * Keyboard handling is a separate prop (`repositionInputs`) and stays on, so a
  * sheet still lifts its input clear of the keyboard.
+ *
+ * `autoFocus` goes on by default (A11Y-003). vaul turns Radix's open-time focus
+ * off unless asked, which left focus on the opener, now aria-hidden behind the
+ * overlay, so a keyboard or screen-reader user had to Tab to find the sheet.
+ * With it, focus moves to the sheet's first control (or the sheet itself) as
+ * it opens. Before the spread, so a sheet can still opt out.
  */
 // After the spread, not before: there is no reason for a call site to want the
 // broken hook back, and a passed-through `undefined` would restore it silently.
 function SheetRoot(props: DialogProps) {
-  return <Drawer.Root {...props} disablePreventScroll={false} />;
+  return <Drawer.Root autoFocus {...props} disablePreventScroll={false} />;
 }
 
 // Unused today, but a nested sheet needs this more than a plain one does: vaul
 // skips the `position: fixed` fallback entirely when `nested`.
 function SheetNestedRoot(props: DialogProps) {
-  return <Drawer.NestedRoot {...props} disablePreventScroll={false} />;
+  return <Drawer.NestedRoot autoFocus {...props} disablePreventScroll={false} />;
 }
 
 export const Sheet = { ...Drawer, Root: SheetRoot, NestedRoot: SheetNestedRoot };

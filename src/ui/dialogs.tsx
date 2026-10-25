@@ -261,11 +261,8 @@ export function DialogFrame({
   return (
     <Sheet.Root
       open
-      // vaul turns Radix's open-time focus off by default, which left focus on
-      // the (now aria-hidden) opener and the answers at the end of the page.
-      // This moves it to the first control: Cancel, the first option, or the
-      // input.
-      autoFocus
+      // Sheet.Root moves focus to the first control as it opens: Cancel, the
+      // first option, or the input.
       onOpenChange={(o) => {
         if (!o) onDismiss();
       }}
