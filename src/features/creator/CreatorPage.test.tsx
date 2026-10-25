@@ -22,6 +22,13 @@ const { registry, put, dialogs } = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
     retry: vi.fn(),
+    /** What `useTypePacks('class')` reports. */
+    classPacks: { status: 'ready', error: null, offline: false } as {
+      status: 'loading' | 'ready' | 'error';
+      error: string | null;
+      offline: boolean;
+    },
+    classRetry: vi.fn(),
   },
   put: vi.fn(),
   dialogs: {
@@ -30,6 +37,11 @@ const { registry, put, dialogs } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/data5e/hooks', () => ({
+  useTypePacks: (type: string) => ({
+    ...(type === 'class' ? registry.classPacks : { status: 'ready', error: null, offline: false }),
+    retry: registry.classRetry,
+    repair: () => undefined,
+  }),
   useRegistryState: () => ({
     registry: registry.loading || registry.error !== null ? null : registry.current,
     status: registry.error !== null ? 'error' : registry.loading ? 'loading' : 'ready',
@@ -71,6 +83,8 @@ afterEach(() => {
   registry.loading = false;
   registry.error = null;
   registry.retry.mockReset();
+  registry.classPacks = { status: 'ready', error: null, offline: false };
+  registry.classRetry.mockReset();
   put.mockReset();
   dialogs.askConfirm.mockReset();
   registry.current = makeTestContext();
@@ -1051,5 +1065,20 @@ describe('an unfinished draft', () => {
     expect(screen.getByRole('heading', { name: 'Basics' })).toBeTruthy();
     expect(nameInput().value).toBe('');
     expect(continuing()).toBeNull();
+  });
+});
+
+// PWA-001: the class step's download was a bare `void`, so without the class
+// files the step offered an empty list and the rejection went uncaught.
+describe('the class step without its download', () => {
+  it('says the device is offline above the list, with Retry', () => {
+    registry.classPacks = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderCreator(['/', '/create?step=class']);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      "You're offline, so the class list can't be downloaded yet.",
+    );
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(registry.classRetry).toHaveBeenCalledOnce();
   });
 });

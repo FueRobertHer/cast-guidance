@@ -3,8 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
-import { useRegistryState } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
+import { useRegistryState, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { characterRepo } from '@/db/characterRepo';
@@ -32,6 +31,7 @@ import { notifyFailure } from '@/stores/notices';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { GameDataProblem } from '@/ui/GameDataProblem';
+import { PackProblem } from '@/ui/PackProblem';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
@@ -226,10 +226,11 @@ export function Component() {
     return () => observer.disconnect();
   }, [bottomBlock]);
 
-  useEffect(() => {
-    void ensureTypePacks('class');
-    void ensureTypePacks('item');
-  }, []);
+  // Fetched from the first step so the class and equipment steps have them by
+  // the time they open. The class step says when its download cannot happen;
+  // the equipment step reads whatever items arrived.
+  const classPacks = useTypePacks('class');
+  useTypePacks('item');
 
   // The step the roster's Resume returns to. Recorded only once the player
   // moves, never for the step the page opened on: a deep link or a plain
@@ -759,6 +760,7 @@ export function Component() {
         const unlockLevel = subclassUnlockLevel(classEntity);
         return (
           <div className="flex flex-col gap-4">
+            <PackProblem packs={classPacks} what="the class list" />
             <EntityCardList
               fill
               dedupe

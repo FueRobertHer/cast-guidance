@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
-import { useRegistry } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
+import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { roll } from '@/dice/roll';
@@ -38,6 +37,7 @@ import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
+import { PackProblem } from '@/ui/PackProblem';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
 import { UndoBar } from '@/ui/UndoBar';
@@ -203,9 +203,9 @@ export function Component() {
   // Tap-to-swap for ability scores (tap one value, then another).
   const [swapFrom, setSwapFrom] = useState<(typeof ABILITIES)[number] | null>(null);
 
-  useEffect(() => {
-    void ensureTypePacks('class');
-  }, []);
+  // Everything below picks from the class files; a download that cannot
+  // happen says so beside the list it leaves empty.
+  const classPacks = useTypePacks('class');
 
   if (sheet === null || doc === null || registry === null) {
     return <p className="text-sm text-ink-muted">Loading…</p>;
@@ -688,7 +688,8 @@ export function Component() {
           >
             {doc.classes.length === 0 ? 'Pick a class — start here' : 'Add a class (multiclass)'}
           </summary>
-          <div className="pt-2">
+          <div className="flex flex-col gap-2 pt-2">
+            <PackProblem packs={classPacks} what="the class list" />
             <EntityCardList
               sources={doc.allowedSources}
               dedupe

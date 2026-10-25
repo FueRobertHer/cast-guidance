@@ -15,7 +15,16 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
 import { Component as StatsTab } from './StatsTab';
 
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
+vi.mock('@/data5e/hooks', () => ({
+  useRegistry: () => makeTestContext(),
+  useTypePacks: () => ({
+    status: 'ready',
+    error: null,
+    offline: false,
+    retry: () => undefined,
+    repair: () => undefined,
+  }),
+}));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
 vi.mock('@/ui/dialogs', () => ({
   askChoice: () => Promise.resolve(null),
