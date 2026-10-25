@@ -19,12 +19,12 @@ vi.mock('./source', () => ({
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG } from './config';
 import { ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
 
-/** A dataset complete enough to pass the installer's sanity check. */
-const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
-  Promise.resolve(path === 'races.json' ? { race: [{ name: 'Elf' }] } : {});
+/** A dataset complete enough to pass the installer's checks. */
+const wholeMirror = validMirror();
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
@@ -71,13 +71,35 @@ describe('updateToTag failure reporting', () => {
   });
 
   it('reports a dataset that arrives empty rather than installing it', async () => {
-    fetchFile.mockImplementation((_tag: string, path: string) =>
-      Promise.resolve(path === 'races.json' ? { race: [] } : {}),
-    );
+    fetchFile.mockImplementation(validMirror({ 'races.json': { race: [] } }));
 
-    await expect(updateToTag('v2.33.0')).rejects.toThrow('sanity check');
+    await expect(updateToTag('v2.33.0')).rejects.toThrow('failed validation');
     expect(dataStatusStore.getState().failedTag).toBe('v2.33.0');
     expect(getActiveTag()).toBe(DATA_TAG);
+  });
+
+  // Each of these passed the old check, which looked at `races.json` alone:
+  // the install went through and the device swapped to a release with a hole
+  // in it, or fetched a path the index made up.
+  it.each([
+    ['a class file with no classes', { 'class/class-fighter.json': {} }],
+    ['a spell file with no spells', { 'spells/spells-phb.json': { spell: [] } }],
+    ['an index entry that is not a file name', { 'class/index.json': { Fighter: 42 } }],
+    ['an index entry that leaves its directory', { 'class/index.json': { Evil: '../x.json' } }],
+    ['an index that lists nothing', { 'spells/index.json': {} }],
+  ])('refuses %s and keeps the release it has', async (_name, overrides) => {
+    fetchFile.mockImplementation(wholeMirror);
+    await ensureTypePacks('race');
+    const before = await dataCacheRepo.cachedPaths(DATA_TAG);
+    fetchFile.mockImplementation(validMirror(overrides));
+
+    await expect(updateToTag('v2.33.0')).rejects.toThrow('failed validation');
+
+    expect(getActiveTag()).toBe(DATA_TAG);
+    expect((await db.settings.get('dataTag'))?.value).toBe(DATA_TAG);
+    expect(await dataCacheRepo.cachedPaths(DATA_TAG)).toEqual(before);
+    expect(await dataCacheRepo.cachedPaths('v2.33.0')).toEqual(new Set());
+    expect(fetchFile).not.toHaveBeenCalledWith('v2.33.0', 'class/../x.json');
   });
 
   it('starts each attempt from zero instead of inheriting the failed run', async () => {
@@ -142,7 +164,9 @@ describe('repairTypePacks', () => {
     await repairTypePacks('race');
 
     const after = await dataCacheRepo.getFile(tag, 'races.json');
-    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'Elf' }]);
+    expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([
+      { name: 'Elf', source: 'PHB' },
+    ]);
   });
 
   it('repairs the dynamic packs, not just the ones named after their files', async () => {
@@ -228,7 +252,7 @@ describe('repairTypePacks', () => {
       if (path === 'races.json') {
         return Promise.resolve({ race: [{ name: tag === DATA_TAG ? 'OLD-Elf' : 'NEW-Elf' }] });
       }
-      return Promise.resolve({});
+      return wholeMirror(tag, path);
     });
     await ensureTypePacks('race');
 

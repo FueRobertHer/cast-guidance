@@ -52,6 +52,7 @@ export function Component() {
   const phase = useDataStatus((s) => s.phase);
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
+  const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
   const [offline, setOffline] = useState<{ cached: number; total: number }>();
   /** Set when the offline inventory itself could not be read. */
   const [offlineError, setOfflineError] = useState<string>();
@@ -169,7 +170,11 @@ export function Component() {
         <h2 className="font-semibold">Game data</h2>
         <dl className="grid grid-cols-2 gap-y-1 text-sm">
           <dt className="text-ink-muted">Dataset version</dt>
-          <dd>{getActiveTag()}</dd>
+          <dd>
+            {getActiveTag()}
+            {rolledBackFrom !== undefined &&
+              ` (went back from ${rolledBackFrom}, which could not start)`}
+          </dd>
           <dt className="text-ink-muted">Download queue</dt>
           <dd className="capitalize">
             {phase}

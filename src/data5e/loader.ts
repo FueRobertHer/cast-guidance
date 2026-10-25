@@ -26,6 +26,7 @@ import {
   spellsPackId,
 } from './packs';
 import { GithubTagSource } from './source';
+import { assertComplete, indexEntries, requiredFiles, validateDataFile } from './validate';
 
 // The active tag can differ from the build-time pin after a user-driven data
 // update; it's restored from settings at boot.
@@ -36,6 +37,162 @@ export function getActiveTag(): string {
   return activeTag;
 }
 
+/**
+ * The settings key that holds an install still on probation: the release it
+ * replaced (`prev`, whose rows are kept), the release installed (`to`), and
+ * how many launches have started on `to` without it ever producing a working
+ * registry. Written in the same transaction as the swap and removed in the
+ * same transaction as a rollback, so it can never disagree with `dataTag`.
+ */
+const ROLLBACK_SETTING = 'dataTagRollback';
+
+interface RollbackRecord {
+  prev: string;
+  to: string;
+  boots: number;
+}
+
+/**
+ * Launches a new release may start on without building a registry before the
+ * app gives up on it. Two, not one: a launch can end for reasons that have
+ * nothing to do with the data (the tab closed, the device slept), and going
+ * back costs the user the update they asked for.
+ */
+const MAX_UNCONFIRMED_BOOTS = 2;
+
+/** A stored rollback record, or undefined for anything that is not one. */
+function parseRollback(value: unknown): RollbackRecord | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const { prev, to, boots } = value as Partial<RollbackRecord>;
+  if (typeof prev !== 'string' || typeof to !== 'string') return undefined;
+  if (typeof boots !== 'number' || !Number.isFinite(boots) || boots < 0) return undefined;
+  return { prev, to, boots };
+}
+
+async function readRollback(): Promise<RollbackRecord | undefined> {
+  return parseRollback((await db.settings.get(ROLLBACK_SETTING))?.value);
+}
+
+/**
+ * The tag whose first working registry would confirm it, mirrored from the
+ * rollback record so the registry can ask on every publish without a read.
+ */
+let pendingTag: string | undefined;
+
+/**
+ * Count this launch against a release still on probation, and go back to the
+ * one it replaced once it has had its chances. Runs inside tag resolution, so
+ * nothing has read a file under the tag yet, and reads nothing but the local
+ * database: a release that cannot start must be escapable offline.
+ */
+async function checkPendingTag(): Promise<void> {
+  let rollback: RollbackRecord | undefined;
+  try {
+    rollback = await readRollback();
+  } catch {
+    // An unreadable record is no record: this launch stays where it is.
+    return;
+  }
+  if (rollback === undefined) return;
+  try {
+    if (rollback.to !== activeTag) {
+      // About some other install. Nothing is on probation here.
+      await db.settings.delete(ROLLBACK_SETTING);
+      return;
+    }
+    const boots = rollback.boots + 1;
+    if (boots > MAX_UNCONFIRMED_BOOTS) {
+      await rollBack(rollback);
+      return;
+    }
+    pendingTag = activeTag;
+    await db.settings.put({ key: ROLLBACK_SETTING, value: { ...rollback, boots } });
+  } catch {
+    // A launch that cannot be counted is not counted; the next one is.
+  }
+}
+
+/**
+ * Go back to the release `rollback` replaced. Only if that release's
+ * essentials are all still on disk: going back to a release that has to be
+ * downloaded again trades a version that may work for one that, offline,
+ * certainly will not. Otherwise the record is dropped and the app stays put,
+ * since there is nothing left to go back to. Resolves whether it went back.
+ */
+async function rollBack(rollback: RollbackRecord): Promise<boolean> {
+  const { prev, to } = rollback;
+  try {
+    const onDisk = await dataCacheRepo.cachedPaths(prev);
+    if (!ESSENTIALS_FILES.every((p) => onDisk.has(p))) {
+      pendingTag = undefined;
+      await db.settings.delete(ROLLBACK_SETTING);
+      return false;
+    }
+    const wentBack = await db.transaction('rw', db.settings, db.dataMeta, async () => {
+      // Re-read under the transaction: an install that swapped since the
+      // caller looked owns both keys now.
+      const current = await db.settings.get('dataTag');
+      if (current?.value !== to || (await readRollback())?.to !== to) return false;
+      await db.settings.put({ key: 'dataTag', value: prev });
+      await db.dataMeta.put({
+        id: 'installed',
+        tag: prev,
+        completedPacks: [],
+        installedAt: Date.now(),
+      });
+      await db.settings.delete(ROLLBACK_SETTING);
+      return true;
+    });
+    if (!wentBack) return false;
+  } catch {
+    return false;
+  }
+  pendingTag = undefined;
+  activeTag = prev;
+  source = new GithubTagSource(prev);
+  dataStatusStore.getState().setRolledBackFrom(to);
+  return true;
+}
+
+/**
+ * Called by the registry each time it publishes a build. The first one under
+ * a release on probation is what confirms it: its files were read, normalized
+ * and merged into something the app can use, so the release it replaced is
+ * no longer needed and its rows can go.
+ */
+export async function noteRegistryPublished(tag: string): Promise<void> {
+  if (pendingTag === undefined || pendingTag !== tag) return;
+  pendingTag = undefined;
+  try {
+    await db.transaction('rw', db.settings, async () => {
+      if ((await readRollback())?.to === tag) await db.settings.delete(ROLLBACK_SETTING);
+    });
+  } catch {
+    // Still on record, so the next launch counts it and the next publish
+    // confirms it. Pruning now would delete what a rollback needs.
+    return;
+  }
+  await pruneStaleTags();
+}
+
+/**
+ * Called by the registry when a build under `tag` throws. A release on
+ * probation that cannot even be built is rolled back at once, rather than
+ * after the launches the boot counter would give it. Resolves whether it went
+ * back, so the registry can build again under the restored release.
+ */
+export async function noteRegistryBuildFailed(tag: string): Promise<boolean> {
+  if (pendingTag === undefined || pendingTag !== tag || activeTag !== tag) return false;
+  let rollback: RollbackRecord | undefined;
+  try {
+    rollback = await readRollback();
+  } catch {
+    return false;
+  }
+  if (rollback?.to !== tag) return false;
+  return rollBack(rollback);
+}
+
 async function restoreActiveTag(): Promise<void> {
   const row = await db.settings.get('dataTag');
   if (typeof row?.value === 'string') {
@@ -43,6 +200,7 @@ async function restoreActiveTag(): Promise<void> {
       activeTag = row.value;
       source = new GithubTagSource(activeTag);
     }
+    await checkPendingTag();
     return;
   }
   // No tag pinned yet (a fresh install), so grab the latest compatible
@@ -105,6 +263,11 @@ function ensureTagReady(): Promise<void> {
  * `getFile`/`ensurePack` batch and a background drain share the same budget.
  */
 const fetchGate = new Semaphore(FETCH_CONCURRENCY);
+
+/** How many fetches are queued behind {@link fetchGate}, for diagnostics and tests. */
+export function fetchesWaiting(): number {
+  return fetchGate.waiting;
+}
 
 /**
  * The gate every downloaded file passes before it is cached. The source has
@@ -180,23 +343,20 @@ export async function filesForPack(pack: PackId): Promise<string[]> {
   if (pack === 'essentials') return [...ESSENTIALS_FILES];
   if (pack === 'items-full') return [...ITEMS_FULL_FILES];
   if (pack === 'library-extras') return [...LIBRARY_EXTRAS_FILES];
+  // Entries naming anything but a plain file are skipped, not fatal: the
+  // installer refuses such an index outright, but one already cached (from a
+  // release installed before it checked) still has good entries to serve.
   if (pack.startsWith('class:')) {
-    const index = await getFile('class/index.json');
     const key = pack.slice('class:'.length);
-    if (index !== null && typeof index === 'object') {
-      for (const [k, v] of Object.entries(index)) {
-        if (k.toLowerCase() === key && typeof v === 'string') return [`class/${v}`];
-      }
+    for (const [k, v] of indexEntries(await getFile('class/index.json'))) {
+      if (k.toLowerCase() === key) return [`class/${v}`];
     }
     return [];
   }
   if (pack.startsWith('spells:')) {
-    const index = await getFile('spells/index.json');
     const key = pack.slice('spells:'.length);
-    if (index !== null && typeof index === 'object') {
-      for (const [k, v] of Object.entries(index)) {
-        if (k.toLowerCase() === key && typeof v === 'string') return [`spells/${v}`];
-      }
+    for (const [k, v] of indexEntries(await getFile('spells/index.json'))) {
+      if (k.toLowerCase() === key) return [`spells/${v}`];
     }
     return [];
   }
@@ -262,14 +422,10 @@ export function ensurePack(pack: PackId, cached?: Set<string>): Promise<void> {
 
 /** All dynamic pack ids, resolvable once essentials (the two indexes) exist. */
 export async function allPackIds(): Promise<PackId[]> {
-  const classIndex = await getFile('class/index.json');
-  const spellsIndex = await getFile('spells/index.json');
-  const classPacks = Object.keys(
-    classIndex !== null && typeof classIndex === 'object' ? classIndex : {},
-  ).map(classPackId);
-  const spellPacks = Object.keys(
-    spellsIndex !== null && typeof spellsIndex === 'object' ? spellsIndex : {},
-  ).map(spellsPackId);
+  // The same lenient reading as `filesForPack`, so every id listed here
+  // resolves to a file there.
+  const classPacks = indexEntries(await getFile('class/index.json')).map(([k]) => classPackId(k));
+  const spellPacks = indexEntries(await getFile('spells/index.json')).map(([k]) => spellsPackId(k));
   return ['essentials', ...classPacks, 'items-full', ...spellPacks, 'library-extras'];
 }
 
@@ -283,15 +439,21 @@ let backgroundStarted = false;
 let installingTag: string | undefined;
 
 /**
- * Drop cached files belonging to any tag that isn't the active one. Only
- * `updateToTag` used to clean up after itself, so rows stranded by an
- * interrupted update, or by a boot that resolved to a different tag than it
- * started with, sat in IndexedDB forever, roughly doubling storage use.
+ * Drop cached files belonging to any tag that is neither the active one nor
+ * the release a probationary install would go back to. Only `updateToTag`
+ * used to clean up after itself, so rows stranded by an interrupted update,
+ * or by a boot that resolved to a different tag than it started with, sat in
+ * IndexedDB forever, roughly doubling storage use.
  */
 async function pruneStaleTags(): Promise<void> {
   if (installingTag !== undefined) return;
   try {
-    await dataCacheRepo.deleteOtherTags(activeTag);
+    // Read first, and no sweep at all if that fails: a sweep that could not
+    // see the rollback record would delete the only release to go back to.
+    const rollback = await readRollback();
+    const keep = [activeTag];
+    if (rollback !== undefined) keep.push(rollback.prev);
+    await dataCacheRepo.deleteTagsExcept(keep);
   } catch {
     // Best-effort housekeeping; a failure just means we retry next boot.
   }
@@ -578,10 +740,27 @@ export async function checkForDataUpdate(): Promise<void> {
 
 /**
  * Install a different data tag: download everything under the new keyspace
- * (old data stays live until the swap), sanity-check, flip, delete old rows.
+ * (old data stays live until the swap), validate every file and check none is
+ * missing, then flip in one transaction. The old release's rows stay until
+ * the new one has produced a working registry (see `noteRegistryPublished`),
+ * so a release that passes these checks and still cannot start has somewhere
+ * to go back to.
+ *
+ * What an interruption leaves behind, by phase:
+ * - before or during the download: settings still name the old tag, which
+ *   boots as before; the staged rows are swept by the next prune.
+ * - during the swap: the transaction commits whole or not at all, so the next
+ *   launch boots the old tag or the new one, never settings for one and
+ *   bookkeeping for the other.
+ * - after the swap, before a registry is built: both releases' rows are kept
+ *   and the rollback record counts launches; the next launch confirms the new
+ *   one on its first registry, or goes back once it has had its chances.
  */
 export async function updateToTag(newTag: string): Promise<void> {
   const status = dataStatusStore.getState();
+  // So `activeTag` is the installed release rather than the build's default,
+  // and any probation it is on has been read, before anything is compared.
+  await ensureTagReady();
   if (newTag === activeTag) {
     // Already installed, by this call or another route, so the recorded
     // failure for it is over: leaving it up would show an error about a
@@ -590,15 +769,30 @@ export async function updateToTag(newTag: string): Promise<void> {
     status.setUpdateAvailableTag(undefined);
     return;
   }
-  const oldTag = activeTag;
   const newSource = new GithubTagSource(newTag);
   status.beginRun();
 
+  // Every file is held to the full check, whether it was fetched just now or
+  // is already staged (from an earlier attempt, or because this is the release
+  // a previous install kept to roll back to): a staged row predating these
+  // checks is no more trustworthy than a fresh download.
   const fetchNew = async (path: string): Promise<unknown> => {
     const cached = await dataCacheRepo.getFile(newTag, path);
-    if (cached) return cached.json;
-    status.fileStarted(path);
-    const json = acceptDataFile(path, await newSource.fetchFile(path));
+    if (cached) {
+      validateDataFile(path, acceptDataFile(path, cached.json));
+      // Counted like a download: it was in the total, and leaving it out of
+      // the done count stalled the bar short of full on every resumed install.
+      status.fileDone();
+      return cached.json;
+    }
+    // Through the same gate as every other fetch. Bypassing it let an install
+    // open its own connection alongside the four the background queue was
+    // already holding, on exactly the slow network where that hurts.
+    const json = await fetchGate.run(async () => {
+      status.fileStarted(path);
+      return acceptDataFile(path, await newSource.fetchFile(path));
+    });
+    validateDataFile(path, json);
     await dataCacheRepo.putFile({
       key: dataCacheRepo.key(newTag, path),
       tag: newTag,
@@ -627,37 +821,51 @@ export async function updateToTag(newTag: string): Promise<void> {
     // let the stale-tag sweep run over a concurrent install's staged rows.
     installingTag = newTag;
 
-    // Static packs + indexes, then everything the indexes list.
+    // Static packs (the indexes among them), then everything the indexes list.
+    // One at a time: the gate bounds the wire either way, and a sibling fetch
+    // still running after a failure could stage a row behind the sweep in the
+    // `finally`.
     const staticFiles = [...ESSENTIALS_FILES, ...ITEMS_FULL_FILES, ...LIBRARY_EXTRAS_FILES];
     status.addTotal(staticFiles.length);
-    for (const path of staticFiles) await fetchNew(path);
-    const classIndex = (await fetchNew('class/index.json')) as Record<string, unknown>;
-    const spellsIndex = (await fetchNew('spells/index.json')) as Record<string, unknown>;
-    const dynamic = [
-      ...Object.values(classIndex ?? {}).map((f) => `class/${String(f)}`),
-      ...Object.values(spellsIndex ?? {}).map((f) => `spells/${String(f)}`),
-    ].filter((p) => p.endsWith('.json'));
+    const staged = new Map<string, unknown>();
+    for (const path of staticFiles) staged.set(path, await fetchNew(path));
+    const required = requiredFiles(staged.get('class/index.json'), staged.get('spells/index.json'));
+    const dynamic = required.filter((p) => !staged.has(p));
     status.addTotal(dynamic.length);
     for (const path of dynamic) await fetchNew(path);
 
-    // Sanity: essentials must parse into non-empty entity arrays.
-    const races = (await dataCacheRepo.getFile(newTag, 'races.json'))?.json as
-      | { race?: unknown[] }
-      | undefined;
-    if (!Array.isArray(races?.race) || races.race.length === 0) {
-      throw new Error(`tag ${newTag} failed sanity check (races.json empty) — keeping ${oldTag}`);
-    }
+    // Every file the release lists is on disk under its tag, checked against
+    // the cache itself rather than the loop above, which is what the swap is
+    // about to promise the next launch.
+    assertComplete(await dataCacheRepo.cachedPaths(newTag), required);
 
-    // Atomic-enough swap: settings first, then in-memory, then cleanup.
-    await db.settings.put({ key: 'dataTag', value: newTag });
-    await dataCacheRepo.setMeta({
-      id: 'installed',
-      tag: newTag,
-      completedPacks: [],
-      installedAt: Date.now(),
+    // The swap, in one transaction: the tag, its bookkeeping and the rollback
+    // record commit together or not at all. As three separate writes, an
+    // interruption between them left settings naming the new release over
+    // bookkeeping for the old one. The release to go back to is the last one
+    // that proved itself: a second install before the first was confirmed
+    // keeps the original, not the unproven one in between.
+    const from = activeTag;
+    await db.transaction('rw', db.settings, db.dataMeta, async () => {
+      const existing = await readRollback();
+      const kept = existing?.to === from ? existing.prev : from;
+      const prev = kept === newTag ? from : kept;
+      await db.settings.put({ key: 'dataTag', value: newTag });
+      await db.dataMeta.put({
+        id: 'installed',
+        tag: newTag,
+        completedPacks: [],
+        installedAt: Date.now(),
+      });
+      await db.settings.put({
+        key: ROLLBACK_SETTING,
+        value: { prev, to: newTag, boots: 0 } satisfies RollbackRecord,
+      });
     });
     activeTag = newTag;
     source = newSource;
+    pendingTag = newTag;
+    status.setRolledBackFrom(undefined);
     // The offer is spent whichever route took it: only the toast's own button
     // used to clear this, so installing from the settings picker left the
     // toast advertising the version that was now live ("v2.33.0 is available
@@ -675,11 +883,12 @@ export async function updateToTag(newTag: string): Promise<void> {
     if (isCompatibleTag(newTag)) status.setFailedTag(newTag);
     throw err;
   } finally {
-    // Whether we swapped or bailed, `activeTag` is now the one to keep, so
-    // this drops the old rows on success and the half-downloaded new ones on
-    // failure, instead of leaving either stranded. Only our own claim is
-    // released; a concurrent install still holding the slot keeps the sweep
-    // off its staged rows.
+    // Whether we swapped or bailed, `activeTag` is now the one to keep, and
+    // the rollback record names the one release kept beside it, so this drops
+    // the half-downloaded new rows on failure and anything older than the
+    // rollback target on success. Only our own claim is released; a
+    // concurrent install still holding the slot keeps the sweep off its
+    // staged rows.
     if (installingTag === newTag) installingTag = undefined;
     await pruneStaleTags();
   }

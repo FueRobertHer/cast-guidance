@@ -5,7 +5,7 @@
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { ensurePack, getActiveTag } from './loader';
+import { ensurePack, getActiveTag, noteRegistryBuildFailed, noteRegistryPublished } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
 import { setHomebrewSourceNames } from './sourceNames';
@@ -26,8 +26,8 @@ let currentSignature = '';
  */
 let epoch = 0;
 
-async function cachedFilesMap(): Promise<Map<string, unknown>> {
-  const rows = await dataCacheRepo.filesByTag(getActiveTag());
+async function cachedFilesMap(tag: string): Promise<Map<string, unknown>> {
+  const rows = await dataCacheRepo.filesByTag(tag);
   const map = new Map<string, unknown>();
   for (const row of rows) map.set(row.path, row.json);
   return map;
@@ -105,8 +105,11 @@ export async function getRegistry(): Promise<EntityRegistry> {
 
 async function readRegistry(): Promise<EntityRegistry> {
   const startedAt = epoch;
+  // One tag for the whole read: the paths, the bodies and the build are all
+  // of the same release even if an install or a rollback moves it meanwhile.
+  const tag = getActiveTag();
   const [paths, { files: brews }] = await Promise.all([
-    dataCacheRepo.cachedPaths(getActiveTag()),
+    dataCacheRepo.cachedPaths(tag),
     // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
     // to throw out of here, and every view needs the compendium.
     homebrewRepo.enabledSafe(),
@@ -115,20 +118,34 @@ async function readRegistry(): Promise<EntityRegistry> {
   if (current !== null && signature === currentSignature) return current;
 
   // Only a real rebuild pays for the file bodies.
-  const files = await cachedFilesMap();
+  const files = await cachedFilesMap(tag);
   // Before the registry is published, so the first render that can show a
   // brew's badge already has its title.
   setHomebrewSourceNames(homebrewSourceNames(brews));
-  const reg = normalizeDataset(files);
-  const brewMap = new Map<string, Record<string, unknown>>();
-  for (const b of brews) brewMap.set(b.id, b.json);
-  mergeHomebrew(reg, brewMap);
-  // Only if nothing invalidated the registry while this was reading. The
-  // caller still gets what was built, which is the best answer available to
-  // it; what it must not do is leave that answer behind as the current one.
-  if (startedAt === epoch) {
+  let reg: EntityRegistry;
+  try {
+    reg = normalizeDataset(files);
+    const brewMap = new Map<string, Record<string, unknown>>();
+    for (const b of brews) brewMap.set(b.id, b.json);
+    mergeHomebrew(reg, brewMap);
+  } catch (err) {
+    // A release just installed that cannot even be built goes back to the
+    // one it replaced, and the caller gets that release's registry instead of
+    // an error. Only once: the rollback spends the record, so a build that
+    // fails again under the restored release is reported as it stands.
+    if (await noteRegistryBuildFailed(tag)) return readRegistry();
+    throw err;
+  }
+  // Only if nothing invalidated the registry while this was reading, and the
+  // release it read is still the live one. The caller still gets what was
+  // built, which is the best answer available to it; what it must not do is
+  // leave that answer behind as the current one. The signature is paths
+  // alone, so a build of one release left current after the tag moved would
+  // be served as the other whenever their file lists match.
+  if (startedAt === epoch && getActiveTag() === tag) {
     current = reg;
     currentSignature = signature;
+    void noteRegistryPublished(tag);
   }
   return reg;
 }

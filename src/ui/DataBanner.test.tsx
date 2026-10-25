@@ -10,7 +10,11 @@ const { retryDataLayer, updateToTag } = vi.hoisted(() => ({
   retryDataLayer: vi.fn(),
   updateToTag: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('@/data5e/loader', () => ({ retryDataLayer, updateToTag }));
+vi.mock('@/data5e/loader', () => ({
+  getActiveTag: () => 'v2.32.0',
+  retryDataLayer,
+  updateToTag,
+}));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: () => undefined }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -26,6 +30,7 @@ afterEach(() => {
     filesTotal: 0,
     error: undefined,
     failedTag: undefined,
+    rolledBackFrom: undefined,
   });
 });
 
@@ -84,5 +89,32 @@ describe('DataBanner', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(updateToTag).toHaveBeenCalledWith('v2.33.0');
     expect(retryDataLayer).not.toHaveBeenCalled();
+  });
+
+  it('says why the version went backwards, over the drain that follows', () => {
+    // A rollback is not an error: the app works, on the older release. But it
+    // is the one change here nobody asked for, so it outranks the progress bar
+    // of the boot it happened in, until the user has seen it.
+    dataStatusStore.setState({
+      phase: 'working',
+      filesDone: 1,
+      filesTotal: 4,
+      rolledBackFrom: 'v2.33.0',
+    });
+    render(<DataBanner />);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain(
+      'v2.33.0 could not start, so the app went back to v2.32.0',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(dataStatusStore.getState().rolledBackFrom).toBeUndefined();
+    expect(screen.getByRole('progressbar').textContent).toContain('1/4');
+  });
+
+  it('says so even once the queue has finished', () => {
+    dataStatusStore.setState({ phase: 'done', rolledBackFrom: 'v2.33.0' });
+    render(<DataBanner />);
+    expect(screen.getByRole('status').textContent).toContain('v2.33.0 could not start');
   });
 });
