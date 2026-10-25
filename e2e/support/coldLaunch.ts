@@ -1,8 +1,10 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import { mkdirSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { handleOverlays } from './app.ts';
 import { DEVICE } from './device.ts';
 import { airplaneLaunchOptions, hermeticLaunchOptions } from './launch.ts';
-import { stableOrigin } from './stableOrigin.ts';
+import { levelsDir, stableOrigin } from './stableOrigin.ts';
 import { test as base, expect } from './test.ts';
 
 /** What the browser reports when an offline launch asks the origin for something. */
@@ -55,9 +57,11 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
       offlineLog,
     },
     use,
+    testInfo,
   ) => {
     const origin = stableOrigin();
     const launched: BrowserContext[] = [];
+    const dirs: string[] = [];
     // Offline, the browser fails origin requests the worker does not answer
     // (the analytics script) itself.
     consoleGuard.allowResource(
@@ -79,6 +83,7 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
         offline,
       });
       launched.push(context);
+      dirs.push(dir);
       await networkGuard.attach(context);
       await mirror.attach(context);
       consoleGuard.watch(context);
@@ -96,6 +101,7 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
       return { context, page };
     });
     for (const context of launched) await context.close();
+    for (const dir of dirs) keepProfileIfUseful(dir, testInfo);
   },
 
   backOnline: async ({ mirror, offlineLog }, use) => {
@@ -108,6 +114,47 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
     });
   },
 });
+
+/** Failed cells in a run whose profile is kept, for a look by hand. */
+const KEEP_FAILED_PROFILES = 3;
+
+/**
+ * Claims one of the run's {@link KEEP_FAILED_PROFILES} slots. Counted on disk,
+ * not in memory: Playwright replaces a worker after a failure, so a counter
+ * in the module would start again at every one.
+ */
+function claimKeepSlot(): boolean {
+  const slots = levelsDir('.kept-failed-profiles');
+  mkdirSync(slots, { recursive: true });
+  for (let i = 0; i < KEEP_FAILED_PROFILES; i++) {
+    try {
+      mkdirSync(path.join(slots, String(i)));
+      return true;
+    } catch {
+      // Taken by an earlier failure; try the next.
+    }
+  }
+  return false;
+}
+
+/**
+ * A cell's profile is a few megabytes, and a broken build fails every cell:
+ * kept whole, the report would carry hundreds of megabytes. A passing cell's
+ * profile goes; a failing one keeps its IndexedDB and settings but not the
+ * worker's CacheStorage (the precached build, which is `dist/` again), and
+ * only the first few failures of the run keep one at all.
+ */
+function keepProfileIfUseful(dir: string, testInfo: TestInfo): void {
+  const failed = testInfo.status !== testInfo.expectedStatus;
+  if (!failed || !claimKeepSlot()) {
+    rmSync(dir, { recursive: true, force: true });
+    return;
+  }
+  rmSync(path.join(dir, 'Default', 'Service Worker', 'CacheStorage'), {
+    recursive: true,
+    force: true,
+  });
+}
 
 /** The offline stretches of a test, as indexes into the mirror's fulfils. */
 class OfflineLog {

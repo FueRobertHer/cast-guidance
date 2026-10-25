@@ -21,6 +21,7 @@ import {
   offlineSection,
   ROUTE_ERROR,
   ROUTES,
+  type RouteCase,
   SPINNERS,
 } from '../support/routeMatrix.ts';
 
@@ -48,9 +49,11 @@ async function openLevel(
 }
 
 /** What every cell must show, whatever its state. */
-async function expectCell(page: Page, cell: Cell, level: CacheLevel): Promise<void> {
+async function expectCell(page: Page, route: RouteCase, cell: Cell, level: CacheLevel) {
   await expect(cell.shows(page)).toBeVisible();
   if (cell.action !== undefined) await expect(cell.action(page)).toBeVisible();
+  if (cell.also !== undefined) await expect(cell.also(page)).toBeVisible();
+  await expect(route.frame(page)).toBeVisible();
   await expect(page).toHaveTitle(cell.title);
   // An incomplete download says why it stopped, on every page, with a way on.
   if (level === 'full') {
@@ -73,7 +76,7 @@ for (const level of CACHE_LEVELS) {
         const { page, manifest } = await openLevel(launchStable, testInfo, level);
         await page.goto(route.path(manifest));
         expect(await page.evaluate(() => navigator.onLine)).toBe(false);
-        await expectCell(page, cell, level);
+        await expectCell(page, route, cell, level);
       });
     }
   });
@@ -151,6 +154,28 @@ test.describe('back online, each offline state recovers', () => {
   });
 });
 
+test.describe('essentials that only partly landed', () => {
+  test('Settings says not downloaded yet, not unreadable, when only the class index is missing', async ({
+    launchStable,
+    mirror,
+  }, testInfo) => {
+    // The essential level minus `class/index.json`: some game data on disk,
+    // but nothing to count the compendium against. Prepared online with the
+    // mirror refusing, so nothing comes back while the row is removed.
+    mirror.setFail(() => 'abort');
+    const prepare = await openLevel(launchStable, testInfo, 'essential', { offline: false });
+    await prepare.page.goto('/');
+    await editDataFile(prepare.page, 'class/index.json', null);
+    await prepare.context.close();
+
+    const { page } = await launchStable(testInfo.outputPath('profile'), { offline: true });
+    await page.goto('/settings');
+    await expect(settingsValue(page, 'Offline compendium')).toHaveText('not downloaded yet');
+    await expect(page.getByRole('button', { name: 'Make available offline' })).toBeVisible();
+    await expect(offlineBanner(page).getByRole('button', { name: 'Retry' })).toBeVisible();
+  });
+});
+
 test.describe('online, the failures are told apart', () => {
   test('a section that failed to download is not called offline', async ({
     launchStable,
@@ -174,7 +199,7 @@ test.describe('online, the failures are told apart', () => {
   }, testInfo) => {
     const { page } = await openLevel(launchStable, testInfo, 'full', { offline: false });
     await page.goto('/');
-    await corruptDataFile(page, 'spells/spells-phb.json', { spell: [] });
+    await editDataFile(page, 'spells/spells-phb.json', { spell: [] });
     await page.goto('/library/spell/fireball%7Cphb');
     const again = page.getByRole('button', { name: 'Download this section again' });
     await expect(again).toBeVisible();
@@ -185,11 +210,12 @@ test.describe('online, the failures are told apart', () => {
 });
 
 /**
- * Overwrites a cached data file's body in place, as a truncated write or a
- * body cached from a misbehaving proxy would leave it: still there, so
- * nothing counts it as missing.
+ * Rewrites one cached data file in place: `json` replaces its body, as a
+ * truncated write or a body cached from a misbehaving proxy would leave it
+ * (still there, so nothing counts it as missing); `null` deletes the row, as
+ * a download stopped part way through essentials would leave it.
  */
-async function corruptDataFile(target: Page, path: string, json: unknown): Promise<void> {
+async function editDataFile(target: Page, path: string, json: unknown | null): Promise<void> {
   await target.evaluate(
     ({ key, json }) =>
       new Promise<void>((resolve, reject) => {
@@ -205,7 +231,8 @@ async function corruptDataFile(target: Page, path: string, json: unknown): Promi
               reject(new Error(`no cached row ${key}`));
               return;
             }
-            store.put({ ...get.result, json });
+            if (json === null) store.delete(key);
+            else store.put({ ...get.result, json });
           };
           tx.oncomplete = () => {
             db.close();

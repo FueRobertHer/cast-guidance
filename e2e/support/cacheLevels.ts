@@ -103,8 +103,10 @@ export function readManifest(level: CacheLevel): LevelManifest {
 
 /**
  * Publishes a built profile in one rename, so a cell never copies one that is
- * half written. A level is built again when tests repeat (`--repeat-each`);
- * the first to finish wins and the others are thrown away.
+ * half written. Each level is built once per run: Playwright does not repeat
+ * a dependency project's tests under `--repeat-each`. Should a level be built
+ * twice all the same (a second worker given the same setup test), the first
+ * to finish wins and the later one is thrown away.
  */
 export function publishLevel(built: string, manifest: LevelManifest): void {
   writeFileSync(`${built}/${MANIFEST}`, JSON.stringify(manifest));

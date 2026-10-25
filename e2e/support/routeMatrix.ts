@@ -1,8 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
+import { MIRROR_PATHS } from '../fixtures/mirror.ts';
 import { characterLink, dataFailureBanner, libraryEntry, settingsValue } from './app.ts';
 import {
   type CacheLevel,
   CHARACTER_NAME,
+  filesAt,
   HOMEBREW_NAME,
   type LevelManifest,
 } from './cacheLevels.ts';
@@ -30,12 +32,20 @@ export interface Cell {
   shows: (page: Page) => Locator;
   /** The way on that the state offers: Retry, or a link to the nearest page. */
   action?: (page: Page) => Locator;
+  /** Anything else the cell must show (a panel inside the page's content). */
+  also?: (page: Page) => Locator;
 }
 
 export interface RouteCase {
   /** Names the cell in the report. */
   name: string;
   path: (m: LevelManifest) => string;
+  /**
+   * The page's frame, whatever its state: the app nav, the sheet's own tab
+   * bar, or the focused flow's way back. A cell with content but no frame is
+   * a page that lost its way out.
+   */
+  frame: (page: Page) => Locator;
   at: (level: CacheLevel) => Cell;
 }
 
@@ -60,6 +70,16 @@ export function offlineData(page: Page): Locator {
 export function offlineBanner(page: Page): Locator {
   return dataFailureBanner(page, "You're offline, so the game data download can't finish yet.");
 }
+
+/** The class pickers' panel for a class list it cannot download while offline. */
+export function offlineClassList(page: Page): Locator {
+  return page
+    .getByRole('alert')
+    .filter({ hasText: "You're offline, so the class list can't be downloaded yet." });
+}
+
+const appNav = (page: Page) => page.getByRole('navigation', { name: 'Main' });
+const sheetNav = (page: Page) => page.getByRole('navigation', { name: 'Character sheet' });
 
 const retryIn = (panel: (page: Page) => Locator) => (page: Page) =>
   panel(page).getByRole('button', { name: 'Retry' });
@@ -96,13 +116,30 @@ const offlinePage = (pageTitle: string): Cell => ({
 });
 
 /** A sheet tab: the character's own page once essentials are here, the offline panel before. */
-function sheetTab(name: string, tab: string, shows: Cell['shows']): RouteCase {
+function sheetTab(
+  name: string,
+  tab: string,
+  shows: Cell['shows'],
+  also?: (level: CacheLevel) => Cell['also'],
+): RouteCase {
   const pageTitle = title(tab, CHARACTER_NAME);
   return {
     name: `sheet ${tab}`,
     path: (m) => `/c/${m.characterId}${name}`,
-    at: (level) => (level === 'none' ? offlinePage(pageTitle) : content(pageTitle, shows)),
+    // The layout keeps its header and tab bar over the offline panel.
+    frame: sheetNav,
+    at: (level) =>
+      level === 'none'
+        ? offlinePage(pageTitle)
+        : { ...content(pageTitle, shows), also: also?.(level) },
   };
+}
+
+/** Settings' count of the offline compendium, as the level leaves it. */
+function compendiumCount(level: CacheLevel): RegExp {
+  if (level === 'none') return /^not downloaded yet$/;
+  if (level === 'full') return /^ready ✓$/;
+  return new RegExp(`^${filesAt(level)}/${MIRROR_PATHS.length} files$`);
 }
 
 const FIREBALL = 'fireball%7Cphb';
@@ -110,16 +147,19 @@ const FIREBALL = 'fireball%7Cphb';
 export const ROUTES: readonly RouteCase[] = [
   {
     name: 'roster',
+    frame: appNav,
     path: () => '/',
     at: () => content(title('Characters'), (page) => characterLink(page, CHARACTER_NAME)),
   },
   {
     name: 'library home',
+    frame: appNav,
     path: () => '/library',
     at: () => content(title('Library'), heading('Library')),
   },
   {
     name: 'library section',
+    frame: appNav,
     path: () => '/library/race',
     at: (level) =>
       level === 'none'
@@ -128,6 +168,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'library spells',
+    frame: appNav,
     path: () => '/library/spell',
     at: (level) =>
       level === 'full'
@@ -136,6 +177,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'library entity',
+    frame: appNav,
     path: () => `/library/spell/${FIREBALL}`,
     at: (level) =>
       level === 'full'
@@ -144,6 +186,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'library entity that does not exist',
+    frame: appNav,
     path: () => '/library/race/nope%7Cx',
     at: (level) =>
       level === 'none'
@@ -156,6 +199,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'library section that does not exist',
+    frame: appNav,
     path: () => '/library/bogus',
     at: () =>
       notFound(
@@ -166,6 +210,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'homebrew',
+    frame: appNav,
     path: () => '/homebrew',
     at: () =>
       content(title('Homebrew'), (page) =>
@@ -174,11 +219,13 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'homebrew file',
+    frame: link('Back to homebrew'),
     path: (m) => `/homebrew/edit/${m.homebrewId}`,
     at: () => content(title(HOMEBREW_NAME, 'Homebrew editor'), heading(HOMEBREW_NAME)),
   },
   {
     name: 'homebrew file that does not exist',
+    frame: link('Back to homebrew'),
     path: () => '/homebrew/edit/missing',
     at: () =>
       notFound(
@@ -189,24 +236,23 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'settings',
+    frame: appNav,
     path: () => '/settings',
     at: (level) =>
-      level === 'full'
-        ? content(title('Settings'), (page) => page.getByText('ready ✓', { exact: true }))
-        : content(
-            title('Settings'),
-            // How much is here, in words; before the first download there is
-            // nothing to count against, which is not a failure to read.
-            (page) =>
-              settingsValue(page, 'Offline compendium').filter({
-                hasText: level === 'none' ? /^not downloaded yet$/ : /^\d+\/\d+ files$/,
-              }),
-            // What makes the compendium complete, once back online.
-            button('Make available offline'),
-          ),
+      content(
+        title('Settings'),
+        // How much is here, counted from what the level left on disk; before
+        // the indexes land there is nothing to count against, which is not a
+        // failure to read.
+        (page) =>
+          settingsValue(page, 'Offline compendium').filter({ hasText: compendiumCount(level) }),
+        // What makes the compendium complete, once back online.
+        level === 'full' ? undefined : button('Make available offline'),
+      ),
   },
   {
     name: 'creator',
+    frame: link('Back to characters (your draft is kept)'),
     path: () => '/create',
     at: (level) => {
       const pageTitle = title('Basics', 'Step 1 of 9', 'New character');
@@ -220,9 +266,16 @@ export const ROUTES: readonly RouteCase[] = [
   sheetTab('/inventory', 'Inventory', button('Add item')),
   sheetTab('/spells', 'Spells', text('This character has no spellcasting.')),
   sheetTab('/features', 'Features', (page) => page.getByRole('heading', { name: 'Notes' })),
-  sheetTab('/build', 'Build', (page) => page.getByRole('textbox', { name: 'Name' })),
+  // Essentials hold no class files, so at that level the class picker says why it is empty.
+  sheetTab(
+    '/build',
+    'Build',
+    (page) => page.getByRole('textbox', { name: 'Name' }),
+    (level) => (level === 'essential' ? offlineClassList : undefined),
+  ),
   {
     name: 'character that does not exist',
+    frame: link('Back to characters'),
     path: () => '/c/missing',
     at: () =>
       notFound(
@@ -233,6 +286,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'sheet tab of a character that does not exist',
+    frame: link('Back to characters'),
     path: () => '/c/missing/spells',
     at: () =>
       notFound(
@@ -243,6 +297,7 @@ export const ROUTES: readonly RouteCase[] = [
   },
   {
     name: 'unknown route',
+    frame: appNav,
     path: () => '/nope',
     at: () =>
       notFound(title('Page not found'), heading('Page not found'), link('Back to characters')),

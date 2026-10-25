@@ -39,7 +39,7 @@ the binary outright, as an escape hatch when the two drift.
   unanswered, as an unreachable host would.
 - **Stable origin** (`support/stableOrigin.ts`): one more server, started in
   `global-setup.ts` for the whole run, on any free port (`E2E_PORT` picks
-  one). A profile is bound to the origin it was built on (its worker
+  one; anything but a port number fails the run at once). A profile is bound to the origin it was built on (its worker
   registration, IndexedDB and caches are keyed by host and port), so a profile
   built in one worker and opened in another needs an address both can reach.
   It has no down switch, since other tests share it: an offline launch is cut
@@ -114,7 +114,10 @@ the binary outright, as an escape hatch when the two drift.
   so each is a real place for an install to stop. Each also holds a character
   and an editable homebrew file (`level.json` has their ids). `copyLevel`
   copies one for a cell without the browser's caches, so the precache alone
-  must serve the app.
+  must serve the app. A passing cell's profile is deleted at teardown; a
+  failing one keeps its IndexedDB but not the worker's CacheStorage, and only
+  the first three failures of a run keep one at all (counted on disk, since a
+  failure replaces the worker), so a broken build cannot fill the report.
 - **Overlays** (`handleOverlays` in `support/app.ts`): locator handlers dismiss
   the roster's getting-started card and wait out the "Ready to use offline"
   notice whenever either is on screen before an action or assertion, so specs
@@ -181,7 +184,7 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 | `sw-update` | Apply, defer (Later) and a failed install, each against a new build served by the variant server, with offline checks. |
 | `manifest` | The manifest's content type, every icon it lists served and decoded at its declared size, opaque maskable corners, the Apple touch icon link; Chromium's own installability verdict in full Chromium (new headless, `launchProfile(dir, { newHeadless: true })`), with a no-manifest canary. |
 | `cache-levels.setup` | Builds the four cache-level profiles (the `cache-levels` project). |
-| `offline-routes` | PWA-001: every route, cold and offline, at every cache level (below); an airplane-mode canary (the worker's update check cannot reach the origin); the offline states recovering once back online (the sheet, the creator, a library section, the banner's download); online, a failed download told apart from offline, and a corrupted section repaired by "Download this section again". |
+| `offline-routes` | PWA-001: every route, cold and offline, at every cache level (below); an airplane-mode canary (the worker's update check cannot reach the origin); the offline states recovering once back online (the sheet, the creator, a library section, the banner's download); essentials that only partly landed (no class index) reading "not downloaded yet" in Settings; online, a failed download told apart from offline, and a corrupted section repaired by "Download this section again". |
 | `harness` | A socket the routes cannot see (a WebSocket to jsDelivr) fails to resolve, from the default context and from a persistent profile, so it never reaches a real host. |
 | `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); a first install interrupted by a reload (finished on the next launch under the tag pinned once); an update from Settings (the old release swept once a registry builds, the new one active after a reload); a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
 
@@ -207,8 +210,9 @@ Every cell lands in one of three states:
   is back online;
 - **not found**: there is no such thing, with a link to the nearest page.
 
-Every cell also checks the title, that no spinner text is left, that the
-route did not throw (`RouteError`), that the page is controlled by the
+Every cell also checks the title, the page's frame (the app nav, the sheet's
+tab bar, or the focused flow's way back), that no spinner text is left, that
+the route did not throw (`RouteError`), that the page is controlled by the
 worker, and (below `full`) that the data banner says the device is offline,
 with Retry. Never a blank screen, an endless spinner or a raw error.
 
@@ -224,16 +228,26 @@ with Retry. Never a blank screen, an endless spinner or a raw error.
 | `/homebrew` | content | content | content | content |
 | `/homebrew/edit/<id>` (homebrew file) | content | content | content | content |
 | `/homebrew/edit/missing` | not found | not found | not found | not found |
-| `/settings` | content ("not downloaded yet", Make available offline) | content (count, Make available offline) | content (count, Make available offline) | content (ready) |
+| `/settings` | content ("not downloaded yet", Make available offline) | content ("13/19 files", Make available offline) | content ("16/19 files", Make available offline) | content ("ready ✓") |
 | `/create` | offline | content | content | content |
-| `/c/<id>` and its `stats`, `inventory`, `spells`, `features`, `build` tabs | offline | content | content | content |
+| `/c/<id>` and its `stats`, `inventory`, `spells`, `features` tabs | offline | content | content | content |
+| `/c/<id>/build` | offline | content, with the class list's offline panel | content | content |
 | `/c/missing`, `/c/missing/spells` | not found | not found | not found | not found |
 | `/nope` | not found | not found | not found | not found |
 
-Recovery actions per state: offline, Retry (and on its own once back online);
+Recovery actions per state: offline, Retry (and on its own once back online:
+the banner's queue, the game data panel, the class pickers and the library's
+section panel each retry on reconnect, each pinned by a unit test that fails
+without it; the E2E recoveries cannot tell them apart, because the banner's
+resumed queue lands the same files);
 not downloaded while online, "This section couldn't be downloaded" with Retry;
 not found, a link to the nearest page; a corrupted section, "Download this
 section again".
 
 Run it alone with `bun run e2e -- --project=offline-routes` (the levels are
-built first). It is about 95 tests, roughly 1.5 minutes on 3 workers.
+built first). It is 96 tests, roughly 1.5 minutes on 3 workers.
+
+The offline short circuit in the data source (no backoff retries while the
+device reports offline, one try per endpoint) is covered by unit tests only:
+an E2E check would have to time the offline panel, and a timing bound is
+flaky on loaded runners.

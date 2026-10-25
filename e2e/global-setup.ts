@@ -8,6 +8,18 @@ import { LEVELS_DIR_ENV, STABLE_ORIGIN_ENV } from './support/stableOrigin.ts';
 const REPO = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(REPO, 'dist');
 
+/** `E2E_PORT` as a port number, 0 (any free port) when unset. */
+function parsePort(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return 0;
+  const port = Number(raw);
+  if (!/^\d+$/.test(raw.trim()) || port > 65_535) {
+    throw new Error(
+      `E2E_PORT must be a port number from 0 to 65535 (0 or unset for any free port), not "${raw}".`,
+    );
+  }
+  return port;
+}
+
 /**
  * Fails fast, with the fix, when there is no build to test. Then starts the
  * one server whose origin outlives a worker (see `support/stableOrigin.ts`)
@@ -26,7 +38,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   // A free port unless one is asked for: the origin only has to stay the same
   // for this run, and a fixed default would collide with a second run.
-  const port = Number(process.env.E2E_PORT ?? 0);
+  const port = parsePort(process.env.E2E_PORT);
   const server = await startStaticServer({
     root: DIST,
     routing: loadVercelRouting(path.join(REPO, 'vercel.json')),
