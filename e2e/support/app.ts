@@ -47,8 +47,8 @@ export function settingsValue(page: Page, label: string): Locator {
  * Opens Settings and waits until the data layer has settled: the download
  * queue is done and every file is cached. A check that something did not
  * happen (no download, no notice) is only meaningful after this. Settings
- * counts the cached files once, on mount, so call this after an install has
- * finished, not to wait for one.
+ * counts the cached files again as they land, so this also waits out an
+ * install still running.
  */
 export async function expectDataSettled(page: Page): Promise<void> {
   await page.goto('/settings');

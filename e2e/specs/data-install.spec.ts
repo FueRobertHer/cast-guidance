@@ -42,9 +42,8 @@ const ROLLBACK = 'dataTagRollback';
 /** Online first launch: the pinned release fully installed, Settings open. */
 async function installPinned(page: Page): Promise<void> {
   await page.goto('/');
-  // Before Settings opens: it counts the cached files once, on mount.
-  await expect.poll(() => countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
   await expectDataSettled(page);
+  expect(await countDataFiles(page, PINNED_TAG)).toBe(MIRROR_PATHS.length);
   expect(await getSetting(page, 'dataTag')).toBe(PINNED_TAG);
 }
 

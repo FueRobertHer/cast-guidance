@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
+import { getRevision, subscribeRevision } from '@/data5e/landing';
 import {
   downloadAllPacks,
   getActiveTag,
@@ -101,17 +102,32 @@ export function Component() {
     }
   };
 
+  /** Files landed so far, as consumers have been told (see `landing.ts`). */
+  const revision = useSyncExternalStore(subscribeRevision, getRevision, getRevision);
+  /** The latest measurement started; an older one that resolves late is dropped. */
+  const measuring = useRef(0);
+
   /** Re-read what is cached; the numbers are a claim, so a failure to read them says so. */
-  const measureOffline = () => {
+  const measureOffline = useCallback(() => {
+    const run = ++measuring.current;
     void verifyFullOffline()
       .then((v) => {
+        if (run !== measuring.current) return;
         setOffline(v);
         setOfflineError(undefined);
       })
-      .catch((err: unknown) => setOfflineError(errorText(err)));
-  };
+      .catch((err: unknown) => {
+        if (run === measuring.current) setOfflineError(errorText(err));
+      });
+  }, []);
 
-  useEffect(measureOffline, []);
+  // Measured on mount and again whenever files land or the queue changes
+  // phase. Measured on mount only, a page opened while the background drain
+  // was still running said "13/19 files" beside "done" for as long as it
+  // stayed open. Landings are flushed in batches, so this re-reads about once
+  // per flush window during a drain, not once per file.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: phase and revision are refresh triggers
+  useEffect(measureOffline, [measureOffline, phase, revision]);
 
   const offlineReady = offline !== undefined && offline.cached === offline.total;
   /** Non-undefined only when the last install attempt failed, and it names it. */

@@ -91,9 +91,6 @@ flows by role and accessible name).
   installed only after the page has booted.
 - The first load is never controlled by the service worker (prompt mode, no
   `clientsClaim`). Call `waitForSwControl` before anything offline.
-- Settings counts the cached files once, when it mounts, so open it with
-  `expectDataSettled` only after an install has finished (poll
-  `countDataFiles` first), or the count it shows is stale.
 - No retries: a flaky spec is a bug. Fix it, or mark a genuine product gap
   with `test.fixme` and a reason.
 
