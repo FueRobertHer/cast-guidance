@@ -6,6 +6,7 @@ import {
   answerImportPreview,
   createBlankCharacter,
   dataFailureBanner,
+  dataUpdateToast,
   exportCharacter,
   gettingStartedDismiss,
   gotoRoster,
@@ -15,6 +16,7 @@ import {
   importHomebrewFile,
   importPreview,
   offlineReadyNotice,
+  onScreen,
   openCharacterActions,
   renameCharacter,
   SHEET_TABS,
@@ -205,7 +207,7 @@ test.describe('axe: pages and overlays', () => {
     await opened(page, preview);
     await scanState(page, 'homebrew-import-preview');
     await answerImportPreview(page, 'Import "axe-brew.json"?');
-    await expect(page.getByText(/^Imported "axe-brew\.json"/)).toBeVisible();
+    await expect(page.getByText(/^Imported "axe-brew\.json"/).and(onScreen(page))).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'homebrew');
 
@@ -231,7 +233,9 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'homebrew-builder');
 
     await page.goto('/homebrew/edit/no-such-file');
-    await expect(page.getByText('This homebrew file is no longer on this device.')).toBeVisible();
+    await expect(
+      page.getByText('This homebrew file is no longer on this device.').and(onScreen(page)),
+    ).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'homebrew-builder-unknown');
   });
@@ -282,10 +286,10 @@ test.describe('axe: banners and toasts', () => {
     await gotoRosterSettled(page);
     // A newer release appears, and the remembered list is out of date, so
     // the next boot asks for it and offers the update.
-    mirror.setTags(['v2.33.0', PINNED_TAG]);
+    mirror.setTags([NEXT_TAG, PINNED_TAG]);
     await putSetting(page, 'dataTagList', { tags: [PINNED_TAG], checkedAt: 0 });
     await page.reload();
-    await expect(page.getByText(/v2\.33\.0/)).toBeVisible();
+    await expect(dataUpdateToast(page, NEXT_TAG)).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'toast-data-update');
   });
@@ -302,7 +306,7 @@ test.describe('axe: banners and toasts', () => {
     );
     await startDataInstall(page, NEXT_TAG);
     await expect(dataFailureBanner(page, `Update to ${NEXT_TAG} failed`)).toBeVisible();
-    await expect(page.getByRole('alert').filter({ hasText: 'Update failed:' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(/^Update failed:/)).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'settings-update-failed');
   });
@@ -368,7 +372,9 @@ test.describe('axe: banners and toasts', () => {
       await waitForSwControl(page);
       server.setVariant('v2');
       expect((await triggerSwUpdate(page)).state).toBe('installed');
-      await expect(page.getByText('A new version of the app is ready.')).toBeVisible();
+      await expect(
+        page.getByText('A new version of the app is ready.').and(onScreen(page)),
+      ).toBeVisible();
       await animationsSettled(page);
       await scanState(page, 'toast-app-update');
     });
