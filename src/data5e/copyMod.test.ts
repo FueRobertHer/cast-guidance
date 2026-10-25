@@ -6,10 +6,11 @@ import {
   type Entity,
   expandVersions,
   MAX_REPLACE_STRING_LENGTH,
-  MAX_REPLACE_TOTAL_CHARS,
+  MAX_REPLACE_WORK,
   MAX_VERSIONS_PER_ENTITY,
   resolveCopies,
   uidOf,
+  withReplaceBudget,
 } from './copyMod';
 
 const noWarn = (message: string) => {
@@ -101,7 +102,7 @@ describe('applyMod', () => {
     );
     expect(t.entries).toEqual(['aaa']);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/replaceTxt unsafe regex/);
+    expect(warnings[0]).toMatch(/replaceTxt pattern refused/);
   });
 
   it('replaceTxt refuses a backreference', () => {
@@ -129,20 +130,38 @@ describe('applyMod', () => {
     expect(warnings[0]).toMatch(/skipped 1 string/);
   });
 
-  it('replaceTxt stops once one operation has searched its budget', () => {
+  it('replaceTxt charges a repeating pattern by length squared and stops at the budget', () => {
     const warnings: string[] = [];
     const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
-    const count = Math.ceil(MAX_REPLACE_TOTAL_CHARS / chunk.length) + 2;
-    const t: Entity = { entries: Array.from({ length: count }, () => chunk) };
+    const perString = chunk.length * chunk.length;
+    const fits = Math.floor(MAX_REPLACE_WORK / perString);
+    const t: Entity = { entries: Array.from({ length: fits + 2 }, () => chunk) };
     applyMod(
       t,
-      { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } },
+      { entries: { mode: 'replaceTxt', replace: 'dwarf\\w*', with: 'gnome' } },
       (m) => void warnings.push(m),
     );
     const out = t.entries as string[];
-    expect(out[0]?.startsWith('gnome')).toBe(true);
-    expect(out[count - 1]?.startsWith('dwarf')).toBe(true);
-    expect(warnings[0]).toMatch(/stopped after/);
+    expect(out[0]?.startsWith('gnome ')).toBe(true);
+    expect(out[fits - 1]?.startsWith('gnome ')).toBe(true);
+    expect(out[fits]?.startsWith('dwarf')).toBe(true);
+    expect(warnings[0]).toMatch(/work budget used up/);
+  });
+
+  it('replaceTxt draws every operation in a merge from one budget', () => {
+    const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
+    const fits = Math.floor(MAX_REPLACE_WORK / (chunk.length * chunk.length));
+    const op = { entries: { mode: 'replaceTxt', replace: 'dwarf\\w*', with: 'gnome' } };
+    const first: Entity = { entries: Array.from({ length: fits }, () => chunk) };
+    const second: Entity = { entries: [chunk] };
+    const warnings: string[] = [];
+    withReplaceBudget(() => {
+      applyMod(first, op, (m) => void warnings.push(m));
+      applyMod(second, op, (m) => void warnings.push(m));
+    });
+    // A fresh budget per operation would have let the second one run.
+    expect((second.entries as string[])[0]?.startsWith('dwarf')).toBe(true);
+    expect(warnings).toEqual([expect.stringMatching(/work budget used up/)]);
   });
 
   it('sets scalar and object props without a mode', () => {
@@ -358,9 +377,25 @@ describe('compileModRegex', () => {
     expect(refused('(?<x>a)\\k<x>')).toBe(true);
   });
 
-  it('caps unbounded quantifiers at three', () => {
-    expect(refused('a+b*c+')).toBe(false);
-    expect(refused('a+b*c+d{2,}')).toBe(true);
+  it('allows one repeating quantifier, and a fixed count does not repeat', () => {
+    expect(refused('\\bdwarf\\w*')).toBe(false);
+    expect(refused('.{20}Q')).toBe(false);
+    expect(refused('(?:ab){3}x+')).toBe(false);
+  });
+
+  it('refuses patterns that backtrack on ordinary prose', () => {
+    // Each of these froze V8 for seconds on a single 1,200 character string.
+    for (const p of [
+      '.*.*.*q',
+      '\\w+\\w+x',
+      'a+b*',
+      'a{1,8192}a{1,8192}x',
+      `${'.?'.repeat(20)}.{20}Q`,
+      'a?b?c?d?e?',
+    ]) {
+      expect(refused(p), p).toBe(true);
+    }
+    expect(refused('a?b?c?d?')).toBe(false);
   });
 
   it('refuses an overlong pattern', () => {
@@ -371,8 +406,9 @@ describe('compileModRegex', () => {
   it('reads escapes and classes as atoms, not syntax', () => {
     // An escaped paren is a literal, and a quantifier inside a class is a
     // character: neither opens or quantifies a group.
-    expect(refused('\\(a+\\)+')).toBe(false);
-    expect(refused('[(]a+[)]+')).toBe(false);
+    // Each has one real quantifier; the parens and stars around it are text.
+    expect(refused('\\(a+\\)\\*')).toBe(false);
+    expect(refused('[(*+]a+[)?]')).toBe(false);
   });
 
   it('refuses a pattern that does not compile, with the reason', () => {

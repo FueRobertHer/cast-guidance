@@ -115,9 +115,9 @@ export const IMPORT_LIMITS = {
 
 /**
  * Bounds for an official data file, checked before it is cached, normalized
- * or indexed. Measured against v2.32.0: at most 61,948 values, 13 levels and
- * 1,227 characters in one string (all in items.json). These leave roughly
- * eight times the values and twenty-six times the string length, so a release
+ * or indexed. Measured against v2.32.0: at most 61,948 values and 13 levels
+ * (items.json) and 1,255 characters in one string (spells-xphb.json). These
+ * leave roughly eight times the values and twenty-six times the string, so a release
  * that grows is accepted and a body that is not game data is not.
  */
 export const DATA_FILE_LIMITS: JsonLimits = {

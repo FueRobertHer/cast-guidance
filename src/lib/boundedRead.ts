@@ -42,8 +42,9 @@ function declaredLength(res: Response): number | undefined {
 export async function readTextBounded(res: Response, maxBytes: number): Promise<string> {
   // An early refusal before a byte is read. Content-Length is CORS-safelisted,
   // so cross-origin mirrors expose it. With a Content-Encoding it is the
-  // compressed size, which can only be smaller than the decoded one, so a
-  // value over the limit is still a safe reason to refuse; a value under it
+  // compressed size. Gzip or Brotli can only grow text that does not compress
+  // by a few bytes of framing, and JSON compresses well, so a value over the
+  // limit is still a safe reason to refuse; a value under it
   // proves nothing, and the streaming count below still applies.
   const declared = declaredLength(res);
   if (declared !== undefined && declared > maxBytes) {

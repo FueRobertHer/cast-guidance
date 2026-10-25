@@ -56,16 +56,31 @@ function entryName(e: unknown): string | undefined {
 // pattern that backtracks catastrophically (`(a+)+$` against a long run of
 // "a") would freeze the app on every launch. The checks below refuse the
 // shapes that backtrack badly and bound how much text any one pattern sees.
-// They are a heuristic, not a proof; the text budget is the backstop.
+//
+// The rule is a narrow safe subset rather than a list of known-bad shapes:
+// at most one quantifier that can repeat (`*`, `+`, `{n,}`, `{n,m}` with
+// m > n), a few optional atoms, and no repeated group that holds a quantifier
+// or `|`. Two repeating quantifiers side by side (`\w+\w+x`, `.*.*q`) or a
+// run of optional atoms (`.?.?.?…`) backtrack polynomially or exponentially
+// on ordinary prose, inside a single string, where no length cap helps. One
+// repeating quantifier is at worst quadratic in the string, so each string is
+// charged its length squared against a budget shared by a whole homebrew
+// merge, and strings are capped well above the longest official one (1,255).
 
 /** Longest `replaceTxt` pattern accepted. Official data uses `Goblins`. */
 export const MAX_MOD_PATTERN_LENGTH = 256;
-/** Unbounded quantifiers (`*`, `+`, `{n,}`) one pattern may use. */
-export const MAX_MOD_UNBOUNDED_QUANTIFIERS = 3;
+/** Quantifiers that can match more than once (`*`, `+`, `{n,}`, `{n,m}`) one pattern may use. */
+export const MAX_MOD_REPEATING_QUANTIFIERS = 1;
+/** Optional atoms (`?`, `{0,1}`) one pattern may use. */
+export const MAX_MOD_OPTIONAL_QUANTIFIERS = 4;
 /** Strings longer than this are left as they are rather than searched. */
-export const MAX_REPLACE_STRING_LENGTH = 8192;
-/** Characters one `replaceTxt` operation may search in total. */
-export const MAX_REPLACE_TOTAL_CHARS = 1_000_000;
+export const MAX_REPLACE_STRING_LENGTH = 4096;
+/**
+ * Work `replaceTxt` may do across one homebrew merge (or one lone operation):
+ * each string costs its length, or its length squared under a repeating
+ * quantifier, so about four maximal strings for a repeating pattern.
+ */
+export const MAX_REPLACE_WORK = 64_000_000;
 /** Entities one base may expand into through `_versions`. Official max: 10. */
 export const MAX_VERSIONS_PER_ENTITY = 64;
 
@@ -92,7 +107,8 @@ function unsafeModPattern(pattern: string): string | undefined {
   const top = (): GroupFrame => stack[stack.length - 1] as GroupFrame;
   // The group that just closed, while the next token could still quantify it.
   let closed: GroupFrame | undefined;
-  let unbounded = 0;
+  let repeating = 0;
+  let optional = 0;
   let i = 0;
   while (i < pattern.length) {
     const c = pattern[i];
@@ -149,12 +165,14 @@ function unsafeModPattern(pattern: string): string | undefined {
     }
     const brace = c === '{' ? /^\{(\d+)(,(\d*))?\}/.exec(pattern.slice(i)) : null;
     if (c === '*' || c === '+' || c === '?' || brace !== null) {
-      // The most times the atom may match: `?` once, `{n}` n times, `{n,m}`
-      // m times, `*`, `+` and `{n,}` without limit.
+      // The least and most times the atom may match: `?` zero or once, `{n}`
+      // exactly n, `{n,m}` n to m, `*`, `+` and `{n,}` without limit.
+      let min = c === '+' ? 1 : 0;
       let max = 1;
       if (c === '*' || c === '+') max = Number.POSITIVE_INFINITY;
       else if (brace !== null) {
-        if (brace[2] === undefined) max = Number(brace[1]);
+        min = Number(brace[1]);
+        if (brace[2] === undefined) max = min;
         else max = brace[3] === '' ? Number.POSITIVE_INFINITY : Number(brace[3]);
       }
       // Only a group that can match more than once multiplies the ways a run
@@ -162,8 +180,12 @@ function unsafeModPattern(pattern: string): string | undefined {
       if (max > 1 && closed !== undefined && (closed.quantified || closed.alternates)) {
         return 'quantified group containing a quantifier or alternation';
       }
-      if (max === Number.POSITIVE_INFINITY && ++unbounded > MAX_MOD_UNBOUNDED_QUANTIFIERS) {
-        return `more than ${MAX_MOD_UNBOUNDED_QUANTIFIERS} unbounded quantifiers`;
+      // A fixed count (`{3}`) is plain repetition and never backtracks.
+      if (max > 1 && max > min && ++repeating > MAX_MOD_REPEATING_QUANTIFIERS) {
+        return `more than ${MAX_MOD_REPEATING_QUANTIFIERS} repeating quantifier`;
+      }
+      if (max === 1 && min === 0 && ++optional > MAX_MOD_OPTIONAL_QUANTIFIERS) {
+        return `more than ${MAX_MOD_OPTIONAL_QUANTIFIERS} optional atoms`;
       }
       top().quantified = true;
       closed = undefined;
@@ -176,6 +198,11 @@ function unsafeModPattern(pattern: string): string | undefined {
     i++;
   }
   return stack.length === 1 ? undefined : 'unbalanced parenthesis';
+}
+
+/** Whether a compiled-safe pattern repeats, so it is charged quadratically. */
+function repeats(pattern: string): boolean {
+  return /(^|[^\\])([*+]|\{\d+,\d*\})/.test(pattern);
 }
 
 /**
@@ -202,23 +229,53 @@ interface ReplaceBudget {
   exhausted: boolean;
 }
 
-function replaceTextDeep(v: unknown, re: RegExp, w: string, budget: ReplaceBudget): unknown {
+/**
+ * The budget every `replaceTxt` in the current merge draws on. One per
+ * operation let a file with many operations, or many entities and versions,
+ * add up to seconds on the main thread; see {@link withReplaceBudget}.
+ */
+let sharedBudget: ReplaceBudget | undefined;
+
+/**
+ * Run `fn` with one `replaceTxt` budget shared by everything it applies. The
+ * homebrew merge wraps its whole run in this.
+ */
+export function withReplaceBudget<T>(fn: () => T): T {
+  const outer = sharedBudget;
+  sharedBudget = { left: MAX_REPLACE_WORK, skippedLong: 0, exhausted: false };
+  try {
+    return fn();
+  } finally {
+    sharedBudget = outer;
+  }
+}
+
+function replaceTextDeep(
+  v: unknown,
+  re: RegExp,
+  w: string,
+  budget: ReplaceBudget,
+  quadratic: boolean,
+): unknown {
   if (typeof v === 'string') {
     if (v.length > MAX_REPLACE_STRING_LENGTH) {
       budget.skippedLong++;
       return v;
     }
-    if (v.length > budget.left) {
+    const cost = quadratic ? v.length * v.length : v.length;
+    if (cost > budget.left) {
       budget.exhausted = true;
       return v;
     }
-    budget.left -= v.length;
+    budget.left -= cost;
     return v.replace(re, w);
   }
-  if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w, budget));
+  if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w, budget, quadratic));
   if (typeof v === 'object' && v !== null) {
     const out: Record<string, unknown> = {};
-    for (const [k, val] of Object.entries(v)) out[k] = replaceTextDeep(val, re, w, budget);
+    for (const [k, val] of Object.entries(v)) {
+      out[k] = replaceTextDeep(val, re, w, budget, quadratic);
+    }
     return out;
   }
   return v;
@@ -310,22 +367,31 @@ export function applyMod(
         case 'replaceTxt': {
           const re = compileModRegex(String(o.replace), o.flags);
           if (!(re instanceof RegExp)) {
-            warn(`replaceTxt unsafe regex on "${prop}" (${re.reason}); left unchanged`);
+            warn(`replaceTxt pattern refused on "${prop}" (${re.reason}); left unchanged`);
             break;
           }
-          const budget: ReplaceBudget = {
-            left: MAX_REPLACE_TOTAL_CHARS,
+          const budget = sharedBudget ?? {
+            left: MAX_REPLACE_WORK,
             skippedLong: 0,
             exhausted: false,
           };
-          target[prop] = replaceTextDeep(target[prop], re, String(o.with ?? ''), budget);
-          if (budget.skippedLong > 0) {
+          const skippedBefore = budget.skippedLong;
+          const wasExhausted = budget.exhausted;
+          target[prop] = replaceTextDeep(
+            target[prop],
+            re,
+            String(o.with ?? ''),
+            budget,
+            repeats(String(o.replace)),
+          );
+          const skipped = budget.skippedLong - skippedBefore;
+          if (skipped > 0) {
             warn(
-              `replaceTxt skipped ${budget.skippedLong} string(s) over ${MAX_REPLACE_STRING_LENGTH} characters on "${prop}"`,
+              `replaceTxt skipped ${skipped} string(s) over ${MAX_REPLACE_STRING_LENGTH} characters on "${prop}"`,
             );
           }
-          if (budget.exhausted) {
-            warn(`replaceTxt stopped after ${MAX_REPLACE_TOTAL_CHARS} characters on "${prop}"`);
+          if (budget.exhausted && !wasExhausted) {
+            warn(`replaceTxt work budget used up on "${prop}"; later replacements left unchanged`);
           }
           break;
         }

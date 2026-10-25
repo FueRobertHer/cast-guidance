@@ -10,6 +10,7 @@ import {
   expandVersions,
   resolveCopies,
   uidOf,
+  withReplaceBudget,
 } from './copyMod';
 
 /**
@@ -317,6 +318,15 @@ const HOMEBREW_TYPES: EntityType[] = [
  * copy/mod machinery — `_copy` targets may be official entities.
  */
 export function mergeHomebrew(
+  reg: EntityRegistry,
+  homebrew: ReadonlyMap<string, Record<string, unknown>>,
+): void {
+  // Every replaceTxt in every file draws on one budget, so the merge as a
+  // whole is bounded rather than each operation on its own.
+  withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
+}
+
+function mergeHomebrewFiles(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
 ): void {
