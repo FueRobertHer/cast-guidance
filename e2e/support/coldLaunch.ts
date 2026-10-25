@@ -37,7 +37,25 @@ interface Fixtures {
   backOnline: (launch: StableLaunch) => Promise<void>;
 }
 
-export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
+export const test = base.extend<Fixtures & { offlineLog: OfflineLog; profileDirs: string[] }>({
+  /** The profile directories this test launched, for the decision below. */
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads fixture dependencies from this pattern.
+  profileDirs: async ({}, use) => {
+    await use([]);
+  },
+
+  /**
+   * Decides what to keep of each launched profile. On `context` because every
+   * guard depends on it (the network guard, the mirror, the console guard,
+   * the offline log), so this teardown runs after all of theirs: a guard that
+   * fails the test at teardown has already done so by the time the status is
+   * read, and its profile is kept for a look.
+   */
+  context: async ({ context, profileDirs }, use, testInfo) => {
+    await use(context);
+    for (const dir of profileDirs) keepProfileIfUseful(dir, testInfo);
+  },
+
   offlineLog: async ({ mirror }, use) => {
     const log = new OfflineLog();
     await use(log);
@@ -55,13 +73,12 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
       networkGuard,
       consoleGuard,
       offlineLog,
+      profileDirs,
     },
     use,
-    testInfo,
   ) => {
     const origin = stableOrigin();
     const launched: BrowserContext[] = [];
-    const dirs: string[] = [];
     // Offline, the browser fails origin requests the worker does not answer
     // (the analytics script) itself.
     consoleGuard.allowResource(
@@ -83,7 +100,7 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
         offline,
       });
       launched.push(context);
-      dirs.push(dir);
+      profileDirs.push(dir);
       await networkGuard.attach(context);
       await mirror.attach(context);
       consoleGuard.watch(context);
@@ -101,7 +118,6 @@ export const test = base.extend<Fixtures & { offlineLog: OfflineLog }>({
       return { context, page };
     });
     for (const context of launched) await context.close();
-    for (const dir of dirs) keepProfileIfUseful(dir, testInfo);
   },
 
   backOnline: async ({ mirror, offlineLog }, use) => {
