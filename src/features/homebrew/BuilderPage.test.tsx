@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { namelessControls } from '../../../tests-fixtures/a11y';
 
 type Json = Record<string, unknown>;
 
@@ -131,7 +132,7 @@ describe('BuilderPage writes', () => {
     saveEditable.mockRejectedValue(new Error('database closed'));
     renderBuilder();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Delete\b/ }));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Could not delete Old blade');
@@ -141,7 +142,7 @@ describe('BuilderPage writes', () => {
   it('retries a delete against the file as it stands now, not as it was', async () => {
     saveEditable.mockRejectedValueOnce(new Error('database closed'));
     renderBuilder();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Delete\b/ }));
     await screen.findByRole('alert');
 
     // Another tab adds an entity between the refused delete and the retry. A
@@ -159,7 +160,7 @@ describe('BuilderPage writes', () => {
   it('says so instead of doing nothing when the retry target is already gone', async () => {
     saveEditable.mockRejectedValueOnce(new Error('database closed'));
     renderBuilder();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Delete\b/ }));
     await screen.findByRole('alert');
 
     row.json.item = [];
@@ -233,7 +234,7 @@ describe('BuilderPage reads a file it did not write', () => {
     saveEditable.mockResolvedValue(undefined);
     renderBuilder();
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Delete\b/ })[0] as HTMLElement);
 
     await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
     const [, written] = saveEditable.mock.calls[0] as [string, { item: Array<{ name: string }> }];
@@ -248,7 +249,7 @@ describe('BuilderPage reads a file it did not write', () => {
     renderBuilder();
 
     row.json.item = [{ name: 'New sword' }, { name: 'Old blade' }];
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Delete\b/ })[0] as HTMLElement);
 
     await waitFor(() =>
       expect(noticeStore.getState().notice).toMatchObject({
@@ -268,7 +269,7 @@ describe('BuilderPage reads a file it did not write', () => {
 
     row.json.item = ['first bad', 'second bad'];
     // Index 1 as rendered: the row showing 'first bad'.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[1] as HTMLElement);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Delete\b/ })[1] as HTMLElement);
 
     await waitFor(() => expect(saveEditable).toHaveBeenCalledOnce());
     const [, written] = saveEditable.mock.calls[0] as [string, { item: unknown[] }];
@@ -368,5 +369,19 @@ describe('BuilderPage titles and navigation', () => {
     expect(screen.getByRole('link', { name: 'Back to homebrew' }).getAttribute('href')).toBe(
       '/homebrew',
     );
+  });
+});
+
+// A11Y-001: the row delete was an icon named only by its tooltip, and every
+// row's "view" link read the same.
+describe('BuilderPage accessible names', () => {
+  it('names each row action after the record it acts on', () => {
+    row.json.item = [null, { name: 'Old blade' }];
+    renderBuilder();
+
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Delete Old blade' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete unnamed item' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View Old blade in the library' })).toBeTruthy();
   });
 });
