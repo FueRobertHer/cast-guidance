@@ -148,3 +148,32 @@ describe('spellRollActions: spells with two outcomes', () => {
     ]);
   });
 });
+
+describe('spellRollActions on hostile text', () => {
+  it('still reads a slot-scaled roll through the bounded patterns', () => {
+    const fireball: Entity = {
+      name: 'Fireball',
+      level: 3,
+      entries: ['Each creature takes {@damage 8d6} fire damage.'],
+      entriesHigherLevel: ['The damage increases by {@scaledamage 8d6|3-9|1d6} per slot level.'],
+    };
+    expect(spellRollActions(fireball, { characterLevel: 5, slotLevel: 5 })).toEqual([
+      { expr: '10d6', label: 'Fireball fire damage', variant: 'damage' },
+    ]);
+  });
+
+  it('stays linear on a long run of unclosed dice tags', () => {
+    // Each unclosed tag made the old patterns walk the rest of the string, so
+    // these took about thirteen and twelve seconds on a fast machine. The
+    // budget here is the test timeout.
+    const spell: Entity = {
+      name: 'Hostile',
+      level: 1,
+      entries: ['Takes {@damage 1d6} fire damage.', '{@damage '.repeat(45_000)],
+      entriesHigherLevel: ['{@scaledamage '.repeat(32_000)],
+    };
+    expect(spellRollActions(spell, { characterLevel: 1, slotLevel: 2 })).toEqual([
+      { expr: '1d6', label: 'Hostile fire damage', variant: 'damage' },
+    ]);
+  }, 2000);
+});

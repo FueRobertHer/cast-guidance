@@ -1,12 +1,17 @@
 import { db } from '@/db/db';
+import type { Entity } from '../copyMod';
 import { getActiveTag } from '../loader';
 import type { EntityRegistry, EntityType } from '../normalize';
-import type {
-  SearchDoc,
-  SearchErrorPhase,
-  SearchSourceFilter,
-  SearchWorkerRequest,
-  SearchWorkerResponse,
+import {
+  clampDocName,
+  clampLimit,
+  clampQuery,
+  MAX_INDEX_DOCS,
+  type SearchDoc,
+  type SearchErrorPhase,
+  type SearchSourceFilter,
+  type SearchWorkerRequest,
+  type SearchWorkerResponse,
 } from './protocol';
 
 /** Types worth surfacing in global search. */
@@ -151,11 +156,20 @@ function send(msg: SearchWorkerRequest): void {
   getWorker().postMessage(msg);
 }
 
+/**
+ * The documents to index, at most {@link MAX_INDEX_DOCS} of them.
+ *
+ * Official entries of every type go in before any homebrew does. Walking type
+ * by type to the cap would let one enormous homebrew file of races push every
+ * later type (items, spells) out of search entirely; this way a cap that is
+ * reached costs homebrew entries only.
+ */
 function docsFrom(registry: EntityRegistry): SearchDoc[] {
   const docs: SearchDoc[] = [];
   const seen = new Set<string>();
-  for (const type of SEARCHABLE) {
-    for (const e of registry.byType(type)) {
+  const take = (type: EntityType, entities: readonly Entity[]): void => {
+    for (const e of entities) {
+      if (docs.length >= MAX_INDEX_DOCS) return;
       const name = typeof e.name === 'string' ? e.name : undefined;
       const source = typeof e.source === 'string' ? e.source : '?';
       if (name === undefined) continue;
@@ -163,8 +177,14 @@ function docsFrom(registry: EntityRegistry): SearchDoc[] {
       const id = `${type}:${uid}`;
       if (seen.has(id)) continue;
       seen.add(id);
-      docs.push({ id, type, uid, name, source });
+      docs.push({ id, type, uid, name: clampDocName(name), source });
     }
+  };
+  for (const type of SEARCHABLE) {
+    take(type, registry.byType(type).slice(0, registry.officialCount(type)));
+  }
+  for (const type of SEARCHABLE) {
+    take(type, registry.byType(type).slice(registry.officialCount(type)));
   }
   return docs;
 }
@@ -412,6 +432,12 @@ export async function searchAll(
       clearTimeout(timer);
       resolve(result);
     });
-    send({ kind: 'query', id, q, limit: opts.limit ?? 30, sources: opts.sources });
+    send({
+      kind: 'query',
+      id,
+      q: clampQuery(q),
+      limit: clampLimit(opts.limit),
+      sources: opts.sources,
+    });
   });
 }

@@ -25,16 +25,22 @@ vi.mock('./config', async (importOriginal) => ({
   BOOT_TAG_RESOLVE_TIMEOUT_MS: 20,
 }));
 
-import { DATA_TAG, TAG_LIST_TTL_MS } from './config';
+import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
 
 /** Every release list request the loader makes. */
 const tagsFetch = vi.fn();
 
-/** A `fetch` answer shaped like GitHub's tag listing. */
-const tagList = (...names: string[]) => ({
-  ok: true,
-  json: () => Promise.resolve(names.map((name) => ({ name }))),
-});
+/**
+ * A `fetch` answer shaped like GitHub's tag listing. A real `Response`, since
+ * the loader reads it through a byte-bounded stream, and so a new one per
+ * request: a body can only be read once.
+ */
+const tagList = (...names: string[]) =>
+  new Response(JSON.stringify(names.map((name) => ({ name }))));
+
+/** Answer every release list request with a fresh listing of `names`. */
+const serveTags = (...names: string[]) =>
+  tagsFetch.mockImplementation(() => Promise.resolve(tagList(...names)));
 
 /** A mirror complete enough to boot against, with one class and one spell pack. */
 const wholeMirror = (_tag: string, path: string): Promise<unknown> =>
@@ -77,7 +83,7 @@ beforeEach(() => {
   fetchFile.mockReset();
   fetchFile.mockImplementation(wholeMirror);
   tagsFetch.mockReset();
-  tagsFetch.mockResolvedValue(tagList('v2.33.0', DATA_TAG));
+  serveTags('v2.33.0', DATA_TAG);
   vi.stubGlobal('fetch', tagsFetch);
   // Node has no `requestIdleCallback`, so the background queue would fall back
   // to a quarter-second timer per pack and every drain here would outlast its
@@ -248,17 +254,27 @@ describe('the boot-time update check', () => {
     expect(tagsFetch).toHaveBeenCalledOnce();
   });
 
+  it('refuses a release list far larger than one could be, unparsed', async () => {
+    tagsFetch.mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify([{ name: 'x'.repeat(MAX_TAG_LIST_BYTES) }]))),
+    );
+    const { db, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await expect(loader.listAvailableTags({ maxAgeMs: 0 })).rejects.toThrow(/byte limit/);
+    expect(await db.settings.get('dataTagList')).toBeUndefined();
+  });
+
   it('does not remember an answer with nothing installable in it', async () => {
     // A mirror carrying only releases this build cannot read, or a captive
     // portal answering 200 with something else entirely, would otherwise own
     // the next six hours of checks.
-    tagsFetch.mockResolvedValue(tagList('v3.0.0'));
+    serveTags('v3.0.0');
     const { db, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
 
     await expect(loader.listAvailableTags()).resolves.toEqual([]);
     expect(await db.settings.get('dataTagList')).toBeUndefined();
 
-    tagsFetch.mockResolvedValue(tagList('v2.33.0', DATA_TAG));
+    serveTags('v2.33.0', DATA_TAG);
     await expect(loader.listAvailableTags()).resolves.toEqual(['v2.33.0', DATA_TAG]);
   });
 

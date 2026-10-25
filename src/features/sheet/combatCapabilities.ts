@@ -6,6 +6,7 @@
  * "what it lets you do". Tapping the chip still opens the feature's full text.
  */
 import type { FeatureCard } from '@/engine/types';
+import { stripTrailingParenthetical } from '@/lib/trailingParenthetical';
 
 export const COMBAT_CAPABILITIES: Record<string, string> = {
   'extra attack': 'Attack more than once whenever you take the Attack action.',
@@ -33,10 +34,7 @@ export const COMBAT_CAPABILITIES: Record<string, string> = {
 
 /** Strip a trailing "(…)" annotation and lowercase, matching curated keys. */
 export function capabilityKey(name: string): string {
-  return name
-    .replace(/\s*\(.*\)\s*$/, '')
-    .trim()
-    .toLowerCase();
+  return stripTrailingParenthetical(name).trim().toLowerCase();
 }
 
 export interface CapabilityCard {

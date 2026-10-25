@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { pageAllowedHits, type SearchDoc } from './protocol';
+import {
+  clampDocs,
+  clampLimit,
+  clampQuery,
+  MAX_DOC_NAME_LENGTH,
+  MAX_INDEX_DOCS,
+  MAX_QUERY_LENGTH,
+  MAX_QUERY_LIMIT,
+  MAX_QUERY_TERMS,
+  pageAllowedHits,
+  type SearchDoc,
+} from './protocol';
 
 const doc = (n: number, source: string): SearchDoc => ({
   id: `spell:s${n}|${source}`.toLowerCase(),
@@ -56,5 +67,43 @@ describe('pageAllowedHits', () => {
     // MiniSearch results carry a score and other internals; only the doc shape
     // should cross the worker boundary.
     expect(Object.keys(hits[0] ?? {}).sort()).toEqual(['id', 'name', 'source', 'type', 'uid']);
+  });
+});
+
+describe('clampQuery', () => {
+  it('leaves an ordinary query alone', () => {
+    expect(clampQuery('fire bolt')).toBe('fire bolt');
+  });
+
+  it('cuts the length and keeps the leading terms', () => {
+    const q = clampQuery('x'.repeat(10_000));
+    expect(q).toHaveLength(MAX_QUERY_LENGTH);
+    expect(clampQuery('a b c d e f g h i j k')).toBe('a b c d e f g h');
+    expect(clampQuery(' a   b ').split(' ')).toEqual(['a', 'b']);
+    expect(MAX_QUERY_TERMS).toBe(8);
+  });
+});
+
+describe('clampLimit', () => {
+  it('defaults, floors and bounds the result count', () => {
+    expect(clampLimit(undefined)).toBe(30);
+    expect(clampLimit(Number.NaN)).toBe(30);
+    expect(clampLimit(0)).toBe(1);
+    expect(clampLimit(-5)).toBe(1);
+    expect(clampLimit(12.7)).toBe(12);
+    expect(clampLimit(1e9)).toBe(MAX_QUERY_LIMIT);
+  });
+});
+
+describe('clampDocs', () => {
+  it('caps the doc count and cuts long names, leaving ids whole', () => {
+    const docs = Array.from({ length: MAX_INDEX_DOCS + 5 }, (_, i) => doc(i, 'PHB'));
+    const long = { ...doc(0, 'PHB'), name: 'n'.repeat(MAX_DOC_NAME_LENGTH + 50) };
+    const out = clampDocs([long, ...docs]);
+    expect(out).toHaveLength(MAX_INDEX_DOCS);
+    expect(out[0]?.name).toHaveLength(MAX_DOC_NAME_LENGTH);
+    expect(out[0]?.uid).toBe(long.uid);
+    // An unchanged doc is passed through as is.
+    expect(out[1]).toBe(docs[0]);
   });
 });

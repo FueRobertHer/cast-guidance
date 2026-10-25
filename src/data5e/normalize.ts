@@ -10,6 +10,7 @@ import {
   expandVersions,
   resolveCopies,
   uidOf,
+  withReplaceBudget,
 } from './copyMod';
 
 /**
@@ -90,6 +91,25 @@ export class EntityRegistry {
   private readonly types = new Map<EntityType, Entity[]>();
   private readonly index = new Map<EntityType, Map<string, Entity>>();
   readonly warnings: CopyModWarning[] = [];
+  /** Per-type list lengths when homebrew started arriving; see `officialCount`. */
+  private officialCounts: Map<EntityType, number> | undefined;
+
+  /**
+   * Record where official data ends. Homebrew is only ever appended after it
+   * (`mergeHomebrew` calls this first), so each type's list is official up to
+   * the recorded length and homebrew past it.
+   */
+  sealOfficial(): void {
+    if (this.officialCounts !== undefined) return;
+    this.officialCounts = new Map([...this.types].map(([type, list]) => [type, list.length]));
+  }
+
+  /** How many of `byType(type)`, from the front, are official data. */
+  officialCount(type: EntityType): number {
+    const all = this.byType(type).length;
+    if (this.officialCounts === undefined) return all;
+    return this.officialCounts.get(type) ?? 0;
+  }
 
   addAll(type: EntityType, entities: Entity[]): void {
     const list = this.types.get(type) ?? [];
@@ -301,6 +321,16 @@ export function mergeHomebrew(
   reg: EntityRegistry,
   homebrew: ReadonlyMap<string, Record<string, unknown>>,
 ): void {
+  // Every replaceTxt in every file draws on one budget, so the merge as a
+  // whole is bounded rather than each operation on its own.
+  withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
+}
+
+function mergeHomebrewFiles(
+  reg: EntityRegistry,
+  homebrew: ReadonlyMap<string, Record<string, unknown>>,
+): void {
+  reg.sealOfficial();
   for (const [, json] of homebrew) {
     for (const type of HOMEBREW_TYPES) {
       const arr = json[type];

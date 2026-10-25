@@ -14,6 +14,19 @@ export const ENDPOINTS: Endpoint[] = [
 ];
 
 export const FETCH_TIMEOUT_MS = 20_000;
+
+/**
+ * The most bytes one data file may decode to before it is refused unparsed.
+ * Measured against v2.32.0: the largest file, items.json, is 2,785,210 bytes
+ * uncompressed, and nothing else passes 710 KB. Eight MiB is about 2.9 times
+ * that, room for several releases of growth while still refusing a mirror that
+ * answers with something absurd. `bun run data:audit` fails once any file
+ * passes half of this, so a bump is planned rather than discovered.
+ */
+export const MAX_DATA_FILE_BYTES = 8 * 1024 * 1024;
+
+/** The release list is a few kilobytes; anything near this is not one. */
+export const MAX_TAG_LIST_BYTES = 1024 * 1024;
 export const FETCH_CONCURRENCY = 4;
 
 export interface TagVersion {

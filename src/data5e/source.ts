@@ -1,4 +1,7 @@
-import { ENDPOINTS, type Endpoint, FETCH_TIMEOUT_MS } from './config';
+// Relative, not `@/`: scripts/data-audit.ts runs this module under plain Bun,
+// which does not see the app's path alias.
+import { ResponseTooLargeError, readJsonBounded } from '../lib/boundedRead';
+import { ENDPOINTS, type Endpoint, FETCH_TIMEOUT_MS, MAX_DATA_FILE_BYTES } from './config';
 
 export interface DataSource {
   id: string;
@@ -13,6 +16,8 @@ export interface GithubTagSourceOptions {
   /** Attempts per endpoint before moving to the next. */
   triesPerEndpoint?: number;
   backoffMs?: number;
+  /** Decoded bytes one file may have before it is refused unparsed. */
+  maxBytes?: number;
 }
 
 export class DataFetchError extends Error {
@@ -36,6 +41,7 @@ export class GithubTagSource implements DataSource {
   private readonly fetchImpl: typeof fetch;
   private readonly triesPerEndpoint: number;
   private readonly backoffMs: number;
+  private readonly maxBytes: number;
 
   constructor(tag: string, opts: GithubTagSourceOptions = {}) {
     this.tag = tag;
@@ -46,6 +52,7 @@ export class GithubTagSource implements DataSource {
     this.fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
     this.triesPerEndpoint = opts.triesPerEndpoint ?? 2;
     this.backoffMs = opts.backoffMs ?? 300;
+    this.maxBytes = opts.maxBytes ?? MAX_DATA_FILE_BYTES;
   }
 
   async fetchFile(path: string): Promise<unknown> {
@@ -63,9 +70,13 @@ export class GithubTagSource implements DataSource {
             // lag right after a tag is published — still worth the failover.
             break;
           }
-          return await res.json();
+          return await readJsonBounded(res, this.maxBytes);
         } catch (err) {
           failures.push(`${url} -> ${err instanceof Error ? err.message : String(err)}`);
+          // The same endpoint will send the same oversized body again, so a
+          // retry only spends another download on it. The mirror is worth
+          // asking: one CDN copy gone wrong is not the release gone wrong.
+          if (err instanceof ResponseTooLargeError) break;
           if (attempt < this.triesPerEndpoint) await sleep(this.backoffMs * attempt);
         }
       }

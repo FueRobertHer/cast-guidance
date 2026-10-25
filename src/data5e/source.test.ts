@@ -73,4 +73,35 @@ describe('GithubTagSource', () => {
     expect((err as DataFetchError).message).toContain('offline');
     expect((err as DataFetchError).path).toBe('y.json');
   });
+
+  it('moves past an oversized body to the mirror without retrying it', async () => {
+    const calls: string[] = [];
+    const src = new GithubTagSource('v1', {
+      endpoints,
+      backoffMs: 1,
+      maxBytes: 64,
+      fetchImpl: fakeFetch((url) => {
+        calls.push(url);
+        return url.includes('primary') ? json({ pad: 'x'.repeat(500) }) : json({ via: 'fallback' });
+      }),
+    });
+    await expect(src.fetchFile('races.json')).resolves.toEqual({ via: 'fallback' });
+    // One request at the primary: the same endpoint would send the same body.
+    expect(calls).toEqual([
+      'https://primary.test/v1/races.json',
+      'https://fallback.test/v1/races.json',
+    ]);
+  });
+
+  it('reports the byte limit when every endpoint sends too much', async () => {
+    const src = new GithubTagSource('v1', {
+      endpoints,
+      backoffMs: 1,
+      maxBytes: 64,
+      fetchImpl: fakeFetch(() => json({ pad: 'x'.repeat(500) })),
+    });
+    const err = await src.fetchFile('items.json').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DataFetchError);
+    expect((err as DataFetchError).message).toContain('larger than the 64 byte limit');
+  });
 });

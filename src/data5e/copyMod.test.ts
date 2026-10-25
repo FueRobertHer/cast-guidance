@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   applyMod,
   type CopyModWarning,
+  compileModRegex,
   type Entity,
   expandVersions,
+  MAX_REPLACE_STRING_LENGTH,
+  MAX_REPLACE_WORK,
+  MAX_VERSIONS_PER_ENTITY,
   resolveCopies,
   uidOf,
+  withReplaceBudget,
 } from './copyMod';
 
 const noWarn = (message: string) => {
@@ -67,6 +72,96 @@ describe('applyMod', () => {
     const t: Entity = { entries: ['a dwarf walks', { name: 'X', entries: ['dwarf again'] }] };
     applyMod(t, { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } }, noWarn);
     expect(t.entries).toEqual(['a gnome walks', { name: 'X', entries: ['gnome again'] }]);
+  });
+
+  it('replaceTxt is always global, as in 5etools, with the file flags added', () => {
+    // The one official pattern: `{ replace: 'Goblins', flags: 'i' }`. 5etools
+    // builds it as `new RegExp(replace, 'g' + flags)`, so every match changes.
+    const t: Entity = { entries: ['goblins and GOBLINS'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'Goblins', flags: 'i', with: 'Kobolds' } },
+      noWarn,
+    );
+    expect(t.entries).toEqual(['Kobolds and Kobolds']);
+  });
+
+  it('replaceTxt keeps a doubled g from making the pattern invalid', () => {
+    const t: Entity = { entries: ['a-a'] };
+    applyMod(t, { entries: { mode: 'replaceTxt', replace: 'a', flags: 'gg', with: 'b' } }, noWarn);
+    expect(t.entries).toEqual(['b-b']);
+  });
+
+  it('replaceTxt refuses a pattern that backtracks catastrophically', () => {
+    const warnings: string[] = [];
+    const t: Entity = { entries: ['aaa'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: '(a+)+$', with: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['aaa']);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/replaceTxt pattern refused/);
+  });
+
+  it('replaceTxt refuses a backreference', () => {
+    const warnings: string[] = [];
+    const t: Entity = { entries: ['aa'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: '(a)\\1', with: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['aa']);
+    expect(warnings[0]).toMatch(/backreference/);
+  });
+
+  it('replaceTxt leaves strings past the length cap alone, and says so', () => {
+    const warnings: string[] = [];
+    const long = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH)}`;
+    const t: Entity = { entries: ['a dwarf', long] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['a gnome', long]);
+    expect(warnings[0]).toMatch(/skipped 1 string/);
+  });
+
+  it('replaceTxt charges a repeating pattern by length squared and stops at the budget', () => {
+    const warnings: string[] = [];
+    const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
+    const perString = chunk.length * chunk.length;
+    const fits = Math.floor(MAX_REPLACE_WORK / perString);
+    const t: Entity = { entries: Array.from({ length: fits + 2 }, () => chunk) };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceTxt', replace: 'dwarf\\w*', with: 'gnome' } },
+      (m) => void warnings.push(m),
+    );
+    const out = t.entries as string[];
+    expect(out[0]?.startsWith('gnome ')).toBe(true);
+    expect(out[fits - 1]?.startsWith('gnome ')).toBe(true);
+    expect(out[fits]?.startsWith('dwarf')).toBe(true);
+    expect(warnings[0]).toMatch(/work budget used up/);
+  });
+
+  it('replaceTxt draws every operation in a merge from one budget', () => {
+    const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
+    const fits = Math.floor(MAX_REPLACE_WORK / (chunk.length * chunk.length));
+    const op = { entries: { mode: 'replaceTxt', replace: 'dwarf\\w*', with: 'gnome' } };
+    const first: Entity = { entries: Array.from({ length: fits }, () => chunk) };
+    const second: Entity = { entries: [chunk] };
+    const warnings: string[] = [];
+    withReplaceBudget(() => {
+      applyMod(first, op, (m) => void warnings.push(m));
+      applyMod(second, op, (m) => void warnings.push(m));
+    });
+    // A fresh budget per operation would have let the second one run.
+    expect((second.entries as string[])[0]?.startsWith('dwarf')).toBe(true);
+    expect(warnings).toEqual([expect.stringMatching(/work budget used up/)]);
   });
 
   it('sets scalar and object props without a mode', () => {
@@ -225,5 +320,105 @@ describe('expandVersions', () => {
 
   it('returns [] when there are no versions', () => {
     expect(expandVersions({ name: 'X', source: 'S' }, [])).toEqual([]);
+  });
+
+  it('caps how many entities one base expands into', () => {
+    const base: Entity = {
+      name: 'Manyfolk',
+      source: 'TST',
+      _versions: [
+        {
+          _abstract: { name: 'Manyfolk ({{n}})', source: 'TST' },
+          _implementations: Array.from({ length: MAX_VERSIONS_PER_ENTITY + 10 }, (_, n) => ({
+            _variables: { n },
+          })),
+        },
+        { name: 'Manyfolk; Extra', source: 'TST' },
+      ],
+    };
+    const warnings: CopyModWarning[] = [];
+    const versions = expandVersions(base, warnings);
+    expect(versions).toHaveLength(MAX_VERSIONS_PER_ENTITY);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toMatch(/more than 64 versions/);
+  });
+});
+
+describe('compileModRegex', () => {
+  const refused = (pattern: string) => !(compileModRegex(pattern) instanceof RegExp);
+
+  it('accepts the patterns real data uses', () => {
+    for (const p of [
+      'Goblins',
+      'dwarf',
+      '\\(\\d+\\)',
+      '[()+*]+',
+      'a|b',
+      '(?:the )?goblin',
+      'x{2,5}',
+    ]) {
+      expect(refused(p), p).toBe(false);
+    }
+  });
+
+  it('refuses nested and alternating quantified groups', () => {
+    for (const p of ['(a+)+', '(a*)*b', '(a|aa)+', '(?:a+)*', '((a)+)+', '(a+){2}', '(a{1,3})+']) {
+      expect(refused(p), p).toBe(true);
+    }
+  });
+
+  it('allows a group that cannot repeat around a quantifier', () => {
+    expect(refused('(\\d+)?')).toBe(false);
+    expect(refused('(a+){1}')).toBe(false);
+  });
+
+  it('refuses backreferences, numbered and named', () => {
+    expect(refused('(a)\\1')).toBe(true);
+    expect(refused('(?<x>a)\\k<x>')).toBe(true);
+  });
+
+  it('allows one repeating quantifier, and a fixed count does not repeat', () => {
+    expect(refused('\\bdwarf\\w*')).toBe(false);
+    expect(refused('.{20}Q')).toBe(false);
+    expect(refused('(?:ab){3}x+')).toBe(false);
+  });
+
+  it('refuses patterns that backtrack on ordinary prose', () => {
+    // Each of these froze V8 for seconds on a single 1,200 character string.
+    for (const p of [
+      '.*.*.*q',
+      '\\w+\\w+x',
+      'a+b*',
+      'a{1,8192}a{1,8192}x',
+      `${'.?'.repeat(20)}.{20}Q`,
+      'a?b?c?d?e?',
+    ]) {
+      expect(refused(p), p).toBe(true);
+    }
+    expect(refused('a?b?c?d?')).toBe(false);
+  });
+
+  it('refuses an overlong pattern', () => {
+    expect(refused('a'.repeat(256))).toBe(false);
+    expect(refused('a'.repeat(257))).toBe(true);
+  });
+
+  it('reads escapes and classes as atoms, not syntax', () => {
+    // An escaped paren is a literal, and a quantifier inside a class is a
+    // character: neither opens or quantifies a group.
+    // Each has one real quantifier; the parens and stars around it are text.
+    expect(refused('\\(a+\\)\\*')).toBe(false);
+    expect(refused('[(*+]a+[)?]')).toBe(false);
+  });
+
+  it('refuses a pattern that does not compile, with the reason', () => {
+    const out = compileModRegex('(a');
+    expect(out).not.toBeInstanceOf(RegExp);
+  });
+
+  it('keeps only usable flags, always global', () => {
+    const re = compileModRegex('a', 'gixdgv');
+    expect(re).toBeInstanceOf(RegExp);
+    expect((re as RegExp).flags).toBe('gi');
   });
 });

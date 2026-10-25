@@ -44,6 +44,59 @@ export type SearchWorkerResponse =
 export const SEARCH_FIELDS = ['name'] as const;
 export const STORE_FIELDS = ['type', 'uid', 'name', 'source'] as const;
 
+// ---------------------------------------------------------------------------
+// Work limits
+// ---------------------------------------------------------------------------
+//
+// A query or a build the worker cannot finish is not stopped by anything: the
+// query timeout settles the caller empty but leaves the worker grinding, and
+// every later query waits behind it. Fuzzy prefix search costs grow with the
+// number and length of terms, and builds with the number and length of names,
+// so all four are bounded. Applied on both sides of the boundary: the client
+// so it never sends the work, the worker so a caller that skipped the client
+// still cannot hand it more.
+
+/** Characters of a query that are searched. A name is rarely past forty. */
+export const MAX_QUERY_LENGTH = 100;
+/** Whitespace-separated terms of a query that are searched. */
+export const MAX_QUERY_TERMS = 8;
+/** Results one query may ask for. */
+export const MAX_QUERY_LIMIT = 100;
+/** Results when the caller does not say. */
+export const DEFAULT_QUERY_LIMIT = 30;
+/** Documents one index may hold. Official data is about 5,500. */
+export const MAX_INDEX_DOCS = 50_000;
+/** Characters of a name that are indexed. */
+export const MAX_DOC_NAME_LENGTH = 200;
+
+/** The part of `q` that is worth searching: bounded in length and terms. */
+export function clampQuery(q: string): string {
+  const terms = q.slice(0, MAX_QUERY_LENGTH).trim().split(/\s+/);
+  return terms.slice(0, MAX_QUERY_TERMS).join(' ');
+}
+
+/** A result count between 1 and {@link MAX_QUERY_LIMIT}. */
+export function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_QUERY_LIMIT;
+  return Math.min(MAX_QUERY_LIMIT, Math.max(1, Math.floor(limit)));
+}
+
+/** A name cut to what is indexed. */
+export function clampDocName(name: string): string {
+  return name.length > MAX_DOC_NAME_LENGTH ? name.slice(0, MAX_DOC_NAME_LENGTH) : name;
+}
+
+/**
+ * At most {@link MAX_INDEX_DOCS} documents, names cut to what is indexed. The
+ * id and uid are left whole: they are what a hit navigates by.
+ */
+export function clampDocs(docs: readonly SearchDoc[]): SearchDoc[] {
+  return docs.slice(0, MAX_INDEX_DOCS).map((d) => {
+    const name = clampDocName(d.name);
+    return name === d.name ? d : { ...d, name };
+  });
+}
+
 /**
  * Take a page of `limit` allowed hits from a full ranked list, counting what
  * the filter dropped along the way.

@@ -5,11 +5,14 @@ import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
+import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
+import { IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
+import { importHomebrewFromUrl } from './importUrl';
 
 export function Component() {
   usePageTitle('Homebrew');
@@ -24,7 +27,9 @@ export function Component() {
 
   const importFile = async (file: File) => {
     try {
-      const raw: unknown = JSON.parse(await file.text());
+      const raw: unknown = JSON.parse(
+        await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
+      );
       const row = await homebrewRepo.importJson(raw, file.name);
       invalidateRegistry();
       // Imported content the player cannot see is worse than useless, and a
@@ -44,11 +49,7 @@ export function Component() {
 
   const importUrl = async () => {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw: unknown = await res.json();
-      const name = url.split('/').pop() ?? 'homebrew.json';
-      const row = await homebrewRepo.importJson(raw, decodeURIComponent(name), url);
+      const row = await importHomebrewFromUrl(url);
       invalidateRegistry();
       await ensureSourcesVisible(row.sourceIds);
       setStatus(`Imported "${row.fileName}"`);

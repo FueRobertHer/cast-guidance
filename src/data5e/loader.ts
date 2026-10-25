@@ -1,6 +1,8 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
+import { readJsonBounded } from '@/lib/boundedRead';
 import { jsonByteSize } from '@/lib/byteSize';
+import { assertJsonWithinLimits, DATA_FILE_LIMITS, ValidationError } from '@/lib/guards';
 import { runWhenIdle } from '@/lib/idle';
 import { Semaphore } from '@/lib/semaphore';
 import { singleFlight } from '@/lib/singleFlight';
@@ -10,6 +12,7 @@ import {
   DATA_TAG,
   FETCH_CONCURRENCY,
   isCompatibleTag,
+  MAX_TAG_LIST_BYTES,
   TAG_LIST_TIMEOUT_MS,
   TAG_LIST_TTL_MS,
   TAGS_API_URL,
@@ -103,6 +106,23 @@ function ensureTagReady(): Promise<void> {
  */
 const fetchGate = new Semaphore(FETCH_CONCURRENCY);
 
+/**
+ * The gate every downloaded file passes before it is cached. The source has
+ * already bounded the bytes; this bounds the shape, so a body that parses but
+ * is not a data file (nested a thousand deep, one enormous string, a bare
+ * array) is refused here and never stored, normalized or indexed. Refused the
+ * same way a failed download is: the caller sees the error, nothing is kept,
+ * and the next attempt fetches again.
+ */
+function acceptDataFile(path: string, json: unknown): unknown {
+  const label = `data file "${path}"`;
+  assertJsonWithinLimits(json, DATA_FILE_LIMITS, label);
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+    throw new ValidationError(`${label} is not a JSON object`);
+  }
+  return json;
+}
+
 /** In-flight de-dupe so concurrent callers share one fetch per file. */
 const inflight = new Map<string, Promise<unknown>>();
 
@@ -129,7 +149,7 @@ export async function getFile(path: string): Promise<unknown> {
       // behind is simply not written: it is the caller's answer, not cache.
       const tag = activeTag;
       const from = source;
-      const json = await from.fetchFile(path);
+      const json = acceptDataFile(path, await from.fetchFile(path));
       if (activeTag === tag) {
         await dataCacheRepo.putFile({
           key: dataCacheRepo.key(tag, path),
@@ -406,7 +426,7 @@ async function refetchFile(path: string): Promise<void> {
   // reads until the next boot cleans it up again.
   const tag = activeTag;
   const from = source;
-  const json = await fetchGate.run(() => from.fetchFile(path));
+  const json = acceptDataFile(path, await fetchGate.run(() => from.fetchFile(path)));
   if (activeTag !== tag) return;
   await dataCacheRepo.putFile({
     key: dataCacheRepo.key(tag, path),
@@ -490,7 +510,7 @@ async function fetchTagList(): Promise<string[]> {
     signal: AbortSignal.timeout(TAG_LIST_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
-  const tags = (await res.json()) as Array<{ name?: string }>;
+  const tags = (await readJsonBounded(res, MAX_TAG_LIST_BYTES)) as Array<{ name?: string }>;
   return tags
     .map((t) => t.name)
     .filter((n): n is string => typeof n === 'string')
@@ -578,7 +598,7 @@ export async function updateToTag(newTag: string): Promise<void> {
     const cached = await dataCacheRepo.getFile(newTag, path);
     if (cached) return cached.json;
     status.fileStarted(path);
-    const json = await newSource.fetchFile(path);
+    const json = acceptDataFile(path, await newSource.fetchFile(path));
     await dataCacheRepo.putFile({
       key: dataCacheRepo.key(newTag, path),
       tag: newTag,

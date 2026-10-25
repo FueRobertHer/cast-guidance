@@ -31,11 +31,31 @@ function stringsIn(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * Longest tag body or argument list the roll patterns will consider. Real
+ * dice expressions are a handful of characters. The cap is what keeps these
+ * patterns linear: with an unbounded `[^}|]+`, every unclosed `{@damage `
+ * in a string made the engine walk the rest of that string again, so a long
+ * homebrew entry full of them cost time proportional to its length squared.
+ * Bounded, each attempt gives up after this many characters.
+ */
+const MAX_TAG_PART = 200;
+
+const TAGGED_ROLL = new RegExp(
+  `{@(damage|dice) ([^}|]{1,${MAX_TAG_PART}})(?:\\|[^}]{0,${MAX_TAG_PART}})?}`,
+  'gi',
+);
+
+const SCALE_TAG = new RegExp(
+  `{@scale(?:damage|dice) ([^}|]{1,${MAX_TAG_PART}})\\|[^}|]{1,${MAX_TAG_PART}}\\|([^}|]{1,${MAX_TAG_PART}})(?:\\|[^}]{0,${MAX_TAG_PART}})?}`,
+  'gi',
+);
+
 function taggedRolls(value: unknown): TaggedRoll[] {
   const out: TaggedRoll[] = [];
   for (const source of stringsIn(value)) {
-    const re = /{@(damage|dice) ([^}|]+)(?:\|[^}]*)?}/gi;
-    for (const match of source.matchAll(re)) {
+    // `matchAll` iterates a copy, so the shared pattern's `lastIndex` stays put.
+    for (const match of source.matchAll(TAGGED_ROLL)) {
       const kind = match[1]?.toLowerCase();
       // "d4" and "1d4" are the same roll, and only one of them looks like one.
       const expr = match[2]?.replaceAll(' ', '').replace(/^d/i, '1d');
@@ -133,8 +153,7 @@ function applySlotScaling(
   slotLevel: number,
 ): TaggedRoll {
   const higher = stringsIn(entity.entriesHigherLevel).join(' ');
-  const re = /{@scale(?:damage|dice) ([^}|]+)\|[^}|]+\|([^}|]+)(?:\|[^}]*)?}/gi;
-  for (const match of higher.matchAll(re)) {
+  for (const match of higher.matchAll(SCALE_TAG)) {
     const base = match[1]?.replaceAll(' ', '');
     const increment = match[2]?.replaceAll(' ', '');
     if (base === roll.expr && increment !== undefined) {

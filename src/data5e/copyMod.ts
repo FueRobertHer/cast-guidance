@@ -46,12 +46,236 @@ function entryName(e: unknown): string | undefined {
   return typeof n === 'string' ? n : undefined;
 }
 
-function replaceTextDeep(v: unknown, re: RegExp, w: string): unknown {
-  if (typeof v === 'string') return v.replace(re, w);
-  if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w));
+// ---------------------------------------------------------------------------
+// replaceTxt: patterns that come from the data
+// ---------------------------------------------------------------------------
+//
+// A `replaceTxt` pattern is written by whoever wrote the file, homebrew
+// included, and runs on the main thread over every string of the entity on
+// every registry rebuild. A regex cannot be interrupted once it starts, so a
+// pattern that backtracks catastrophically (`(a+)+$` against a long run of
+// "a") would freeze the app on every launch. The checks below refuse the
+// shapes that backtrack badly and bound how much text any one pattern sees.
+//
+// The rule is a narrow safe subset rather than a list of known-bad shapes:
+// at most one quantifier that can repeat (`*`, `+`, `{n,}`, `{n,m}` with
+// m > n), a few optional atoms, and no repeated group that holds a quantifier
+// or `|`. Two repeating quantifiers side by side (`\w+\w+x`, `.*.*q`) or a
+// run of optional atoms (`.?.?.?…`) backtrack polynomially or exponentially
+// on ordinary prose, inside a single string, where no length cap helps. One
+// repeating quantifier is at worst quadratic in the string, so each string is
+// charged its length squared against a budget shared by a whole homebrew
+// merge, and strings are capped well above the longest official one (1,255).
+
+/** Longest `replaceTxt` pattern accepted. Official data uses `Goblins`. */
+export const MAX_MOD_PATTERN_LENGTH = 256;
+/** Quantifiers that can match more than once (`*`, `+`, `{n,}`, `{n,m}`) one pattern may use. */
+export const MAX_MOD_REPEATING_QUANTIFIERS = 1;
+/** Optional atoms (`?`, `{0,1}`) one pattern may use. */
+export const MAX_MOD_OPTIONAL_QUANTIFIERS = 4;
+/** Strings longer than this are left as they are rather than searched. */
+export const MAX_REPLACE_STRING_LENGTH = 4096;
+/**
+ * Work `replaceTxt` may do across one homebrew merge (or one lone operation):
+ * each string costs its length, or its length squared under a repeating
+ * quantifier, so about four maximal strings for a repeating pattern.
+ */
+export const MAX_REPLACE_WORK = 64_000_000;
+/** Entities one base may expand into through `_versions`. Official max: 10. */
+export const MAX_VERSIONS_PER_ENTITY = 64;
+
+const MOD_FLAGS = 'gimsuy';
+
+interface GroupFrame {
+  /** Any quantifier anywhere inside, nested groups included. */
+  quantified: boolean;
+  /** Any `|` anywhere inside, nested groups included. */
+  alternates: boolean;
+}
+
+/**
+ * Why `pattern` is unsafe to run on the main thread, or undefined if it is
+ * not. Tokenizes rather than pattern-matching the source so escapes and
+ * character classes are read as what they are: `\(\d+\)` is a literal
+ * parenthesis around one quantifier, not a quantified group.
+ */
+function unsafeModPattern(pattern: string): string | undefined {
+  if (pattern.length > MAX_MOD_PATTERN_LENGTH) {
+    return `pattern longer than ${MAX_MOD_PATTERN_LENGTH} characters`;
+  }
+  const stack: GroupFrame[] = [{ quantified: false, alternates: false }];
+  const top = (): GroupFrame => stack[stack.length - 1] as GroupFrame;
+  // The group that just closed, while the next token could still quantify it.
+  let closed: GroupFrame | undefined;
+  let repeating = 0;
+  let optional = 0;
+  let i = 0;
+  while (i < pattern.length) {
+    const c = pattern[i];
+    if (c === '\\') {
+      const next = pattern[i + 1] ?? '';
+      if (/[1-9]/.test(next) || (next === 'k' && pattern[i + 2] === '<')) {
+        return 'backreference';
+      }
+      closed = undefined;
+      i += 2;
+      continue;
+    }
+    if (c === '[') {
+      // A class is one atom whatever is inside; it ends at the first `]` that
+      // is not escaped.
+      i++;
+      while (i < pattern.length && pattern[i] !== ']') i += pattern[i] === '\\' ? 2 : 1;
+      closed = undefined;
+      i++;
+      continue;
+    }
+    if (c === '(') {
+      stack.push({ quantified: false, alternates: false });
+      closed = undefined;
+      i++;
+      // Group prefixes are not quantifiers: `(?:`, `(?=`, `(?!`, `(?<=`,
+      // `(?<!` and `(?<name>`.
+      if (pattern[i] === '?') {
+        i++;
+        if (pattern[i] === '<' && pattern[i + 1] !== '=' && pattern[i + 1] !== '!') {
+          while (i < pattern.length && pattern[i] !== '>') i++;
+        } else if (pattern[i] === '<') {
+          i++;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === ')') {
+      if (stack.length === 1) return 'unbalanced parenthesis';
+      const frame = stack.pop() as GroupFrame;
+      const parent = top();
+      parent.quantified ||= frame.quantified;
+      parent.alternates ||= frame.alternates;
+      closed = frame;
+      i++;
+      continue;
+    }
+    if (c === '|') {
+      top().alternates = true;
+      closed = undefined;
+      i++;
+      continue;
+    }
+    const brace = c === '{' ? /^\{(\d+)(,(\d*))?\}/.exec(pattern.slice(i)) : null;
+    if (c === '*' || c === '+' || c === '?' || brace !== null) {
+      // The least and most times the atom may match: `?` zero or once, `{n}`
+      // exactly n, `{n,m}` n to m, `*`, `+` and `{n,}` without limit.
+      let min = c === '+' ? 1 : 0;
+      let max = 1;
+      if (c === '*' || c === '+') max = Number.POSITIVE_INFINITY;
+      else if (brace !== null) {
+        min = Number(brace[1]);
+        if (brace[2] === undefined) max = min;
+        else max = brace[3] === '' ? Number.POSITIVE_INFINITY : Number(brace[3]);
+      }
+      // Only a group that can match more than once multiplies the ways a run
+      // can be split between its inner and outer repeats.
+      if (max > 1 && closed !== undefined && (closed.quantified || closed.alternates)) {
+        return 'quantified group containing a quantifier or alternation';
+      }
+      // A fixed count (`{3}`) is plain repetition and never backtracks.
+      if (max > 1 && max > min && ++repeating > MAX_MOD_REPEATING_QUANTIFIERS) {
+        return `more than ${MAX_MOD_REPEATING_QUANTIFIERS} repeating quantifier`;
+      }
+      if (max === 1 && min === 0 && ++optional > MAX_MOD_OPTIONAL_QUANTIFIERS) {
+        return `more than ${MAX_MOD_OPTIONAL_QUANTIFIERS} optional atoms`;
+      }
+      top().quantified = true;
+      closed = undefined;
+      i += brace !== null ? brace[0].length : 1;
+      // A lazy suffix belongs to this quantifier.
+      if (pattern[i] === '?') i++;
+      continue;
+    }
+    closed = undefined;
+    i++;
+  }
+  return stack.length === 1 ? undefined : 'unbalanced parenthesis';
+}
+
+/** Whether a compiled-safe pattern repeats, so it is charged quadratically. */
+function repeats(pattern: string): boolean {
+  return /(^|[^\\])([*+]|\{\d+,\d*\})/.test(pattern);
+}
+
+/**
+ * Compile a `replaceTxt` pattern, or say why it was refused. Flags follow
+ * 5etools (`DataUtil.generic._getRegexFromReplaceModInfo`): the replacement is
+ * always global, with the file's own flags added, filtered to the ones a
+ * replace can use and de-duplicated so `"gi"` cannot become an invalid `"ggi"`.
+ */
+export function compileModRegex(pattern: string, flags?: unknown): RegExp | { reason: string } {
+  const reason = unsafeModPattern(pattern);
+  if (reason !== undefined) return { reason };
+  const wanted = typeof flags === 'string' ? flags : '';
+  const kept = [...MOD_FLAGS].filter((f) => f === 'g' || wanted.includes(f)).join('');
+  try {
+    return new RegExp(pattern, kept);
+  } catch (err) {
+    return { reason: String(err) };
+  }
+}
+
+interface ReplaceBudget {
+  left: number;
+  skippedLong: number;
+  exhausted: boolean;
+}
+
+/**
+ * The budget every `replaceTxt` in the current merge draws on. One per
+ * operation let a file with many operations, or many entities and versions,
+ * add up to seconds on the main thread; see {@link withReplaceBudget}.
+ */
+let sharedBudget: ReplaceBudget | undefined;
+
+/**
+ * Run `fn` with one `replaceTxt` budget shared by everything it applies. The
+ * homebrew merge wraps its whole run in this.
+ */
+export function withReplaceBudget<T>(fn: () => T): T {
+  const outer = sharedBudget;
+  sharedBudget = { left: MAX_REPLACE_WORK, skippedLong: 0, exhausted: false };
+  try {
+    return fn();
+  } finally {
+    sharedBudget = outer;
+  }
+}
+
+function replaceTextDeep(
+  v: unknown,
+  re: RegExp,
+  w: string,
+  budget: ReplaceBudget,
+  quadratic: boolean,
+): unknown {
+  if (typeof v === 'string') {
+    if (v.length > MAX_REPLACE_STRING_LENGTH) {
+      budget.skippedLong++;
+      return v;
+    }
+    const cost = quadratic ? v.length * v.length : v.length;
+    if (cost > budget.left) {
+      budget.exhausted = true;
+      return v;
+    }
+    budget.left -= cost;
+    return v.replace(re, w);
+  }
+  if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w, budget, quadratic));
   if (typeof v === 'object' && v !== null) {
     const out: Record<string, unknown> = {};
-    for (const [k, val] of Object.entries(v)) out[k] = replaceTextDeep(val, re, w);
+    for (const [k, val] of Object.entries(v)) {
+      out[k] = replaceTextDeep(val, re, w, budget, quadratic);
+    }
     return out;
   }
   return v;
@@ -141,11 +365,33 @@ export function applyMod(
           break;
         }
         case 'replaceTxt': {
-          try {
-            const re = new RegExp(String(o.replace), typeof o.flags === 'string' ? o.flags : 'g');
-            target[prop] = replaceTextDeep(target[prop], re, String(o.with ?? ''));
-          } catch (err) {
-            warn(`replaceTxt bad regex on "${prop}": ${String(err)}`);
+          const re = compileModRegex(String(o.replace), o.flags);
+          if (!(re instanceof RegExp)) {
+            warn(`replaceTxt pattern refused on "${prop}" (${re.reason}); left unchanged`);
+            break;
+          }
+          const budget = sharedBudget ?? {
+            left: MAX_REPLACE_WORK,
+            skippedLong: 0,
+            exhausted: false,
+          };
+          const skippedBefore = budget.skippedLong;
+          const wasExhausted = budget.exhausted;
+          target[prop] = replaceTextDeep(
+            target[prop],
+            re,
+            String(o.with ?? ''),
+            budget,
+            repeats(String(o.replace)),
+          );
+          const skipped = budget.skippedLong - skippedBefore;
+          if (skipped > 0) {
+            warn(
+              `replaceTxt skipped ${skipped} string(s) over ${MAX_REPLACE_STRING_LENGTH} characters on "${prop}"`,
+            );
+          }
+          if (budget.exhausted && !wasExhausted) {
+            warn(`replaceTxt work budget used up on "${prop}"; later replacements left unchanged`);
           }
           break;
         }
@@ -256,13 +502,22 @@ export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity
   const warn = (message: string) =>
     warnings.push({ entity: uidOf(base), message: `versions: ${message}` });
   const out: Entity[] = [];
-  for (const raw of versions) {
+  // Each version is a deep copy of the base, so a short file listing many
+  // implementations multiplies into far more than its own size. The structural
+  // limits bound the file, not that product; this bounds the product.
+  if (countVersions(versions) > MAX_VERSIONS_PER_ENTITY) {
+    warn(`more than ${MAX_VERSIONS_PER_ENTITY} versions; the rest are ignored`);
+  }
+  const full = (): boolean => out.length >= MAX_VERSIONS_PER_ENTITY;
+  expand: for (const raw of versions) {
     if (raw === null || typeof raw !== 'object') continue;
+    if (full()) break;
     const v = raw as Entity;
     if (v._abstract !== undefined && Array.isArray(v._implementations)) {
       const abstract = v._abstract as Entity;
       for (const implRaw of v._implementations) {
         if (implRaw === null || typeof implRaw !== 'object') continue;
+        if (full()) break expand;
         const impl = implRaw as Entity;
         const vars = (impl._variables ?? {}) as Record<string, unknown>;
         const materialized = substituteVariables(abstract, vars);
@@ -275,4 +530,19 @@ export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity
     }
   }
   return out;
+}
+
+/** How many entities `_versions` asks for, counted without building any. */
+function countVersions(versions: unknown[]): number {
+  let n = 0;
+  for (const raw of versions) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const v = raw as Entity;
+    if (v._abstract !== undefined && Array.isArray(v._implementations)) {
+      n += v._implementations.filter((i) => i !== null && typeof i === 'object').length;
+    } else {
+      n++;
+    }
+  }
+  return n;
 }
