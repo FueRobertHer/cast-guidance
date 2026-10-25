@@ -63,7 +63,7 @@ function defaultTargetType(holderType: EntityType): EntityType {
  * says which uid shape to expect and where the target lives; an entry's own
  * `tag` overrides that for the cross-type targets. Omitting `holderType` reads
  * every uid as `Name|SOURCE` and leaves the target type unset, which is what
- * the same-list picker filter wants.
+ * a picker filter that names no holder type wants.
  */
 export function reprintTargets(entity: Entity, holderType?: EntityType): EditionRef[] {
   const reprints = entity.reprintedAs;
@@ -118,14 +118,44 @@ export function pickForVersion<T extends Entity>(
  * Filter a list for a rules version, deduping reprints:
  * - 2024 mode hides entities whose `reprintedAs` target is present in the list.
  * - 2014 mode hides "one"-edition entities entirely.
+ *
+ * `holderType` says what the list holds, so its reprint uids parse in their own
+ * shape. It matters for subclasses (GAME-009): their uids are the four-segment
+ * `ShortName|ClassName|ClassSource|SubclassSource`, which read as `Name|SOURCE`
+ * put the class name in the source slot and never matched, so every legacy
+ * subclass stood beside its 2024 printing. A subclass target names the
+ * subclass by `shortName`, so the list is keyed by that too. A subclass uid in
+ * the short `Name|SOURCE` form (homebrew only) no longer dedupes. With a
+ * holder type set, only targets in that same bucket count: a subrace pointing
+ * at a race, or an entry tagged as a feat, says nothing about this list.
+ *
+ * `keep` exempts the character's current pick, which must stay on screen
+ * whatever its edition so the picker can show what is chosen.
  */
-export function filterByRulesVersion<T extends Entity>(entities: T[], version: RulesVersion): T[] {
-  if (version === '2014') return entities.filter((e) => editionOf(e) === '2014');
+export function filterByRulesVersion<T extends Entity>(
+  entities: T[],
+  version: RulesVersion,
+  options: { holderType?: EntityType; keep?: (e: T) => boolean } = {},
+): T[] {
+  const { holderType, keep } = options;
+  if (version === '2014') {
+    return entities.filter((e) => editionOf(e) === '2014' || keep?.(e) === true);
+  }
 
-  const uids = new Set(entities.map((e) => `${String(e.name)}|${String(e.source)}`.toLowerCase()));
+  const uids = new Set<string>();
+  for (const e of entities) {
+    uids.add(`${String(e.name)}|${String(e.source)}`.toLowerCase());
+    if (holderType === 'subclass' && typeof e.shortName === 'string' && e.shortName !== '') {
+      uids.add(`${e.shortName}|${String(e.source)}`.toLowerCase());
+    }
+  }
   return entities.filter((e) => {
-    if (editionOf(e) === '2024') return true;
+    if (editionOf(e) === '2024' || keep?.(e) === true) return true;
     // Superseded by a reprint that is actually in this list.
-    return !reprintTargets(e).some((r) => uids.has(`${r.name}|${r.source}`.toLowerCase()));
+    return !reprintTargets(e, holderType).some(
+      (r) =>
+        (holderType === undefined || r.type === holderType) &&
+        uids.has(`${r.name}|${r.source}`.toLowerCase()),
+    );
   });
 }

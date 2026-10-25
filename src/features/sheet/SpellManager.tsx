@@ -223,6 +223,8 @@ function ClassSpells({
         spell,
         spellLevel: level,
         characterLevel,
+        rulesVersion: doc.rulesVersion,
+        classes: doc.classes,
       }),
     });
     if (picked === null) return;

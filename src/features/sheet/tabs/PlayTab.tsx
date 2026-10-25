@@ -1358,6 +1358,8 @@ export function Component() {
                           spell={entity}
                           spellLevel={level}
                           characterLevel={sheet.totalLevel}
+                          rulesVersion={doc.rulesVersion}
+                          classes={doc.classes}
                           onPick={(picked) => chooseCastResource(choiceKey, picked)}
                         />
                         {hasAttack && (
@@ -1535,6 +1537,8 @@ export function Component() {
                         spell={entity}
                         spellLevel={level}
                         characterLevel={sheet.totalLevel}
+                        rulesVersion={doc.rulesVersion}
+                        classes={doc.classes}
                         onPick={(picked) => chooseCastResource(choiceKey, picked)}
                       />
                     )}

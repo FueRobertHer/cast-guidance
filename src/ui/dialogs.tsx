@@ -205,9 +205,13 @@ export function DialogHost() {
                       o.danger === true ? 'text-accent' : ''
                     }`}
                   >
-                    <span>{o.label}</span>
+                    <span className="min-w-0">{o.label}</span>
+                    {/* Wraps rather than running off a phone screen: cast hints
+                        carry cost, turn, and edition notes, the last one last. */}
                     {o.hint !== undefined && (
-                      <span className="shrink-0 text-xs font-normal text-ink-muted">{o.hint}</span>
+                      <span className="min-w-0 text-right text-xs font-normal text-ink-muted">
+                        {o.hint}
+                      </span>
                     )}
                   </button>
                 ))}

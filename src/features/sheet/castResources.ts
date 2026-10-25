@@ -1,5 +1,11 @@
 import type { Entity } from '@/data5e/copyMod';
-import type { DerivedResource, PlayState, SpellcastingBlock } from '@/engine/types';
+import type { RulesVersion } from '@/data5e/rulesVersion';
+import type {
+  ClassLevelEntry,
+  DerivedResource,
+  PlayState,
+  SpellcastingBlock,
+} from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { spellRollActions } from './spellRolls';
 
@@ -28,6 +34,11 @@ interface SlotConversion {
   costs: readonly number[];
   /** Which slice of the turn converting takes. */
   economy: 'action' | 'bonus';
+  /**
+   * 2024 only: the class whose level gates each slot level, and the minimum
+   * level per slot (index 0 = a level-1 slot).
+   */
+  minLevel2024?: { className: string; levels: readonly number[] };
 }
 
 /**
@@ -37,14 +48,18 @@ interface SlotConversion {
  * another pool needs a row here and a label that reads sensibly as initials on
  * the chip.
  *
- * The costs and the 5th-level ceiling are the same in both editions. What is
- * NOT modelled: 2024 added a minimum-Sorcerer-level column to the same table,
- * so a 2024 sorcerer can be offered a slot level they are too low to create
- * (the points alone gate it here). Offering it is the lesser error under
- * guidance-not-gatekeeping, but it is an unlabelled one.
+ * The costs and the 5th-level ceiling are the same in both editions. 2024
+ * added a minimum-Sorcerer-level column to the same table (GAME-008). It is a
+ * note on the option, not a gate: the option stays offered under
+ * guidance-not-gatekeeping, and now says what level it needs. 2014 has no
+ * such column, so a 2014 character sees no note.
  */
 const SLOT_CONVERSIONS: Record<string, SlotConversion> = {
-  'sorcery-points': { costs: [2, 3, 5, 6, 7], economy: 'bonus' },
+  'sorcery-points': {
+    costs: [2, 3, 5, 6, 7],
+    economy: 'bonus',
+    minLevel2024: { className: 'Sorcerer', levels: [2, 3, 5, 7, 9] },
+  },
 };
 
 /** Which slice of the turn converting `key` into a slot takes, if it converts. */
@@ -73,6 +88,25 @@ function conversionTurnNote(
   if (own === economy) return "on top of the spell's own";
   if (play.turn?.[economy] === true) return `your ${slice} is already used`;
   return undefined;
+}
+
+/**
+ * What class level a 2024 conversion into a `slotLevel` slot needs, when the
+ * character is below it; undefined when it is met, when the rules are 2014, or
+ * when the character has none of the gating class (nothing to measure, so
+ * nothing is said rather than every row being labelled).
+ */
+function conversionLevelNote(key: string, slotLevel: number, ctx: CastContext): string | undefined {
+  const gate = SLOT_CONVERSIONS[key]?.minLevel2024;
+  if (ctx.rulesVersion !== '2024' || gate === undefined) return undefined;
+  const needed = gate.levels[slotLevel - 1];
+  if (needed === undefined) return undefined;
+  const entry = ctx.classes.find(
+    (c) => String(c.ref.name).toLowerCase() === gate.className.toLowerCase(),
+  );
+  // An unreadable level (an imported doc) is nothing to measure either.
+  if (entry === undefined || !Number.isFinite(entry.levels)) return undefined;
+  return entry.levels < needed ? `2024: needs ${gate.className} ${String(needed)}` : undefined;
 }
 
 /** Which slice of the turn a spell's own casting time uses (undefined for rituals). */
@@ -263,6 +297,10 @@ export interface CastContext {
   spell?: Entity;
   spellLevel: number;
   characterLevel: number;
+  /** For limits only one edition has (GAME-008). */
+  rulesVersion: RulesVersion;
+  /** The character's classes, so a level-gated conversion can say which level it needs. */
+  classes: readonly ClassLevelEntry[];
 }
 
 /**
@@ -288,6 +326,9 @@ export function castResourceOptions(
       parts.push(
         `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · ${convert}${note === undefined ? '' : `, ${note}`}`,
       );
+      // Its own part, not a turn note: it is about the character, not the turn.
+      const levelNote = conversionLevelNote(option.key, option.level, ctx);
+      if (levelNote !== undefined) parts.push(levelNote);
     } else if (option.kind === 'pact') {
       const left = (ctx.block.pactSlots?.count ?? 0) - ctx.play.pactSlotsSpent;
       parts.push(`${String(left)} left`);

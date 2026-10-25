@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Entity } from './copyMod';
 import type { EntityType } from './normalize';
-import { pickForVersion, reprintTargets } from './rulesVersion';
+import { filterByRulesVersion, pickForVersion, reprintTargets } from './rulesVersion';
 
 const exhaustion2014: Entity = { name: 'Exhaustion', source: 'PHB', entries: ['2014 table'] };
 const exhaustion2024: Entity = { name: 'Exhaustion', source: 'XPHB', entries: ['2024 linear'] };
@@ -85,5 +85,97 @@ describe('reprintTargets', () => {
     expect(targets([42, null, {}, { uid: 7 }])).toEqual([]);
     expect(targets(undefined)).toEqual([]);
     expect(targets('Fighter|XPHB')).toEqual([]); // not an array
+  });
+});
+
+describe('filterByRulesVersion', () => {
+  const names = (list: Entity[]) => list.map((e) => `${String(e.name)}|${String(e.source)}`);
+
+  it('keeps only 2014 printings for a 2014 character, and any pick it was told to keep', () => {
+    const list: Entity[] = [
+      { name: 'Old', source: 'PHB' },
+      { name: 'New', source: 'XPHB' },
+      { name: 'Tagged', source: 'HB', edition: 'one' },
+    ];
+    expect(names(filterByRulesVersion(list, '2014'))).toEqual(['Old|PHB']);
+    expect(names(filterByRulesVersion(list, '2014', { keep: (e) => e.name === 'New' }))).toEqual([
+      'Old|PHB',
+      'New|XPHB',
+    ]);
+  });
+
+  it('hides a 2014 printing for a 2024 character only when its reprint is in the list', () => {
+    const old: Entity = { name: 'Elf', source: 'PHB', reprintedAs: ['Elf|XPHB'] };
+    const reprint: Entity = { name: 'Elf', source: 'XPHB' };
+    expect(names(filterByRulesVersion([old, reprint], '2024'))).toEqual(['Elf|XPHB']);
+    // A carry-over with nothing to replace it is valid in a 2024 game.
+    expect(names(filterByRulesVersion([old], '2024'))).toEqual(['Elf|PHB']);
+  });
+
+  it('still reads a tagged target for a caller that names no holder type', () => {
+    const old: Entity = {
+      name: 'Old',
+      source: 'PHB',
+      reprintedAs: [{ uid: 'New|XPHB', tag: 'race' }],
+    };
+    const reprint: Entity = { name: 'New', source: 'XPHB' };
+    expect(names(filterByRulesVersion([old, reprint], '2024'))).toEqual(['New|XPHB']);
+  });
+
+  it('reads a four-segment subclass reprint, which used to leave both printings listed', () => {
+    // GAME-009 cause A: read as Name|SOURCE, the uid put the class name in the
+    // source slot and matched nothing.
+    const old: Entity = {
+      name: 'Purple Dragon Knight (Banneret)',
+      shortName: 'Purple Dragon Knight (Banneret)',
+      source: 'SCAG',
+      reprintedAs: ['Banneret|Fighter|XPHB|FRHoF'],
+    };
+    const reprint: Entity = {
+      name: 'Banneret',
+      shortName: 'Banneret',
+      source: 'FRHoF',
+      edition: 'one',
+    };
+    expect(filterByRulesVersion([old, reprint], '2024')).toHaveLength(2);
+    expect(names(filterByRulesVersion([old, reprint], '2024', { holderType: 'subclass' }))).toEqual(
+      ['Banneret|FRHoF'],
+    );
+  });
+
+  it('matches a subclass target by the short name it uses, not the full name', () => {
+    const old: Entity = {
+      name: 'Life Domain',
+      shortName: 'Life',
+      source: 'PHB',
+      reprintedAs: ['Life|Cleric|XPHB|XPHB'],
+    };
+    const reprint: Entity = { name: 'Life Domain', shortName: 'Life', source: 'XPHB' };
+    expect(names(filterByRulesVersion([old, reprint], '2024', { holderType: 'subclass' }))).toEqual(
+      ['Life Domain|XPHB'],
+    );
+  });
+
+  it('keeps a pick it was told to keep even when its reprint is listed', () => {
+    const old: Entity = { name: 'Elf', source: 'PHB', reprintedAs: ['Elf|XPHB'] };
+    const reprint: Entity = { name: 'Elf', source: 'XPHB' };
+    expect(
+      names(filterByRulesVersion([old, reprint], '2024', { keep: (e) => e.source === 'PHB' })),
+    ).toEqual(['Elf|PHB', 'Elf|XPHB']);
+  });
+
+  it('ignores a target in another bucket when it knows what the list holds', () => {
+    // A race tagged as reprinted into a feat says nothing about the race list,
+    // even when a race happens to share the feat's name and source.
+    const old: Entity = {
+      name: 'Old',
+      source: 'PHB',
+      reprintedAs: [{ uid: 'Same|XPHB', tag: 'feat' }],
+    };
+    const namesake: Entity = { name: 'Same', source: 'XPHB' };
+    expect(names(filterByRulesVersion([old, namesake], '2024', { holderType: 'race' }))).toEqual([
+      'Old|PHB',
+      'Same|XPHB',
+    ]);
   });
 });

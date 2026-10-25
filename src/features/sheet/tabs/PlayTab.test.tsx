@@ -365,6 +365,31 @@ describe('PlayTab cast resource cues (GAME-001)', () => {
       "Level 3 slot from Sorcery Points (upcast) | 4d6 · 5 points of 5 · Bonus Action to convert, on top of the spell's own",
     ]);
   });
+
+  it('labels a 2024 conversion the Sorcerer is too low to create, and still offers it', async () => {
+    // GAME-008: 2024 "Create Spell Slot" needs Sorcerer 9 for a 5th-level slot.
+    // Seven points buy one at Sorcerer 7, so it is offered, with the level said.
+    const { getDoc } = renderSorcerer(undefined, (doc) => {
+      doc.rulesVersion = '2024';
+      const c = doc.classes[0];
+      if (c !== undefined) {
+        c.levels = 7;
+        c.hp = Array(7).fill('avg');
+      }
+    });
+    answerWith('pool-sorcery-points-5');
+    fireEvent.click(screen.getByRole('button', { name: /casting with level 1 slot/i }));
+    await waitFor(() => expect(dialogs.askChoice).toHaveBeenCalled());
+    const points = offered().filter((o) => o.includes('Sorcery Points'));
+    expect(points.at(-1)).toBe(
+      'Level 5 slot from Sorcery Points (upcast) | 6d6 · 7 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 9',
+    );
+    // Only the row that needs more says so.
+    expect(points.filter((o) => o.includes('needs'))).toHaveLength(1);
+
+    fireEvent.click(await screen.findByRole('button', { name: '6d6' }));
+    expect(getDoc().play.resources).toContainEqual({ key: 'sorcery-points', used: 7 });
+  });
 });
 
 describe('PlayTab always-prepared grants (GAME-001)', () => {

@@ -217,3 +217,76 @@ describe('BuildPage edition cues (GAME-003)', () => {
     ).toBeTruthy();
   });
 });
+
+describe('BuildPage subclass picker (GAME-009)', () => {
+  /**
+   * A legacy subclass and the 2024 printing that replaces it, named in the
+   * four-segment form 5etools gives subclass reprints. Fresh names, because
+   * the mock layers extras over the base world rather than replacing rows.
+   */
+  function withReprintedSubclass() {
+    extra.current = [
+      [
+        'subclass',
+        {
+          name: 'Path of Old',
+          shortName: 'Old',
+          source: 'TST',
+          className: 'Warrior',
+          classSource: 'TST',
+          reprintedAs: ['Old|Warrior|TST|XTST'],
+        },
+      ],
+      [
+        'subclass',
+        {
+          name: 'Path of Old',
+          shortName: 'Old',
+          source: 'XTST',
+          edition: 'one',
+          className: 'Warrior',
+          classSource: 'TST',
+        },
+      ],
+    ];
+  }
+
+  it('offers one printing per subclass to a 2024 character', () => {
+    withReprintedSubclass();
+    const { getDoc } = renderBuild((d) => {
+      d.rulesVersion = '2024';
+    });
+    const cards = screen.getAllByRole('button', { name: 'Path of Old' });
+    expect(cards).toHaveLength(1);
+    fireEvent.click(cards[0] as HTMLElement);
+    expect(getDoc().classes[0]?.subclass).toEqual({ name: 'Path of Old', source: 'XTST' });
+  });
+
+  it('keeps the legacy printing a character holds, and says what replaced it', () => {
+    withReprintedSubclass();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      const c = d.classes[0];
+      if (c !== undefined) c.subclass = { name: 'Path of Old', source: 'TST' };
+    });
+    // Both printings stay: the held one so the picker can show what is chosen,
+    // the reprint so the player can move to it.
+    expect(screen.getAllByRole('button', { name: 'Path of Old', hidden: true })).toHaveLength(2);
+    expect(screen.getByText('Mixed editions (4)')).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Warrior's Path of Old: 2014 content, reprinted for 2024 as Path of Old. Kept as chosen.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('still lists every 2014 printing for a 2014 character', () => {
+    withReprintedSubclass();
+    const { getDoc } = renderBuild();
+    const cards = screen.getAllByRole('button', { name: 'Path of Old' });
+    expect(cards).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Path of Tests' })).toBeTruthy();
+    fireEvent.click(cards[0] as HTMLElement);
+    expect(getDoc().classes[0]?.subclass).toEqual({ name: 'Path of Old', source: 'TST' });
+  });
+});
