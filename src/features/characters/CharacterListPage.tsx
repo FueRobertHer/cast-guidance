@@ -9,12 +9,24 @@ import { characterRepo, type ImportSummary } from '@/db/characterRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import {
+  clearDraft,
+  type DraftEnvelope,
+  draftName,
+  draftSummary,
+  isBlankDraft,
+  RESUME_STATE,
+  readDraft,
+  restoreDraft,
+} from '@/features/creator/draft';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
+import { UndoBar } from '@/ui/UndoBar';
 import { homebrewForExport } from './homebrewExport';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
@@ -122,6 +134,34 @@ export function Component() {
   const readErrors = result?.errors ?? [];
   const importInput = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
+
+  // The wizard's unfinished draft, read once: it lives in this tab's
+  // sessionStorage, and nothing else writes it while the roster is open.
+  // Wrapped, so "no draft" after a discard is a state the undo can anchor to.
+  const [stored, setStored] = useState<{ draft: DraftEnvelope | null }>(() => {
+    const draft = readDraft();
+    return { draft: draft !== null && !isBlankDraft(draft) ? draft : null };
+  });
+  // The undo line is mounted only on a roster that showed a draft, so it is
+  // in place, empty, before a discard fills it.
+  const [hadDraft] = useState(() => stored.draft !== null);
+  const draftUndo = useUndoOffer<{ draft: DraftEnvelope | null }>({
+    current: stored,
+    same: (a, b) => a.draft === b.draft,
+    restore: (before) => {
+      if (before.draft !== null) restoreDraft(before.draft);
+      setStored(before);
+    },
+  });
+  const discardDraft = () => {
+    const before = stored;
+    if (before.draft === null) return;
+    clearDraft();
+    const after = { draft: null };
+    setStored(after);
+    draftUndo.offer(before, after, `Discarded draft ${draftName(before.draft.doc)}`);
+  };
+  const unfinished = stored.draft;
 
   // At-a-glance vitals per character (few characters → deriving all is cheap).
   const vitals = useMemo(() => {
@@ -302,6 +342,42 @@ export function Component() {
        */}
       <section className="flex flex-col gap-1.5">
         <h2 className="text-sm font-semibold text-ink-muted">New character</h2>
+        {/* The explicit choice point for a draft left in the wizard: Resume
+            goes back to the step it was left on, Discard drops it with an
+            undo. The wizard tile below still continues it, and says so. */}
+        {unfinished !== null && (
+          <div className="flex items-center gap-2 rounded-lg border border-surface-2 bg-surface p-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">
+                Unfinished character: {draftSummary(unfinished.doc)}
+              </div>
+              <div className="text-xs text-ink-muted">
+                Kept in this tab until you create it or close the tab.
+              </div>
+            </div>
+            <Link
+              to={unfinished.step !== undefined ? `/create?step=${unfinished.step}` : '/create'}
+              state={RESUME_STATE}
+              className="shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3"
+            >
+              Resume
+            </Link>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="shrink-0 rounded-lg px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2"
+            >
+              Discard
+            </button>
+          </div>
+        )}
+        {hadDraft && (
+          <UndoBar
+            pending={draftUndo.pending}
+            undone={draftUndo.undone}
+            onUndo={() => void draftUndo.run()}
+          />
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"

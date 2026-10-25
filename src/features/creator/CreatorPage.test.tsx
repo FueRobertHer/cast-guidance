@@ -35,11 +35,22 @@ vi.mock('@/ui/dialogs', () => ({
 
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
+import { LEGACY_DRAFT_KEY, RESUME_STATE, readDraft, writeDraft } from './draft';
 import { wizardState } from './steps';
 
 registry.current = makeTestContext();
 
-const DRAFT_KEY = 'cast-guidance:creator-draft';
+/** Store `doc` as the draft the creator opens on. */
+function seedDoc(doc: CharacterDoc) {
+  writeDraft({ doc, bundleChoices: {}, slotPicks: {} });
+}
+
+/** The draft as the wizard last saved it. */
+function saved(): CharacterDoc {
+  const stored = readDraft();
+  if (stored === null) throw new Error('no draft stored');
+  return stored.doc;
+}
 
 afterEach(() => {
   cleanup();
@@ -79,7 +90,7 @@ const walkedToReview: Entry[] = [
 ];
 
 function seedDraft() {
-  sessionStorage.setItem(DRAFT_KEY, JSON.stringify(newCharacterDoc('hero-1', 'Aria', 't')));
+  seedDoc(newCharacterDoc('hero-1', 'Aria', 't'));
 }
 
 describe('stepping through the creator', () => {
@@ -137,7 +148,7 @@ describe('creating a character', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/c/hero-1'));
     expect(put).toHaveBeenCalledOnce();
-    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(readDraft()).toBeNull();
 
     await act(() => router.navigate(-1));
     expect(router.state.location.pathname).toBe('/');
@@ -211,7 +222,7 @@ describe('creating a character', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create character/ }));
     await waitFor(() => expect(noticeStore.getState().notice?.title).toBe('Create failed'));
     expect(router.state.location.search).toBe('?step=review');
-    expect(sessionStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    expect(readDraft()).not.toBeNull();
     // And Create can be pressed again.
     expect(screen.getByRole('button', { name: /Create character/ })).toBeTruthy();
   });
@@ -242,7 +253,7 @@ describe('accessible names and states', () => {
     doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
     doc.abilities.method = 'pointbuy';
     doc.abilities.base = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(doc));
+    seedDoc(doc);
     renderCreator(['/', { pathname: '/create', search: `?step=${step}`, state: wizardState(1) }]);
   }
 
@@ -331,7 +342,7 @@ describe('changes that take something away', () => {
   function renderDraft(step: string, build: (doc: CharacterDoc) => void) {
     const doc = newCharacterDoc('hero-1', 'Aria', 't');
     build(doc);
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(doc));
+    seedDoc(doc);
     const router = createMemoryRouter(
       [
         { path: '/', element: <p>Roster</p> },
@@ -355,8 +366,6 @@ describe('changes that take something away', () => {
     return { goto };
   }
 
-  /** The draft as the wizard last saved it. */
-  const saved = () => JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? 'null') as CharacterDoc;
   const tap = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }));
   const pressed = (name: string) =>
     screen.getByRole('button', { name }).getAttribute('aria-pressed');
@@ -602,6 +611,28 @@ describe('changes that take something away', () => {
     });
   });
 
+  // UX-001: only the doc was kept, so a reload lost the rows picked for the
+  // kit, and the Equipment step showed row (A) pressed over the (B) kit held.
+  it('keeps the kit rows picked over a reload', () => {
+    withExtras();
+    renderDraft('equipment', (d) => {
+      d.classes = [{ ref: { name: 'Blade', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    });
+    tap('(B) Dagger, 5 gp');
+    cleanup();
+    // The same entry in the next page load: its state is from the one before.
+    renderCreator([
+      '/',
+      {
+        pathname: '/create',
+        search: '?step=equipment',
+        state: { creatorDepth: 1, creatorLoad: 'x' },
+      },
+    ]);
+    expect(pressed('(B) Dagger, 5 gp')).toBe('true');
+    expect(pressed('(A) Longsword')).toBe('false');
+  });
+
   // UX-001: the standard array was six free steppers under a sentence, point
   // buy flagged a bad spread only by colour, and switching to point buy always
   // threw the scores away.
@@ -804,5 +835,89 @@ describe('changes that take something away', () => {
       expect(dialogs.askConfirm).not.toHaveBeenCalled();
       expect(saved().rulesVersion).toBe('2024');
     });
+  });
+});
+
+// UX-001: entering the creator resumed a draft without a word, with nowhere to
+// start over but the roster's blank sheet, and a corrupt draft was trusted.
+describe('an unfinished draft', () => {
+  /** Aria, a level 3 Warrior of the Testfolk, stored as the draft. */
+  function seedAria(step?: 'abilities') {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+    ];
+    doc.race = { name: 'Testfolk', source: 'TST' };
+    writeDraft({ doc, bundleChoices: {}, slotPicks: {} }, step);
+  }
+  const continuing = () => screen.queryByText(/Continuing your unfinished character/);
+  const nameInput = () =>
+    screen.getByRole('textbox', { name: 'Character name' }) as HTMLInputElement;
+
+  it('says it is continuing one entered afresh, and Start over can be undone', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    expect(continuing()?.textContent).toContain('Aria (Warrior 3, Testfolk)');
+    // A line, not a gate: the step is right there to work on.
+    expect(nameInput().value).toBe('Aria');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(nameInput().value).toBe('');
+    expect(saved().classes).toEqual([]);
+    expect(continuing()).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain(
+      'Started a new character · was Aria (Warrior 3, Testfolk)',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo: Started a new character' }));
+    expect(nameInput().value).toBe('Aria');
+    expect(saved().classes[0]?.levels).toBe(3);
+  });
+
+  it('goes back to Basics to start over', async () => {
+    seedAria();
+    const router = renderCreator(['/', '/create?step=abilities']);
+    fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=basics'));
+    expect(nameInput().value).toBe('');
+  });
+
+  it('says nothing for a blank draft, a step of this load, or the roster Resume', () => {
+    seedAria();
+    renderCreator(['/', '/create']);
+    expect(continuing()).not.toBeNull();
+    cleanup();
+
+    renderCreator(['/', { pathname: '/create', search: '?step=class', state: wizardState(1) }]);
+    expect(continuing()).toBeNull();
+    cleanup();
+
+    renderCreator(['/', { pathname: '/create', search: '?step=class', state: RESUME_STATE }]);
+    expect(continuing()).toBeNull();
+    cleanup();
+
+    seedDoc(newCharacterDoc('hero-1', '', 't'));
+    renderCreator(['/', '/create']);
+    expect(continuing()).toBeNull();
+    // Nor once a name goes in: this is the character just begun.
+    fireEvent.change(nameInput(), { target: { value: 'Bram' } });
+    expect(continuing()).toBeNull();
+  });
+
+  it('records the step to resume once the player moves, not the one it opened on', async () => {
+    seedAria('abilities');
+    const router = renderCreator(['/', '/create']);
+    expect(readDraft()?.step).toBe('abilities');
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    expect(readDraft()?.step).toBe('class');
+  });
+
+  it('starts fresh from a stored value that is not a character', () => {
+    sessionStorage.setItem(LEGACY_DRAFT_KEY, JSON.stringify({ id: 'x', classes: 'x' }));
+    renderCreator(['/', '/create']);
+    expect(screen.getByRole('heading', { name: 'Basics' })).toBeTruthy();
+    expect(nameInput().value).toBe('');
+    expect(continuing()).toBeNull();
   });
 });

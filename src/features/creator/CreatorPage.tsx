@@ -1,7 +1,6 @@
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, History } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
-import { DATA_TAG } from '@/data5e/config';
 import type { Entity } from '@/data5e/copyMod';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
@@ -16,7 +15,6 @@ import {
   type CharacterDoc,
   type EffectOrigin,
   type EntityRef,
-  newCharacterDoc,
   refUid,
 } from '@/engine/types';
 import { SpellManager } from '@/features/sheet/SpellManager';
@@ -36,6 +34,17 @@ import { EntityCardList } from '@/ui/EntityCardList';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
+import {
+  clearDraft,
+  type Draft,
+  draftSummary,
+  freshDraft,
+  isBlankDraft,
+  isResumeState,
+  readDraft,
+  saveDraftStep,
+  writeDraft,
+} from './draft';
 import { replaceWizardWith } from './leaveWizard';
 import { OriginChoices } from './OriginChoices';
 import {
@@ -57,31 +66,6 @@ import { normalizeStep, STEP_LABELS, STEPS, type Step, wizardDepth, wizardState 
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
-
-const DRAFT_KEY = 'cast-guidance:creator-draft';
-
-/**
- * The wizard's working state: the character, plus the equipment rows picked
- * for its kit. The rows are not on the doc (and not kept over a reload), but
- * an undo has to put them back with it, or the kit regranted afterwards would
- * not be the one taken away.
- */
-interface Draft {
-  doc: CharacterDoc;
-  bundleChoices: Record<string, string>;
-  /** Concrete picks for "any martial weapon"-style slots, keyed `${group}:${idx}`. */
-  slotPicks: Record<string, string>;
-}
-
-function loadDraftDoc(): CharacterDoc {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (raw !== null) return JSON.parse(raw) as CharacterDoc;
-  } catch {
-    // corrupted draft, start fresh
-  }
-  return newCharacterDoc(crypto.randomUUID(), '', DATA_TAG);
-}
 
 const rowsKey = (rows: Record<string, string>) => JSON.stringify(Object.entries(rows).sort());
 
@@ -166,12 +150,26 @@ export function Component() {
   const [params, setParams] = useSearchParams();
   const step = normalizeStep(params.get('step'));
   const registry = useRegistry(['essentials']);
-  // The in-progress draft survives reloads via sessionStorage.
-  const [draft, setDraftState] = useState<Draft>(() => ({
-    doc: loadDraftDoc(),
-    bundleChoices: {},
-    slotPicks: {},
-  }));
+  // The in-progress draft survives reloads and trips to the roster via
+  // sessionStorage, kit rows included.
+  const [entry] = useState(() => {
+    const stored = readDraft();
+    return {
+      draft: stored ?? freshDraft(),
+      // Entered afresh (not a step of this load, nor the roster's Resume) on
+      // a draft with something in it: say it is being continued, and offer
+      // to start over. A line, not a gate: the step is right there.
+      continuing:
+        stored !== null &&
+        !isBlankDraft(stored) &&
+        wizardDepth(location.state) === 0 &&
+        !isResumeState(location.state),
+    };
+  });
+  const [draft, setDraftState] = useState<Draft>(() => {
+    const { doc, bundleChoices, slotPicks } = entry.draft;
+    return { doc, bundleChoices, slotPicks };
+  });
   const { doc, bundleChoices, slotPicks } = draft;
   // The draft as last set, which a change builds on before React renders it:
   // two changes in one handler must see each other, and a change is worked out
@@ -181,11 +179,7 @@ export function Component() {
   const setDraft = (next: Draft) => {
     latest.current = next;
     setDraftState(next);
-    try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next.doc));
-    } catch {
-      // storage full/unavailable: the draft just won't survive a reload
-    }
+    writeDraft(next, step);
   };
   /** Apply `recipe` to a copy of the draft, once, and keep both sides. */
   const change = (recipe: (d: Draft) => void) => {
@@ -222,6 +216,16 @@ export function Component() {
     void ensureTypePacks('class');
     void ensureTypePacks('item');
   }, []);
+
+  // The step the roster's Resume returns to. Recorded only once the player
+  // moves, never for the step the page opened on: a deep link or a plain
+  // /create must not overwrite where the draft was left before it is used.
+  const openedOn = useRef(step);
+  useEffect(() => {
+    if (openedOn.current === step) return;
+    openedOn.current = step;
+    saveDraftStep(step);
+  }, [step]);
 
   // Set once Create is pressed: the name of the character being opened. From
   // then on the wizard is spent, and its history entries are being unwound.
@@ -659,6 +663,21 @@ export function Component() {
       (before, after) => scoresChanged(before, after) && !allAt(before.doc.abilities.base, 10),
     );
 
+  /**
+   * Begin a new character in place of the draft, from the Basics step. Undo
+   * brings the whole draft back, kit rows included.
+   */
+  const startOver = () => {
+    undoable(
+      (d) => Object.assign(d, freshDraft()),
+      (before) => ({
+        title: 'Started a new character',
+        detail: `was ${draftSummary(before.doc)}`,
+      }),
+    );
+    if (step !== 'basics') setParams({ step: 'basics' }, { replace: true, state: location.state });
+  };
+
   const stepBody = () => {
     switch (step) {
       case 'basics':
@@ -1063,7 +1082,7 @@ export function Component() {
             notifyFailure('Create', err);
             return;
           }
-          sessionStorage.removeItem(DRAFT_KEY);
+          clearDraft();
           // Left while the save was in flight: the character is saved, and
           // the page the player went to is not this flow's to replace.
           if (!live.current.mounted) return;
@@ -1220,6 +1239,24 @@ export function Component() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
       {header}
+
+      {entry.continuing && !isBlankDraft(draft) && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface px-3 py-2 text-sm text-ink-muted">
+          <History size={16} aria-hidden className="shrink-0" />
+          <span>
+            Continuing your unfinished character,{' '}
+            <strong className="text-ink">{draftSummary(doc)}</strong>
+          </span>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={startOver}
+            className="font-semibold text-ink underline underline-offset-2"
+          >
+            Start over
+          </button>
+        </p>
+      )}
 
       {/* Live summary bar — the "like a game" feedback loop */}
       {sheet !== null && doc.classes.length > 0 && (
