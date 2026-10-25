@@ -156,13 +156,9 @@ function rulesSwitchClears(d: Draft, active: ReadonlySet<string>): string[] {
     ),
   );
   if (spells.size > 0) parts.push(plural(spells.size, 'spell'));
-  if (
-    doc.equipment.length > 0 ||
-    hasCoin(doc) ||
-    Object.keys(d.bundleChoices).length + Object.keys(d.slotPicks).length > 0
-  ) {
-    parts.push('starting equipment');
-  }
+  // Only gear actually granted; kit options picked but not yet granted are
+  // still reset, but there is nothing in hand to lose.
+  if (doc.equipment.length > 0 || hasCoin(doc)) parts.push('starting equipment');
   return parts;
 }
 
@@ -207,6 +203,22 @@ export function Component() {
     same: sameDraft,
     restore: (before) => setDraft(before),
   });
+
+  // The fixed block at the bottom (undo line plus step nav) is measured, and
+  // the page ends in a spacer that tall, so nothing it covers is out of reach.
+  // A fixed padding guessed its height, and a long undo line outgrew it,
+  // leaving the Create button stuck under the bar.
+  const [bottomBlock, setBottomBlock] = useState<HTMLDivElement | null>(null);
+  const [bottomHeight, setBottomHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (bottomBlock === null) return;
+    const measure = () => setBottomHeight(bottomBlock.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(bottomBlock);
+    return () => observer.disconnect();
+  }, [bottomBlock]);
 
   useEffect(() => {
     void ensureTypePacks('class');
@@ -259,7 +271,8 @@ export function Component() {
   /**
    * Make a change that takes something away, then offer to put it back
    * (UX-004). The undo restores the whole draft, kit rows included. A change
-   * that changed nothing (or nothing `worthUndo` cares about) offers nothing.
+   * that changed nothing, or took nothing away (`worthUndo`: a first pick of
+   * a class or species replaces nothing), offers nothing.
    */
   const undoable = (
     recipe: (d: Draft) => void,
@@ -429,11 +442,15 @@ export function Component() {
     });
 
   /**
-   * Step navigation that never loses work: walking off the equipment step
+   * Step navigation that never loses work: walking on past the equipment step
    * grants the highlighted defaults if the player didn't touch anything.
+   * Stepping back does not: that is usually to fix the class or background
+   * just changed, and a grant there would count as a new edit and withdraw
+   * the undo offered for that change. Walking forward again grants it.
    */
   const navStep = (s: Step) => {
-    if (step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
+    const forward = STEPS.indexOf(s) > stepIdx;
+    if (forward && step === 'equipment' && doc.equipment.length === 0 && allEqGroups.length > 0) {
       change(grantKit);
     }
     goto(s);
@@ -506,6 +523,7 @@ export function Component() {
           ),
         };
       },
+      (before, after) => !sameDraft(before, after) && (before.doc.classes[0] !== undefined || kit),
     );
   };
 
@@ -526,6 +544,9 @@ export function Component() {
           detail: typeof lost === 'number' ? `rolled ${lost} HP for that level cleared` : undefined,
         };
       },
+      // At average HP the "+" puts back exactly what went.
+      (before, after) =>
+        !sameDraft(before, after) && typeof before.doc.classes[0]?.hp.at(-1) === 'number',
     );
 
   /** Swap or clear the subclass; the old one's picks go with it. */
@@ -546,6 +567,7 @@ export function Component() {
           detail: picksCleared(before.doc, removed, c?.subclass?.name, activeChoices),
         };
       },
+      (before, after) => !sameDraft(before, after) && before.doc.classes[0]?.subclass !== undefined,
     );
   };
 
@@ -562,13 +584,16 @@ export function Component() {
       },
       (before) => ({
         title: `Species: ${before.doc.race?.name ?? 'none'} → ${next.name}`,
+        // Named for the species that changed; mixed species and subrace picks
+        // are just "picks".
         detail: picksCleared(
           before.doc,
           removed,
-          before.doc.subrace?.name ?? before.doc.race?.name,
+          before.doc.subrace === undefined ? before.doc.race?.name : undefined,
           activeChoices,
         ),
       }),
+      (before, after) => !sameDraft(before, after) && before.doc.race !== undefined,
     );
   };
 
@@ -586,6 +611,7 @@ export function Component() {
         title: `Subrace: ${before.doc.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
         detail: picksCleared(before.doc, removed, before.doc.subrace?.name, activeChoices),
       }),
+      (before, after) => !sameDraft(before, after) && before.doc.subrace !== undefined,
     );
   };
 
@@ -608,6 +634,7 @@ export function Component() {
           kit ? KIT_CLEARED : undefined,
         ),
       }),
+      (before, after) => !sameDraft(before, after) && (before.doc.background !== undefined || kit),
     );
   };
 
@@ -1330,13 +1357,7 @@ export function Component() {
   };
 
   return (
-    <main
-      className={`flex flex-1 flex-col gap-4 p-4 ${
-        undoShown
-          ? 'pb-[calc(8rem+max(env(safe-area-inset-bottom),0.75rem))]'
-          : 'pb-[calc(4rem+max(env(safe-area-inset-bottom),0.75rem))]'
-      }`}
-    >
+    <main className="flex flex-1 flex-col gap-4 p-4">
       {header}
 
       {/* Live summary bar — the "like a game" feedback loop */}
@@ -1371,10 +1392,13 @@ export function Component() {
 
       {stepBody()}
 
+      {/* Room for the fixed block below, measured so a long undo line fits. */}
+      <div aria-hidden="true" className="shrink-0" style={{ height: bottomHeight }} />
+
       {/* The undo line rides on top of the step navigation, in the same fixed
           block, so the bar never covers it and it stays in reach while the
-          step scrolls. The page pads its bottom by both while the line shows. */}
-      <div className="fixed inset-x-0 bottom-0 flex flex-col">
+          step scrolls. */}
+      <div ref={setBottomBlock} className="fixed inset-x-0 bottom-0 flex flex-col">
         <div className={undoShown ? 'mx-auto w-full max-w-5xl px-3 pb-2' : undefined}>
           <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
         </div>

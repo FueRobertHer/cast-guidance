@@ -486,6 +486,31 @@ describe('changes that take something away', () => {
     expect(saved().equipment).toHaveLength(2);
   });
 
+  it('offers nothing for a first pick, which takes nothing away', () => {
+    renderDraft('species', () => undefined);
+    tap('Testfolk');
+    expect(saved().race?.name).toBe('Testfolk');
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('keeps the undo offer when stepping back from the equipment step', async () => {
+    withExtras();
+    const { goto } = renderDraft('background', (d) => {
+      d.classes = [{ ref: { name: 'Blade', source: 'TST' }, levels: 1, hp: ['avg'] }];
+      d.background = { name: 'Kit Sage', source: 'TST' };
+      d.choices = { 'feat:skilled|tst:kit sage|tst:skill:0': ['stealth', 'arcana', 'history'] };
+    });
+    tap('Scholar');
+    await goto('equipment');
+    // Back to fix the background: no kit is granted on the way, which would
+    // count as an edit and withdraw the offer.
+    tap('Back');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Scholar' })).toBeTruthy());
+    expect(saved().equipment).toEqual([]);
+    tap('Undo: Background: Kit Sage → Scholar');
+    expect(saved().background?.name).toBe('Kit Sage');
+  });
+
   it('offers to undo a species change', () => {
     renderDraft('species', (d) => {
       d.race = { name: 'Testfolk', source: 'TST' };
