@@ -8,8 +8,10 @@ import {
   installCharacterSessionLifecycle,
   useCharacterSession,
 } from '@/stores/characterSession';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { DataBanner } from '@/ui/DataBanner';
 import { DataUpdateToast } from '@/ui/DataUpdateToast';
+import { DbLifecycleBanner } from '@/ui/DbLifecycleBanner';
 import { DialogHost } from '@/ui/dialogs';
 import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
@@ -45,6 +47,29 @@ function SaveErrorBanner() {
   );
 }
 
+/**
+ * The banners about saving and the game data download. Once another tab has
+ * deleted or upgraded the database (TEST-002), every save and download here
+ * fails with "Database has been closed", which explains nothing and offers a
+ * Retry that cannot work. The lifecycle banner says what happened instead, and
+ * the ones that would echo it stand aside. Exported for tests.
+ */
+export function StorageBanners() {
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
+  return (
+    <>
+      <DbLifecycleBanner />
+      {dbOpen && (
+        <>
+          <DataBanner />
+          <DataUpdateToast />
+          <SaveErrorBanner />
+        </>
+      )}
+    </>
+  );
+}
+
 export function AppShell() {
   useEffect(() => {
     void initDataLayer();
@@ -63,9 +88,7 @@ export function AppShell() {
         unless the page was opened from a link) wants.
       */}
       <ScrollRestoration />
-      <DataBanner />
-      <DataUpdateToast />
-      <SaveErrorBanner />
+      <StorageBanners />
       <Outlet />
       <DialogHost />
       <NoticeToast />
