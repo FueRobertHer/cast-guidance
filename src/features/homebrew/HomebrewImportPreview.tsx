@@ -17,6 +17,7 @@ import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { storageErrorText } from '@/lib/storageErrors';
+import { notifyFailure } from '@/stores/notices';
 import {
   countsText,
   ImportPreviewDialog,
@@ -69,23 +70,30 @@ export async function buildHomebrewPreview(
 export async function commitHomebrewImport(
   prepared: HomebrewFileRow,
 ): Promise<{ ok: boolean; message: string }> {
+  let committed: Awaited<ReturnType<typeof homebrewRepo.commit>>;
   try {
-    const { row, duplicate } = await homebrewRepo.commit(prepared);
-    // Imported content the player cannot see is worse than useless, and a
-    // preset (allow list) would hide it by default. A file already here gets
-    // the same, as the old flow gave it.
-    await ensureSourcesVisible(row.sourceIds);
-    if (duplicate) {
-      return {
-        ok: true,
-        message: `"${row.fileName}" was already on this device, so nothing was added.`,
-      };
-    }
-    invalidateRegistry();
-    return { ok: true, message: `Imported "${row.fileName}" (${countsText(row.counts)})` };
+    committed = await homebrewRepo.commit(prepared);
   } catch (err) {
     return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
   }
+  const { row, duplicate } = committed;
+  // The row is stored, so the registry must see it even if showing its
+  // sources fails below.
+  if (!duplicate) invalidateRegistry();
+  // Imported content the player cannot see is worse than useless, and a
+  // preset (allow list) would hide it by default. A file already here gets
+  // the same, as the old flow gave it. A failure here does not undo the
+  // import, so it is reported on its own.
+  await ensureSourcesVisible(row.sourceIds).catch((err: unknown) =>
+    notifyFailure('Show sources', err),
+  );
+  if (duplicate) {
+    return {
+      ok: true,
+      message: `"${row.fileName}" was already on this device, so nothing was added.`,
+    };
+  }
+  return { ok: true, message: `Imported "${row.fileName}" (${countsText(row.counts)})` };
 }
 
 const DEPENDENCY: Record<

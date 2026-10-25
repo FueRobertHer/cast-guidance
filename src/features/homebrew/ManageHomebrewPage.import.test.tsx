@@ -48,6 +48,7 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { noticeStore } from '@/stores/notices';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
 
 // jsdom has no matchMedia and the sheet asks for one on mount.
@@ -146,6 +147,20 @@ describe('homebrew import preview', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     // Focus is back on the button the import started from.
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it('still uses a stored file when showing its sources fails', async () => {
+    ensureSourcesVisible.mockImplementationOnce(() => Promise.reject(new Error('quota')));
+    renderPage();
+    chooseFile('brew.json', ZAP_1);
+    const dialog = await findDialog('Import "brew.json"?');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(status().textContent).toBe('Imported "brew.json" (1 spell)'));
+    expect(await fileCount()).toBe(1);
+    expect(invalidateRegistry).toHaveBeenCalled();
+    expect(noticeStore.getState().notice?.title).toBe('Show sources failed');
   });
 
   it('writes nothing on Cancel', async () => {
