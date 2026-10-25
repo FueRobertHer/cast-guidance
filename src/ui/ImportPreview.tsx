@@ -13,9 +13,8 @@ import { BadgeAlert, BadgeCheck, BadgeInfo, BadgePlus } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
 import { DialogFrame } from './dialogs';
 
-/** 44px targets, the same as the roster's row action. */
-const BUTTON =
-  'flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 py-2.5 text-sm font-semibold';
+/** 44px targets (A11Y-002's `tap`). */
+const BUTTON = 'tap flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold';
 
 /**
  * Puts focus back on what had it when the preview opened (the import button,

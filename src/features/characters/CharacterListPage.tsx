@@ -465,7 +465,7 @@ export function Component() {
       <button
         type="button"
         onClick={() => importInput.current?.click()}
-        className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
+        className="tap gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
       >
         <FileUp size={15} aria-hidden /> Import from a file
       </button>

@@ -174,7 +174,7 @@ export function Component() {
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+          className="tap gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
         >
           <FileUp size={16} /> Import file
         </button>
@@ -207,7 +207,7 @@ export function Component() {
               setStatus(`Could not create the collection: ${errorText(err)}`);
             }
           }}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
+          className="tap gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
         >
           <Hammer size={16} /> Create your own homebrew
         </button>
@@ -240,7 +240,7 @@ export function Component() {
             type="submit"
             aria-label="Import from URL"
             title="Import from URL"
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
+            className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
           >
             <LinkIcon size={16} />
           </button>
