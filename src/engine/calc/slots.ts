@@ -94,6 +94,23 @@ export function casterLevelFor(progression: string, classLevel: number): number 
   }
 }
 
+/**
+ * The 2014 prepared-spell formula: "<$level$> + <$wis_mod$>" (level plus the
+ * modifier) for full casters, "<$level$> / 2 + <$cha_mod$>" (half the level,
+ * rounded down) for the paladin and artificer. Never fewer than one. Reading
+ * every formula as the first shape overstated a half caster's limit, which
+ * hid real overage and let "Trim to limit" stop short.
+ */
+export function preparedFromFormula(
+  formula: string | undefined,
+  level: number,
+  mod: number,
+): number | undefined {
+  if (formula?.includes('<$level$>') !== true) return undefined;
+  const divisor = Number(/<\$level\$>\s*\/\s*(\d+)/.exec(formula)?.[1] ?? 1);
+  return Math.max(1, Math.floor(level / (divisor > 0 ? divisor : 1)) + mod);
+}
+
 export function calcSpellcasting(
   doc: CharacterDoc,
   col: Collector,
@@ -151,9 +168,8 @@ export function calcSpellcasting(
     let preparedMax: number | undefined;
     if (Array.isArray(cls.preparedSpellsProgression)) {
       preparedMax = num(cls.preparedSpellsProgression[Math.min(entry.levels, 20) - 1]);
-    } else if (str(cls.preparedSpells)?.includes('<$level$>')) {
-      // 2014 formula style: "<$level$> + <$wis_mod$>" — level + ability mod
-      preparedMax = Math.max(1, entry.levels + mod);
+    } else {
+      preparedMax = preparedFromFormula(str(cls.preparedSpells), entry.levels, mod);
     }
 
     // Known casters (sorcerer/bard/ranger/warlock) cap the leveled spells they
