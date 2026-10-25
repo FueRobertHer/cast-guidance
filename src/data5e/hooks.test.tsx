@@ -108,6 +108,26 @@ describe('useRegistryState', () => {
   });
 });
 
+describe('useRegistryState after a failure', () => {
+  it('drops the failure when the queue moves, and waits on the new attempt', async () => {
+    // PWA-001: a Retry on the banner (or "Make available offline") restarts
+    // the queue; a page still showing the old error said "couldn't be
+    // downloaded" over a download that was under way.
+    getRegistry.mockRejectedValueOnce(new Error('Failed to fetch'));
+    const { result } = renderHook(() => useRegistryState(['essentials']));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+
+    let finish: (reg: unknown) => void = () => undefined;
+    getRegistry.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    act(() => dataStatusStore.getState().beginRun());
+    await waitFor(() => expect(result.current.status).toBe('loading'));
+    expect(result.current.error).toBeNull();
+
+    await act(async () => finish(fakeRegistry));
+    expect(result.current.status).toBe('ready');
+  });
+});
+
 describe('useRegistryState refresh triggers', () => {
   it('rebuilds when landed files are flushed, not on every file', async () => {
     // Every file a drain downloads ticks the progress counter, and each tick

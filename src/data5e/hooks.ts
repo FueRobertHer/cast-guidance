@@ -65,6 +65,12 @@ export function useRegistryState(packs: readonly PackId[] = []): RegistryState {
   // biome-ignore lint/correctness/useExhaustiveDependencies: key stands in for packs; phase/revision/nonce are refresh triggers
   useEffect(() => {
     let alive = true;
+    // Each run is a new attempt, so the last one's failure no longer stands.
+    // A run started by the queue moving (a Retry on the banner, "Make
+    // available offline") is waiting on that download, and a page that kept
+    // the old error up said "couldn't be downloaded" over a download that was
+    // under way. A page holding a registry is unaffected: it stays `ready`.
+    setError(null);
     // Released in the same synchronous block as `setRegistry`, so React
     // batches the flag dropping with the registry arriving. Releasing it any
     // later (in a `.finally`, or inside `getRegistry` itself) commits a frame
