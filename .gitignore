@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 coverage
+playwright-report
+test-results
+blob-report
 *.local
 
 # Editor directories and files
