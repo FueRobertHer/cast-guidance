@@ -31,6 +31,7 @@ import {
   raceBlurb,
 } from '@/features/creator/pickerHints';
 import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
+import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
@@ -416,7 +417,7 @@ export function Component() {
     ) {
       if (node instanceof HTMLDetailsElement) node.open = true;
     }
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
   };
 
   return (

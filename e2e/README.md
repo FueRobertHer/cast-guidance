@@ -134,6 +134,7 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 | Spec | Covers |
 |---|---|
 | `a11y/axe` | axe on every main route, the sheet's tabs, the dialogs, drawers and info sheets, the banners and toasts (the app update toast from the variant server), and four routes at a desktop size; see `docs/a11y-audit.md` for the list of states. |
+| `a11y/reduced-motion` | With `reducedMotion: 'reduce'`, no animation or transition runs longer than 0.01 ms while sheets open and close and a die is rolled; the same flow animates without it. |
 | `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |

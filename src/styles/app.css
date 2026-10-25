@@ -170,3 +170,32 @@ a {
   align-items: center;
   justify-content: center;
 }
+
+/*
+ * Reduced motion, app-wide (A11Y-003). Someone who asks their device for less
+ * motion gets none: sheets and dialogs appear in place instead of sliding,
+ * toasts land without moving, and nothing spins or fades. The roll toast and
+ * the roster already guard their own keyframes with `motion-safe:`; this
+ * covers what they cannot, chiefly vaul's sheet slide (its own stylesheet)
+ * and the inline transitions it sets while a sheet is dragged.
+ *
+ * Durations go to a hair above zero rather than `none`, so `animationend`
+ * and `transitionend` still fire: Radix unmounts a closing dialog on the end
+ * of its exit animation, and code waiting on one must not wait forever.
+ * Unlayered and `!important`, so it beats Tailwind's utilities and inline
+ * styles alike. e2e/a11y/reduced-motion.spec.ts checks it in the browser.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: only !important outranks inline styles and Tailwind's utilities */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: see above */
