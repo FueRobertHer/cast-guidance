@@ -495,11 +495,14 @@ export function Component() {
         summary={doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / ') || 'none'}
         defaultOpen
       >
-        <fieldset className="flex flex-col gap-1.5">
+        {/* A fieldset's default min-width is min-content, which at large
+            text sizes holds it wider than the screen; min-w-0 lets it and
+            its legend wrap, and the choices wrap rather than overflow. */}
+        <fieldset className="flex min-w-0 flex-col gap-1.5">
           <legend className="mb-1 text-xs text-ink-muted">
             HP per level (level 1 of your first class is always the full die)
           </legend>
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {(
               [
                 ['average', 'Average'],
