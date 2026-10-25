@@ -2,7 +2,8 @@
 // GAME-003: switching rules version re-reads every pick under the other edition,
 // so it previews what that does to this character and waits for a yes. It used
 // to apply on one tap, under a legend promising warnings that did not exist.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
@@ -82,34 +83,49 @@ function renderBuild(build?: (doc: CharacterDoc) => void) {
   doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] }];
   build?.(doc);
 
+  // A tiny stand-in for the session store. The page stays mounted across
+  // edits, as it does in the app, so page state such as an undo offer lives on.
   let current = doc;
-  const update = (recipe: (d: CharacterDoc) => void) => {
+  const listeners = new Set<() => void>();
+  const set = (next: CharacterDoc) => {
+    current = next;
+    for (const l of listeners) l();
+  };
+  const update = vi.fn((recipe: (d: CharacterDoc) => void, _label?: unknown) => {
     const d = structuredClone(current);
     recipe(d);
-    current = d;
-    rerender();
+    set(d);
+  });
+  const restore = vi.fn((snapshot: CharacterDoc, _label?: string) =>
+    set(structuredClone(snapshot)),
+  );
+  const subscribe = (l: () => void) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
   };
-  const ctxValue = () =>
-    ({
-      doc: current,
-      sheet: deriveSheet(current, makeTestContext()),
+  function Shell() {
+    const live = useSyncExternalStore(subscribe, () => current);
+    const sheet = useMemo(() => deriveSheet(live, makeTestContext()), [live]);
+    const ctx = {
+      doc: live,
+      sheet,
       update,
+      restore,
       loadStatus: 'ready',
       missing: false,
       error: null,
       saveStatus: 'saved',
       retryLoad: () => undefined,
-    }) as unknown as CharacterSheetState;
-  const routes = () => [
-    {
-      path: '/',
-      element: <Outlet context={ctxValue()} />,
-      children: [{ index: true, element: <BuildPage /> }],
-    },
-  ];
-  const view = render(<RouterProvider router={createMemoryRouter(routes())} />);
-  const rerender = () => view.rerender(<RouterProvider router={createMemoryRouter(routes())} />);
-  return { getDoc: () => current };
+    } as unknown as CharacterSheetState;
+    return <Outlet context={ctx} />;
+  }
+  const router = createMemoryRouter([
+    { path: '/', element: <Shell />, children: [{ index: true, element: <BuildPage /> }] },
+  ]);
+  render(<RouterProvider router={router} />);
+  /** An edit made from elsewhere (another control, the HP sync). */
+  const edit = (recipe: (d: CharacterDoc) => void) => act(() => update(recipe));
+  return { getDoc: () => current, update, restore, edit };
 }
 
 describe('BuildPage rules-version switch (GAME-003)', () => {
@@ -320,5 +336,207 @@ describe('BuildPage accessible names', () => {
     renderBuild();
     fireEvent.click(screen.getByRole('button', { name: /^STR 14: swap/, pressed: false }));
     expect(screen.getByRole('button', { name: /^STR 14: swap/, pressed: true })).toBeTruthy();
+  });
+});
+
+// UX-004: changes that take picks away say what went and offer to put it back,
+// and removing a class asks first whichever class it is.
+describe('BuildPage destructive changes (UX-004)', () => {
+  const undoButton = () => screen.queryByRole('button', { name: /^Undo: / });
+  const clickUndo = () => {
+    const button = undoButton();
+    if (button === null) throw new Error('no undo offered');
+    fireEvent.click(button);
+  };
+
+  /** Mage, then a level-1 Warrior with a subclass, a dormant ASI feat and spells. */
+  const twoClasses = (d: CharacterDoc) => {
+    d.classes = [
+      { ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] },
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        levels: 1,
+        hp: ['avg'],
+        subclass: { name: 'Path of Tests', source: 'TST' },
+      },
+    ];
+    d.choices = {
+      'class:mage|tst:skill': ['arcana'],
+      'class:warrior|tst:skill': ['athletics', 'survival'],
+      'class:warrior|tst:asi:4:feat': ['skilled|tst'],
+      'feat:skilled|tst:asi4:skill': ['stealth'],
+      'subclass:path of tests|tst:spell': ['shield|tst'],
+    };
+    d.spellcasting = {
+      'mage|tst': { known: [], prepared: [{ name: 'Guidance', source: 'TST' }] },
+      'warrior|tst': { known: [{ name: 'Guidance', source: 'TST' }], prepared: [] },
+    };
+  };
+
+  it('asks before removing a level-1 class that is not the only one, and says what goes', async () => {
+    const { getDoc } = renderBuild(twoClasses);
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Warrior' }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalledTimes(1));
+    expect(lastPrompt()?.title).toBe('Remove Warrior?');
+    expect(lastPrompt()?.detail).toBe(
+      'Clears 3 Warrior picks, subclass Path of Tests (1 pick) and its spell list (1 known, 0 prepared). You can undo this right after.',
+    );
+    // Declined: nothing moved.
+    expect(getDoc().classes).toHaveLength(2);
+    expect(undoButton()).toBeNull();
+  });
+
+  it('removes the class with its subclass picks, ASI feat picks and spells, and undoes it', async () => {
+    const { getDoc, restore } = renderBuild(twoClasses);
+    const original = structuredClone(getDoc());
+    dialogs.askConfirm.mockResolvedValueOnce(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Warrior' }));
+    await waitFor(() => expect(getDoc().classes).toHaveLength(1));
+    expect(getDoc().classes[0]?.ref.name).toBe('Mage');
+    expect(getDoc().choices).toEqual({ 'class:mage|tst:skill': ['arcana'] });
+    expect(Object.keys(getDoc().spellcasting)).toEqual(['mage|tst']);
+
+    await waitFor(() => expect(undoButton()).not.toBeNull());
+    expect(screen.getByText('Removed Warrior')).toBeTruthy();
+    clickUndo();
+    expect(restore).toHaveBeenCalledWith(expect.anything(), 'Undo: Removed Warrior');
+    expect(getDoc()).toEqual(original);
+  });
+
+  it('offers to put back a level taken off, with the HP rolled for it', () => {
+    const { getDoc } = renderBuild((d) => {
+      d.hpMethod = 'rolled';
+      const c = d.classes[0];
+      if (c !== undefined) c.hp = ['avg', 7, 4];
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a Warrior level' }));
+    expect(getDoc().classes[0]?.levels).toBe(2);
+    expect(getDoc().classes[0]?.hp).toEqual(['avg', 7]);
+    expect(screen.getByText(/rolled 4 HP for that level cleared/)).toBeTruthy();
+    clickUndo();
+    expect(getDoc().classes[0]?.levels).toBe(3);
+    expect(getDoc().classes[0]?.hp).toEqual(['avg', 7, 4]);
+  });
+
+  it('clears the old species picks on a change, and undo brings species and picks back', () => {
+    const { getDoc } = renderBuild((d) => {
+      d.choices = {
+        'race:testfolk|tst:lang:0': ['elvish'],
+        'class:warrior|tst:skill': ['athletics'],
+      };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Dragonborn', hidden: true }));
+    expect(getDoc().race).toEqual({ name: 'Dragonborn', source: 'TST' });
+    expect(getDoc().choices).toEqual({ 'class:warrior|tst:skill': ['athletics'] });
+    expect(screen.getByText(/1 Testfolk pick cleared/)).toBeTruthy();
+
+    clickUndo();
+    expect(getDoc().race).toEqual({ name: 'Testfolk', source: 'TST' });
+    expect(getDoc().choices['race:testfolk|tst:lang:0']).toEqual(['elvish']);
+    // Focus stays in the bar, which now says what was undone.
+    expect(document.activeElement?.textContent).toBe('Undone: Species: Testfolk → Dragonborn');
+  });
+
+  it('clears the subrace picks when the subrace is unselected, and undoes it', () => {
+    const { getDoc } = renderBuild((d) => {
+      d.race = { name: 'Dragonborn', source: 'TST' };
+      d.subrace = { name: 'Dragonborn (Blue)', source: 'TST' };
+      d.choices = { 'subrace:dragonborn (blue)|tst:skill': ['arcana'] };
+    });
+    const card = screen
+      .getAllByRole('button', { name: 'Dragonborn (Blue)', hidden: true })
+      .find((b) => b.getAttribute('aria-pressed') === 'true');
+    if (card === undefined) throw new Error('no selected subrace card');
+    fireEvent.click(card);
+    expect(getDoc().subrace).toBeUndefined();
+    expect(getDoc().choices).toEqual({});
+    expect(screen.getByText('Subrace: Dragonborn (Blue) → none')).toBeTruthy();
+    clickUndo();
+    expect(getDoc().subrace).toEqual({ name: 'Dragonborn (Blue)', source: 'TST' });
+    expect(getDoc().choices).toEqual({ 'subrace:dragonborn (blue)|tst:skill': ['arcana'] });
+  });
+
+  it('clears the sub-choices of a feat the old background granted', () => {
+    const { getDoc } = renderBuild((d) => {
+      d.choices = {
+        'background:scholar|tst:skill': ['arcana', 'history'],
+        'feat:skilled|tst:scholar|tst:skill': ['stealth'],
+      };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Linguist', hidden: true }));
+    expect(getDoc().background).toEqual({ name: 'Linguist', source: 'TST' });
+    expect(getDoc().choices).toEqual({});
+    clickUndo();
+    expect(Object.keys(getDoc().choices).sort()).toEqual([
+      'background:scholar|tst:skill',
+      'feat:skilled|tst:scholar|tst:skill',
+    ]);
+  });
+
+  it('clears the old subclass picks on a change, and undoes it', () => {
+    const { getDoc } = renderBuild((d) => {
+      const c = d.classes[0];
+      if (c !== undefined) c.subclass = { name: 'Path of Tests', source: 'TST' };
+      d.choices = { 'subclass:path of tests|tst:spell': ['shield|tst'] };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Spell Knight', hidden: true }));
+    expect(getDoc().classes[0]?.subclass).toEqual({ name: 'Spell Knight', source: 'TST' });
+    expect(getDoc().choices).toEqual({});
+    clickUndo();
+    expect(getDoc().classes[0]?.subclass).toEqual({ name: 'Path of Tests', source: 'TST' });
+    expect(getDoc().choices).toEqual({ 'subclass:path of tests|tst:spell': ['shield|tst'] });
+  });
+
+  it('undoes the standard array', () => {
+    const { getDoc } = renderBuild();
+    fireEvent.click(screen.getByRole('button', { name: 'Standard array' }));
+    expect(getDoc().abilities.base.str).toBe(15);
+    expect(screen.getByText(/was 14\/12\/14\/10\/10\/10/)).toBeTruthy();
+    clickUndo();
+    expect(getDoc().abilities.base).toEqual({
+      str: 14,
+      dex: 12,
+      con: 14,
+      int: 10,
+      wis: 10,
+      cha: 10,
+    });
+  });
+
+  it('undoes a 4d6 roll', () => {
+    // Every die comes up 6, so every score rolls 18.
+    const rng = vi.spyOn(crypto, 'getRandomValues').mockImplementation((buf) => {
+      if (buf instanceof Uint32Array) buf[0] = 5;
+      return buf;
+    });
+    try {
+      const { getDoc } = renderBuild();
+      fireEvent.click(screen.getByRole('button', { name: 'Roll 4d6' }));
+      expect(getDoc().abilities.base.int).toBe(18);
+      expect(screen.getByText('Rolled ability scores: 18/18/18/18/18/18')).toBeTruthy();
+      clickUndo();
+      expect(getDoc().abilities.base.int).toBe(10);
+    } finally {
+      rng.mockRestore();
+    }
+  });
+
+  it('offers nothing when the standard array is already what the scores are', () => {
+    renderBuild((d) => {
+      d.abilities.base = { str: 15, dex: 14, con: 13, int: 12, wis: 10, cha: 8 };
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Standard array' }));
+    expect(undoButton()).toBeNull();
+  });
+
+  it('withdraws the offer at the next edit', () => {
+    const { edit } = renderBuild();
+    fireEvent.click(screen.getByRole('button', { name: 'Dragonborn', hidden: true }));
+    expect(undoButton()).not.toBeNull();
+    edit((d) => {
+      d.name = 'Renamed';
+    });
+    expect(undoButton()).toBeNull();
   });
 });
