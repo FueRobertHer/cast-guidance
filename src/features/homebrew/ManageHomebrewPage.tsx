@@ -368,7 +368,9 @@ export function Component() {
           // remove, so the failure stays in its own row and the rest of the
           // library, and its controls, keep working.
           <DecodeBoundary key={r.id} label="This file">
-            <div className="flex items-center gap-2 rounded-lg bg-surface p-3">
+            {/* Below 360px the name takes the first line and the toggle and
+                actions the second, or the name would get about 60px. */}
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface p-3">
               {/* A stable verb for the name, so the state is announced once: by
                   aria-pressed, not again by the flipping visible text. */}
               <button
@@ -384,15 +386,19 @@ export function Component() {
                     .then(invalidateRegistry)
                     .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
                 }}
-                className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-                  r.enabled
-                    ? 'border-purple-300 text-purple-300'
-                    : 'border-surface-2 text-ink-muted'
-                }`}
+                className="tap -my-1 mr-auto shrink-0 rounded text-xs"
               >
-                {r.enabled ? 'enabled' : 'disabled'}
+                <span
+                  className={`rounded-full border px-2 py-0.5 ${
+                    r.enabled
+                      ? 'border-purple-300 text-purple-300'
+                      : 'border-surface-2 text-ink-muted'
+                  }`}
+                >
+                  {r.enabled ? 'enabled' : 'disabled'}
+                </span>
               </button>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
                 <div className="truncate text-sm font-semibold">{r.fileName}</div>
                 <div className="truncate text-xs text-ink-muted">{summary(r)}</div>
               </div>
@@ -401,7 +407,7 @@ export function Component() {
                   to={`/homebrew/edit/${r.id}`}
                   aria-label={`Edit ${r.fileName} in the builder`}
                   title="Edit in the builder"
-                  className="shrink-0 rounded p-1.5 text-purple-300 hover:text-purple-200"
+                  className="tap -m-1 shrink-0 rounded text-purple-300 hover:text-purple-200"
                 >
                   <Pencil size={15} />
                 </Link>
@@ -417,7 +423,7 @@ export function Component() {
                     notifyFailure('Download', err);
                   }
                 }}
-                className="shrink-0 rounded p-1.5 text-ink-muted hover:text-ink"
+                className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-ink"
               >
                 <Download size={15} />
               </button>
@@ -426,7 +432,7 @@ export function Component() {
                 aria-label={`Delete ${r.fileName}`}
                 title="Delete"
                 onClick={() => void remove(r.id, r.fileName)}
-                className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
+                className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-accent"
               >
                 <Trash2 size={15} />
               </button>
@@ -454,7 +460,7 @@ export function Component() {
                   aria-label={`Delete ${e.fileName ?? 'this unreadable file'}`}
                   title="Delete"
                   onClick={() => void remove(id, e.fileName ?? 'this file')}
-                  className="shrink-0 rounded p-1.5 text-ink-muted hover:text-accent"
+                  className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-accent"
                 >
                   <Trash2 size={15} />
                 </button>

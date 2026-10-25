@@ -333,7 +333,7 @@ export function Component() {
       <Link
         to="/"
         aria-label="Back to characters (your draft is kept)"
-        className="text-ink-muted hover:text-ink"
+        className="tap -my-2 -ml-3 rounded text-ink-muted hover:text-ink"
       >
         <ArrowLeft size={20} aria-hidden />
       </Link>
