@@ -21,16 +21,22 @@ vi.mock('./source', () => ({
 
 // A deadline the suite can afford to wait out, with room on both sides: a
 // prompt list must beat it even on a loaded runner (at 20 ms a fresh install
-// sometimes fell back to the pinned release), and a slow one must miss it.
+// sometimes fell back to the pinned release), and a slow one must miss it. And
+// a landing window it never reaches, so every flush a test sees is one the
+// loader asked for.
 vi.mock('./config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./config')>()),
   BOOT_TAG_RESOLVE_TIMEOUT_MS: 500,
+  LANDING_FLUSH_MS: 60_000,
 }));
 /** How long a "slow" release list takes: well past the mocked deadline. */
 const SLOW_LIST_MS = 2_000;
 
 import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG, MAX_TAG_LIST_BYTES, TAG_LIST_TTL_MS } from './config';
+import { ESSENTIALS_FILES } from './packs';
+
+const VALID_ESSENTIALS = ESSENTIALS_FILES.length;
 
 // IndexedDB under fake-indexeddb is slow on a loaded runner: the default
 // one-second wait was enough locally and flaked in CI under the coverage gate.
@@ -64,13 +70,14 @@ const wholeMirror = validMirror();
  */
 async function reboot() {
   vi.resetModules();
-  const [{ db }, { dataCacheRepo }, { dataStatusStore }, loader] = await Promise.all([
+  const [{ db }, { dataCacheRepo }, { dataStatusStore }, loader, landing] = await Promise.all([
     import('@/db/db'),
     import('@/db/dataCacheRepo'),
     import('@/stores/dataStatus'),
     import('./loader'),
+    import('./landing'),
   ]);
-  return { db, dataCacheRepo, dataStatusStore, loader };
+  return { db, dataCacheRepo, dataStatusStore, loader, landing };
 }
 
 /** A fresh loader over an empty device. */
@@ -358,5 +365,144 @@ describe('the boot-time update check', () => {
       WAIT,
     );
     expect(tagsFetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe('telling the registry what landed (DATA-003)', () => {
+  it('hands over what a boot downloaded by the time it reports done, in a few batches', async () => {
+    const { dataStatusStore, landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    const bumps = vi.fn();
+    landing.subscribeRevision(bumps);
+    // Read at the moment the phase moves, which is when the pages showing
+    // "still downloading" stop saying so.
+    let revisionAtDone = -1;
+    dataStatusStore.subscribe((s, prev) => {
+      if (s.phase === 'done' && prev.phase !== 'done') revisionAtDone = landing.getRevision();
+    });
+
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('done'), WAIT);
+
+    // Every file the drain wrote, with the timer nowhere near firing.
+    expect(landing.getLandedCount()).toBeGreaterThan(10);
+    expect(revisionAtDone).toBe(landing.getLandedCount());
+    // Essentials, then the end of the drain: not one per file.
+    expect(bumps.mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it('hands over essentials as soon as they are in, while the drain goes on', async () => {
+    // The first screen is waiting on essentials. The class pack never
+    // arrives, so the drain cannot finish and only the essentials flush can
+    // hand them over before the landing window would.
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path === 'class/class-fighter.json' ? new Promise(() => undefined) : wholeMirror(tag, path),
+    );
+    const { dataStatusStore, landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    void loader.initDataLayer();
+
+    await vi.waitFor(() => expect(landing.getRevision()).toBe(VALID_ESSENTIALS), WAIT);
+    expect(dataStatusStore.getState().phase).toBe('working');
+  });
+
+  it('hands over the essentials that did land when the rest of them failed', async () => {
+    const { dataStatusStore, landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    // One essentials file fails, but only once every other one has landed, so
+    // there is something on disk for the failure to strand.
+    let othersIn = (): void => undefined;
+    const allOthers = new Promise<void>((resolve) => {
+      othersIn = resolve;
+    });
+    landing.subscribeLanded(() => {
+      if (landing.getLandedCount() === VALID_ESSENTIALS - 1) othersIn();
+    });
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path === 'feats.json'
+        ? allOthers.then(() => Promise.reject(new Error('offline')))
+        : wholeMirror(tag, path),
+    );
+
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'), WAIT);
+
+    expect(landing.getRevision()).toBe(VALID_ESSENTIALS - 1);
+  });
+
+  it('hands over what landed before a drain failed', async () => {
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path === 'spells/spells-phb.json'
+        ? Promise.reject(new Error('offline'))
+        : wholeMirror(tag, path),
+    );
+    const { dataStatusStore, landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    void loader.initDataLayer();
+    await vi.waitFor(() => expect(dataStatusStore.getState().phase).toBe('error'), WAIT);
+
+    // The class and item packs landed after essentials were handed over, and
+    // before the spell pack failed: the error must not strand them.
+    expect(landing.getLandedCount()).toBeGreaterThan(VALID_ESSENTIALS);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+
+  it('hands over the files of a type before telling the page they are in', async () => {
+    const { landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await loader.ensureTypePacks('spell');
+
+    expect(landing.getLandedCount()).toBeGreaterThan(0);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+
+  it('hands over what did land for a type whose download failed', async () => {
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path.startsWith('spells/spells-')
+        ? Promise.reject(new Error('offline'))
+        : wholeMirror(tag, path),
+    );
+    const { landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await expect(loader.ensureTypePacks('spell')).rejects.toThrow('offline');
+
+    // Essentials made it, and the page that asked is about to show the error
+    // over whatever the registry has: it should have those.
+    expect(landing.getLandedCount()).toBeGreaterThan(0);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+
+  it('hands over a full download before it resolves', async () => {
+    const { landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await loader.downloadAllPacks();
+
+    expect(landing.getLandedCount()).toBeGreaterThan(10);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+
+  it('hands over what landed before a full download failed', async () => {
+    fetchFile.mockImplementation((tag: string, path: string) =>
+      path === 'spells/spells-phb.json'
+        ? Promise.reject(new Error('offline'))
+        : wholeMirror(tag, path),
+    );
+    const { landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+
+    await expect(loader.downloadAllPacks()).rejects.toThrow('offline');
+
+    expect(landing.getLandedCount()).toBeGreaterThan(VALID_ESSENTIALS);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
+  });
+
+  it('tells every consumer to read again when a release is installed', async () => {
+    const { landing, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
+    await loader.downloadAllPacks();
+    const before = landing.getRevision();
+
+    await loader.updateToTag('v2.33.0');
+
+    // Nothing landed in the active release (the install staged its own), and
+    // the whole release changed anyway.
+    expect(landing.getRevision()).toBeGreaterThan(before);
+    expect(landing.getRevision()).toBe(landing.getLandedCount());
   });
 });

@@ -5,6 +5,8 @@
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import { singleFlight } from '@/lib/singleFlight';
+import { getLandedCount, getRevision, subscribeLanded } from './landing';
 import {
   ensurePack,
   getActiveTag,
@@ -106,36 +108,83 @@ export function homebrewSourceNames(
  * in memory. That was most of the delay before a page could paint.
  */
 export async function getRegistry(): Promise<EntityRegistry> {
+  // Taken before anything is read: every landing counted here has committed
+  // its row, so the read below sees at least these files. See `builtThrough`
+  // for why the smaller of the two is what this read can vouch for.
+  const covers = Math.min(getLandedCount(), getRevision());
   beginRead();
   try {
-    return await readRegistry();
+    const reg = await readRegistry();
+    if (covers > builtThrough) builtThrough = covers;
+    return reg;
   } finally {
     endRead();
   }
 }
 
-async function readRegistry(): Promise<EntityRegistry> {
-  const startedAt = epoch;
-  // The cache is read directly, not through `getFile`, so tag resolution (and
-  // any rollback it decides on) has to be waited for here; reading before it
-  // built whatever release the module happened to start on.
-  await whenTagReady();
-  // One tag for the whole read: the paths, the bodies and the build are all
-  // of the same release even if an install or a rollback moves it meanwhile.
-  const tag = getActiveTag();
-  const [paths, { files: brews }] = await Promise.all([
-    dataCacheRepo.cachedPaths(tag),
-    // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
-    // to throw out of here, and every view needs the compendium.
-    homebrewRepo.enabledSafe(),
-  ]);
-  const signature = computeRegistrySignature(tag, paths, brews);
-  if (current !== null && signature === currentSignature) return current;
+/**
+ * Rebuilds in flight, keyed by the epoch they started in and the signature
+ * they are building. Every mounted registry hook reads when the landings are
+ * flushed, all at once, and each of them used to rebuild the same registry
+ * from the same rows for itself: a dozen full reads and normalizations per
+ * flush where one gives every caller the same answer. The epoch is part of the
+ * key because an invalidation changes bodies without changing the signature,
+ * and a read that started after it must not be handed one that started before.
+ */
+const rebuilds = new Map<string, Promise<EntityRegistry | undefined>>();
 
+async function readRegistry(): Promise<EntityRegistry> {
+  for (;;) {
+    const startedAt = epoch;
+    // The cache is read directly, not through `getFile`, so tag resolution (and
+    // any rollback it decides on) has to be waited for here; reading before it
+    // built whatever release the module happened to start on.
+    await whenTagReady();
+    // One tag for the whole read: the paths, the bodies and the build are all
+    // of the same release even if an install or a rollback moves it meanwhile.
+    const tag = getActiveTag();
+    const [paths, { files: brews }] = await Promise.all([
+      dataCacheRepo.cachedPaths(tag),
+      // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
+      // to throw out of here, and every view needs the compendium.
+      homebrewRepo.enabledSafe(),
+    ]);
+    const signature = computeRegistrySignature(tag, paths, brews);
+    if (current !== null && signature === currentSignature) return current;
+    const reg = await singleFlight(rebuilds, `${startedAt}|${signature}`, () =>
+      rebuild({ startedAt, tag, paths, brews, signature }),
+    );
+    // Undefined means the active tag moved under the build (a rollback, or an
+    // install), so every caller that shared it reads again, from the top, each
+    // on its own: the loop rather than a recursive call from inside the shared
+    // build, which could otherwise end up waiting on itself.
+    if (reg !== undefined) return reg;
+  }
+}
+
+interface RebuildInput {
+  startedAt: number;
+  tag: string;
+  paths: ReadonlySet<string>;
+  brews: Awaited<ReturnType<typeof homebrewRepo.enabledSafe>>['files'];
+  signature: string;
+}
+
+/**
+ * Build the registry for one signature, or resolve undefined when the tag has
+ * to be read again first.
+ */
+async function rebuild({
+  startedAt,
+  tag,
+  paths,
+  brews,
+  signature,
+}: RebuildInput): Promise<EntityRegistry | undefined> {
   // A release on probation counts this build as started before it begins,
   // so one that never finishes is on record; one that has already used up
   // its starts goes back instead, and this builds the restored release.
-  if (await noteRegistryBuildStarting(tag)) return readRegistry();
+  if (await noteRegistryBuildStarting(tag)) return undefined;
   // Only a real rebuild pays for the file bodies.
   const files = await cachedFilesMap(tag);
   // Before the registry is published, so the first render that can show a
@@ -151,7 +200,7 @@ async function readRegistry(): Promise<EntityRegistry> {
     // fails again under the restored release is reported as it stands. A
     // concurrent build that lost the race to roll back finds the tag already
     // moved and builds the restored release too.
-    if ((await noteRegistryBuildFailed(tag)) || getActiveTag() !== tag) return readRegistry();
+    if ((await noteRegistryBuildFailed(tag)) || getActiveTag() !== tag) return undefined;
     throw err;
   }
   // The official build is what an install is judged on, so this is where its
@@ -175,7 +224,7 @@ async function readRegistry(): Promise<EntityRegistry> {
 }
 
 /**
- * Whether a registry read is in flight, and who to tell when that changes.
+ * Whether the registry is behind the cache, and who to tell when that changes.
  *
  * This lives here rather than in each `useRegistryState` because it is a
  * property of the registry, not of any one component. Every consumer used to
@@ -186,6 +235,29 @@ async function readRegistry(): Promise<EntityRegistry> {
  */
 let readsInFlight = 0;
 const readListeners = new Set<() => void>();
+
+/**
+ * The landing count every consumer's registry is known to include: the
+ * highest count captured at the start of a read that completed and was
+ * returned to its caller, published or not.
+ *
+ * Landings are flushed to consumers in batches (see `landing.ts`), which opens
+ * a window where a file is on disk and no read has started for it. Without
+ * this the flag reads false across that window, over a registry that does not
+ * have the file, and the library says "Nothing here yet" about a section that
+ * just arrived.
+ *
+ * A read can vouch only for what it saw AND what every other consumer has been
+ * told to read: the smaller of the landed count and the revision. A page
+ * mounting between a landing and its flush reads the new file, but the pages
+ * already mounted will not read again until the flush, and they are still
+ * showing the registry without it. Counting that read as covering the landing
+ * dropped the flag over them.
+ */
+let builtThrough = 0;
+
+/** The value the listeners were last told about. */
+let lastAnnounced = false;
 
 /**
  * Tell the listeners, but only when the flag itself moved.
@@ -203,8 +275,10 @@ const readListeners = new Set<() => void>();
  * would surface as an unhandled error with no stack pointing here, so the
  * console is the honest place for it.
  */
-function announceReads(wasRefreshing: boolean): void {
-  if (isRegistryRefreshing() === wasRefreshing) return;
+function announceRefreshing(): void {
+  const now = isRegistryRefreshing();
+  if (now === lastAnnounced) return;
+  lastAnnounced = now;
   for (const fn of [...readListeners]) {
     try {
       fn();
@@ -215,24 +289,29 @@ function announceReads(wasRefreshing: boolean): void {
 }
 
 function beginRead(): void {
-  const wasRefreshing = isRegistryRefreshing();
   readsInFlight++;
-  announceReads(wasRefreshing);
+  announceRefreshing();
 }
 
 function endRead(): void {
-  const wasRefreshing = isRegistryRefreshing();
   readsInFlight--;
-  announceReads(wasRefreshing);
+  announceRefreshing();
 }
 
+// A landing raises the flag the moment the row is written, not when the flush
+// gets round to it; the reads that follow the flush bring it back down. Told
+// only when the flag moves, so a drain landing hundreds of files costs the
+// pages listening one render, not one per file.
+subscribeLanded(announceRefreshing);
+
 /**
- * True while the registry is catching up with the files on disk. A page that
- * reads "nothing here" out of the registry during this window is reading a
- * stale answer, not a final one.
+ * True while the registry is catching up with the files on disk: a read is
+ * running, or a file has landed that not every consumer has read yet. A page
+ * that reads "nothing here" out of the registry during this window is reading
+ * a stale answer, not a final one.
  */
 export function isRegistryRefreshing(): boolean {
-  return readsInFlight > 0;
+  return readsInFlight > 0 || builtThrough < getLandedCount();
 }
 
 /**

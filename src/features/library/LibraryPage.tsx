@@ -53,7 +53,7 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
 
 function GlobalSearch() {
   const { registry, status: regStatus, error: regError, retry: retryRegistry } = useRegistryState();
-  const { status: searchStatus, retry: retrySearch } = useSearchState(registry);
+  const { status: searchStatus, retry: retrySearch, indexVersion } = useSearchState(registry);
   const ready = searchStatus === 'ready';
   const [q, setQ] = useState('');
   const [result, setResult] = useState<SearchResult>({ hits: [], hiddenCount: 0 });
@@ -68,7 +68,11 @@ function GlobalSearch() {
   const sources = showHidden ? undefined : policyForSearch(policy);
   const sourcesKey = sources === undefined ? '' : JSON.stringify(sources);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object
+  // The index rebuilds behind a `ready` status as a download lands files, so
+  // `indexVersion` asks the query again whenever one of those finishes:
+  // otherwise the results on screen stay those of the index that was current
+  // when the query was typed, missing everything that has arrived since.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object; indexVersion re-asks after a rebuild
   useEffect(() => {
     if (!ready || trimmed.length < 2) {
       setResult({ hits: [], hiddenCount: 0 });
@@ -84,7 +88,7 @@ function GlobalSearch() {
       alive = false;
       clearTimeout(t);
     };
-  }, [trimmed, ready, sourcesKey]);
+  }, [trimmed, ready, sourcesKey, indexVersion]);
 
   // A new query starts back inside the player's chosen sources.
   // biome-ignore lint/correctness/useExhaustiveDependencies: resetting on query change is the point

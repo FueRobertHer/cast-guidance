@@ -63,14 +63,16 @@ const fetchesFor = (tag: string) => fetchFile.mock.calls.filter(([t]) => t === t
 
 async function reboot() {
   vi.resetModules();
-  const [{ db }, { dataCacheRepo }, { dataStatusStore }, loader, registry] = await Promise.all([
-    import('@/db/db'),
-    import('@/db/dataCacheRepo'),
-    import('@/stores/dataStatus'),
-    import('./loader'),
-    import('./registry'),
-  ]);
-  return { db, dataCacheRepo, dataStatusStore, loader, registry };
+  const [{ db }, { dataCacheRepo }, { dataStatusStore }, loader, registry, landing] =
+    await Promise.all([
+      import('@/db/db'),
+      import('@/db/dataCacheRepo'),
+      import('@/stores/dataStatus'),
+      import('./loader'),
+      import('./registry'),
+      import('./landing'),
+    ]);
+  return { db, dataCacheRepo, dataStatusStore, loader, registry, landing };
 }
 
 type Started = Awaited<ReturnType<typeof reboot>>;
@@ -235,6 +237,11 @@ describe('phase E: installed, not yet confirmed', () => {
         .spyOn(session.dataCacheRepo, 'filesByTag')
         .mockReturnValue(new Promise(() => undefined));
       void session.registry.getRegistry();
+      // Two screens reading the same data share one build, so the second is
+      // kept from joining the first: builds that do not share (one started
+      // after an invalidation, or after another file landed) must still be
+      // counted as one start between them.
+      session.registry.invalidateRegistry();
       void session.registry.getRegistry();
       // Both builds are past the count and stuck reading, so the record now
       // says everything this session will ever say: one start, not two.
@@ -308,6 +315,23 @@ describe('phase E: installed, not yet confirmed', () => {
     expect(await storedTag(started)).toBe(DATA_TAG);
     expect(await rollbackRecord(started)).toBeUndefined();
     expect(started.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+  });
+
+  it('tells every consumer to read again when it goes back', async () => {
+    // Pages holding a registry (or the error) of the release just left would
+    // otherwise keep it until something else happened to land.
+    fetchFile.mockImplementation(
+      releases({ [NEXT]: { 'races.json': { race: [{ name: 'Crash' }] } } }),
+    );
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    const before = started.landing.getRevision();
+
+    await started.registry.getRegistry();
+
+    expect(started.loader.getActiveTag()).toBe(DATA_TAG);
+    expect(started.landing.getRevision()).toBeGreaterThan(before);
+    expect(started.landing.getRevision()).toBe(started.landing.getLandedCount());
   });
 
   it('answers every concurrent build of a release that cannot be built from the one it went back to', async () => {

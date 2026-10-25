@@ -29,6 +29,16 @@ export const MAX_DATA_FILE_BYTES = 8 * 1024 * 1024;
 export const MAX_TAG_LIST_BYTES = 1024 * 1024;
 export const FETCH_CONCURRENCY = 4;
 
+/**
+ * How long files landing in the cache are gathered before the registry and
+ * the search index are told about them. A background drain lands hundreds of
+ * files, and each one used to rebuild every mounted registry (a full read and
+ * normalize of the cached compendium) and then the search index behind it.
+ * Gathered like this, a drain of any size costs about one rebuild per window,
+ * plus one at each point something is waiting on the data (see `landing.ts`).
+ */
+export const LANDING_FLUSH_MS = 1500;
+
 export interface TagVersion {
   major: number;
   minor: number;
