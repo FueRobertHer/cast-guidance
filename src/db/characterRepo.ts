@@ -1,20 +1,63 @@
+import Dexie, { type ObservabilitySet } from 'dexie';
 import { invalidateRegistry } from '@/data5e/registry';
 import { migrateCharacter } from '@/engine/migrate';
 import type { CharacterDoc } from '@/engine/types';
+import { sameContent } from '@/lib/docDiff';
 import {
   assertCharacterExport,
   type CharacterExport,
   IMPORT_LIMITS,
   ValidationError,
 } from '@/lib/guards';
-import { db, type HomebrewFileRow } from './db';
+import { randomId } from '@/lib/randomId';
+import { type CharacterRow, db, type HomebrewFileRow } from './db';
 import { buildHomebrewRow } from './homebrewRepo';
+
+/**
+ * What a save expects the stored row to be (REL-007, #98): the revision this
+ * tab last read or wrote, with the content it had then, or no row at all.
+ */
+export type SaveExpect =
+  | { kind: 'revision'; revision: string | undefined; content?: CharacterDoc }
+  | { kind: 'absent' };
+
+/**
+ * How a checked save ended. `conflict`: the row is no longer what the save
+ * expected; `missing`: the row is gone. Neither wrote anything.
+ */
+export type SaveResult =
+  | { status: 'saved'; revision: string | undefined }
+  | { status: 'conflict' }
+  | { status: 'missing' };
+
+/** Every part Dexie reports for a write to the characters table starts with this. */
+const CHARACTERS_PART = `idb://${db.name}/characters/`;
+
+/**
+ * A stored row without its storage bookkeeping. Every read goes through here,
+ * so a document never carries `revision` into an export, a history snapshot
+ * or the journal.
+ */
+function withoutRevision(row: unknown): unknown {
+  if (row === null || typeof row !== 'object' || !('revision' in row)) return row;
+  const { revision: _, ...doc } = row as CharacterRow;
+  return doc;
+}
+
+function splitRow(row: CharacterRow): { doc: CharacterDoc; revision: string | undefined } {
+  return { doc: migrateCharacter(withoutRevision(row)), revision: row.revision };
+}
+
+/** A row to store: a fresh stamp and a fresh revision, whatever `doc` carried. */
+function rowFor(doc: CharacterDoc): CharacterRow {
+  return { ...doc, updatedAt: new Date().toISOString(), revision: randomId() };
+}
 
 /** Persistence seam for characters (cloud sync slots in behind this). */
 export const characterRepo = {
   async list(): Promise<CharacterDoc[]> {
     const rows = await db.characters.orderBy('updatedAt').reverse().toArray();
-    return rows.map((r) => migrateCharacter(r));
+    return rows.map((r) => migrateCharacter(withoutRevision(r)));
   },
 
   /**
@@ -30,11 +73,102 @@ export const characterRepo = {
 
   async get(id: string): Promise<CharacterDoc | undefined> {
     const row = await db.characters.get(id);
-    return row === undefined ? undefined : migrateCharacter(row);
+    return row === undefined ? undefined : splitRow(row).doc;
   },
 
+  /** A character with the revision of the row it was read from. */
+  async getWithRevision(
+    id: string,
+  ): Promise<{ doc: CharacterDoc; revision: string | undefined } | undefined> {
+    const row = await db.characters.get(id);
+    return row === undefined ? undefined : splitRow(row);
+  },
+
+  /**
+   * An unconditional write, for a character no tab has open yet: a new one,
+   * or an id nothing else can have written.
+   */
   async put(doc: CharacterDoc): Promise<void> {
-    await db.characters.put({ ...doc, updatedAt: new Date().toISOString() });
+    await db.characters.put(rowFor(doc));
+  },
+
+  /**
+   * Store a new character. If its id is already taken (a browser's "Duplicate
+   * tab" copies the creator's draft, id and all), it is stored under a fresh
+   * one rather than over the other. Returns what was stored.
+   */
+  async create(doc: CharacterDoc): Promise<CharacterDoc> {
+    return db.transaction('rw', db.characters, async () => {
+      const taken = (await db.characters.get(doc.id)) !== undefined;
+      const created = taken ? { ...doc, id: crypto.randomUUID() } : doc;
+      await db.characters.add(rowFor(created));
+      return created;
+    });
+  },
+
+  /**
+   * The session's save (REL-007, #98): write `doc` only if the stored row is
+   * still what `expect` says, so a tab holding an older copy cannot write
+   * over another tab's newer save. The read, the check and the write are one
+   * transaction, and everything between them is synchronous, so no other
+   * write can land in between.
+   *
+   * A matching revision is not enough on its own: the stored content must
+   * also be the copy the tab expects. A tab running older code writes back
+   * the revision it read, and a row from before revisions has none, so only
+   * the content tells those writes apart. A row that already holds exactly
+   * what this save would write is not a conflict: nothing is written and its
+   * revision comes back.
+   */
+  async save(doc: CharacterDoc, expect: SaveExpect): Promise<SaveResult> {
+    return db.transaction('rw', db.characters, async (): Promise<SaveResult> => {
+      const row = await db.characters.get(doc.id);
+      if (row === undefined) {
+        if (expect.kind !== 'absent') return { status: 'missing' };
+      } else {
+        const { doc: stored, revision } = splitRow(row);
+        const current =
+          expect.kind === 'revision' &&
+          revision === expect.revision &&
+          (expect.content === undefined || sameContent(stored, expect.content));
+        if (!current) {
+          return sameContent(stored, doc) ? { status: 'saved', revision } : { status: 'conflict' };
+        }
+      }
+      const written = rowFor(doc);
+      await db.characters.put(written);
+      return { status: 'saved', revision: written.revision };
+    });
+  },
+
+  /**
+   * Rename in place: patches the name alone, with a new revision, so a tab
+   * holding the character open sees the change rather than having its whole
+   * document written over by the roster's copy. False if it is gone.
+   */
+  async rename(id: string, name: string): Promise<boolean> {
+    const changed = await db.characters.update(id, {
+      name,
+      updatedAt: new Date().toISOString(),
+      revision: randomId(),
+    });
+    return changed > 0;
+  },
+
+  /**
+   * Call `listener` after any committed write to the characters table, by
+   * this tab or another one (Dexie relays its own change events between tabs
+   * over a BroadcastChannel), and when Dexie says anything may have changed
+   * (its `all` part, sent when a page comes back from the back-forward cache,
+   * having missed whatever was written meanwhile). Returns the unsubscribe.
+   */
+  onChange(listener: () => void): () => void {
+    const handler = (parts: ObservabilitySet) => {
+      const keys = Object.keys(parts);
+      if (keys.some((part) => part === 'all' || part.startsWith(CHARACTERS_PART))) listener();
+    };
+    Dexie.on.storagemutated.subscribe(handler);
+    return () => Dexie.on.storagemutated.unsubscribe(handler);
   },
 
   async delete(id: string): Promise<void> {
@@ -56,7 +190,7 @@ export const characterRepo = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await db.characters.put(copy);
+    await db.characters.put(rowFor(copy));
     return copy;
   },
 
@@ -114,7 +248,7 @@ export const characterRepo = {
       // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
       // an import from when it lands.
       for (const row of plan.homebrewToAdd) await db.homebrewFiles.add({ ...row, addedAt });
-      await db.characters.put(plan.finalDoc);
+      await db.characters.put({ ...plan.finalDoc, revision: randomId() });
       return plan.summary;
     });
 
@@ -154,7 +288,8 @@ async function prepareExport(
   exp: CharacterExport,
   bytes: number,
 ): Promise<PreparedCharacterImport> {
-  const doc = migrateCharacter(exp.character);
+  // A revision in the file is another device's bookkeeping, never this one's.
+  const doc = migrateCharacter(withoutRevision(exp.character));
   const homebrew: HomebrewFileRow[] = [];
   for (const brew of exp.homebrew) {
     const b = (brew ?? {}) as Partial<HomebrewFileRow>;
@@ -185,7 +320,7 @@ export function partitionCharacterRows(rows: readonly unknown[]): CharacterListR
   const errors: CharacterReadError[] = [];
   for (const row of rows) {
     try {
-      characters.push(migrateCharacter(row));
+      characters.push(migrateCharacter(withoutRevision(row)));
     } catch (err) {
       const id = (row as { id?: unknown }).id;
       errors.push({

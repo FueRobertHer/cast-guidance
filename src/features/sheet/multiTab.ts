@@ -1,8 +1,10 @@
 /**
  * Multi-tab presence for a single character (REL-007). Each open sheet
  * heartbeats on a per-character BroadcastChannel; when two tabs have the same
- * character open, both show a non-blocking warning so a save in one tab can't
- * silently clobber an edit in the other. Guidance, not a hard lock.
+ * character open, both show a non-blocking warning that editing in both will
+ * ask which version to keep. Presence only: the guard is the revision check
+ * on every save (`characterRepo.save`), which refuses a tab's save once the
+ * other tab has saved since it read the character.
  *
  * Presence is tracked with last-seen timestamps and a staleness window, so a
  * tab that closes (or crashes) ages out even if its best-effort `bye` is lost —

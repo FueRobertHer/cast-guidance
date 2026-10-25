@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/db';
 import { historyRepo } from '@/db/historyRepo';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { unchecked } from '../../tests-fixtures/sessionCharacters';
 import { createCharacterSessionStore } from './characterSession';
 
 let clock = 1_000_000;
@@ -20,12 +21,12 @@ describe('history under a burst of small edits (UX-005)', () => {
     // cap pruned the level up a player would actually want to return to.
     const stored = new Map<string, CharacterDoc>([['c1', newCharacterDoc('c1', 'Wren', 't')]]);
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: async (id) => structuredClone(stored.get(id)),
         put: async (doc) => {
           stored.set(doc.id, structuredClone(doc));
         },
-      },
+      }),
       history: historyRepo,
       debounceMs: 10_000,
       now: () => Date.now(),
@@ -54,12 +55,12 @@ describe('history under a burst of small edits (UX-005)', () => {
   it('drops a run that ends where it began, such as a pip ticked by mistake', async () => {
     const stored = new Map<string, CharacterDoc>([['c1', newCharacterDoc('c1', 'Wren', 't')]]);
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: async (id) => structuredClone(stored.get(id)),
         put: async (doc) => {
           stored.set(doc.id, structuredClone(doc));
         },
-      },
+      }),
       history: historyRepo,
       debounceMs: 10_000,
       now: () => Date.now(),

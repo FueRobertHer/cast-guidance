@@ -48,7 +48,7 @@ import { db } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
-import { resetAnnouncer } from '@/stores/announcer';
+import { resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { onboardingStore } from '@/stores/onboarding';
 import { recordAnnouncer } from '../../../tests-fixtures/announcements';
@@ -400,23 +400,26 @@ describe('character import preview', () => {
 // announcer, the check in progress and then its outcome.
 describe('character import announcements', () => {
   it('says the check and each outcome once', async () => {
+    // Each line on this key waits out the announcer's throttle after the one
+    // before (THROTTLE_MS), and an import that is slow under load adds its
+    // own time to that, so every wait for a line allows well past both: the
+    // default second could run out first, with the line still to come.
+    const said = { timeout: THROTTLE_MS + 2000 };
     renderRoster();
     chooseFile(exported(hero()));
     expect(outcome()).toBe('Checking "brin.json"…');
     let dialog = await findDialog('Import Brin?');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
+    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'), said);
 
     chooseFile(exported(hero()));
     dialog = await findDialog('Import Brin?');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
-    await waitFor(() => expect(outcome()).toBe('Imported Brin. Added 1 homebrew file'));
+    await waitFor(() => expect(outcome()).toBe('Imported Brin. Added 1 homebrew file'), said);
 
     // Right after the last one, so this one waits out the key's throttle.
     chooseFile('{ not json');
-    await waitFor(() => expect(outcome()).toBe('Import failed: file is not valid JSON'), {
-      timeout: 3000,
-    });
+    await waitFor(() => expect(outcome()).toBe('Import failed: file is not valid JSON'), said);
 
     // A check that is answered inside the key's throttle can be replaced by
     // its answer before it is said, so only the outcomes are counted exactly.

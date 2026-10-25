@@ -120,6 +120,40 @@ export function getCharacter(page: Page, id: string): Promise<StoredCharacter | 
   return query<StoredCharacter | undefined>(page, { store: 'characters', kind: 'get', key: id });
 }
 
+/**
+ * Writes a whole character row, as another tab would save one, for state a
+ * test cannot reach through a second page in reasonable time. A raw write
+ * fires none of Dexie's change events, so the app's tabs do not refresh from
+ * it: the next save of a tab holding the character is refused. Fails if the
+ * database or store is missing.
+ */
+export async function putCharacterRow(page: Page, row: StoredCharacter): Promise<void> {
+  await page.evaluate(
+    (row) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('cast-guidance');
+        open.onupgradeneeded = () => {
+          open.transaction?.abort();
+          reject(new Error('putCharacterRow: the app database does not exist yet'));
+        };
+        open.onerror = () => {
+          if (open.error?.name !== 'AbortError') reject(open.error);
+        };
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction('characters', 'readwrite');
+          tx.objectStore('characters').put(row);
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    row,
+  );
+}
+
 /** Stored homebrew files, any state. */
 export function countHomebrewFiles(page: Page): Promise<number> {
   return query<number>(page, { store: 'homebrewFiles', kind: 'count' });

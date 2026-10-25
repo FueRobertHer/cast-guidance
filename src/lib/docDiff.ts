@@ -124,8 +124,20 @@ export function humanKey(key: string): string {
   return key.replace(/-/g, ' ');
 }
 
-/** Bookkeeping that says nothing about the character itself. */
-const IGNORED_TOP = ['id', 'createdAt', 'updatedAt', 'schemaVersion', 'homebrewDeps'] as const;
+/**
+ * Bookkeeping that says nothing about the character itself. `revision` is the
+ * stored row's write token (see `CharacterRow` in src/db/db.ts). The
+ * repository strips it from every read, but a history row, journal entry or
+ * export written by an older build can still carry it.
+ */
+const IGNORED_TOP = [
+  'id',
+  'createdAt',
+  'updatedAt',
+  'schemaVersion',
+  'homebrewDeps',
+  'revision',
+] as const;
 
 function sortedJson(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
@@ -152,9 +164,12 @@ function sortedJson(value: unknown): string {
  * the previous app are compared by the next one, so changing what this key
  * includes makes an edit cut off by the update reload drop instead of replay.
  */
-export function contentKey(doc: CharacterDoc): string {
+export function contentKey(doc: CharacterDoc, revision?: string): string {
   const clone: Record<string, unknown> = { ...doc };
   for (const k of IGNORED_TOP) delete clone[k];
+  // The key a build from before `revision` was ignored computed for a row
+  // that held one; only the journal asks for it (see `contentHash`).
+  if (revision !== undefined) clone.revision = revision;
   const p = doc.play;
   const slots = [...p.slotsSpent];
   while (slots.length > 0 && slots[slots.length - 1] === 0) slots.pop();

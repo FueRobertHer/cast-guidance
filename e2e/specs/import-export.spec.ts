@@ -39,6 +39,10 @@ test.describe('import and export', () => {
     const character = json.character as { id: string; name: string };
     expect(character.id).toBe(id);
     expect(character.name).toBe(NAME);
+    // The stored row's revision (REL-007) is this device's bookkeeping, and
+    // stays out of the file, though the row has one.
+    expect((await listCharacters(page))[0]?.revision).toEqual(expect.any(String));
+    expect(character).not.toHaveProperty('revision');
     expect(Array.isArray(json.homebrew)).toBe(true);
 
     await deleteCharacter(page, NAME);

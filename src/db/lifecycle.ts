@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { randomId } from '@/lib/randomId';
 import { type DbLifecycle, dbLifecycleStore } from '@/stores/dbLifecycle';
 
 /** The `settings` row that names this copy of the database. */
@@ -15,13 +16,6 @@ const CLOSED_REASONS: Readonly<Record<Exclude<DbLifecycle, 'open'>, string>> = {
   superseded: 'A newer version of the database is open in another tab',
   stale: 'The database is newer than this copy of the app',
 };
-
-function newInstanceId(): string {
-  // `randomUUID` exists only in secure contexts; a plain-http dev server is not one.
-  return (
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36)}`
-  );
-}
 
 /**
  * What this tab does when another tab deletes or upgrades the database
@@ -111,7 +105,7 @@ export function installDbLifecycle(database: Dexie, store = dbLifecycleStore): (
       // First open, or every stamp so far failed: adopt whatever is stored,
       // or stamp one. A tab that never knew an id cannot tell a reset from
       // its own failed write, so it never calls this a delete.
-      store.setState({ instanceId: await stampIfMissing(vipDb, newInstanceId()) });
+      store.setState({ instanceId: await stampIfMissing(vipDb, randomId()) });
       return;
     }
     const settings = vipDb.table<SettingRow, string>('settings');

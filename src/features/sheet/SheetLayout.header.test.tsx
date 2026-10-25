@@ -130,6 +130,13 @@ describe('SheetLayout tab bar (A11Y-002)', () => {
     expect(marked[0]?.className).toContain('font-semibold');
   });
 
+  it('has a heading that focus can land on once a save conflict is resolved', () => {
+    renderAt('/c/x');
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.id).toBe('sheet-title');
+    expect(heading.tabIndex).toBe(-1);
+  });
+
   it('gives the back link a full-size target', () => {
     renderAt('/c/x');
     const back = screen.getByRole('link', { name: 'Back to characters' });
@@ -152,7 +159,16 @@ describe('SheetLayout announcements (A11Y-002)', () => {
     renderSheet();
     const listener = listenForAnnouncements();
     const seen: string[] = [];
-    for (const status of ['pending', 'saving', 'saved', 'pending', 'saving', 'error', 'saved']) {
+    for (const status of [
+      'pending',
+      'saving',
+      'saved',
+      'pending',
+      'saving',
+      'error',
+      'conflict',
+      'saved',
+    ]) {
       act(() => sheetState.set({ saveStatus: status }));
       seen.push(document.querySelector('[data-save-indicator]')?.textContent?.trim() ?? '');
     }
@@ -165,6 +181,7 @@ describe('SheetLayout announcements (A11Y-002)', () => {
       'Unsaved',
       'Saving',
       'Save failed',
+      'Not saved',
       'Saved',
     ]);
     expect(listener.heard).toEqual([]);

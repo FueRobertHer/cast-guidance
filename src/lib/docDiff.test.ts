@@ -33,6 +33,14 @@ describe('diffDocs', () => {
     expect(sameContent(base(), to)).toBe(true);
   });
 
+  it("ignores a stored row's revision, which older builds left in snapshots", () => {
+    // REL-007: the repository strips it from reads, but a history row or
+    // export written before that can carry one.
+    const to = { ...base(), revision: 'r1' } as CharacterDoc;
+    expect(diffDocs(base(), to)).toEqual([]);
+    expect(sameContent(base(), to)).toBe(true);
+  });
+
   it('treats a missing turn tracker or HP rule as their defaults', () => {
     const old = edited((d) => {
       delete d.play.turn;

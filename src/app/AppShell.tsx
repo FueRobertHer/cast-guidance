@@ -10,6 +10,7 @@ import {
   useCharacterSession,
 } from '@/stores/characterSession';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { notify } from '@/stores/notices';
 import { DataBanner } from '@/ui/DataBanner';
 import { DataUpdateToast } from '@/ui/DataUpdateToast';
 import { DbLifecycleBanner } from '@/ui/DbLifecycleBanner';
@@ -18,6 +19,7 @@ import { LiveAnnouncer } from '@/ui/LiveAnnouncer';
 import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
+import { SaveConflictBanner } from '@/ui/SaveConflictBanner';
 
 /** What a screen reader hears when saving works again after a failure. */
 export const SAVE_RECOVERED_TEXT = 'Changes saved';
@@ -32,19 +34,30 @@ export const SAVE_RECOVERED_TEXT = 'Changes saved';
  * and its text does not change while saves keep failing, so it is not said
  * again. The recovery is said once through the announcer, because the banner
  * that could say it is the thing that goes away.
+ *
+ * Only a save that landed is a recovery. A failed save also leaves this list
+ * when its retry is refused because another tab changed the character (for
+ * the conflict banner), or when only the sheet's own edits were waiting and
+ * the stored copy was taken instead; neither wrote anything, so neither is
+ * "saved".
  */
 function SaveErrorBanner() {
   const errors = useCharacterSession((state) => state.saveErrors);
+  const status = useCharacterSession((state) => state.saveStatus);
   const entries = Object.entries(errors);
   const failing = entries.length > 0;
   const wasFailing = useRef(false);
   useEffect(() => {
     // Each recovery is its own event: a second failure and recovery inside the
-    // de-duplication window still deserves its "saved".
-    if (wasFailing.current && !failing)
+    // de-duplication window still deserves its "saved". The list empties only
+    // on saved, conflict or idle, and the status can have moved on by this
+    // render: an edit queued behind the save that landed is already
+    // "saving". Conflict and idle are never followed so at once, so anything
+    // else here is a save that landed.
+    if (wasFailing.current && !failing && status !== 'conflict' && status !== 'idle')
       announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
     wasFailing.current = failing;
-  }, [failing]);
+  }, [failing, status]);
   if (!failing) return null;
   const [, message] = entries[0] ?? [];
   return (
@@ -88,6 +101,7 @@ export function StorageBanners() {
         <>
           <DataBanner />
           <DataUpdateToast />
+          <SaveConflictBanner />
           <SaveErrorBanner />
         </>
       )}
@@ -100,7 +114,14 @@ export function AppShell() {
     void initDataLayer();
   }, []);
 
-  useEffect(() => installCharacterSessionLifecycle(), []);
+  useEffect(
+    () =>
+      installCharacterSessionLifecycle(characterSessionStore, {
+        onKept: (name) =>
+          notify({ title: `Unsaved edits to ${name} were kept in History`, tone: 'info' }),
+      }),
+    [],
+  );
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col">
