@@ -137,7 +137,7 @@ experience.)
 | SEC-001 | [#108](https://github.com/FueRobertHer/cast-guidance/issues/108) | The CSP is enforced through `vercel.json`; confirm the live header and a clean console on the production deployment, then close. |
 | SEC-002 | [#109](https://github.com/FueRobertHer/cast-guidance/issues/109) | Bound the raw remote-response byte stream before parse; cap regex and worker work. |
 | IMP-002 | [#110](https://github.com/FueRobertHer/cast-guidance/issues/110) | Import preview explaining dependencies, duplicates, winner policy, and collisions before commit. |
-| LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | Content and licensing review, license, third-party notices, mirror attribution, trademark disclaimer. |
+| LEGAL-001 | [#111](https://github.com/FueRobertHer/cast-guidance/issues/111) | License, generated notices and draft notice shipped; legal review open. The MIT `LICENSE`, the generated `THIRD_PARTY_NOTICES.md` (checked in CI) and the DRAFT `docs/content-notice.md` with a trademark disclaimer draft are in. Remaining, for the owner: the legal review, the choice between the Fan Content Policy, SRD only or the mirror as it is, the shipped book titles and curated mechanics, and the Settings privacy copy versus Vercel Analytics (the checklist in `docs/content-notice.md`). |
 
 (`{@link}` sanitization + enforced deployment headers (SEC-001) and the
 local-data/privacy explanation + "Reset app data" control (PRIV-001) have
@@ -283,7 +283,8 @@ work:
 - Define semantic app/data/export versions, a changelog and support policy, a
   release/rollback checklist, and cross-browser smoke tests for iOS, Android,
   Chromium, Firefox, and Safari (issue/PR templates exist).
-- Add dependency vulnerability/license scanning and automated update triage;
+- Add dependency vulnerability scanning and automated update triage (shipped
+  code already has a license allowlist, enforced by `bun run notices:check`);
   document mirror/release provenance, checksums where available, emergency pin,
   security reporting, supported versions, and patch expectations.
 

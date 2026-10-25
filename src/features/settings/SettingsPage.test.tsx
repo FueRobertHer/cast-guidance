@@ -2,6 +2,8 @@
 // The data section makes two claims a user acts on: which version is installed
 // and whether the compendium is complete. Both can fail, and a failure that
 // only reaches the console leaves the page asserting something untrue.
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,7 +38,7 @@ import { onboardingStore } from '@/stores/onboarding';
 import { DataBanner } from '@/ui/DataBanner';
 import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
 import { quotaExceeded } from '../../../tests-fixtures/idbFaults';
-import { OFFLINE_DOWNLOADED_TEXT, Component as SettingsPage } from './SettingsPage';
+import { ABOUT_LINKS, OFFLINE_DOWNLOADED_TEXT, Component as SettingsPage } from './SettingsPage';
 
 /** The failure line under the control that failed, a plain visual now. */
 const failureLine = async (text: RegExp) => {
@@ -427,5 +429,35 @@ describe('SettingsPage data and privacy', () => {
     expect(ask.hasAttribute('disabled')).toBe(false);
     const status = await screen.findByText('Not protected');
     await waitFor(() => expect(document.activeElement).toBe(status));
+  });
+});
+
+describe('SettingsPage about', () => {
+  it('states the license and links the license, notices and content notice on GitHub', () => {
+    render(<SettingsPage />);
+    const about = screen.getByRole('heading', { name: 'About' }).closest('section');
+    if (!about) throw new Error('no About section');
+    expect(about.textContent).toContain('Cast Guidance is open source under the MIT License.');
+    const links = Array.from(about.querySelectorAll('a'), (a) => ({
+      name: a.textContent,
+      href: a.getAttribute('href'),
+      target: a.getAttribute('target'),
+      rel: a.getAttribute('rel'),
+    }));
+    const blob = 'https://github.com/FueRobertHer/cast-guidance/blob/main';
+    const opens = { target: '_blank', rel: 'noreferrer noopener' };
+    expect(links).toEqual([
+      { name: 'License', href: `${blob}/LICENSE`, ...opens },
+      { name: 'Third-party notices', href: `${blob}/THIRD_PARTY_NOTICES.md`, ...opens },
+      { name: 'Content notice', href: `${blob}/docs/content-notice.md`, ...opens },
+    ]);
+  });
+
+  // Catches: a link that 404s on GitHub because its file was renamed or never added.
+  it('links only files that exist in the repository', () => {
+    const root = path.resolve(import.meta.dirname, '../../..');
+    for (const link of ABOUT_LINKS) {
+      expect(existsSync(path.join(root, link.path)), link.path).toBe(true);
+    }
   });
 });
