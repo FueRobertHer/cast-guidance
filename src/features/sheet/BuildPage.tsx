@@ -32,6 +32,7 @@ import {
 import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -184,7 +185,9 @@ function Section({
 }) {
   return (
     <details id={id} open={defaultOpen} className="group scroll-mt-4 rounded-lg bg-surface">
-      <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
+      {/* Wraps so a long summary (six ability scores, no spaces) moves
+          under the title at large text instead of widening the page. */}
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-x-2 px-3 py-2.5">
         <span className="text-sm font-semibold">{title}</span>
         <span className="flex items-center gap-2 text-xs text-ink-muted">
           {summary}
@@ -200,6 +203,8 @@ export function Component() {
   const { sheet, doc, update, restore } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry(['essentials']);
   const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
+  // Under the sheet header, so the scroll padding counts it too (A11Y-003).
+  const bar = useStickyHeight('--sheet-bar-h');
   // Tap-to-swap for ability scores (tap one value, then another).
   const [swapFrom, setSwapFrom] = useState<(typeof ABILITIES)[number] | null>(null);
 
@@ -422,7 +427,7 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
+      <div ref={bar} className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
         <ChangeBar sheet={sheet} />
         <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
       </div>
@@ -492,11 +497,14 @@ export function Component() {
         summary={doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / ') || 'none'}
         defaultOpen
       >
-        <fieldset className="flex flex-col gap-1.5">
+        {/* A fieldset's default min-width is min-content, which at large
+            text sizes holds it wider than the screen; min-w-0 lets it and
+            its legend wrap, and the choices wrap rather than overflow. */}
+        <fieldset className="flex min-w-0 flex-col gap-1.5">
           <legend className="mb-1 text-xs text-ink-muted">
             HP per level (level 1 of your first class is always the full die)
           </legend>
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {(
               [
                 ['average', 'Average'],

@@ -43,10 +43,27 @@ describe('Sheet.Root', () => {
   });
 });
 
+// A11Y-003: vaul leaves Radix's open-time focus off unless asked, so focus
+// stayed on the opener behind the overlay. On by default, a sheet's own off.
+describe('Sheet.Root focus on open', () => {
+  it('moves focus into the sheet by default', () => {
+    render(<Sheet.Root />);
+    expect(Root.mock.lastCall?.[0]).toMatchObject({ autoFocus: true });
+  });
+
+  it('lets a sheet opt out', () => {
+    render(<Sheet.Root autoFocus={false} />);
+    expect(Root.mock.lastCall?.[0]).toMatchObject({ autoFocus: false });
+  });
+});
+
 describe('Sheet.NestedRoot', () => {
   it('gets the same treatment as Sheet.Root', () => {
     render(<Sheet.NestedRoot disablePreventScroll />);
-    expect(NestedRoot.mock.lastCall?.[0]).toMatchObject({ disablePreventScroll: false });
+    expect(NestedRoot.mock.lastCall?.[0]).toMatchObject({
+      disablePreventScroll: false,
+      autoFocus: true,
+    });
   });
 });
 

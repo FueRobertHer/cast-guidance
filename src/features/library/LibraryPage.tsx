@@ -240,7 +240,9 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
             to={`/library/${type}`}
             className="flex flex-col gap-1 rounded-lg bg-surface p-3 hover:bg-surface-2"
           >
-            <span className="text-sm font-semibold">{label}</span>
+            {/* Breaks a long word (Backgrounds) rather than run off the card
+                and the screen when the text is set large (A11Y-003). */}
+            <span className="text-sm font-semibold break-words">{label}</span>
             <span className="text-xs text-ink-muted">{counts[type] ?? '…'}</span>
           </Link>
         ))}

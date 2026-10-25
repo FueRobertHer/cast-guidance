@@ -5,9 +5,10 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useStickyHeight } from '@/lib/useStickyHeight';
 import { resetAnnouncer } from '@/stores/announcer';
 import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
-import { OPEN_ELSEWHERE_TEXT, Component as SheetLayout, useHeaderHeight } from './SheetLayout';
+import { OPEN_ELSEWHERE_TEXT, Component as SheetLayout } from './SheetLayout';
 
 // The layout's own data comes from the session store and IndexedDB; a loaded
 // character stands in, so the header and the tab bar are what is under test.
@@ -59,19 +60,44 @@ afterEach(() => {
 });
 
 function Probe() {
-  const { header, style } = useHeaderHeight();
-  return (
-    <div data-testid="root" style={style}>
-      <header ref={header}>Name</header>
-    </div>
-  );
+  const header = useStickyHeight('--sheet-header-h');
+  return <header ref={header}>Name</header>;
 }
 
-describe('useHeaderHeight', () => {
+const rootVar = () => document.documentElement.style.getPropertyValue('--sheet-header-h');
+
+describe('useStickyHeight', () => {
   it('publishes the header height for a tab bar to stick under', () => {
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(68);
-    const { getByTestId } = render(<Probe />);
-    expect(getByTestId('root').style.getPropertyValue('--sheet-header-h')).toBe('68px');
+    render(<Probe />);
+    // On the root, where the page's scroll padding reads it too (A11Y-003).
+    expect(rootVar()).toBe('68px');
+  });
+
+  it('takes it back when the header goes', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(68);
+    const { unmount } = render(<Probe />);
+    unmount();
+    expect(rootVar()).toBe('');
+  });
+
+  it('leaves a value another bar has set since', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(68);
+    const { unmount } = render(<Probe />);
+    document.documentElement.style.setProperty('--sheet-header-h', '90px');
+    unmount();
+    expect(rootVar()).toBe('90px');
+    document.documentElement.style.removeProperty('--sheet-header-h');
+  });
+
+  it('is published by the sheet layout', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(58);
+    const router = createMemoryRouter(
+      [{ path: '/c/:id', element: <SheetLayout />, children: [{ index: true, element: null }] }],
+      { initialEntries: ['/c/x'] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(rootVar()).toBe('58px');
   });
 });
 
