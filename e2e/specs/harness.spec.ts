@@ -23,10 +23,10 @@ async function openUnroutedSocket(page: Page): Promise<string> {
 const SOCKET_FAILED = /^WebSocket connection to 'wss:\/\/cdn\.jsdelivr\.net\/' failed/;
 
 test.describe('harness', () => {
-  // The name never resolves, so the socket never left the machine. Through a
+  // The name never resolves, so the socket reached no host. Through a
   // proxy it fails differently ("Establishing a tunnel via proxy server
   // failed"), and with neither flag it reaches jsDelivr.
-  test('a socket below the routing layer never leaves the machine', async ({
+  test('a socket below the routing layer never reaches a real host', async ({
     page,
     consoleGuard,
   }) => {

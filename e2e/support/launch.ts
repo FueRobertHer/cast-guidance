@@ -11,9 +11,13 @@ import type { LaunchOptions } from '@playwright/test';
  *   The headless shell ignores `--no-proxy-server` and keeps the proxy from
  *   the environment, so that flag is not enough.
  * - `--host-resolver-rules`: every name but our own servers' fails to
- *   resolve, so nothing reaches a real host. The rule also catches IP
- *   literals, hence the 127.0.0.1 exclusion. Routed requests are answered
- *   before any lookup, so the mirror and the network guard work as before.
+ *   resolve, so nothing opened by host name reaches a real host. The rule
+ *   also catches IP literals, hence the 127.0.0.1 exclusion. Routed requests
+ *   are answered before any lookup, so the mirror and the network guard work
+ *   as before.
+ *
+ * Not covered: a connection to another literal IP address that skips the
+ * resolver, such as WebRTC over UDP. The app uses no WebRTC.
  *
  * `harness.spec.ts` checks both launch paths with a WebSocket.
  */
