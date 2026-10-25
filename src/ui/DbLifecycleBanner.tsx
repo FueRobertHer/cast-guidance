@@ -52,7 +52,7 @@ export function DbLifecycleBanner({ onReload = reloadPage }: { onReload?: () => 
         <button
           type="button"
           onClick={onReload}
-          className="min-h-11 shrink-0 rounded bg-accent px-3 font-semibold"
+          className="min-h-11 shrink-0 rounded bg-accent-fill px-3 font-semibold"
         >
           Reload
         </button>

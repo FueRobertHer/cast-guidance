@@ -64,7 +64,7 @@ function SaveErrorBanner() {
             .retryFailedSaves()
             .catch(() => undefined);
         }}
-        className="shrink-0 rounded bg-accent px-2 py-0.5 font-semibold"
+        className="shrink-0 rounded bg-accent-fill px-2 py-0.5 font-semibold"
       >
         Retry
       </button>

@@ -41,11 +41,28 @@ function sources(dir: string): string[] {
 }
 
 /**
- * Labelled controls still on `bg-accent`, each with why. The save-error
- * banner's Retry lives in AppShell, which #166 is changing; it moves to
- * `bg-accent-fill` once that lands.
+ * Every bare `bg-accent` the app is allowed, per file, and what each one is.
+ * None carries a label: they are marks and icon-only fills, which need 3:1
+ * (WCAG 1.4.11) and get 3.8:1. Anything with words on it uses
+ * `bg-accent-fill`. A new use has to be added here on purpose, which is the
+ * point: a class list can be split across a conditional, a variable or a prop
+ * where no per-attribute check would see it.
  */
-const ALLOWED = new Set(['app/AppShell.tsx']);
+const MARKS: Readonly<Record<string, { count: number; what: string }>> = {
+  'app/AppNav.tsx': { count: 1, what: 'the current tab bar' },
+  'features/sheet/SheetLayout.tsx': { count: 1, what: "the sheet's current tab bar" },
+  'features/characters/CharacterListPage.tsx': { count: 1, what: 'the low HP bar' },
+  'features/sheet/tabs/PlayTab.tsx': {
+    count: 3,
+    what: 'the low HP bar, a failed death save, resource pips',
+  },
+  'features/dice/DiceTray.tsx': { count: 1, what: 'the icon-only dice button' },
+  'ui/DataBanner.tsx': { count: 1, what: "the download bar's fill" },
+  'ui/ProfDot.tsx': { count: 1, what: 'the proficiency dot' },
+};
+
+/** Bare `bg-accent` class tokens (not `bg-accent-deep`, `-fill`, or `/40`). */
+const BARE = /(?<![\w-])bg-accent(?![\w/-])/g;
 
 describe('label contrast on the accent fill (A11Y-003)', () => {
   it('accent-fill clears 4.5:1 with white and with ink', () => {
@@ -59,20 +76,20 @@ describe('label contrast on the accent fill (A11Y-003)', () => {
     expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
   });
 
-  it('puts no text-styled class list on the lighter bg-accent', () => {
-    const offenders: string[] = [];
+  it('uses the lighter bg-accent only for the listed marks', () => {
+    const seen: Record<string, number> = {};
     for (const file of sources(SRC)) {
-      const rel = path.relative(SRC, file).split(path.sep).join('/');
-      if (ALLOWED.has(rel)) continue;
-      // Each quoted class list on its own: a string or a template literal.
-      for (const m of readFileSync(file, 'utf8').matchAll(/(["'`])([^"'`]*)\1/g)) {
-        const classes = (m[2] ?? '').split(/\s+/);
-        if (!classes.includes('bg-accent')) continue;
-        if (classes.some((c) => /^(font-|text-(xs|sm|base|lg|xl))/.test(c))) {
-          offenders.push(`${rel}: ${m[2]}`);
-        }
-      }
+      const n = readFileSync(file, 'utf8').match(BARE)?.length ?? 0;
+      if (n > 0) seen[path.relative(SRC, file).split(path.sep).join('/')] = n;
     }
-    expect(offenders).toEqual([]);
+    const allowed = Object.fromEntries(Object.entries(MARKS).map(([f, m]) => [f, m.count]));
+    expect(seen).toEqual(allowed);
+  });
+
+  it('sees a token inside a conditional, which a class-list check would miss', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is source text to scan, not a template
+    const source = "className={`text-sm ${danger ? 'bg-accent-deep' : 'bg-accent'}`}";
+    expect(source.match(BARE)).toEqual(['bg-accent']);
+    expect('bg-accent-fill bg-accent-deep bg-accent/40 border-accent'.match(BARE)).toBeNull();
   });
 });
