@@ -16,6 +16,7 @@ import { DiceTray } from '@/features/dice/DiceTray';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce } from '@/stores/announcer';
 import { AdvToggle } from '@/ui/AdvToggle';
+import { GameDataProblem } from '@/ui/GameDataProblem';
 import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
 import { useOpenElsewhere } from './useOpenElsewhere';
@@ -212,7 +213,18 @@ export function Component() {
         </div>
       )}
       <main className="flex-1 px-4 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4 lg:pl-40">
-        <Outlet context={state} />
+        {state.sheet === null && state.data.status === 'error' ? (
+          // Every tab is derived from the game data, so none of them can draw
+          // without it; the header above still names the character, which is
+          // safe on the device either way.
+          <GameDataProblem
+            error={state.data.error}
+            onRetry={state.data.retry}
+            note="Your character is saved on this device. Retry once you're back online."
+          />
+        ) : (
+          <Outlet context={state} />
+        )}
       </main>
       <nav
         aria-label="Character sheet"

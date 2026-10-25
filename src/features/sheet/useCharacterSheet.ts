@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { engineContextFor } from '@/data5e/engineAdapter';
-import { useRegistry } from '@/data5e/hooks';
+import { type AsyncStatus, useRegistryState } from '@/data5e/hooks';
 import { deriveSheet } from '@/engine/derive';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import {
@@ -23,11 +23,18 @@ export interface CharacterSheetState {
   /** Put back an earlier snapshot as its own history entry (an undo, a restore). */
   restore: CharacterSessionState['restore'];
   retryLoad: () => void;
+  /**
+   * The game data the sheet is derived from. Until it is here `sheet` stays
+   * null, and an `error` is the difference between waiting for it and never
+   * getting it (not downloaded, and offline or failing).
+   */
+  data: { status: AsyncStatus; error: string | null; retry: () => void };
 }
 
 /** Load the character for a route id and derive its sheet reactively. */
 export function useCharacterSheet(id: string | undefined): CharacterSheetState {
-  const registry = useRegistry(['essentials']);
+  const registryState = useRegistryState(['essentials']);
+  const registry = registryState.registry;
   const sessionDoc = useCharacterSession((s) => s.doc);
   const rev = useCharacterSession((s) => s.rev);
   const requestedId = useCharacterSession((s) => s.requestedId);
@@ -84,5 +91,6 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     retryLoad: () => {
       if (id !== undefined) void characterSessionStore.getState().load(id);
     },
+    data: { status: registryState.status, error: registryState.error, retry: registryState.retry },
   };
 }

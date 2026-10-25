@@ -22,7 +22,21 @@ import { makeTestContext } from '../../tests-fixtures/testWorld';
 import { SAVE_RECOVERED_TEXT, StorageBanners } from './AppShell';
 
 // The synthetic world stands in for the compendium, as in the PlayTab tests.
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
+vi.mock('@/data5e/hooks', () => {
+  // One registry for both hooks, made on first use: the factory runs before
+  // the test world's import is ready.
+  let registry: ReturnType<typeof makeTestContext> | undefined;
+  const shared = () => (registry ??= makeTestContext());
+  return {
+    useRegistry: shared,
+    useRegistryState: () => ({
+      registry: shared(),
+      status: 'ready',
+      error: null,
+      retry: () => undefined,
+    }),
+  };
+});
 vi.mock('@/data5e/engineAdapter', () => ({ engineContextFor: (r: unknown) => r }));
 vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
 vi.mock('@/features/sheet/HistoryDrawer', () => ({ HistoryDrawer: () => null }));
