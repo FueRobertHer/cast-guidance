@@ -279,6 +279,17 @@ describe('phase E: installed, not yet confirmed', () => {
     const kept = await next.dataCacheRepo.cachedPaths(DATA_TAG);
     expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
     expect(fetchFile).not.toHaveBeenCalled();
+    // Evicted is not broken: the release is not rejected, and stays on offer
+    // for a download that brings its files back.
+    expect(await next.db.settings.get('dataTagRejected')).toBeUndefined();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify([{ name: NEXT }, { name: DATA_TAG }]))),
+      ),
+    );
+    await next.loader.checkForDataUpdate();
+    expect(next.dataStatusStore.getState().updateAvailableTag).toBe(NEXT);
   });
 
   it('goes back at once when the new release cannot be built', async () => {
@@ -298,23 +309,86 @@ describe('phase E: installed, not yet confirmed', () => {
     expect(started.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
   });
 
-  it('does not go back over a homebrew file that breaks the build', async () => {
-    const started = await installedDevice();
-    await started.loader.updateToTag(NEXT);
+  /** Save an enabled homebrew file holding `json`, through the module set in use now. */
+  async function addBrew(json: Record<string, unknown>): Promise<void> {
     const { homebrewRepo } = await import('@/db/homebrewRepo');
     const brew = await homebrewRepo.createEditable('Brew', 'HB');
     await homebrewRepo.saveEditable(brew.id, {
       _meta: { sources: [{ json: 'HB', abbreviation: 'HB', full: 'Brew' }] },
-      feat: [{ name: 'Crash', source: 'HB' }],
+      ...json,
+    });
+  }
+
+  it('does not go back over a homebrew file that breaks the merge, however many sessions', async () => {
+    // The official release is fine; going back would not fix the brew, and
+    // would cost the user the update they asked for. The start counter used
+    // to finish only on a publish, which a failing merge never reached, so two
+    // sessions later the healthy release was rolled back and rejected anyway.
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await addBrew({ feat: [{ name: 'Crash', source: 'HB' }] });
+
+    for (let i = 0; i < 4; i++) {
+      const session = await reboot();
+      await expect(session.registry.getRegistry()).rejects.toThrow('cannot merge');
+      expect(session.loader.getActiveTag()).toBe(NEXT);
+      expect(session.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
+    }
+    expect(await storedTag(started)).toBe(NEXT);
+    expect(await started.db.settings.get('dataTagRejected')).toBeUndefined();
+  });
+
+  it('builds over homebrew that used to make the merge throw, session after session', async () => {
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await addBrew({
+      race: [
+        {
+          name: 'Drake',
+          source: 'HB',
+          // A quote in a variable broke the JSON the template is spliced into.
+          _versions: [
+            {
+              _abstract: { name: 'Drake ({{color}})' },
+              _implementations: [{ _variables: { color: 'Red "Classic"' } }],
+            },
+          ],
+        },
+      ],
+      // Valid JSON that `String()` refuses with a TypeError.
+      feat: [{ name: { toString: 1 }, source: 'HB', _copy: null }],
     });
 
-    // The official release is fine; going back would not fix the brew, and
-    // would cost the user the update they asked for.
-    await expect(started.registry.getRegistry()).rejects.toThrow('cannot merge');
-    expect(started.loader.getActiveTag()).toBe(NEXT);
+    for (let i = 0; i < 3; i++) {
+      const session = await reboot();
+      const reg = await session.registry.getRegistry();
+      expect(reg.byType('race').map((r) => r.name)).toContain('Drake (Red "Classic")');
+      expect(session.loader.getActiveTag()).toBe(NEXT);
+    }
     expect(await storedTag(started)).toBe(NEXT);
-    expect(await rollbackRecord(started)).toMatchObject({ prev: DATA_TAG, to: NEXT });
-    expect(started.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
+    expect(await started.db.settings.get('dataTagRejected')).toBeUndefined();
+  });
+
+  it('decides an exhausted release once for every build waiting on it', async () => {
+    // Two screens asking at once: the second used to find the start already
+    // claimed, skip the decision, and build (and confirm) the release the
+    // first was in the middle of rejecting.
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await started.db.settings.put({
+      key: 'dataTagRollback',
+      value: { prev: DATA_TAG, to: NEXT, starts: 2 },
+    });
+
+    const next = await reboot();
+    const [a, b] = await Promise.all([next.registry.getRegistry(), next.registry.getRegistry()]);
+
+    expect(a.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
+    expect(b.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
+    expect(next.loader.getActiveTag()).toBe(DATA_TAG);
+    expect(await storedTag(next)).toBe(DATA_TAG);
+    const kept = await next.dataCacheRepo.cachedPaths(DATA_TAG);
+    expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
   });
 
   it('stays put when the release it would go back to is no longer whole', async () => {

@@ -14,9 +14,23 @@ export interface CopyModWarning {
   message: string;
 }
 
+/**
+ * `String(value)`, except that it cannot throw. Homebrew is anyone's JSON,
+ * and `{"toString": 1}` is valid JSON that `String()` refuses with a
+ * TypeError: from an identity or a warning message, that took down the
+ * registry it was being added to.
+ */
+export function textOf(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return '?';
+  }
+}
+
 /** `name|source`, lowercased — the 5etools identity convention. */
 export function uidOf(e: Entity): string {
-  return `${String(e.name ?? '?')}|${String(e.source ?? '?')}`.toLowerCase();
+  return `${textOf(e.name ?? '?')}|${textOf(e.source ?? '?')}`.toLowerCase();
 }
 
 /** Meta keys that do NOT carry over from a copy target unless `_preserve`d. */
@@ -483,7 +497,7 @@ export function resolveCopies(
     const c = e._copy as CopyRef;
     warnings.push({
       entity: uidOf(e),
-      message: `${label}: unresolved _copy target ${String(c?.name)}|${String(c?.source)}`,
+      message: `${label}: unresolved _copy target ${textOf(c?.name)}|${textOf(c?.source)}`,
     });
     delete e._copy;
   }
@@ -493,7 +507,10 @@ export function resolveCopies(
 function substituteVariables(template: Entity, vars: Record<string, unknown>): Entity {
   let json = JSON.stringify(template);
   for (const [k, val] of Object.entries(vars)) {
-    json = json.split(`{{${k}}}`).join(String(val));
+    // Escaped for where it lands, inside a JSON string: spliced in raw, a
+    // value with a quote or a backslash in it (`Red "Classic"`) broke the
+    // document and threw out of the parse below.
+    json = json.split(`{{${k}}}`).join(JSON.stringify(textOf(val)).slice(1, -1));
   }
   return JSON.parse(json) as Entity;
 }
@@ -532,6 +549,15 @@ export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity
     warn(`more than ${MAX_VERSIONS_PER_ENTITY} versions; the rest are ignored`);
   }
   const full = (): boolean => out.length >= MAX_VERSIONS_PER_ENTITY;
+  // One version that cannot be built costs that version, not the entity's
+  // others, and not the registry they are being added to.
+  const tryVersion = (build: () => void) => {
+    try {
+      build();
+    } catch (err) {
+      warn(`a version could not be built: ${err instanceof Error ? err.message : textOf(err)}`);
+    }
+  };
   expand: for (const raw of versions) {
     if (raw === null || typeof raw !== 'object') continue;
     if (full()) break;
@@ -542,14 +568,16 @@ export function expandVersions(base: Entity, warnings: CopyModWarning[]): Entity
         if (implRaw === null || typeof implRaw !== 'object') continue;
         if (full()) break expand;
         const impl = implRaw as Entity;
-        const vars = (impl._variables ?? {}) as Record<string, unknown>;
-        const materialized = substituteVariables(abstract, vars);
-        const overlay: Entity = { ...impl };
-        delete overlay._variables;
-        out.push(buildVersion(base, { ...materialized, ...overlay }, warn));
+        tryVersion(() => {
+          const vars = (impl._variables ?? {}) as Record<string, unknown>;
+          const materialized = substituteVariables(abstract, vars);
+          const overlay: Entity = { ...impl };
+          delete overlay._variables;
+          out.push(buildVersion(base, { ...materialized, ...overlay }, warn));
+        });
       }
     } else {
-      out.push(buildVersion(base, v, warn));
+      tryVersion(() => out.push(buildVersion(base, v, warn)));
     }
   }
   return out;

@@ -10,7 +10,7 @@ import {
   getActiveTag,
   noteRegistryBuildFailed,
   noteRegistryBuildStarting,
-  noteRegistryPublished,
+  noteRegistryBuilt,
   whenTagReady,
 } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
@@ -152,6 +152,11 @@ async function readRegistry(): Promise<EntityRegistry> {
     if (await noteRegistryBuildFailed(tag)) return readRegistry();
     throw err;
   }
+  // The official build is what an install is judged on, so this is where its
+  // start finishes and the release is confirmed. Waiting for the publish
+  // below let a homebrew file that broke the merge leave every start
+  // unfinished, and roll a healthy release back two sessions later.
+  await noteRegistryBuilt(tag, paths);
   // Outside the rollback above on purpose: a broken homebrew file says
   // nothing about the official release, and going back would not fix it.
   const brewMap = new Map<string, Record<string, unknown>>();
@@ -163,9 +168,6 @@ async function readRegistry(): Promise<EntityRegistry> {
   if (startedAt === epoch) {
     current = reg;
     currentSignature = signature;
-    // Awaited: a confirm is one small write, and a caller holding the
-    // registry can then rely on the install's state matching it.
-    await noteRegistryPublished(tag, paths);
   }
   return reg;
 }

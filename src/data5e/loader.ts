@@ -40,8 +40,8 @@ export function getActiveTag(): string {
 /**
  * The settings key that holds an install still on probation: the release it
  * replaced (`prev`, whose rows are kept), the release installed (`to`), and
- * how many registry builds have started on `to` without one ever being
- * published. Written in the same transaction as the swap and removed in the
+ * how many registry builds have started on `to` without its official build
+ * ever succeeding. Written in the same transaction as the swap and removed in the
  * same transaction as a rollback, so it can never disagree with `dataTag`.
  */
 const ROLLBACK_SETTING = 'dataTagRollback';
@@ -65,7 +65,7 @@ interface RejectedRecord {
 
 /**
  * Sessions whose first registry build under a release on probation may start
- * and never publish before the app gives up on it. A build that starts and
+ * and never finish its official build before the app gives up on it. A build that starts and
  * never finishes is what a release that crashes the app looks like from the
  * next launch. Counted per build rather than per launch, because plenty of
  * launches (a homebrew page, a reload on a missing route) build no registry
@@ -104,13 +104,19 @@ async function hasEssentials(tag: string): Promise<boolean> {
 }
 
 /**
- * The tag whose first working registry would confirm it, mirrored from the
- * rollback record so the registry can ask on every publish without a read.
+ * The tag whose first successful official build would confirm it, mirrored
+ * from the rollback record so the registry can ask on every build without a
+ * read.
  */
 let pendingTag: string | undefined;
 
-/** The probationary tag whose build start this session has already counted. */
-let countedStart: string | undefined;
+/**
+ * This session's decision about its first build under a release on
+ * probation: counted, or rolled back. One promise per tag that every build
+ * waits on, so a second build cannot slip past while the first is still
+ * deciding and build (and confirm) a release that is about to be rejected.
+ */
+let startDecision: { tag: string; wentBack: Promise<boolean> } | undefined;
 
 /**
  * Pick up a release still on probation at launch. Runs inside tag
@@ -150,7 +156,9 @@ async function checkPendingTag(): Promise<void> {
       return;
     }
     if (!(await hasEssentials(rollback.to)) && (await hasEssentials(rollback.prev))) {
-      await rollBack(rollback);
+      // Not rejected: the release lost its files, it did not fail to start,
+      // so it stays on offer for a download that brings them back.
+      await rollBack(rollback, { reject: false });
       return;
     }
     pendingTag = activeTag;
@@ -165,8 +173,15 @@ async function checkPendingTag(): Promise<void> {
  * downloaded again trades a version that may work for one that, offline,
  * certainly will not. Otherwise the record is dropped and the app stays put,
  * since there is nothing left to go back to. Resolves whether it went back.
+ *
+ * `reject` records the release as one this device went back from, so the
+ * update check stops offering it and the notice outlives a reload; it is for
+ * a release that failed, not one that was merely evicted.
  */
-async function rollBack(rollback: RollbackRecord): Promise<boolean> {
+async function rollBack(
+  rollback: RollbackRecord,
+  { reject }: { reject: boolean },
+): Promise<boolean> {
   const { prev, to } = rollback;
   try {
     if (!(await hasEssentials(prev))) {
@@ -187,10 +202,12 @@ async function rollBack(rollback: RollbackRecord): Promise<boolean> {
         installedAt: Date.now(),
       });
       await db.settings.delete(ROLLBACK_SETTING);
-      await db.settings.put({
-        key: REJECTED_SETTING,
-        value: { tag: to, dismissed: false } satisfies RejectedRecord,
-      });
+      if (reject) {
+        await db.settings.put({
+          key: REJECTED_SETTING,
+          value: { tag: to, dismissed: false } satisfies RejectedRecord,
+        });
+      }
       return true;
     });
     if (!wentBack) return false;
@@ -226,16 +243,23 @@ export async function dismissRollbackNotice(): Promise<void> {
  * Called by the registry when it is about to build under `tag`. The first
  * build of each session under a release on probation is counted, in one
  * transaction with the read that decides it; a release that already has
- * {@link MAX_UNPUBLISHED_STARTS} builds started and none published goes back
- * instead. Resolves whether it went back, so the registry builds the restored
- * release rather than the one that keeps failing to finish.
+ * {@link MAX_UNPUBLISHED_STARTS} builds started and none finished goes back
+ * instead. Resolves true when the caller must read the active tag again
+ * before building: because this went back, or because the tag it read has
+ * been left behind meanwhile.
  */
 export async function noteRegistryBuildStarting(tag: string): Promise<boolean> {
-  if (pendingTag !== tag || activeTag !== tag || countedStart === tag) return false;
-  // Before the first await, so concurrent builds in one session count once:
-  // one session that never publishes is one failed start, however many
-  // screens asked for the registry during it.
-  countedStart = tag;
+  if (activeTag !== tag) return true;
+  if (pendingTag !== tag) return false;
+  // Shared, so concurrent builds in one session count once (one session that
+  // never finishes is one failed start, however many screens asked for the
+  // registry during it) and all of them wait for the same answer.
+  if (startDecision?.tag !== tag) startDecision = { tag, wentBack: decideStart(tag) };
+  await startDecision.wentBack;
+  return activeTag !== tag;
+}
+
+async function decideStart(tag: string): Promise<boolean> {
   let exhausted: RollbackRecord | undefined;
   try {
     exhausted = await db.transaction('rw', db.settings, async () => {
@@ -252,21 +276,20 @@ export async function noteRegistryBuildStarting(tag: string): Promise<boolean> {
     // An uncounted start is not counted; the next session's is.
     return false;
   }
-  return exhausted === undefined ? false : rollBack(exhausted);
+  return exhausted === undefined ? false : rollBack(exhausted, { reject: true });
 }
 
 /**
- * Called by the registry each time it publishes a build, with the paths the
- * build read. The first one under a release on probation that holds every
- * essentials file is what confirms it: its files were read, normalized and
- * merged into something the app can use, so the release it replaced is no
- * longer needed and its rows can go. A build missing essentials proves
+ * Called by the registry each time the official build succeeds, with the
+ * paths it read, before homebrew is merged in. The first one under a release
+ * on probation that holds every essentials file is what confirms it (and
+ * finishes the start counted for it): its files were read and normalized into
+ * something the app can use, so the release it replaced is no longer needed
+ * and its rows can go. Before the merge on purpose, since a broken homebrew
+ * file says nothing about the release. A build missing essentials proves
  * nothing, since a page can ask for the registry before they are on disk.
  */
-export async function noteRegistryPublished(
-  tag: string,
-  paths: ReadonlySet<string>,
-): Promise<void> {
+export async function noteRegistryBuilt(tag: string, paths: ReadonlySet<string>): Promise<void> {
   if (pendingTag === undefined || pendingTag !== tag) return;
   if (!ESSENTIALS_FILES.every((p) => paths.has(p))) return;
   pendingTag = undefined;
@@ -278,7 +301,7 @@ export async function noteRegistryPublished(
       return true;
     });
   } catch {
-    // Still on record, so the next publish confirms it. Pruning now would
+    // Still on record, so the next build confirms it. Pruning now would
     // delete what a rollback needs.
     pendingTag = tag;
     return;
@@ -305,7 +328,7 @@ export async function noteRegistryBuildFailed(tag: string): Promise<boolean> {
     return false;
   }
   if (rollback?.to !== tag) return false;
-  return rollBack(rollback);
+  return rollBack(rollback, { reject: true });
 }
 
 async function restoreActiveTag(): Promise<void> {
@@ -882,8 +905,8 @@ export async function checkForDataUpdate(): Promise<void> {
  * Install a different data tag: download everything under the new keyspace
  * (old data stays live until the swap), validate every file and check none is
  * missing, then flip in one transaction. The old release's rows stay until
- * the new one has produced a working registry (see `noteRegistryPublished`),
- * so a release that passes these checks and still cannot start has somewhere
+ * the new one has been built into a registry (see `noteRegistryBuilt`), so
+ * a release that passes these checks and still cannot start has somewhere
  * to go back to.
  *
  * What an interruption leaves behind, by phase:
@@ -894,8 +917,8 @@ export async function checkForDataUpdate(): Promise<void> {
  *   bookkeeping for the other.
  * - after the swap, before a registry is built: both releases' rows are kept
  *   and the rollback record counts registry builds that start and never
- *   publish; the first one that publishes confirms the new release, a build
- *   that throws goes back at once, and so do too many unfinished ones.
+ *   finish; the first official build that succeeds confirms the new release,
+ *   one that throws goes back at once, and so do too many unfinished ones.
  */
 export async function updateToTag(newTag: string): Promise<void> {
   const status = dataStatusStore.getState();
@@ -1017,7 +1040,7 @@ export async function updateToTag(newTag: string): Promise<void> {
     activeTag = newTag;
     source = newSource;
     pendingTag = newTag;
-    countedStart = undefined;
+    startDecision = undefined;
     status.setRolledBackFrom(undefined);
     // The offer is spent whichever route took it: only the toast's own button
     // used to clear this, so installing from the settings picker left the
