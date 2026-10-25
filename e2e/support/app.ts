@@ -46,12 +46,52 @@ export function settingsValue(page: Page, label: string): Locator {
 /**
  * Opens Settings and waits until the data layer has settled: the download
  * queue is done and every file is cached. A check that something did not
- * happen (no download, no notice) is only meaningful after this.
+ * happen (no download, no notice) is only meaningful after this. Settings
+ * counts the cached files once, on mount, so call this after an install has
+ * finished, not to wait for one.
  */
 export async function expectDataSettled(page: Page): Promise<void> {
   await page.goto('/settings');
   await expect(settingsValue(page, 'Download queue')).toHaveText('done');
   await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
+}
+
+/** The data banner's failure alert (a failed download or a failed install), with its Retry. */
+export function dataFailureBanner(page: Page, text: string | RegExp): Locator {
+  return page.getByRole('alert').filter({ hasText: text });
+}
+
+/** The data banner's download progress bar. */
+export function dataProgress(page: Page): Locator {
+  return page.getByRole('progressbar', { name: 'Downloading game data' });
+}
+
+/** The toast that offers a newer data release found at boot. */
+export function dataUpdateToast(page: Page, tag: string): Locator {
+  return page.getByText(`Game data ${tag} is available`).locator('xpath=..');
+}
+
+/**
+ * In Settings: asks the mirror for releases, picks `tag` and confirms the
+ * install. Returns once the confirmation has closed; the install runs on.
+ */
+export async function startDataInstall(page: Page, tag: string): Promise<void> {
+  await page.getByRole('button', { name: 'Check for data updates' }).click();
+  await page.getByLabel('Switch version').selectOption(tag);
+  const confirm = page.getByRole('dialog', { name: `Install data version ${tag}?` });
+  await confirm.getByRole('button', { name: 'Install' }).click();
+  await expect(confirm).toBeHidden();
+}
+
+/** Opens the library's species list and waits for `present` to be listed. */
+export async function gotoRaces(page: Page, present: string): Promise<void> {
+  await page.goto('/library/race');
+  await expect(libraryEntry(page, present)).toBeVisible();
+}
+
+/** A row of the library list on screen, by its exact name. */
+export function libraryEntry(page: Page, name: string): Locator {
+  return page.getByRole('main').getByText(name, { exact: true });
 }
 
 /** The empty roster's line, drawn in the same render as the getting-started card. */
