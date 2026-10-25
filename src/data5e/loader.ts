@@ -1122,13 +1122,60 @@ export async function updateToTag(newTag: string): Promise<void> {
   }
 }
 
-/** Sanity/UI helper: full-file inventory of what a complete install looks like. */
+/**
+ * {@link verifyFullOffline}'s answer when the class and spell indexes are not
+ * on disk. The class and spell packs are listed in them, so without them there
+ * is no total to count against: the compendium is not downloaded yet, which is
+ * not the same as an inventory that could not be read.
+ */
+export class CompendiumNotDownloadedError extends Error {
+  constructor() {
+    super('the game data is not downloaded yet');
+    this.name = 'CompendiumNotDownloadedError';
+  }
+}
+
+/**
+ * Sanity/UI helper: full-file inventory of what a complete install looks like.
+ * Reads the disk only. It used to fetch missing indexes through `getFile`, so
+ * a look at Settings started a download, and offline it failed as if the
+ * inventory were unreadable.
+ */
 export async function verifyFullOffline(): Promise<{ cached: number; total: number }> {
-  const packs = await allPackIds();
-  const lists = await Promise.all(packs.map((p) => filesForPack(p)));
-  const all = new Set(lists.flat());
-  const cached = await dataCacheRepo.cachedPaths(activeTag);
+  await ensureTagReady();
+  const tag = activeTag;
+  // The indexes are read from the disk here rather than through `getFile`,
+  // so the count can never fall through to a fetch, not even for an index
+  // that is evicted between this read and the next.
+  const [classIndex, spellIndex] = await Promise.all([
+    dataCacheRepo.getFile(tag, 'class/index.json'),
+    dataCacheRepo.getFile(tag, 'spells/index.json'),
+  ]);
+  if (classIndex === undefined || spellIndex === undefined) {
+    throw new CompendiumNotDownloadedError();
+  }
+  const all = new Set([
+    ...ESSENTIALS_FILES,
+    ...ITEMS_FULL_FILES,
+    ...LIBRARY_EXTRAS_FILES,
+    ...indexedFiles('class', classIndex.json),
+    ...indexedFiles('spells', spellIndex.json),
+  ]);
+  const cached = await dataCacheRepo.cachedPaths(tag);
   let have = 0;
   for (const p of all) if (cached.has(p)) have++;
   return { cached: have, total: all.size };
+}
+
+/**
+ * The files an index lists, one per pack, as `filesForPack` resolves them: a
+ * pack id is the lowercased key, and the first entry with that key wins.
+ */
+function indexedFiles(dir: 'class' | 'spells', index: unknown): string[] {
+  const byPack = new Map<string, string>();
+  for (const [k, v] of indexEntries(index)) {
+    const key = k.toLowerCase();
+    if (!byPack.has(key)) byPack.set(key, `${dir}/${v}`);
+  }
+  return [...byPack.values()];
 }

@@ -4,11 +4,28 @@ import { hermeticLaunchOptions } from './e2e/support/launch.ts';
 
 const CI = process.env.CI !== undefined && process.env.CI !== '';
 
+const BROWSER = {
+  ...DEVICE,
+  // Off the real network below the routing layer (see launch.ts), plus an
+  // escape hatch for a machine whose browser build does not match the pinned
+  // @playwright/test.
+  launchOptions: hermeticLaunchOptions(
+    process.env.PW_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE }
+      : {},
+  ),
+};
+
+/** The route matrix, which runs in its own project after the cache levels are built. */
+const OFFLINE_ROUTES = 'specs/offline-routes.spec.ts';
+
 /**
  * Browser E2E against the production build in `dist/` (run `bun run build`
  * first, or `bun run e2e:ci`). There is no `webServer`: each worker starts its
  * own static server (see `e2e/support/test.ts`), so every worker has its own
- * origin, and a spec can take a private server whose content it changes.
+ * origin, and a spec can take a private server whose content it changes. One
+ * more, started in `e2e/global-setup.ts`, gives the offline route matrix an
+ * origin that is the same in every worker (`e2e/support/stableOrigin.ts`).
  * See e2e/README.md.
  */
 export default defineConfig({
@@ -46,17 +63,22 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: {
-        ...DEVICE,
-        // Off the real network below the routing layer (see launch.ts), plus
-        // an escape hatch for a machine whose browser build does not match
-        // the pinned @playwright/test.
-        launchOptions: hermeticLaunchOptions(
-          process.env.PW_CHROMIUM_EXECUTABLE
-            ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE }
-            : {},
-        ),
-      },
+      testIgnore: OFFLINE_ROUTES,
+      use: BROWSER,
+    },
+    // The offline route matrix (PWA-001): one profile per cache level, built
+    // once at the stable origin, then copied for every cell. The matrix waits
+    // for the builds; the rest of the suite runs beside both.
+    {
+      name: 'cache-levels',
+      testMatch: 'specs/cache-levels.setup.ts',
+      use: BROWSER,
+    },
+    {
+      name: 'offline-routes',
+      testMatch: OFFLINE_ROUTES,
+      dependencies: ['cache-levels'],
+      use: BROWSER,
     },
   ],
 });

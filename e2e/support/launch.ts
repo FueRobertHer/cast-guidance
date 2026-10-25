@@ -43,3 +43,26 @@ export function hermeticLaunchOptions(base: LaunchOptions = {}): LaunchOptions {
     args: [...(base.args ?? []).filter((arg) => !isHermeticArg(arg)), ...HERMETIC_ARGS],
   };
 }
+
+/**
+ * Airplane mode below the routing layer: {@link HERMETIC_ARGS} without the
+ * loopback exclusions, so every name and IP literal fails to resolve, our own
+ * servers included. For an offline launch at the stable origin
+ * (`coldLaunch.ts`): `offline: true` makes `navigator.onLine` false and fails
+ * the page's and the worker's fetches, but the browser's own update check for
+ * the service worker still reaches the origin, and a server other tests share
+ * cannot be taken down for one of them. Routed requests are still answered
+ * before any lookup, so the mirror (refusing, offline) sees them.
+ */
+export const AIRPLANE_ARGS: readonly string[] = [
+  '--proxy-server=direct://',
+  '--host-resolver-rules=MAP * ~NOTFOUND',
+];
+
+/** `base` with {@link AIRPLANE_ARGS} in force, in place of any proxy or resolver flags. */
+export function airplaneLaunchOptions(base: LaunchOptions = {}): LaunchOptions {
+  return {
+    ...base,
+    args: [...(base.args ?? []).filter((arg) => !isHermeticArg(arg)), ...AIRPLANE_ARGS],
+  };
+}

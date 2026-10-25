@@ -319,6 +319,10 @@ describe('BuilderPage opening a file it cannot use', () => {
     read.current = {};
     renderBuilder();
     expect(screen.getByRole('alert').textContent).toContain('no longer on this device');
+    // PWA-001: a dead link names the nearest page in words, not only an icon.
+    expect(screen.getByRole('link', { name: 'Go to the homebrew list' }).getAttribute('href')).toBe(
+      '/homebrew',
+    );
   });
 
   it('says why a file could not be read, and where to go about it', () => {

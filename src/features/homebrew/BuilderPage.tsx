@@ -734,11 +734,12 @@ export function Component() {
             ? 'This homebrew file is no longer on this device.'
             : `This homebrew file could not be read: ${read.error.message}. You can remove it from the homebrew list.`}
         </p>
-        {read.error !== undefined && (
-          <Link to="/homebrew" className="text-sm text-ink-muted underline hover:text-ink">
-            Go to the homebrew list
-          </Link>
-        )}
+        {/* Both ways: a file that is gone is a dead link (a bookmark, a
+            history entry), and the list is the nearest page that has
+            anything on it. The icon above is easy to miss as the only way. */}
+        <Link to="/homebrew" className="text-sm text-ink-muted underline hover:text-ink">
+          Go to the homebrew list
+        </Link>
       </main>
     );
   }

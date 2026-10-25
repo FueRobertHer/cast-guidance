@@ -13,8 +13,23 @@ import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 
 const { registry, put, dialogs } = vi.hoisted(() => ({
-  /** What `useRegistry` returns; null stands for game data still loading. */
-  registry: { current: undefined as unknown, loading: false },
+  /**
+   * What `useRegistryState` returns: `loading` stands for game data still on
+   * its way, `error` for game data that could not be had.
+   */
+  registry: {
+    current: undefined as unknown,
+    loading: false,
+    error: null as string | null,
+    retry: vi.fn(),
+    /** What `useTypePacks('class')` reports. */
+    classPacks: { status: 'ready', error: null, offline: false } as {
+      status: 'loading' | 'ready' | 'error';
+      error: string | null;
+      offline: boolean;
+    },
+    classRetry: vi.fn(),
+  },
   put: vi.fn(),
   dialogs: {
     askConfirm: vi.fn<(req: { title: string; detail?: string }) => Promise<boolean>>(),
@@ -22,7 +37,17 @@ const { registry, put, dialogs } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/data5e/hooks', () => ({
-  useRegistry: () => (registry.loading ? null : registry.current),
+  useTypePacks: (type: string) => ({
+    ...(type === 'class' ? registry.classPacks : { status: 'ready', error: null, offline: false }),
+    retry: registry.classRetry,
+    repair: () => undefined,
+  }),
+  useRegistryState: () => ({
+    registry: registry.loading || registry.error !== null ? null : registry.current,
+    status: registry.error !== null ? 'error' : registry.loading ? 'loading' : 'ready',
+    error: registry.error,
+    retry: registry.retry,
+  }),
 }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
 vi.mock('@/db/characterRepo', () => ({ characterRepo: { put } }));
@@ -33,6 +58,7 @@ vi.mock('@/ui/dialogs', () => ({
   askChoice: () => Promise.resolve(null),
 }));
 
+import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { Component as CreatorPage } from './CreatorPage';
 import { LEGACY_DRAFT_KEY, RESUME_STATE, readDraft, writeDraft } from './draft';
@@ -53,9 +79,14 @@ function saved(): CharacterDoc {
 }
 
 afterEach(() => {
+  dataStatusStore.setState({ phase: 'idle', error: undefined });
   cleanup();
   sessionStorage.clear();
   registry.loading = false;
+  registry.error = null;
+  registry.retry.mockReset();
+  registry.classPacks = { status: 'ready', error: null, offline: false };
+  registry.classRetry.mockReset();
   put.mockReset();
   dialogs.askConfirm.mockReset();
   registry.current = makeTestContext();
@@ -64,6 +95,13 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+/** The panel a line of text sits in (a failure panel is a visual offline, not an alert). */
+function panelOf(text: string): HTMLElement {
+  const panel = screen.getByText(text).parentElement;
+  if (panel === null) throw new Error(`no panel around ${text}`);
+  return panel;
+}
 
 type Entry = string | { pathname: string; search?: string; state?: unknown };
 
@@ -233,6 +271,25 @@ describe('the way out', () => {
     registry.loading = true;
     renderCreator(['/', '/create']);
     expect(screen.getByText('Loading game data…')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
+  });
+
+  it('is there when game data cannot be had, beside the reason and a Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    // PWA-001: a first launch offline never gets the essentials pack, and the
+    // creator used to say "Loading game data…" for good.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    registry.error = 'Failed to fetch';
+    renderCreator(['/', '/create']);
+    expect(screen.queryByText('Loading game data…')).toBeNull();
+    // A visual offline: the shell's data banner is the alert that says it.
+    expect(screen.queryByRole('alert')).toBeNull();
+    const alert = panelOf("You're offline, and the game data this needs isn't downloaded yet.");
+    expect(alert.textContent).toContain('Your draft is kept.');
+    expect(alert.textContent).toContain("It downloads by itself once you're back online.");
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(registry.retry).toHaveBeenCalledOnce();
     expect(screen.getByRole('link', { name: /Back to characters/ }).getAttribute('href')).toBe('/');
   });
 
@@ -1019,5 +1076,20 @@ describe('an unfinished draft', () => {
     expect(screen.getByRole('heading', { name: 'Basics' })).toBeTruthy();
     expect(nameInput().value).toBe('');
     expect(continuing()).toBeNull();
+  });
+});
+
+// PWA-001: the class step's download was a bare `void`, so without the class
+// files the step offered an empty list and the rejection went uncaught.
+describe('the class step without its download', () => {
+  it('says the device is offline above the list, with Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    registry.classPacks = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderCreator(['/', '/create?step=class']);
+    expect(screen.queryByRole('alert')).toBeNull();
+    const alert = panelOf("You're offline, so the class list can't be downloaded yet.");
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(registry.classRetry).toHaveBeenCalledOnce();
   });
 });

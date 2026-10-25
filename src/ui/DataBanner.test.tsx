@@ -21,7 +21,7 @@ vi.mock('@/data5e/registry', () => ({ invalidateRegistry: () => undefined }));
 
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
-import { DataBanner } from './DataBanner';
+import { DataBanner, isNetworkFailure } from './DataBanner';
 
 /** Every line the announcer has said so far. */
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
@@ -29,6 +29,7 @@ const spoken = () => getAnnouncerState().messages.map((m) => m.text);
 afterEach(() => {
   cleanup();
   resetAnnouncer();
+  vi.restoreAllMocks();
   retryDataLayer.mockClear();
   updateToTag.mockClear();
   dismissRollbackNotice.mockClear();
@@ -99,6 +100,78 @@ describe('DataBanner', () => {
     expect(retryDataLayer).not.toHaveBeenCalled();
   });
 
+  it('says the device is offline instead of the fetch error, and keeps Retry', () => {
+    // PWA-001: offline, the error is a list of mirror URLs that each "failed
+    // to fetch". The reason, and the remedy, is the network.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({
+      phase: 'error',
+      error: 'failed to fetch "races.json": https://cdn.jsdelivr.net/... -> Failed to fetch',
+    });
+    render(<DataBanner />);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      "You're offline, so the game data download can't finish yet. It picks up by itself once you're back online.",
+    );
+    expect(alert.textContent).not.toContain('Failed to fetch');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retryDataLayer).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a reason of its own visible offline instead of blaming the network', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'QuotaExceededError: storage is full' });
+    render(<DataBanner />);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Game data download failed: QuotaExceededError');
+    expect(alert.textContent).not.toContain("You're offline");
+  });
+
+  it('says an install cannot finish offline, and still retries that install', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch', failedTag: 'v2.33.0' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain(
+      "You're offline, so the update to v2.33.0 can't install yet.",
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(updateToTag).toHaveBeenCalledWith('v2.33.0');
+  });
+
+  it('goes back to the failure itself once the device is online again', () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain("You're offline");
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Game data download failed: Failed to fetch',
+    );
+  });
+
+  it('picks the download back up by itself once the device is online again', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    render(<DataBanner />);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(retryDataLayer).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a failed version install to its own Retry when the network returns', () => {
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch', failedTag: 'v2.33.0' });
+    render(<DataBanner />);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(retryDataLayer).not.toHaveBeenCalled();
+    expect(updateToTag).not.toHaveBeenCalled();
+  });
+
   it('says why the version went backwards, over the drain that follows', () => {
     // A rollback is not an error: the app works, on the older release. But it
     // is the one change here nobody asked for, so it outranks the progress bar
@@ -165,5 +238,27 @@ describe('DataBanner announcements', () => {
     render(<DataBanner />);
     expect(screen.getByRole('alert').textContent).toContain('offline');
     expect(getAnnouncerState().emitted).toBe(0);
+  });
+});
+
+describe('isNetworkFailure', () => {
+  it("knows each browser's fetch failure and the source's offline note", () => {
+    for (const error of [
+      'failed to fetch "races.json": https://x -> Failed to fetch',
+      'NetworkError when attempting to fetch resource.',
+      'Load failed',
+      'failed to fetch "races.json": the device is offline',
+      'TimeoutError: signal timed out',
+      'The network connection was lost.',
+      'The Internet connection appears to be offline.',
+    ]) {
+      expect(isNetworkFailure(error), error).toBe(true);
+    }
+  });
+
+  it('leaves reasons of their own alone', () => {
+    for (const error of ['QuotaExceededError', 'HTTP 503', '"races.json" failed validation']) {
+      expect(isNetworkFailure(error), error).toBe(false);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataFetchError, GithubTagSource } from './source';
 
 function fakeFetch(handler: (url: string) => Response | Error): typeof fetch {
@@ -15,6 +15,10 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { 'content-type': 'application/json' },
   });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('GithubTagSource', () => {
   const endpoints = [
@@ -72,6 +76,44 @@ describe('GithubTagSource', () => {
     expect(err).toBeInstanceOf(DataFetchError);
     expect((err as DataFetchError).message).toContain('offline');
     expect((err as DataFetchError).path).toBe('y.json');
+  });
+
+  it('tries each endpoint once, without the backoff retries, while the device is offline', async () => {
+    // PWA-001: a device that is offline now is offline a moment later too, so
+    // the backoff retries only kept an offline page waiting for the same answer.
+    vi.stubGlobal('navigator', { onLine: false });
+    const seen: string[] = [];
+    const src = new GithubTagSource('v1', {
+      endpoints,
+      backoffMs: 60_000,
+      fetchImpl: fakeFetch((url) => {
+        seen.push(url);
+        return new TypeError('Failed to fetch');
+      }),
+    });
+    const err = await src.fetchFile('races.json').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DataFetchError);
+    expect((err as Error).message).toContain('the device is offline');
+    expect(seen).toEqual([
+      'https://primary.test/v1/races.json',
+      'https://fallback.test/v1/races.json',
+    ]);
+  });
+
+  it('still reaches the mirror when the device wrongly reports offline', async () => {
+    // `onLine` can be false with a working network (a blocked CDN, a captive
+    // portal that let the mirror through); the failover must still run.
+    vi.stubGlobal('navigator', { onLine: false });
+    const src = new GithubTagSource('v1', {
+      endpoints,
+      backoffMs: 60_000,
+      fetchImpl: fakeFetch((url) =>
+        url.startsWith('https://primary.test/')
+          ? new TypeError('Failed to fetch')
+          : json({ ok: 2 }),
+      ),
+    });
+    await expect(src.fetchFile('races.json')).resolves.toEqual({ ok: 2 });
   });
 
   it('moves past an oversized body to the mirror without retrying it', async () => {

@@ -2,12 +2,13 @@
 // GAME-003: switching rules version re-reads every pick under the other edition,
 // so it previews what that does to this character and waits for a yes. It used
 // to apply on one tap, under a legend promising warnings that did not exist.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { dataStatusStore } from '@/stores/dataStatus';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from './BuildPage';
@@ -21,7 +22,18 @@ import type { CharacterSheetState } from './useCharacterSheet';
  */
 const extra = vi.hoisted(() => ({ current: [] as Array<[string, Record<string, unknown>]> }));
 
+/** What `useTypePacks('class')` reports: downloaded unless a test says otherwise. */
+const classPacks = vi.hoisted(() => ({
+  current: { status: 'ready', error: null, offline: false } as {
+    status: 'loading' | 'ready' | 'error';
+    error: string | null;
+    offline: boolean;
+  },
+  retry: vi.fn(),
+}));
+
 vi.mock('@/data5e/hooks', () => ({
+  useTypePacks: () => ({ ...classPacks.current, retry: classPacks.retry, repair: () => undefined }),
   useRegistry: () => {
     const base = makeTestContext();
     return {
@@ -52,9 +64,12 @@ vi.mock('@/ui/dialogs', () => ({
 }));
 
 afterEach(() => {
+  dataStatusStore.setState({ phase: 'idle', error: undefined });
   cleanup();
   dialogs.askConfirm.mockReset();
   extra.current = [];
+  classPacks.current = { status: 'ready', error: null, offline: false };
+  classPacks.retry.mockReset();
 });
 
 /**
@@ -622,5 +637,61 @@ describe('BuildPage destructive changes (UX-004)', () => {
       d.name = 'Renamed';
     });
     expect(undoButton()).toBeNull();
+  });
+});
+
+// PWA-001: the class download was started with a bare `void`. Without the class
+// files (offline, or a failed download) the picker showed "Pick a class" over
+// an empty list, and the rejection surfaced only as an uncaught error.
+/** The alert beside the class picker (the page has other live regions). */
+/** The panel beside the class picker, found by its words (offline it is no alert). */
+function classListAlert(): HTMLElement {
+  const panel = screen.getByText(/class list/).parentElement;
+  if (panel === null) throw new Error('no class list panel');
+  return panel;
+}
+
+describe('BuildPage class list without its download', () => {
+  it('says the device is offline beside the class picker, with Retry', () => {
+    // The shell's data banner is alerting the stopped download, as it does offline.
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
+    classPacks.current = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderBuild();
+    const alert = classListAlert();
+    expect(alert.textContent).toContain(
+      "You're offline, so the class list can't be downloaded yet.",
+    );
+    // The shell's data banner is the alert offline (A11Y-002).
+    expect(alert.getAttribute('role')).toBeNull();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(classPacks.retry).toHaveBeenCalledOnce();
+  });
+
+  it('tries the class download again by itself once back online', () => {
+    classPacks.current = { status: 'error', error: 'Failed to fetch', offline: true };
+    renderBuild();
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(classPacks.retry).toHaveBeenCalledOnce();
+  });
+
+  it('names a failed download online', () => {
+    classPacks.current = { status: 'error', error: 'HTTP 503', offline: false };
+    renderBuild();
+    // Online, with the shell's queue fine, the panel is the one alert.
+    expect(classListAlert().getAttribute('role')).toBe('alert');
+    expect(classListAlert().textContent).toContain(
+      "The class list couldn't be downloaded: HTTP 503",
+    );
+  });
+
+  it('says nothing while the class files are fine', () => {
+    renderBuild();
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(classPacks.retry).not.toHaveBeenCalled();
+    expect(screen.queryByText(/class list/)).toBeNull();
   });
 });
