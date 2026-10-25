@@ -3,7 +3,7 @@
 // so it previews what that does to this character and waits for a yes. It used
 // to apply on one tap, under a legend promising warnings that did not exist.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
@@ -106,6 +106,15 @@ function renderBuild(build?: (doc: CharacterDoc) => void) {
   function Shell() {
     const live = useSyncExternalStore(subscribe, () => current);
     const sheet = useMemo(() => deriveSheet(live, makeTestContext()), [live]);
+    // The app's HP sync (useCharacterSheet): while a character is still being
+    // built, current HP follows the derived maximum with a write of its own.
+    useEffect(() => {
+      if (live.play.hpInitialized === false && live.play.currentHp !== sheet.maxHp.value) {
+        update((d) => {
+          d.play.currentHp = sheet.maxHp.value;
+        });
+      }
+    }, [live, sheet]);
     const ctx = {
       doc: live,
       sheet,
@@ -349,20 +358,23 @@ describe('BuildPage destructive changes (UX-004)', () => {
     fireEvent.click(button);
   };
 
-  /** Mage, then a level-1 Warrior with a subclass, a dormant ASI feat and spells. */
+  /**
+   * A level-1 Warrior (with a subclass, a dormant ASI feat and spells), then
+   * Mage. Warrior comes first so its skill prompt is one the sheet shows.
+   */
   const twoClasses = (d: CharacterDoc) => {
     d.classes = [
-      { ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] },
       {
         ref: { name: 'Warrior', source: 'TST' },
         levels: 1,
         hp: ['avg'],
         subclass: { name: 'Path of Tests', source: 'TST' },
       },
+      { ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] },
     ];
     d.choices = {
-      'class:mage|tst:skill': ['arcana'],
-      'class:warrior|tst:skill': ['athletics', 'survival'],
+      'class:mage|tst:skill:0': ['arcana'],
+      'class:warrior|tst:skill:0': ['athletics', 'survival'],
       'class:warrior|tst:asi:4:feat': ['skilled|tst'],
       'feat:skilled|tst:asi4:skill': ['stealth'],
       'subclass:path of tests|tst:spell': ['shield|tst'],
@@ -380,7 +392,9 @@ describe('BuildPage destructive changes (UX-004)', () => {
     await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalledTimes(1));
     expect(lastPrompt()?.title).toBe('Remove Warrior?');
     expect(lastPrompt()?.detail).toBe(
-      'Clears 3 Warrior picks, subclass Path of Tests (1 pick) and its spell list (1 known, 0 prepared). You can undo this right after.',
+      // Two skills under one prompt are two picks; the dormant level-4 feat
+      // pick is not one the player can see, so it is not counted.
+      'Clears 2 Warrior picks, subclass Path of Tests and its spell list (1 known). You can undo this right after.',
     );
     // Declined: nothing moved.
     expect(getDoc().classes).toHaveLength(2);
@@ -394,7 +408,7 @@ describe('BuildPage destructive changes (UX-004)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Warrior' }));
     await waitFor(() => expect(getDoc().classes).toHaveLength(1));
     expect(getDoc().classes[0]?.ref.name).toBe('Mage');
-    expect(getDoc().choices).toEqual({ 'class:mage|tst:skill': ['arcana'] });
+    expect(getDoc().choices).toEqual({ 'class:mage|tst:skill:0': ['arcana'] });
     expect(Object.keys(getDoc().spellcasting)).toEqual(['mage|tst']);
 
     await waitFor(() => expect(undoButton()).not.toBeNull());
@@ -402,6 +416,19 @@ describe('BuildPage destructive changes (UX-004)', () => {
     clickUndo();
     expect(restore).toHaveBeenCalledWith(expect.anything(), 'Undo: Removed Warrior');
     expect(getDoc()).toEqual(original);
+  });
+
+  it('keeps the offer through the HP sync that follows a level down, and undo restores HP', () => {
+    const { getDoc } = renderBuild((d) => {
+      d.play.hpInitialized = false;
+    });
+    const fullHp = getDoc().play.currentHp;
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a Warrior level' }));
+    // The sync wrote a lower current HP of its own; that is not the player's edit.
+    expect(getDoc().play.currentHp).toBeLessThan(fullHp);
+    clickUndo();
+    expect(getDoc().classes[0]?.levels).toBe(3);
+    expect(getDoc().play.currentHp).toBe(fullHp);
   });
 
   it('offers to put back a level taken off, with the HP rolled for it', () => {

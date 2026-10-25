@@ -40,12 +40,14 @@ export function pruneFeatInstances(
   instance: string,
   featUid?: string,
 ): string[] {
+  // With the feat known, match it whole: a homebrew feat name can hold a ':'.
+  if (featUid !== undefined)
+    return pruneKeys(doc, (key) => under(key, `feat:${featUid}:${instance}`));
   return pruneKeys(doc, (key) => {
     if (!key.startsWith('feat:')) return false;
     const rest = key.slice('feat:'.length);
     const sep = rest.indexOf(':');
     if (sep < 0) return false;
-    if (featUid !== undefined && rest.slice(0, sep) !== featUid) return false;
     return under(rest.slice(sep + 1), instance);
   });
 }

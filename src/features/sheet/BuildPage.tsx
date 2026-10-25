@@ -156,9 +156,33 @@ function listJoin(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
 }
 
+/**
+ * How many picks a set of removed choice keys held, counting only prompts the
+ * player can see now (`active`). A key can hold several picks (two skills
+ * under one prompt), and a stored answer to a prompt no longer offered (an ASI
+ * feat kept from a higher level) is not one the player would recognise, so
+ * counting keys told a player with two skills that three picks went.
+ */
+function pickCount(doc: CharacterDoc, keys: string[], active: ReadonlySet<string>): number {
+  return keys.reduce((n, k) => {
+    if (!active.has(k)) return n;
+    const v = doc.choices[k];
+    return n + (Array.isArray(v) ? v.length : v === undefined ? 0 : 1);
+  }, 0);
+}
+
 /** "3 Testfolk picks cleared", or nothing when no picks went. */
-const picksCleared = (keys: string[], owner: string | undefined) =>
-  keys.length === 0 ? undefined : `${plural(keys.length, `${owner ?? 'old'} pick`)} cleared`;
+const picksCleared = (
+  before: CharacterDoc,
+  keys: string[],
+  owner: string | undefined,
+  active: ReadonlySet<string>,
+) => {
+  const n = pickCount(before, keys, active);
+  return n === 0
+    ? undefined
+    : `${plural(n, owner === undefined ? 'pick' : `${owner} pick`)} cleared`;
+};
 
 /**
  * What removing a class takes with it, for the confirm and the undo bar: its
@@ -166,13 +190,22 @@ const picksCleared = (keys: string[], owner: string | undefined) =>
  * picks, and its spell list. Worked out on a copy, so it matches what
  * {@link pruneClass} will remove.
  */
-function classRemovalParts(doc: CharacterDoc, entry: ClassLevelEntry): string[] {
+function classRemovalParts(
+  doc: CharacterDoc,
+  entry: ClassLevelEntry,
+  active: ReadonlySet<string>,
+): string[] {
   const uid = refUid(entry.ref);
   const probe = structuredClone(doc);
   probe.classes = probe.classes.filter((c) => refUid(c.ref) !== uid);
   const removed = pruneClass(probe, entry);
-  const subPicks = removed.filter((k) => k.startsWith('subclass:')).length;
-  const ownPicks = removed.length - subPicks;
+  const subKeys = removed.filter((k) => k.startsWith('subclass:'));
+  const subPicks = pickCount(doc, subKeys, active);
+  const ownPicks = pickCount(
+    doc,
+    removed.filter((k) => !k.startsWith('subclass:')),
+    active,
+  );
   const parts: string[] = [];
   if (ownPicks > 0) parts.push(plural(ownPicks, `${entry.ref.name} pick`));
   if (entry.subclass !== undefined) {
@@ -184,7 +217,11 @@ function classRemovalParts(doc: CharacterDoc, entry: ClassLevelEntry): string[] 
   }
   const spells = doc.spellcasting[uid];
   if (spells !== undefined && spells.known.length + spells.prepared.length > 0) {
-    parts.push(`its spell list (${spells.known.length} known, ${spells.prepared.length} prepared)`);
+    const counts = [
+      spells.known.length > 0 ? `${spells.known.length} known` : '',
+      spells.prepared.length > 0 ? `${spells.prepared.length} prepared` : '',
+    ].filter((c) => c !== '');
+    parts.push(`its spell list (${counts.join(', ')})`);
   }
   return parts;
 }
@@ -253,6 +290,8 @@ export function Component() {
     return <p className="text-sm text-ink-muted">Loading…</p>;
   }
 
+  // Prompts the player can see now, so "N picks cleared" counts only those.
+  const activeChoices = new Set(sheet.resolvedChoices.map((r) => r.prompt.id));
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
   const subclassesFor = (entry: ClassLevelEntry) =>
     subclassOptions(registry.byType('subclass'), entry.ref, doc.rulesVersion, entry.subclass);
@@ -364,7 +403,7 @@ export function Component() {
    */
   const removeClass = async (entry: ClassLevelEntry) => {
     const name = entry.ref.name;
-    const parts = classRemovalParts(doc, entry);
+    const parts = classRemovalParts(doc, entry, activeChoices);
     const clears = parts.length > 0 ? `Clears ${listJoin(parts)}.` : 'Nothing else is tied to it.';
     const ok = await askConfirm({
       title: `Remove ${name}?`,
@@ -391,8 +430,7 @@ export function Component() {
   };
 
   /** One level off a class. Its rolled HP for that level goes, so it can come back. */
-  const levelDownClass = (idx: number, entry: ClassLevelEntry) => {
-    const lost = entry.hp[entry.levels - 1];
+  const levelDownClass = (idx: number) => {
     undoable(
       (d) => {
         const c = d.classes[idx];
@@ -400,10 +438,15 @@ export function Component() {
         c.levels -= 1;
         c.hp = c.hp.slice(0, c.levels);
       },
-      () => ({
-        title: `${entry.ref.name} level ${entry.levels} → ${entry.levels - 1}`,
-        detail: typeof lost === 'number' ? `rolled ${lost} HP for that level cleared` : undefined,
-      }),
+      (before) => {
+        // From the snapshot the recipe ran on, not the render that scheduled it.
+        const c = before.classes[idx];
+        const lost = c?.hp[c.levels - 1];
+        return {
+          title: `${c?.ref.name ?? 'Class'} level ${c?.levels ?? 0} → ${(c?.levels ?? 1) - 1}`,
+          detail: typeof lost === 'number' ? `rolled ${lost} HP for that level cleared` : undefined,
+        };
+      },
     );
   };
 
@@ -421,7 +464,7 @@ export function Component() {
         const c = before.classes[idx];
         return {
           title: `${c?.ref.name ?? 'Class'} subclass: ${c?.subclass?.name ?? 'none'} → ${next?.name ?? 'none'}`,
-          detail: picksCleared(removed, c?.subclass?.name),
+          detail: picksCleared(before, removed, c?.subclass?.name, activeChoices),
         };
       },
     );
@@ -437,7 +480,7 @@ export function Component() {
       },
       (before) => ({
         title: `Subrace: ${before.subrace?.name ?? 'none'} → ${next?.name ?? 'none'}`,
-        detail: picksCleared(removed, before.subrace?.name),
+        detail: picksCleared(before, removed, before.subrace?.name, activeChoices),
       }),
     );
   };
@@ -458,7 +501,7 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="sticky top-0 z-10 flex flex-col gap-1.5">
+      <div className="sticky top-(--sheet-header-h,0px) z-10 flex flex-col gap-1.5">
         <ChangeBar sheet={sheet} />
         <UndoBar pending={undo.pending} undone={undo.undone} onUndo={() => void undo.run()} />
       </div>
@@ -579,7 +622,7 @@ export function Component() {
                     type="button"
                     onClick={() => {
                       if (entry.levels <= 1) void removeClass(entry);
-                      else levelDownClass(idx, entry);
+                      else levelDownClass(idx);
                     }}
                     className="h-8 w-8 rounded-full bg-surface-2 text-lg"
                     aria-label={
@@ -782,7 +825,12 @@ export function Component() {
                   },
                   (before, after) => ({
                     title: `Species: ${before.race?.name ?? 'none'} → ${after.race?.name ?? 'none'}`,
-                    detail: picksCleared(removed, before.race?.name),
+                    detail: picksCleared(
+                      before,
+                      removed,
+                      before.subrace === undefined ? before.race?.name : undefined,
+                      activeChoices,
+                    ),
                   }),
                 );
               }}
@@ -996,7 +1044,7 @@ export function Component() {
                   },
                   (before, after) => ({
                     title: `Background: ${before.background?.name ?? 'none'} → ${after.background?.name ?? 'none'}`,
-                    detail: picksCleared(removed, before.background?.name),
+                    detail: picksCleared(before, removed, before.background?.name, activeChoices),
                   }),
                 );
               }}

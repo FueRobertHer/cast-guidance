@@ -52,4 +52,17 @@ describe('UndoBar', () => {
     expect(document.activeElement).toBe(status);
     expect(status.textContent).toBe('Undone: Species: Testfolk → Dragonborn');
   });
+
+  it('moves focus only once the bar says what was undone', () => {
+    // Focused any earlier, a screen reader reads the stale offer and then
+    // announces again when the text changes.
+    render(<Harness onUndo={() => undefined} />);
+    const status = screen.getByRole('status');
+    let heardOnFocus = '';
+    status.addEventListener('focus', () => {
+      heardOnFocus = status.textContent ?? '';
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Undo/ }));
+    expect(heardOnFocus).toBe('Undone: Species: Testfolk → Dragonborn');
+  });
 });
