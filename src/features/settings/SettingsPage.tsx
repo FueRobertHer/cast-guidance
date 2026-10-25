@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import { getRevision, subscribeRevision } from '@/data5e/landing';
 import {
+  CompendiumNotDownloadedError,
   downloadAllPacks,
   getActiveTag,
   listAvailableTags,
@@ -56,6 +57,12 @@ function useStorageUsage(phase: string) {
   }, [phase]);
   return { estimate, cachedBytes };
 }
+
+/**
+ * The offline inventory's answer before the class and spell indexes have
+ * landed (a first download that never started, or stopped inside essentials).
+ */
+const NOT_DOWNLOADED = 'not downloaded';
 
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -126,7 +133,11 @@ export function Component() {
         setOfflineError(undefined);
       })
       .catch((err: unknown) => {
-        if (run === measuring.current) setOfflineError(errorText(err));
+        if (run !== measuring.current) return;
+        // Not a failure to read: there is nothing to count yet.
+        setOfflineError(
+          err instanceof CompendiumNotDownloadedError ? NOT_DOWNLOADED : errorText(err),
+        );
       });
   }, []);
 
@@ -251,10 +262,7 @@ export function Component() {
           <dt className="text-ink-muted">Offline compendium</dt>
           <dd>
             {offlineError !== undefined
-              ? // The inventory is counted against the class and spell indexes,
-                // which arrive with the first download. With nothing on disk
-                // there is nothing to count, and that is not a read failure.
-                cachedBytes === 0
+              ? offlineError === NOT_DOWNLOADED
                 ? 'not downloaded yet'
                 : 'could not be read'
               : offline === undefined

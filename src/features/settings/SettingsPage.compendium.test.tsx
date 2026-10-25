@@ -5,18 +5,24 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const cache = vi.hoisted(() => ({ bytes: 0 }));
+const loader = vi.hoisted(() => {
+  class CompendiumNotDownloadedError extends Error {}
+  return {
+    CompendiumNotDownloadedError,
+    downloadAllPacks: vi.fn(() => Promise.resolve()),
+    getActiveTag: () => 'v2.32.0',
+    listAvailableTags: vi.fn(() => Promise.resolve([])),
+    updateToTag: vi.fn(() => Promise.resolve()),
+    verifyFullOffline: vi.fn<() => Promise<{ cached: number; total: number }>>(),
+  };
+});
 
-vi.mock('@/data5e/loader', () => ({
-  downloadAllPacks: vi.fn(() => Promise.resolve()),
-  getActiveTag: () => 'v2.32.0',
-  listAvailableTags: vi.fn(() => Promise.resolve([])),
-  updateToTag: vi.fn(() => Promise.resolve()),
-  verifyFullOffline: () => Promise.reject(new Error('failed to fetch "class/index.json"')),
-}));
+vi.mock('@/data5e/loader', () => loader);
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
 vi.mock('@/db/dataCacheRepo', () => ({
-  dataCacheRepo: { totalBytes: () => Promise.resolve(cache.bytes) },
+  // Some bytes on disk: essentials that only partly landed still read as not
+  // downloaded, so the answer cannot rest on the cache being empty.
+  dataCacheRepo: { totalBytes: () => Promise.resolve(4096) },
 }));
 vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
@@ -27,12 +33,13 @@ import { Component as SettingsPage } from './SettingsPage';
 
 afterEach(() => {
   cleanup();
-  cache.bytes = 0;
+  loader.verifyFullOffline.mockReset();
   dataStatusStore.setState({ phase: 'idle', error: undefined });
 });
 
-describe('SettingsPage offline compendium before any download', () => {
+describe('SettingsPage offline compendium before the indexes land', () => {
   it('says the compendium is not downloaded yet, and offers the download', async () => {
+    loader.verifyFullOffline.mockRejectedValue(new loader.CompendiumNotDownloadedError());
     dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     render(<SettingsPage />);
     expect(await screen.findByText('not downloaded yet')).toBeTruthy();
@@ -40,8 +47,8 @@ describe('SettingsPage offline compendium before any download', () => {
     expect(screen.getByRole('button', { name: 'Make available offline' })).toBeTruthy();
   });
 
-  it('still says it could not be read when there is data it failed to count', async () => {
-    cache.bytes = 4096;
+  it('still says it could not be read when the count itself failed', async () => {
+    loader.verifyFullOffline.mockRejectedValue(new Error('QuotaExceededError'));
     dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch' });
     render(<SettingsPage />);
     expect(await screen.findByText('could not be read')).toBeTruthy();

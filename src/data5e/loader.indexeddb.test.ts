@@ -21,7 +21,14 @@ import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { validMirror } from '../../tests-fixtures/dataMirror';
 import { DATA_TAG } from './config';
-import { ensureTypePacks, getActiveTag, repairTypePacks, updateToTag } from './loader';
+import {
+  CompendiumNotDownloadedError,
+  ensureTypePacks,
+  getActiveTag,
+  repairTypePacks,
+  updateToTag,
+  verifyFullOffline,
+} from './loader';
 
 /** A dataset complete enough to pass the installer's checks. */
 const wholeMirror = validMirror();
@@ -268,5 +275,43 @@ describe('repairTypePacks', () => {
 
     const after = await dataCacheRepo.getFile('v2.33.0', 'races.json');
     expect((after?.json as { race: Array<{ name: string }> }).race).toEqual([{ name: 'NEW-Elf' }]);
+  });
+});
+
+// PWA-001: Settings counts the offline compendium against the class and spell
+// indexes. Before they land there is nothing to count, and the count used to
+// fetch them, so a look at Settings started a download and, offline, read as
+// an inventory that could not be read.
+describe('verifyFullOffline', () => {
+  async function cache(paths: string[]): Promise<void> {
+    // The tag this module is on: earlier tests in the file may have moved it.
+    const tag = getActiveTag();
+    for (const path of paths) {
+      await dataCacheRepo.putFile({
+        key: dataCacheRepo.key(tag, path),
+        tag,
+        path,
+        pack: 'essentials',
+        json: await wholeMirror(tag, path),
+        bytes: 10,
+        fetchedAt: 0,
+      });
+    }
+  }
+
+  it('says the compendium is not downloaded while an index is missing, and fetches nothing', async () => {
+    // Essentials that only partly landed: the class index made it, the spell
+    // index did not.
+    await cache(['races.json', 'class/index.json']);
+    await expect(verifyFullOffline()).rejects.toBeInstanceOf(CompendiumNotDownloadedError);
+    expect(fetchFile).not.toHaveBeenCalled();
+  });
+
+  it('counts against the indexes once both are on disk', async () => {
+    await cache(['class/index.json', 'spells/index.json', 'races.json']);
+    const counted = await verifyFullOffline();
+    expect(counted.cached).toBe(3);
+    expect(counted.total).toBeGreaterThan(3);
+    expect(fetchFile).not.toHaveBeenCalled();
   });
 });

@@ -1122,8 +1122,31 @@ export async function updateToTag(newTag: string): Promise<void> {
   }
 }
 
-/** Sanity/UI helper: full-file inventory of what a complete install looks like. */
+/**
+ * {@link verifyFullOffline}'s answer when the class and spell indexes are not
+ * on disk. The class and spell packs are listed in them, so without them there
+ * is no total to count against: the compendium is not downloaded yet, which is
+ * not the same as an inventory that could not be read.
+ */
+export class CompendiumNotDownloadedError extends Error {
+  constructor() {
+    super('the game data is not downloaded yet');
+    this.name = 'CompendiumNotDownloadedError';
+  }
+}
+
+/**
+ * Sanity/UI helper: full-file inventory of what a complete install looks like.
+ * Reads the disk only. It used to fetch missing indexes through `getFile`, so
+ * a look at Settings started a download, and offline it failed as if the
+ * inventory were unreadable.
+ */
 export async function verifyFullOffline(): Promise<{ cached: number; total: number }> {
+  await ensureTagReady();
+  const onDisk = await dataCacheRepo.cachedPaths(activeTag);
+  if (!onDisk.has('class/index.json') || !onDisk.has('spells/index.json')) {
+    throw new CompendiumNotDownloadedError();
+  }
   const packs = await allPackIds();
   const lists = await Promise.all(packs.map((p) => filesForPack(p)));
   const all = new Set(lists.flat());

@@ -15,7 +15,10 @@ const loader = vi.hoisted(() => ({
   verifyFullOffline: vi.fn(() => Promise.resolve({ cached: 31, total: 48 })),
 }));
 
-vi.mock('@/data5e/loader', () => loader);
+vi.mock('@/data5e/loader', () => ({
+  ...loader,
+  CompendiumNotDownloadedError: class extends Error {},
+}));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
 vi.mock('@/db/dataCacheRepo', () => ({
   dataCacheRepo: { totalBytes: () => Promise.resolve(0) },
