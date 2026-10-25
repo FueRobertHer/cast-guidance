@@ -146,6 +146,7 @@ export function EntityCardList({
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          aria-label="Filter the list"
           placeholder="Filter…"
           className="rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
         />
