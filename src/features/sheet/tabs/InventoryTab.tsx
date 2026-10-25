@@ -21,6 +21,19 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
 
+/**
+ * Where Add item puts focus as it opens (A11Y-003). The sheet's first control
+ * is its search box, which suits a keyboard; on a touch screen focusing it
+ * pops the on-screen keyboard over the list it filters before anyone asked
+ * to type. There the sheet itself takes focus instead, as a screen reader
+ * expects, and a tap on the box brings the keyboard up. Exported for tests.
+ */
+export function focusSheetOnTouch(event: Event): void {
+  if (!matchMedia('(pointer: coarse)').matches) return;
+  event.preventDefault();
+  (event.currentTarget as HTMLElement | null)?.focus();
+}
+
 export function AddItemDrawer({
   onAdd,
   sources,
@@ -84,7 +97,10 @@ export function AddItemDrawer({
       </Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+        <Sheet.Content
+          onOpenAutoFocus={focusSheetOnTouch}
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+        >
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
           <Sheet.Title className="mb-2 text-base font-semibold">Add item</Sheet.Title>
           <label className="mb-2 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2">

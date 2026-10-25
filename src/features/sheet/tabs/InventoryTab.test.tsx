@@ -55,7 +55,11 @@ vi.mock('vaul', async () => {
   };
 });
 
-const { AddItemDrawer, Component: InventoryTab } = await import('./InventoryTab');
+const {
+  AddItemDrawer,
+  Component: InventoryTab,
+  focusSheetOnTouch,
+} = await import('./InventoryTab');
 
 const items = (...names: string[]): Entity[] =>
   names.map((name) => ({ name, source: 'PHB' }) as Entity);
@@ -228,5 +232,46 @@ describe("InventoryTab item search under a character's own sources", () => {
     const revealed = screen.getByRole('button', { name: /Sword of Answering/ });
     expect(revealed.textContent).toContain("Not in this character's sources");
     expect(screen.getByRole('button', { name: /Longsword/ }).textContent).not.toContain('Not in');
+  });
+});
+
+// A11Y-003: the sheet's first control is its search box. Focusing that on a
+// touch screen pops the on-screen keyboard over the list, so there the sheet
+// itself takes focus; with a mouse or keyboard Radix focuses the box as usual.
+describe('Add item focus on open', () => {
+  const pointer = (coarse: boolean) => {
+    window.matchMedia = (query: string) =>
+      ({ matches: coarse && query === '(pointer: coarse)', media: query }) as MediaQueryList;
+  };
+
+  /** Opens as Radix does: a cancelable auto-focus event on the sheet's content. */
+  function open() {
+    const content = document.createElement('div');
+    content.tabIndex = -1;
+    document.body.append(content);
+    content.addEventListener('focusScope.autoFocusOnMount', focusSheetOnTouch);
+    const event = new CustomEvent('focusScope.autoFocusOnMount', { cancelable: true });
+    content.dispatchEvent(event);
+    return { content, event };
+  }
+
+  const original = window.matchMedia;
+  afterEach(() => {
+    window.matchMedia = original;
+    document.body.replaceChildren();
+  });
+
+  it('focuses the sheet, not the search box, on a coarse pointer', () => {
+    pointer(true);
+    const { content, event } = open();
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(content);
+  });
+
+  it('leaves Radix to focus the search box on a fine pointer', () => {
+    pointer(false);
+    const { content, event } = open();
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(content);
   });
 });
