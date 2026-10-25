@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
@@ -52,6 +52,20 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
       <SourceBadge source={sourceOf(e)} />
     </Link>
   );
+}
+
+/**
+ * An {@link EntityRow}'s height in px at the current root font size: its
+ * `py-3` (1.5rem), one 1.5rem line of text and the 1 px border, rounded as
+ * a measured height is. The source badge is shorter than the line, so it
+ * never sets the height. The list's restored scroll offset depends on this
+ * being exact (see `VirtualList`), so a class change to the row has to
+ * change this too; `library-scale.spec.ts` compares it to the rendered row.
+ * jsdom reports the root font as "medium", hence the fallback.
+ */
+export function entityRowHeight(): number {
+  const px = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return Math.round(3 * (Number.isNaN(px) ? 16 : px) + 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +383,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   const registry = reg.registry;
   const failed = reg.error !== null || packs.status === 'error';
   usePageTitle(TYPE_LABELS.get(type) ?? type, 'Library');
+  const headingId = useId();
 
   const { items, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
@@ -450,7 +465,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         >
           <ArrowLeft size={20} aria-hidden />
         </Link>
-        <h1 className="text-xl font-bold">{TYPE_LABELS.get(type) ?? type}</h1>
+        <h1 id={headingId} className="text-xl font-bold">
+          {TYPE_LABELS.get(type) ?? type}
+        </h1>
         <span className="text-sm text-ink-muted">{items.length}</span>
       </header>
       {/* An empty list and a failed download used to look identical here. */}
@@ -504,7 +521,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
       )}
       <VirtualList
         items={items}
-        className="min-h-0 flex-1"
+        estimateSize={entityRowHeight}
+        getKey={uidOf}
+        labelledBy={headingId}
         renderRow={(e) => <EntityRow type={type} e={e} />}
       />
     </main>
