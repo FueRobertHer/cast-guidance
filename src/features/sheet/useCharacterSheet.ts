@@ -70,12 +70,19 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   // currentHp tracks the derived max — so leveling up keeps you at full.
   // The first time the player damages/heals HP in play, it locks (see PlayTab).
   // Never affects saved characters (hpInitialized === undefined).
+  // Automatic, since the sheet does this by itself: it never raises a save
+  // conflict with another tab, and is not saved over another tab's copy
+  // until the person edits (see `scheduleSave` in the session).
   useEffect(() => {
     if (doc === null || sheet === null) return;
     if (doc.play.hpInitialized === false && doc.play.currentHp !== sheet.maxHp.value) {
-      characterSessionStore.getState().update((d) => {
-        d.play.currentHp = sheet.maxHp.value;
-      });
+      characterSessionStore.getState().update(
+        (d) => {
+          d.play.currentHp = sheet.maxHp.value;
+        },
+        undefined,
+        { automatic: true },
+      );
     }
   }, [doc, sheet]);
 

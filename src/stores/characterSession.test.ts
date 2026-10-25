@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc } from '@/engine/types';
 import { newCharacterDoc } from '@/engine/types';
+import { unchecked } from '../../tests-fixtures/sessionCharacters';
 import { createCharacterSessionStore } from './characterSession';
 
 function character(id: string, name = id.toUpperCase()): CharacterDoc {
@@ -32,10 +33,10 @@ describe('character session persistence', () => {
     });
     const record = vi.fn(async () => undefined);
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: vi.fn(async (id: string) => structuredClone(docs.get(id))),
         put,
-      },
+      }),
       history: { record },
       debounceMs: 10_000,
     });
@@ -64,7 +65,7 @@ describe('character session persistence', () => {
       return read.promise;
     });
     const session = createCharacterSessionStore({
-      characters: { get, put: vi.fn(async () => undefined) },
+      characters: unchecked({ get, put: vi.fn(async () => undefined) }),
       history: { record: vi.fn(async () => undefined) },
     });
 
@@ -102,7 +103,7 @@ describe('character session persistence', () => {
       .mockRejectedValueOnce(new Error('quota exceeded'))
       .mockResolvedValue(undefined);
     const session = createCharacterSessionStore({
-      characters: { get: vi.fn(async () => character('a')), put },
+      characters: unchecked({ get: vi.fn(async () => character('a')), put }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
     });
@@ -134,7 +135,7 @@ describe('character session persistence', () => {
       if (names.length === 1) await firstWrite.promise;
     });
     const session = createCharacterSessionStore({
-      characters: { get: vi.fn(async () => character('a')), put },
+      characters: unchecked({ get: vi.fn(async () => character('a')), put }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
     });
@@ -158,12 +159,12 @@ describe('character session persistence', () => {
   it('handles debounced write failures without an unhandled rejection', async () => {
     vi.useFakeTimers();
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: vi.fn(async () => character('a')),
         put: vi.fn(async () => {
           throw new Error('database unavailable');
         }),
-      },
+      }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 50,
     });
@@ -186,10 +187,10 @@ describe('history labels for named actions', () => {
   const labelSession = () => {
     const record = vi.fn(async (_doc: CharacterDoc, _label: string) => undefined);
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: vi.fn(async (id: string) => character(id)),
         put: vi.fn(async () => undefined),
-      },
+      }),
       history: { record },
       debounceMs: 10_000,
     });
@@ -278,7 +279,7 @@ describe('history labels across a failed save', () => {
       .mockRejectedValueOnce(new Error('quota exceeded'))
       .mockResolvedValue(undefined);
     const session = createCharacterSessionStore({
-      characters: { get: vi.fn(async () => character('a')), put },
+      characters: unchecked({ get: vi.fn(async () => character('a')), put }),
       history: { record },
       debounceMs: 10_000,
     });
@@ -308,7 +309,7 @@ describe('history labels across a failed save', () => {
       .mockRejectedValueOnce(new Error('disk full'))
       .mockResolvedValue(undefined);
     const session = createCharacterSessionStore({
-      characters: { get: vi.fn(async () => character('a')), put },
+      characters: unchecked({ get: vi.fn(async () => character('a')), put }),
       history: { record },
       debounceMs: 10_000,
     });
@@ -338,10 +339,10 @@ describe('folding rapid edits into one history entry (UX-005)', () => {
         (opts?.replaceId ?? `r${++rows}`) as string | undefined,
     );
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: vi.fn(async () => structuredClone(start)),
         put: vi.fn(async () => undefined),
-      },
+      }),
       history: { record },
       debounceMs: 10_000,
       now: () => clock,

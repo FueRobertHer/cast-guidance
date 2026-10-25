@@ -5,7 +5,13 @@
 // them on the next boot.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { createCharacterSessionStore, installCharacterSessionLifecycle } from './characterSession';
+import { unchecked } from '../../tests-fixtures/sessionCharacters';
+import {
+  createCharacterSessionStore,
+  installCharacterSessionLifecycle,
+  NOT_SAVED_LABEL,
+  type SessionCharacters,
+} from './characterSession';
 import {
   contentHash,
   type JournalBase,
@@ -57,7 +63,7 @@ function repo(...docs: CharacterDoc[]) {
     rows.set(doc.id, structuredClone(doc));
   });
   const get = vi.fn(async (id: string) => structuredClone(rows.get(id)));
-  return { rows, characters: { get, put } };
+  return { rows, characters: unchecked({ get, put }) };
 }
 
 /** An entry replayable over a row holding `over` (by default, the doc's own id, unedited). */
@@ -86,7 +92,7 @@ describe('journaling unsaved edits at page teardown', () => {
     const { area, storage } = memoryStorage();
     const put = deferred<void>();
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put: () => put.promise },
+      characters: unchecked({ get: async () => character('a'), put: () => put.promise }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -109,10 +115,42 @@ describe('journaling unsaved edits at page teardown', () => {
     expect(entry?.bases).toEqual([base(character('a'))]);
   });
 
+  it("marks a snapshot made only of the sheet's own edits", async () => {
+    const { storage } = memoryStorage();
+    const session = createCharacterSessionStore({
+      characters: unchecked({
+        get: async () => character('a'),
+        put: () => new Promise(() => undefined),
+      }),
+      history: { record: vi.fn(async () => undefined) },
+      debounceMs: 10_000,
+      journal: storage,
+    });
+    await session.getState().load('a');
+    session.getState().update(
+      (doc) => {
+        doc.play.currentHp = 9;
+      },
+      undefined,
+      { automatic: true },
+    );
+    session.getState().journalUnsaved();
+    expect(readJournal(storage).map((e) => e.automatic)).toEqual([true]);
+
+    session.getState().update((doc) => {
+      doc.name = 'Edited';
+    });
+    session.getState().journalUnsaved();
+    expect(readJournal(storage).map((e) => e.automatic)).toEqual([undefined]);
+  });
+
   it('journals on the page becoming hidden too', async () => {
     const { storage } = memoryStorage();
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put: () => new Promise(() => undefined) },
+      characters: unchecked({
+        get: async () => character('a'),
+        put: () => new Promise(() => undefined),
+      }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -130,7 +168,7 @@ describe('journaling unsaved edits at page teardown', () => {
   it('journals against the row it last saved, not the one it first read', async () => {
     const { storage } = memoryStorage();
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put: vi.fn(async () => undefined) },
+      characters: unchecked({ get: async () => character('a'), put: vi.fn(async () => undefined) }),
       // History lags the put; the row is already saved while this is pending.
       history: { record: () => new Promise(() => undefined) },
       debounceMs: 10_000,
@@ -157,7 +195,7 @@ describe('journaling unsaved edits at page teardown', () => {
     const first = deferred<void>();
     const put = vi.fn<(doc: CharacterDoc) => Promise<void>>(() => first.promise);
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put },
+      characters: unchecked({ get: async () => character('a'), put }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -192,14 +230,14 @@ describe('journaling unsaved edits at page teardown', () => {
     const { area, storage } = memoryStorage();
     const writes: Array<ReturnType<typeof deferred<void>>> = [];
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: async () => character('a'),
         put: () => {
           const write = deferred<void>();
           writes.push(write);
           return write.promise;
         },
-      },
+      }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -230,7 +268,7 @@ describe('journaling unsaved edits at page teardown', () => {
     const { area, storage } = memoryStorage();
     const write = deferred<void>();
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put: () => write.promise },
+      characters: unchecked({ get: async () => character('a'), put: () => write.promise }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -252,7 +290,7 @@ describe('journaling unsaved edits at page teardown', () => {
   it('keeps flushing when storage throws or the entry is too large', async () => {
     const put = vi.fn(async () => undefined);
     const session = createCharacterSessionStore({
-      characters: { get: async () => character('a'), put },
+      characters: unchecked({ get: async () => character('a'), put }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: () => {
@@ -373,21 +411,123 @@ describe('replaying the journal on boot', () => {
     expect(area.map.has(journalKey('a'))).toBe(false);
   });
 
-  it('never replays over a row another tab saved since', async () => {
+  it('never replays over a row another tab saved since, and keeps the snapshot in history', async () => {
+    // REL-007 (#98): this used to drop the snapshot without a word. A tab
+    // closed while its save was refused leaves exactly such an entry.
     const { area, storage } = memoryStorage();
     area.map.set(journalKey('a'), entryText(character('a', 'Stale edit')));
     const { characters } = repo(character('a', 'Saved later in another tab'));
+    const record = vi.fn(async (_doc: CharacterDoc, _label: string) => 'row');
+    const onKept = vi.fn();
     const session = createCharacterSessionStore({
       characters,
-      history: { record: vi.fn(async () => undefined) },
+      history: { record },
       journal: storage,
     });
+    uninstall = installCharacterSessionLifecycle(session, { onKept });
 
     await session.getState().load('a');
 
     expect(session.getState().doc?.name).toBe('Saved later in another tab');
     expect(characters.put).not.toHaveBeenCalled();
+    expect(record.mock.calls.map(([doc, label]) => [doc.name, label])).toEqual([
+      ['Stale edit', NOT_SAVED_LABEL],
+    ]);
+    // The person is told where the edits went.
+    expect(await session.getState().replayJournal()).toEqual(['Stale edit']);
+    expect(onKept.mock.calls).toEqual([['Stale edit']]);
     expect(area.map.has(journalKey('a'))).toBe(false);
+  });
+
+  it("keeps quiet about a stale snapshot of only the sheet's own edits", async () => {
+    const { area, storage } = memoryStorage();
+    const text = JSON.stringify({
+      v: 1,
+      bases: [base(character('a'))],
+      doc: { ...character('a'), play: { ...character('a').play, currentHp: 9 } },
+      automatic: true,
+    });
+    area.map.set(journalKey('a'), text);
+    const { characters } = repo(character('a', 'Saved later in another tab'));
+    const record = vi.fn(async () => 'row');
+    const session = createCharacterSessionStore({
+      characters,
+      history: { record },
+      journal: storage,
+    });
+
+    await session.getState().load('a');
+
+    expect(record).not.toHaveBeenCalled();
+    expect(await session.getState().replayJournal()).toEqual([]);
+    expect(area.map.has(journalKey('a'))).toBe(false);
+  });
+
+  it('keeps an entry whose history row could not be written, for the next boot', async () => {
+    const { area, storage } = memoryStorage();
+    area.map.set(journalKey('a'), entryText(character('a', 'Stale edit')));
+    const session = createCharacterSessionStore({
+      characters: repo(character('a', 'Saved later')).characters,
+      history: {
+        record: vi.fn(async () => {
+          throw new Error('quota exceeded');
+        }),
+      },
+      journal: storage,
+    });
+
+    await session.getState().replayJournal();
+    expect(area.map.has(journalKey('a'))).toBe(true);
+  });
+
+  it('replays as a save checked against the revision it read', async () => {
+    const { area, storage } = memoryStorage();
+    const stored = character('a');
+    const edited = structuredClone(stored);
+    edited.play.inspiration = true;
+    area.map.set(journalKey('a'), entryText(edited));
+    const save = vi.fn<SessionCharacters['save']>(async () => ({
+      status: 'saved',
+      revision: 'r2',
+    }));
+    const session = createCharacterSessionStore({
+      characters: {
+        getWithRevision: async () => ({ doc: structuredClone(stored), revision: 'r1' }),
+        save,
+      },
+      history: { record: vi.fn(async () => 'row') },
+      journal: storage,
+    });
+
+    await session.getState().replayJournal();
+
+    expect(save.mock.calls.map(([doc, expectAt]) => [doc.play.inspiration, expectAt])).toEqual([
+      [true, { kind: 'revision', revision: 'r1', content: stored }],
+    ]);
+  });
+
+  it('replays an entry an older build hashed with the stored revision in it', async () => {
+    // Such a build kept the revision it read in the document; the next app
+    // ignores the field, so it checks the old hash as well.
+    const { area, storage } = memoryStorage();
+    const edited = character('a');
+    edited.play.inspiration = true;
+    area.map.set(journalKey('a'), entryText(edited, [{ hash: contentHash(character('a'), 'r1') }]));
+    const save = vi.fn<SessionCharacters['save']>(async () => ({
+      status: 'saved',
+      revision: 'r2',
+    }));
+    const session = createCharacterSessionStore({
+      characters: {
+        getWithRevision: async () => ({ doc: character('a'), revision: 'r1' }),
+        save,
+      },
+      history: { record: vi.fn(async () => 'row') },
+      journal: storage,
+    });
+
+    await session.getState().replayJournal();
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('never replays a save left for Retry over a newer edit from another tab', async () => {
@@ -400,7 +540,7 @@ describe('replaying the journal on boot', () => {
       throw new Error('quota exceeded');
     });
     const tabA = createCharacterSessionStore({
-      characters: { get: shared.characters.get, put: failing },
+      characters: unchecked({ get: shared.characters.get, put: failing }),
       history: { record: vi.fn(async () => undefined) },
       debounceMs: 10_000,
       journal: storage,
@@ -440,14 +580,17 @@ describe('replaying the journal on boot', () => {
     const { area, storage } = memoryStorage();
     area.map.set(journalKey('gone'), entryText(character('gone', 'Edited')));
     const { characters } = repo();
+    const record = vi.fn(async () => undefined);
     const session = createCharacterSessionStore({
       characters,
-      history: { record: vi.fn(async () => undefined) },
+      history: { record },
       journal: storage,
     });
 
     expect(await session.getState().load('gone')).toBe(false);
     expect(characters.put).not.toHaveBeenCalled();
+    // Its history went with it: nothing to keep the snapshot in.
+    expect(record).not.toHaveBeenCalled();
     expect(area.map.size).toBe(0);
   });
 
@@ -564,7 +707,7 @@ describe('replaying the journal on boot', () => {
       .fn<(id: string) => Promise<CharacterDoc | undefined>>()
       .mockRejectedValueOnce(new Error('read failed'));
     const unreadable = createCharacterSessionStore({
-      characters: { get, put: vi.fn(async () => undefined) },
+      characters: unchecked({ get, put: vi.fn(async () => undefined) }),
       history: { record: vi.fn(async () => undefined) },
       journal: storage,
     });
@@ -572,12 +715,12 @@ describe('replaying the journal on boot', () => {
     expect(area.map.has(journalKey('a'))).toBe(true);
 
     const session = createCharacterSessionStore({
-      characters: {
+      characters: unchecked({
         get: async () => character('a'),
         put: vi.fn(async () => {
           throw new Error('quota exceeded');
         }),
-      },
+      }),
       history: { record: vi.fn(async () => undefined) },
       journal: storage,
     });
@@ -585,5 +728,89 @@ describe('replaying the journal on boot', () => {
     expect(session.getState().doc?.name).toBe('Unsaved');
     expect(session.getState().saveErrors).toEqual({ a: 'quota exceeded' });
     expect(area.map.has(journalKey('a'))).toBe(true);
+  });
+});
+
+// REL-007 (#98): the lifecycle also keeps the character on screen current, so
+// a tab that has nothing unsaved is not refused on its next edit.
+describe('following saves made elsewhere', () => {
+  function changes() {
+    const listeners = new Set<() => void>();
+    return {
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      fire: () => {
+        for (const listener of listeners) listener();
+      },
+      count: () => listeners.size,
+    };
+  }
+
+  it('refreshes the character on screen when the characters table changes', async () => {
+    const shared = repo(character('a'));
+    const session = createCharacterSessionStore({
+      characters: shared.characters,
+      history: { record: vi.fn(async () => undefined) },
+    });
+    const bus = changes();
+    uninstall = installCharacterSessionLifecycle(session, { onCharactersChanged: bus.subscribe });
+    await session.getState().load('a');
+
+    shared.rows.set('a', character('a', 'Saved in another tab'));
+    bus.fire();
+    await vi.waitFor(() => expect(session.getState().doc?.name).toBe('Saved in another tab'));
+
+    uninstall();
+    uninstall = undefined;
+    expect(bus.count()).toBe(0);
+  });
+
+  it('refreshes when the page comes back into view', async () => {
+    const shared = repo(character('a'));
+    const session = createCharacterSessionStore({
+      characters: shared.characters,
+      history: { record: vi.fn(async () => undefined) },
+    });
+    uninstall = installCharacterSessionLifecycle(session, {
+      onCharactersChanged: changes().subscribe,
+    });
+    await session.getState().load('a');
+
+    shared.rows.set('a', character('a', 'Saved while hidden'));
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.waitFor(() => expect(session.getState().doc?.name).toBe('Saved while hidden'));
+  });
+
+  it('asks before the page is left only while a save is refused', async () => {
+    const session = createCharacterSessionStore({
+      characters: {
+        getWithRevision: async () => ({ doc: character('a'), revision: 'r1' }),
+        save: async () => ({ status: 'conflict' }),
+      },
+      history: { record: vi.fn(async () => undefined) },
+      debounceMs: 10_000,
+    });
+    uninstall = installCharacterSessionLifecycle(session, {
+      onCharactersChanged: changes().subscribe,
+    });
+    const leave = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    await session.getState().load('a');
+    expect(leave()).toBe(false);
+
+    session.getState().update((doc) => {
+      doc.name = 'Refused';
+    });
+    await expect(session.getState().flush()).rejects.toThrow('changed in another tab');
+    expect(leave()).toBe(true);
+
+    await session.getState().resolveConflict('a', 'reload');
+    expect(leave()).toBe(false);
   });
 });

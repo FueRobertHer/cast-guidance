@@ -17,9 +17,13 @@ import { assertCharacterDoc, assertJsonWithinLimits } from '@/lib/guards';
  *
  * One entry per character, shared by every tab: two tabs that both go away
  * holding unsaved edits to the same character overwrite each other here, and
- * the last to write wins, as their IndexedDB saves would. A tab only ever
- * removes the entry it wrote itself, so a tab whose save lands later cannot
- * delete another tab's newer entry.
+ * the last to write the entry keeps it; the other tab's snapshot then rests
+ * on its own pagehide save landing. Whatever is replayed is checked: the
+ * replay is a save against the revision it reads (REL-007, #98), and an entry
+ * built on a stored row that has changed since goes into the character's
+ * history instead of over the row. A tab only ever removes the entry it wrote
+ * itself, so a tab whose save lands later cannot delete another tab's newer
+ * entry.
  */
 export const SAVE_JOURNAL_PREFIX = 'cast-guidance:unsaved:';
 
@@ -45,6 +49,13 @@ export interface JournalBase {
 
 export interface JournalEntry {
   doc: CharacterDoc;
+  /**
+   * Set when every edit in the snapshot was one the sheet made by itself
+   * (current HP following the maximum). Such a snapshot is not worth a
+   * history row, or a word to the player, when it cannot be replayed.
+   * Optional and absent on older entries, so the format stays at version 1.
+   */
+  automatic?: boolean;
   /**
    * What the stored row held when the snapshot was made, or may hold if a
    * write already issued lands. Any other content means something else saved
@@ -73,13 +84,17 @@ export function journalKey(id: string): string {
  * Base hashes are computed by the app that wrote the entry and compared by the
  * app that boots next, which after an update reload is a newer one. If the two
  * differ in `contentKey`, or a migration step rewrites the stored row's
- * content, no base matches, and an edit cut off by that reload is dropped
- * rather than replayed. That fails safe (no stale overwrite), and is rare (an
- * update reload with an edit inside the save debounce), so the entry carries
- * no hash-scheme version; add one if either starts to change often.
+ * content, no base matches, and an edit cut off by that reload is kept in
+ * history rather than replayed. That fails safe (no stale overwrite), and is
+ * rare (an update reload with an edit inside the save debounce), so the entry
+ * carries no hash-scheme version; add one if either starts to change often.
+ *
+ * `revision` gives the hash a build from before the stored row's revision was
+ * ignored would have computed for that row: such a build kept the revision it
+ * read in the document, and hashed it with the rest.
  */
-export function contentHash(doc: CharacterDoc): string {
-  const text = contentKey(doc);
+export function contentHash(doc: CharacterDoc, revision?: string): string {
+  const text = contentKey(doc, revision);
   const digest = (seed: number): string => {
     let h1 = 0xdeadbeef ^ seed;
     let h2 = 0x41c6ce57 ^ seed;
@@ -105,7 +120,12 @@ export function writeJournalEntry(
   entry: JournalEntry,
 ): string | undefined {
   try {
-    const text = JSON.stringify({ v: VERSION, bases: entry.bases, doc: entry.doc });
+    const text = JSON.stringify({
+      v: VERSION,
+      bases: entry.bases,
+      doc: entry.doc,
+      ...(entry.automatic === true && { automatic: true }),
+    });
     if (text.length > MAX_JOURNAL_CHARS) return undefined;
     storage().setItem(journalKey(entry.doc.id), text);
     return text;
@@ -151,7 +171,7 @@ function parseEntry(id: string, text: string): StoredJournalEntry {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('journal entry is not an object');
   }
-  const { v, bases, doc } = raw as Record<string, unknown>;
+  const { v, bases, doc, automatic } = raw as Record<string, unknown>;
   // Only a later format is worth keeping; any other version is corrupt.
   if (Number.isInteger(v) && (v as number) > VERSION) {
     throw new NotYetReadable('journal entry is from a newer version');
@@ -171,7 +191,12 @@ function parseEntry(id: string, text: string): StoredJournalEntry {
   assertCharacterDoc(doc);
   const migrated = migrateCharacter(doc);
   if (migrated.id !== id) throw new Error('journal entry belongs to another character');
-  return { doc: migrated, bases: parsedBases, text };
+  return {
+    doc: migrated,
+    bases: parsedBases,
+    text,
+    ...(automatic === true && { automatic: true }),
+  };
 }
 
 /**
