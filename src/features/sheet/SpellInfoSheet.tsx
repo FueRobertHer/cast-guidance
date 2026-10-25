@@ -1,10 +1,11 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
-import { useRegistry } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
+import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { headerFacts } from '@/features/library/fmt';
+import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { PackProblem } from '@/ui/PackProblem';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from '@/ui/sheet';
 
 /**
@@ -44,17 +45,27 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
   const registry = useRegistry();
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
-  const [loaded, setLoaded] = useState(false);
-
+  // Not gated on `open`: this component only mounts on the press that opens
+  // it, so the download is still lazy, and `open` starts false for a frame
+  // (see `useSheetOpenOnMount`). Gated, the first open render saw a settled
+  // hook and said "Couldn't find rules text" before the download had started.
+  // The bare `void` this replaces left "Loading spell…" up for good when the
+  // download failed (#106).
+  const packs = useTypePacks('spell');
+  const messageId = useId();
+  // Opened again after a failure, try again. Closing the sheet does not
+  // unmount this component, so the failure is kept, but it does unmount the
+  // panel, the part that retries on reconnect. Without this, a sheet closed
+  // offline and reopened online would still say the device is offline. Not
+  // on the first opening, which is the download itself however quickly it
+  // failed, and not with the database closed, where no retry can work.
+  const dbOpen = useDbLifecycle((s) => s.state === 'open');
+  const openedBefore = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only an opening asks
   useEffect(() => {
     if (!open) return;
-    let alive = true;
-    void ensureTypePacks('spell').then(() => {
-      if (alive) setLoaded(true);
-    });
-    return () => {
-      alive = false;
-    };
+    if (openedBefore.current && dbOpen && packs.status === 'error') packs.retry();
+    openedBefore.current = true;
   }, [open]);
 
   const spell = useMemo((): Entity | undefined => {
@@ -77,7 +88,13 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+        <Sheet.Content
+          // With no spell to show, the line saying why is the sheet's
+          // description: focus lands on Retry or the sheet itself, and the
+          // line would otherwise go unread.
+          aria-describedby={spell === undefined ? messageId : undefined}
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+        >
           <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-surface-2" />
           <Sheet.Title className="mb-1 shrink-0 text-base font-semibold capitalize">
             {spell !== undefined ? String(spell.name) : name}
@@ -87,9 +104,22 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
           )}
           <div className="min-h-0 flex-1 overflow-y-auto text-sm">
             {spell === undefined ? (
-              <p className="text-ink-muted">
-                {loaded ? `Couldn’t find rules text for “${name}”.` : 'Loading spell…'}
-              </p>
+              packs.status === 'error' ? (
+                // Inside the modal the shell's banner is hidden, so this is
+                // the one alert about the failure (docs/a11y-audit.md).
+                <PackProblem
+                  packs={packs}
+                  what="this spell's description"
+                  alert="always"
+                  messageId={messageId}
+                />
+              ) : (
+                <p id={messageId} className="text-ink-muted">
+                  {packs.status === 'ready'
+                    ? `Couldn’t find rules text for “${name}”.`
+                    : 'Loading spell…'}
+                </p>
+              )
             ) : (
               <>
                 {facts.length > 0 && (

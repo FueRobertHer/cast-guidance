@@ -61,6 +61,9 @@ the binary outright, as an escape hatch when the two drift.
 - **Caster** (`fixtures/caster.ts`): the release has no caster, so a
   character file built on a stored blank character carries a homebrew
   Sorcerer and Cleric (slots, a point pool past twelve, a pool of pips).
+  With `known`, the Sorcerer knows those spells; the fixture release's class
+  spell index puts Fireball on the Sorcerer list, so a caster who knows it
+  has a spell list to fill and a Play row that opens its rules text.
 - **Network guard**: every other host is aborted and fails the test.
 - **Below the routing layer** (`support/launch.ts`): some sockets never pass
   through `context.route` (a `<link rel="preconnect">`, a WebSocket, the
@@ -223,8 +226,12 @@ is recorded by an init script, `heardLines`, so a line said late or already
 gone is still caught). With no banner to say it, a repair pressed offline at
 `full`, the section panel is the one alert; online, with every mirror failing,
 the banner and the section end as one alert whichever failed first. Panels
-are found by their words and their Retry (`failurePanel`), not by role. Never a blank screen, an endless spinner
-or a raw error.
+are found by their words and their Retry (`failurePanel`), not by role. The
+exception is a sheet opened over the page (a cell's `open`, the spell info
+sheet): the modal hides the rest of the app from assistive tech, banner
+included, so inside it the sheet's own panel is the one alert, and the
+checks run inside the dialog. Never a blank screen, an endless spinner or a
+raw error.
 
 | Route | none | essential | partial | full |
 |---|---|---|---|---|
@@ -242,20 +249,24 @@ or a raw error.
 | `/create` | offline | content | content | content |
 | `/c/<id>` and its `stats`, `inventory`, `spells`, `features` tabs | offline | content | content | content |
 | `/c/<id>/build` | offline | content, with the class list's offline panel | content | content |
+| `/c/<caster>/spells` | offline | content: both classes, with one spell list offline panel | as essential | content: Fireball in the Sorcerer list, no panel |
+| `/c/<caster>` with Fireball's sheet open | offline (no sheet) | content; in the sheet, the description's offline panel, the one alert | as essential | content; the sheet shows Fireball's facts |
 | `/c/missing`, `/c/missing/spells` | not found | not found | not found | not found |
 | `/nope` | not found | not found | not found | not found |
 
 Recovery actions per state: offline, Retry (and on its own once back online:
-the banner's queue, the game data panel, the class pickers and the library's
-section panel each retry on reconnect, each pinned by a unit test that fails
-without it; the E2E recoveries cannot tell them apart, because the banner's
-resumed queue lands the same files);
+the banner's queue, the game data panel, the class pickers, the spell list
+and the library's section panel each retry on reconnect, each pinned by a
+unit test that fails without it; the E2E recoveries mostly cannot tell them
+apart, because the banner's resumed queue lands the same files, but the
+caster's spell list at `partial` can: the queue lands Fireball, and only the
+panel's own retry takes the panel away);
 not downloaded while online, "This section couldn't be downloaded" with Retry;
 not found, a link to the nearest page; a corrupted section, "Download this
 section again".
 
 Run it alone with `bun run e2e -- --project=offline-routes` (the levels are
-built first). It is 97 tests, roughly 1.5 minutes on 3 workers.
+built first). It is 107 tests, roughly 1.5 minutes on 3 workers.
 
 The offline short circuit in the data source (no backoff retries while the
 device reports offline, one try per endpoint) is covered by unit tests only:

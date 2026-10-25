@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { MIRROR_PATHS } from '../fixtures/mirror.ts';
 import { characterLink, dataFailureBanner, libraryEntry, onScreen, settingsValue } from './app.ts';
 import {
+  CASTER_NAME,
   type CacheLevel,
   CHARACTER_NAME,
   filesAt,
@@ -33,7 +34,17 @@ export interface Cell {
   /** The way on that the state offers: Retry, or a link to the nearest page. */
   action?: (page: Page) => Locator;
   /** Anything else the cell must show (a panel inside the page's content). */
-  also?: (page: Page) => Locator;
+  also?: (page: Page) => Locator | readonly Locator[];
+  /** What the cell must not show: a panel the level gives it no reason for. */
+  absent?: (page: Page) => Locator;
+  /** What the sheet `RouteCase.open` opens must show; no sheet without it. */
+  sheet?: SheetCell;
+}
+
+/** A sheet opened over the page, checked inside its dialog. */
+export interface SheetCell {
+  shows: (dialog: Locator) => Locator;
+  absent?: (dialog: Locator) => Locator;
 }
 
 export interface RouteCase {
@@ -47,6 +58,8 @@ export interface RouteCase {
    */
   frame: (page: Page) => Locator;
   at: (level: CacheLevel) => Cell;
+  /** Opens a sheet over the page and returns its dialog, for the cell's `sheet`. */
+  open?: (page: Page) => Promise<Locator>;
 }
 
 const APP = 'Cast Guidance';
@@ -88,6 +101,26 @@ export function offlineBanner(page: Page): Locator {
 /** The class pickers' panel for a class list it cannot download while offline. */
 export function offlineClassList(page: Page): Locator {
   return failurePanel(page, "You're offline, so the class list can't be downloaded yet.");
+}
+
+/** The spell list's words, while offline without the spell files. */
+export const OFFLINE_SPELL_LIST = "You're offline, so the spell list can't be downloaded yet.";
+
+/** The caster's Spells tab panel for spell files it cannot download while offline. */
+export function offlineSpellList(page: Page): Locator {
+  return failurePanel(page, OFFLINE_SPELL_LIST);
+}
+
+/**
+ * The spell info sheet's panel for a description it cannot download while
+ * offline. By role: inside the modal the banner is hidden, so this panel is
+ * the alert (docs/a11y-audit.md).
+ */
+export function offlineSpellText(dialog: Locator): Locator {
+  return dialog
+    .getByRole('alert')
+    .filter({ hasText: "You're offline, so this spell's description can't be downloaded yet." })
+    .filter({ has: dialog.page().getByRole('button', { name: 'Retry' }) });
 }
 
 const appNav = (page: Page) => page.getByRole('navigation', { name: 'Main' });
@@ -157,6 +190,12 @@ function compendiumCount(level: CacheLevel): RegExp {
 }
 
 const FIREBALL = 'fireball%7Cphb';
+
+/** A class's block on the caster's Spells tab, by its heading. */
+const classSpells = (page: Page, className: string) =>
+  page.locator('section').filter({
+    has: page.getByRole('heading', { level: 2, name: new RegExp(`^${className} spells`) }),
+  });
 
 export const ROUTES: readonly RouteCase[] = [
   {
@@ -287,6 +326,58 @@ export const ROUTES: readonly RouteCase[] = [
     (page) => page.getByRole('textbox', { name: 'Name' }),
     (level) => (level === 'essential' ? offlineClassList : undefined),
   ),
+  // The caster knows Fireball, which is on the Sorcerer list, so its Spells
+  // tab reads the spell files. Without them (any level short of full) it says
+  // why once, for both of its casting classes.
+  {
+    name: 'caster spells',
+    frame: sheetNav,
+    path: (m) => `/c/${m.casterId}/spells`,
+    at: (level) => {
+      const pageTitle = title('Spells', CASTER_NAME);
+      if (level === 'none') return offlinePage(pageTitle);
+      const sorcerer = (page: Page) => classSpells(page, 'Sorcerer');
+      const cleric = (page: Page) => classSpells(page, 'Cleric');
+      return level === 'full'
+        ? {
+            ...content(pageTitle, (page) =>
+              sorcerer(page).getByRole('link', { name: 'Fireball', exact: true }),
+            ),
+            also: (page) => cleric(page),
+            absent: (page) => page.getByText(/can't be downloaded|couldn't be downloaded/),
+          }
+        : {
+            ...content(pageTitle, sorcerer, retryIn(offlineSpellList)),
+            // Exactly one, by its words: strict, so a panel per class fails.
+            also: (page) => [cleric(page), text(OFFLINE_SPELL_LIST)(page)],
+          };
+    },
+  },
+  // Fireball's row on the caster's Play tab opens its rules text in a sheet,
+  // which reads the spell files on the press.
+  {
+    name: 'caster spell info sheet',
+    frame: sheetNav,
+    path: (m) => `/c/${m.casterId}`,
+    open: async (page) => {
+      await page.getByRole('button', { name: 'Fireball', exact: true }).click();
+      return page.getByRole('dialog', { name: 'Fireball' });
+    },
+    at: (level) => {
+      const pageTitle = title('Play', CASTER_NAME);
+      if (level === 'none') return offlinePage(pageTitle);
+      return {
+        ...content(pageTitle, button('Fireball')),
+        sheet:
+          level === 'full'
+            ? {
+                shows: (dialog) => dialog.getByText('Level:', { exact: true }),
+                absent: (dialog) => dialog.getByText(/find rules text/),
+              }
+            : { shows: offlineSpellText },
+      };
+    },
+  },
   {
     name: 'character that does not exist',
     frame: link('Back to characters'),
@@ -319,7 +410,8 @@ export const ROUTES: readonly RouteCase[] = [
 ];
 
 /** Text that means a page is still waiting; none of it may outlast the state it resolves to. */
-export const SPINNERS = /^(Loading…|Loading character…|Loading game data…|Deriving…)$/;
+export const SPINNERS =
+  /^(Loading…|Loading character…|Loading game data…|Deriving…|Loading spell list…|Loading spell…)$/;
 
 /** RouteError's heading: a page that threw. */
 export const ROUTE_ERROR = 'This screen ran into a problem';

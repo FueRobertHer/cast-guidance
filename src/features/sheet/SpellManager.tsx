@@ -2,8 +2,7 @@ import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
-import { useRegistry } from '@/data5e/hooks';
-import { ensureTypePacks } from '@/data5e/loader';
+import { type TypePacksState, useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
 import {
   applySourcePolicy,
@@ -15,6 +14,7 @@ import {
   classSpellUids,
   classSpellUidsFromEntities,
   getSpellClassLookup,
+  type SpellClassLookup,
 } from '@/data5e/spellLookup';
 import type {
   CharacterDoc,
@@ -28,6 +28,7 @@ import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import type { DocUpdater } from '@/stores/characterSession';
 import { askChoice, askConfirm } from '@/ui/dialogs';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
+import { PackProblem } from '@/ui/PackProblem';
 import { SourceBadge } from '@/ui/SourceBadge';
 import {
   availableCastResources,
@@ -94,6 +95,9 @@ export function spellNeedsConcentration(e: Entity | undefined): boolean {
 
 function ClassSpells({
   block,
+  lookup,
+  waiting,
+  complete,
   doc,
   update,
   allowCasting,
@@ -102,6 +106,12 @@ function ClassSpells({
   alwaysPrepared,
 }: {
   block: SpellcastingBlock;
+  /** Which spells are on which class's list; null until it has been read. */
+  lookup: SpellClassLookup | null;
+  /** Whether the list is still on its way, rather than failed and said above. */
+  waiting: boolean;
+  /** Whether everything the list reads is in, so an empty list is the answer. */
+  complete: boolean;
   doc: CharacterDoc;
   update: DocUpdater;
   allowCasting: boolean;
@@ -112,17 +122,14 @@ function ClassSpells({
   alwaysPrepared: readonly EntityRef[];
 }) {
   const registry = useRegistry();
-  const [classUids, setClassUids] = useState<Set<string> | null>(null);
   const [filter, setFilter] = useState('');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
   const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
 
-  useEffect(() => {
-    void ensureTypePacks('spell');
-    void getSpellClassLookup().then((lookup) =>
-      setClassUids(classSpellUids(lookup, block.className)),
-    );
-  }, [block.className]);
+  const classUids = useMemo(
+    () => (lookup !== null ? classSpellUids(lookup, block.className) : null),
+    [lookup, block.className],
+  );
 
   // Homebrew spells carry classes.fromClassList inline — union them in.
   const homebrewUids = useMemo(
@@ -383,7 +390,19 @@ function ClassSpells({
           className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
         />
       </label>
-      {classUids === null && <p className="text-sm text-ink-muted">Loading spell list…</p>}
+      {classUids === null && waiting && (
+        <p className="text-sm text-ink-muted">Loading spell list…</p>
+      )}
+      {/* Said, not left as a bare heading: a homebrew class with no list, or a
+          search or sources that leave nothing (the offer below then says how
+          many are hidden). */}
+      {complete && classUids !== null && byLevel.size === 0 && (
+        <p className="text-sm text-ink-muted">
+          {filter.trim() === ''
+            ? `No spells on the ${block.className} list to show.`
+            : `No ${block.className} spells match “${filter.trim()}”.`}
+        </p>
+      )}
       {sourceHiddenCount > 0 && (
         <button
           type="button"
@@ -510,6 +529,67 @@ function ClassSpells({
   );
 }
 
+const NO_LOOKUP: SpellClassLookup = {};
+
+/**
+ * The generated index of which spells each class can learn, read once for
+ * every casting class, with somewhere for its failure to go.
+ *
+ * It is one essentials file, so it is normally on the device already, but the
+ * read can still fail: the row went missing and the network is down, or
+ * IndexedDB refused the read. That used to be a rejection nothing caught, and
+ * the list said "Loading spell list…" for good. Until it is in hand it is read
+ * again whenever the spell download's status moves, so the Retry on the spell
+ * list's panel, the only one on screen until the spell files are in, retries
+ * this too.
+ */
+function useClassLookup(
+  enabled: boolean,
+  packsStatus: TypePacksState['status'],
+): { lookup: SpellClassLookup | null; problem: TypePacksState } {
+  const [lookup, setLookup] = useState<SpellClassLookup | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // Read once: in hand, a later status change has nothing to fix.
+  const settled = lookup !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `packsStatus` and `attempt` are what ask for a fresh read
+  useEffect(() => {
+    if (!enabled || settled) return;
+    let alive = true;
+    // Back to waiting while it is read again, as a retried download is.
+    setFailure(null);
+    getSpellClassLookup().then(
+      (next) => {
+        if (!alive) return;
+        setLookup(next);
+        setFailure(null);
+      },
+      (e: unknown) => {
+        if (!alive) return;
+        setFailure(e instanceof Error ? e.message : String(e));
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [enabled, settled, packsStatus, attempt]);
+  return {
+    // Failed, the lists fall back to the homebrew spells, which carry their
+    // classes inline, rather than to a list that never arrives.
+    lookup: lookup ?? (failure !== null ? NO_LOOKUP : null),
+    problem: {
+      status: failure !== null ? 'error' : lookup !== null ? 'ready' : 'loading',
+      error: failure,
+      // Never "offline": the read is normally local, so a failure is this
+      // device's storage far more often than the network, and the panel is
+      // given words that say so instead.
+      offline: false,
+      retry: () => setAttempt((n) => n + 1),
+      repair: () => undefined,
+    },
+  };
+}
+
 /** Full spell management for every casting class on the character. */
 export function SpellManager({
   doc,
@@ -522,7 +602,13 @@ export function SpellManager({
   update: DocUpdater;
   allowCasting?: boolean;
 }) {
-  if (sheet.spellcasting.length === 0) {
+  const caster = sheet.spellcasting.length > 0;
+  // Once for the whole page, not once per class: a character with two casting
+  // classes reads the same spell files, and one panel says why both are short.
+  // Nothing for a character with no spellcasting, which has no list to fill.
+  const packs = useTypePacks(caster ? 'spell' : undefined);
+  const { lookup, problem } = useClassLookup(caster, packs.status);
+  if (!caster) {
     return <p className="text-sm text-ink-muted">This character has no spellcasting.</p>;
   }
   // Always-prepared grants aren't tied to a class, so they only say which of a
@@ -533,10 +619,26 @@ export function SpellManager({
       : [];
   return (
     <div className="flex flex-col gap-5">
+      <PackProblem packs={packs} what="the spell list" />
+      {/* Only with the spell files in: while they are failing or being
+          retried, the spell list's panel speaks for both (its Retry reads
+          the index again too), so one outage is one alert. */}
+      {packs.status === 'ready' && (
+        <PackProblem
+          packs={problem}
+          what="the class spell lists"
+          message={`The class spell lists couldn't be read on this device${
+            problem.error === null ? '.' : `: ${problem.error}`
+          }`}
+        />
+      )}
       {sheet.spellcasting.map((block) => (
         <ClassSpells
           key={block.classUid}
           block={block}
+          lookup={lookup}
+          waiting={packs.status !== 'error'}
+          complete={packs.status === 'ready' && problem.status === 'ready'}
           doc={doc}
           update={update}
           allowCasting={allowCasting}

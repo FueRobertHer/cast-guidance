@@ -15,8 +15,16 @@ import { Component as FeaturesTab } from './FeaturesTab';
 import { Component as SpellsTab } from './SpellsTab';
 import { Component as StatsTab } from './StatsTab';
 
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
-vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
+vi.mock('@/data5e/hooks', () => ({
+  useRegistry: () => makeTestContext(),
+  useTypePacks: () => ({
+    status: 'ready',
+    error: null,
+    offline: false,
+    retry: () => undefined,
+    repair: () => undefined,
+  }),
+}));
 // No stored source policy: everything is browsable.
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => undefined }));
 // The class spell list is a downloaded index; the two bolts stand in for it.

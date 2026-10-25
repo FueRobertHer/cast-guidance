@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { casterFile } from '../fixtures/caster.ts';
 import { PINNED_TAG } from '../fixtures/mirror.ts';
-import { createBlankCharacter, gotoRoster, settingsValue } from '../support/app.ts';
+import {
+  answerImportPreview,
+  createBlankCharacter,
+  gotoRoster,
+  importCharacterFile,
+  settingsValue,
+} from '../support/app.ts';
 import {
   CACHE_LEVELS,
+  CASTER_NAME,
   type CacheLevel,
   filesAt,
   HOMEBREW_NAME,
@@ -11,16 +19,37 @@ import {
   publishLevel,
 } from '../support/cacheLevels.ts';
 import { expect, test } from '../support/coldLaunch.ts';
-import { countDataFiles } from '../support/idb.ts';
+import { countDataFiles, getCharacter } from '../support/idb.ts';
 import { levelsDir } from '../support/stableOrigin.ts';
 import { waitForSwControl } from '../support/sw.ts';
 
 /**
  * Builds one persistent profile per cache level at the stable origin, for the
  * offline route matrix to copy (`offline-routes.spec.ts`). Each holds a
- * character and an editable homebrew file, the level's game data, and an
- * installed service worker, and is closed before it is published.
+ * blank character, a caster who knows Fireball, an editable homebrew file,
+ * the level's game data, and an installed service worker, and is closed
+ * before it is published.
  */
+
+/** The caster's id: imported, so it is the file's to choose. */
+const CASTER_ID = 'e2e-matrix-caster';
+
+/**
+ * Imports the caster (fixtures/caster.ts), built on the stored blank
+ * character, knowing Fireball: its Play tab lists the spell whatever the
+ * level, and its Spells tab reads the spell files.
+ */
+async function importCaster(page: Page, blankId: string): Promise<string> {
+  const blank = await getCharacter(page, blankId);
+  if (blank === undefined) throw new Error('The blank character was not stored');
+  const { file, previewTitle } = casterFile(blank, CASTER_ID, CASTER_NAME, {
+    known: [{ name: 'Fireball', source: 'PHB' }],
+  });
+  await gotoRoster(page);
+  await importCharacterFile(page, file);
+  await answerImportPreview(page, previewTitle);
+  return CASTER_ID;
+}
 
 /** Creates an editable homebrew collection and returns its id. */
 async function createHomebrew(page: Page): Promise<string> {
@@ -54,11 +83,12 @@ for (const level of CACHE_LEVELS) {
 
     await gotoRoster(page);
     const characterId = await createBlankCharacter(page);
+    const casterId = await importCaster(page, characterId);
     const homebrewId = await createHomebrew(page);
     await expectLevelSettled(page, level);
     await waitForSwControl(page);
     await context.close();
 
-    publishLevel(dir, { level, characterId, homebrewId });
+    publishLevel(dir, { level, characterId, casterId, homebrewId });
   });
 }

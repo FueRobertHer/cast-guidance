@@ -17,6 +17,13 @@ const SPELLS = [
 ];
 
 vi.mock('@/data5e/hooks', () => ({
+  useTypePacks: () => ({
+    status: 'ready',
+    error: null,
+    offline: false,
+    retry: () => undefined,
+    repair: () => undefined,
+  }),
   useRegistry: () => ({
     get: (_type: string, name: string, source?: string) =>
       SPELLS.find(
@@ -27,7 +34,6 @@ vi.mock('@/data5e/hooks', () => ({
     byType: () => SPELLS,
   }),
 }));
-vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
 vi.mock('@/data5e/spellLookup', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/data5e/spellLookup')>()),
   getSpellClassLookup: () => Promise.resolve({}),

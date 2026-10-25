@@ -33,8 +33,8 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Area | States |
 |---|---|
 | Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
-| Character sheet | `sheet-play`, `sheet-stats`, `sheet-items`, `sheet-spells`, `sheet-more`, `sheet-build` |
-| Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build) |
+| Character sheet | `sheet-play`, `sheet-stats`, `sheet-items`, `sheet-spells`, `sheet-more`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell) |
+| Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
 | Other routes | `settings`, `creator` (step 1), `not-found` |
@@ -42,11 +42,12 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
 | Desktop layout | `desktop-roster`, `desktop-library`, `desktop-settings`, `desktop-sheet-play` |
 
-The character is a blank sheet, and the game data is the suite's small fixture
-release (one class, one spell, one of most other things), so a scan sees every
-control a page draws but not every row a full compendium would. Not scanned
-yet: the creator past step 1, a character at 0 HP (the death-save row), and
-the sheet with a high-level, multiclass character.
+The character is a blank sheet, except in the caster states (the Sorcerer 13
+and Cleric 2 of `e2e/fixtures/caster.ts`, who knows Fireball), and the game
+data is the suite's small fixture release (one class, one spell, one of most
+other things), so a scan sees every control a page draws but not every row a
+full compendium would. Not scanned yet: the creator past step 1, a character
+at 0 HP (the death-save row), and the caster's other tabs.
 
 ### Reduced motion
 
@@ -202,7 +203,7 @@ every selector would be a false change.
 The first run found 14 serious nodes across 9 states. Unmasking the drawers
 found one more (a destructive choice's red label in the actions sheet). All
 are fixed, so the baseline is empty: axe reports no violation in any of the
-43 states. That is not the same as every node passing. Some nodes are
+46 states. That is not the same as every node passing. Some nodes are
 undecided, and those are listed, not gated:
 
 | Undecided `color-contrast` | Nodes | States |
@@ -210,11 +211,13 @@ undecided, and those are listed, not gated:
 | Before hiding vaul's overshoot strip | 59 | 15 |
 | After it, same 37 states | 16 | 9 |
 | After it, with the 6 states added since (the two import previews add none) | 22 | 12 |
+| With the caster's 3 states (`sheet-spells-caster` adds none) | 26 | 14 |
 
 What is left is of two kinds. Most are symbols with no text (the Inspiration
 star, the toast icon), which have no contrast requirement: in `sheet-play`,
 `desktop-sheet-play`, `dice-tray`, `history-drawer`, `long-rest-confirm`,
-`banner-save-error`, `banner-db-closed` and `toast-offline-ready`. The rest
+`spell-info-sheet`, `spell-pack-problem`, `banner-save-error`,
+`banner-db-closed` and `toast-offline-ready`. The rest
 are text another layer partly covers, so axe cannot pick one background:
 under the fixed bottom nav or the update toast (`settings`,
 `desktop-settings`, `toast-app-update`), on a translucent toast
@@ -244,6 +247,7 @@ screen-reader and zoom passes below look at them on a device.
 | 2026-10-25 (review) | Text at 200% with the Conditions fold open: the Exhaustion stepper's count sat in a fixed `w-10` between `justify-between` neighbours, so the + ran out of its card and the page was 478 px wide at 412 px. | The count grows with its text (`min-w-10`, no wrap), and the stepper wraps under the name, at the right, when both do not fit. The 200% and 320 px passes now open every fold. The HP total also stays readable: it breaks only before "/ max", and a floor of 3.25rem or its min-content, whichever is wider, gives it a line of its own at large text rather than split "0 / 0". Measured: at 360 and 412 px totals up to 1234 / 1234 sit between the pairs; at 320 px a two-digit total does, breaking before "/ max", and a three- or four-digit one moves the heal pair onto a line of its own rather than overlap it. |
 | 2026-10-25 | Focus not obscured (2.4.11): in landscape, Tab scrolled a control just into view under the bottom tab bar (the Play tab's turn tracker, Stats' skills, Build's sections), and Shift+Tab under the sheet header and the build page's bar, entirely hidden. | The page's scroll padding clears the bars: 4rem at the bottom below `lg` (app.css), and at the top the sheet header's and the build bar's measured heights (`useStickyHeight`, which now also publishes `--sheet-header-h` from the root). |
 | 2026-10-25 | Reflow at 320 px: the Play tab's turn tracker (Action, Bonus, Reaction, End turn) was 5 px wider than the screen. | The row wraps, End turn kept at the right, only when it cannot fit. |
+| 2026-10-25 (#106) | A failure inside a modal sheet: the spell info sheet now says why it has no spell when the spell files failed to download. By the one-voice rule (A11Y-002) its panel would be a plain visual while the shell's data banner alerts the outage, but the open sheet's modal sets `aria-hidden` on the whole app behind it, banner and announcer included, so nothing would say it. Opened offline, a screen reader would read "Loading spell…" and then nothing as the failure landed. | The panel takes `alert="always"` (`PackProblem`), for in-modal use only: inside the modal it is the only voice, so it is not a second one. The same goes for its closed-database line ("Reload this tab to load this spell's description."), an alert in the modal because the database banner is hidden too. `useFailureAlert`'s contract is unchanged everywhere else. While no spell is shown, the sheet's `aria-describedby` points at the line saying why (not at the body, which holds Retry), so focus landing on Retry or the sheet as it opens reads the reason. Pinned in `SpellInfoSheet.test.tsx` and `PackProblem.test.tsx`; the offline route matrix expects exactly one alert inside the sheet below `full`, and axe scans the state as `spell-pack-problem`. |
 | 2026-10-25 | Text at 200%: a library tile's one-word label (Backgrounds, Languages) ran past its card and the screen; the Play tab's HP row (the damage and heal pairs around the total) was 121 px wider than the phone. | The tile label breaks inside a long word (`break-words`). The HP row wraps, the heal pair kept at the right; the total has a zero flex basis, so a three-digit total at 320 px still breaks onto two lines in place, as before, and the row wraps only where it would have overflowed. |
 
 Open findings, for follow-up issues:
@@ -299,6 +303,7 @@ The automated column says what CI already holds in Chromium (passing on
 | Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the eleven dialogs and drawers listed above. |
 | Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable. | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view. Not announcement or length. |
 | Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. | `reduced-motion.spec.ts`. |
+| A failure inside a sheet | Offline, without the spell files, open a known spell's rules text from a caster's Play tab: the sheet is announced with its name, the reason ("You're offline, so this spell's description can't be downloaded yet.") is read once, whether the failure lands before or after focus moves into the sheet, and Retry is reachable. | `offline-routes.spec.ts`: one alert inside the sheet, none outside it; `SpellInfoSheet.test.tsx`: the sheet's description is the reason. Not the timing against a real screen reader. |
 
 ### Results
 
