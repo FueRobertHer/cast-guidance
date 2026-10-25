@@ -7,6 +7,7 @@ import { loadVercelRouting } from '../server/vercelRouting.ts';
 import { handleOverlays } from './app.ts';
 import { DEVICE } from './device.ts';
 import { ConsoleGuard, NetworkGuard } from './guards.ts';
+import { hermeticLaunchOptions } from './launch.ts';
 
 const REPO = path.resolve(import.meta.dirname, '../..');
 const DIST = path.join(REPO, 'dist');
@@ -230,14 +231,27 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   launchProfile: async (
-    { playwright, browserName, launchOptions, server, mirror, networkGuard, consoleGuard, network },
+    {
+      playwright,
+      browserName,
+      channel,
+      launchOptions,
+      server,
+      mirror,
+      networkGuard,
+      consoleGuard,
+      network,
+    },
     use,
   ) => {
     const launched: BrowserContext[] = [];
     await use(async (dir, options = {}) => {
       const context = await playwright[browserName].launchPersistentContext(dir, {
-        ...launchOptions,
-        ...(options.newHeadless ? { channel: 'chromium' } : {}),
+        // The project's browser build (`channel`, unset for the headless
+        // shell), or full Chromium in new headless when a spec asks for it,
+        // held off the real network either way.
+        ...hermeticLaunchOptions(launchOptions),
+        channel: options.newHeadless ? 'chromium' : channel,
         ...DEVICE,
         baseURL: server.url,
         offline: options.offline ?? false,

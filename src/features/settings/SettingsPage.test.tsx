@@ -2,7 +2,7 @@
 // The data section makes two claims a user acts on: which version is installed
 // and whether the compendium is complete. Both can fail, and a failure that
 // only reaches the console leaves the page asserting something untrue.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const loader = vi.hoisted(() => ({
@@ -22,6 +22,7 @@ vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
+import { flushLanded, noteFileLanded } from '@/data5e/landing';
 import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { onboardingStore } from '@/stores/onboarding';
@@ -41,7 +42,7 @@ afterEach(() => {
   loader.updateToTag.mockResolvedValue(undefined);
   loader.downloadAllPacks.mockResolvedValue(undefined);
   loader.verifyFullOffline.mockResolvedValue({ cached: 31, total: 48 });
-  dataStatusStore.setState({ rolledBackFrom: undefined });
+  dataStatusStore.setState({ rolledBackFrom: undefined, phase: 'idle' });
 });
 
 describe('SettingsPage data section', () => {
@@ -72,6 +73,50 @@ describe('SettingsPage data section', () => {
     // Once every file is cached the claim is true, so the control retires.
     await waitFor(() => expect(screen.queryByText('31/48 files')).toBeNull());
     expect(screen.getByText('ready ✓')).toBeTruthy();
+  });
+
+  it('counts the compendium again when the background download finishes', async () => {
+    // Opened mid-drain: the count on mount is a snapshot of a moving target.
+    dataStatusStore.setState({ phase: 'working' });
+    render(<SettingsPage />);
+    expect(await screen.findByText('31/48 files')).toBeTruthy();
+
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    act(() => dataStatusStore.getState().setPhase('done'));
+    expect(await screen.findByText('ready ✓')).toBeTruthy();
+  });
+
+  it('counts the compendium again as downloaded files land', async () => {
+    dataStatusStore.setState({ phase: 'working' });
+    render(<SettingsPage />);
+    expect(await screen.findByText('31/48 files')).toBeTruthy();
+
+    loader.verifyFullOffline.mockResolvedValue({ cached: 40, total: 48 });
+    act(() => {
+      noteFileLanded();
+      flushLanded();
+    });
+    expect(await screen.findByText('40/48 files')).toBeTruthy();
+  });
+
+  it('keeps the newest count when an older one resolves after it', async () => {
+    let finishFirst: (v: { cached: number; total: number }) => void = () => undefined;
+    loader.verifyFullOffline.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishFirst = resolve;
+      }),
+    );
+    dataStatusStore.setState({ phase: 'working' });
+    render(<SettingsPage />);
+
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    act(() => dataStatusStore.getState().setPhase('done'));
+    expect(await screen.findByText('ready ✓')).toBeTruthy();
+
+    // The mount's count, taken before the drain finished, arrives last.
+    await act(async () => finishFirst({ cached: 13, total: 48 }));
+    expect(screen.getByText('ready ✓')).toBeTruthy();
+    expect(screen.queryByText('13/48 files')).toBeNull();
   });
 
   it('says the offline inventory could not be read, and still offers the download', async () => {

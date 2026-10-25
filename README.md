@@ -53,8 +53,9 @@ floors in `vite.config.ts` or the build outgrows `scripts/bundle-budget.json`.
 `e2e/` holds Playwright specs that run the production build in Chromium, as a
 phone, with the service worker on and every network host mocked: first load,
 offline reload and cold offline restart, service-worker updates (apply, defer,
-failed install), the character lifecycle and its save flushes, and import and
-export. The server copies `vercel.json`'s headers and rewrites, so the suite
+failed install), the character lifecycle and its save flushes, import and
+export, and data installs (failed, interrupted and retried, updates and their
+rollback). The server copies `vercel.json`'s headers and rewrites, so the suite
 runs under the enforced CSP, and any console error or CSP violation fails a
 test. CI runs it as the separate `e2e` job. Install the pinned browser once
 with `bunx playwright install chromium`; see [`e2e/README.md`](e2e/README.md)

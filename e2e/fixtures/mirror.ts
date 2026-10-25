@@ -7,6 +7,31 @@ export const PINNED_TAG = 'v2.32.0';
 /** Every file of the fixture release, which a full install fetches. */
 export const MIRROR_PATHS: readonly string[] = Object.keys(VALID_BODIES);
 
+/** A newer compatible release, for the data-update specs. */
+export const NEXT_TAG = 'v2.33.0';
+
+/** A species only {@link NEXT_TAG} has, so a page shows which release it reads. */
+export const NEXT_ONLY_RACE = 'Newfolk';
+
+/**
+ * {@link NEXT_TAG}'s files: the shared valid release with one more species,
+ * so the same paths install and the library tells the two apart.
+ */
+export const NEXT_BODIES: Readonly<Record<string, unknown>> = {
+  ...VALID_BODIES,
+  'races.json': {
+    race: [
+      ...(VALID_BODIES['races.json'] as { race: readonly unknown[] }).race,
+      { name: NEXT_ONLY_RACE, source: 'PHB' },
+    ],
+  },
+};
+
+/** Serves {@link NEXT_BODIES} for {@link NEXT_TAG} and the shared release for every other tag. */
+export function withNextRelease(tag: string): Readonly<Record<string, unknown>> {
+  return tag === NEXT_TAG ? NEXT_BODIES : VALID_BODIES;
+}
+
 const JSDELIVR =
   /^https:\/\/cdn\.jsdelivr\.net\/gh\/5etools-mirror-3\/5etools-src@([^/]+)\/data\/(.+)$/;
 const RAW_GITHUB =
@@ -67,7 +92,7 @@ export class Mirror {
   tagListRequests = 0;
 
   private tags: readonly string[];
-  private readonly bodies: (tag: string) => Readonly<Record<string, unknown>>;
+  private bodies: (tag: string) => Readonly<Record<string, unknown>>;
   private fail: FailRule | undefined;
   private hold: HoldRule | undefined;
   private held: Array<() => void> = [];
@@ -85,6 +110,11 @@ export class Mirror {
 
   setTags(tags: readonly string[]): void {
     this.tags = tags;
+  }
+
+  /** Replaces the bodies served per tag (a new release published, say). */
+  setBodies(bodies: (tag: string) => Readonly<Record<string, unknown>>): void {
+    this.bodies = bodies;
   }
 
   setFail(rule: FailRule | undefined): void {
