@@ -15,6 +15,7 @@ import { newCharacterDoc } from '@/engine/types';
 import { characterSessionStore, createCharacterSessionStore } from '@/stores/characterSession';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { DB_LIFECYCLE_COPY } from '@/ui/DbLifecycleBanner';
+import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { characterRepo } from './characterRepo';
 import { db } from './db';
 import { historyRepo } from './historyRepo';
@@ -99,6 +100,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   cleanup();
+  await removeIdbFaults();
   vi.restoreAllMocks();
   // Back to one fresh database at the app's version, open, for the next test.
   db.close();
@@ -262,5 +264,75 @@ describe('a tab coming back from the back/forward cache', () => {
     await other.open();
     expect(await other.table('characters').count()).toBe(1);
     other.close();
+  });
+});
+
+/** This tab's first open, as on a fresh page load: nothing remembered yet. */
+async function firstOpen(): Promise<void> {
+  db.close();
+  dbLifecycleStore.setState({ state: 'open', instanceId: undefined });
+  await db.open().catch(() => undefined);
+}
+
+describe('a copy of the app older than the saved data', () => {
+  // Stale HTML, or a deploy rolled back below a schema bump: no other tab is
+  // involved, so the banner must not say one is.
+  it('stops at its first open and says this copy is the old one', async () => {
+    render(<StorageBanners />);
+    db.close();
+    const newer = new Dexie(NAME);
+    newer.version(5).stores({ characters: 'id, name, updatedAt', probe: 'id' });
+    await newer.open();
+    newer.close();
+
+    await firstOpen();
+
+    expect(dbLifecycleStore.getState().state).toBe('stale');
+    await expect(db.characters.put(newCharacterDoc('c2', 'Ash', 'tag'))).rejects.toMatchObject({
+      name: 'DatabaseClosedError',
+    });
+    expect(await screen.findByText(DB_LIFECYCLE_COPY.stale)).toBeTruthy();
+    await newer.open();
+    expect(await newer.table('characters').count()).toBe(1);
+    newer.close();
+  });
+});
+
+describe('an instance id that could not be stamped', () => {
+  it('opens anyway, then adopts the id another tab stamped instead of calling it a delete', async () => {
+    await db.settings.delete(DB_INSTANCE_KEY);
+    // The device is full when this tab first opens (the fixture's own open is
+    // that open), so its stamp fails.
+    dbLifecycleStore.setState({ instanceId: undefined });
+    const fault = await injectIdbFault(db, { tables: ['settings'], times: 1 });
+    expect(fault.hits).toBe(1);
+    expect(dbLifecycleStore.getState().instanceId).toBeNull();
+    await fault();
+
+    // Another tab, with room again, stamps its own id.
+    pageTransition('pagehide');
+    const other = new Dexie(NAME);
+    await other.open();
+    await other.table('settings').put({ key: DB_INSTANCE_KEY, value: 'other-tab' });
+    other.close();
+    pageTransition('pageshow');
+
+    await db.characters.put(newCharacterDoc('c2', 'Ash', 'tag'));
+    expect(dbLifecycleStore.getState()).toMatchObject({ state: 'open', instanceId: 'other-tab' });
+    expect(await db.characters.count()).toBe(2);
+    // Adopted, not overwritten: the other tab's next open still finds its own id.
+    expect((await db.settings.get(DB_INSTANCE_KEY))?.value).toBe('other-tab');
+  });
+
+  it('puts a lost id back on the next open, and keeps saving', async () => {
+    const seen = dbLifecycleStore.getState().instanceId;
+    expect(typeof seen).toBe('string');
+    await db.settings.delete(DB_INSTANCE_KEY);
+    pageTransition('pagehide');
+    pageTransition('pageshow');
+
+    await db.characters.put(newCharacterDoc('c2', 'Ash', 'tag'));
+    expect(dbLifecycleStore.getState()).toMatchObject({ state: 'open', instanceId: seen });
+    expect((await db.settings.get(DB_INSTANCE_KEY))?.value).toBe(seen);
   });
 });

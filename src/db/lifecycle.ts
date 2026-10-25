@@ -9,6 +9,13 @@ interface SettingRow {
   value: unknown;
 }
 
+/** The message a write gets once this tab has stopped using the database. */
+const CLOSED_REASONS: Readonly<Record<Exclude<DbLifecycle, 'open'>, string>> = {
+  deleted: 'The database was deleted under this tab',
+  superseded: 'A newer version of the database is open in another tab',
+  stale: 'The database is newer than this copy of the app',
+};
+
 function newInstanceId(): string {
   // `randomUUID` exists only in secure contexts; a plain-http dev server is not one.
   return (
@@ -37,10 +44,12 @@ function newInstanceId(): string {
  * and reopens on its next write after Back. Every open is therefore checked
  * as well, before anything else may use it:
  * - a database at a newer version than this build knows was upgraded by
- *   newer code (or this build is stale);
+ *   newer code: `superseded` on a reopen, `stale` on this tab's first open,
+ *   where it is this copy of the app that is old;
  * - a database this tab has to create, or one carrying a different instance
- *   id than the one this tab saw on its first open, was deleted by another
- *   tab, which may have made a fresh one since.
+ *   id than the one this tab adopted, was deleted under it (another tab's
+ *   reset, or the browser clearing storage), and may have been made afresh.
+ *   A tab whose stamp never got written adopts whatever it finds instead.
  * Either way the open closes with auto-open off and fails, so the write that
  * caused it rejects with `DatabaseClosedError` and nothing lands.
  *
@@ -52,11 +61,7 @@ export function installDbLifecycle(database: Dexie, store = dbLifecycleStore): (
   const closeFor = (state: Exclude<DbLifecycle, 'open'>): Error => {
     database.close();
     store.getState().markClosed(state);
-    return new Dexie.DatabaseClosedError(
-      state === 'deleted'
-        ? 'The database was deleted in another tab'
-        : 'A newer version of the database is open in another tab',
-    );
+    return new Dexie.DatabaseClosedError(CLOSED_REASONS[state]);
   };
 
   const onVersionChange = (event: IDBVersionChangeEvent): false => {
@@ -66,45 +71,56 @@ export function installDbLifecycle(database: Dexie, store = dbLifecycleStore): (
   };
 
   // Runs inside the upgrade that creates the database. A tab that has opened
-  // it before is recreating one another tab deleted: throwing aborts that
-  // upgrade, so the deleted database is not brought back empty either.
+  // it before is recreating one that was deleted under it: throwing aborts
+  // that upgrade, so the deleted database is not brought back empty either.
   const onPopulate = (): void => {
     if (store.getState().instanceId === undefined) return;
     throw closeFor('deleted');
   };
 
-  const onReady = async (vipDb: Dexie): Promise<void> => {
-    // Dexie stores its version times ten.
-    if (Math.floor(database.backendDB().version / 10) > database.verno) {
-      throw closeFor('superseded');
-    }
+  /**
+   * Stamp `id` only if the row is still missing, in one read-write
+   * transaction, so it never overwrites an id another tab wrote first.
+   * Resolves to the id now stored, or null when the write failed (a full
+   * device): a failed stamp must not keep the app from opening.
+   */
+  const stampIfMissing = async (vipDb: Dexie, id: string): Promise<string | null> => {
     const settings = vipDb.table<SettingRow, string>('settings');
+    try {
+      return await vipDb.transaction('rw', settings, async () => {
+        const stored = (await settings.get(DB_INSTANCE_KEY))?.value;
+        if (typeof stored === 'string') return stored;
+        await settings.put({ key: DB_INSTANCE_KEY, value: id });
+        return id;
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const onReady = async (vipDb: Dexie): Promise<void> => {
     const seen = store.getState().instanceId;
-    if (seen === undefined) {
-      // First open in this tab: adopt the stored id, or stamp one. Read and
-      // written in one transaction so two tabs booting together agree.
-      let id: string | undefined;
-      try {
-        id = await vipDb.transaction('rw', settings, async () => {
-          const stored = (await settings.get(DB_INSTANCE_KEY))?.value;
-          if (typeof stored === 'string') return stored;
-          const fresh = newInstanceId();
-          await settings.put({ key: DB_INSTANCE_KEY, value: fresh });
-          return fresh;
-        });
-      } catch {
-        // A full device must not keep the app from opening. Without a stored
-        // id a later reopen restores this one (below), so the check still works.
-        id = newInstanceId();
-      }
-      store.setState({ instanceId: id });
+    // Dexie stores its version times ten. Newer data than this build knows:
+    // on a reopen another tab upgraded it; on this tab's first open it is
+    // this copy of the app that is old (stale HTML, or a rollback below a
+    // schema bump). Either way old code must not write the newer shape.
+    if (Math.floor(database.backendDB().version / 10) > database.verno) {
+      throw closeFor(seen === undefined ? 'stale' : 'superseded');
+    }
+    if (seen === undefined || seen === null) {
+      // First open, or every stamp so far failed: adopt whatever is stored,
+      // or stamp one. A tab that never knew an id cannot tell a reset from
+      // its own failed write, so it never calls this a delete.
+      store.setState({ instanceId: await stampIfMissing(vipDb, newInstanceId()) });
       return;
     }
+    const settings = vipDb.table<SettingRow, string>('settings');
     const stored = (await settings.get(DB_INSTANCE_KEY))?.value;
     if (stored === undefined) {
-      // The database was not recreated (that would have stopped in populate),
-      // so the row was lost some other way, such as a failed first stamp.
-      await settings.put({ key: DB_INSTANCE_KEY, value: seen }).catch(() => undefined);
+      // Not recreated (that stops in populate), so the row went some other
+      // way. Put this tab's id back, or adopt the one another tab wrote first.
+      const now = await stampIfMissing(vipDb, seen);
+      if (now !== null) store.setState({ instanceId: now });
       return;
     }
     if (stored !== seen) throw closeFor('deleted');

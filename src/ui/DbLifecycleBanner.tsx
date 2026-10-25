@@ -1,12 +1,16 @@
 import { type DbLifecycle, useDbLifecycle } from '@/stores/dbLifecycle';
 
-/** What the banner says for each closed state. Neither one is something this tab did wrong. */
+/** What the banner says for each closed state. None of them is something the person did wrong. */
 export const DB_LIFECYCLE_COPY: Readonly<Record<Exclude<DbLifecycle, 'open'>, string>> = {
   deleted:
-    'App data was reset in another tab, so this tab has stopped saving. Reload to start fresh.',
+    "This app's saved data was cleared (from another tab or by the browser), so this tab has " +
+    'stopped saving. Reload to start fresh.',
   superseded:
     'A newer version of the app opened in another tab, so this tab has stopped saving, and ' +
     'changes made here from now on are not kept. Reload to use the new version.',
+  stale:
+    'This copy of the app is older than your saved data, so it has stopped saving. Reload to ' +
+    'get the latest version; if that does not help, the app was rolled back and needs an update.',
 };
 
 function reloadPage(): void {

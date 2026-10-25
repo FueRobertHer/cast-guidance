@@ -20,8 +20,11 @@ describe('DbLifecycleBanner', () => {
   });
 
   it.each([
-    ['deleted', /reset in another tab/],
+    // Another tab's reset and the browser clearing storage look the same from here.
+    ['deleted', /saved data was cleared \(from another tab or by the browser\)/],
     ['superseded', /newer version of the app opened in another tab/],
+    // No other tab needs to exist for this one: it is this copy that is old.
+    ['stale', /This copy of the app is older than your saved data/],
   ] as const)('says why this tab stopped saving when %s', (state, copy) => {
     render(<DbLifecycleBanner onReload={vi.fn()} />);
     const status = screen.getByRole('status');
@@ -57,9 +60,14 @@ describe('DbLifecycleBanner', () => {
     expect(DB_LIFECYCLE_COPY.superseded).toMatch(/changes made here from now on are not kept/);
   });
 
-  it('never words the change as something this tab did wrong', () => {
+  it('does not claim another tab for an old copy of the app', () => {
+    expect(DB_LIFECYCLE_COPY.stale).not.toMatch(/another tab/);
+    expect(DB_LIFECYCLE_COPY.stale).toMatch(/rolled back and needs an update/);
+  });
+
+  it('never words the change as something the person did wrong', () => {
     for (const copy of Object.values(DB_LIFECYCLE_COPY)) {
-      expect(copy).toMatch(/another tab/);
+      expect(copy).toMatch(/stopped saving/);
       expect(copy).not.toMatch(/\byou\b|error|fail|wrong/i);
     }
   });
