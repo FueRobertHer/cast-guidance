@@ -27,6 +27,7 @@ import { useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { UndoBar } from '@/ui/UndoBar';
+import { GettingStarted } from '../onboarding/GettingStarted';
 import { homebrewForExport } from './homebrewExport';
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
@@ -133,6 +134,7 @@ export function Component() {
   const characters = result?.characters ?? [];
   const readErrors = result?.errors ?? [];
   const importInput = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
 
   // The wizard's unfinished draft, read once: it lives in this tab's
@@ -272,8 +274,16 @@ export function Component() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Characters</h1>
+        {/* Focusable so hiding the getting-started card hands focus back here
+            instead of dropping it to the page body. */}
+        <h1 ref={heading} tabIndex={-1} className="text-xl font-bold outline-none">
+          Characters
+        </h1>
       </header>
+
+      {/* Above an existing roster; for a new one it waits below the ways to make
+          a character, so New character stays above the fold on a phone. */}
+      {characters.length > 0 && <GettingStarted onDismiss={() => heading.current?.focus()} />}
 
       {characters.length === 0 && result !== undefined && readErrors.length === 0 && (
         <p className="text-sm text-ink-muted">No characters yet — create your first hero.</p>
@@ -434,6 +444,9 @@ export function Component() {
         }}
       />
       {importStatus !== undefined && <p className="text-xs text-amber-300">{importStatus}</p>}
+      {characters.length === 0 && result !== undefined && (
+        <GettingStarted onDismiss={() => heading.current?.focus()} />
+      )}
     </main>
   );
 }
