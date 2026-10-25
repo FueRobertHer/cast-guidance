@@ -64,6 +64,9 @@ const serveTags = (...names: string[]) =>
 /** A mirror complete enough to boot and install against, with one class and one spell pack. */
 const wholeMirror = validMirror();
 
+/** The database the last `reboot` opened, closed by the next one. */
+let previousDb: { close(): void } | undefined;
+
 /**
  * A loader with no memory of the last test. Tag resolution, the release list
  * and the "already started" latch are all module state that boot sets once, so
@@ -71,6 +74,12 @@ const wholeMirror = validMirror();
  * status store it closed over rather than the ones this file imported.
  */
 async function reboot() {
+  // The app being relaunched: the last one's connection goes with it. Left
+  // open, a loader still writing from the last test (a failed pack's
+  // siblings are mid-download) lands rows after this test's `boot` has
+  // cleared the tables, so this test starts with files it never fetched and
+  // counts its writes wrong. Closed with auto-open off, those writes reject.
+  previousDb?.close();
   vi.resetModules();
   const [{ db }, { dataCacheRepo }, { dataStatusStore }, loader, landing] = await Promise.all([
     import('@/db/db'),
@@ -79,6 +88,7 @@ async function reboot() {
     import('./loader'),
     import('./landing'),
   ]);
+  previousDb = db;
   return { db, dataCacheRepo, dataStatusStore, loader, landing };
 }
 
@@ -529,7 +539,9 @@ describe('a full device while game data downloads', () => {
 
   it('says what to do when a later pack cannot be stored in the background drain', async () => {
     const { db, dataStatusStore, loader } = await boot([{ key: 'dataTag', value: DATA_TAG }]);
-    // Essentials go in; the first file of the drain is refused.
+    // Essentials go in; the first file of the drain is refused. That count
+    // holds only on an empty cache, so check it is one.
+    expect(await db.dataFiles.count()).toBe(0);
     const fault = await injectIdbFault(db, { tables: ['dataFiles'], skip: VALID_ESSENTIALS });
 
     void loader.initDataLayer();
