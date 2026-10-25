@@ -218,7 +218,7 @@ export function EntityCardList({
                 )}
                 {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
-              <div className="flex shrink-0 items-center gap-1 py-2.5 pr-2">
+              <div className="flex shrink-0 items-center gap-2.5 py-2.5 pr-2.5">
                 <SourceBadge source={sourceOf(e)} />
                 {infoType !== undefined && (
                   <EntityInfoSheet
@@ -231,7 +231,7 @@ export function EntityCardList({
                         type="button"
                         aria-label={`${nameOf(e)} details`}
                         title="Full description"
-                        className="rounded-full p-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+                        className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-2 hover:text-ink"
                       >
                         <Info size={16} />
                       </button>

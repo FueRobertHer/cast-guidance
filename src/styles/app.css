@@ -146,3 +146,19 @@ a {
   outline: 2px solid var(--color-ink);
   outline-offset: 2px;
 }
+
+/*
+ * A touch target big enough to hit with a thumb at the table (A11Y-002): at
+ * least 44 by 44 CSS pixels, the size Apple and WCAG 2.5.5 recommend. It sizes
+ * the element's own box, not a pseudo-element, because axe's target-size rule
+ * and the E2E check both measure the element. Where a control should still
+ * look small, keep the visual in an inner span and let the padding around it
+ * take the tap; a negative margin at the call site stops a row from growing.
+ */
+@utility tap {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

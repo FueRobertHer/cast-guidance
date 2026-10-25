@@ -546,7 +546,7 @@ export function Component() {
                       if (entry.levels <= 1) void removeClass(entry);
                       else levelDownClass(idx);
                     }}
-                    className="h-8 w-8 rounded-full bg-surface-2 text-lg"
+                    className="tap rounded-full bg-surface-2 text-lg"
                     aria-label={
                       entry.levels <= 1
                         ? `Remove ${entry.ref.name}`
@@ -867,13 +867,18 @@ export function Component() {
             );
           })()}
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {/* Two columns on a phone: a 44px − and + either side of the score
+            need about 130px, which a third of a 320px screen does not have. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {ABILITIES.map((a) => {
             const final = sheet.abilities[a];
             return (
-              <div key={a} className="flex flex-col items-center gap-1 rounded-lg bg-surface-2 p-2">
+              <div
+                key={a}
+                className="flex flex-col items-center gap-1 rounded-lg bg-surface-2 px-1 py-2"
+              >
                 <span className="text-[10px] font-semibold uppercase text-ink-muted">{a}</span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     aria-label={`Decrease ${a.toUpperCase()}`}
@@ -882,7 +887,7 @@ export function Component() {
                         (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
                       )
                     }
-                    className="h-7 w-7 rounded-full bg-surface"
+                    className="tap rounded-full bg-surface"
                   >
                     −
                   </button>
@@ -903,7 +908,7 @@ export function Component() {
                         });
                       }
                     }}
-                    className={`w-8 rounded text-center font-bold ${
+                    className={`h-11 w-7 shrink-0 rounded text-center font-bold ${
                       swapFrom === a ? 'bg-accent-deep/60 ring-1 ring-accent' : ''
                     }`}
                   >
@@ -917,7 +922,7 @@ export function Component() {
                         (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
                       )
                     }
-                    className="h-7 w-7 rounded-full bg-surface"
+                    className="tap rounded-full bg-surface"
                   >
                     +
                   </button>

@@ -164,35 +164,45 @@ export function ChoicePromptRenderer({
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           {options.map((o) => {
             const times = selected.filter((s) => s === o.id).length;
+            // Two 44px buttons either side of "STR+2" need about 9rem. A cell
+            // narrower than that (two columns inside a Build card at 320px)
+            // puts the name on its own line above them, so the buttons never
+            // overlap the next cell (A11Y-002). DOM order stays −, name, +.
             return (
               <div
                 key={o.id}
-                className={`flex items-center justify-between gap-1 rounded-lg border px-2 py-1.5 ${
+                className={`@container rounded-lg border ${
                   times > 0 ? 'border-accent bg-accent-deep/40' : 'border-surface-2 bg-surface-2/40'
                 }`}
               >
-                <button
-                  type="button"
-                  aria-label={`Decrease ${o.label}`}
-                  onClick={() => removeOne(o.id)}
-                  disabled={times === 0}
-                  className="h-6 w-6 shrink-0 rounded-full bg-surface text-sm disabled:opacity-30"
-                >
-                  −
-                </button>
-                <span className="text-sm font-semibold">
-                  {o.label}
-                  {times > 0 && <span className="ml-1 text-emerald-300">+{times}</span>}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Increase ${o.label}`}
-                  onClick={() => addOne(o.id)}
-                  disabled={selected.length >= prompt.count}
-                  className="h-6 w-6 shrink-0 rounded-full bg-surface text-sm disabled:opacity-30"
-                >
-                  +
-                </button>
+                <div className="flex flex-wrap items-center justify-between @min-[9rem]:flex-nowrap">
+                  <button
+                    type="button"
+                    aria-label={`Decrease ${o.label}`}
+                    onClick={() => removeOne(o.id)}
+                    disabled={times === 0}
+                    className="tap shrink-0 rounded-lg text-sm disabled:opacity-30"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface">
+                      −
+                    </span>
+                  </button>
+                  <span className="order-first basis-full pt-1.5 text-center text-sm font-semibold @min-[9rem]:order-none @min-[9rem]:basis-auto @min-[9rem]:pt-0">
+                    {o.label}
+                    {times > 0 && <span className="ml-1 text-emerald-300">+{times}</span>}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Increase ${o.label}`}
+                    onClick={() => addOne(o.id)}
+                    disabled={selected.length >= prompt.count}
+                    className="tap shrink-0 rounded-lg text-sm disabled:opacity-30"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface">
+                      +
+                    </span>
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -229,7 +239,9 @@ export function ChoicePromptRenderer({
                     <span className="text-xs font-medium text-amber-300">⚠ {o.advisory}</span>
                   )}
                 </button>
-                {info != null && <div className="shrink-0 p-2">{info}</div>}
+                {/* p-2.5 matches the info button's -m-2.5, so its 44px target
+                    stays inside the row instead of poking out of the scroller. */}
+                {info != null && <div className="shrink-0 p-2.5">{info}</div>}
               </div>
             );
           })}

@@ -220,3 +220,29 @@ describe('ChoicePromptRenderer confirm gate', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('feat');
   });
 });
+
+describe('ChoicePromptRenderer stepper targets (A11Y-002)', () => {
+  it('gives each ability stepper a 44px target in a cell that can stack', () => {
+    // Class level only; the E2E target-size check measures the boxes. The
+    // container query is what keeps + off the next cell's - at 320px.
+    const asi: ChoicePrompt = {
+      id: 'class:warrior|tst:asi:4:abilities',
+      origin: { label: 'Warrior', uid: 'class|warrior', type: 'class' },
+      kind: 'ability',
+      label: 'Level 4: +1 to two abilities',
+      count: 2,
+      allowRepeat: true,
+      options: [
+        { id: 'str', label: 'STR' },
+        { id: 'dex', label: 'DEX' },
+      ],
+    };
+    render(<ChoicePromptRenderer prompt={asi} value={undefined} onChange={vi.fn()} />);
+    const steppers = screen.getAllByRole('button', { name: /^(Decrease|Increase) [A-Z]{3}$/ });
+    expect(steppers).toHaveLength(4);
+    for (const b of steppers) {
+      expect(b.className.split(' ')).toContain('tap');
+      expect(b.parentElement?.parentElement?.className.split(' ')).toContain('@container');
+    }
+  });
+});

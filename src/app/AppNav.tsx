@@ -9,6 +9,24 @@ const items = [
 ] as const;
 
 /**
+ * Marks the current tab with a bar along its top edge (bottom bar) or its left
+ * edge (side rail), so the open tab is not told apart by colour alone
+ * (A11Y-002). Decorative: NavLink reports the page through `aria-current`.
+ * The sheet's tab bar draws the same one. Sharing a module between the two
+ * pulled the data registry chunk into the entry bundle (+140 KB), so each
+ * keeps its own copy.
+ */
+function ActiveTabBar() {
+  return (
+    <span
+      aria-hidden="true"
+      data-indicator=""
+      className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-accent lg:inset-x-auto lg:inset-y-2 lg:left-0 lg:h-auto lg:w-0.5"
+    />
+  );
+}
+
+/**
  * Layout route for the top-level sections: persistent tab bar at the bottom
  * on mobile, a left rail on desktop (mirrors the sheet's nav placement).
  * Focused flows (creator, sheet, homebrew editor) stay outside this layout.
@@ -30,13 +48,20 @@ export function AppNavLayout() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium lg:flex-none lg:flex-row lg:justify-start lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2 lg:text-sm ${
-                isActive ? 'text-accent' : 'text-ink-muted hover:text-ink'
+              `relative flex flex-1 flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] lg:flex-none lg:flex-row lg:justify-start lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2 lg:text-sm ${
+                isActive ? 'font-semibold text-accent' : 'font-medium text-ink-muted hover:text-ink'
               }`
             }
           >
-            <Icon size={20} aria-hidden className="lg:size-[17px]" />
-            {label}
+            {({ isActive }) => (
+              <>
+                {/* The current tab is marked by weight and a bar, not by
+                    colour alone (A11Y-002); NavLink sets aria-current. */}
+                {isActive && <ActiveTabBar />}
+                <Icon size={20} aria-hidden className="lg:size-[17px]" />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

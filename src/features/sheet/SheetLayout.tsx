@@ -80,6 +80,23 @@ export function useHeaderHeight() {
   return { header, style: { '--sheet-header-h': `${height}px` } as CSSProperties };
 }
 
+/**
+ * Marks the open tab with a bar along its top edge (bottom bar) or its left
+ * edge (side rail), so it is not told apart by colour alone (A11Y-002).
+ * Decorative: NavLink reports the page through `aria-current`. AppNav draws
+ * the same one. Sharing a module between the two pulled the data registry
+ * chunk into the entry bundle (+140 KB), so each keeps its own copy.
+ */
+function ActiveTabBar() {
+  return (
+    <span
+      aria-hidden="true"
+      data-indicator=""
+      className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-accent lg:inset-x-auto lg:inset-y-2 lg:left-0 lg:h-auto lg:w-0.5"
+    />
+  );
+}
+
 export function Component() {
   const { id } = useParams();
   const headerHeight = useHeaderHeight();
@@ -148,7 +165,7 @@ export function Component() {
         <Link
           to="/"
           aria-label="Back to characters"
-          className="-my-2 -ml-2 rounded p-2 text-ink-muted hover:text-ink"
+          className="tap -my-2 -ml-3 rounded text-ink-muted hover:text-ink"
         >
           <ArrowLeft size={20} />
         </Link>
@@ -198,13 +215,20 @@ export function Component() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium lg:flex-none lg:flex-row lg:justify-start lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2 lg:text-sm ${
-                isActive ? 'text-accent' : 'text-ink-muted hover:text-ink'
+              `relative flex flex-1 flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] lg:flex-none lg:flex-row lg:justify-start lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2 lg:text-sm ${
+                isActive ? 'font-semibold text-accent' : 'font-medium text-ink-muted hover:text-ink'
               }`
             }
           >
-            <Icon size={20} aria-hidden className="lg:size-[17px]" />
-            {label}
+            {({ isActive }) => (
+              <>
+                {/* The current tab is marked by weight and a bar, not by
+                    colour alone (A11Y-002); NavLink sets aria-current. */}
+                {isActive && <ActiveTabBar />}
+                <Icon size={20} aria-hidden className="lg:size-[17px]" />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

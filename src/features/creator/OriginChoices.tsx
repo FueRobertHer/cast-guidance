@@ -100,7 +100,7 @@ function featOptionInfo(registry: EntityRegistry) {
             type="button"
             aria-label={`${o.label} details`}
             title="Full description"
-            className="rounded-full p-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+            className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-2 hover:text-ink"
           >
             <Info size={16} />
           </button>
