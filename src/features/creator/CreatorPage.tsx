@@ -404,8 +404,7 @@ export function Component() {
                       <span aria-hidden="true">−</span>
                     </button>
                     <span aria-live="polite" className="w-8 text-center text-lg font-bold">
-                      <span className="sr-only">Level </span>
-                      {entry.levels}
+                      <span className="sr-only">Level</span> {entry.levels}
                     </span>
                     <button
                       type="button"
