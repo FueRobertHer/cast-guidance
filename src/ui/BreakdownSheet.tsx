@@ -85,6 +85,7 @@ function BreakdownSheetContent({
                 inputMode="numeric"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                aria-label={`Override ${title}`}
                 placeholder={`Override (${value.base})`}
                 className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
               />

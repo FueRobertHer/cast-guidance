@@ -51,6 +51,13 @@ describe('EntityCardList selection', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  // A11Y-001: the selected card was shown only by its border and weight.
+  it('reports the current pick as pressed', () => {
+    render(<EntityCardList entities={entities} selectedUid="human|phb" onSelect={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Human', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Elf', pressed: false })).toBeTruthy();
+  });
+
   it('is a no-op when re-tapping the current pick with no onDeselect (no silent wipe)', () => {
     const onSelect = vi.fn();
     render(<EntityCardList entities={entities} selectedUid="human|phb" onSelect={onSelect} />);

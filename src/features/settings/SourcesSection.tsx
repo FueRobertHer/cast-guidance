@@ -121,6 +121,7 @@ export function SourcesSection() {
           <button
             key={p.id}
             type="button"
+            aria-pressed={activePreset?.id === p.id}
             title={p.detail}
             onClick={() => setPolicy(p.policy())}
             className={`rounded-full border px-3 py-1 text-xs font-semibold ${
