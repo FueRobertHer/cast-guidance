@@ -15,11 +15,12 @@ import type {
   CharacterDoc,
   DerivedResource,
   DerivedSheet,
+  EntityRef,
   SpellcastingBlock,
   SpellcastingMode,
 } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
-import { askChoice } from '@/ui/dialogs';
+import { askChoice, askConfirm } from '@/ui/dialogs';
 import { SourceBadge } from '@/ui/SourceBadge';
 import {
   availableCastResources,
@@ -29,6 +30,7 @@ import {
   needsCastChoice,
 } from './castResources';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
+import { applySpellTrim, describeTrim, isEmptyTrim, planSpellTrim, spellLimits } from './spellTrim';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -90,6 +92,7 @@ function ClassSpells({
   allowCasting,
   characterLevel,
   pools,
+  alwaysPrepared,
 }: {
   block: SpellcastingBlock;
   doc: CharacterDoc;
@@ -98,6 +101,8 @@ function ClassSpells({
   characterLevel: number;
   /** Derived pools, so a convertible one (sorcery points) is offered as a source. */
   pools: readonly DerivedResource[];
+  /** Always-prepared grants a trim may unprepare first (empty with several casting classes). */
+  alwaysPrepared: readonly EntityRef[];
 }) {
   const registry = useRegistry();
   const [classUids, setClassUids] = useState<Set<string> | null>(null);
@@ -238,22 +243,39 @@ function ClassSpells({
   // Classify known spells by their real level via the registry (NOT the
   // search-filtered `byLevel`, which would shrink the counts mid-search and
   // fire a spurious over-limit cue).
-  const { cantrips: cantripsKnown, leveled: knownLeveled } = classifyKnown(state.known, (ref) => {
+  const levelOf = (ref: EntityRef) => {
     const e = registry?.get('spell', ref.name, ref.source);
     return typeof e?.level === 'number' ? e.level : undefined;
-  });
+  };
+  const { cantrips: cantripsKnown, leveled: knownLeveled } = classifyKnown(state.known, levelOf);
 
   // Over-limit is allowed (house rules, features that add preparations) — flag
   // it, never block it (GAME-002/007 / guidance-not-gatekeeping).
-  const prepMax = block.preparedMax;
-  const cantripMax = block.cantripsKnown;
-  // Known/pact casters cap the leveled spells they know; prepared/spellbook
-  // casters don't count "known" this way, so the cue only applies to those modes.
-  const knownGated = block.mode === 'known' || block.mode === 'pact';
-  const knownMax = knownGated ? block.spellsKnownMax : undefined;
+  const limits = spellLimits(block);
+  const prepMax = limits.prepared;
+  const cantripMax = limits.cantrips;
+  const knownMax = limits.known;
   const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
   const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
   const overKnown = knownMax !== undefined && knownLeveled > knownMax;
+  const over = overPrepared || overCantrips || overKnown;
+
+  // Offered, never done for the player: the confirm lists exactly what goes,
+  // and only this class's entry changes.
+  const trim = async () => {
+    const plan = planSpellTrim({ state, limits, levelOf, alwaysPrepared });
+    if (isEmptyTrim(plan)) return;
+    const ok = await askConfirm({
+      title: `Trim ${block.className} spells to your limits?`,
+      detail: `${describeTrim(plan, block.mode).join('. ')}. The most recently added go first. Over-limit is allowed, so this is optional.`,
+      confirmLabel: 'Trim',
+    });
+    if (!ok) return;
+    update((d) => {
+      const sc = d.spellcasting[block.classUid];
+      if (sc !== undefined) applySpellTrim(sc, plan);
+    }, `Trimmed ${block.className} spells to limit`);
+  };
 
   return (
     <section className="flex flex-col gap-2">
@@ -297,7 +319,7 @@ function ClassSpells({
           )}
         </span>
       </header>
-      {(overPrepared || overCantrips || overKnown) && (
+      {over && (
         <p role="status" className="text-xs text-amber-300">
           {overPrepared
             ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
@@ -306,6 +328,18 @@ function ClassSpells({
           {overKnown ? `${knownLeveled - (knownMax ?? 0)} over your spells-known limit. ` : ''}
           That&rsquo;s allowed — the extra picks are kept, just flagging it.
         </p>
+      )}
+      {/* A sibling of the cue, not inside it, so the live region doesn't read the button. */}
+      {over && (
+        <button
+          type="button"
+          onClick={() => {
+            void trim();
+          }}
+          className="self-start rounded-lg border border-surface-2 px-3 py-1 text-xs text-ink-muted hover:text-ink"
+        >
+          Trim to limit…
+        </button>
       )}
       {(() => {
         const rec = recommendedStarters(block.className);
@@ -467,6 +501,12 @@ export function SpellManager({
   if (sheet.spellcasting.length === 0) {
     return <p className="text-sm text-ink-muted">This character has no spellcasting.</p>;
   }
+  // Always-prepared grants aren't tied to a class, so they only say which of a
+  // class's preparations are redundant when there is just the one class.
+  const alwaysPrepared =
+    sheet.spellcasting.length === 1
+      ? sheet.grantedSpells.filter((g) => g.usage === 'prepared')
+      : [];
   return (
     <div className="flex flex-col gap-5">
       {sheet.spellcasting.map((block) => (
@@ -478,6 +518,7 @@ export function SpellManager({
           allowCasting={allowCasting}
           characterLevel={sheet.totalLevel}
           pools={sheet.resources}
+          alwaysPrepared={alwaysPrepared}
         />
       ))}
     </div>
