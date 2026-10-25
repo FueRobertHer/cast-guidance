@@ -13,9 +13,10 @@ import { deriveSheet } from '@/engine/derive';
 import { newCharacterDoc } from '@/engine/types';
 import { Component as SheetLayout } from '@/features/sheet/SheetLayout';
 import { Component as PlayTab } from '@/features/sheet/tabs/PlayTab';
-import { resetAnnouncer } from '@/stores/announcer';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { characterSessionStore } from '@/stores/characterSession';
 import { LiveAnnouncer } from '@/ui/LiveAnnouncer';
+import { CONFLICT_RESOLVED_TEXT } from '@/ui/SaveConflictBanner';
 import { listenForAnnouncements } from '../../tests-fixtures/announcements';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { makeTestContext } from '../../tests-fixtures/testWorld';
@@ -90,7 +91,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   cleanup();
-  await characterSessionStore.getState().close();
+  await characterSessionStore
+    .getState()
+    .close()
+    .catch(() => undefined);
   await removeIdbFaults();
   resetAnnouncer();
 });
@@ -160,5 +164,45 @@ describe('save announcements', () => {
     const saving = aboutSaving(listener.heard);
     expect(saving).toEqual([saving[0], SAVE_RECOVERED_TEXT]);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says a refused retry as a conflict, never as saved, and its resolution once', async () => {
+    // REL-007 (#98): a failed save leaves the error list when its retry is
+    // refused because another tab saved first. That is not a recovery.
+    const max = await seedWarrior();
+    renderSheet();
+    const damage = await screen.findByRole('button', { name: 'Damage 1 hit point' });
+    fireEvent.click(damage);
+    await waitFor(async () => expect(await storedHp()).toBe(max - 1), SAVED_WAIT);
+    await waitFor(() => expect(saveStatus()).toBe('saved'), SAVED_WAIT);
+
+    const fault = await injectIdbFault(db, { tables: ['characters'] });
+    const listener = listenForAnnouncements();
+    fireEvent.click(damage);
+    await waitFor(() => expect(saveStatus()).toBe('error'), SAVED_WAIT);
+    await fault();
+    // Another tab saves meanwhile: a full write, with a revision of its own.
+    const row = await db.characters.get('c1');
+    if (row === undefined) throw new Error('no row');
+    await db.characters.put({ ...row, name: 'Hero of the other tab', revision: 'other-tab' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(saveStatus()).toBe('conflict'), SAVED_WAIT);
+    await act(async () => undefined);
+    expect(aboutSaving(listener.heard)).toHaveLength(2);
+    expect(aboutSaving(listener.heard)[1]).toContain('changed in another tab');
+    expect(listener.heard).not.toContain(SAVE_RECOVERED_TEXT);
+    expect(await storedHp()).toBe(max - 1);
+
+    const before = getAnnouncerState().emitted;
+    fireEvent.click(screen.getByRole('button', { name: 'Reload stored version' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull(), SAVED_WAIT);
+    await act(async () => undefined);
+    listener.stop();
+
+    expect(getAnnouncerState().emitted - before).toBe(1);
+    expect(aboutSaving(listener.heard).at(-1)).toBe(CONFLICT_RESOLVED_TEXT.reload);
+    expect(listener.heard).not.toContain(SAVE_RECOVERED_TEXT);
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Hero of the other tab');
   });
 });

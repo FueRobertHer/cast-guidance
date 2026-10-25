@@ -69,7 +69,7 @@ export function tabTitle(tab: string): string | undefined {
  */
 /** The warning when the same character is open in another tab, shown and said. */
 export const OPEN_ELSEWHERE_TEXT =
-  'This character is open in another tab, so edits in one can overwrite the other.';
+  'This character is open in another tab. If both change it, you will be asked which version to keep.';
 
 function ActiveTabBar() {
   return (
@@ -161,12 +161,17 @@ export function Component() {
           <ArrowLeft size={20} />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-bold">{state.doc?.name ?? '…'}</h1>
+          {/* Focusable, so resolving a save conflict (SaveConflictBanner) can
+              land here once the banner and its buttons go away. */}
+          <h1 id="sheet-title" tabIndex={-1} className="truncate text-lg font-bold outline-none">
+            {state.doc?.name ?? '…'}
+          </h1>
           <p className="truncate text-xs text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
         </div>
         {/* Visual only (A11Y-002). As a live region it said "Unsaved, Saving,
-            Saved" for every HP tap. A failure is announced by the app shell's
-            save banner, and the recovery after one by the announcer. */}
+            Saved" for every HP tap. A failure or a refused save is announced
+            by the app shell's banners, and the recovery after one by the
+            announcer. */}
         <span data-save-indicator="" className="flex items-center gap-1 text-xs text-ink-muted">
           {state.saveStatus === 'pending' && 'Unsaved'}
           {state.saveStatus === 'saving' && (
@@ -182,6 +187,11 @@ export function Component() {
           {state.saveStatus === 'error' && (
             <>
               <CircleAlert size={13} aria-hidden="true" /> Save failed
+            </>
+          )}
+          {state.saveStatus === 'conflict' && (
+            <>
+              <CircleAlert size={13} aria-hidden="true" /> Not saved
             </>
           )}
         </span>
