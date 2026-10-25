@@ -4,7 +4,7 @@ import { Mirror } from '../fixtures/mirror.ts';
 import { type StaticServer, startStaticServer } from '../server/staticServer.ts';
 import { swVariantTransform } from '../server/swVariants.ts';
 import { loadVercelRouting } from '../server/vercelRouting.ts';
-import { dismissGettingStartedWhenShown } from './app.ts';
+import { handleOverlays } from './app.ts';
 import { DEVICE } from './device.ts';
 import { ConsoleGuard, NetworkGuard } from './guards.ts';
 
@@ -142,7 +142,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   page: async ({ page, consoleGuard }, use) => {
     void consoleGuard;
-    await dismissGettingStartedWhenShown(page);
+    await handleOverlays(page);
     await use(page);
   },
 
@@ -203,8 +203,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       await mirror.attach(context);
       consoleGuard.watch(context);
       network.track(context);
-      for (const page of context.pages()) await dismissGettingStartedWhenShown(page);
-      context.on('page', (page) => void dismissGettingStartedWhenShown(page));
+      for (const page of context.pages()) await handleOverlays(page);
+      context.on('page', (page) => void handleOverlays(page));
       return context;
     });
     for (const context of launched) await context.close();

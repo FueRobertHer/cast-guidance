@@ -1,5 +1,5 @@
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
-import { rosterHeading } from '../support/app.ts';
+import { gettingStartedDismiss, offlineReadyNotice, rosterHeading } from '../support/app.ts';
 import { countDataFiles, getSetting } from '../support/idb.ts';
 import { swState, waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
@@ -46,6 +46,34 @@ test.describe('first load', () => {
       status: 200,
       rewrittenTo: '/index.html',
     });
+  });
+
+  test('a first visit away from the roster announces offline readiness once', async ({ page }) => {
+    // No getting-started card here to carry the news, so the notice does. The
+    // page is not controlled yet, so it promises the next launch, not this one.
+    await page.removeLocatorHandler(offlineReadyNotice(page));
+    await page.goto('/settings');
+    await expect(offlineReadyNotice(page)).toContainText('Ready to use offline next time');
+    await expect(offlineReadyNotice(page)).toBeHidden();
+
+    await page.reload();
+    await expect(page).toHaveTitle('Settings · Cast Guidance');
+    await page.goto('/library');
+    await expect(page).toHaveTitle('Library · Cast Guidance');
+    await expect(offlineReadyNotice(page)).toHaveCount(0);
+  });
+
+  test('the roster shows the getting-started card until it is dismissed', async ({ page }) => {
+    await page.removeLocatorHandler(gettingStartedDismiss(page));
+    await page.goto('/');
+    const card = page.getByRole('region', { name: 'Getting started' });
+    await expect(card).toBeVisible();
+    await gettingStartedDismiss(page).click();
+    await expect(card).toBeHidden();
+
+    await page.reload();
+    await expect(rosterHeading(page)).toBeVisible();
+    await expect(card).toHaveCount(0);
   });
 
   test('an unknown deep link renders the not-found screen with a way back', async ({ page }) => {

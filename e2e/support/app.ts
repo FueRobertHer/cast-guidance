@@ -7,19 +7,35 @@ import type { FilePayload } from '../fixtures/characterFile.ts';
  * kept here so a copy change touches one file.
  */
 
+/** The getting-started card's dismiss button, on the roster until it is used. */
+export function gettingStartedDismiss(page: Page): Locator {
+  return page.getByRole('button', { name: 'Got it, hide this' });
+}
+
 /**
- * The roster's getting-started card (#116) is not an overlay, but it sits
- * above the roster and pushes it down. Registered as a locator handler, it is
- * hidden whenever it is on screen before an action, so specs work with or
- * without it and never race its asynchronous first render.
+ * The one-time "Ready to use offline" notice: a toast near the bottom of the
+ * screen that hides itself after a few seconds.
  */
-export async function dismissGettingStartedWhenShown(page: Page): Promise<void> {
-  await page.addLocatorHandler(
-    page.getByRole('button', { name: 'Got it, hide this' }),
-    async (button) => {
-      await button.click();
-    },
-  );
+export function offlineReadyNotice(page: Page): Locator {
+  return page.getByRole('status').filter({ hasText: 'Ready to use offline' });
+}
+
+/**
+ * Keeps the app's unbidden UI out of the specs' way. Playwright runs a locator
+ * handler whenever its locator is visible before an action or an assertion,
+ * so neither depends on when these first render:
+ * - the roster's getting-started card is dismissed (the dismissal persists in
+ *   that profile, as it would for a person);
+ * - the "Ready to use offline" notice is waited out (Playwright waits for it
+ *   to hide after the empty handler), since it can cover controls near the
+ *   bottom of the screen.
+ * A spec that asserts on either removes its handler first.
+ */
+export async function handleOverlays(page: Page): Promise<void> {
+  await page.addLocatorHandler(gettingStartedDismiss(page), async (button) => {
+    await button.click();
+  });
+  await page.addLocatorHandler(offlineReadyNotice(page), async () => undefined);
 }
 
 /** Opens the roster and waits for it. */

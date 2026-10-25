@@ -56,8 +56,11 @@ the binary outright, as an escape hatch when the two drift.
 - **Persistent profiles**: `launchProfile(dir, { offline })` launches a real
   browser profile wired to the same server, mirror and guards, for cold
   restarts.
-- **Overlays**: the roster's getting-started card is hidden whenever it is
-  on screen before an action (`support/app.ts`), so specs do not depend on it.
+- **Overlays** (`handleOverlays` in `support/app.ts`): locator handlers dismiss
+  the roster's getting-started card and wait out the "Ready to use offline"
+  notice whenever either is on screen before an action or assertion, so specs
+  do not depend on when they render. A spec that asserts on one of them
+  removes its handler first (`page.removeLocatorHandler`).
 
 Helpers: `support/sw.ts` (`waitForSwControl`, `triggerSwUpdate`, `swState`),
 `support/idb.ts` (raw IndexedDB reads), `support/app.ts` (roster flows by
@@ -79,7 +82,7 @@ role and accessible name).
 
 | Spec | Covers |
 |---|---|
-| `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the 404 screen; the routing canary for a controlled page. |
+| `first-load` | Fresh online boot: roster, download banner, full install of the pinned release, one release-list request, worker activated; SPA fallback for a cold deep link; the one-time "Ready to use offline" notice; the getting-started card and its dismissal; the 404 screen; the routing canary for a controlled page. |
 | `offline-reload` | Reload and deep links offline from the precache and IndexedDB, nothing re-downloaded once back online; a browser restart in airplane mode. |
 | `lifecycle` | Create, rename, edit, reload, delete; the save debounce on a frozen clock, and the flushes on `visibilitychange` and `pagehide`. |
 | `import-export` | Export file shape, import back, a duplicate import gets a new id, refused files change nothing, export offline. |
