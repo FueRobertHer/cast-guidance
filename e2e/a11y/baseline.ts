@@ -19,6 +19,19 @@ export const BASELINE_PATH = path.join(import.meta.dirname, 'axe-baseline.json')
 /** True when this run rewrites the baseline (the reporter writes it). */
 export const UPDATING = process.env.A11Y_BASELINE_UPDATE === '1';
 
+/**
+ * Refuses a baseline update in CI. The baseline is reviewed in a diff; a CI
+ * run that rewrote it would pass whatever it saw and throw the file away.
+ */
+export function assertUpdateAllowed(env: Readonly<Record<string, string | undefined>>): void {
+  if (env.A11Y_BASELINE_UPDATE === '1' && env.CI !== undefined && env.CI !== '') {
+    throw new Error(
+      'A11Y_BASELINE_UPDATE is set in CI. Update the axe baseline locally ' +
+        '(`bun run e2e:a11y:update`) and commit it; CI only checks it.',
+    );
+  }
+}
+
 /** The command that rewrites the baseline, quoted in failures and the summary. */
 export const UPDATE_COMMAND = 'bun run e2e:a11y:update';
 
@@ -136,12 +149,20 @@ export function compareState(
 
 /**
  * The baseline after an update run: every scanned state is replaced by what
- * it saw now (notes kept for rules still present), and states this run did
- * not scan are kept as they were, so updating from a filtered run cannot
- * drop another state's entry.
+ * it saw now (notes kept for rules still present). States this run did not
+ * scan are kept, so updating from a filtered run cannot drop another state's
+ * entry, unless `prune` says the run was complete: then they are gone from
+ * the spec, and so from the baseline.
  */
-export function nextBaseline(previous: Baseline, scans: ReadonlyArray<ScanRecord>): Baseline {
+export function nextBaseline(
+  previous: Baseline,
+  scans: ReadonlyArray<ScanRecord>,
+  { prune = false }: { prune?: boolean } = {},
+): Baseline {
   const next: Baseline = structuredClone(previous);
+  if (prune) {
+    for (const state of staleStates(previous, scans)) delete next[state];
+  }
   for (const scan of scans) {
     const old = previous[scan.state] ?? {};
     const entry: Record<string, BaselineRule> = {};
@@ -152,6 +173,66 @@ export function nextBaseline(previous: Baseline, scans: ReadonlyArray<ScanRecord
     next[scan.state] = entry;
   }
   return next;
+}
+
+/** Baseline states no scan in `scans` covered, sorted. */
+export function staleStates(baseline: Baseline, scans: ReadonlyArray<ScanRecord>): string[] {
+  const scanned = new Set(scans.map((s) => s.state));
+  return Object.keys(baseline)
+    .filter((s) => !scanned.has(s))
+    .sort();
+}
+
+/** What the runner knows about how a run was narrowed. */
+export interface RunScope {
+  grep: RegExp | ReadonlyArray<RegExp>;
+  grepInvert: RegExp | ReadonlyArray<RegExp> | null;
+  shard: unknown;
+  /** Each project's own `grep` and `grepInvert`. */
+  projects: ReadonlyArray<{
+    grep: RegExp | ReadonlyArray<RegExp>;
+    grepInvert: RegExp | ReadonlyArray<RegExp> | null;
+  }>;
+  /** The runner's `process.argv`. */
+  argv: ReadonlyArray<string>;
+}
+
+const list = <T>(v: T | ReadonlyArray<T> | null): ReadonlyArray<T> =>
+  v === null ? [] : Array.isArray(v) ? (v as ReadonlyArray<T>) : [v as T];
+
+/** CLI flags that can run only some tests of a file. */
+const NARROWING_FLAGS = new Set([
+  '-g',
+  '--grep',
+  '-G',
+  '--grep-invert',
+  '--shard',
+  '--last-failed',
+  '--only-changed',
+  '--test-list',
+  '--test-list-invert',
+]);
+
+/**
+ * Whether the run may have left tests out: a grep or inverted grep (in the
+ * config, a project, or `-g` and `-G` on the command line, which the runner
+ * applies without writing them into the config), a shard, a last-failed or
+ * changed-files run, a test list, or a `file:line` filter. A plain file or
+ * folder filter is not narrowing here, since it selects whole spec files.
+ */
+export function isNarrowedRun(scope: RunScope): boolean {
+  const matchesAll = (g: RegExp | ReadonlyArray<RegExp>) =>
+    list(g).every((r) => r.source === '.*' || r.source === '(?:)');
+  if (!matchesAll(scope.grep) || list(scope.grepInvert).length > 0) return true;
+  if (scope.shard !== null && scope.shard !== undefined) return true;
+  for (const p of scope.projects) {
+    if (!matchesAll(p.grep) || list(p.grepInvert).length > 0) return true;
+  }
+  const args = scope.argv.slice(scope.argv.indexOf('test') + 1);
+  return args.some(
+    (a) =>
+      NARROWING_FLAGS.has(a.split('=')[0] as string) || /^-[gG]./.test(a) || /:\d+(:\d+)?$/.test(a),
+  );
 }
 
 /** Stable JSON: states and rules sorted, fields in a fixed order, trailing newline. */
@@ -210,6 +291,11 @@ export interface SummaryInput {
   updated: boolean;
   /** The command that rewrites the baseline, for the note. */
   updateCommand: string;
+  /**
+   * True when every axe test ran and passed, so a baseline state no scan
+   * covered is stale: it fails the run (or is pruned by an update).
+   */
+  complete?: boolean;
 }
 
 /**
@@ -217,7 +303,13 @@ export interface SummaryInput {
  * (the failures), what got better (update the baseline), and the per-state
  * counts the baseline still allows.
  */
-export function renderSummary({ scans, baseline, updated, updateCommand }: SummaryInput): string {
+export function renderSummary({
+  scans,
+  baseline,
+  updated,
+  updateCommand,
+  complete = false,
+}: SummaryInput): string {
   const lines: string[] = ['### Accessibility (axe)', ''];
   if (scans.length === 0) {
     lines.push('_No axe scans ran._', '');
@@ -297,12 +389,20 @@ export function renderSummary({ scans, baseline, updated, updateCommand }: Summa
     );
   }
 
-  const unscanned = Object.keys(baseline)
-    .filter((s) => !states.has(s))
-    .sort();
-  if (unscanned.length > 0) {
+  const unscanned = staleStates(baseline, scans);
+  if (unscanned.length > 0 && complete && updated) {
+    lines.push(`Pruned from the baseline, no longer scanned: ${unscanned.join(', ')}.`, '');
+  } else if (unscanned.length > 0 && complete) {
     lines.push(
-      `Baseline states this run did not scan (filtered out, or gone): ${unscanned.join(', ')}.`,
+      '#### Stale baseline states (these fail the run)',
+      '',
+      `Every axe test ran, and none scanned: ${unscanned.join(', ')}. ` +
+        `A renamed or removed state must leave the baseline too: run \`${updateCommand}\`.`,
+      '',
+    );
+  } else if (unscanned.length > 0) {
+    lines.push(
+      `Baseline states this run did not scan (it was narrowed): ${unscanned.join(', ')}.`,
       '',
     );
   }

@@ -2,14 +2,17 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assertUpdateAllowed,
   type Baseline,
   compareState,
   countViolations,
+  isNarrowedRun,
   nextBaseline,
   parseBaseline,
   type RuleCount,
   renderSummary,
   serializeBaseline,
+  staleStates,
 } from './baseline.ts';
 
 // The axe ratchet's policy (A11Y-003), apart from the browser: worse fails,
@@ -161,7 +164,8 @@ describe('renderSummary', () => {
         incomplete: { 'color-contrast': 4 },
       },
     ]);
-    expect(md).toContain('did not scan (filtered out, or gone): settings.');
+    expect(md).toContain('did not scan (it was narrowed): settings.');
+    expect(md).not.toContain('Stale baseline states');
     expect(md).toContain('Needs review');
     expect(md).toContain('| roster | color-contrast | 4 |');
   });
@@ -169,5 +173,85 @@ describe('renderSummary', () => {
   it('says so when the baseline was rewritten, and when nothing ran', () => {
     expect(summary([{ state: 'roster', rules: {} }], true)).toContain('rewritten from this run');
     expect(summary([])).toContain('No axe scans ran');
+  });
+});
+
+describe('stale baseline states', () => {
+  const scans = [{ state: 'roster', rules: { 'color-contrast': contrast(2) } }];
+
+  it('names the baseline states no scan covered', () => {
+    expect(staleStates(BASE, scans)).toEqual(['settings']);
+    expect(staleStates(BASE, [...scans, { state: 'settings', rules: {} }])).toEqual([]);
+  });
+
+  it('fails a complete run that left a baseline state unscanned', () => {
+    const md = renderSummary({
+      scans,
+      baseline: BASE,
+      updated: false,
+      updateCommand: 'bun run e2e:a11y:update',
+      complete: true,
+    });
+    expect(md).toContain('Stale baseline states (these fail the run)');
+    expect(md).toContain('none scanned: settings.');
+  });
+
+  it('prunes them in a complete update, and keeps them in a narrowed one', () => {
+    expect(Object.keys(nextBaseline(BASE, scans, { prune: true }))).toEqual(['roster']);
+    expect(Object.keys(nextBaseline(BASE, scans))).toEqual(['roster', 'settings']);
+    const md = renderSummary({
+      scans,
+      baseline: BASE,
+      updated: true,
+      updateCommand: 'x',
+      complete: true,
+    });
+    expect(md).toContain('Pruned from the baseline, no longer scanned: settings.');
+  });
+});
+
+describe('isNarrowedRun', () => {
+  const plain = {
+    grep: /.*/,
+    grepInvert: null,
+    shard: null,
+    projects: [{ grep: /.*/, grepInvert: null }],
+    argv: ['node', 'playwright', 'test'],
+  };
+
+  it('treats a plain run, or whole files and folders, as complete', () => {
+    expect(isNarrowedRun(plain)).toBe(false);
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, 'e2e/a11y', '--workers=2'] })).toBe(
+      false,
+    );
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, 'e2e/a11y/axe.spec.ts'] })).toBe(false);
+  });
+
+  it('sees a grep on the command line, which the config does not show', () => {
+    for (const flag of [['-g', 'roster'], ['--grep=roster'], ['-groster'], ['-G', 'x']]) {
+      expect(isNarrowedRun({ ...plain, argv: [...plain.argv, ...flag] }), flag.join(' ')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('sees a line filter, a shard, a last-failed run and a config or project grep', () => {
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, 'e2e/a11y/axe.spec.ts:82'] })).toBe(
+      true,
+    );
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, '--last-failed'] })).toBe(true);
+    expect(isNarrowedRun({ ...plain, shard: { current: 1, total: 2 } })).toBe(true);
+    expect(isNarrowedRun({ ...plain, grep: /roster/ })).toBe(true);
+    expect(isNarrowedRun({ ...plain, grepInvert: [/x/] })).toBe(true);
+    expect(isNarrowedRun({ ...plain, projects: [{ grep: /x/, grepInvert: null }] })).toBe(true);
+  });
+});
+
+describe('assertUpdateAllowed', () => {
+  it('refuses a baseline update in CI, and allows it anywhere else', () => {
+    expect(() => assertUpdateAllowed({ CI: 'true', A11Y_BASELINE_UPDATE: '1' })).toThrow(/in CI/);
+    expect(() => assertUpdateAllowed({ A11Y_BASELINE_UPDATE: '1' })).not.toThrow();
+    expect(() => assertUpdateAllowed({ CI: 'true' })).not.toThrow();
+    expect(() => assertUpdateAllowed({ CI: '', A11Y_BASELINE_UPDATE: '1' })).not.toThrow();
   });
 });
