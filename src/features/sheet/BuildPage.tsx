@@ -638,7 +638,7 @@ export function Component() {
                 </p>
               ) : subclasses.length > 0 ? (
                 <details open={entry.subclass === undefined}>
-                  <summary className="cursor-pointer text-xs text-ink-muted">
+                  <summary className="cursor-pointer py-1 text-xs text-ink-muted">
                     Subclass: {entry.subclass?.name ?? 'none picked'}{' '}
                     <EditionChip
                       cue={cueFor('subclass', entry.subclass)}
@@ -682,7 +682,7 @@ export function Component() {
 
         <details open={doc.classes.length === 0}>
           <summary
-            className={`cursor-pointer text-xs ${
+            className={`cursor-pointer py-1 text-xs ${
               doc.classes.length === 0 ? 'font-semibold text-amber-200' : 'text-ink-muted'
             }`}
           >
@@ -719,7 +719,7 @@ export function Component() {
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
         <details key={pickerKey(doc.race)} open={doc.race === undefined}>
           <summary
-            className={`cursor-pointer text-xs ${
+            className={`cursor-pointer py-1 text-xs ${
               doc.race === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
             }`}
           >
@@ -765,7 +765,7 @@ export function Component() {
         </details>
         {subraces.length > 0 && (
           <details key={pickerKey(doc.subrace)} open={doc.subrace === undefined}>
-            <summary className="cursor-pointer text-xs text-ink-muted">
+            <summary className="cursor-pointer py-1 text-xs text-ink-muted">
               Subrace: {doc.subrace?.name ?? 'none picked'}{' '}
               <EditionChip cue={cueFor('subrace', doc.subrace)} version={doc.rulesVersion} />
             </summary>
@@ -947,7 +947,7 @@ export function Component() {
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
         <details key={pickerKey(doc.background)} open={doc.background === undefined}>
           <summary
-            className={`cursor-pointer text-xs ${
+            className={`cursor-pointer py-1 text-xs ${
               doc.background === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
             }`}
           >
