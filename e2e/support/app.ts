@@ -44,7 +44,9 @@ export function announcements(
  * screen that hides itself after a few seconds.
  */
 export function offlineReadyNotice(page: Page): Locator {
-  return page.getByText('Ready to use offline').and(onScreen(page));
+  // The notice toast only: the getting-started card has a lasting line with
+  // the same words, which would hold the overlay handler waiting forever.
+  return page.getByTestId('notice-toast').filter({ hasText: 'Ready to use offline' });
 }
 
 /**
