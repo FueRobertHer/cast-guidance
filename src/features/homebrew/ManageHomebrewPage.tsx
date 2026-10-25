@@ -8,11 +8,12 @@ import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
+import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
-import { importHomebrewFromUrl } from './importUrl';
+import { HomebrewUrlRefusedError, importHomebrewFromUrl } from './importUrl';
 
 export function Component() {
   usePageTitle('Homebrew');
@@ -24,8 +25,11 @@ export function Component() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState<string>();
+  // A URL the import would not fetch, kept so the guidance can link to it.
+  const [refused, setRefused] = useState<{ url: string; reason: string }>();
 
   const importFile = async (file: File) => {
+    setRefused(undefined);
     try {
       const raw: unknown = JSON.parse(
         await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
@@ -48,6 +52,7 @@ export function Component() {
   };
 
   const importUrl = async () => {
+    setRefused(undefined);
     try {
       const row = await importHomebrewFromUrl(url);
       invalidateRegistry();
@@ -55,11 +60,26 @@ export function Component() {
       setStatus(`Imported "${row.fileName}"`);
       setUrl('');
     } catch (err) {
-      setStatus(
-        `URL import failed (${err instanceof Error ? err.message : String(err)}). If this is a CORS error, download the file and import it instead.`,
-      );
+      if (err instanceof HomebrewUrlRefusedError) {
+        // Refused before any request: say why and offer the way that works.
+        setStatus(undefined);
+        setRefused({ url: err.url, reason: err.message });
+        return;
+      }
+      // `fetch` rejects with a bare TypeError for an unreachable host and for
+      // one that does not allow cross-site reads alike, so the advice covers
+      // both. Anything else (an HTTP status, a file that is not homebrew)
+      // already says what went wrong.
+      const advice =
+        err instanceof TypeError
+          ? ' The host may be down or may not allow the app to read the file; download it and use Import file instead.'
+          : '';
+      setStatus(`URL import failed (${errorText(err)}).${advice}`);
     }
   };
+
+  /** Only a plain http(s) URL becomes a link; anything else stays text. */
+  const refusedHref = refused === undefined ? undefined : safeExternalHref(refused.url);
 
   /**
    * Removing a file, from a row the page can render and from one it cannot: an
@@ -162,7 +182,7 @@ export function Component() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             aria-label="Homebrew JSON URL"
-            placeholder="…or paste a raw JSON URL (GitHub raw, gist)"
+            placeholder="…or paste a GitHub, gist, or jsDelivr JSON URL"
             className="min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
           />
           <button
@@ -175,6 +195,33 @@ export function Component() {
           </button>
         </form>
         {status !== undefined && <p className="text-xs text-amber-300">{status}</p>}
+        {refused !== undefined && (
+          <div className="flex flex-col gap-1.5 text-xs text-amber-300" role="status">
+            <p>
+              {refused.reason} For other sites, open the file, save it to this device, and use
+              Import file.
+            </p>
+            <div className="flex gap-3">
+              {refusedHref !== undefined && (
+                <a
+                  href={refusedHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline"
+                >
+                  Open file
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="font-semibold underline"
+              >
+                Import file
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {readErrors.length > 0 && (

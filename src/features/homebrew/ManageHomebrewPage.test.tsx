@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
 // This is the only screen that can remove a file the app cannot read, so it is
 // the one screen that has to say such a file exists, and offer the delete.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 
-const { read, remove } = vi.hoisted(() => ({
+const { read, remove, importJson } = vi.hoisted(() => ({
   read: { current: undefined as unknown },
   remove: vi.fn(),
+  importJson: vi.fn(),
 }));
 
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => read.current }));
-vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { delete: remove } }));
+vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { delete: remove, importJson } }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true), askText: vi.fn() }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
 vi.mock('@/data5e/sourceFilter', () => ({ ensureSourcesVisible: vi.fn() }));
@@ -43,6 +44,8 @@ afterEach(() => {
   cleanup();
   read.current = undefined;
   remove.mockReset();
+  importJson.mockReset();
+  vi.restoreAllMocks();
 });
 
 describe('ManageHomebrewPage read errors', () => {
@@ -136,5 +139,102 @@ describe('ManageHomebrewPage accessible names', () => {
 
     expect(screen.getByRole('button', { name: 'Enable good.json', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Enable off.json', pressed: false })).toBeTruthy();
+  });
+});
+
+// SEC-001: the enforced CSP only lets the app connect to a few hosts, so a URL
+// anywhere else is refused before any request, with a way that still works.
+describe('ManageHomebrewPage URL import', () => {
+  const brew = { _meta: { sources: [{ json: 'HB' }] } };
+
+  function submitUrl(url: string) {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Homebrew JSON URL' }), {
+      target: { value: url },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import from URL' }));
+  }
+
+  it('refuses a host off the list without fetching, and offers the file instead', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('https://example.com/x.json');
+
+    const guidance = await screen.findByRole('status');
+    expect(guidance.textContent).toContain('only from GitHub');
+    expect(guidance.textContent).toContain('use Import file');
+    const open = within(guidance).getByRole('link', { name: 'Open file' });
+    expect(open.getAttribute('href')).toBe('https://example.com/x.json');
+    expect(open.getAttribute('rel')).toContain('noopener');
+    expect(within(guidance).getByRole('button', { name: 'Import file' })).toBeTruthy();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(importJson).not.toHaveBeenCalled();
+  });
+
+  it('links nothing for a refused URL that is not http(s)', async () => {
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('javascript:alert(1)');
+
+    const guidance = await screen.findByRole('status');
+    expect(within(guidance).queryByRole('link')).toBeNull();
+  });
+
+  it('still imports from raw.githubusercontent', async () => {
+    const url = 'https://raw.githubusercontent.com/me/brews/main/brew.json';
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(brew)));
+    importJson.mockResolvedValue({ fileName: 'brew.json', sourceIds: ['HB'] });
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl(url);
+
+    await screen.findByText('Imported "brew.json"');
+    expect(fetchSpy).toHaveBeenCalledWith(url, expect.anything());
+    expect(importJson).toHaveBeenCalledWith(brew, 'brew.json', url);
+  });
+
+  it('advises the file import when the host cannot be reached', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('https://raw.githubusercontent.com/me/brews/main/brew.json');
+
+    const status = await screen.findByText(/URL import failed/);
+    expect(status.textContent).toContain('(Failed to fetch)');
+    expect(status.textContent).toContain('use Import file instead');
+  });
+
+  it('reports an HTTP failure as itself, without network advice', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 404 }));
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('https://raw.githubusercontent.com/me/brews/main/brew.json');
+
+    const status = await screen.findByText(/URL import failed/);
+    expect(status.textContent).toBe('URL import failed (HTTP 404).');
+  });
+
+  it('fetches the raw file behind a github.com blob URL', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(brew)));
+    importJson.mockResolvedValue({ fileName: 'brew.json', sourceIds: ['HB'] });
+    read.current = { files: [], errors: [] };
+    renderPage();
+
+    submitUrl('https://github.com/me/brews/blob/main/brew.json');
+
+    await screen.findByText('Imported "brew.json"');
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://raw.githubusercontent.com/me/brews/main/brew.json',
+      expect.anything(),
+    );
   });
 });
