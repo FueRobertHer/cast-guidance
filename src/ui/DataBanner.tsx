@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
+import { useOnline } from '@/lib/useOnline';
 import { announce } from '@/stores/announcer';
 import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
@@ -34,6 +35,7 @@ export function DataBanner() {
   useEffect(() => {
     if (rollbackShown) announce(rollbackText(rolledBackFrom, getActiveTag()), { key: 'data' });
   }, [rollbackShown, rolledBackFrom]);
+  const online = useOnline();
 
   // The same predicate the update toast stands aside for, so neither can drift
   // into painting over the other.
@@ -59,10 +61,17 @@ export function DataBanner() {
         className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
         role="alert"
       >
-        <span className="truncate">
-          {failedTag === undefined
-            ? `Game data download failed: ${error}`
-            : `Update to ${failedTag} failed: ${error}`}
+        <span className={online ? 'truncate' : undefined}>
+          {/* Offline, the reason is the network and so is the remedy. The
+              fetch error under it (a list of mirror URLs that each "failed to
+              fetch") says neither, and read as the app being broken. */}
+          {online
+            ? failedTag === undefined
+              ? `Game data download failed: ${error}`
+              : `Update to ${failedTag} failed: ${error}`
+            : failedTag === undefined
+              ? "You're offline, so the game data download can't finish yet. Retry once you're back online."
+              : `You're offline, so the update to ${failedTag} can't install yet. Retry once you're back online.`}
         </span>
         <button
           type="button"

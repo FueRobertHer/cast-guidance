@@ -29,6 +29,7 @@ const spoken = () => getAnnouncerState().messages.map((m) => m.text);
 afterEach(() => {
   cleanup();
   resetAnnouncer();
+  vi.restoreAllMocks();
   retryDataLayer.mockClear();
   updateToTag.mockClear();
   dismissRollbackNotice.mockClear();
@@ -97,6 +98,47 @@ describe('DataBanner', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(updateToTag).toHaveBeenCalledWith('v2.33.0');
     expect(retryDataLayer).not.toHaveBeenCalled();
+  });
+
+  it('says the device is offline instead of the fetch error, and keeps Retry', () => {
+    // PWA-001: offline, the error is a list of mirror URLs that each "failed
+    // to fetch". The reason, and the remedy, is the network.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({
+      phase: 'error',
+      error: 'failed to fetch "races.json": https://cdn.jsdelivr.net/... -> Failed to fetch',
+    });
+    render(<DataBanner />);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      "You're offline, so the game data download can't finish yet. Retry once you're back online.",
+    );
+    expect(alert.textContent).not.toContain('Failed to fetch');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retryDataLayer).toHaveBeenCalledOnce();
+  });
+
+  it('says an install cannot finish offline, and still retries that install', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'Failed to fetch', failedTag: 'v2.33.0' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain(
+      "You're offline, so the update to v2.33.0 can't install yet.",
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(updateToTag).toHaveBeenCalledWith('v2.33.0');
+  });
+
+  it('goes back to the failure itself once the device is online again', () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    dataStatusStore.setState({ phase: 'error', error: 'HTTP 503' });
+    render(<DataBanner />);
+    expect(screen.getByRole('alert').textContent).toContain("You're offline");
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Game data download failed: HTTP 503');
   });
 
   it('says why the version went backwards, over the drain that follows', () => {
