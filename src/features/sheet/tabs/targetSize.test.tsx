@@ -13,6 +13,7 @@ import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from '../BuildPage';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
+import { Component as StatsTab } from './StatsTab';
 
 vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
@@ -25,11 +26,13 @@ vi.mock('@/ui/dialogs', () => ({
 
 afterEach(cleanup);
 
+const PAGES = { play: <PlayTab />, build: <BuildPage />, stats: <StatsTab /> };
+
 /**
  * A level 13 sorcerer: slots draw pips, and 13 sorcery points is past the
  * twelve pips can show, so the pool gets its stepper.
  */
-function render13(page: 'play' | 'build') {
+function render13(page: 'play' | 'build' | 'stats') {
   const doc = newCharacterDoc('t1', 'Sparks', 't');
   doc.abilities.method = 'manual';
   doc.classes = [
@@ -54,7 +57,7 @@ function render13(page: 'play' | 'build') {
     {
       path: '/',
       element: <Outlet context={ctx} />,
-      children: [{ index: true, element: page === 'play' ? <PlayTab /> : <BuildPage /> }],
+      children: [{ index: true, element: PAGES[page] }],
     },
   ]);
   render(<RouterProvider router={router} />);
@@ -97,6 +100,13 @@ describe('touch targets (A11Y-002)', () => {
     expect(rows.map((r) => r.name)).toEqual(
       expect.arrayContaining(['Remove a Sorcerer level', 'Decrease STR', 'Increase CHA']),
     );
+    expect(rows.filter((r) => !r.big)).toEqual([]);
+  });
+
+  it('sizes the Stats ability score buttons for a thumb (A11Y-003)', () => {
+    render13('stats');
+    const rows = sized(/^[A-Z]{3} score \d+.*: breakdown$/);
+    expect(rows).toHaveLength(6);
     expect(rows.filter((r) => !r.big)).toEqual([]);
   });
 });

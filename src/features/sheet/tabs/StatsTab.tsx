@@ -48,7 +48,11 @@ export function Component() {
                     aria-label={`${a.toUpperCase()} score ${ability.value}${
                       ability.overridden ? ' (set manually)' : ''
                     }: breakdown`}
-                    className="text-xs text-ink-muted"
+                    // A thumb-sized target around the small score (A11Y-003:
+                    // it was 13 by 16, under even axe's 24px floor). The
+                    // negative margin spends the card's bottom padding, so the
+                    // card grows less than the target does.
+                    className="tap -mb-2 text-xs text-ink-muted"
                   >
                     {ability.value}
                     {ability.overridden ? '•' : ''}

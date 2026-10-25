@@ -31,13 +31,7 @@
   "sheet-more": {},
   "sheet-play": {},
   "sheet-spells": {},
-  "sheet-stats": {
-    "target-size": {
-      "count": 6,
-      "impact": "serious",
-      "help": "All touch targets must be 24px large, or leave sufficient space"
-    }
-  },
+  "sheet-stats": {},
   "text-prompt": {},
   "toast-app-update": {},
   "toast-data-update": {},
