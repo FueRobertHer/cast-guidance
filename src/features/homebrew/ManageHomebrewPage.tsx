@@ -49,10 +49,30 @@ export function Component() {
   // is written until Import.
   const [pending, setPending] = useState<PendingImport>();
   const [checking, setChecking] = useState(false);
+  // Which check is the latest. A slow check (a registry read during a first
+  // download) must not land after a newer one and swap its preview in, or
+  // Import would store a file the dialog no longer showed.
+  const latest = useRef(0);
+  const begin = (message: string): number => {
+    setRefused(undefined);
+    setStatus(message);
+    setChecking(true);
+    latest.current += 1;
+    return latest.current;
+  };
+  const finish = (request: number) => {
+    if (request === latest.current) setChecking(false);
+  };
 
-  /** Work out what the prepared file would do, then show it. */
-  const showPreview = async (row: HomebrewFileRow, bytes: number, source: 'file' | 'url') => {
+  /** Work out what the prepared file would do, then show it if still wanted. */
+  const showPreview = async (
+    request: number,
+    row: HomebrewFileRow,
+    bytes: number,
+    source: 'file' | 'url',
+  ) => {
     const preview = await (await loadImportFlow()).buildHomebrewPreview(row, bytes);
+    if (request !== latest.current) return;
     setStatus(undefined);
     setPending({ row, preview, source });
   };
@@ -60,31 +80,28 @@ export function Component() {
   // Validation and the preview write nothing, so a failure before Import is
   // never a storage one: the error's own message says what went wrong.
   const importFile = async (file: File) => {
-    setRefused(undefined);
-    setStatus(`Checking "${file.name}"…`);
-    setChecking(true);
+    const request = begin(`Checking "${file.name}"…`);
     try {
       const raw: unknown = JSON.parse(
         await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
       );
       const row = await homebrewRepo.prepare(raw, file.name);
-      await showPreview(row, file.size, 'file');
+      await showPreview(request, row, file.size, 'file');
     } catch (err) {
-      setStatus(`Import failed: ${errorText(err)}`);
+      if (request === latest.current) setStatus(`Import failed: ${errorText(err)}`);
     } finally {
-      setChecking(false);
+      finish(request);
     }
   };
 
   const importUrl = async () => {
-    setRefused(undefined);
-    setStatus('Checking the file at that URL…');
-    setChecking(true);
+    const request = begin('Checking the file at that URL…');
     try {
       const fetched = await fetchHomebrewFromUrl(url);
       const row = await homebrewRepo.prepare(fetched.raw, fetched.fileName, fetched.url);
-      await showPreview(row, fetched.bytes, 'url');
+      await showPreview(request, row, fetched.bytes, 'url');
     } catch (err) {
+      if (request !== latest.current) return;
       if (err instanceof HomebrewUrlRefusedError) {
         // Refused before any request: say why and offer the way that works.
         setStatus(undefined);
@@ -101,8 +118,13 @@ export function Component() {
           : '';
       setStatus(`URL import failed (${errorText(err)}).${advice}`);
     } finally {
-      setChecking(false);
+      finish(request);
     }
+  };
+
+  /** Starting another import while one is being checked waits for it. */
+  const chooseFile = () => {
+    if (!checking) fileInput.current?.click();
   };
 
   /** Import pressed in the preview: store the file the preview described. */
@@ -123,9 +145,17 @@ export function Component() {
   };
 
   const keepExisting = () => {
-    const name = pending?.preview.duplicateOf?.fileName ?? pending?.row.fileName ?? 'file';
+    const p = pending;
+    if (p === undefined) return;
     setPending(undefined);
-    setStatus(`Kept the existing "${name}". Nothing was added.`);
+    setStatus(
+      `Kept the existing "${p.preview.duplicateOf?.fileName ?? p.row.fileName}". Nothing was added.`,
+    );
+    // As the old flow did for a file imported twice: its sources are shown,
+    // so the file the player meant to bring in is not left hidden by a preset.
+    void ensureSourcesVisible(p.row.sourceIds).catch((err: unknown) =>
+      notifyFailure('Show sources', err),
+    );
   };
 
   /** Only a plain http(s) URL becomes a link; anything else stays text. */
@@ -170,11 +200,15 @@ export function Component() {
         imported.
       </p>
 
-      <div className="flex flex-col gap-2" aria-busy={checking}>
+      <div className="flex flex-col gap-2">
+        {/* aria-disabled rather than disabled while a file is checked, so the
+            button keeps focus: the preview hands focus back to it. */}
         <button
           type="button"
-          onClick={() => fileInput.current?.click()}
-          className="tap gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+          onClick={chooseFile}
+          aria-disabled={checking}
+          aria-busy={checking}
+          className="tap gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white aria-disabled:opacity-60"
         >
           <FileUp size={16} /> Import file
         </button>
@@ -226,7 +260,7 @@ export function Component() {
           className="flex gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            if (url.trim() !== '') void importUrl();
+            if (url.trim() !== '' && !checking) void importUrl();
           }}
         >
           <input
@@ -240,7 +274,9 @@ export function Component() {
             type="submit"
             aria-label="Import from URL"
             title="Import from URL"
-            className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
+            aria-disabled={checking}
+            aria-busy={checking}
+            className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold aria-disabled:opacity-60"
           >
             <LinkIcon size={16} />
           </button>
@@ -269,11 +305,7 @@ export function Component() {
                     Open file
                   </a>
                 )}
-                <button
-                  type="button"
-                  onClick={() => fileInput.current?.click()}
-                  className="font-semibold underline"
-                >
+                <button type="button" onClick={chooseFile} className="font-semibold underline">
                   Import file
                 </button>
               </div>

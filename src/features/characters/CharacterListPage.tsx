@@ -60,11 +60,20 @@ async function exportCharacter(doc: CharacterDoc): Promise<void> {
   downloadJson(doc.name.replaceAll(/[^\w-]+/g, '_') || 'character', payload);
 }
 
+/**
+ * The class list, or none: the importer accepts an export with no class list,
+ * and the roster must still render it (REL-005).
+ */
+function classesOf(doc: CharacterDoc): CharacterDoc['classes'] {
+  return Array.isArray(doc.classes) ? doc.classes : [];
+}
+
 function classSummary(doc: CharacterDoc): string {
-  if (doc.classes.length === 0) return 'No class yet';
+  const classes = classesOf(doc);
+  if (classes.length === 0) return 'No class yet';
   // Defensive: a corrupted class entry (missing ref) must not throw while
   // rendering the list: one bad record cannot take down the page (REL-005).
-  return doc.classes
+  return classes
     .map((c) => {
       const name = c.ref?.name ?? 'Unknown class';
       const sub = c.subclass?.name !== undefined ? ` · ${c.subclass.name}` : '';
@@ -150,6 +159,10 @@ export function Component() {
   const heading = useRef<HTMLHeadingElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
   const [pendingImport, setPendingImport] = useState<PendingImport>();
+  const [checking, setChecking] = useState(false);
+  // Which check is the latest: a slow one must not land after a newer one
+  // and swap its preview in, or Import would store a file nobody was shown.
+  const latestImport = useRef(0);
 
   /**
    * Validate the file and show what importing it would do; nothing is written
@@ -157,19 +170,25 @@ export function Component() {
    * `prepareImport` only runs once the whole file is in memory.
    */
   const previewImport = async (file: File) => {
+    latestImport.current += 1;
+    const request = latestImport.current;
     setImportStatus(`Checking "${file.name}"…`);
+    setChecking(true);
     try {
       const prepared = await characterRepo.prepareImport(
         await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
       );
       const flow = await loadImportFlow();
       const preview = await flow.buildCharacterPreview(prepared);
+      if (request !== latestImport.current) return;
       setImportStatus(undefined);
       setPendingImport({ prepared, preview, sourceSpellingOf: flow.spellingLookup(prepared) });
     } catch (err) {
       // Validation and the preview write nothing, so this is never a storage
       // failure: the error's own message says what went wrong.
-      setImportStatus(`Import failed: ${errorText(err)}`);
+      if (request === latestImport.current) setImportStatus(`Import failed: ${errorText(err)}`);
+    } finally {
+      if (request === latestImport.current) setChecking(false);
     }
   };
 
@@ -222,7 +241,7 @@ export function Component() {
     if (registry === null) return map;
     const ctx = engineContextFor(registry);
     for (const c of characters) {
-      if (c.classes.length === 0) continue;
+      if (classesOf(c).length === 0) continue;
       try {
         const sheet = deriveSheet(c, ctx);
         map.set(c.id, { hp: c.play.currentHp, maxHp: sheet.maxHp.value, ac: sheet.ac.value });
@@ -357,7 +376,7 @@ export function Component() {
               {/* Nothing to wait for on a classless character, and nothing
                   coming if the compendium failed to load. */}
               {(vitals.get(c.id) !== undefined ||
-                (registryStatus === 'loading' && c.classes.length > 0)) && (
+                (registryStatus === 'loading' && classesOf(c).length > 0)) && (
                 <VitalsLine v={vitals.get(c.id)} />
               )}
             </Link>
@@ -462,10 +481,16 @@ export function Component() {
           </Link>
         </div>
       </section>
+      {/* aria-disabled rather than disabled while a file is checked, so the
+          button keeps focus: the preview hands focus back to it. */}
       <button
         type="button"
-        onClick={() => importInput.current?.click()}
-        className="tap gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
+        onClick={() => {
+          if (!checking) importInput.current?.click();
+        }}
+        aria-disabled={checking}
+        aria-busy={checking}
+        className="tap gap-2 rounded-lg bg-surface px-4 aria-disabled:opacity-60 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
       >
         <FileUp size={15} aria-hidden /> Import from a file
       </button>

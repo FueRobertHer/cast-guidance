@@ -10,9 +10,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { ensureSourcesVisible, invalidateRegistry } = vi.hoisted(() => ({
+const { ensureSourcesVisible, invalidateRegistry, registry } = vi.hoisted(() => ({
   ensureSourcesVisible: vi.fn(() => Promise.resolve()),
   invalidateRegistry: vi.fn(),
+  /**
+   * `gates` holds back the next reads, in call order (a slow read during a
+   * first download); `fail` makes a read throw (no game data readable).
+   */
+  registry: { calls: 0, gates: [] as Promise<void>[], fail: false },
 }));
 
 vi.mock('@/data5e/sourceFilter', () => ({ ensureSourcesVisible }));
@@ -23,6 +28,10 @@ vi.mock('@/data5e/registry', async () => {
     invalidateRegistry,
     /** Official Fire Bolt, then every enabled file in the real merge order. */
     getRegistry: async () => {
+      registry.calls += 1;
+      const gate = registry.gates.shift();
+      if (gate !== undefined) await gate;
+      if (registry.fail) throw new Error('no game data');
       const reg = new EntityRegistry();
       reg.addAll('spell', [{ name: 'Fire Bolt', source: 'PHB', level: 0 }]);
       const brews = new Map<string, Record<string, unknown>>();
@@ -61,6 +70,7 @@ beforeEach(async () => {
   dataStatusStore.getState().setPhase('done');
   ensureSourcesVisible.mockClear();
   invalidateRegistry.mockClear();
+  Object.assign(registry, { calls: 0, gates: [], fail: false });
 });
 
 afterEach(() => {
@@ -86,7 +96,7 @@ function renderPage() {
 
 /** Choose a file through the page's Import file button, as a person would. */
 function chooseFile(name: string, content: unknown) {
-  const button = screen.getByRole('button', { name: 'Import file' });
+  const button = screen.getByRole('button', { name: 'Import file', hidden: true });
   button.focus();
   const text = typeof content === 'string' ? content : JSON.stringify(content);
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -175,7 +185,8 @@ describe('homebrew import preview', () => {
       expect(status().textContent).toBe('Kept the existing "zap.json". Nothing was added.'),
     );
     expect(await db.homebrewFiles.toArray()).toEqual([{ ...existing, enabled: false }]);
-    expect(ensureSourcesVisible).not.toHaveBeenCalled();
+    // As the old flow did for a file imported twice.
+    await waitFor(() => expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']));
   });
 
   it('names the file that wins a clash, and the registry agrees', async () => {
@@ -236,19 +247,124 @@ describe('homebrew import preview', () => {
     expect(await fileCount()).toBe(1);
   });
 
-  it('calls a source "not here yet" while game data is still downloading', async () => {
-    dataStatusStore.getState().setPhase('working');
+  // True whether the download is running, stopped on an error, or not begun.
+  it.each([
+    'working',
+    'error',
+    'idle',
+  ] as const)('says only that not all game data is here when the download is %s', async (phase) => {
+    dataStatusStore.getState().setPhase(phase);
     renderPage();
     chooseFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
 
     const dialog = await findDialog('Import "needs.json"?');
     expect(dialog.textContent).toContain(
-      'XYZ is not here yet. Game data is still downloading, so it may arrive.',
+      'XYZ is not found yet. Not all game data is on this device yet, so it may arrive with the rest.',
     );
     expect(dialog.textContent).toContain(
-      'Game data is still downloading, so clashes with official',
+      'Not all game data is on this device yet, so clashes with official content may be incomplete.',
     );
     expect(dialog.textContent).not.toContain('is not on this device');
+    expect(dialog.textContent).not.toContain('downloading');
+  });
+
+  it('agrees with its note when no game data could be read', async () => {
+    registry.fail = true;
+    renderPage();
+    chooseFile('needs.json', brew('HB', [], { dependencies: { spell: ['XYZ'] } }));
+
+    const dialog = await findDialog('Import "needs.json"?');
+    expect(within(dialog).getByRole('region', { name: 'Depends on' }).textContent).toContain(
+      'XYZ could not be checked against official content, because game data could not be read.',
+    );
+    expect(dialog.textContent).toContain(
+      'Game data could not be read, so clashes with official content were not checked.',
+    );
+  });
+
+  it('says when a copy target is only in a turned-off file', async () => {
+    const off = await homebrewRepo.importJson(
+      brew('OFF', [{ name: 'Base', source: 'OFF', level: 2 }]),
+      'off.json',
+    );
+    await homebrewRepo.setEnabled(off.id, false);
+    renderPage();
+    chooseFile(
+      'child.json',
+      brew('HB', [{ name: 'Child', source: 'HB', _copy: { name: 'Base', source: 'OFF' } }]),
+    );
+
+    const dialog = await findDialog('Import "child.json"?');
+    expect(
+      within(dialog).getByRole('region', { name: 'Copies that will not load in full' }).textContent,
+    ).toContain(
+      'Child copies Base|OFF, which is only in "off.json", a file that is turned off. Until that file is turned on, Child will be missing what it copies.',
+    );
+  });
+
+  it('still previews when a roster character cannot be read', async () => {
+    const good = newCharacterDoc('hero-1', 'Brin', 't');
+    good.homebrewDeps = ['HB'];
+    await characterRepo.put(good);
+    // A stored doc whose spellcasting entry has no lists.
+    await db.characters.put({
+      ...newCharacterDoc('hero-2', 'Broken', 't'),
+      spellcasting: { wizard: {} },
+    } as never);
+    renderPage();
+    chooseFile('brew.json', ZAP_1);
+
+    const dialog = await findDialog('Import "brew.json"?');
+    const characters = within(dialog).getByRole('region', {
+      name: 'Characters that use its sources',
+    });
+    expect(
+      within(characters)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['Brin']);
+  });
+
+  it('describes the dialog and lets a keyboard scroll its details', async () => {
+    renderPage();
+    chooseFile('brew.json', ZAP_1);
+
+    const dialog = await findDialog('Import "brew.json"?');
+    const describedBy = dialog.getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      'Nothing is added until you choose Import.',
+    );
+    expect(within(dialog).getByRole('region', { name: 'Import details' }).tabIndex).toBe(0);
+  });
+
+  it('keeps the newest preview when an earlier check finishes late', async () => {
+    let release: () => void = () => undefined;
+    registry.gates.push(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPage();
+    const opener = chooseFile('a.json', brew('AAA', [{ name: 'Slow', source: 'AAA', level: 1 }]));
+    await waitFor(() => expect(registry.calls).toBe(1));
+    // While a file is checked, the button says it is busy and starts nothing.
+    expect(opener.getAttribute('aria-disabled')).toBe('true');
+    // The Checking line is announced: no busy ancestor holds it back.
+    expect(status().textContent).toBe('Checking "a.json"…');
+    expect(status().closest('[aria-busy="true"]')).toBeNull();
+
+    chooseFile('b.json', brew('BBB', [{ name: 'Quick', source: 'BBB', level: 1 }]));
+    const dialog = await findDialog('Import "b.json"?');
+    release();
+    // The late answer for a.json does not take b.json's place.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('dialog', { name: 'Import "a.json"?' })).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(status().textContent).toBe('Imported "b.json" (1 spell)'));
+    expect((await db.homebrewFiles.toArray()).map((f) => f.fileName)).toEqual(['b.json']);
+    expect(opener.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('lists the copies a file completes and the characters that use its sources', async () => {

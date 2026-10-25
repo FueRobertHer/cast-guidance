@@ -9,9 +9,11 @@
  * with the Homebrew page and, on the roster, only once an import starts, so
  * none of it is in the entry chunk.
  */
-import { BadgeAlert, BadgeCheck, BadgeInfo, BadgePlus } from 'lucide-react';
+// Icons the app already ships elsewhere, so the preview adds no icon chunks.
+import { Check, ChevronRight, Plus, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
 import { DialogFrame } from './dialogs';
+import { Sheet } from './sheet';
 
 /** 44px targets (A11Y-002's `tap`). */
 const BUTTON = 'tap flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold';
@@ -47,11 +49,14 @@ export interface PreviewAction {
  */
 export function ImportPreviewDialog({
   title,
+  description,
   onDismiss,
   actions,
   children,
 }: {
   title: string;
+  /** One line under the title; the dialog's accessible description. */
+  description: string;
   onDismiss: () => void;
   actions: PreviewAction[];
   children: ReactNode;
@@ -59,12 +64,21 @@ export function ImportPreviewDialog({
   useReturnFocus();
   return (
     <DialogFrame title={title} onDismiss={onDismiss}>
+      <Sheet.Description className="-mt-2 mb-3 text-xs text-ink-muted">
+        {description}
+      </Sheet.Description>
       {/* Below the sheet's handle and title, so the actions stay on screen
-          however long the preview runs. */}
-      <div className="flex max-h-[75dvh] flex-col">
-        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
+          however long the preview runs. Focusable and named, so a keyboard
+          can scroll it (Safari does not focus a scroll area on its own). */}
+      <div className="flex max-h-[70dvh] flex-col">
+        <section
+          aria-label="Import details"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll area must take focus to be scrolled by keyboard.
+          tabIndex={0}
+          className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4"
+        >
           <div className="flex flex-col gap-4 pb-3 text-sm">{children}</div>
-        </div>
+        </section>
         <div className="flex shrink-0 gap-2 border-t border-surface-2 pt-3">
           {actions.map((a) => (
             <button
@@ -102,11 +116,11 @@ export function PreviewList({ children }: { children: ReactNode }) {
 
 export type Tone = 'good' | 'info' | 'warn' | 'new';
 
-const TONE: Record<Tone, { Icon: typeof BadgeInfo; className: string }> = {
-  good: { Icon: BadgeCheck, className: 'text-emerald-400' },
-  new: { Icon: BadgePlus, className: 'text-emerald-400' },
-  info: { Icon: BadgeInfo, className: 'text-ink-muted' },
-  warn: { Icon: BadgeAlert, className: 'text-amber-300' },
+const TONE: Record<Tone, { Icon: typeof Check; className: string }> = {
+  good: { Icon: Check, className: 'text-emerald-400' },
+  new: { Icon: Plus, className: 'text-emerald-400' },
+  info: { Icon: ChevronRight, className: 'text-ink-muted' },
+  warn: { Icon: TriangleAlert, className: 'text-amber-300' },
 };
 
 /**

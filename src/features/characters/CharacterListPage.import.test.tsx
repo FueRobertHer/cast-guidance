@@ -12,14 +12,33 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 vi.mock('@/data5e/hooks', () => ({
   useRegistryState: () => ({ registry: null, status: 'loading' }),
 }));
+const { registry, preview } = vi.hoisted(() => ({
+  /** `gates` holds back the next reads, in call order: a slow first download. */
+  registry: { calls: 0, gates: [] as Promise<void>[] },
+  /** Makes the preview builder throw, as a shape it cannot read would. */
+  preview: { fail: false },
+}));
 vi.mock('@/data5e/registry', async () => {
   const { EntityRegistry } = await import('@/data5e/normalize');
   return {
     invalidateRegistry: vi.fn(),
-    getRegistry: () => {
+    getRegistry: async () => {
+      registry.calls += 1;
+      const gate = registry.gates.shift();
+      if (gate !== undefined) await gate;
       const reg = new EntityRegistry();
       reg.addAll('class', [{ name: 'Fighter', source: 'PHB' }]);
-      return Promise.resolve(reg);
+      return reg;
+    },
+  };
+});
+vi.mock('./importPreview', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./importPreview')>();
+  return {
+    ...real,
+    previewCharacterImport: (input: Parameters<typeof real.previewCharacterImport>[0]) => {
+      if (preview.fail) throw new TypeError('x is not iterable');
+      return real.previewCharacterImport(input);
     },
   };
 });
@@ -50,6 +69,8 @@ beforeAll(() => {
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
   dataStatusStore.getState().setPhase('done');
+  Object.assign(registry, { calls: 0, gates: [] });
+  preview.fail = false;
   // Keep the getting-started card out of the way of the import row.
   onboardingStore.setState({ dismissed: true });
 });
@@ -88,7 +109,7 @@ function renderRoster() {
 }
 
 function chooseFile(content: unknown) {
-  const button = screen.getByRole('button', { name: 'Import from a file' });
+  const button = screen.getByRole('button', { name: 'Import from a file', hidden: true });
   button.focus();
   const text = typeof content === 'string' ? content : JSON.stringify(content);
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -215,8 +236,8 @@ describe('character import preview', () => {
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeTruthy();
   });
 
-  it('calls an unfound source "not here yet" while game data is downloading', async () => {
-    dataStatusStore.getState().setPhase('working');
+  it('says only that not all game data is here while the download is not done', async () => {
+    dataStatusStore.getState().setPhase('error');
     renderRoster();
     chooseFile(
       exported(
@@ -229,9 +250,115 @@ describe('character import preview', () => {
 
     const dialog = await findDialog('Import Brin?');
     expect(dialog.textContent).toContain(
-      'Later is not here yet. Game data is still downloading, so it may arrive.',
+      'Later is not found yet. Not all game data is on this device yet, so it may arrive with the rest.',
+    );
+    expect(dialog.textContent).toContain(
+      'Not all game data is on this device yet, so some sources may only be missing for now.',
     );
     expect(dialog.textContent).not.toContain('is not on this device');
+    expect(dialog.textContent).not.toContain('downloading');
+  });
+
+  it('warns when a file it carries is already here but turned off', async () => {
+    await characterRepo.importFromText(JSON.stringify(exported(hero())));
+    const [file] = await db.homebrewFiles.toArray();
+    await homebrewRepo.setEnabled(file?.id ?? '', false);
+    renderRoster();
+    chooseFile(exported(hero()));
+
+    const dialog = await findDialog('Import Brin?');
+    expect(
+      within(dialog).getByRole('region', { name: 'Homebrew in this file' }).textContent,
+    ).toContain(
+      'Already here, turned off. brews.json (1 spell). The same file is on this device, so it is skipped, but it is turned off, so its entries are not used. Turn it on in Homebrew to use them.',
+    );
+  });
+
+  // Shapes the old flow imported: the preview must read them, not throw.
+  it.each([
+    ['no class list', (d: Json) => delete d.classes, 'ClassNo class yet'],
+    [
+      'a class entry with no reference',
+      (d: Json) => {
+        d.classes = [{ levels: 2, hp: [] }];
+      },
+      'ClassUnknown class 2',
+    ],
+    [
+      'a stray value among its homebrew dependencies',
+      (d: Json) => {
+        d.homebrewDeps = [5, 'HB'];
+      },
+      'ClassFighter 3',
+    ],
+  ])('previews and imports a character with %s', async (_, edit, classLine) => {
+    const doc = hero() as unknown as Json;
+    edit(doc);
+    renderRoster();
+    chooseFile(exported(doc as unknown as CharacterDoc));
+
+    const dialog = await findDialog('Import Brin?');
+    expect(dialog.textContent).toContain(classLine);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(importStatus().textContent).toMatch(/^Imported Brin/));
+    expect(await db.characters.count()).toBe(1);
+    // The roster still renders the imported character.
+    expect(await screen.findByRole('button', { name: 'Actions for Brin' })).toBeTruthy();
+  });
+
+  it('falls back to a short preview when the details cannot be read', async () => {
+    preview.fail = true;
+    renderRoster();
+    chooseFile(exported(hero()));
+
+    const dialog = await findDialog('Import Brin?');
+    expect(dialog.textContent).toContain(
+      'Some details of this file could not be read for the preview, so it shows less than usual. Import still adds the character from the file.',
+    );
+    expect(dialog.textContent).toMatch(/Size\d+ bytes/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(importStatus().textContent).toBe('Imported Brin. Added 1 homebrew file'),
+    );
+  });
+
+  it('keeps the newest preview when an earlier check finishes late', async () => {
+    let release: () => void = () => undefined;
+    registry.gates.push(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderRoster();
+    const opener = chooseFile(
+      exported(
+        hero((d) => {
+          d.name = 'Slow';
+        }),
+        [],
+      ),
+    );
+    await waitFor(() => expect(registry.calls).toBe(1));
+    expect(opener.getAttribute('aria-disabled')).toBe('true');
+
+    chooseFile(
+      exported(
+        hero((d) => {
+          d.id = 'hero-2';
+          d.name = 'Quick';
+        }),
+        [],
+      ),
+    );
+    const dialog = await findDialog('Import Quick?');
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('dialog', { name: 'Import Slow?' })).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(importStatus().textContent).toBe('Imported Quick'));
+    expect((await db.characters.toArray()).map((c) => c.name)).toEqual(['Quick']);
+    expect(opener.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('refuses a file that is not JSON without a preview', async () => {

@@ -31,6 +31,7 @@ import {
   type Dependency,
   describeCollision,
   type HomebrewPreview,
+  type OfficialCoverage,
   previewHomebrewImport,
   WINNER_POLICY,
 } from './importPreview';
@@ -70,6 +71,10 @@ export async function commitHomebrewImport(
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const { row, duplicate } = await homebrewRepo.commit(prepared);
+    // Imported content the player cannot see is worse than useless, and a
+    // preset (allow list) would hide it by default. A file already here gets
+    // the same, as the old flow gave it.
+    await ensureSourcesVisible(row.sourceIds);
     if (duplicate) {
       return {
         ok: true,
@@ -77,31 +82,43 @@ export async function commitHomebrewImport(
       };
     }
     invalidateRegistry();
-    // Imported content the player cannot see is worse than useless, and a
-    // preset (allow list) would hide it by default.
-    await ensureSourcesVisible(row.sourceIds);
     return { ok: true, message: `Imported "${row.fileName}" (${countsText(row.counts)})` };
   } catch (err) {
     return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
   }
 }
 
-const DEPENDENCY: Record<Dependency['status'], { tone: Tone; text: string }> = {
+const DEPENDENCY: Record<
+  Exclude<Dependency['status'], 'not-downloaded'>,
+  { tone: Tone; text: string }
+> = {
   official: { tone: 'good', text: 'is official content, available on this device.' },
   homebrew: { tone: 'good', text: 'is in your homebrew, available on this device.' },
   disabled: {
     tone: 'warn',
     text: 'is in a homebrew file that is turned off. Turn that file on to use the entries that need it.',
   },
-  'not-downloaded': {
-    tone: 'info',
-    text: 'is not here yet. Game data is still downloading, so it may arrive.',
-  },
   missing: {
     tone: 'warn',
     text: 'is not on this device. Entries that need it may be incomplete until you import it.',
   },
 };
+
+/**
+ * A source not found while some official data was not checked. True whether
+ * the download is running, stopped or not started: it says only what is
+ * known. With no game data read at all, it matches the preview's note.
+ */
+function dependencyLine(status: Dependency['status'], coverage: OfficialCoverage) {
+  if (status !== 'not-downloaded') return DEPENDENCY[status];
+  return {
+    tone: 'info' as const,
+    text:
+      coverage === 'unavailable'
+        ? 'could not be checked against official content, because game data could not be read.'
+        : 'is not found yet. Not all game data is on this device yet, so it may arrive with the rest.',
+  };
+}
 
 /** "And 3 more", for a list the preview capped. */
 function more(total: number, shown: number, what: string): ReactNode {
@@ -131,6 +148,11 @@ export default function HomebrewImportPreview({
   return (
     <ImportPreviewDialog
       title={dup !== undefined ? `"${p.fileName}" is already here` : `Import "${p.fileName}"?`}
+      description={
+        dup !== undefined
+          ? 'Nothing new would be added.'
+          : 'Nothing is added until you choose Import.'
+      }
       onDismiss={dup !== undefined ? onKeepExisting : onCancel}
       actions={
         dup !== undefined
@@ -174,8 +196,12 @@ export default function HomebrewImportPreview({
         <PreviewSection heading="Depends on">
           <PreviewList>
             {p.dependencies.map((d) => (
-              <StatusItem key={d.sourceId} tone={DEPENDENCY[d.status].tone} status={d.sourceId}>
-                {DEPENDENCY[d.status].text}
+              <StatusItem
+                key={d.sourceId}
+                tone={dependencyLine(d.status, p.officialCoverage).tone}
+                status={d.sourceId}
+              >
+                {dependencyLine(d.status, p.officialCoverage).text}
                 {d.via === 'copy' && ' Entries in this file copy from it.'}
               </StatusItem>
             ))}
@@ -225,8 +251,9 @@ export default function HomebrewImportPreview({
           <PreviewList>
             {p.copyIssues.map((c) => (
               <StatusItem key={`${c.type}:${c.name}:${c.target}`} tone="warn">
-                {c.name} copies {c.target}, which is not on this device, so it will be missing what
-                it copies.
+                {c.disabledIn === undefined
+                  ? `${c.name} copies ${c.target}, which is not on this device, so it will be missing what it copies.`
+                  : `${c.name} copies ${c.target}, which is only in "${c.disabledIn.fileName}", a file that is turned off. Until that file is turned on, ${c.name} will be missing what it copies.`}
               </StatusItem>
             ))}
           </PreviewList>
