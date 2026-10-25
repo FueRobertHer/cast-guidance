@@ -6,7 +6,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const loader = vi.hoisted(() => ({
+  dismissRollbackNotice: vi.fn(() => Promise.resolve()),
   downloadAllPacks: vi.fn(() => Promise.resolve()),
+  retryDataLayer: vi.fn(),
   getActiveTag: vi.fn(() => 'v2.32.0'),
   listAvailableTags: vi.fn(() => Promise.resolve(['v2.33.0', 'v2.32.0'])),
   updateToTag: vi.fn(() => Promise.resolve()),
@@ -24,10 +26,21 @@ vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
 
 import { flushLanded, noteFileLanded } from '@/data5e/landing';
 import { QUOTA_GUIDANCE } from '@/lib/storageErrors';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { OFFLINE_ANNOUNCED_KEY } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
+import { DataBanner } from '@/ui/DataBanner';
+import { listenForAnnouncements } from '../../../tests-fixtures/announcements';
 import { quotaExceeded } from '../../../tests-fixtures/idbFaults';
-import { Component as SettingsPage } from './SettingsPage';
+import { OFFLINE_DOWNLOADED_TEXT, Component as SettingsPage } from './SettingsPage';
+
+/** The failure line under the control that failed, a plain visual now. */
+const failureLine = async (text: RegExp) => {
+  const line = (await screen.findByText(text)).closest('div');
+  if (line === null) throw new Error(`no line for ${text}`);
+  return line;
+};
 
 /** Walk the version picker as a user does, up to the install attempt. */
 async function installVersion(tag: string) {
@@ -42,7 +55,13 @@ afterEach(() => {
   loader.updateToTag.mockResolvedValue(undefined);
   loader.downloadAllPacks.mockResolvedValue(undefined);
   loader.verifyFullOffline.mockResolvedValue({ cached: 31, total: 48 });
-  dataStatusStore.setState({ rolledBackFrom: undefined, phase: 'idle' });
+  dataStatusStore.setState({
+    rolledBackFrom: undefined,
+    phase: 'idle',
+    error: undefined,
+    failedTag: undefined,
+  });
+  resetAnnouncer();
 });
 
 describe('SettingsPage data section', () => {
@@ -51,14 +70,14 @@ describe('SettingsPage data section', () => {
     render(<SettingsPage />);
     await installVersion('v2.33.0');
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('HTTP 500');
+    const failure = await failureLine(/Update failed/);
+    expect(failure.textContent).toContain('HTTP 500');
     // The old version is still the one in use, and the page says so.
-    expect(alert.textContent).toContain('current version is untouched');
+    expect(failure.textContent).toContain('current version is untouched');
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry install' }));
     await waitFor(() => expect(loader.updateToTag).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/Update failed/)).toBeNull());
     expect(screen.getByText(/Now on v2\.33\.0/)).toBeTruthy();
   });
 
@@ -147,7 +166,7 @@ describe('SettingsPage data section', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
 
-    expect((await screen.findByRole('alert')).textContent).toContain('offline');
+    expect((await failureLine(/Download failed/)).textContent).toContain('offline');
     fireEvent.click(screen.getByRole('button', { name: 'Retry download' }));
     await waitFor(() => expect(loader.downloadAllPacks).toHaveBeenCalledTimes(2));
   });
@@ -159,7 +178,7 @@ describe('SettingsPage data section', () => {
     render(<SettingsPage />);
     await installVersion('v2.33.0');
 
-    const alert = await screen.findByRole('alert');
+    const alert = await failureLine(/Update failed/);
     expect(alert.textContent).toContain(QUOTA_GUIDANCE);
     expect(alert.textContent).not.toContain('quota has been exceeded');
   });
@@ -170,7 +189,7 @@ describe('SettingsPage data section', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
 
-    const alert = await screen.findByRole('alert');
+    const alert = await failureLine(/Download failed/);
     expect(alert.textContent).toContain(QUOTA_GUIDANCE);
     expect(alert.textContent).not.toContain('quota has been exceeded');
   });
@@ -181,6 +200,186 @@ describe('SettingsPage data section', () => {
     dataStatusStore.setState({ rolledBackFrom: 'v2.33.0' });
     render(<SettingsPage />);
     expect(screen.getByText(/went back from v2\.33\.0, which could not start/)).toBeTruthy();
+  });
+});
+
+// A11Y-002: a failure here also reaches the shell's DataBanner, whose alert
+// says it. Two alerts for one failure were read back to back, so the page's own
+// lines are visual, and an outcome nothing else says goes through the announcer.
+describe('SettingsPage data announcements', () => {
+  /** The page as the shell shows it, with the banner beside it. */
+  const renderInShell = () =>
+    render(
+      <>
+        <DataBanner />
+        <SettingsPage />
+      </>,
+    );
+
+  it('alerts a failed download once, through the banner', async () => {
+    // The loader records the failure where the banner reads it, then rejects.
+    loader.downloadAllPacks.mockImplementationOnce(() => {
+      dataStatusStore.getState().setPhase('error', 'offline');
+      return Promise.reject(new Error('offline'));
+    });
+    renderInShell();
+    const download = await screen.findByRole('button', { name: 'Make available offline' });
+    const listener = listenForAnnouncements();
+    fireEvent.click(download);
+    await screen.findByText(/Download failed/);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Retry download' })).toBeTruthy(),
+    );
+    listener.stop();
+
+    expect(listener.heard).toHaveLength(1);
+    expect(listener.heard[0]).toContain('Game data download failed: offline');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('alerts a failed install once, through the banner', async () => {
+    loader.updateToTag.mockImplementationOnce(() => {
+      const status = dataStatusStore.getState();
+      status.setPhase('error', 'HTTP 500');
+      status.setFailedTag('v2.33.0');
+      return Promise.reject(new Error('HTTP 500'));
+    });
+    renderInShell();
+    await installVersion('v2.33.0');
+    await screen.findByText(/Update failed/);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toContain('Update to v2.33.0 failed');
+  });
+
+  it('decides a failure line is not an alert once, and a banner Retry does not change that', async () => {
+    // The line stays on screen through a Retry from the banner. Read from the
+    // live phase, it became an alert the moment the retry moved the phase
+    // on, and stayed one after the retry worked.
+    loader.updateToTag.mockImplementationOnce(() => {
+      const status = dataStatusStore.getState();
+      status.setPhase('error', 'HTTP 500');
+      status.setFailedTag('v2.33.0');
+      return Promise.reject(new Error('HTTP 500'));
+    });
+    let finish: () => void = () => undefined;
+    loader.updateToTag.mockImplementationOnce(() => {
+      dataStatusStore.getState().beginRun();
+      return new Promise<void>((resolve) => {
+        finish = () => {
+          dataStatusStore.getState().setPhase('done');
+          resolve();
+        };
+      });
+    });
+    renderInShell();
+    await installVersion('v2.33.0');
+    const line = (await screen.findByText(/^Update failed: HTTP 500/)).parentElement;
+    const roles: Array<string | null> = [line?.getAttribute('role') ?? null];
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(loader.updateToTag).toHaveBeenCalledTimes(2));
+    roles.push(line?.getAttribute('role') ?? null);
+    await act(async () => finish());
+    roles.push(line?.getAttribute('role') ?? null);
+
+    expect(roles).toEqual([null, null, null]);
+    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+  });
+
+  it('decides a download failure line is not an alert once, through a banner Retry', async () => {
+    loader.downloadAllPacks.mockImplementationOnce(() => {
+      dataStatusStore.getState().setPhase('error', 'offline');
+      return Promise.reject(new Error('offline'));
+    });
+    // The banner's Retry re-arms the background queue.
+    loader.retryDataLayer.mockImplementationOnce(() => {
+      dataStatusStore.getState().beginRun();
+    });
+    renderInShell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    const line = await screen.findByText(/^Download failed: offline/);
+    expect(line.getAttribute('role')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(loader.retryDataLayer).toHaveBeenCalledOnce());
+    act(() => dataStatusStore.getState().setPhase('done'));
+    expect(screen.getByText(/^Download failed: offline/).getAttribute('role')).toBeNull();
+  });
+
+  it('keeps a failed version check an alert, since nothing else reports it', async () => {
+    loader.listAvailableTags.mockRejectedValueOnce(new Error('rate limited'));
+    renderInShell();
+    fireEvent.click(screen.getByRole('button', { name: 'Check for data updates' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not list versions');
+  });
+
+  it('says once that a requested download finished, on a device past its offline notice', async () => {
+    localStorage.setItem(OFFLINE_ANNOUNCED_KEY, 'earlier');
+    loader.verifyFullOffline.mockResolvedValueOnce({ cached: 31, total: 48 });
+    render(<SettingsPage />);
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    await screen.findByText('ready ✓');
+    expect(getAnnouncerState().messages.map((m) => m.text)).toEqual([OFFLINE_DOWNLOADED_TEXT]);
+    localStorage.removeItem(OFFLINE_ANNOUNCED_KEY);
+  });
+
+  it('leaves the news to the one-time offline notice when that is still to come', async () => {
+    // Finishing the download is what fires "Ready to use offline"; saying
+    // "Game data downloaded" as well would be two lines for one event.
+    localStorage.removeItem(OFFLINE_ANNOUNCED_KEY);
+    loader.verifyFullOffline.mockResolvedValueOnce({ cached: 31, total: 48 });
+    render(<SettingsPage />);
+    loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    await screen.findByText('ready ✓');
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('marks the download control busy while it runs, described by the queue count', async () => {
+    let finish: () => void = () => undefined;
+    loader.downloadAllPacks.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    render(<SettingsPage />);
+    const button = await screen.findByRole('button', { name: 'Make available offline' });
+    expect(button.getAttribute('aria-busy')).toBe('false');
+    const queue = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(queue?.previousElementSibling?.textContent).toBe('Download queue');
+    fireEvent.click(button);
+    expect(screen.getByRole('button', { name: 'Downloading…' }).getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    await act(async () => finish());
+  });
+
+  it('keeps a failed install an alert when the banner is not showing it', async () => {
+    // Rejected with nothing recorded where the banner reads, as a failure
+    // outside the loader's own catch would be.
+    loader.updateToTag.mockRejectedValueOnce(new Error('HTTP 500'));
+    renderInShell();
+    await installVersion('v2.33.0');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Update failed: HTTP 500');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('keeps a failed download an alert when the banner is not showing it', async () => {
+    loader.downloadAllPacks.mockRejectedValueOnce(new Error('offline'));
+    renderInShell();
+    fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Download failed: offline');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('says once that an install finished', async () => {
+    render(<SettingsPage />);
+    await installVersion('v2.33.0');
+    await screen.findByText(/Now on v2\.33\.0/);
+    expect(getAnnouncerState().messages.map((m) => m.text)).toEqual([
+      'Now on v2.33.0. Characters re-derive automatically.',
+    ]);
   });
 });
 

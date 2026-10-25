@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { GAME_DATA_DOWNLOAD_SIZE } from '@/data5e/downloadSize';
 import { getRevision, subscribeRevision } from '@/data5e/landing';
 import {
@@ -15,12 +15,18 @@ import { resetAppData } from '@/db/reset';
 import { usePersistentStorage } from '@/lib/persistentStorage';
 import { storageErrorText } from '@/lib/storageErrors';
 import { usePageTitle } from '@/lib/usePageTitle';
-import { useDataStatus } from '@/stores/dataStatus';
+import { announce } from '@/stores/announcer';
+import { dataStatusStore, useDataStatus } from '@/stores/dataStatus';
+import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { errorText } from '@/stores/notices';
+import { offlineReadyAnnounced } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
 import { askConfirm } from '@/ui/dialogs';
 import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
+
+/** Said once a requested download completes; it matches the line that turns to "ready". */
+export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
 
 /**
  * Measured cached-data size alongside the browser's own figure. They differ,
@@ -59,6 +65,7 @@ export function Component() {
   const filesDone = useDataStatus((s) => s.filesDone);
   const filesTotal = useDataStatus((s) => s.filesTotal);
   const rolledBackFrom = useDataStatus((s) => s.rolledBackFrom);
+  const queueId = useId();
   const [offline, setOffline] = useState<{ cached: number; total: number }>();
   /** Set when the offline inventory itself could not be read. */
   const [offlineError, setOfflineError] = useState<string>();
@@ -66,16 +73,18 @@ export function Component() {
   const [updating, setUpdating] = useState(false);
   /**
    * The last thing the data section has to say. `failed` decides whether it is
-   * announced and styled as a failure; `failedTag` additionally means there is
-   * a specific install to retry.
+   * styled as a failure; `failedTag` additionally means there is a specific
+   * install to retry; `alert` whether the line is the alert that says it (see
+   * `alertsHere`).
    */
   const [updateMsg, setUpdateMsg] = useState<{
     text: string;
     failed?: boolean;
     failedTag?: string;
+    alert?: boolean;
   }>();
   const [downloading, setDownloading] = useState(false);
-  const [downloadFailed, setDownloadFailed] = useState<string>();
+  const [downloadFailed, setDownloadFailed] = useState<{ text: string; alert: boolean }>();
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState<string>();
   const { estimate, cachedBytes } = useStorageUsage(phase);
@@ -132,6 +141,22 @@ export function Component() {
   const offlineReady = offline !== undefined && offline.cached === offline.total;
   /** Non-undefined only when the last install attempt failed, and it names it. */
   const failedInstallTag = updateMsg?.failedTag;
+  /**
+   * Whether a failure line here is the alert that says it (A11Y-002). Not when
+   * the shell's DataBanner is alerting that very failure, so one failure is not
+   * two alerts read back to back. Decided once, as the failure is recorded:
+   * read from the live phase, a stale line gained the alert role the moment a
+   * banner Retry moved the phase on, and kept it after the retry succeeded.
+   * `failedTag` is the install that failed, or undefined for a download.
+   */
+  const alertsHere = (failedTag: string | undefined): boolean => {
+    const data = dataStatusStore.getState();
+    const bannerShowsIt =
+      dbLifecycleStore.getState().state === 'open' &&
+      data.phase === 'error' &&
+      data.failedTag === failedTag;
+    return !bannerShowsIt;
+  };
 
   /**
    * The install itself, without the confirmation. Retrying is agreeing to the
@@ -144,13 +169,18 @@ export function Component() {
     try {
       await updateToTag(tag);
       invalidateRegistry();
-      setUpdateMsg({ text: `Now on ${tag}. Characters re-derive automatically.` });
+      const done = `Now on ${tag}. Characters re-derive automatically.`;
+      setUpdateMsg({ text: done });
+      // The line appears with its text, which a screen reader may not hear,
+      // and the install was waited on, so the outcome is said (A11Y-002).
+      announce(done, { key: 'update' });
       setTags(null);
       measureOffline();
     } catch (err) {
       setUpdateMsg({
         text: `Update failed: ${storageErrorText(err)}`,
         failed: true,
+        alert: alertsHere(tag),
         failedTag: tag,
       });
     } finally {
@@ -177,10 +207,17 @@ export function Component() {
   const downloadEverything = async () => {
     setDownloading(true);
     setDownloadFailed(undefined);
+    // Read before the download: finishing it is what fires the one-time
+    // "Ready to use offline" notice, and then that is the one thing said.
+    const noticeSpent = offlineReadyAnnounced();
     try {
       await downloadAllPacks();
+      // The button that was pressed retires with the download, so focus has
+      // nothing left to say; this is the one word that it finished, unless
+      // the offline-ready notice is saying it.
+      if (noticeSpent) announce(OFFLINE_DOWNLOADED_TEXT, { key: 'download' });
     } catch (err) {
-      setDownloadFailed(storageErrorText(err));
+      setDownloadFailed({ text: storageErrorText(err), alert: alertsHere(undefined) });
     } finally {
       setDownloading(false);
       measureOffline();
@@ -203,7 +240,7 @@ export function Component() {
               ` (went back from ${rolledBackFrom}, which could not start)`}
           </dd>
           <dt className="text-ink-muted">Download queue</dt>
-          <dd className="capitalize">
+          <dd id={queueId} className="capitalize">
             {phase}
             {/* Clamped like the banner's bar: the counters are shared, so a run
                 that starts while another is finishing can pass its own total. */}
@@ -295,7 +332,12 @@ export function Component() {
           (updateMsg.failed !== true ? (
             <p className="text-xs text-ink-muted">{updateMsg.text}</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2" role="alert">
+            // An alert unless the shell's DataBanner is alerting this same
+            // install failure ("Update to … failed"); see `alertsHere`.
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role={updateMsg.alert === false ? undefined : 'alert'}
+            >
               <p className="text-xs text-amber-300">
                 {updateMsg.text}
                 {failedInstallTag !== undefined && ' Your current version is untouched.'}
@@ -320,6 +362,11 @@ export function Component() {
             <button
               type="button"
               disabled={downloading || updating}
+              // Busy while it runs, and described by the queue line that
+              // counts the files, so the count is there to read on demand
+              // rather than spoken as each file lands.
+              aria-busy={downloading}
+              aria-describedby={queueId}
               onClick={() => void downloadEverything()}
               className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >
@@ -329,9 +376,14 @@ export function Component() {
                   ? 'Make available offline'
                   : 'Retry download'}
             </button>
+            {/* An alert unless the shell's DataBanner is alerting the same
+                failure ("Game data download failed"); one alert is enough. */}
             {downloadFailed !== undefined && !downloading && (
-              <p className="text-xs text-amber-300" role="alert">
-                Download failed: {downloadFailed}
+              <p
+                className="text-xs text-amber-300"
+                role={downloadFailed.alert ? 'alert' : undefined}
+              >
+                Download failed: {downloadFailed.text}
               </p>
             )}
           </div>

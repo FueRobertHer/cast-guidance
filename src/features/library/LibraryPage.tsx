@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
@@ -13,10 +13,12 @@ import {
 } from '@/data5e/hooks';
 import { type EntityRegistry, type EntityType, isEntityType } from '@/data5e/normalize';
 import { type SearchResult, searchAll } from '@/data5e/search/client';
+import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
 import { useBack } from '@/lib/useBack';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { VirtualList } from '@/ui/VirtualList';
@@ -52,6 +54,25 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
 
 // ---------------------------------------------------------------------------
 
+/** How long the query has to stay put before its result count is said (A11Y-002). */
+export const SEARCH_SETTLE_MS = 750;
+
+/** "30 or more" for a page the search cut short, since it stops at its limit. */
+function countSpeech(n: number): string {
+  return n >= DEFAULT_QUERY_LIMIT ? `${n} or more` : String(n);
+}
+
+/** A search's outcome as a screen reader hears it, matching what the page lists. */
+export function searchSpeech(query: string, result: SearchResult): string {
+  const { hits, hiddenCount } = result;
+  const hidden =
+    hiddenCount > 0 ? `${countSpeech(hiddenCount)} more in sources you have hidden` : '';
+  if (hits.length === 0)
+    return hidden === '' ? `No matches for "${query}"` : `No matches. ${hidden}`;
+  const shown = `${countSpeech(hits.length)} result${hits.length === 1 ? '' : 's'}`;
+  return hidden === '' ? shown : `${shown}, and ${hidden}`;
+}
+
 function GlobalSearch() {
   const { registry, status: regStatus, error: regError, retry: retryRegistry } = useRegistryState();
   const { status: searchStatus, retry: retrySearch, indexVersion } = useSearchState(registry);
@@ -68,6 +89,13 @@ function GlobalSearch() {
   // good matches sit at rank 31.
   const sources = showHidden ? undefined : policyForSearch(policy);
   const sourcesKey = sources === undefined ? '' : JSON.stringify(sources);
+  // The query whose count was last said. A rebuild of the index asks the same
+  // query again as files land, and that is not news: only a query or source
+  // change the person made is.
+  const spokenFor = useRef<string | null>(null);
+  // Leaving the library drops a count still settling: it is about a page
+  // nobody is on any more.
+  useEffect(() => () => cancelAnnouncement('search'), []);
 
   // The index rebuilds behind a `ready` status as a download lands files, so
   // `indexVersion` asks the query again whenever one of those finishes:
@@ -77,12 +105,28 @@ function GlobalSearch() {
   useEffect(() => {
     if (!ready || trimmed.length < 2) {
       setResult({ hits: [], hiddenCount: 0 });
+      // A count still waiting to be said is for a query that is gone.
+      cancelAnnouncement('search');
+      spokenFor.current = null;
       return;
     }
     let alive = true;
     const t = setTimeout(() => {
       void searchAll(trimmed, { sources }).then((res) => {
-        if (alive) setResult(res);
+        if (!alive) return;
+        setResult(res);
+        const asked = `${trimmed}\n${sourcesKey}`;
+        if (spokenFor.current === asked) return;
+        spokenFor.current = asked;
+        // Settled, so typing a word is one count, for the word, not one per
+        // letter. A repeat, because a new query with the same count ("30 or
+        // more results" twice) is a new answer; `spokenFor` already keeps a
+        // rebuild behind the same query quiet.
+        announce(searchSpeech(trimmed, res), {
+          key: 'search',
+          settleMs: SEARCH_SETTLE_MS,
+          repeat: true,
+        });
       });
     }, 150);
     return () => {

@@ -1,8 +1,9 @@
 import { Analytics } from '@vercel/analytics/react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
 import { OfflineReadyNotice } from '@/features/onboarding/OfflineReadyNotice';
+import { announce } from '@/stores/announcer';
 import {
   characterSessionStore,
   installCharacterSessionLifecycle,
@@ -13,14 +14,38 @@ import { DataBanner } from '@/ui/DataBanner';
 import { DataUpdateToast } from '@/ui/DataUpdateToast';
 import { DbLifecycleBanner } from '@/ui/DbLifecycleBanner';
 import { DialogHost } from '@/ui/dialogs';
+import { LiveAnnouncer } from '@/ui/LiveAnnouncer';
 import { NoticeToast } from '@/ui/NoticeToast';
 import { PwaUpdateToast } from '@/ui/PwaUpdateToast';
 import { RollToast } from '@/ui/RollToast';
 
+/** What a screen reader hears when saving works again after a failure. */
+export const SAVE_RECOVERED_TEXT = 'Changes saved';
+
+/**
+ * A failed save, and the way to retry it.
+ *
+ * Saving is otherwise silent to a screen reader (A11Y-002): the header's
+ * Unsaved, Saving and Saved are visual only, since every HP tap cycles them.
+ * What is said is the failure, once, through this banner's `role="alert"`:
+ * an alert is the one kind of region announced reliably when it is inserted,
+ * and its text does not change while saves keep failing, so it is not said
+ * again. The recovery is said once through the announcer, because the banner
+ * that could say it is the thing that goes away.
+ */
 function SaveErrorBanner() {
   const errors = useCharacterSession((state) => state.saveErrors);
   const entries = Object.entries(errors);
-  if (entries.length === 0) return null;
+  const failing = entries.length > 0;
+  const wasFailing = useRef(false);
+  useEffect(() => {
+    // Each recovery is its own event: a second failure and recovery inside the
+    // de-duplication window still deserves its "saved".
+    if (wasFailing.current && !failing)
+      announce(SAVE_RECOVERED_TEXT, { key: 'save', repeat: true });
+    wasFailing.current = failing;
+  }, [failing]);
+  if (!failing) return null;
   const [, message] = entries[0] ?? [];
   return (
     <div
@@ -88,6 +113,8 @@ export function AppShell() {
         unless the page was opened from a link) wants.
       */}
       <ScrollRestoration />
+      {/* First, so its regions are in the page before anything announces. */}
+      <LiveAnnouncer />
       <StorageBanners />
       <Outlet />
       <DialogHost />

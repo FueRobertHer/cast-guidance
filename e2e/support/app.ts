@@ -13,11 +13,33 @@ export function gettingStartedDismiss(page: Page): Locator {
 }
 
 /**
+ * Everything but the announcer's screen-reader-only lines (A11Y-002). A toast
+ * is a plain visual whose words are also said through the announcer, so a
+ * text locator for the toast matches its spoken copy too; this is the one
+ * place a spec reaches past roles and names, to tell the two apart.
+ */
+export function onScreen(page: Page): Locator {
+  return page.locator('xpath=//*[not(ancestor-or-self::*[@data-announcer])]');
+}
+
+/**
+ * The lines the announcer is saying, or has said in the last few seconds, in
+ * one region or (`any`) in both.
+ */
+export function announcements(
+  page: Page,
+  politeness: 'polite' | 'assertive' | 'any' = 'polite',
+): Locator {
+  const region = politeness === 'any' ? '[data-announcer]' : `[data-announcer="${politeness}"]`;
+  return page.locator(`${region} > *`);
+}
+
+/**
  * The one-time "Ready to use offline" notice: a toast near the bottom of the
  * screen that hides itself after a few seconds.
  */
 export function offlineReadyNotice(page: Page): Locator {
-  return page.getByRole('status').filter({ hasText: 'Ready to use offline' });
+  return page.getByText('Ready to use offline').and(onScreen(page));
 }
 
 /**
@@ -66,9 +88,9 @@ export function dataProgress(page: Page): Locator {
   return page.getByRole('progressbar', { name: 'Downloading game data' });
 }
 
-/** The toast that offers a newer data release found at boot. */
+/** The toast that offers a newer data release found at boot (not its spoken copy). */
 export function dataUpdateToast(page: Page, tag: string): Locator {
-  return page.getByText(`Game data ${tag} is available`).locator('xpath=..');
+  return page.getByText(`Game data ${tag} is available`).and(onScreen(page)).locator('xpath=..');
 }
 
 /**

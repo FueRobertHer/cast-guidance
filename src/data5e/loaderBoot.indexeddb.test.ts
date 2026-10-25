@@ -575,4 +575,28 @@ describe('a full device while game data downloads', () => {
       failedTag: 'v2.33.0',
     });
   });
+
+  it('records an install that fails before it starts, and lets a retry resolve the tag again', async () => {
+    // A fresh device pins its release on first use, so a full device refuses
+    // that write inside tag resolution, ahead of the install proper. That used
+    // to reject with nothing recorded, and the rejection stayed cached, so
+    // every later install failed the same way until a reload.
+    const { db, dataStatusStore, loader } = await boot();
+    const fault = await injectIdbFault(db, { tables: ['settings'] });
+
+    await expect(loader.updateToTag('v2.33.0')).rejects.toMatchObject({
+      name: 'QuotaExceededError',
+    });
+    expect(fault.hits).toBeGreaterThan(0);
+    expect(dataStatusStore.getState()).toMatchObject({
+      phase: 'error',
+      error: QUOTA_GUIDANCE,
+      failedTag: 'v2.33.0',
+    });
+
+    await fault();
+    await loader.updateToTag('v2.33.0');
+    expect(dataStatusStore.getState().phase).toBe('done');
+    expect((await db.settings.get('dataTag'))?.value).toBe('v2.33.0');
+  });
 });

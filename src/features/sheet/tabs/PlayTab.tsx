@@ -6,6 +6,7 @@ import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { PlayState, SpellcastingBlock } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
@@ -53,6 +54,18 @@ const CONDITIONS = [
   'Stunned',
   'Unconscious',
 ];
+
+/**
+ * How long HP has to stay put before it is said (A11Y-002). A run of taps on
+ * the steppers is one change to a listener: only where it ends is spoken.
+ */
+export const HP_SETTLE_MS = 1000;
+
+/** HP as a screen reader hears it once a change settles; the meter's own words. */
+export function hpSpeech(play: Pick<PlayState, 'currentHp' | 'tempHp'>, max: number): string {
+  const temp = play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : '';
+  return `${play.currentHp} of ${max} hit points${temp}`;
+}
 
 /** Damage eats temp HP first; healing caps at max. */
 function applyHp(play: PlayState, delta: number, maxHp: number): void {
@@ -104,6 +117,10 @@ function rollConcentration(
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
+  // Keyed by character, so a settling HP line is only ever about the one it
+  // was for; leaving the tab or the character drops one still settling.
+  const hpKey = `hp:${doc?.id ?? ''}`;
+  useEffect(() => () => cancelAnnouncement(hpKey), [hpKey]);
   // Which resource each castable spell will spend, keyed by class + spell, held
   // only for as long as the tab is open: a pick is about this cast, not a
   // setting.
@@ -282,10 +299,19 @@ export function Component() {
   const chooseCastResource = (key: string, resource: CastResource) =>
     setCastChoice((prev) => ({ ...prev, [key]: castResourceId(resource) }));
 
+  /** Say where HP ended up, once the taps stop; see {@link HP_SETTLE_MS}. */
+  const sayHp = (after: Pick<PlayState, 'currentHp' | 'tempHp'>) =>
+    announce(hpSpeech(after, sheet.maxHp.value), { key: hpKey, settleMs: HP_SETTLE_MS });
   const hpDelta = async (delta: number) => {
+    const after = { currentHp: play.currentHp, tempHp: play.tempHp };
     // Healing is a plain apply; damage may force a concentration save.
     if (delta >= 0) {
-      update((d) => applyHp(d.play, delta, sheet.maxHp.value));
+      update((d) => {
+        applyHp(d.play, delta, sheet.maxHp.value);
+        after.currentHp = d.play.currentHp;
+        after.tempHp = d.play.tempHp;
+      });
+      sayHp(after);
       return;
     }
     // Relentless Endurance: when the hit would drop to 0, offer 1 HP instead.
@@ -313,12 +339,15 @@ export function Component() {
         else d.play.resources.push({ key: 'relentless-endurance', used: 1 });
       }
       notice = rollConcentration(d.play, -delta, sheet.saves.con.total.value, concAdv());
+      after.currentHp = d.play.currentHp;
+      after.tempHp = d.play.tempHp;
     });
+    sayHp(after);
     if (notice !== null) notify(notice);
     else if (useRelentless) {
       notify({
         title: 'Relentless Endurance',
-        detail: 'Dropped to 1 HP instead of 0 — used for the day',
+        detail: 'Dropped to 1 HP instead of 0, used for the day',
         tone: 'good',
       });
     }
@@ -402,6 +431,7 @@ export function Component() {
               });
               if (n === null) return;
               let notice: Notice | null = null;
+              const after = { currentHp: play.currentHp, tempHp: play.tempHp };
               update((d) => {
                 const target = Math.max(0, Math.min(sheet.maxHp.value, n));
                 const damageTaken = d.play.currentHp - target;
@@ -417,7 +447,10 @@ export function Component() {
                     concAdv(),
                   );
                 }
+                after.currentHp = d.play.currentHp;
+                after.tempHp = d.play.tempHp;
               });
+              sayHp(after);
               if (notice !== null) notify(notice);
             }}
           >

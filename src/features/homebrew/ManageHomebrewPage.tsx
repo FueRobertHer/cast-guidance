@@ -11,6 +11,7 @@ import { downloadJson } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
@@ -25,6 +26,17 @@ import { fetchHomebrewFromUrl, HomebrewUrlRefusedError } from './importUrl';
  */
 const loadImportFlow = () => import('./HomebrewImportPreview');
 const HomebrewImportPreview = lazy(loadImportFlow);
+
+/**
+ * Why a URL was refused, and what to do instead. The other-sites advice
+ * answers a host refusal only; a malformed or http URL, or a GitHub folder
+ * page, has its own fix.
+ */
+function refusedText(reason: string): string {
+  return reason === REFUSED_HOST_REASON
+    ? `${reason} For other sites, open the file, save it to this device, and use Import file.`
+    : reason;
+}
 
 /** A file validated and previewed, waiting for the player's answer. */
 interface PendingImport {
@@ -42,9 +54,29 @@ export function Component() {
   const readErrors = read?.errors ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
-  const [status, setStatus] = useState<string>();
+  const [status, setStatusText] = useState<string>();
   // A URL the import would not fetch, kept so the guidance can link to it.
-  const [refused, setRefused] = useState<{ url: string; reason: string }>();
+  const [refused, setRefusedState] = useState<{ url: string; reason: string }>();
+  /**
+   * The import messages, on screen and said (A11Y-002). The lines below are
+   * plain visuals and each message goes through the announcer once: the check
+   * in progress, then its outcome (imported, already here, canceled, kept the
+   * existing file, failed or refused). Each answers something the person did,
+   * so the same words twice are said twice. The check has a key of its own,
+   * so its answer is not held behind it by the outcome key's throttle.
+   */
+  const setStatus = (text: string | undefined, key = 'import') => {
+    setStatusText(text);
+    // An outcome replaces the check, so a check still waiting on its throttle
+    // is not heard after its own answer.
+    if (key !== 'import-check') cancelAnnouncement('import-check');
+    if (text !== undefined) announce(text, { key, repeat: true });
+  };
+  const setRefused = (next: { url: string; reason: string } | undefined) => {
+    setRefusedState(next);
+    if (next !== undefined) cancelAnnouncement('import-check');
+    if (next !== undefined) announce(refusedText(next.reason), { key: 'import', repeat: true });
+  };
   // An import validated and previewed, waiting for Import or Cancel. Nothing
   // is written until Import.
   const [pending, setPending] = useState<PendingImport>();
@@ -55,7 +87,7 @@ export function Component() {
   const latest = useRef(0);
   const begin = (message: string): number => {
     setRefused(undefined);
-    setStatus(message);
+    setStatus(message, 'import-check');
     setChecking(true);
     latest.current += 1;
     return latest.current;
@@ -74,6 +106,8 @@ export function Component() {
     const preview = await (await loadImportFlow()).buildHomebrewPreview(row, bytes);
     if (request !== latest.current) return;
     setStatus(undefined);
+    // The dialog's title answers the check.
+    cancelAnnouncement('import-check');
     setPending({ row, preview, source });
   };
 
@@ -281,19 +315,14 @@ export function Component() {
             <LinkIcon size={16} />
           </button>
         </form>
-        {/* One live region for every import message, mounted before it has
-            anything to say so the first message is announced too. */}
-        <div className="flex flex-col gap-1.5 text-xs text-amber-300" role="status">
+        {/* Every import message, as a plain visual: `setStatus` and
+            `setRefused` say each one through the announcer, so a live role
+            here would say it twice (A11Y-002). */}
+        <div data-import-status="" className="flex flex-col gap-1.5 text-xs text-amber-300">
           {status !== undefined && <p>{status}</p>}
           {refused !== undefined && (
             <>
-              <p>
-                {refused.reason}
-                {/* The other-sites advice answers a host refusal only; a malformed
-                  or http URL, or a GitHub folder page, has its own fix. */}
-                {refused.reason === REFUSED_HOST_REASON &&
-                  ' For other sites, open the file, save it to this device, and use Import file.'}
-              </p>
+              <p>{refusedText(refused.reason)}</p>
               <div className="flex gap-3">
                 {refusedHref !== undefined && (
                   <a

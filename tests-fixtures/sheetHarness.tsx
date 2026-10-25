@@ -347,7 +347,11 @@ export function concentratingOn(): string | undefined {
 export function notice(): string | undefined {
   const toast = screen.queryByTestId('notice-toast');
   if (toast === null) return undefined;
-  const [title, detail] = [...toast.querySelectorAll('div > div')].map((d) => d.textContent);
+  // From the toast itself: the toast is a <div> now (A11Y-002), so a bare
+  // `div > div` would match the text column as well as its two lines.
+  const [title, detail] = [...toast.querySelectorAll(':scope > div > div')].map(
+    (d) => d.textContent,
+  );
   return detail === undefined ? (title ?? undefined) : `${title}: ${detail}`;
 }
 

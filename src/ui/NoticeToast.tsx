@@ -30,12 +30,13 @@ export function NoticeToast() {
   if (visible === null) return null;
 
   return (
+    // A plain visual: `notify` says the notice through the announcer, since
+    // an <output> that mounts with its text is announced unreliably.
     // `data-testid` is the toast's stable handle for tests: its element and
     // live-region attributes are free to change, the handle is not.
-    <output
+    <div
       data-testid="notice-toast"
       className={`fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex items-start gap-3 rounded-lg border ${TONE[visible.tone]} bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80`}
-      aria-live="polite"
     >
       <span className="shrink-0 text-lg leading-6 text-ink-muted">{ICON[visible.tone]}</span>
       <div className="min-w-0">
@@ -44,6 +45,6 @@ export function NoticeToast() {
           <div className="text-xs text-ink-muted">{visible.detail}</div>
         )}
       </div>
-    </output>
+    </div>
   );
 }

@@ -95,9 +95,10 @@ describe('the unfinished draft card', () => {
   it('is not there without a draft, or for one with nothing in it', () => {
     renderRoster();
     expect(screen.queryByText(/Unfinished character/)).toBeNull();
-    // No undo line: the one status region is the import's, mounted empty.
-    expect(screen.getAllByRole('status')).toHaveLength(1);
-    expect(screen.getByRole('status').textContent).toBe('');
+    // No undo line, the only status region the roster mounts; the import
+    // line is a plain visual (A11Y-002), and empty.
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
+    expect(document.querySelector('[data-import-status]')?.textContent).toBe('');
     cleanup();
 
     writeDraft({ doc: newCharacterDoc('hero-2', '', 't'), bundleChoices: {}, slotPicks: {} });

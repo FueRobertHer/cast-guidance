@@ -2,16 +2,17 @@
 // FIX-003: the HP damage/heal controls apply an exact, deterministic amount and
 // roll exactly one concentration save per gesture. (The old single/double-tap
 // combo double-fired: a "double-tap −5" applied −6 and rolled up to three saves.)
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { rollLogStore } from '@/stores/rollLog';
 import { namelessControls } from '../../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import type { CharacterSheetState } from '../useCharacterSheet';
-import { Component as PlayTab } from './PlayTab';
+import { HP_SETTLE_MS, Component as PlayTab } from './PlayTab';
 
 // The sheet reads spell text through the registry: without one, every granted
 // spell renders as a bare Cast button, which is the one path a limited grant
@@ -23,11 +24,12 @@ vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
 // lets a test answer the prompt.
 const dialogs = vi.hoisted(() => ({
   askChoice: vi.fn<(req: ChoiceRequest) => Promise<string | null>>(),
+  askNumber: vi.fn<() => Promise<number | null>>(() => Promise.resolve(null)),
 }));
 vi.mock('@/ui/dialogs', () => ({
   askChoice: dialogs.askChoice,
   askConfirm: () => Promise.resolve(false),
-  askNumber: () => Promise.resolve(null),
+  askNumber: dialogs.askNumber,
   askText: () => Promise.resolve(null),
 }));
 
@@ -582,5 +584,58 @@ describe('PlayTab hit point meter (A11Y-002)', () => {
     const meter = screen.getByRole('meter', { name: 'Hit points' });
     expect(meter.getAttribute('aria-valuenow')).toBe(String(max));
     expect(meter.getAttribute('aria-valuetext')).toBe(`${max + 4} of ${max}`);
+  });
+});
+
+// A11Y-002: HP is said once it settles, never per tap. A run of steppers is one
+// change to a listener, so only where it ends is spoken.
+describe('PlayTab hit point announcements (A11Y-002)', () => {
+  const spoken = () => getAnnouncerState().messages.map((m) => m.text);
+
+  afterEach(() => {
+    resetAnnouncer();
+    vi.useRealTimers();
+    dialogs.askNumber.mockReset().mockResolvedValue(null);
+  });
+
+  it('says a burst of damage taps once, with where it ended', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    resetAnnouncer();
+    const { start, sheet } = renderPlay();
+    const max = sheet.maxHp.value;
+    for (let i = 0; i < 5; i++) {
+      fireEvent.click(screen.getByLabelText('Damage 1 hit point'));
+      act(() => vi.advanceTimersByTime(100));
+    }
+    // Nothing while the taps keep coming, or just after.
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS - 200));
+    expect(getAnnouncerState().emitted).toBe(0);
+    act(() => vi.advanceTimersByTime(200));
+    expect(spoken()).toEqual([`${start - 5} of ${max} hit points`]);
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS * 5));
+    expect(getAnnouncerState().emitted).toBe(1);
+  });
+
+  it('drops an HP line still settling when the tab goes away', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    resetAnnouncer();
+    renderPlay();
+    fireEvent.click(screen.getByLabelText('Damage 1 hit point'));
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS / 2));
+    cleanup();
+    act(() => vi.advanceTimersByTime(HP_SETTLE_MS * 2));
+    expect(getAnnouncerState().emitted).toBe(0);
+  });
+
+  it('says an exact value typed into the HP dialog', async () => {
+    resetAnnouncer();
+    dialogs.askNumber.mockResolvedValueOnce(7);
+    const { sheet, getDoc } = renderPlay();
+    const max = sheet.maxHp.value;
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`/ ${max}\\s*hit points`) }));
+    await waitFor(() => expect(getDoc().play.currentHp).toBe(7));
+    await waitFor(() => expect(spoken()).toEqual([`7 of ${max} hit points`]), {
+      timeout: HP_SETTLE_MS + 1000,
+    });
   });
 });
