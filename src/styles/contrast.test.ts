@@ -70,6 +70,14 @@ describe('label contrast on the accent fill (A11Y-003)', () => {
     expect(contrast(token('accent-fill'), token('ink'))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('accent-ink clears 4.5:1 on a raised control and its hover step', () => {
+    for (const surface of ['surface-2', 'surface-3']) {
+      expect(contrast(token('accent-ink'), token(surface))).toBeGreaterThanOrEqual(4.5);
+    }
+    // Why it exists: the page red does not, on either.
+    expect(contrast(token('accent'), token('surface-2'))).toBeLessThan(4.5);
+  });
+
   it('measures the ratio the way WCAG does', () => {
     // The pair that failed: white on red-500.
     expect(contrast(token('accent'), '#ffffff')).toBeCloseTo(3.76, 2);

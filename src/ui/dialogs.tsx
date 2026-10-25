@@ -214,7 +214,7 @@ export function DialogHost() {
                   close();
                 }}
                 className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
-                  o.danger === true ? 'text-accent' : ''
+                  o.danger === true ? 'text-accent-ink' : ''
                 }`}
               >
                 <span className="min-w-0">{o.label}</span>
