@@ -81,6 +81,15 @@ describe('useStickyHeight', () => {
     expect(rootVar()).toBe('');
   });
 
+  it('leaves a value another bar has set since', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(68);
+    const { unmount } = render(<Probe />);
+    document.documentElement.style.setProperty('--sheet-header-h', '90px');
+    unmount();
+    expect(rootVar()).toBe('90px');
+    document.documentElement.style.removeProperty('--sheet-header-h');
+  });
+
   it('is published by the sheet layout', () => {
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(58);
     const router = createMemoryRouter(

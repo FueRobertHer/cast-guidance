@@ -18,13 +18,20 @@ export function useStickyHeight(name: `--${string}`): (el: HTMLElement | null) =
   useLayoutEffect(() => {
     if (el === null) return;
     const root = document.documentElement.style;
-    const measure = () => root.setProperty(name, `${el.offsetHeight}px`);
+    let mine = '';
+    const measure = () => {
+      mine = `${el.offsetHeight}px`;
+      root.setProperty(name, mine);
+    };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(el);
     return () => {
       observer?.disconnect();
-      root.removeProperty(name);
+      // One mounted bar per name is assumed (the sheet header, the build
+      // bar). Should another have set the name since, with a different
+      // height, its value is left alone.
+      if (root.getPropertyValue(name) === mine) root.removeProperty(name);
     };
   }, [el, name]);
   return ref;
