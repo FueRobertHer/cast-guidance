@@ -64,7 +64,9 @@ test.describe('character lifecycle', () => {
     await expect(rosterHeading(page)).toBeVisible();
   });
 
-  test.fixme('an edit made just before a reload survives it', async ({ page }) => {
+  test.fixme('an edit made just before a reload survives it (tracks the reload data loss)', async ({
+    page,
+  }) => {
     // Known gap found by this suite: the pagehide flush starts its IndexedDB
     // write, but the reload tears the document down before the transaction
     // commits, so an edit inside the 400 ms debounce is lost (5 of 5 runs).

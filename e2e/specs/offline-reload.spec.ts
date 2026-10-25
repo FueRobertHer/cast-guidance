@@ -1,6 +1,12 @@
 import type { Page } from '@playwright/test';
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
-import { characterLink, createBlankCharacter, gotoRoster, rosterHeading } from '../support/app.ts';
+import {
+  characterLink,
+  createBlankCharacter,
+  expectDataSettled,
+  gotoRoster,
+  rosterHeading,
+} from '../support/app.ts';
 import { countDataFiles } from '../support/idb.ts';
 import { waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
@@ -53,6 +59,7 @@ test.describe('offline reload', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'New hero' })).toBeVisible();
     await gotoRoster(page);
     await expect(characterLink(page, 'New hero')).toBeVisible();
+    await expectDataSettled(page);
     expect(mirror.totalHits()).toBe(hitsBefore);
     expect(mirror.tagListRequests).toBe(tagListBefore);
   });

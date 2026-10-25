@@ -51,10 +51,19 @@ const CORS = { 'access-control-allow-origin': '*' };
 export class Mirror {
   /** Requests per `${tag}:${path}`, across both data hosts, failed ones included. */
   readonly hits = new Map<string, number>();
-  /** Every data request answered 200, and whether the mirror was offline then. */
-  readonly fulfils: Array<{ tag: string; path: string; offline: boolean }> = [];
-  /** URLs this mirror refused, so the console guard can expect their errors. */
+  /** Every request answered 200 (data files and the release list), in order. */
+  readonly fulfils: string[] = [];
+  /**
+   * URLs this mirror failed because the test asked it to ({@link setFail},
+   * {@link setOffline}), so the console guard can expect their errors.
+   */
   readonly failedUrls = new Set<string>();
+  /**
+   * Requests no test asked to fail and the mirror cannot answer: a URL shape
+   * the app should never build, or a file the release does not have. They are
+   * answered 404, as a real mirror would, and fail the test at teardown.
+   */
+  readonly unexpected: string[] = [];
   tagListRequests = 0;
 
   private tags: readonly string[];
@@ -94,7 +103,8 @@ export class Mirror {
   }
 
   /**
-   * The harness side of being offline (see `support/offline.ts`): while set,
+   * The mirror's part of being offline (the `network` fixture in
+   * `support/test.ts` drives it with the rest): while set,
    * every mirror and API request fails as a dropped connection would.
    * `context.setOffline` alone does not stop `route.fulfill`.
    */
@@ -106,16 +116,19 @@ export class Mirror {
     return this.offline;
   }
 
-  /** Data-file requests answered 200 while offline. Must stay 0. */
-  fulfilsWhileOffline(): number {
-    return this.fulfils.filter((f) => f.offline).length;
-  }
-
   /** Total data-file requests so far, for "nothing was downloaded again" checks. */
   totalHits(): number {
     let total = 0;
     for (const n of this.hits.values()) total += n;
     return total;
+  }
+
+  assertClean(): void {
+    if (this.unexpected.length > 0) {
+      throw new Error(
+        `The mirror was asked for things it does not have (add them to the release, or fail them on purpose with setFail):\n${this.unexpected.join('\n')}`,
+      );
+    }
   }
 
   private async handle(route: Route): Promise<void> {
@@ -124,6 +137,7 @@ export class Mirror {
     if (url.split('?')[0] === TAGS_API) {
       this.tagListRequests++;
       if (this.offline) return this.abort(route, url);
+      this.fulfils.push(url);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -135,7 +149,7 @@ export class Mirror {
     const parsed = parseMirrorUrl(url);
     if (parsed === null) {
       // A host we serve, but a URL shape the app should never ask for.
-      this.failedUrls.add(url);
+      this.unexpected.push(url);
       return route.fulfill({ status: 404, headers: CORS, body: 'Not found' });
     }
     const { tag, path } = parsed;
@@ -156,10 +170,10 @@ export class Mirror {
 
     const body = this.bodies(tag)[path];
     if (body === undefined) {
-      this.failedUrls.add(url);
+      this.unexpected.push(url);
       return route.fulfill({ status: 404, headers: CORS, body: 'Not found' });
     }
-    this.fulfils.push({ tag, path, offline: this.offline });
+    this.fulfils.push(url);
     return route.fulfill({
       status: 200,
       contentType: 'application/json',

@@ -131,12 +131,23 @@ jobs:
           {
             echo "### E2E"
             echo ""
-            if [ -f "$report" ]; then
+            if [ -f "$report" ] && jq -e . "$report" > /dev/null 2>&1; then
               echo "| Passed | Failed | Flaky | Skipped | Duration |"
               echo "| ---: | ---: | ---: | ---: | ---: |"
-              jq -r '.stats | "| \(.expected) | \(.unexpected) | \(.flaky) | \(.skipped) | \(.duration / 1000 | floor) s |"' "$report"
+              jq -r '.stats // {} | "| \(.expected // 0) | \(.unexpected // 0) | \(.flaky // 0) | \(.skipped // 0) | \((.duration // 0) / 1000 | floor) s |"' "$report"
+              # Errors outside any test (a global setup that threw, a spec that
+              # failed to load) leave the counts at zero on a red run.
+              errors=$(jq '.errors // [] | length' "$report")
+              if [ "$errors" -gt 0 ]; then
+                echo ""
+                echo "**${errors} error(s) outside the tests.** The first:"
+                echo ""
+                echo '```'
+                jq -r '.errors[0].message // "(no message)"' "$report" | head -n 20
+                echo '```'
+              fi
             else
-              echo "_No E2E report: the run did not get that far._"
+              echo "_No E2E report: the run did not get far enough to write one._"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

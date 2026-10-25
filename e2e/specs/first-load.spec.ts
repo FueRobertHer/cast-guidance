@@ -1,5 +1,11 @@
 import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
-import { gettingStartedDismiss, offlineReadyNotice, rosterHeading } from '../support/app.ts';
+import {
+  emptyRosterLine,
+  expectDataSettled,
+  gettingStartedDismiss,
+  offlineReadyNotice,
+  rosterHeading,
+} from '../support/app.ts';
 import { countDataFiles, getSetting } from '../support/idb.ts';
 import { swState, waitForSwControl } from '../support/sw.ts';
 import { expect, test } from '../support/test.ts';
@@ -56,10 +62,15 @@ test.describe('first load', () => {
     await expect(offlineReadyNotice(page)).toContainText('Ready to use offline next time');
     await expect(offlineReadyNotice(page)).toBeHidden();
 
-    await page.reload();
-    await expect(page).toHaveTitle('Settings · Cast Guidance');
-    await page.goto('/library');
-    await expect(page).toHaveTitle('Library · Cast Guidance');
+    expect(
+      await page.evaluate(() => localStorage.getItem('cast-guidance:offline-ready-announced')),
+    ).not.toBeNull();
+
+    // A second launch, controlled this time, with every condition for the
+    // notice met again: the worker in control and the data settled. Only then
+    // does its absence mean it was not repeated.
+    await waitForSwControl(page);
+    await expectDataSettled(page);
     await expect(offlineReadyNotice(page)).toHaveCount(0);
   });
 
@@ -72,7 +83,9 @@ test.describe('first load', () => {
     await expect(card).toBeHidden();
 
     await page.reload();
-    await expect(rosterHeading(page)).toBeVisible();
+    // The card is drawn in the same render as this line, so once it shows,
+    // the card's absence is settled.
+    await expect(emptyRosterLine(page)).toBeVisible();
     await expect(card).toHaveCount(0);
   });
 

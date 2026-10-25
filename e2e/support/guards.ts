@@ -51,7 +51,7 @@ export interface ConsoleEntry {
 export class ConsoleGuard {
   readonly entries: ConsoleEntry[] = [];
   private readonly textRules: RegExp[] = [];
-  private readonly resourceRules: Array<(url: string, text: string) => boolean> = [];
+  private readonly resourceRules: Array<(url: string, text: string, index: number) => boolean> = [];
 
   watch(context: BrowserContext): void {
     context.on('console', (msg) => {
@@ -73,18 +73,22 @@ export class ConsoleGuard {
     this.textRules.push(pattern);
   }
 
-  /** Expects "Failed to load resource" for the URLs (and error text) `match` accepts. */
-  allowResource(match: (url: string, text: string) => boolean): void {
+  /**
+   * Expects "Failed to load resource" for what `match` accepts: the resource
+   * URL, the error text, and the entry's index in {@link entries} (so a rule
+   * can be limited to a stretch of the test).
+   */
+  allowResource(match: (url: string, text: string, index: number) => boolean): void {
     this.resourceRules.push(match);
   }
 
   unexpected(): ConsoleEntry[] {
-    return this.entries.filter((entry) => {
+    return this.entries.filter((entry, index) => {
       if (/Refused to|Content Security Policy/.test(entry.text)) return true;
       if (
         entry.kind === 'console' &&
         entry.text.startsWith('Failed to load resource') &&
-        this.resourceRules.some((match) => match(entry.url, entry.text))
+        this.resourceRules.some((match) => match(entry.url, entry.text, index))
       ) {
         return false;
       }

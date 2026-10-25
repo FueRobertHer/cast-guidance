@@ -38,6 +38,27 @@ export async function handleOverlays(page: Page): Promise<void> {
   await page.addLocatorHandler(offlineReadyNotice(page), async () => undefined);
 }
 
+/** A value in Settings' storage and data list, by its label. */
+export function settingsValue(page: Page, label: string): Locator {
+  return page.locator('dt', { hasText: label }).locator('xpath=following-sibling::dd[1]');
+}
+
+/**
+ * Opens Settings and waits until the data layer has settled: the download
+ * queue is done and every file is cached. A check that something did not
+ * happen (no download, no notice) is only meaningful after this.
+ */
+export async function expectDataSettled(page: Page): Promise<void> {
+  await page.goto('/settings');
+  await expect(settingsValue(page, 'Download queue')).toHaveText('done');
+  await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
+}
+
+/** The empty roster's line, drawn in the same render as the getting-started card. */
+export function emptyRosterLine(page: Page): Locator {
+  return page.getByRole('main').getByText(/^No characters yet/);
+}
+
 /** Opens the roster and waits for it. */
 export async function gotoRoster(page: Page): Promise<void> {
   await page.goto('/');

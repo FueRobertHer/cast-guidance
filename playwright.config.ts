@@ -14,6 +14,8 @@ export default defineConfig({
   testDir: './e2e/specs',
   testMatch: '**/*.spec.ts',
   outputDir: './test-results/e2e',
+  // Traces, screenshots and persistent profiles are kept for failures only.
+  preserveOutput: 'failures-only',
   globalSetup: './e2e/global-setup.ts',
   fullyParallel: true,
   forbidOnly: CI,

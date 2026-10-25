@@ -43,16 +43,27 @@ the binary outright, as an escape hatch when the two drift.
 - **Mirror** (`fixtures/mirror.ts`): answers jsDelivr, raw GitHub and the
   GitHub tags API through `context.route`, with the release from
   `tests-fixtures/dataMirror.ts`. It counts hits per `tag:path`, and takes fail
-  (`abort` or a status), hold and offline rules.
+  (`abort` or a status), hold and offline rules. A request it cannot answer
+  and no test asked to fail (a URL shape the app should never build, a file
+  the release does not have) gets a 404, as from a real mirror, and fails the
+  test at teardown.
 - **Network guard**: every other host is aborted and fails the test.
-- **Console guard**: any console error or uncaught page error fails the test
-  unless the test caused it (a request it failed on purpose). CSP violations
-  are never allowed, so every spec also checks the policy.
+- **Console guard**: any console error or uncaught page error fails the test,
+  with two exceptions. "Failed to load resource" is expected for a mirror
+  request the test failed on purpose (`setFail`, or the mirror offline), and,
+  only inside an offline window, for origin requests the browser or the down
+  server refused. CSP violations are never allowed, so every spec also checks
+  the policy.
 - **Offline** is a harness state, not just a browser flag:
   `network.goOffline()` makes the mirror refuse, takes the server down and
   sets every context offline (`navigator.onLine` is what the app reads).
   `context.setOffline` alone would not stop `route.fulfill`. Then
-  `network.assertNothingServedOffline()` checks that nothing was.
+  `network.assertNothingServedOffline()` checks, for every offline window, that
+  the mirror fulfilled nothing and the server served nothing (only the worker's
+  update check may have tried, and been refused).
+- **Settled signals**: a check that something did not happen waits first for
+  the point where it would have. `expectDataSettled` (Settings shows the
+  download queue done and the compendium ready) is the usual one.
 - **Persistent profiles**: `launchProfile(dir, { offline })` launches a real
   browser profile wired to the same server, mirror and guards, for cold
   restarts.
