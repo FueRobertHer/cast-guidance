@@ -5,6 +5,8 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newCharacterDoc } from '@/engine/types';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
+import { isQuotaError } from '@/lib/storageErrors';
+import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { characterRepo } from './characterRepo';
 import { db, type HomebrewFileRow } from './db';
 
@@ -23,7 +25,8 @@ beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await removeIdbFaults();
   vi.restoreAllMocks();
 });
 
@@ -110,6 +113,51 @@ describe('characterRepo.importExport (IndexedDB-backed)', () => {
     expect(await db.homebrewFiles.count()).toBe(0);
     expect(await db.characters.count()).toBe(0);
     putSpy.mockRestore();
+  });
+
+  it('rolls back the files already added when a later homebrew add runs out of space', async () => {
+    // The first embedded file goes in, the second is refused by the database
+    // itself (not a mocked Table method), before the character is written.
+    const fault = await injectIdbFault(db, { tables: ['homebrewFiles'], ops: ['add'], skip: 1 });
+
+    const err = await characterRepo
+      .importFromText(
+        exportText(newCharacterDoc('h', 'H', 'tag'), [
+          { fileName: 'a.json', json: brewFile('ALPHA', 'Zap') },
+          { fileName: 'b.json', json: brewFile('BETA', 'Zip') },
+        ]),
+      )
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    // The first add went through and the second was the one refused.
+    expect(fault.attempts).toBe(2);
+    expect(fault.hits).toBe(1);
+    expect(isQuotaError(err)).toBe(true);
+    expect(await db.homebrewFiles.count()).toBe(0);
+    expect(await db.characters.count()).toBe(0);
+  });
+
+  it('rolls back the embedded homebrew when the database refuses the character', async () => {
+    const fault = await injectIdbFault(db, { tables: ['characters'] });
+
+    const err = await characterRepo
+      .importFromText(
+        exportText(newCharacterDoc('h', 'H', 'tag'), [
+          { fileName: 'b.json', json: brewFile('BREW', 'Zap') },
+        ]),
+      )
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    expect(fault.hits).toBe(1);
+    expect(isQuotaError(err)).toBe(true);
+    expect(await db.homebrewFiles.count()).toBe(0);
+    expect(await db.characters.count()).toBe(0);
   });
 
   it('leaves the database untouched on malformed / future-version imports', async () => {

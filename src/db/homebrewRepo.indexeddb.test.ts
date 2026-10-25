@@ -1,7 +1,9 @@
 // IndexedDB-backed coverage for the homebrew repository (TEST-002 harness).
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ValidationError } from '@/lib/guards';
+import { isQuotaError } from '@/lib/storageErrors';
+import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { db } from './db';
 import { buildHomebrewRow, homebrewRepo } from './homebrewRepo';
 
@@ -15,6 +17,8 @@ function file(sourceId: string, spells: string[] = []) {
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
 });
+
+afterEach(removeIdbFaults);
 
 describe('homebrewRepo.importJson (IndexedDB-backed)', () => {
   it('stores a file under a content-hash id with recomputed metadata', async () => {
@@ -39,6 +43,23 @@ describe('homebrewRepo.importJson (IndexedDB-backed)', () => {
     const payload = { ...file('BREW'), nested: deep };
     await expect(homebrewRepo.importJson(payload, 'evil.json')).rejects.toThrow(ValidationError);
     expect(await db.homebrewFiles.count()).toBe(0);
+  });
+
+  it('rejects with a quota error and stores nothing when the device is full', async () => {
+    const fault = await injectIdbFault(db, { tables: ['homebrewFiles'] });
+
+    const err = await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json').then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+
+    expect(fault.hits).toBe(1);
+    expect(isQuotaError(err)).toBe(true);
+    expect(await db.homebrewFiles.count()).toBe(0);
+    // Nothing half-written blocks the same file once there is room again.
+    await fault();
+    await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
+    expect(await db.homebrewFiles.count()).toBe(1);
   });
 });
 
