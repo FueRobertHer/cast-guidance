@@ -4,8 +4,14 @@
 // open before they exist. It rendered an empty list with no explanation, which
 // is indistinguishable from a broken feature.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
+import { deriveSheet } from '@/engine/derive';
+import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { namelessControls } from '../../../../tests-fixtures/a11y';
+import { makeTestContext } from '../../../../tests-fixtures/testWorld';
+import type { CharacterSheetState } from '../useCharacterSheet';
 
 const registryRef: { current: { byType: (t: string) => Entity[] } | null } = { current: null };
 const ensureTypePacks = vi.fn(async (_type: string) => undefined);
@@ -49,7 +55,7 @@ vi.mock('vaul', async () => {
   };
 });
 
-const { AddItemDrawer } = await import('./InventoryTab');
+const { AddItemDrawer, Component: InventoryTab } = await import('./InventoryTab');
 
 const items = (...names: string[]): Entity[] =>
   names.map((name) => ({ name, source: 'PHB' }) as Entity);
@@ -127,5 +133,62 @@ describe('AddItemDrawer once items are queryable', () => {
 
     expect(screen.getByText('No items match “banjo”.')).toBeTruthy();
     expect(screen.queryByText(/Downloading/)).toBeNull();
+  });
+});
+
+// A11Y-001: each row's attune, quantity and remove controls were bare glyphs
+// or an icon named by a tooltip, and the equip and attune toggles had no state.
+describe('InventoryTab rows', () => {
+  /** The tab over a doc holding an equipped Longsword and a carried Rope. */
+  function renderRows() {
+    // No registry: every entry stays plain text, which is all these rows need.
+    registryRef.current = null;
+    const doc = newCharacterDoc('i1', 'Hero', 't');
+    doc.equipment = [
+      { id: 'a', custom: { name: 'Longsword' }, qty: 1, equipped: true, attuned: false },
+      { id: 'b', custom: { name: 'Rope' }, qty: 2, equipped: false, attuned: false },
+    ];
+    let current = doc;
+    const update = (recipe: (d: CharacterDoc) => void) => {
+      const d = structuredClone(current);
+      recipe(d);
+      current = d;
+      view.rerender(<RouterProvider router={router()} />);
+    };
+    const router = () =>
+      createMemoryRouter([
+        {
+          path: '/',
+          element: (
+            <Outlet
+              context={
+                {
+                  doc: current,
+                  sheet: deriveSheet(current, makeTestContext()),
+                  update,
+                } as unknown as CharacterSheetState
+              }
+            />
+          ),
+          children: [{ index: true, element: <InventoryTab /> }],
+        },
+      ]);
+    const view = render(<RouterProvider router={router()} />);
+  }
+
+  it('names every control, after the item it acts on', () => {
+    renderRows();
+    expect(namelessControls()).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Increase Rope quantity' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Longsword' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Search items' })).toBeTruthy();
+  });
+
+  it('reports equipped and attuned as pressed states', () => {
+    renderRows();
+    expect(screen.getByRole('button', { name: 'Equip Longsword', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Equip Rope', pressed: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Attune Longsword', pressed: false }));
+    expect(screen.getByRole('button', { name: 'Attune Longsword', pressed: true })).toBeTruthy();
   });
 });

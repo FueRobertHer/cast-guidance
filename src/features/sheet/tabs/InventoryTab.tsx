@@ -78,6 +78,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              aria-label="Search items"
               placeholder="Search items…"
               className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
             />
@@ -172,6 +173,7 @@ export function AddItemDrawer({ onAdd }: { onAdd: (entry: EquipmentEntry) => voi
             <input
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
+              aria-label="Custom item name"
               placeholder="Or add a custom item…"
               className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
             />
@@ -225,6 +227,8 @@ export function Component() {
   const equipped = doc.equipment.filter((e) => e.equipped);
   const backpack = doc.equipment.filter((e) => !e.equipped);
 
+  // Each control names the item it acts on: the rows repeat the same glyphs.
+  // The toggles keep a stable verb, so aria-pressed alone says the state.
   const row = (entry: EquipmentEntry) => (
     <div
       key={entry.id}
@@ -232,6 +236,8 @@ export function Component() {
     >
       <button
         type="button"
+        aria-label={`Equip ${displayName(entry)}`}
+        aria-pressed={entry.equipped}
         onClick={() =>
           update((d) => {
             const it = d.equipment.find((x) => x.id === entry.id);
@@ -274,6 +280,8 @@ export function Component() {
       </div>
       <button
         type="button"
+        aria-label={`Attune ${displayName(entry)}`}
+        aria-pressed={entry.attuned}
         title="Attune"
         onClick={() =>
           update((d) => {
@@ -283,11 +291,12 @@ export function Component() {
         }
         className={`shrink-0 text-xs ${entry.attuned ? 'text-amber-300' : 'text-ink-muted/50'}`}
       >
-        ✦
+        <span aria-hidden="true">✦</span>
       </button>
       <div className="flex shrink-0 items-center gap-0.5 text-xs text-ink-muted">
         <button
           type="button"
+          aria-label={`Decrease ${displayName(entry)} quantity`}
           onClick={() =>
             update((d) => {
               const it = d.equipment.find((x) => x.id === entry.id);
@@ -296,10 +305,11 @@ export function Component() {
           }
           className="rounded bg-surface-2 px-1.5 py-0.5"
         >
-          −
+          <span aria-hidden="true">−</span>
         </button>
         <button
           type="button"
+          aria-label={`Increase ${displayName(entry)} quantity`}
           onClick={() =>
             update((d) => {
               const it = d.equipment.find((x) => x.id === entry.id);
@@ -308,11 +318,12 @@ export function Component() {
           }
           className="rounded bg-surface-2 px-1.5 py-0.5"
         >
-          +
+          <span aria-hidden="true">+</span>
         </button>
       </div>
       <button
         type="button"
+        aria-label={`Remove ${displayName(entry)}`}
         title="Remove"
         onClick={() =>
           update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== entry.id)))
