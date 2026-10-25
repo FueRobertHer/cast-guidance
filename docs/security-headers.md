@@ -54,7 +54,8 @@ What each directive was checked against in the built `dist/`:
 - **Styles:** vaul inserts a `<style>` element at runtime, which needs
   `'unsafe-inline'`. React `style={}` props go through the CSSOM and do not.
 - **Fonts and images:** system fonts only, no `@font-face` or `url()` in the
-  CSS, and the only image is `favicon.svg`.
+  CSS, and the only images are `favicon.svg` and the PWA icons under
+  `/icons/`, all same-origin.
 - **Downloads** use a `blob:` URL on an anchor, which CSP does not govern.
 
 ### Connect hosts

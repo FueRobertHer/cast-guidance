@@ -10,15 +10,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "biome check src scripts tests-fixtures e2e playwright.config.ts",
-    "lint:fix": "biome check --write src scripts tests-fixtures e2e playwright.config.ts",
+    "lint": "biome check src scripts tests-fixtures e2e playwright.config.ts pwa.manifest.ts",
+    "lint:fix": "biome check --write src scripts tests-fixtures e2e playwright.config.ts pwa.manifest.ts",
     "typecheck": "tsc -b",
     "check": "bun run lint && bun run typecheck && bun run test",
     "ci": "bun run lint && bun run typecheck && bun run test:coverage && bun run build && bun run bundle:budget",
     "bundle:budget": "bun scripts/bundle-budget.ts",
     "e2e": "playwright test",
     "e2e:ci": "bun run build && playwright test",
-    "data:audit": "bun scripts/data-audit.ts"
+    "data:audit": "bun scripts/data-audit.ts",
+    "icons:generate": "bun scripts/generate-icons.ts"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.5",
