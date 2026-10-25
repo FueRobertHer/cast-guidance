@@ -30,7 +30,10 @@ export function NoticeToast() {
   if (visible === null) return null;
 
   return (
+    // `data-testid` is the toast's stable handle for tests: its element and
+    // live-region attributes are free to change, the handle is not.
     <output
+      data-testid="notice-toast"
       className={`fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex items-start gap-3 rounded-lg border ${TONE[visible.tone]} bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80`}
       aria-live="polite"
     >
