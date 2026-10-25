@@ -1,6 +1,6 @@
 import type { HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { readTextBounded } from '@/lib/boundedRead';
+import { readTextBoundedSized } from '@/lib/boundedRead';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import { checkHomebrewUrl } from './homebrewUrl';
 
@@ -54,14 +54,14 @@ export async function fetchHomebrewFromUrl(
   const target = check.url;
   const res = await fetchImpl(target, { signal: AbortSignal.timeout(IMPORT_URL_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await readTextBounded(res, maxBytes);
+  const { text, bytes } = await readTextBoundedSized(res, maxBytes);
   const raw = JSON.parse(text) as unknown;
   const name = target.split('/').pop() ?? 'homebrew.json';
   return {
     raw,
     fileName: decodeURIComponent(name),
     url: target,
-    bytes: new TextEncoder().encode(text).byteLength,
+    bytes,
   };
 }
 
