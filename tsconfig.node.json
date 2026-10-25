@@ -13,11 +13,20 @@
     "moduleDetection": "force",
     "noEmit": true,
 
+    /* Strictness (matches tsconfig.app.json) */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "scripts/bundleBudget.ts",
+    "scripts/bundleBudget.test.ts",
+    "scripts/bundle-budget.ts"
+  ]
 }
