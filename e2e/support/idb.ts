@@ -120,6 +120,11 @@ export function getCharacter(page: Page, id: string): Promise<StoredCharacter | 
   return query<StoredCharacter | undefined>(page, { store: 'characters', kind: 'get', key: id });
 }
 
+/** Stored homebrew files, any state. */
+export function countHomebrewFiles(page: Page): Promise<number> {
+  return query<number>(page, { store: 'homebrewFiles', kind: 'count' });
+}
+
 export function listCharacters(page: Page): Promise<StoredCharacter[]> {
   return query<StoredCharacter[]>(page, { store: 'characters', kind: 'getAll' });
 }

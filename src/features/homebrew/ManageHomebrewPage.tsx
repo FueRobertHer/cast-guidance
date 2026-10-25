@@ -1,9 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AlertTriangle, Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
+import type { HomebrewFileRow } from '@/db/db';
 import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
@@ -14,7 +15,23 @@ import { errorText, notifyFailure } from '@/stores/notices';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
 import { REFUSED_HOST_REASON } from './homebrewUrl';
-import { HomebrewUrlRefusedError, importHomebrewFromUrl } from './importUrl';
+import type { HomebrewPreview } from './importPreview';
+import { fetchHomebrewFromUrl, HomebrewUrlRefusedError } from './importUrl';
+
+/**
+ * The import preview (IMP-002), its gathering and its commit, loaded once an
+ * import starts. Kept out of the page's own chunk, and so out of the entry
+ * chunk's list of what each page needs.
+ */
+const loadImportFlow = () => import('./HomebrewImportPreview');
+const HomebrewImportPreview = lazy(loadImportFlow);
+
+/** A file validated and previewed, waiting for the player's answer. */
+interface PendingImport {
+  row: HomebrewFileRow;
+  preview: HomebrewPreview;
+  source: 'file' | 'url';
+}
 
 export function Component() {
   usePageTitle('Homebrew');
@@ -28,39 +45,63 @@ export function Component() {
   const [status, setStatus] = useState<string>();
   // A URL the import would not fetch, kept so the guidance can link to it.
   const [refused, setRefused] = useState<{ url: string; reason: string }>();
-
-  const importFile = async (file: File) => {
+  // An import validated and previewed, waiting for Import or Cancel. Nothing
+  // is written until Import.
+  const [pending, setPending] = useState<PendingImport>();
+  const [checking, setChecking] = useState(false);
+  // Which check is the latest. A slow check (a registry read during a first
+  // download) must not land after a newer one and swap its preview in, or
+  // Import would store a file the dialog no longer showed.
+  const latest = useRef(0);
+  const begin = (message: string): number => {
     setRefused(undefined);
+    setStatus(message);
+    setChecking(true);
+    latest.current += 1;
+    return latest.current;
+  };
+  const finish = (request: number) => {
+    if (request === latest.current) setChecking(false);
+  };
+
+  /** Work out what the prepared file would do, then show it if still wanted. */
+  const showPreview = async (
+    request: number,
+    row: HomebrewFileRow,
+    bytes: number,
+    source: 'file' | 'url',
+  ) => {
+    const preview = await (await loadImportFlow()).buildHomebrewPreview(row, bytes);
+    if (request !== latest.current) return;
+    setStatus(undefined);
+    setPending({ row, preview, source });
+  };
+
+  // Validation and the preview write nothing, so a failure before Import is
+  // never a storage one: the error's own message says what went wrong.
+  const importFile = async (file: File) => {
+    const request = begin(`Checking "${file.name}"…`);
     try {
       const raw: unknown = JSON.parse(
         await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
       );
-      const row = await homebrewRepo.importJson(raw, file.name);
-      invalidateRegistry();
-      // Imported content the player cannot see is worse than useless, and a
-      // preset (allow list) would hide it by default.
-      await ensureSourcesVisible(row.sourceIds);
-      setStatus(
-        `Imported "${row.fileName}" (${
-          Object.entries(row.counts)
-            .map(([k, v]) => `${v} ${k}`)
-            .join(', ') || 'no recognized entities'
-        })`,
-      );
+      const row = await homebrewRepo.prepare(raw, file.name);
+      await showPreview(request, row, file.size, 'file');
     } catch (err) {
-      setStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (request === latest.current) setStatus(`Import failed: ${errorText(err)}`);
+    } finally {
+      finish(request);
     }
   };
 
   const importUrl = async () => {
-    setRefused(undefined);
+    const request = begin('Checking the file at that URL…');
     try {
-      const row = await importHomebrewFromUrl(url);
-      invalidateRegistry();
-      await ensureSourcesVisible(row.sourceIds);
-      setStatus(`Imported "${row.fileName}"`);
-      setUrl('');
+      const fetched = await fetchHomebrewFromUrl(url);
+      const row = await homebrewRepo.prepare(fetched.raw, fetched.fileName, fetched.url);
+      await showPreview(request, row, fetched.bytes, 'url');
     } catch (err) {
+      if (request !== latest.current) return;
       if (err instanceof HomebrewUrlRefusedError) {
         // Refused before any request: say why and offer the way that works.
         setStatus(undefined);
@@ -76,7 +117,45 @@ export function Component() {
           ? ' The host may be down or may not allow the app to read the file; download it and use Import file instead.'
           : '';
       setStatus(`URL import failed (${errorText(err)}).${advice}`);
+    } finally {
+      finish(request);
     }
+  };
+
+  /** Starting another import while one is being checked waits for it. */
+  const chooseFile = () => {
+    if (!checking) fileInput.current?.click();
+  };
+
+  /** Import pressed in the preview: store the file the preview described. */
+  const confirmImport = async () => {
+    const p = pending;
+    if (p === undefined) return;
+    setPending(undefined);
+    const result = await (await loadImportFlow()).commitHomebrewImport(p.row);
+    // The URL stays in the field until its file is stored, so a failure can
+    // be retried without typing it again.
+    if (result.ok && p.source === 'url') setUrl('');
+    setStatus(result.message);
+  };
+
+  const cancelImport = () => {
+    setPending(undefined);
+    setStatus('Import canceled. Nothing was added.');
+  };
+
+  const keepExisting = () => {
+    const p = pending;
+    if (p === undefined) return;
+    setPending(undefined);
+    setStatus(
+      `Kept the existing "${p.preview.duplicateOf?.fileName ?? p.row.fileName}". Nothing was added.`,
+    );
+    // As the old flow did for a file imported twice: its sources are shown,
+    // so the file the player meant to bring in is not left hidden by a preset.
+    void ensureSourcesVisible(p.row.sourceIds).catch((err: unknown) =>
+      notifyFailure('Show sources', err),
+    );
   };
 
   /** Only a plain http(s) URL becomes a link; anything else stays text. */
@@ -116,15 +195,20 @@ export function Component() {
       </header>
 
       <p className="text-sm text-ink-muted">
-        Import 5etools-format homebrew JSON. Imported content appears everywhere — creator, library,
-        search — alongside official content.
+        Import 5etools-format homebrew JSON. Imported content appears alongside official content
+        everywhere: in the creator, the library and search. You see what a file adds before it is
+        imported.
       </p>
 
       <div className="flex flex-col gap-2">
+        {/* aria-disabled rather than disabled while a file is checked, so the
+            button keeps focus: the preview hands focus back to it. */}
         <button
           type="button"
-          onClick={() => fileInput.current?.click()}
-          className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white"
+          onClick={chooseFile}
+          aria-disabled={checking}
+          aria-busy={checking}
+          className="tap gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white aria-disabled:opacity-60"
         >
           <FileUp size={16} /> Import file
         </button>
@@ -157,7 +241,7 @@ export function Component() {
               setStatus(`Could not create the collection: ${errorText(err)}`);
             }
           }}
-          className="flex items-center justify-center gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
+          className="tap gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
         >
           <Hammer size={16} /> Create your own homebrew
         </button>
@@ -176,7 +260,7 @@ export function Component() {
           className="flex gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            if (url.trim() !== '') void importUrl();
+            if (url.trim() !== '' && !checking) void importUrl();
           }}
         >
           <input
@@ -184,49 +268,62 @@ export function Component() {
             onChange={(e) => setUrl(e.target.value)}
             aria-label="Homebrew JSON URL"
             placeholder="…or paste a GitHub, gist, or jsDelivr JSON URL"
-            className="min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
+            className="min-h-11 min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
           />
           <button
             type="submit"
             aria-label="Import from URL"
             title="Import from URL"
-            className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
+            aria-disabled={checking}
+            aria-busy={checking}
+            className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold aria-disabled:opacity-60"
           >
             <LinkIcon size={16} />
           </button>
         </form>
-        {status !== undefined && <p className="text-xs text-amber-300">{status}</p>}
-        {refused !== undefined && (
-          <div className="flex flex-col gap-1.5 text-xs text-amber-300" role="status">
-            <p>
-              {refused.reason}
-              {/* The other-sites advice answers a host refusal only; a malformed
+        {/* One live region for every import message, mounted before it has
+            anything to say so the first message is announced too. */}
+        <div className="flex flex-col gap-1.5 text-xs text-amber-300" role="status">
+          {status !== undefined && <p>{status}</p>}
+          {refused !== undefined && (
+            <>
+              <p>
+                {refused.reason}
+                {/* The other-sites advice answers a host refusal only; a malformed
                   or http URL, or a GitHub folder page, has its own fix. */}
-              {refused.reason === REFUSED_HOST_REASON &&
-                ' For other sites, open the file, save it to this device, and use Import file.'}
-            </p>
-            <div className="flex gap-3">
-              {refusedHref !== undefined && (
-                <a
-                  href={refusedHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold underline"
-                >
-                  Open file
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                className="font-semibold underline"
-              >
-                Import file
-              </button>
-            </div>
-          </div>
-        )}
+                {refused.reason === REFUSED_HOST_REASON &&
+                  ' For other sites, open the file, save it to this device, and use Import file.'}
+              </p>
+              <div className="flex gap-3">
+                {refusedHref !== undefined && (
+                  <a
+                    href={refusedHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold underline"
+                  >
+                    Open file
+                  </a>
+                )}
+                <button type="button" onClick={chooseFile} className="font-semibold underline">
+                  Import file
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {pending !== undefined && (
+        <Suspense fallback={null}>
+          <HomebrewImportPreview
+            preview={pending.preview}
+            onImport={() => void confirmImport()}
+            onCancel={cancelImport}
+            onKeepExisting={keepExisting}
+          />
+        </Suspense>
+      )}
 
       {readErrors.length > 0 && (
         <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">

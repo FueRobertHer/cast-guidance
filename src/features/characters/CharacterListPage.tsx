@@ -1,11 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Ellipsis, FileUp } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistryState } from '@/data5e/hooks';
-import { characterRepo, type ImportSummary } from '@/db/characterRepo';
+import { characterRepo, type PreparedCharacterImport } from '@/db/characterRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
@@ -24,34 +24,56 @@ import { downloadJson } from '@/lib/download';
 import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
-import { notifyFailure } from '@/stores/notices';
+import { errorText, notifyFailure } from '@/stores/notices';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { UndoBar } from '@/ui/UndoBar';
 import { GettingStarted } from '../onboarding/GettingStarted';
-import { homebrewForExport } from './homebrewExport';
+import type { CharacterPreview } from './importPreview';
+
+/**
+ * The import preview, its gathering and its commit, loaded only once an import
+ * starts (IMP-002): the roster is the first screen, and most visits never
+ * import anything.
+ */
+const loadImportFlow = () => import('./CharacterImportPreview');
+const CharacterImportPreview = lazy(loadImportFlow);
+
+/** A validated import and its preview, waiting for Import or Cancel. */
+interface PendingImport {
+  prepared: PreparedCharacterImport;
+  preview: CharacterPreview;
+  sourceSpellingOf: (lower: string) => string;
+}
 
 async function exportCharacter(doc: CharacterDoc): Promise<void> {
   // Embed only the homebrew this character depends on, as a minimal public DTO
-  // (no local-only fields) — keeps exports self-contained without shipping all
-  // of the user's unrelated homebrew.
-  const homebrew = homebrewForExport(doc, (await homebrewRepo.enabledSafe()).files);
+  // (no local-only fields). That keeps exports self-contained without shipping all
+  // of the user's unrelated homebrew. Loaded on use, as the import preview
+  // shares it: a static import would split it into a chunk of its own that
+  // the entry chunk has to list for this page.
+  const [{ homebrewForExport }, enabled] = await Promise.all([
+    import('./homebrewExport'),
+    homebrewRepo.enabledSafe(),
+  ]);
+  const homebrew = homebrewForExport(doc, enabled.files);
   const payload = { $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew };
   downloadJson(doc.name.replaceAll(/[^\w-]+/g, '_') || 'character', payload);
 }
 
-function importSummaryMessage(s: ImportSummary): string {
-  const parts = [`Imported ${s.name}`];
-  if (s.renamed) parts.push('(renamed — id already existed)');
-  if (s.homebrewAdded > 0) parts.push(`· ${s.homebrewAdded} homebrew file(s) added`);
-  if (s.homebrewSkipped > 0) parts.push(`· ${s.homebrewSkipped} already present`);
-  return parts.join(' ');
+/**
+ * The class list, or none: the importer accepts an export with no class list,
+ * and the roster must still render it (REL-005).
+ */
+function classesOf(doc: CharacterDoc): CharacterDoc['classes'] {
+  return Array.isArray(doc.classes) ? doc.classes : [];
 }
 
 function classSummary(doc: CharacterDoc): string {
-  if (doc.classes.length === 0) return 'No class yet';
+  const classes = classesOf(doc);
+  if (classes.length === 0) return 'No class yet';
   // Defensive: a corrupted class entry (missing ref) must not throw while
-  // rendering the list — one bad record cannot take down the page (REL-005).
-  return doc.classes
+  // rendering the list: one bad record cannot take down the page (REL-005).
+  return classes
     .map((c) => {
       const name = c.ref?.name ?? 'Unknown class';
       const sub = c.subclass?.name !== undefined ? ` · ${c.subclass.name}` : '';
@@ -136,6 +158,51 @@ export function Component() {
   const importInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const [importStatus, setImportStatus] = useState<string>();
+  const [pendingImport, setPendingImport] = useState<PendingImport>();
+  const [checking, setChecking] = useState(false);
+  // Which check is the latest: a slow one must not land after a newer one
+  // and swap its preview in, or Import would store a file nobody was shown.
+  const latestImport = useRef(0);
+
+  /**
+   * Validate the file and show what importing it would do; nothing is written
+   * until Import. Refused by size before it is read: the text-length check in
+   * `prepareImport` only runs once the whole file is in memory.
+   */
+  const previewImport = async (file: File) => {
+    latestImport.current += 1;
+    const request = latestImport.current;
+    setImportStatus(`Checking "${file.name}"…`);
+    setChecking(true);
+    try {
+      const prepared = await characterRepo.prepareImport(
+        await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
+      );
+      const flow = await loadImportFlow();
+      const preview = await flow.buildCharacterPreview(prepared);
+      if (request !== latestImport.current) return;
+      setImportStatus(undefined);
+      setPendingImport({ prepared, preview, sourceSpellingOf: flow.spellingLookup(prepared) });
+    } catch (err) {
+      // Validation and the preview write nothing, so this is never a storage
+      // failure: the error's own message says what went wrong.
+      if (request === latestImport.current) setImportStatus(`Import failed: ${errorText(err)}`);
+    } finally {
+      if (request === latestImport.current) setChecking(false);
+    }
+  };
+
+  const confirmImport = async () => {
+    const p = pendingImport;
+    if (p === undefined) return;
+    setPendingImport(undefined);
+    setImportStatus(await (await loadImportFlow()).commitCharacterImport(p.prepared));
+  };
+
+  const cancelImport = () => {
+    setPendingImport(undefined);
+    setImportStatus('Import canceled. Nothing was added.');
+  };
 
   // The wizard's unfinished draft, read once: it lives in this tab's
   // sessionStorage, and nothing else writes it while the roster is open.
@@ -174,7 +241,7 @@ export function Component() {
     if (registry === null) return map;
     const ctx = engineContextFor(registry);
     for (const c of characters) {
-      if (c.classes.length === 0) continue;
+      if (classesOf(c).length === 0) continue;
       try {
         const sheet = deriveSheet(c, ctx);
         map.set(c.id, { hp: c.play.currentHp, maxHp: sheet.maxHp.value, ac: sheet.ac.value });
@@ -309,7 +376,7 @@ export function Component() {
               {/* Nothing to wait for on a classless character, and nothing
                   coming if the compendium failed to load. */}
               {(vitals.get(c.id) !== undefined ||
-                (registryStatus === 'loading' && c.classes.length > 0)) && (
+                (registryStatus === 'loading' && classesOf(c).length > 0)) && (
                 <VitalsLine v={vitals.get(c.id)} />
               )}
             </Link>
@@ -414,10 +481,16 @@ export function Component() {
           </Link>
         </div>
       </section>
+      {/* aria-disabled rather than disabled while a file is checked, so the
+          button keeps focus: the preview hands focus back to it. */}
       <button
         type="button"
-        onClick={() => importInput.current?.click()}
-        className="flex items-center justify-center gap-2 rounded-lg bg-surface px-4 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
+        onClick={() => {
+          if (!checking) importInput.current?.click();
+        }}
+        aria-disabled={checking}
+        aria-busy={checking}
+        className="tap gap-2 rounded-lg bg-surface px-4 aria-disabled:opacity-60 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
       >
         <FileUp size={15} aria-hidden /> Import from a file
       </button>
@@ -428,22 +501,25 @@ export function Component() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f !== undefined) {
-            // Refused by size before it is read: the text-length check in
-            // `importFromText` only runs once the whole file is in memory.
-            readFileTextBounded(f, IMPORT_LIMITS.maxImportBytes)
-              .then((text) => characterRepo.importFromText(text))
-              .then((summary) => setImportStatus(importSummaryMessage(summary)))
-              .catch((err: unknown) =>
-                setImportStatus(
-                  `Import failed: ${err instanceof Error ? err.message : String(err)}`,
-                ),
-              );
-          }
+          if (f !== undefined) void previewImport(f);
           e.target.value = '';
         }}
       />
-      {importStatus !== undefined && <p className="text-xs text-amber-300">{importStatus}</p>}
+      {/* Mounted before it has anything to say, so the first message is
+          announced too. */}
+      <p role="status" className="text-xs text-amber-300 empty:hidden">
+        {importStatus}
+      </p>
+      {pendingImport !== undefined && (
+        <Suspense fallback={null}>
+          <CharacterImportPreview
+            preview={pendingImport.preview}
+            sourceSpellingOf={pendingImport.sourceSpellingOf}
+            onImport={() => void confirmImport()}
+            onCancel={cancelImport}
+          />
+        </Suspense>
+      )}
       {characters.length === 0 && result !== undefined && (
         <GettingStarted onDismiss={() => heading.current?.focus()} />
       )}

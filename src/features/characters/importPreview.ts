@@ -1,8 +1,8 @@
 /**
  * What importing a character export would do, worked out before anything is
- * written (IMP-002). Pure, and its one runtime import is the small
- * `collectCharacterSources` helper (everything else is type-only), so the
- * roster can load it on demand without growing the entry chunk.
+ * written (IMP-002). Pure. Its runtime imports are `collectCharacterSources`
+ * and the homebrew preview's `officialCoverage`, both loaded with the import
+ * flow, so the roster can load it on demand without growing the entry chunk.
  *
  * The commit decides again inside its transaction (`characterRepo.commitImport`),
  * so this is a forecast for the player, not a promise: another tab may change
@@ -10,7 +10,11 @@
  */
 import type { PreparedCharacterImport } from '@/db/characterRepo';
 import type { HomebrewFile } from '@/db/homebrewRepo';
-import type { OfficialIndex } from '@/features/homebrew/importPreview';
+import {
+  type OfficialCoverage,
+  type OfficialIndex,
+  officialCoverage,
+} from '@/features/homebrew/importPreview';
 import { collectCharacterSources } from './homebrewExport';
 
 /** Worded for the preview's list of sources nothing here provides. */
@@ -41,6 +45,12 @@ export interface EmbeddedFilePreview {
    * Enabled ones keep precedence now; disabled ones regain it if turned on.
    */
   localFiles: { id: string; fileName: string; enabled: boolean }[];
+  /**
+   * For `already-here`: whether the copy here is turned on. A turned-off copy
+   * is skipped like any other, but its entries are not in use until it is
+   * turned back on.
+   */
+  existingEnabled?: boolean;
 }
 
 export interface CharacterPreview {
@@ -57,6 +67,7 @@ export interface CharacterPreview {
   notDownloadedSources: string[];
   /** Provided only by a homebrew file here that is turned off. */
   disabledSources: string[];
+  officialCoverage: OfficialCoverage;
   notes: string[];
 }
 
@@ -73,7 +84,8 @@ const lower = (s: string) => s.toLowerCase();
 export function previewCharacterImport(input: CharacterPreviewInput): CharacterPreview {
   const { prepared, existing, official } = input;
   const { doc } = prepared;
-  const existingIds = new Set(existing.map((f) => f.id));
+  const existingById = new Map(existing.map((f) => [f.id, f]));
+  const existingIds = new Set(existingById.keys());
 
   // The commit skips a file repeated inside the export, so list it once.
   const seen = new Set<string>();
@@ -97,6 +109,7 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
       counts: row.counts,
       sourceIds: row.sourceIds,
       localFiles,
+      ...(existingIds.has(row.id) ? { existingEnabled: existingById.get(row.id)?.enabled } : {}),
     });
   }
 
@@ -119,21 +132,39 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
   }
 
   const notes: string[] = [];
-  if (official === null) {
-    notes.push('Game data is not available yet, so official sources were not checked.');
-  } else if (!official.complete) {
-    notes.push('Game data is still downloading, so some sources may not be here yet.');
+  const coverage = officialCoverage(official);
+  if (coverage === 'unavailable') {
+    notes.push('Game data could not be read, so official sources were not checked.');
+  } else if (coverage === 'partial') {
+    notes.push(
+      'Not all game data is on this device yet, so some sources may only be missing for now.',
+    );
   }
 
   return {
     name: doc.name,
-    classLabel: doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / '),
+    classLabel: classLabelOf(doc.classes),
     importsAsCopy: input.characterExists,
     bytes: prepared.bytes,
     files,
     missingSources,
     notDownloadedSources,
     disabledSources,
+    officialCoverage: coverage,
     notes,
   };
+}
+
+/**
+ * `Mage 3 / Warrior 1`, read defensively: an export the old flow imported can
+ * lack its class list or hold a class entry with no reference.
+ */
+function classLabelOf(classes: unknown): string {
+  if (!Array.isArray(classes)) return '';
+  return classes
+    .map((c: { ref?: { name?: unknown }; levels?: unknown } | null) => {
+      const name = typeof c?.ref?.name === 'string' ? c.ref.name : 'Unknown class';
+      return typeof c?.levels === 'number' ? `${name} ${c.levels}` : name;
+    })
+    .join(' / ');
 }

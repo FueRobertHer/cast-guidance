@@ -19,31 +19,49 @@ export interface HomebrewExportDTO {
   json: unknown;
 }
 
-function addRef(into: Set<string>, ref: EntityRef | undefined): void {
-  if (ref?.source !== undefined && ref.source !== '') into.add(ref.source.toLowerCase());
+function addRef(into: Set<string>, ref: unknown): void {
+  const source = (ref as Partial<EntityRef> | null | undefined)?.source;
+  if (typeof source === 'string' && source !== '') into.add(source.toLowerCase());
 }
+
+/** The array a field should hold, or nothing: stored and imported docs can be malformed. */
+function listOf(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+const refOf = (entry: unknown, key: string): unknown =>
+  typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>)[key] : undefined;
 
 /**
  * Every source id the character references across its picks. Used to decide
- * which homebrew files an export must carry.
+ * which homebrew files an export must carry, and by the import previews.
+ *
+ * Read defensively: a document the app accepted (an older export, a damaged
+ * roster entry) can lack a list or hold a stray value in one, and one such
+ * field must not stop an export or an import of something else.
  */
 export function collectCharacterSources(doc: CharacterDoc): Set<string> {
   const out = new Set<string>();
   addRef(out, doc.race);
   addRef(out, doc.subrace);
   addRef(out, doc.background);
-  for (const c of doc.classes) {
-    addRef(out, c.ref);
-    addRef(out, c.subclass);
+  for (const c of listOf(doc.classes)) {
+    addRef(out, refOf(c, 'ref'));
+    addRef(out, refOf(c, 'subclass'));
   }
-  for (const f of doc.feats) addRef(out, f.ref);
-  for (const e of doc.equipment) addRef(out, e.ref);
-  for (const sc of Object.values(doc.spellcasting)) {
-    for (const ref of sc.known) addRef(out, ref);
-    for (const ref of sc.prepared) addRef(out, ref);
+  for (const f of listOf(doc.feats)) addRef(out, refOf(f, 'ref'));
+  for (const e of listOf(doc.equipment)) addRef(out, refOf(e, 'ref'));
+  const spellcasting = doc.spellcasting as unknown;
+  if (typeof spellcasting === 'object' && spellcasting !== null) {
+    for (const sc of Object.values(spellcasting)) {
+      for (const ref of listOf(refOf(sc, 'known'))) addRef(out, ref);
+      for (const ref of listOf(refOf(sc, 'prepared'))) addRef(out, ref);
+    }
   }
   // Explicit deps, if the character tracked any.
-  for (const dep of doc.homebrewDeps) out.add(dep.toLowerCase());
+  for (const dep of listOf(doc.homebrewDeps)) {
+    if (typeof dep === 'string' && dep !== '') out.add(dep.toLowerCase());
+  }
   return out;
 }
 

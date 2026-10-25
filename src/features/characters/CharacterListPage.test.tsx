@@ -80,7 +80,9 @@ describe('the unfinished draft card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(readDraft()).toBeNull();
     expect(screen.queryByText(/Unfinished character/)).toBeNull();
-    expect(screen.getByRole('status').textContent).toContain('Discarded draft Aria');
+    expect(screen.getAllByRole('status').map((s) => s.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('Discarded draft Aria')]),
+    );
     // Discard went with its card; focus goes to the undo, not the page body.
     const undoButton = screen.getByRole('button', { name: 'Undo: Discarded draft Aria' });
     expect(document.activeElement).toBe(undoButton);
@@ -93,7 +95,9 @@ describe('the unfinished draft card', () => {
   it('is not there without a draft, or for one with nothing in it', () => {
     renderRoster();
     expect(screen.queryByText(/Unfinished character/)).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
+    // No undo line: the one status region is the import's, mounted empty.
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toBe('');
     cleanup();
 
     writeDraft({ doc: newCharacterDoc('hero-2', '', 't'), bundleChoices: {}, slotPicks: {} });
