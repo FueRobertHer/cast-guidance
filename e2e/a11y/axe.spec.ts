@@ -1,9 +1,10 @@
 import { devices, type Locator, type Page } from '@playwright/test';
 import { jsonFile } from '../fixtures/characterFile.ts';
-import { MIRROR_PATHS, PINNED_TAG } from '../fixtures/mirror.ts';
+import { MIRROR_PATHS, NEXT_TAG, PINNED_TAG, withNextRelease } from '../fixtures/mirror.ts';
 import {
   animationsSettled,
   createBlankCharacter,
+  dataFailureBanner,
   gettingStartedDismiss,
   gotoRoster,
   gotoRosterSettled,
@@ -15,6 +16,7 @@ import {
   type SheetTab,
   settingsValue,
   skipOfflineReadyNotice,
+  startDataInstall,
 } from '../support/app.ts';
 import { putSetting } from '../support/idb.ts';
 import { triggerSwUpdate, waitForSwControl } from '../support/sw.ts';
@@ -270,6 +272,74 @@ test.describe('axe: banners and toasts', () => {
     await expect(page.getByText(/v2\.33\.0/)).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'toast-data-update');
+  });
+
+  test('a failed data update, in Settings and in the banner', async ({ page, mirror }) => {
+    await skipOfflineReadyNotice(page);
+    await gotoRosterSettled(page);
+    await gotoHeading(page, '/settings', 'Settings');
+    mirror.setTags([NEXT_TAG, PINNED_TAG]);
+    mirror.setBodies(withNextRelease);
+    // The last file the install fetches, so everything else is staged first.
+    mirror.setFail((tag, path) =>
+      tag === NEXT_TAG && path === 'spells/spells-phb.json' ? 500 : undefined,
+    );
+    await startDataInstall(page, NEXT_TAG);
+    await expect(dataFailureBanner(page, `Update to ${NEXT_TAG} failed`)).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Update failed:' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'settings-update-failed');
+  });
+
+  test('a plain confirm, and the banner for a save that failed', async ({ page }) => {
+    await skipOfflineReadyNotice(page);
+    // Character writes fail on demand, as a full disk would refuse them.
+    await page.addInitScript(() => {
+      const put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args) {
+        if ((window as { failSaves?: boolean }).failSaves === true && this.name === 'characters') {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        }
+        return put.apply(this, args);
+      };
+    });
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+    await gotoSheetTab(page, id, 'Play');
+
+    // A confirm that is not destructive, so its button is the red fill.
+    await page.getByRole('button', { name: 'Long rest' }).click();
+    const rest = page.getByRole('dialog', { name: 'Long rest' });
+    await opened(page, rest);
+    await scanState(page, 'long-rest-confirm');
+    await rest.getByRole('button', { name: 'Cancel' }).click();
+    await expect(rest).toBeHidden();
+
+    await page.evaluate(() => {
+      (window as { failSaves?: boolean }).failSaves = true;
+    });
+    await page.getByRole('button', { name: 'Inspiration' }).click();
+    const failed = page.getByRole('alert').filter({ hasText: 'could not be saved' });
+    await expect(failed).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'banner-save-error');
+  });
+
+  test('the banner for a database another tab deleted', async ({ page }) => {
+    await skipOfflineReadyNotice(page);
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+    await gotoSheetTab(page, id, 'Play');
+    // What clearing site data from another tab does: the app's connection
+    // gets a versionchange, closes, and this tab stops saving.
+    await page.evaluate(() => {
+      indexedDB.deleteDatabase('cast-guidance');
+    });
+    await expect(
+      page.getByRole('status').filter({ hasText: 'saved data was cleared' }),
+    ).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'banner-db-closed');
   });
 
   test.describe(() => {
