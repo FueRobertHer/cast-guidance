@@ -7,6 +7,7 @@ import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
+import { subclassOptions } from '@/data5e/subclassOptions';
 import { characterRepo } from '@/db/characterRepo';
 import { POINT_BUY_BUDGET, pointBuyCost, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { deriveSheet } from '@/engine/derive';
@@ -182,15 +183,11 @@ export function Component() {
       : undefined;
   const subclasses =
     doc.classes[0] !== undefined
-      ? filterByRulesVersion(
-          registry
-            .byType('subclass')
-            .filter(
-              (s) =>
-                String(s.className).toLowerCase() === doc.classes[0]?.ref.name.toLowerCase() &&
-                String(s.classSource).toLowerCase() === doc.classes[0]?.ref.source.toLowerCase(),
-            ),
+      ? subclassOptions(
+          registry.byType('subclass'),
+          doc.classes[0].ref,
           doc.rulesVersion,
+          doc.classes[0].subclass,
         )
       : [];
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);

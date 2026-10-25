@@ -6,13 +6,20 @@ import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
 import { useRegistry } from '@/data5e/hooks';
 import { ensureTypePacks } from '@/data5e/loader';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import { subclassOptions } from '@/data5e/subclassOptions';
 import { roll } from '@/dice/roll';
 import {
   meetsMulticlassRequirements,
   multiclassRequirementText,
   subclassUnlockLevel,
 } from '@/engine/multiclass';
-import { ABILITIES, type DerivedSheet, type EffectOrigin, SKILLS } from '@/engine/types';
+import {
+  ABILITIES,
+  type ClassLevelEntry,
+  type DerivedSheet,
+  type EffectOrigin,
+  SKILLS,
+} from '@/engine/types';
 import { OriginChoices } from '@/features/creator/OriginChoices';
 import {
   backgroundBlurb,
@@ -194,17 +201,8 @@ export function Component() {
   }
 
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
-  const subclassesFor = (ref: { name: string; source: string }) =>
-    filterByRulesVersion(
-      registry
-        .byType('subclass')
-        .filter(
-          (s) =>
-            String(s.className).toLowerCase() === ref.name.toLowerCase() &&
-            String(s.classSource).toLowerCase() === ref.source.toLowerCase(),
-        ),
-      doc.rulesVersion,
-    );
+  const subclassesFor = (entry: ClassLevelEntry) =>
+    subclassOptions(registry.byType('subclass'), entry.ref, doc.rulesVersion, entry.subclass);
   const subclassBlurb = makeSubclassBlurb(registry);
   const subclassEntries = makeSubclassEntries(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
@@ -397,7 +395,7 @@ export function Component() {
           const clsEntity = registry.get('class', entry.ref.name, entry.ref.source);
           const reqText = multiclassRequirementText(clsEntity);
           const reqMet = meetsMulticlassRequirements(clsEntity, finalScores);
-          const subclasses = subclassesFor(entry.ref);
+          const subclasses = subclassesFor(entry);
           return (
             <div
               key={`${entry.ref.name}|${entry.ref.source}`}
