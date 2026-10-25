@@ -1,5 +1,11 @@
 import type { Entity } from '@/data5e/copyMod';
-import type { DerivedResource, PlayState, SpellcastingBlock } from '@/engine/types';
+import type { RulesVersion } from '@/data5e/rulesVersion';
+import type {
+  ClassLevelEntry,
+  DerivedResource,
+  PlayState,
+  SpellcastingBlock,
+} from '@/engine/types';
 import { askChoice } from '@/ui/dialogs';
 import {
   type CastResource,
@@ -32,6 +38,8 @@ export function CastResourcePicker({
   spell,
   spellLevel,
   characterLevel,
+  rulesVersion,
+  classes,
   onPick,
 }: {
   spellName: string;
@@ -44,6 +52,8 @@ export function CastResourcePicker({
   spell: Entity | undefined;
   spellLevel: number;
   characterLevel: number;
+  rulesVersion: RulesVersion;
+  classes: readonly ClassLevelEntry[];
   onPick: (resource: CastResource) => void;
 }) {
   if (!needsCastChoice(options)) return null;
@@ -58,6 +68,8 @@ export function CastResourcePicker({
         spell,
         spellLevel,
         characterLevel,
+        rulesVersion,
+        classes,
       }),
     });
     if (picked === null) return;

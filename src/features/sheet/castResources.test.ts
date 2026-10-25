@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import {
   type CharacterDoc,
+  type ClassLevelEntry,
   type DerivedResource,
   emptyPlayState,
   type SpellcastingBlock,
@@ -402,6 +403,8 @@ describe('cast option wording', () => {
         spell: fireball,
         spellLevel: 3,
         characterLevel: 7,
+        rulesVersion: '2014',
+        classes: [],
       }),
     ).toEqual([
       { id: 'slot-3', label: 'Level 3 slot', hint: '8d6 · 2 left' },
@@ -428,6 +431,8 @@ describe('cast option wording', () => {
         play: emptyPlayState(),
         spellLevel: 1,
         characterLevel: 5,
+        rulesVersion: '2014',
+        classes: [],
       }),
     ).toEqual([{ id: 'pact', label: 'Pact slot · level 3 (upcast)', hint: '2 left' }]);
   });
@@ -497,6 +502,8 @@ describe('what a conversion costs the turn', () => {
       spell: entity,
       spellLevel: 1,
       characterLevel: 5,
+      rulesVersion: '2014',
+      classes: [],
     })[0]?.hint;
 
   it('says only what it costs when the turn can hold it', () => {
@@ -528,5 +535,88 @@ describe('what a conversion costs the turn', () => {
     // An unspent turn says nothing extra.
     play.turn = { action: true, bonus: false, reaction: false };
     expect(hint(spell('action'), play)).toBe('2 points of 2 · Bonus Action to convert');
+  });
+});
+
+describe('2024 slot creation level (GAME-008)', () => {
+  const sorcerer = (levels: number): ClassLevelEntry => ({
+    ref: { name: 'Sorcerer', source: 'XPHB' },
+    levels,
+    hp: [],
+  });
+  const mage = (levels: number): ClassLevelEntry => ({
+    ref: { name: 'Mage', source: 'TST' },
+    levels,
+    hp: [],
+  });
+  /** The pool rows' hints for a level-1 spell, by slot level. */
+  const hints = (
+    classes: ClassLevelEntry[],
+    rulesVersion: '2014' | '2024' = '2024',
+    play = emptyPlayState(),
+  ) => {
+    const options = poolCastResources([points(7)], play, 1);
+    return Object.fromEntries(
+      castResourceOptions(options, {
+        block: block({ slots: [] }),
+        play,
+        pools: [points(7)],
+        spellLevel: 1,
+        characterLevel: 7,
+        rulesVersion,
+        classes,
+      }).map((o) => [o.id, o.hint]),
+    );
+  };
+
+  it('says what Sorcerer level a 2024 conversion needs, on the rows that need more', () => {
+    expect(hints([sorcerer(7)])).toEqual({
+      'pool-sorcery-points-1': '2 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-2': '3 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-3': '5 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-4': '6 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-5': '7 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 9',
+    });
+  });
+
+  it('still offers the conversion: the note is guidance, not a gate', () => {
+    // A 2024 Sorcerer 7 with seven points can still be offered a 5th-level slot.
+    expect(poolCastResources([points(7)], emptyPlayState(), 1).map((o) => o.level)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+  });
+
+  it('says nothing under 2014 rules, which have no level column', () => {
+    for (const hint of Object.values(hints([sorcerer(7)], '2014'))) {
+      expect(hint).not.toContain('needs');
+    }
+  });
+
+  it('reads the Sorcerer level, not the character level, for a multiclass', () => {
+    expect(hints([sorcerer(3), mage(6)])).toEqual({
+      'pool-sorcery-points-1': '2 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-2': '3 points of 7 · Bonus Action to convert',
+      'pool-sorcery-points-3': '5 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 5',
+      'pool-sorcery-points-4': '6 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 7',
+      'pool-sorcery-points-5': '7 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 9',
+    });
+  });
+
+  it('says nothing when the character has no Sorcerer level to measure', () => {
+    for (const hint of Object.values(hints([mage(9)]))) expect(hint).not.toContain('needs');
+  });
+
+  it('treats an unreadable level as no levels rather than throwing', () => {
+    expect(hints([sorcerer(Number.NaN)])['pool-sorcery-points-1']).toBe(
+      '2 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 2',
+    );
+  });
+
+  it('keeps the turn note and the level note apart', () => {
+    const play = emptyPlayState();
+    play.turn = { action: false, bonus: true, reaction: false };
+    expect(hints([sorcerer(7)], '2024', play)['pool-sorcery-points-5']).toBe(
+      '7 points of 7 · Bonus Action to convert, your Bonus Action is already used · 2024: needs Sorcerer 9',
+    );
   });
 });
