@@ -530,7 +530,7 @@ export function Component() {
         <div className="mt-3 flex items-center justify-between text-xs">
           <button
             type="button"
-            className="text-ink-muted underline"
+            className="min-h-6 text-ink-muted underline"
             onClick={async () => {
               const n = await askNumber({
                 title: 'Temporary HP',
@@ -578,7 +578,7 @@ export function Component() {
               })
             }
             trigger={
-              <button type="button" className="text-ink-muted underline">
+              <button type="button" className="min-h-6 text-ink-muted underline">
                 breakdown
               </button>
             }
@@ -590,32 +590,41 @@ export function Component() {
       {dying && (
         <section className="rounded-lg border border-accent/50 bg-surface p-3">
           <div className="mb-2 text-sm font-semibold text-accent">Death saving throws</div>
-          <div className="flex items-center justify-between text-sm">
-            {(['success', 'fail'] as const).map((kind) => (
-              <div key={kind} className="flex items-center gap-1.5">
-                <span className="text-xs capitalize text-ink-muted">{kind}</span>
-                {[1, 2, 3].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    aria-label={`Death save ${kind} ${n}`}
-                    aria-pressed={play.deathSaves[kind] >= n}
-                    onClick={() =>
-                      update((d) => {
-                        d.play.deathSaves[kind] = d.play.deathSaves[kind] >= n ? n - 1 : n;
-                      })
-                    }
-                    className={`h-5 w-5 rounded-full border ${
-                      play.deathSaves[kind] >= n
-                        ? kind === 'success'
-                          ? 'border-emerald-300 bg-emerald-300'
-                          : 'border-accent bg-accent'
-                        : 'border-surface-2'
-                    }`}
-                  />
-                ))}
-              </div>
-            ))}
+          {/* Successes over failures, each circle in a 44px target
+              (A11Y-002); Roll save wraps under them on a narrow phone. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div>
+              {(['success', 'fail'] as const).map((kind) => (
+                <div key={kind} className="flex items-center">
+                  <span className="w-14 text-xs capitalize text-ink-muted">{kind}</span>
+                  {[1, 2, 3].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      aria-label={`Death save ${kind} ${n}`}
+                      aria-pressed={play.deathSaves[kind] >= n}
+                      onClick={() =>
+                        update((d) => {
+                          d.play.deathSaves[kind] = d.play.deathSaves[kind] >= n ? n - 1 : n;
+                        })
+                      }
+                      className="tap rounded"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`h-5 w-5 rounded-full border ${
+                          play.deathSaves[kind] >= n
+                            ? kind === 'success'
+                              ? 'border-emerald-300 bg-emerald-300'
+                              : 'border-accent bg-accent'
+                            : 'border-surface-2'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() =>
@@ -997,7 +1006,7 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className="font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            className="min-h-6 font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
                             title="What does this do?"
                           >
                             {r.label}
@@ -1091,7 +1100,7 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className="truncate text-left font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            className="min-h-6 truncate text-left font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
                           >
                             {a.label}
                           </button>
@@ -1194,7 +1203,7 @@ export function Component() {
                     trigger={
                       <button
                         type="button"
-                        className="underline decoration-surface-2 decoration-dashed underline-offset-4"
+                        className="min-h-6 underline decoration-surface-2 decoration-dashed underline-offset-4"
                       >
                         {a.label}
                       </button>

@@ -25,5 +25,11 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["e2e", "playwright.config.ts", "tests-fixtures/dataMirror.ts", "src/data5e/packs.ts"]
+  "include": [
+    "e2e",
+    "playwright.config.ts",
+    "tests-fixtures/dataMirror.ts",
+    "src/data5e/packs.ts",
+    "src/features/sheet/multiTab.ts"
+  ]
 }

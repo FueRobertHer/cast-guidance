@@ -37,6 +37,8 @@ const METHOD_NOTES: Readonly<Record<ShownMethod, string>> = {
 
 const SECONDARY =
   'self-start rounded-lg bg-surface-2 px-3 py-1.5 text-left text-xs font-semibold text-ink';
+const STEP = 'tap rounded-full';
+const STEP_DOT = 'flex h-8 w-8 items-center justify-center rounded-full bg-surface-2';
 
 /** The point-buy status in words, for the summary line and the live region. */
 export function pointBuyText(status: PointBuyStatus): string {
@@ -436,15 +438,19 @@ function StepperCard({
       }`}
     >
       <span className="text-xs font-semibold uppercase text-ink-muted">{ability}</span>
-      <div className="flex items-center gap-2">
+      {/* 44px targets around a 32px circle (A11Y-002), with no gap, so the
+          pair and the score still fit half of a 320px screen. */}
+      <div className="flex items-center">
         <button
           type="button"
           aria-label={`Decrease ${label}`}
           aria-describedby={out !== undefined ? badgeId : undefined}
           onClick={() => onStep(-1)}
-          className="h-8 w-8 rounded-full bg-surface-2"
+          className={STEP}
         >
-          <span aria-hidden="true">−</span>
+          <span aria-hidden="true" className={STEP_DOT}>
+            −
+          </span>
         </button>
         <span className="w-7 text-center text-lg font-bold">{score}</span>
         <button
@@ -454,9 +460,11 @@ function StepperCard({
             pointBuy ? [out !== undefined ? badgeId : '', upId].join(' ').trim() : undefined
           }
           onClick={() => onStep(1)}
-          className="h-8 w-8 rounded-full bg-surface-2"
+          className={STEP}
         >
-          <span aria-hidden="true">+</span>
+          <span aria-hidden="true" className={STEP_DOT}>
+            +
+          </span>
         </button>
       </div>
       {pointBuy && cost !== undefined && (

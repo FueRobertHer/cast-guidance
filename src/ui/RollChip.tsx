@@ -14,10 +14,23 @@ export interface RollChipProps {
   variant?: 'dice' | 'damage' | 'd20';
   /** Fires after a successful roll (e.g. to spend a limited-use resource). */
   onRolled?: (total: number) => void;
+  /**
+   * In running text: sized by the line, as WCAG 2.5.8 allows a target in a
+   * sentence. Otherwise (a row of controls) the chip is at least 24 by 24.
+   * Marked `data-inline-target`, the one exemption the E2E size check allows.
+   */
+  inline?: boolean;
 }
 
-/** Tappable inline dice roll. Shows the result on the chip for a moment. */
-export function RollChip({ expr, display, label, variant = 'dice', onRolled }: RollChipProps) {
+/** Tappable dice roll. Shows the result on the chip for a moment. */
+export function RollChip({
+  expr,
+  display,
+  label,
+  variant = 'dice',
+  onRolled,
+  inline,
+}: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const valid = useRef<boolean | null>(null);
@@ -57,7 +70,12 @@ export function RollChip({ expr, display, label, variant = 'dice', onRolled }: R
     <button
       type="button"
       onClick={onRoll}
-      className={`inline-block cursor-pointer rounded border bg-surface px-1 font-mono text-[0.85em] leading-snug align-baseline hover:bg-surface-2 ${color}`}
+      data-inline-target={inline ? '' : undefined}
+      className={`${
+        inline
+          ? 'inline-block align-baseline'
+          : 'inline-flex min-h-6 min-w-6 items-center justify-center'
+      } cursor-pointer rounded border bg-surface px-1 font-mono text-[0.85em] leading-snug hover:bg-surface-2 ${color}`}
       title={label ?? expr}
     >
       {result !== null ? <strong>{result}</strong> : (display ?? expr)}
