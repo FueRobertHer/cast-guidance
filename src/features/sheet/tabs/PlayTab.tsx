@@ -425,10 +425,11 @@ export function Component() {
               break onto two lines. The 3.25rem floor is what fits between
               the pairs at 320px; with large text it no longer fits beside
               a pair, so the total gets a line of its own rather than split
-              "0 / 0" in two. */}
+              "0 / 0" in two. Never below min-content, though: a floor that
+              replaced it let a long total run into the heal pair. */}
           <button
             type="button"
-            className="min-w-13 grow basis-0 text-center"
+            className="min-w-[max(3.25rem,min-content)] grow basis-0 text-center"
             onClick={async () => {
               const n = await askNumber({
                 title: 'Set current HP',
