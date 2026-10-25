@@ -435,6 +435,11 @@ describe('copies elsewhere that this file fixes', () => {
           local('needs-it', { _meta: meta(['AAA']), spell: [child] }),
           local('off', { _meta: meta(['CCC']), spell: [child] }, { enabled: false }),
           local('unrelated', { _meta: meta(['DDD']), spell: [spell('Nope', 'DDD')] }),
+          // Broken too, but for a target this file does not supply.
+          local('other-gap', {
+            _meta: meta(['EEE']),
+            spell: [spell('Gap', 'EEE', { _copy: { name: 'Elsewhere', source: 'ZZZ' } })],
+          }),
         ],
       },
     );

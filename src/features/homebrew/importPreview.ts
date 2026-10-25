@@ -406,24 +406,20 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
 
   // Broken copies in enabled files that this file's entries would resolve:
   // not found in their own file, official data, or any other enabled file.
+  // `homebrewUids` covers every enabled file, the copying one included, so a
+  // single shared lookup answers both "own file" and "elsewhere" (one pass,
+  // not a fresh index of the other files for each file).
   const satisfiesCopies: SatisfiedCopies[] = [];
   if (duplicateOf === undefined) {
     for (const f of enabled) {
-      const elsewhere = firstFileBy(
-        enabled.filter((g) => g.id !== f.id),
-        uidKey,
-      );
       const entries: CopyIssue[] = [];
       for (const type of HOMEBREW_ENTITY_KEYS) {
-        const own = entitiesOf(f.json, type);
-        const ownIds = new Set(own.flatMap((e) => (named(e) === undefined ? [] : [uidOf(e)])));
-        for (const e of own) {
+        for (const e of entitiesOf(f.json, type)) {
           const target = copyTarget(e);
           if (target === undefined) continue;
-          const uid = targetUid(target);
-          if (!ownUids.has(`${type}:${uid}`) || ownIds.has(uid)) continue;
-          if (official?.uids.get(type)?.has(uid) === true || elsewhere.has(`${type}:${uid}`))
-            continue;
+          const key = `${type}:${targetUid(target)}`;
+          if (!ownUids.has(key) || homebrewUids.has(key)) continue;
+          if (official?.uids.get(type)?.has(targetUid(target)) === true) continue;
           entries.push({
             type,
             name: named(e)?.name ?? target.name,
