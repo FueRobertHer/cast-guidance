@@ -759,7 +759,7 @@ export function Component() {
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    aria-label={`Decrease ${a}`}
+                    aria-label={`Decrease ${a.toUpperCase()}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
@@ -771,7 +771,7 @@ export function Component() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`${a} ${doc.abilities.base[a]}: swap with another ability`}
+                    aria-label={`${a.toUpperCase()} ${doc.abilities.base[a]}: swap with another ability`}
                     aria-pressed={swapFrom === a}
                     onClick={() => {
                       if (swapFrom === null) setSwapFrom(a);
@@ -794,7 +794,7 @@ export function Component() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Increase ${a}`}
+                    aria-label={`Increase ${a.toUpperCase()}`}
                     onClick={() =>
                       update(
                         (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),

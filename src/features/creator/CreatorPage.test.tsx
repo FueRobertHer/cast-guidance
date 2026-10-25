@@ -247,9 +247,9 @@ describe('accessible names and states', () => {
   it('names the point-buy steppers and says which method is in use', () => {
     renderStep('abilities');
     expect(namelessControls()).toEqual([]);
-    expect(screen.getByRole('button', { name: 'Increase str' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: /^\d+ pending decisions: go to the Choices step$/ }),
+      screen.getByRole('button', { name: /^\d+ pending decisions?: go to the Choices step$/ }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Point buy', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Manual', pressed: false })).toBeTruthy();

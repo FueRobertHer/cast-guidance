@@ -300,8 +300,8 @@ describe('BuildPage accessible names', () => {
       d.hpMethod = 'rolled';
     });
     // Two steps, so the modifier moves and the banner (and its dismiss) shows.
-    fireEvent.click(screen.getByRole('button', { name: 'Increase str' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Increase str' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase STR' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase STR' }));
     expect(screen.getByRole('button', { name: 'Dismiss stat changes' })).toBeTruthy();
     expect(namelessControls()).toEqual([]);
     expect(screen.getByRole('button', { name: 'Remove a Warrior level' })).toBeTruthy();
@@ -318,7 +318,7 @@ describe('BuildPage accessible names', () => {
 
   it('says the score on an ability swap button, and which one is picked up', () => {
     renderBuild();
-    fireEvent.click(screen.getByRole('button', { name: /^str 14: swap/, pressed: false }));
-    expect(screen.getByRole('button', { name: /^str 14: swap/, pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^STR 14: swap/, pressed: false }));
+    expect(screen.getByRole('button', { name: /^STR 14: swap/, pressed: true })).toBeTruthy();
   });
 });

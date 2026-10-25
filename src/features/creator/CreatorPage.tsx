@@ -645,7 +645,7 @@ export function Component() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        aria-label={`Decrease ${a}`}
+                        aria-label={`Decrease ${a.toUpperCase()}`}
                         onClick={() =>
                           update(
                             (d) =>
@@ -661,7 +661,7 @@ export function Component() {
                       </span>
                       <button
                         type="button"
-                        aria-label={`Increase ${a}`}
+                        aria-label={`Increase ${a.toUpperCase()}`}
                         onClick={() =>
                           update(
                             (d) =>
@@ -1077,7 +1077,7 @@ export function Component() {
               type="button"
               onClick={() => navStep('choices')}
               className="text-amber-300 underline decoration-dotted underline-offset-2"
-              aria-label={`${sheet.pending.length} pending decisions: go to the Choices step`}
+              aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: go to the Choices step`}
               title="Decisions like skills and languages are waiting on the Choices step"
             >
               {sheet.pending.length} pending <span aria-hidden="true">→</span>

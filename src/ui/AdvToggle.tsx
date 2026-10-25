@@ -32,7 +32,7 @@ export function AdvToggle() {
     <fieldset
       className={`fixed right-4 bottom-[calc(8.25rem+env(safe-area-inset-bottom))] z-20 flex min-w-0 overflow-hidden rounded-full border bg-surface shadow-lg transition-all duration-200 lg:bottom-20 ${
         hidden
-          ? 'pointer-events-none translate-x-32 opacity-0 focus-within:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100'
+          ? 'pointer-events-none translate-x-32 opacity-0 has-focus-visible:pointer-events-auto has-focus-visible:translate-x-0 has-focus-visible:opacity-100'
           : ''
       } ${
         mode === 'adv'

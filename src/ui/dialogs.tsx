@@ -163,7 +163,8 @@ export function DialogHost() {
     if (req !== null) return;
     const target = returnFocus;
     returnFocus = null;
-    if (target?.isConnected === true) target.focus();
+    // vaul restores the page's scroll position itself; don't scroll first.
+    if (target?.isConnected === true) target.focus({ preventScroll: true });
   }, [req]);
   if (req === null) return null;
 
@@ -176,6 +177,11 @@ export function DialogHost() {
   return (
     <Sheet.Root
       open
+      // vaul turns Radix's open-time focus off by default, which left focus on
+      // the (now aria-hidden) opener and the answers at the end of the page.
+      // This moves it to the first control: Cancel, the first option, or the
+      // input.
+      autoFocus
       onOpenChange={(o) => {
         if (!o) dismiss();
       }}

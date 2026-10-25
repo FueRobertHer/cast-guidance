@@ -67,6 +67,36 @@ describe('DialogHost', () => {
     await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
+  it('keeps the first opener when the next dialog opens before the first unmounts', async () => {
+    // In a browser the answer's continuation runs before React commits the
+    // close, so the second dialog opens while the first one's Confirm still
+    // has focus. Clicking inside an async act reproduces that order.
+    const opener = renderWithOpener();
+    act(() => {
+      void askConfirm({ title: 'First?' }).then(() => askConfirm({ title: 'Second?' }));
+    });
+    const confirm = await screen.findByRole('button', { name: 'Confirm' });
+    confirm.focus();
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+    await press('Cancel');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it('moves focus into the dialog when it opens', async () => {
+    renderWithOpener();
+    act(() => {
+      void askConfirm({ title: 'Delete it?' });
+    });
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await press('Cancel');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('names the prompt input after the question', async () => {
     renderWithOpener();
     act(() => {
