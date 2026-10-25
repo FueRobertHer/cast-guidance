@@ -19,31 +19,62 @@ import { LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
  * Every explicit case below is listed in `FORMATTING_TAGS` (inlineTags.ts), so
  * the data audit counts it as handled; the renderer test keeps the two in step.
  */
-function TagView({ tag, args }: { tag: string; args: string[] }): ReactNode {
+/**
+ * One inline tag. `inline` is whether there are words around it, so a roll
+ * chip in a sentence keeps the size of its line (WCAG 2.5.8 exempts a target
+ * in a sentence) and one alone, in a table cell say, is a 24 px target.
+ */
+function TagView({
+  tag,
+  args,
+  inline,
+}: {
+  tag: string;
+  args: string[];
+  inline: boolean;
+}): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {
     case 'dice':
     case 'damage':
       return (
-        <RollChip expr={body} display={args[1]} variant={tag === 'damage' ? 'damage' : 'dice'} />
+        <RollChip
+          inline={inline}
+          expr={body}
+          display={args[1]}
+          variant={tag === 'damage' ? 'damage' : 'dice'}
+        />
       );
     case 'scaledamage':
     case 'scaledice': {
       // {@scaledamage 8d6|3-9|1d6} — the last arg is the per-step add.
       const add = args[2] ?? body;
-      return <RollChip expr={add} variant="damage" label={`scaling: +${add} per level`} />;
+      return (
+        <RollChip
+          inline={inline}
+          expr={add}
+          variant="damage"
+          label={`scaling: +${add} per level`}
+        />
+      );
     }
     case 'hit': {
       const n = Number.parseInt(body, 10);
       const sign = n >= 0 ? '+' : '';
       return (
-        <RollChip expr={`1d20${n >= 0 ? '+' : ''}${n}`} display={`${sign}${n}`} variant="d20" />
+        <RollChip
+          inline={inline}
+          expr={`1d20${n >= 0 ? '+' : ''}${n}`}
+          display={`${sign}${n}`}
+          variant="d20"
+        />
       );
     }
     case 'd20': {
       const n = Number.parseInt(body || '0', 10);
       return (
         <RollChip
+          inline={inline}
           expr={`1d20${n >= 0 ? '+' : ''}${n}`}
           display={`d20${n !== 0 ? (n > 0 ? `+${n}` : n) : ''}`}
           variant="d20"
@@ -142,13 +173,14 @@ function TagView({ tag, args }: { tag: string; args: string[] }): ReactNode {
 
 export function InlineText({ text }: { text: string }): ReactNode {
   const tokens = tokenizeEntryText(text);
+  const prose = tokens.some((t) => t.kind === 'text' && t.text.trim() !== '');
   return (
     <>
       {tokens.map((t, i) =>
         t.kind === 'text' ? (
           <Fragment key={i}>{t.text}</Fragment>
         ) : (
-          <TagView key={i} tag={t.tag} args={t.args} />
+          <TagView key={i} tag={t.tag} args={t.args} inline={prose} />
         ),
       )}
     </>

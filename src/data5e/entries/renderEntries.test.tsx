@@ -67,3 +67,22 @@ describe('InlineText tag coverage agrees with inlineTags', () => {
     expect(markup(tag)).not.toBe(markup('zzzUnknownTag'));
   });
 });
+
+describe('InlineText roll chips and target size (A11Y-002)', () => {
+  /** Whether the text's roll chip is marked as sized by its line. */
+  const inlineChip = (text: string) => {
+    const { container, unmount } = render(<InlineText text={text} />);
+    const inline = container.querySelector('button')?.hasAttribute('data-inline-target');
+    unmount();
+    return inline;
+  };
+
+  it('keeps a chip in a sentence the size of its line', () => {
+    expect(inlineChip('Deals {@damage 1d6} fire damage.')).toBe(true);
+  });
+
+  it('makes a chip with no words around it, as in a table cell, a full target', () => {
+    expect(inlineChip('{@dice 1d6}')).toBe(false);
+    expect(inlineChip(' {@dice 1d6} ')).toBe(false);
+  });
+});
