@@ -5,7 +5,8 @@ import { createStore } from 'zustand/vanilla';
  * Whether this tab still holds the app's database (TEST-002).
  *
  * - `open`: the normal case. A connection the browser dropped on its own (the
- *   Safari kill case) still counts as open, because the next write reopens it.
+ *   Safari kill case, or the back/forward cache) still counts as open, because
+ *   the next write reopens it.
  * - `deleted`: another tab deleted the database ("Reset app data"). This tab
  *   has closed its connection for good, so a pending save cannot recreate the
  *   database and write its character back into the reset device.
@@ -19,6 +20,12 @@ export type DbLifecycle = 'open' | 'deleted' | 'superseded';
 
 export interface DbLifecycleState {
   state: DbLifecycle;
+  /**
+   * The id stamped into the database this tab first opened. A reopen that
+   * finds a different one, or has to create the database, is looking at a
+   * database another tab deleted. Undefined until the first open.
+   */
+  instanceId?: string;
   markClosed(state: Exclude<DbLifecycle, 'open'>): void;
 }
 

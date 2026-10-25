@@ -53,6 +53,10 @@ describe('DbLifecycleBanner', () => {
     expect(onReload).toHaveBeenCalledOnce();
   });
 
+  it('says plainly that changes made after an upgrade elsewhere are not kept', () => {
+    expect(DB_LIFECYCLE_COPY.superseded).toMatch(/changes made here from now on are not kept/);
+  });
+
   it('never words the change as something this tab did wrong', () => {
     for (const copy of Object.values(DB_LIFECYCLE_COPY)) {
       expect(copy).toMatch(/another tab/);

@@ -5,8 +5,8 @@ export const DB_LIFECYCLE_COPY: Readonly<Record<Exclude<DbLifecycle, 'open'>, st
   deleted:
     'App data was reset in another tab, so this tab has stopped saving. Reload to start fresh.',
   superseded:
-    'A newer version of the app opened in another tab, so this tab has stopped saving. ' +
-    'Reload to use the new version.',
+    'A newer version of the app opened in another tab, so this tab has stopped saving, and ' +
+    'changes made here from now on are not kept. Reload to use the new version.',
 };
 
 function reloadPage(): void {
@@ -22,6 +22,10 @@ function reloadPage(): void {
  * to a region that mounts with it is announced unreliably. Polite, and focus
  * stays where it was, because nothing here needs an answer this second; the
  * person can finish reading what they were on and reload when ready.
+ *
+ * For PR7 (A11Y-002 announcer): this is the third always-mounted live region
+ * in the shell, beside the save status and the announcer itself. Keep it, or
+ * route this message through `announce` and make this a plain visual.
  */
 export function DbLifecycleBanner({ onReload = reloadPage }: { onReload?: () => void }) {
   const state = useDbLifecycle((s) => s.state);
