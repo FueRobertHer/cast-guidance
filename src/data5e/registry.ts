@@ -5,7 +5,14 @@
  */
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { ensurePack, getActiveTag, noteRegistryBuildFailed, noteRegistryPublished } from './loader';
+import {
+  ensurePack,
+  getActiveTag,
+  noteRegistryBuildFailed,
+  noteRegistryBuildStarting,
+  noteRegistryPublished,
+  whenTagReady,
+} from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
 import { setHomebrewSourceNames } from './sourceNames';
@@ -34,13 +41,17 @@ async function cachedFilesMap(tag: string): Promise<Map<string, unknown>> {
 }
 
 /**
- * Fingerprint of the data behind a registry: the cached file paths plus each
- * enabled homebrew file's id AND content revision. Including `rev` is what makes
- * an editable-homebrew edit (same id, new content) change the signature, so the
- * registry rebuilds and the search index (keyed off this) is not served stale.
- * Pure so it can be unit-tested.
+ * Fingerprint of the data behind a registry: the data tag, the cached file
+ * paths, and each enabled homebrew file's id AND content revision. Including
+ * `rev` is what makes an editable-homebrew edit (same id, new content) change
+ * the signature, so the registry rebuilds and the search index (keyed off
+ * this) is not served stale. Including the tag does the same for an install:
+ * releases share their file lists, so without it the session that installed
+ * one kept serving the registry of the release it replaced, and never built
+ * the one that confirms the install. Pure so it can be unit-tested.
  */
 export function computeRegistrySignature(
+  tag: string,
   filePaths: Iterable<string>,
   brews: ReadonlyArray<{ id: string; rev?: number }>,
 ): string {
@@ -49,7 +60,7 @@ export function computeRegistrySignature(
     .map((b) => `${b.id}@${b.rev ?? 0}`)
     .sort()
     .join(',');
-  return `${files}|hb:${hb}`;
+  return `${tag}|${files}|hb:${hb}`;
 }
 
 /**
@@ -105,6 +116,10 @@ export async function getRegistry(): Promise<EntityRegistry> {
 
 async function readRegistry(): Promise<EntityRegistry> {
   const startedAt = epoch;
+  // The cache is read directly, not through `getFile`, so tag resolution (and
+  // any rollback it decides on) has to be waited for here; reading before it
+  // built whatever release the module happened to start on.
+  await whenTagReady();
   // One tag for the whole read: the paths, the bodies and the build are all
   // of the same release even if an install or a rollback moves it meanwhile.
   const tag = getActiveTag();
@@ -114,9 +129,13 @@ async function readRegistry(): Promise<EntityRegistry> {
     // to throw out of here, and every view needs the compendium.
     homebrewRepo.enabledSafe(),
   ]);
-  const signature = computeRegistrySignature(paths, brews);
+  const signature = computeRegistrySignature(tag, paths, brews);
   if (current !== null && signature === currentSignature) return current;
 
+  // A release on probation counts this build as started before it begins,
+  // so one that never finishes is on record; one that has already used up
+  // its starts goes back instead, and this builds the restored release.
+  if (await noteRegistryBuildStarting(tag)) return readRegistry();
   // Only a real rebuild pays for the file bodies.
   const files = await cachedFilesMap(tag);
   // Before the registry is published, so the first render that can show a
@@ -125,9 +144,6 @@ async function readRegistry(): Promise<EntityRegistry> {
   let reg: EntityRegistry;
   try {
     reg = normalizeDataset(files);
-    const brewMap = new Map<string, Record<string, unknown>>();
-    for (const b of brews) brewMap.set(b.id, b.json);
-    mergeHomebrew(reg, brewMap);
   } catch (err) {
     // A release just installed that cannot even be built goes back to the
     // one it replaced, and the caller gets that release's registry instead of
@@ -136,16 +152,20 @@ async function readRegistry(): Promise<EntityRegistry> {
     if (await noteRegistryBuildFailed(tag)) return readRegistry();
     throw err;
   }
-  // Only if nothing invalidated the registry while this was reading, and the
-  // release it read is still the live one. The caller still gets what was
-  // built, which is the best answer available to it; what it must not do is
-  // leave that answer behind as the current one. The signature is paths
-  // alone, so a build of one release left current after the tag moved would
-  // be served as the other whenever their file lists match.
-  if (startedAt === epoch && getActiveTag() === tag) {
+  // Outside the rollback above on purpose: a broken homebrew file says
+  // nothing about the official release, and going back would not fix it.
+  const brewMap = new Map<string, Record<string, unknown>>();
+  for (const b of brews) brewMap.set(b.id, b.json);
+  mergeHomebrew(reg, brewMap);
+  // Only if nothing invalidated the registry while this was reading. The
+  // caller still gets what was built, which is the best answer available to
+  // it; what it must not do is leave that answer behind as the current one.
+  if (startedAt === epoch) {
     current = reg;
     currentSignature = signature;
-    void noteRegistryPublished(tag);
+    // Awaited: a confirm is one small write, and a caller holding the
+    // registry can then rely on the install's state matching it.
+    await noteRegistryPublished(tag, paths);
   }
   return reg;
 }

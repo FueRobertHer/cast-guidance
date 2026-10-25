@@ -442,16 +442,39 @@ export function resolveCopies(
   label: string,
 ): CopyModWarning[] {
   const warnings: CopyModWarning[] = [];
-  const pending = entities.filter((e) => e._copy !== undefined);
+  /** Give up on one entity's copy, keeping the entity as it stands. */
+  const skip = (e: Entity, why: string) => {
+    warnings.push({ entity: uidOf(e), message: `${label}: ${why}` });
+    delete e._copy;
+  };
+  const pending: Entity[] = [];
+  for (const e of entities) {
+    if (e._copy === undefined) continue;
+    // Homebrew is anyone's JSON. A `_copy` that is not a reference at all
+    // (null, a string, a list) used to throw out of the lookup, and with it
+    // the whole registry: every page, for one malformed entry.
+    if (e._copy === null || typeof e._copy !== 'object' || Array.isArray(e._copy)) {
+      skip(e, `malformed _copy ${JSON.stringify(e._copy)}`);
+      continue;
+    }
+    pending.push(e);
+  }
   let progress = true;
   while (pending.length > 0 && progress) {
     progress = false;
     for (let i = pending.length - 1; i >= 0; i--) {
       const e = pending[i] as Entity;
       const copy = e._copy as CopyRef;
-      const target = lookup(copy, e);
-      if (target === undefined || target._copy !== undefined) continue; // retry next pass
-      applyCopy(e, target, warnings, label);
+      try {
+        const target = lookup(copy, e);
+        if (target === undefined || target._copy !== undefined) continue; // retry next pass
+        applyCopy(e, target, warnings, label);
+      } catch (err) {
+        // Same reasoning one level down: whatever this entry holds that the
+        // copy machinery cannot handle costs this entry its copy, not the
+        // registry its existence.
+        skip(e, `could not resolve _copy: ${err instanceof Error ? err.message : String(err)}`);
+      }
       pending.splice(i, 1);
       progress = true;
     }

@@ -15,6 +15,8 @@ vi.mock('./loader', () => ({
   repairTypePacks: vi.fn().mockResolvedValue(undefined),
   noteRegistryPublished: vi.fn().mockResolvedValue(undefined),
   noteRegistryBuildFailed: vi.fn().mockResolvedValue(false),
+  noteRegistryBuildStarting: vi.fn().mockResolvedValue(false),
+  whenTagReady: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./search/client', () => ({
   ensureSearchIndex: vi.fn().mockResolvedValue(undefined),

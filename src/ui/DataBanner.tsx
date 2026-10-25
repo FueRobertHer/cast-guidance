@@ -1,6 +1,6 @@
-import { getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
+import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
-import { dataStatusStore, showsDataBanner, useDataStatus } from '@/stores/dataStatus';
+import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 
 /** Download progress for the background data queue, and its failure state. */
 export function DataBanner() {
@@ -65,7 +65,7 @@ export function DataBanner() {
         </span>
         <button
           type="button"
-          onClick={() => dataStatusStore.getState().setRolledBackFrom(undefined)}
+          onClick={() => void dismissRollbackNotice()}
           className="shrink-0 rounded bg-surface-2 px-2 py-0.5 font-semibold"
         >
           Dismiss

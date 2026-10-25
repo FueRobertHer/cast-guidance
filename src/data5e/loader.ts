@@ -40,8 +40,8 @@ export function getActiveTag(): string {
 /**
  * The settings key that holds an install still on probation: the release it
  * replaced (`prev`, whose rows are kept), the release installed (`to`), and
- * how many launches have started on `to` without it ever producing a working
- * registry. Written in the same transaction as the swap and removed in the
+ * how many registry builds have started on `to` without one ever being
+ * published. Written in the same transaction as the swap and removed in the
  * same transaction as a rollback, so it can never disagree with `dataTag`.
  */
 const ROLLBACK_SETTING = 'dataTagRollback';
@@ -49,28 +49,58 @@ const ROLLBACK_SETTING = 'dataTagRollback';
 interface RollbackRecord {
   prev: string;
   to: string;
-  boots: number;
+  starts: number;
 }
 
 /**
- * Launches a new release may start on without building a registry before the
- * app gives up on it. Two, not one: a launch can end for reasons that have
- * nothing to do with the data (the tab closed, the device slept), and going
- * back costs the user the update they asked for.
+ * The release a rollback left behind, kept so the app stops offering it and
+ * can say why the version moved backwards until someone has read that.
  */
-const MAX_UNCONFIRMED_BOOTS = 2;
+const REJECTED_SETTING = 'dataTagRejected';
+
+interface RejectedRecord {
+  tag: string;
+  dismissed: boolean;
+}
+
+/**
+ * Sessions whose first registry build under a release on probation may start
+ * and never publish before the app gives up on it. A build that starts and
+ * never finishes is what a release that crashes the app looks like from the
+ * next launch. Counted per build rather than per launch, because plenty of
+ * launches (a homebrew page, a reload on a missing route) build no registry
+ * at all and say nothing about the data. Two, not one: a session can also
+ * end for reasons that have nothing to do with the data (the tab closed, the
+ * device slept), and going back costs the user the update they asked for.
+ */
+const MAX_UNPUBLISHED_STARTS = 2;
 
 /** A stored rollback record, or undefined for anything that is not one. */
 function parseRollback(value: unknown): RollbackRecord | undefined {
   if (value === null || typeof value !== 'object') return undefined;
-  const { prev, to, boots } = value as Partial<RollbackRecord>;
+  const { prev, to, starts } = value as Partial<RollbackRecord>;
   if (typeof prev !== 'string' || typeof to !== 'string') return undefined;
-  if (typeof boots !== 'number' || !Number.isFinite(boots) || boots < 0) return undefined;
-  return { prev, to, boots };
+  if (typeof starts !== 'number' || !Number.isFinite(starts) || starts < 0) return undefined;
+  return { prev, to, starts };
 }
 
 async function readRollback(): Promise<RollbackRecord | undefined> {
   return parseRollback((await db.settings.get(ROLLBACK_SETTING))?.value);
+}
+
+/** The stored rejected release, or undefined for anything that is not one. */
+async function readRejected(): Promise<RejectedRecord | undefined> {
+  const value = (await db.settings.get(REJECTED_SETTING))?.value;
+  if (value === null || typeof value !== 'object') return undefined;
+  const { tag, dismissed } = value as Partial<RejectedRecord>;
+  if (typeof tag !== 'string') return undefined;
+  return { tag, dismissed: dismissed === true };
+}
+
+/** Whether every essentials file of `tag` is on disk. */
+async function hasEssentials(tag: string): Promise<boolean> {
+  const onDisk = await dataCacheRepo.cachedPaths(tag);
+  return ESSENTIALS_FILES.every((p) => onDisk.has(p));
 }
 
 /**
@@ -79,13 +109,26 @@ async function readRollback(): Promise<RollbackRecord | undefined> {
  */
 let pendingTag: string | undefined;
 
+/** The probationary tag whose build start this session has already counted. */
+let countedStart: string | undefined;
+
 /**
- * Count this launch against a release still on probation, and go back to the
- * one it replaced once it has had its chances. Runs inside tag resolution, so
- * nothing has read a file under the tag yet, and reads nothing but the local
- * database: a release that cannot start must be escapable offline.
+ * Pick up a release still on probation at launch. Runs inside tag
+ * resolution, so nothing has read a file under the tag yet, and reads nothing
+ * but the local database: a release that cannot start must be escapable
+ * offline. The one thing decided here is a release whose essentials are gone
+ * (evicted, or deleted by hand) while the release it replaced still has its
+ * own: nothing could be built from it, and the way back is right there.
  */
 async function checkPendingTag(): Promise<void> {
+  try {
+    const rejected = await readRejected();
+    if (rejected !== undefined && !rejected.dismissed) {
+      dataStatusStore.getState().setRolledBackFrom(rejected.tag);
+    }
+  } catch {
+    // The notice is a courtesy; an unreadable one just is not shown.
+  }
   let rollback: RollbackRecord | undefined;
   try {
     rollback = await readRollback();
@@ -96,19 +139,23 @@ async function checkPendingTag(): Promise<void> {
   if (rollback === undefined) return;
   try {
     if (rollback.to !== activeTag) {
-      // About some other install. Nothing is on probation here.
-      await db.settings.delete(ROLLBACK_SETTING);
+      // About some other install, unless one has swapped since the read.
+      await db.transaction('rw', db.settings, async () => {
+        const stored = (await db.settings.get('dataTag'))?.value;
+        const current = await readRollback();
+        if (current !== undefined && current.to !== stored) {
+          await db.settings.delete(ROLLBACK_SETTING);
+        }
+      });
       return;
     }
-    const boots = rollback.boots + 1;
-    if (boots > MAX_UNCONFIRMED_BOOTS) {
+    if (!(await hasEssentials(rollback.to)) && (await hasEssentials(rollback.prev))) {
       await rollBack(rollback);
       return;
     }
     pendingTag = activeTag;
-    await db.settings.put({ key: ROLLBACK_SETTING, value: { ...rollback, boots } });
   } catch {
-    // A launch that cannot be counted is not counted; the next one is.
+    // Left for the next launch to look at again.
   }
 }
 
@@ -122,8 +169,7 @@ async function checkPendingTag(): Promise<void> {
 async function rollBack(rollback: RollbackRecord): Promise<boolean> {
   const { prev, to } = rollback;
   try {
-    const onDisk = await dataCacheRepo.cachedPaths(prev);
-    if (!ESSENTIALS_FILES.every((p) => onDisk.has(p))) {
+    if (!(await hasEssentials(prev))) {
       pendingTag = undefined;
       await db.settings.delete(ROLLBACK_SETTING);
       return false;
@@ -141,6 +187,10 @@ async function rollBack(rollback: RollbackRecord): Promise<boolean> {
         installedAt: Date.now(),
       });
       await db.settings.delete(ROLLBACK_SETTING);
+      await db.settings.put({
+        key: REJECTED_SETTING,
+        value: { tag: to, dismissed: false } satisfies RejectedRecord,
+      });
       return true;
     });
     if (!wentBack) return false;
@@ -154,32 +204,97 @@ async function rollBack(rollback: RollbackRecord): Promise<boolean> {
   return true;
 }
 
-/**
- * Called by the registry each time it publishes a build. The first one under
- * a release on probation is what confirms it: its files were read, normalized
- * and merged into something the app can use, so the release it replaced is
- * no longer needed and its rows can go.
- */
-export async function noteRegistryPublished(tag: string): Promise<void> {
-  if (pendingTag === undefined || pendingTag !== tag) return;
-  pendingTag = undefined;
+/** Put the rollback notice away, on this launch and the ones after it. */
+export async function dismissRollbackNotice(): Promise<void> {
+  dataStatusStore.getState().setRolledBackFrom(undefined);
   try {
     await db.transaction('rw', db.settings, async () => {
-      if ((await readRollback())?.to === tag) await db.settings.delete(ROLLBACK_SETTING);
+      const rejected = await readRejected();
+      if (rejected !== undefined && !rejected.dismissed) {
+        await db.settings.put({
+          key: REJECTED_SETTING,
+          value: { ...rejected, dismissed: true } satisfies RejectedRecord,
+        });
+      }
     });
   } catch {
-    // Still on record, so the next launch counts it and the next publish
-    // confirms it. Pruning now would delete what a rollback needs.
-    return;
+    // Shown again on the next launch, which is the honest failure.
   }
-  await pruneStaleTags();
 }
 
 /**
- * Called by the registry when a build under `tag` throws. A release on
- * probation that cannot even be built is rolled back at once, rather than
- * after the launches the boot counter would give it. Resolves whether it went
- * back, so the registry can build again under the restored release.
+ * Called by the registry when it is about to build under `tag`. The first
+ * build of each session under a release on probation is counted, in one
+ * transaction with the read that decides it; a release that already has
+ * {@link MAX_UNPUBLISHED_STARTS} builds started and none published goes back
+ * instead. Resolves whether it went back, so the registry builds the restored
+ * release rather than the one that keeps failing to finish.
+ */
+export async function noteRegistryBuildStarting(tag: string): Promise<boolean> {
+  if (pendingTag !== tag || activeTag !== tag || countedStart === tag) return false;
+  // Before the first await, so concurrent builds in one session count once:
+  // one session that never publishes is one failed start, however many
+  // screens asked for the registry during it.
+  countedStart = tag;
+  let exhausted: RollbackRecord | undefined;
+  try {
+    exhausted = await db.transaction('rw', db.settings, async () => {
+      const rollback = await readRollback();
+      if (rollback?.to !== tag) return undefined;
+      if (rollback.starts >= MAX_UNPUBLISHED_STARTS) return rollback;
+      await db.settings.put({
+        key: ROLLBACK_SETTING,
+        value: { ...rollback, starts: rollback.starts + 1 } satisfies RollbackRecord,
+      });
+      return undefined;
+    });
+  } catch {
+    // An uncounted start is not counted; the next session's is.
+    return false;
+  }
+  return exhausted === undefined ? false : rollBack(exhausted);
+}
+
+/**
+ * Called by the registry each time it publishes a build, with the paths the
+ * build read. The first one under a release on probation that holds every
+ * essentials file is what confirms it: its files were read, normalized and
+ * merged into something the app can use, so the release it replaced is no
+ * longer needed and its rows can go. A build missing essentials proves
+ * nothing, since a page can ask for the registry before they are on disk.
+ */
+export async function noteRegistryPublished(
+  tag: string,
+  paths: ReadonlySet<string>,
+): Promise<void> {
+  if (pendingTag === undefined || pendingTag !== tag) return;
+  if (!ESSENTIALS_FILES.every((p) => paths.has(p))) return;
+  pendingTag = undefined;
+  let confirmed = false;
+  try {
+    confirmed = await db.transaction('rw', db.settings, async () => {
+      if ((await readRollback())?.to !== tag) return false;
+      await db.settings.delete(ROLLBACK_SETTING);
+      return true;
+    });
+  } catch {
+    // Still on record, so the next publish confirms it. Pruning now would
+    // delete what a rollback needs.
+    pendingTag = tag;
+    return;
+  }
+  // Only a confirm that happened here sweeps: a record already gone, or
+  // rewritten by another tab's install, is not this build's to act on. Not
+  // awaited: the registry waits for the confirm, not for the housekeeping.
+  if (confirmed) void pruneStaleTags();
+}
+
+/**
+ * Called by the registry when the official build under `tag` throws. A
+ * release on probation that cannot even be built is rolled back at once,
+ * rather than after the sessions the start counter would give it. Resolves
+ * whether it went back, so the registry can build again under the restored
+ * release.
  */
 export async function noteRegistryBuildFailed(tag: string): Promise<boolean> {
   if (pendingTag === undefined || pendingTag !== tag || activeTag !== tag) return false;
@@ -254,6 +369,15 @@ let tagReady: Promise<void> | undefined;
 function ensureTagReady(): Promise<void> {
   tagReady ??= restoreActiveTag();
   return tagReady;
+}
+
+/**
+ * Resolves once the active tag is known (and any rollback has happened), for
+ * readers outside this module that go to the cache directly rather than
+ * through `getFile`.
+ */
+export function whenTagReady(): Promise<void> {
+  return ensureTagReady();
 }
 
 /**
@@ -439,21 +563,35 @@ let backgroundStarted = false;
 let installingTag: string | undefined;
 
 /**
- * Drop cached files belonging to any tag that is neither the active one nor
- * the release a probationary install would go back to. Only `updateToTag`
- * used to clean up after itself, so rows stranded by an interrupted update,
- * or by a boot that resolved to a different tag than it started with, sat in
- * IndexedDB forever, roughly doubling storage use.
+ * Drop cached files belonging to any tag nothing can still read: not this
+ * session's, not the one stored for the next launch, and neither side of an
+ * install on probation. Only `updateToTag` used to clean up after itself, so
+ * rows stranded by an interrupted update, or by a boot that resolved to a
+ * different tag than it started with, sat in IndexedDB forever, roughly
+ * doubling storage use.
+ *
+ * The stored tag matters because `activeTag` is this tab's view. A second tab
+ * still on the old release, sweeping by its own view alone, deleted the
+ * release the first tab had just installed, and the next launch booted a tag
+ * with no rows at all. Read in the same transaction as the delete, so an
+ * install committing in between cannot slip past it.
  */
 async function pruneStaleTags(): Promise<void> {
   if (installingTag !== undefined) return;
   try {
-    // Read first, and no sweep at all if that fails: a sweep that could not
-    // see the rollback record would delete the only release to go back to.
-    const rollback = await readRollback();
-    const keep = [activeTag];
-    if (rollback !== undefined) keep.push(rollback.prev);
-    await dataCacheRepo.deleteTagsExcept(keep);
+    // No sweep at all if the reads fail: a sweep that could not see the
+    // rollback record would delete the only release to go back to.
+    await db.transaction('rw', db.settings, db.dataFiles, async () => {
+      const keep = new Set([activeTag]);
+      const stored = (await db.settings.get('dataTag'))?.value;
+      if (typeof stored === 'string') keep.add(stored);
+      const rollback = await readRollback();
+      if (rollback !== undefined) {
+        keep.add(rollback.prev);
+        keep.add(rollback.to);
+      }
+      await dataCacheRepo.deleteTagsExcept([...keep]);
+    });
   } catch {
     // Best-effort housekeeping; a failure just means we retry next boot.
   }
@@ -730,7 +868,9 @@ export async function checkForDataUpdate(): Promise<void> {
   try {
     const tags = await listAvailableTags();
     const latest = tags[0];
-    if (latest !== undefined && latest !== activeTag) {
+    // Not the release this device already went back from: offering it again
+    // only invites the same rollback. A newer release is a new offer.
+    if (latest !== undefined && latest !== activeTag && latest !== (await readRejected())?.tag) {
       dataStatusStore.getState().setUpdateAvailableTag(latest);
     }
   } catch {
@@ -753,8 +893,9 @@ export async function checkForDataUpdate(): Promise<void> {
  *   launch boots the old tag or the new one, never settings for one and
  *   bookkeeping for the other.
  * - after the swap, before a registry is built: both releases' rows are kept
- *   and the rollback record counts launches; the next launch confirms the new
- *   one on its first registry, or goes back once it has had its chances.
+ *   and the rollback record counts registry builds that start and never
+ *   publish; the first one that publishes confirms the new release, a build
+ *   that throws goes back at once, and so do too many unfinished ones.
  */
 export async function updateToTag(newTag: string): Promise<void> {
   const status = dataStatusStore.getState();
@@ -859,12 +1000,24 @@ export async function updateToTag(newTag: string): Promise<void> {
       });
       await db.settings.put({
         key: ROLLBACK_SETTING,
-        value: { prev, to: newTag, boots: 0 } satisfies RollbackRecord,
+        value: { prev, to: newTag, starts: 0 } satisfies RollbackRecord,
       });
+      // An install that went through puts the rollback notice away. Installing
+      // the very release that was rolled back is the user overruling it, so
+      // that one stops being held back from future offers as well.
+      const rejected = await readRejected();
+      if (rejected?.tag === newTag) await db.settings.delete(REJECTED_SETTING);
+      else if (rejected !== undefined && !rejected.dismissed) {
+        await db.settings.put({
+          key: REJECTED_SETTING,
+          value: { ...rejected, dismissed: true } satisfies RejectedRecord,
+        });
+      }
     });
     activeTag = newTag;
     source = newSource;
     pendingTag = newTag;
+    countedStart = undefined;
     status.setRolledBackFrom(undefined);
     // The offer is spent whichever route took it: only the toast's own button
     // used to clear this, so installing from the settings picker left the

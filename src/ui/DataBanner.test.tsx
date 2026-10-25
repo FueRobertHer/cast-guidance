@@ -3,14 +3,16 @@
 // anything to download, and leaves it there until the whole pack queue drains.
 // On an installed PWA that meant ~1.2s of "Downloading game data… 0/0" for a
 // download that had already happened, so the banner is gated on real work.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { retryDataLayer, updateToTag } = vi.hoisted(() => ({
+const { dismissRollbackNotice, retryDataLayer, updateToTag } = vi.hoisted(() => ({
+  dismissRollbackNotice: vi.fn(() => Promise.resolve()),
   retryDataLayer: vi.fn(),
   updateToTag: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('@/data5e/loader', () => ({
+  dismissRollbackNotice,
   getActiveTag: () => 'v2.32.0',
   retryDataLayer,
   updateToTag,
@@ -24,6 +26,7 @@ afterEach(() => {
   cleanup();
   retryDataLayer.mockClear();
   updateToTag.mockClear();
+  dismissRollbackNotice.mockClear();
   dataStatusStore.setState({
     phase: 'idle',
     filesDone: 0,
@@ -108,7 +111,9 @@ describe('DataBanner', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    expect(dataStatusStore.getState().rolledBackFrom).toBeUndefined();
+    // Dismissing is remembered by the loader; the store follows it.
+    expect(dismissRollbackNotice).toHaveBeenCalledOnce();
+    act(() => dataStatusStore.getState().setRolledBackFrom(undefined));
     expect(screen.getByRole('progressbar').textContent).toContain('1/4');
   });
 

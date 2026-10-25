@@ -12,6 +12,7 @@ import {
   uidOf,
   withReplaceBudget,
 } from './copyMod';
+import { mergeHomebrew, normalizeDataset } from './normalize';
 
 const noWarn = (message: string) => {
   throw new Error(`unexpected warning: ${message}`);
@@ -249,6 +250,59 @@ describe('resolveCopies', () => {
     const warnings = resolveCopies([a], byUid([a]), 't');
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toContain('Ghost');
+  });
+
+  it.each([null, 'A', ['A']])('skips a _copy of %j with a warning instead of throwing', (ref) => {
+    // Homebrew is anyone's JSON, and the lookup reads `copy.name`: a null ref
+    // used to throw out of here and take the whole registry with it.
+    const a: Entity = { name: 'A', source: 'S' };
+    const b: Entity = { name: 'B', source: 'S', speed: 25, _copy: ref };
+    const warnings = resolveCopies([a, b], byUid([a, b]), 'feat');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toMatch(/feat: malformed _copy/);
+    expect(b).toEqual({ name: 'B', source: 'S', speed: 25 });
+  });
+
+  it('costs one entity its copy, not the others theirs, when a lookup throws', () => {
+    const a: Entity = { name: 'A', source: 'S', speed: 30 };
+    const b: Entity = { name: 'B', source: 'S', _copy: { name: 'A', source: 'S' } };
+    const bad: Entity = { name: 'C', source: 'S', _copy: { name: 'boom', source: 'S' } };
+    const all = [a, b, bad];
+    const warnings = resolveCopies(
+      all,
+      (copy) => {
+        if (copy.name === 'boom') throw new Error('lookup failed');
+        return byUid(all)(copy);
+      },
+      't',
+    );
+    expect(b.speed).toBe(30);
+    expect(bad._copy).toBeUndefined();
+    expect(warnings.map((w) => w.message)).toEqual(['t: could not resolve _copy: lookup failed']);
+  });
+});
+
+describe('mergeHomebrew', () => {
+  it('keeps the registry when a homebrew entity carries a null _copy', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB' }] }]]),
+    );
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: 'X', source: 'HB', _copy: null },
+              { name: 'Y', source: 'HB' },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.byType('feat').map((f) => f.name)).toEqual(['Alert', 'X', 'Y']);
+    expect(reg.warnings.some((w) => w.message.includes('malformed _copy'))).toBe(true);
   });
 });
 

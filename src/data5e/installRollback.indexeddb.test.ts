@@ -23,7 +23,8 @@ vi.mock('./source', () => ({
 // A release can pass every shape check and still be one the app cannot build
 // a registry from. Real normalization is lenient enough that no small fixture
 // breaks it, so this stands in for whatever a future release changes: a race
-// named "Crash" makes the build throw.
+// named "Crash" makes the official build throw, and a homebrew feat named
+// "Crash" makes the homebrew merge throw.
 vi.mock('./normalize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./normalize')>();
   return {
@@ -32,6 +33,13 @@ vi.mock('./normalize', async (importOriginal) => {
       const races = files.get('races.json') as { race?: Array<{ name?: unknown }> } | undefined;
       if (races?.race?.some((r) => r.name === 'Crash')) throw new Error('cannot normalize');
       return actual.normalizeDataset(files);
+    },
+    mergeHomebrew: (...args: Parameters<typeof actual.mergeHomebrew>) => {
+      for (const json of args[1].values()) {
+        const feats = json.feat as Array<{ name?: unknown }> | undefined;
+        if (feats?.some((f) => f.name === 'Crash')) throw new Error('cannot merge');
+      }
+      actual.mergeHomebrew(...args);
     },
   };
 });
@@ -194,30 +202,53 @@ describe('phase E: installed, not yet confirmed', () => {
     await started.loader.updateToTag(NEXT);
 
     expect(started.loader.getActiveTag()).toBe(NEXT);
-    expect(await rollbackRecord(started)).toEqual({ prev: DATA_TAG, to: NEXT, boots: 0 });
+    expect(await rollbackRecord(started)).toEqual({ prev: DATA_TAG, to: NEXT, starts: 0 });
     const kept = await started.dataCacheRepo.cachedPaths(DATA_TAG);
     expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
   });
 
-  it('goes back after two launches that never built a registry, without the network', async () => {
+  it('does not count launches that build no registry against the release', async () => {
+    // A homebrew page, or a reload on a missing route, builds no registry and
+    // says nothing about the data. Counted as launches, three of them rolled
+    // back a release that was working perfectly.
     const started = await installedDevice();
     await started.loader.updateToTag(NEXT);
 
-    for (const boots of [1, 2]) {
+    for (let i = 0; i < 4; i++) {
       const launch = await reboot();
       await bootToDone(launch);
       expect(launch.loader.getActiveTag()).toBe(NEXT);
-      expect(await rollbackRecord(launch)).toEqual({ prev: DATA_TAG, to: NEXT, boots });
+    }
+    expect(await rollbackRecord(started)).toEqual({ prev: DATA_TAG, to: NEXT, starts: 0 });
+  });
+
+  it('goes back after two sessions whose builds never finished, without the network', async () => {
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+
+    // Each session starts a build (twice, as two screens would) that never
+    // gets to publish: what a release that crashes the app looks like from
+    // the next launch.
+    for (const starts of [1, 2]) {
+      const session = await reboot();
+      const read = vi
+        .spyOn(session.dataCacheRepo, 'filesByTag')
+        .mockReturnValue(new Promise(() => undefined));
+      void session.registry.getRegistry();
+      void session.registry.getRegistry();
+      // Both builds are past the count and stuck reading, so the record now
+      // says everything this session will ever say: one start, not two.
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      expect(await rollbackRecord(session)).toEqual({ prev: DATA_TAG, to: NEXT, starts });
+      expect(session.loader.getActiveTag()).toBe(NEXT);
     }
     fetchFile.mockReset();
     fetchFile.mockRejectedValue(new Error('offline'));
 
     const third = await reboot();
-    // Read before anything else runs: the way back is taken inside tag
-    // resolution, so even the very first file read is the old release's.
-    await expect(third.loader.getFile('races.json')).resolves.toEqual({
-      race: [{ name: `Elf ${DATA_TAG}` }],
-    });
+    // The caller gets the release the app went back to.
+    const reg = await third.registry.getRegistry();
+    expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
     expect(third.loader.getActiveTag()).toBe(DATA_TAG);
     expect(await storedTag(third)).toBe(DATA_TAG);
     expect(await rollbackRecord(third)).toBeUndefined();
@@ -226,6 +257,28 @@ describe('phase E: installed, not yet confirmed', () => {
     expect(fetchFile).not.toHaveBeenCalled();
     // Reported as what it is, not as a failure: the app is working.
     expect(third.dataStatusStore.getState()).toMatchObject({ phase: 'done', failedTag: undefined });
+  });
+
+  it('goes back before anything reads it when the new release has lost its essentials', async () => {
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await started.db.dataFiles.where('tag').equals(NEXT).delete();
+    fetchFile.mockReset();
+    fetchFile.mockRejectedValue(new Error('offline'));
+
+    const next = await reboot();
+    // Decided inside tag resolution, so even the very first file read is the
+    // old release's, and offline is no obstacle.
+    await expect(next.loader.getFile('races.json')).resolves.toEqual({
+      race: [{ name: `Elf ${DATA_TAG}` }],
+    });
+    const reg = await next.registry.getRegistry();
+    expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${DATA_TAG}`]);
+    expect(next.loader.getActiveTag()).toBe(DATA_TAG);
+    expect(next.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+    const kept = await next.dataCacheRepo.cachedPaths(DATA_TAG);
+    expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
+    expect(fetchFile).not.toHaveBeenCalled();
   });
 
   it('goes back at once when the new release cannot be built', async () => {
@@ -243,6 +296,25 @@ describe('phase E: installed, not yet confirmed', () => {
     expect(await storedTag(started)).toBe(DATA_TAG);
     expect(await rollbackRecord(started)).toBeUndefined();
     expect(started.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+  });
+
+  it('does not go back over a homebrew file that breaks the build', async () => {
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    const { homebrewRepo } = await import('@/db/homebrewRepo');
+    const brew = await homebrewRepo.createEditable('Brew', 'HB');
+    await homebrewRepo.saveEditable(brew.id, {
+      _meta: { sources: [{ json: 'HB', abbreviation: 'HB', full: 'Brew' }] },
+      feat: [{ name: 'Crash', source: 'HB' }],
+    });
+
+    // The official release is fine; going back would not fix the brew, and
+    // would cost the user the update they asked for.
+    await expect(started.registry.getRegistry()).rejects.toThrow('cannot merge');
+    expect(started.loader.getActiveTag()).toBe(NEXT);
+    expect(await storedTag(started)).toBe(NEXT);
+    expect(await rollbackRecord(started)).toMatchObject({ prev: DATA_TAG, to: NEXT });
+    expect(started.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
   });
 
   it('stays put when the release it would go back to is no longer whole', async () => {
@@ -268,9 +340,30 @@ describe('phase E: installed, not yet confirmed', () => {
 
     // NEXT never proved itself, so DATA_TAG is still the way back, and NEXT is
     // the one swept.
-    expect(await rollbackRecord(started)).toEqual({ prev: DATA_TAG, to: AFTER, boots: 0 });
+    expect(await rollbackRecord(started)).toEqual({ prev: DATA_TAG, to: AFTER, starts: 0 });
     expect((await started.dataCacheRepo.cachedPaths(NEXT)).size).toBe(0);
     expect((await started.dataCacheRepo.cachedPaths(DATA_TAG)).size).toBe(VALID_PATHS.length);
+  });
+
+  it('leaves a release another tab just installed alone when sweeping', async () => {
+    // Two tabs: this one resolved the old release before the other installed
+    // a new one. Sweeping by its own view alone deleted the release the other
+    // tab had just installed, and the next launch booted a tag with no rows.
+    const stale = await installedDevice();
+    const installer = await reboot();
+    await installer.loader.updateToTag(NEXT);
+    // Confirmed in the installing tab, so no rollback record names NEXT.
+    await installer.registry.getRegistry();
+    await vi.waitFor(async () => expect(await rollbackRecord(installer)).toBeUndefined());
+
+    // The old tab finishes its drain, which ends in a sweep.
+    await bootToDone(stale);
+
+    const kept = await stale.dataCacheRepo.cachedPaths(NEXT);
+    expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
+    const next = await reboot();
+    await bootToDone(next);
+    expect(next.loader.getActiveTag()).toBe(NEXT);
   });
 });
 
@@ -280,8 +373,8 @@ describe('phase F: confirming', () => {
     await started.loader.updateToTag(NEXT);
     const next = await reboot();
     await bootToDone(next);
-    // A launch alone proves nothing: it is counted, not confirmed.
-    expect(await rollbackRecord(next)).toEqual({ prev: DATA_TAG, to: NEXT, boots: 1 });
+    // A launch alone proves nothing, and counts for nothing either.
+    expect(await rollbackRecord(next)).toEqual({ prev: DATA_TAG, to: NEXT, starts: 0 });
 
     const reg = await next.registry.getRegistry();
     expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${NEXT}`]);
@@ -290,12 +383,42 @@ describe('phase F: confirming', () => {
     await vi.waitFor(async () =>
       expect((await next.dataCacheRepo.cachedPaths(DATA_TAG)).size).toBe(0),
     );
-    // Confirmed for good: later launches no longer count towards a rollback.
+    // Confirmed for good: later builds no longer count towards a rollback.
     for (let i = 0; i < 3; i++) {
       const launch = await reboot();
-      await bootToDone(launch);
+      await launch.registry.getRegistry();
       expect(launch.loader.getActiveTag()).toBe(NEXT);
     }
+  });
+
+  it('confirms in the session that installed, over a registry it already had', async () => {
+    // Releases share their file lists, so a signature of paths alone found the
+    // old release's registry still current after the swap, served it, and
+    // never built the one that confirms the install.
+    const started = await installedDevice();
+    await started.registry.getRegistry();
+    await started.loader.updateToTag(NEXT);
+
+    const reg = await started.registry.getRegistry();
+    expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${NEXT}`]);
+    await vi.waitFor(async () => expect(await rollbackRecord(started)).toBeUndefined());
+  });
+
+  it('does not confirm on a registry built without the essentials', async () => {
+    // A page can ask for the registry before essentials are on disk. A build
+    // of nothing proves nothing, and its confirm swept the only release there
+    // was to go back to.
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await started.db.dataFiles.delete(`${NEXT}:races.json`);
+
+    // The registry waits for a confirm to be recorded before it returns, so
+    // one that should not have happened has happened by now.
+    await started.registry.getRegistry();
+
+    expect(await rollbackRecord(started)).toMatchObject({ prev: DATA_TAG, to: NEXT });
+    const kept = await started.dataCacheRepo.cachedPaths(DATA_TAG);
+    expect(VALID_PATHS.every((p) => kept.has(p))).toBe(true);
   });
 
   it('sweeps the old release on a later launch when the confirm stopped short of it', async () => {
@@ -313,6 +436,77 @@ describe('phase F: confirming', () => {
       expect((await next.dataCacheRepo.cachedPaths(DATA_TAG)).size).toBe(0),
     );
     expect(next.loader.getActiveTag()).toBe(NEXT);
+  });
+});
+
+describe('the registry at launch', () => {
+  it('waits for tag resolution before reading the cache', async () => {
+    // It reads the cache directly, not through `getFile`, so a launch whose
+    // first read was the registry built whatever release the module started
+    // on rather than the one installed.
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await started.registry.getRegistry();
+    await vi.waitFor(async () =>
+      expect((await started.dataCacheRepo.cachedPaths(DATA_TAG)).size).toBe(0),
+    );
+
+    const next = await reboot();
+    const reg = await next.registry.getRegistry();
+    expect(reg.byType('race').map((r) => r.name)).toEqual([`Elf ${NEXT}`]);
+  });
+});
+
+describe('after a rollback', () => {
+  /** A device that installed NEXT and went back from it. */
+  async function rolledBack(): Promise<Started> {
+    fetchFile.mockImplementation(
+      releases({ [NEXT]: { 'races.json': { race: [{ name: 'Crash' }] } } }),
+    );
+    const started = await installedDevice();
+    await started.loader.updateToTag(NEXT);
+    await started.registry.getRegistry();
+    expect(started.loader.getActiveTag()).toBe(DATA_TAG);
+    return started;
+  }
+
+  /** Answer the release list with `names`, newest first. */
+  const serveTags = (...names: string[]) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify(names.map((name) => ({ name })))))),
+    );
+
+  it('stops offering the release it went back from', async () => {
+    await rolledBack();
+    serveTags(NEXT, DATA_TAG);
+
+    const next = await reboot();
+    await next.loader.checkForDataUpdate();
+    expect(next.dataStatusStore.getState().updateAvailableTag).toBeUndefined();
+  });
+
+  it('offers a newer release once there is one', async () => {
+    await rolledBack();
+    serveTags(AFTER, NEXT, DATA_TAG);
+
+    const next = await reboot();
+    await next.loader.checkForDataUpdate();
+    expect(next.dataStatusStore.getState().updateAvailableTag).toBe(AFTER);
+  });
+
+  it('keeps saying why across a reload until it is dismissed', async () => {
+    await rolledBack();
+
+    const next = await reboot();
+    await bootToDone(next);
+    expect(next.dataStatusStore.getState().rolledBackFrom).toBe(NEXT);
+    await next.loader.dismissRollbackNotice();
+    expect(next.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
+
+    const after = await reboot();
+    await bootToDone(after);
+    expect(after.dataStatusStore.getState().rolledBackFrom).toBeUndefined();
   });
 });
 
