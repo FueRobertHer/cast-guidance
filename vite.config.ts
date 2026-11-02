@@ -61,6 +61,26 @@ export default defineConfig({
     // Headroom for a loaded 4-vCPU runner with coverage on: component tests
     // that take a second locally ran past the 5 s default there.
     testTimeout: 15_000,
+    // Node 25 and later define their own `localStorage` (undefined without
+    // `--localstorage-file`) and `sessionStorage`. Vitest's jsdom environment
+    // leaves alone most globals Node already has, these two included, so tests
+    // got Node's storage instead of jsdom's. Turning Node's off in the workers
+    // gives the global shape older Node has (CI included), where jsdom's
+    // storage shows through. The check is false on Node without web storage
+    // on, where the flag may not exist.
+    execArgv: 'localStorage' in globalThis ? ['--no-experimental-webstorage'] : [],
+    // vite-plugin-pwa resolves its virtual modules to `/@vite-plugin-pwa/...`.
+    // Vitest builds a CommonJS `require` from each module's `file:///@vite-...`
+    // URL, which has no drive letter, so on Windows it throws and every test
+    // that reaches `PwaUpdateToast` fails to load. Under Vitest the plugin
+    // serves this file verbatim (its dev client, an inert `useRegisterSW`), so
+    // pointing the import straight at it changes nothing but the module's path.
+    alias: {
+      'virtual:pwa-register/react': path.resolve(
+        __dirname,
+        'node_modules/vite-plugin-pwa/dist/client/dev/react.js',
+      ),
+    },
     coverage: {
       provider: 'v8',
       // `json-summary` writes coverage/coverage-summary.json, which CI turns
