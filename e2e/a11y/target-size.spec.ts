@@ -146,13 +146,33 @@ test.describe('touch target sizes', () => {
     await expectTargets(page.getByRole('link', { name: 'Back to characters', exact: true }), 1);
     await expectTargets(editLink(page), 1);
     await expectTargets(sheetMenuButton(page), 1);
+    // The condition strip: the caster carries a level of exhaustion, so a
+    // chip (its name and its x) and the add chip.
+    await expectTargets(
+      page.getByRole('list', { name: 'Active conditions' }).getByRole('button'),
+      2,
+    );
+    await expectTargets(button(page, 'Condition'), 1);
     await expectTargets(button(page, /^(Damage|Heal) [15] hit points?$/), 4);
-    await expectTargets(button(page, /^(Decrease|Increase) exhaustion$/), 2);
     await expectTargets(button(page, /^(Spend|Restore) [15] Sorcery Points$/), 4);
     // 15 caster levels: 4, 3, 3, 3, 2, 1, 1 and 1 slots.
     await expectTargets(button(page, /^Level \d slot \d$/), 18, PIP);
     await expectTargets(button(page, /^Channel Divinity use \d$/), 1, PIP);
     await expectFloor(page);
+
+    // The picker holds each condition's toggle and exhaustion's stepper.
+    await button(page, 'Condition').click();
+    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await expect(picker).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(picker.locator('button[aria-pressed]'), 14);
+    await expectTargets(
+      picker.getByRole('button', { name: /^(Decrease|Increase) exhaustion$/ }),
+      2,
+    );
+    await expectFloor(page);
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
 
     // At 0 HP the death saves appear under the HP card.
     await page

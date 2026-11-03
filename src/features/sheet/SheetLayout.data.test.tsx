@@ -25,7 +25,11 @@ function loaded(data: CharacterSheetState['data'], sheet: unknown = null) {
     missing: false,
     error: null,
     saveStatus: 'idle',
-    doc: { name: 'Hero' } as CharacterSheetState['doc'],
+    doc: {
+      name: 'Hero',
+      rulesVersion: '2024',
+      play: { conditions: [] },
+    } as unknown as CharacterSheetState['doc'],
     sheet: sheet as CharacterSheetState['sheet'],
     data,
   };

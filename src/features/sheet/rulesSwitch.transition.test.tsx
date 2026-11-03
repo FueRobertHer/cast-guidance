@@ -11,6 +11,7 @@ import type { DataEntity } from '@/engine/types';
 import {
   classEntry,
   dialog,
+  dismiss,
   HARNESS_TIMEOUT,
   pips,
   renderSheet,
@@ -172,17 +173,23 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
 
   it("follows the version in the Play tab's exhaustion rules", async () => {
     const sheet = await renderSheet(testCharacter('Wren', [classEntry('Warrior', 3)]));
+    await sheet.conditions();
     fireEvent.click(screen.getByRole('button', { name: 'Increase exhaustion' }));
     expect(screen.getByText('Disadvantage on ability checks')).toBeTruthy();
     expect(screen.queryByText(/to all d20 tests/)).toBeNull();
+    await dismiss();
     expect(screen.getByText('Speed (ft)')).toBeTruthy();
 
     await switchTo(sheet, '2024');
     await sheet.tab('Play');
 
+    // Exhaustion's own sheet, from its chip on the condition strip.
+    fireEvent.click(screen.getByRole('button', { name: 'Exhausted 1' }));
+    await screen.findByRole('dialog', { name: 'Exhaustion' });
     expect(screen.queryByText('Disadvantage on ability checks')).toBeNull();
     expect(screen.getByText('−2 to all d20 tests (checks, attacks, saves)')).toBeTruthy();
     expect(screen.getByText('−5 ft speed')).toBeTruthy();
+    await dismiss();
     expect(screen.getByText('Speed (ft) · exhausted')).toBeTruthy();
   });
 });

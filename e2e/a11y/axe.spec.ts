@@ -200,6 +200,37 @@ test.describe('axe: pages and overlays', () => {
     await expect(menu).toBeHidden();
   });
 
+  test("character sheet: the condition strip, its picker and a condition's rules", async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+
+    await gotoSheetTab(page, id, 'Play');
+    await page.getByRole('button', { name: 'Condition', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await opened(page, picker);
+    await picker.getByRole('button', { name: 'Poisoned', exact: true }).click();
+    await picker.getByRole('button', { name: 'Increase exhaustion' }).click();
+    await expect(picker.getByRole('button', { name: 'Poisoned', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await scanState(page, 'condition-picker');
+    await closeWithEscape(page, picker);
+
+    const strip = page.getByRole('list', { name: 'Active conditions' });
+    await expect(strip.getByRole('button', { name: 'Exhausted 1' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-conditions');
+
+    await strip.getByRole('button', { name: 'Poisoned', exact: true }).click();
+    const rules = page.getByRole('dialog', { name: 'Poisoned' });
+    await opened(page, rules);
+    await scanState(page, 'condition-info-sheet');
+    await closeWithEscape(page, rules);
+  });
+
   test('character sheet: its drawers and info sheets', async ({ page }) => {
     await gotoRosterSettled(page);
     const id = await createBlankCharacter(page);

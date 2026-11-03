@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exhaustionInfo, exhaustionLevel } from './exhaustion';
+import { exhaustionInfo, exhaustionLevel, setExhaustionLevel } from './exhaustion';
 
 describe('exhaustionLevel', () => {
   it('reads the level and clamps to 0–6', () => {
@@ -34,5 +34,25 @@ describe('exhaustionInfo — 2024 linear penalties', () => {
     );
     expect(exhaustionInfo(6, '2024').dead).toBe(true);
     expect(exhaustionInfo(6, '2024').speedAfter(30)).toBe(0);
+  });
+});
+
+describe('setExhaustionLevel', () => {
+  it('adds Exhaustion at its level, changes the level, and removes it at 0', () => {
+    const conditions: { id: string; level?: number }[] = [{ id: 'Poisoned' }];
+    setExhaustionLevel(conditions, 2);
+    expect(conditions).toEqual([{ id: 'Poisoned' }, { id: 'Exhaustion', level: 2 }]);
+    setExhaustionLevel(conditions, 1);
+    expect(conditions).toEqual([{ id: 'Poisoned' }, { id: 'Exhaustion', level: 1 }]);
+    setExhaustionLevel(conditions, 0);
+    expect(conditions).toEqual([{ id: 'Poisoned' }]);
+  });
+
+  it('keeps the level between 0 and 6', () => {
+    const conditions: { id: string; level?: number }[] = [];
+    setExhaustionLevel(conditions, 9);
+    expect(conditions).toEqual([{ id: 'Exhaustion', level: 6 }]);
+    setExhaustionLevel(conditions, -1);
+    expect(conditions).toEqual([]);
   });
 });

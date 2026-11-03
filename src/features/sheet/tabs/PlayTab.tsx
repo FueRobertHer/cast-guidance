@@ -13,7 +13,6 @@ import { Badge, badgeClass } from '@/ui/Badge';
 import { BannerAction } from '@/ui/Banner';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { Button, buttonClass } from '@/ui/Button';
-import { Chip, chipClass } from '@/ui/Chip';
 import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
@@ -87,29 +86,9 @@ const FIVE =
 const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
 /** A cell of the AC / Initiative / Speed strip. */
 const TILE = 'flex min-h-19 flex-col items-center justify-center gap-0.5 px-1 py-2';
-/** Exhaustion's −/+: a 32px raised circle in a 44px target, `ink-faint` when it cannot go further. */
-const EX_STEP = 'tap rounded-full text-ink disabled:text-ink-faint';
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
-
-// Exhaustion is leveled, so it gets its own stepper below — not a plain chip.
-const CONDITIONS = [
-  'Blinded',
-  'Charmed',
-  'Deafened',
-  'Frightened',
-  'Grappled',
-  'Incapacitated',
-  'Invisible',
-  'Paralyzed',
-  'Petrified',
-  'Poisoned',
-  'Prone',
-  'Restrained',
-  'Stunned',
-  'Unconscious',
-];
 
 /**
  * How long HP has to stay put before it is said (A11Y-002). A run of taps on
@@ -290,15 +269,6 @@ export function Component() {
     const e = spellEntity(name, source);
     return (e?.components as { v?: boolean } | undefined)?.v === true;
   };
-  // Condition/status rules text for the character's edition — Exhaustion in
-  // particular reads very differently between 2014 and 2024.
-  const conditionEntry = (id: string) => {
-    if (registry === null) return undefined;
-    const cands = [...registry.byType('condition'), ...registry.byType('status')].filter(
-      (e) => String(e.name).toLowerCase() === id.toLowerCase(),
-    );
-    return pickForVersion(cands, doc.rulesVersion);
-  };
   /** A `guide` "you normally can't do this" line for a condition limit. */
   const limitWarning = (text: string, reasons: readonly string[]) =>
     reasons.length > 0 ? (
@@ -307,23 +277,9 @@ export function Component() {
       </span>
     ) : null;
 
-  // Exhaustion: leveled effects (speed, disadvantage, death) with a real stepper.
-  const exLevel = exhaustionLevel(play.conditions);
-  const exInfo = exhaustionInfo(exLevel, doc.rulesVersion);
+  // Exhaustion slows the character (its stepper is in the condition strip's sheets).
+  const exInfo = exhaustionInfo(exhaustionLevel(play.conditions), doc.rulesVersion);
   const displaySpeed = exInfo.speedAfter(sheet.speedWalk.value);
-  const setExhaustion = (level: number) =>
-    update((d) => {
-      const idx = d.play.conditions.findIndex((x) => x.id === 'Exhaustion');
-      const lvl = Math.max(0, Math.min(6, level));
-      if (lvl === 0) {
-        if (idx >= 0) d.play.conditions.splice(idx, 1);
-      } else if (idx >= 0) {
-        const e = d.play.conditions[idx];
-        if (e !== undefined) e.level = lvl;
-      } else {
-        d.play.conditions.push({ id: 'Exhaustion', level: lvl });
-      }
-    });
   const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
@@ -898,142 +854,6 @@ export function Component() {
           End turn
         </Button>
       </section>
-
-      {/* Conditions — active ones stay visible; the full list is behind a fold */}
-      <details className={`group ${FLUSH}`} open={play.conditions.length > 0}>
-        <summary className="flex min-h-tap cursor-pointer items-center justify-between gap-2 px-4 py-2">
-          <span className="text-heading">
-            Conditions
-            {/* With nothing between them, the heading and the list are one
-                word to the line breaker, wider than a phone with large text;
-                `wbr` lets the list go under it, the text unchanged. */}
-            <wbr />
-            {play.conditions.length > 0 && (
-              <span className="ml-2 font-normal text-body text-guide">
-                {play.conditions
-                  .map((c) => `${c.id}${c.level !== undefined ? ` ${c.level}` : ''}`)
-                  .join(', ')}
-              </span>
-            )}
-          </span>
-          <span className="shrink-0 text-caption text-ink-muted group-open:hidden">
-            tap to edit
-          </span>
-        </summary>
-        {/* Chips pad themselves to 44px with a 6px clear border, so the
-            row needs no gap and less padding of its own. */}
-        <div className="flex flex-wrap border-line border-t px-2.5 py-2">
-          {CONDITIONS.map((c) => {
-            const active = play.conditions.find((x) => x.id === c);
-            return (
-              <Chip
-                key={c}
-                pressed={active !== undefined}
-                onClick={() =>
-                  update((d) => {
-                    const idx = d.play.conditions.findIndex((x) => x.id === c);
-                    if (idx === -1) d.play.conditions.push({ id: c });
-                    else d.play.conditions.splice(idx, 1);
-                  })
-                }
-              >
-                {c}
-              </Chip>
-            );
-          })}
-        </div>
-        {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
-        <div className="@container flex flex-col gap-2 border-line border-t px-4 py-3">
-          {/* Wraps the stepper under the name, at the right, where both do not
-              fit (large text), and the count grows with its text rather than
-              push the + out of the card (A11Y-003). Where even the stepper
-              does not fit on a line (8.5rem), the count goes above its two
-              buttons; DOM order stays −, count, +. */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-body-strong">Exhaustion</span>
-            <div className="-my-2 ml-auto flex flex-wrap items-center justify-center @min-[8.5rem]:flex-nowrap">
-              <button
-                type="button"
-                aria-label="Decrease exhaustion"
-                onClick={() => setExhaustion(exLevel - 1)}
-                disabled={exLevel === 0}
-                className={EX_STEP}
-              >
-                <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised">
-                  <Minus size={16} />
-                </span>
-              </button>
-              <span className="order-first min-w-10 basis-full whitespace-nowrap text-center text-body-strong tabular-nums @min-[8.5rem]:order-none @min-[8.5rem]:basis-auto">
-                {exLevel} / 6
-              </span>
-              <button
-                type="button"
-                aria-label="Increase exhaustion"
-                onClick={() => setExhaustion(exLevel + 1)}
-                disabled={exLevel >= 6}
-                className={EX_STEP}
-              >
-                <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised">
-                  <Plus size={16} />
-                </span>
-              </button>
-            </div>
-          </div>
-          {exInfo.lines.length > 0 && (
-            <ul className="flex flex-col gap-0.5 text-caption text-guide">
-              {exInfo.lines.map((l) => (
-                <li key={l} className="flex items-center gap-1">
-                  <AlertTriangle size={14} className="shrink-0" /> {l}
-                </li>
-              ))}
-            </ul>
-          )}
-          {exInfo.dead && (
-            <button
-              type="button"
-              onClick={() =>
-                update((d) => {
-                  d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
-                  d.play.currentHp = 0;
-                  d.play.tempHp = 0;
-                  d.play.concentratingOn = undefined;
-                })
-              }
-              className="min-h-8 self-start rounded-control px-3 py-1 text-danger text-label ring-1 ring-line-strong ring-inset transition-colors duration-120 hover:bg-danger-soft"
-            >
-              Apply death — drop to 0 HP
-            </button>
-          )}
-        </div>
-        {/* Rules text for whatever's currently active — no rulebook needed. */}
-        {play.conditions.length > 0 && (
-          <div className="flex flex-wrap items-center border-line border-t px-2.5 py-2">
-            <span className="w-full px-1.5 pt-1 text-ink-muted text-overline uppercase">
-              What these do
-            </span>
-            {play.conditions.map((c) => {
-              const e = conditionEntry(c.id);
-              if (e?.entries === undefined) return null;
-              return (
-                <FeatureInfoSheet
-                  key={c.id}
-                  title={c.id}
-                  entries={e.entries}
-                  trigger={
-                    <button
-                      type="button"
-                      aria-label={`What ${c.id} does`}
-                      className={`${chipClass('outline')} ${RULES} underline-offset-2`}
-                    >
-                      {c.id}
-                    </button>
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
-      </details>
 
       {/* Rests */}
       <section className="grid grid-cols-2 gap-2">

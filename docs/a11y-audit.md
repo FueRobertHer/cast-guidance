@@ -33,8 +33,8 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Area | States |
 |---|---|
 | Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
-| Character sheet | `sheet-play`, `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete) |
-| Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
+| Character sheet | `sheet-play`, `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete), `sheet-conditions` (the condition strip under the header with Poisoned and a level of exhaustion) |
+| Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `condition-picker` (the strip's add chip's sheet: every condition's toggle and the exhaustion stepper), `condition-info-sheet` (a condition's rules and what it does to rolls, from its chip), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
 | Other routes | `settings`, `creator` (step 1), `not-found` |
@@ -73,8 +73,9 @@ measures the boxes the browser lays out, on the suite's phone. It measures
 the element's own box, as axe's `target-size` rule does, so a hit area drawn
 by a pseudo-element would not count. Two checks:
 
-- **Inventoried controls, 44 by 44:** the HP steppers, the exhaustion and
-  point-pool steppers, the death saves, Build's level and ability steppers,
+- **Inventoried controls, 44 by 44:** the HP steppers, the condition strip's
+  chips (name and remove) and add chip, the picker's condition toggles and
+  exhaustion stepper, the point-pool steppers, the death saves, Build's level and ability steppers,
   the creator's ability steppers, the sheet's and the creator's back links,
   and Homebrew's row actions (enable, edit, download, delete). Pips are held
   to 32 wide by 44 tall (the decision below). Each check also counts the
@@ -90,7 +91,8 @@ by a pseudo-element would not count. Two checks:
 States: the Play tab of a caster (Sorcerer 13 and Cleric 2, from homebrew
 the character file carries, since the suite's data release has no caster:
 spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
-exhaustion), the same at 0 HP (the death saves), Build with every section
+exhaustion, so a chip on the condition strip), the condition picker open
+over it, the same at 0 HP (the death saves), Build with every section
 and picker open, Homebrew with one file of your own, and the creator's
 abilities step on point buy. Not measured yet: spell rows on Play (the
 caster knows no spells), the Stats, Spells, Items and Features tabs, the
@@ -120,13 +122,17 @@ runs on every scanned state.
   confirm, the character import preview, the homebrew import preview, the dice
   tray, the history drawer (opened from the sheet header's overflow menu, so
   focus comes back to the menu button), the long rest confirm, a number's breakdown (STR),
-  an entity's info sheet (Fighter, a sheet deferred until first used) and
-  Add item (whose focus must land on its search box). Each is opened by Enter
+  an entity's info sheet (Fighter, a sheet deferred until first used),
+  Add item (whose focus must land on its search box), the condition picker
+  (from the strip's add chip) and a condition's info sheet (from its chip's
+  name). Each is opened by Enter
   on its trigger, and must take focus; Tab and Shift+Tab, each pressed two
   more times than the dialog has controls, keep focus inside and visit every
   control (a dialog with none must keep focus on itself); Escape closes it and
   focus is back on the trigger (for Rename and Delete, which open from the
-  actions sheet, the row's Actions button the chain started from).
+  actions sheet, the row's Actions button the chain started from). Removing
+  a condition by Enter on its x puts focus on the chip that takes its place,
+  and removing the last one puts it on the add chip.
 - **Pages by Tab and Enter:** the roster (the character, its Actions, the
   blank sheet and wizard options and Import, in that order; Enter creates a
   character and opens one), the library (search, a result, a type tile, the
@@ -173,9 +179,14 @@ list role while empty.
   each one's
   primary controls (the roster's create and import buttons, the library's
   search and filter, Settings' update check, the creator's Next, the sheet's
-  tab and Back link, the dice tray and Long rest) are whole on screen once
-  scrolled to.
-- **Landscape (851 by 393):** on every sheet tab the character name is whole
+  tab and Back link, the dice tray, Long rest and the condition strip's add
+  chip) are whole on screen once scrolled to.
+- **The condition strip, every condition on:** at 320 by 640, at 16 px and
+  at 200% text, the strip stays one line and scrolls sideways inside its own
+  row (which is checked to overflow), the page does not, and its last chip
+  scrolls whole into view.
+- **Landscape (851 by 393):** with a condition on, so the header carries the
+  condition strip's row, on every sheet tab the character name is whole
   on screen and clear of the bottom tab bar, the content starts below the
   sticky header with more than half the screen between the bars, and no
   control in the page is entirely hidden behind the header, the build page's
@@ -328,7 +339,7 @@ The automated column says what CI already holds in Chromium (passing on
 | Dynamic Type and zoom | iOS Larger Text at the largest size, Android font size and display size at maximum, and browser zoom to 200%: no text clipped or overlapping, no horizontal scrolling for prose, primary buttons still on screen. | `layout.spec.ts`: no sideways scrolling at 320 px or with a 200% root font, primary controls whole on screen. Not clipping or overlap, and not the OS settings. |
 | Safe area and landscape | On a notched phone, portrait and landscape: the sheet header, tab bar, dice button and toasts clear the notch, the home indicator and rounded corners; nothing sits under the system bars in the installed app. | `layout.spec.ts` at 851 by 393: the header and tab bar leave the name and content in sight, and no focused control is hidden behind them. No safe-area insets (none in an emulated viewport). |
 | External keyboard | Every action reachable with Tab and Shift+Tab in a sensible order; Enter and Space activate; Escape closes dialogs and drawers; focus is visible throughout. | `keyboard.spec.ts`: the roster, the library and the sheet's tabs by Tab and Enter; Escape on every listed dialog. Not Space, every page, or how visible focus is. |
-| Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the eleven dialogs and drawers listed above. |
+| Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the thirteen dialogs and drawers listed above. |
 | Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable ("37 of 1000"). | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view, with the list windowed (at most 60 rows) and each row's `aria-posinset` and `aria-setsize` right. `library-scale.spec.ts`: 1,000 rows, the window, the filter and Back. `VirtualList.test.tsx`: a focused row kept rendered through a scroll. Not what is announced. |
 | Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. | `reduced-motion.spec.ts`. |
 | A failure inside a sheet | Offline, without the spell files, open a known spell's rules text from a caster's Play tab: the sheet is announced with its name, the reason ("You're offline, so this spell's description can't be downloaded yet.") is read once, whether the failure lands before or after focus moves into the sheet, and Retry is reachable. | `offline-routes.spec.ts`: one alert inside the sheet, none outside it; `SpellInfoSheet.test.tsx`: the sheet's description is the reason. Not the timing against a real screen reader. |

@@ -22,6 +22,27 @@ export function exhaustionLevel(conditions: ReadonlyArray<{ id: string; level?: 
   return Math.max(0, Math.min(6, lvl));
 }
 
+/**
+ * Set the exhaustion level (clamped to 0–6) in a draft's play-state
+ * conditions; 0 removes the condition. Shared by the condition picker and
+ * Exhaustion's own sheet.
+ */
+export function setExhaustionLevel(
+  conditions: Array<{ id: string; level?: number }>,
+  level: number,
+): void {
+  const idx = conditions.findIndex((x) => x.id === 'Exhaustion');
+  const lvl = Math.max(0, Math.min(6, level));
+  if (lvl === 0) {
+    if (idx >= 0) conditions.splice(idx, 1);
+  } else if (idx >= 0) {
+    const e = conditions[idx];
+    if (e !== undefined) e.level = lvl;
+  } else {
+    conditions.push({ id: 'Exhaustion', level: lvl });
+  }
+}
+
 export function exhaustionInfo(level: number, edition: '2014' | '2024'): ExhaustionInfo {
   const lvl = Math.max(0, Math.min(6, level));
 

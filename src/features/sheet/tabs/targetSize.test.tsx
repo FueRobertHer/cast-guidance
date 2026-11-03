@@ -9,8 +9,11 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { newCharacterDoc } from '@/engine/types';
+import type { DocUpdater } from '@/stores/characterSession';
 import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from '../BuildPage';
+import { ConditionStrip } from '../ConditionStrip';
+import { ExhaustionStepper } from '../ExhaustionStepper';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
 import { Component as StatsTab } from './StatsTab';
@@ -87,20 +90,43 @@ function sized(pattern: RegExp) {
 describe('touch targets (A11Y-002)', () => {
   it('sizes every Play stepper, pip and slot for a thumb', () => {
     render13('play');
-    const rows = sized(/^(Damage|Heal) \d|slot \d|exhaustion$|^(Spend|Restore) \d/);
+    const rows = sized(/^(Damage|Heal) \d|slot \d|^(Spend|Restore) \d/);
     // Every kind is present, so a renamed control cannot drop out unnoticed.
+    // (Exhaustion's stepper moved to the condition strip's sheets: below.)
     const names = rows.map((r) => r.name).join('\n');
-    for (const kind of [
-      /Damage 5/,
-      /Heal 5/,
-      /Decrease exhaustion/,
-      /Restore 5/,
-      /Spend 1/,
-      /Level 1 slot 1/,
-    ]) {
+    for (const kind of [/Damage 5/, /Heal 5/, /Restore 5/, /Spend 1/, /Level 1 slot 1/]) {
       expect(names).toMatch(kind);
     }
     expect(rows.filter((r) => !r.big)).toEqual([]);
+  });
+
+  it('sizes the condition strip and the exhaustion stepper for a thumb', () => {
+    const doc = newCharacterDoc('t1', 'Sparks', 't');
+    doc.play.conditions = [{ id: 'Poisoned' }, { id: 'Exhaustion', level: 2 }];
+    const none = (() => undefined) as unknown as DocUpdater;
+    render(
+      <>
+        <ConditionStrip doc={doc} update={none} addable />
+        <ExhaustionStepper
+          level={2}
+          edition="2024"
+          onSet={() => undefined}
+          onDeath={() => undefined}
+        />
+      </>,
+    );
+    const rows = sized(/^Remove |exhaustion$/);
+    expect(rows.map((r) => r.name)).toEqual([
+      'Remove Poisoned',
+      'Remove Exhaustion',
+      'Decrease exhaustion',
+      'Increase exhaustion',
+    ]);
+    expect(rows.filter((r) => !r.big)).toEqual([]);
+    // A chip's name and the add chip are as wide as their words, and 44px tall.
+    for (const name of ['Poisoned', 'Exhausted 2', 'Condition']) {
+      expect(screen.getByRole('button', { name }).className.split(' ')).toContain('min-h-tap');
+    }
   });
 
   it('sizes the death saves for a thumb, at 0 HP', () => {
