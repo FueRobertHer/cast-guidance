@@ -16,7 +16,7 @@ function renderPips(total: number, spent: number) {
       spent={spent}
       onChange={onChange}
       label={(use) => `Rage use ${use}`}
-      tone="border-accent bg-accent"
+      tone="ink"
     />,
   );
   // In DOM order, which is left to right on screen.
@@ -41,7 +41,7 @@ describe('Pips', () => {
     // this component exists to fix.
     const { pips } = renderPips(3, 1);
     const dots = pips.map(dot);
-    expect(dots.map((d) => d.className.includes('bg-accent'))).toEqual([true, true, false]);
+    expect(dots.map((d) => d.className.includes('bg-ink'))).toEqual([true, true, false]);
     expect(dots.map((d) => d.dataset.state)).toEqual(['available', 'available', 'spent']);
   });
 

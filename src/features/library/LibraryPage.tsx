@@ -21,8 +21,11 @@ import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { Button } from '@/ui/Button';
 import { useFailureAlert } from '@/ui/failureAlert';
 import { SourceBadge } from '@/ui/SourceBadge';
+import { cardClass, listClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
 import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
@@ -42,11 +45,37 @@ function sourceKey(e: Entity): string {
   return sourceOf(e).toLowerCase();
 }
 
+/**
+ * The page's text styles that are not a control (DS-001): a link in a line of
+ * text, as the design's `cg-link`, and a status line in place of a list.
+ */
+const LINK =
+  'text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
+const NOTE = 'text-body text-ink-muted';
+/** An icon-only way back, as the sheet header's. */
+const BACK_ICON = 'tap rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
+/** A tile on the library home and a book's index: a card that is a link. */
+const TILE =
+  'flex flex-col gap-1 rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised';
+/** A search or filter box: the design's search field, a leading Search icon. */
+const SEARCH_ICON = 'pointer-events-none absolute top-3.5 left-3.5 text-ink-muted';
+const SEARCH_FIELD = `${fieldClass} pl-10.5`;
+/** A failure panel: the design's `danger` hint, with its one action. */
+const PROBLEM = 'flex flex-wrap items-center gap-2 rounded-control bg-danger-soft px-3 py-2';
+
+/**
+ * The list's rows sit in one card, divided by `line` hairlines. Each row draws
+ * the line above it, and the first one drawn makes its own transparent: the
+ * card's edge is already there, and a transparent line keeps every row the
+ * same height, which the estimate below relies on.
+ */
+const ROWS = `${listClass} [&_li:first-child>a]:border-t-transparent`;
+
 function EntityRow({ type, e }: { type: string; e: Entity }) {
   return (
     <Link
       to={`/library/${type}/${encodeURIComponent(uidOf(e))}`}
-      className="flex items-center justify-between gap-2 border-b border-surface/60 px-1 py-3 hover:bg-surface"
+      className="flex items-center justify-between gap-2 border-t border-line px-4 py-3 transition-colors duration-120 hover:bg-surface-raised"
     >
       <span className="truncate">{nameOf(e)}</span>
       <SourceBadge source={sourceOf(e)} />
@@ -57,10 +86,11 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
 /**
  * An {@link EntityRow}'s height in px at the current root font size: its
  * `py-3` (1.5rem), one line of body text (1.375rem, DS-001) and the 1 px
- * border, rounded as a measured height is. The source badge is shorter than the line, so it
- * never sets the height. The list's restored scroll offset depends on this
- * being exact (see `VirtualList`), so a class change to the row has to
- * change this too; `library-scale.spec.ts` compares it to the rendered row.
+ * line above it, rounded as a measured height is. The source badge is as tall
+ * as the line (1.375rem), so it never sets the height. The list's restored
+ * scroll offset depends on this being exact (see `VirtualList`), so a class
+ * change to the row has to change this too; `library-scale.spec.ts` compares
+ * it to the rendered row.
  * jsdom reports the root font as "medium", hence the fallback.
  */
 export function entityRowHeight(): number {
@@ -170,63 +200,61 @@ function GlobalSearch() {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
-        <Search size={16} className="shrink-0 text-ink-muted" />
+      <div className="relative">
+        <Search size={20} aria-hidden="true" className={SEARCH_ICON} />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Search everything"
           placeholder={placeholder}
           disabled={failed}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:opacity-60"
+          className={SEARCH_FIELD}
         />
-      </label>
+      </div>
       {failed && !dbOpen && <p className={DB_CLOSED_NOTE}>Reload this tab to search.</p>}
       {failed && dbOpen && (
-        <div
-          className="flex items-center justify-between gap-2 rounded-lg bg-accent-deep/30 px-3 py-2 text-xs"
-          role="alert"
-        >
-          <span className="truncate">
+        <div className={PROBLEM} role="alert">
+          <span className="min-w-0 flex-1 truncate text-caption">
             Couldn&rsquo;t prepare search
             {regStatus === 'error' && regError !== null ? `: ${regError}` : ''}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
             onClick={() => {
               if (regStatus === 'error') retryRegistry();
               else retrySearch();
             }}
-            className="shrink-0 rounded bg-accent-fill px-2 py-0.5 font-semibold"
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
       {ready && trimmed.length >= 2 && result.hits.length === 0 && result.hiddenCount === 0 && (
-        <p className="px-1 text-xs text-ink-muted">No matches for “{trimmed}”.</p>
+        <p className="px-1 text-caption text-ink-muted">No matches for “{trimmed}”.</p>
       )}
       {result.hiddenCount > 0 && (
         <button
           type="button"
           onClick={() => setShowHidden(true)}
-          className="px-1 text-left text-xs text-ink-muted underline hover:text-ink"
+          className={`px-1 text-left ${LINK}`}
         >
           {result.hiddenCount === 30 ? '30+' : result.hiddenCount} more in sources you&rsquo;ve
           hidden. Show them
         </button>
       )}
       {result.hits.length > 0 && (
-        <div className="flex flex-col rounded-lg bg-surface">
+        <div className={listClass}>
           {result.hits.map((h) => (
             <Link
               key={h.id}
               to={`/library/${h.type}/${encodeURIComponent(h.uid)}`}
-              className="flex items-center justify-between gap-2 border-b border-surface-2/50 px-3 py-2.5 last:border-b-0 hover:bg-surface-2"
+              className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors duration-120 hover:bg-surface-raised"
               onClick={() => setQ('')}
             >
-              <span className="truncate text-sm">{h.name}</span>
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-ink-muted">
+              <span className="truncate">{h.name}</span>
+              <span className="flex shrink-0 items-center gap-1.5 text-caption text-ink-muted">
                 {TYPE_LABELS.get(h.type) ?? h.type}
                 <SourceBadge source={h.source} />
               </span>
@@ -242,22 +270,18 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
   usePageTitle('Library');
   const counts = registry?.counts() ?? {};
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
+    <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Library</h1>
+        <h1 className="font-display text-title-page">Library</h1>
       </header>
       <GlobalSearch />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {BROWSE_TYPES.map(({ type, label }) => (
-          <Link
-            key={type}
-            to={`/library/${type}`}
-            className="flex flex-col gap-1 rounded-lg bg-surface p-3 hover:bg-surface-2"
-          >
+          <Link key={type} to={`/library/${type}`} className={TILE}>
             {/* Breaks a long word (Backgrounds) rather than run off the card
                 and the screen when the text is set large (A11Y-003). */}
-            <span className="text-sm font-semibold break-words">{label}</span>
-            <span className="text-xs text-ink-muted">{counts[type] ?? '…'}</span>
+            <span className="text-body-strong break-words">{label}</span>
+            <span className="text-caption text-ink-muted tabular-nums">{counts[type] ?? '…'}</span>
           </Link>
         ))}
       </div>
@@ -267,30 +291,19 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
 
 function BackLink({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-fit items-center gap-1 text-sm text-ink-muted hover:text-ink"
-    >
+    // Ghost, as navigation is; pulled into the gutter so the arrow lines up
+    // with the title under it.
+    <Button variant="ghost" size="sm" className="-ml-3 self-start" onClick={onClick}>
       <ArrowLeft size={16} aria-hidden /> Back
-    </button>
+    </Button>
   );
 }
 
-function Action({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-white"
-    >
-      {label}
-    </button>
-  );
-}
-
-/** What a library panel says in place of its failure once the database is closed. */
-const DB_CLOSED_NOTE = 'rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted';
+/**
+ * What a library panel says in place of its failure once the database is
+ * closed: the design's neutral hint, something to know.
+ */
+const DB_CLOSED_NOTE = 'rounded-control bg-surface-raised px-3 py-2 text-caption text-ink-muted';
 
 /**
  * Why this section has nothing to show, and what to press about it.
@@ -333,11 +346,8 @@ function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksSt
         : `This section couldn't be downloaded${packs.error !== null ? `: ${packs.error}` : ''}`),
   ].filter((l): l is string => l !== false);
   return (
-    <div
-      className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
-      role={alerts ? 'alert' : undefined}
-    >
-      <p className="min-w-0 flex-1 text-xs">
+    <div className={PROBLEM} role={alerts ? 'alert' : undefined}>
+      <p className="min-w-0 flex-1 text-caption">
         {lines.map((line) => (
           <span key={line} className="block">
             {line}
@@ -349,7 +359,9 @@ function SectionProblem({ reg, packs }: { reg: RegistryState; packs: TypePacksSt
           </span>
         )}
       </p>
-      <Action label="Retry" onClick={retry} />
+      <Button variant="outline" size="sm" className="shrink-0" onClick={retry}>
+        Retry
+      </Button>
     </div>
   );
 }
@@ -456,60 +468,59 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   }, [registry, type, filter, policy, pickedSource]);
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-      <header className="flex items-center gap-3">
-        <Link
-          to="/library"
-          aria-label="Back to the library"
-          className="text-ink-muted hover:text-ink"
-        >
+    <main className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <header className="flex items-center gap-2">
+        <Link to="/library" aria-label="Back to the library" className={`-ml-3 ${BACK_ICON}`}>
           <ArrowLeft size={20} aria-hidden />
         </Link>
-        <h1 id={headingId} className="text-xl font-bold">
-          {TYPE_LABELS.get(type) ?? type}
-        </h1>
-        <span className="text-sm text-ink-muted">{items.length}</span>
+        {/* The count on the title's baseline: centred, it rode up like a footnote mark. */}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h1 id={headingId} className="font-display text-title-page">
+            {TYPE_LABELS.get(type) ?? type}
+          </h1>
+          <span className="text-caption text-ink-muted tabular-nums">{items.length}</span>
+        </div>
       </header>
       {/* An empty list and a failed download used to look identical here. */}
       {failed && <SectionProblem reg={reg} packs={packs} />}
-      <label className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
-        <Search size={16} className="shrink-0 text-ink-muted" />
+      <div className="relative">
+        <Search size={20} aria-hidden="true" className={SEARCH_ICON} />
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           aria-label={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}`}
           placeholder={`Filter ${TYPE_LABELS.get(type)?.toLowerCase() ?? type}…`}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
+          className={SEARCH_FIELD}
         />
-      </label>
+      </div>
       <div className="relative">
         <select
           aria-label="Source"
           value={selected}
           onChange={(e) => setPickedSource(e.target.value)}
-          className="w-full appearance-none rounded-lg bg-surface py-2 pr-9 pl-3 text-sm outline-none"
+          className={`${fieldClass} appearance-none pr-9`}
         >
-          <option value={MY_SOURCES} className="bg-surface-2 text-ink">
+          <option value={MY_SOURCES} className="bg-surface-raised text-ink">
             {hiddenBySettings > 0 ? 'My sources' : 'All sources'}
           </option>
           {sources.map(([s, n]) => (
-            <option key={s} value={s} className="bg-surface-2 text-ink">
+            <option key={s} value={s} className="bg-surface-raised text-ink">
               {sourceName(s)} ({n}){s === hiddenPick ? ' · hidden in settings' : ''}
             </option>
           ))}
           {hiddenBySettings > 0 && (
-            <option value={EVERY_SOURCE} className="bg-surface-2 text-ink">
+            <option value={EVERY_SOURCE} className="bg-surface-raised text-ink">
               Everything, including {hiddenBySettings} hidden in settings
             </option>
           )}
         </select>
         <ChevronDown
           aria-hidden
-          className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-muted"
+          className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted"
         />
       </div>
       {items.length === 0 && !failed && (
-        <p className="text-sm text-ink-muted">
+        <p className={NOTE}>
           {/* The registry is what the list reads, so "nothing here" is only
               true once it has finished catching up with the files on disk. */}
           {packs.status === 'loading' || registry === null || refreshing
@@ -519,13 +530,16 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
               : 'Nothing here yet.'}
         </p>
       )}
-      <VirtualList
-        items={items}
-        estimateSize={entityRowHeight}
-        getKey={uidOf}
-        labelledBy={headingId}
-        renderRow={(e) => <EntityRow type={type} e={e} />}
-      />
+      {/* The card only around rows: an empty one would draw an empty frame. */}
+      <div className={items.length > 0 ? ROWS : undefined}>
+        <VirtualList
+          items={items}
+          estimateSize={entityRowHeight}
+          getKey={uidOf}
+          labelledBy={headingId}
+          renderRow={(e) => <EntityRow type={type} e={e} />}
+        />
+      </div>
     </main>
   );
 }
@@ -557,14 +571,14 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
   return (
     <div className="flex flex-col gap-4">
       {subclasses.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h3 className="font-semibold">Subclasses</h3>
-          <div className="flex flex-wrap gap-1.5">
+        <section className="flex flex-col gap-2">
+          <h3 className="text-heading">Subclasses</h3>
+          <div className="flex flex-wrap gap-2">
             {subclasses.map((s) => (
               <Link
                 key={uidOf(s)}
                 to={`/library/subclass/${encodeURIComponent(uidOf(s))}`}
-                className="rounded bg-surface px-2 py-1 text-xs hover:bg-surface-2"
+                className="inline-flex min-h-tap items-center gap-2 rounded-control bg-surface px-3 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
               >
                 {nameOf(s)} <SourceBadge source={sourceOf(s)} />
               </Link>
@@ -573,9 +587,9 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
         </section>
       )}
       {byLevel.size > 0 && (
-        <section className="flex flex-col gap-1">
-          <h3 className="font-semibold">Features by level</h3>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <section className="flex flex-col gap-2">
+          <h3 className="text-heading">Features by level</h3>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
             {[...byLevel.entries()]
               .sort((a, b) => a[0] - b[0])
               .map(([lvl, names]) => (
@@ -606,10 +620,10 @@ function BookExtras({ registry, entity }: { registry: EntityRegistry; entity: En
     <div className="flex flex-col gap-4">
       {sections.length > 0 && (
         <section className="flex flex-col gap-1">
-          <h3 className="font-semibold">In this book</h3>
+          <h3 className="text-heading">In this book</h3>
           {/* Spells and items stream in after boot, so a book opened early can
               honestly hold more than this says. */}
-          <p className="text-xs text-ink-muted">
+          <p className="text-caption text-ink-muted">
             What has downloaded to this device from {sourceName(source)}.
           </p>
           <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -617,27 +631,27 @@ function BookExtras({ registry, entity }: { registry: EntityRegistry; entity: En
               <Link
                 key={s.type}
                 to={`/library/${s.type}?source=${encodeURIComponent(source)}`}
-                className="flex flex-col gap-1 rounded-lg bg-surface p-3 hover:bg-surface-2"
+                className={TILE}
               >
-                <span className="text-sm font-semibold">{s.label}</span>
-                <span className="text-xs text-ink-muted">{s.count}</span>
+                <span className="text-body-strong">{s.label}</span>
+                <span className="text-caption text-ink-muted tabular-nums">{s.count}</span>
               </Link>
             ))}
           </div>
         </section>
       )}
       {chapters.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h3 className="font-semibold">Contents</h3>
+        <section className="flex flex-col gap-2">
+          <h3 className="text-heading">Contents</h3>
           <ol className="flex flex-col gap-2">
             {chapters.map((c) => (
               <li key={c.id} className="flex flex-col">
-                <span className="text-sm">
+                <span>
                   {c.ordinal !== undefined && <span className="text-ink-muted">{c.ordinal}. </span>}
                   {c.name}
                 </span>
                 {c.headers.length > 0 && (
-                  <span className="text-xs text-ink-muted">{c.headers.join(' · ')}</span>
+                  <span className="text-caption text-ink-muted">{c.headers.join(' · ')}</span>
                 )}
               </li>
             ))}
@@ -684,7 +698,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // had anywhere to report to.
     if (failed) {
       return (
-        <main className="flex flex-1 flex-col gap-3 p-4">
+        <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
           <BackLink onClick={back} />
           <SectionProblem reg={reg} packs={packs} />
         </main>
@@ -698,9 +712,9 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // that window offers a re-download for something that just arrived.
     if (registry === null || packs.status === 'loading' || refreshing) {
       return (
-        <main className="flex flex-1 flex-col gap-3 p-4">
+        <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
           <BackLink onClick={back} />
-          <p className="text-sm text-ink-muted">Loading…</p>
+          <p className={NOTE}>Loading…</p>
         </main>
       );
     }
@@ -712,16 +726,18 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
     // did arrive is not what it should be. The second is the one the ordinary
     // retry cannot fix, because nothing is missing for it to fetch.
     return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
+      <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
         <BackLink onClick={back} />
-        <p className="text-sm text-ink-muted">
+        <p className={NOTE}>
           Nothing in {TYPE_LABELS.get(type)?.toLowerCase() ?? type} is called{' '}
           <span className="font-semibold text-ink">{decoded}</span>. The link may be from an older
           version of the app, or from a homebrew file that is no longer installed.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Action label="Download this section again" onClick={packs.repair} />
-          <Link to={`/library/${type}`} className="text-sm text-ink-muted underline hover:text-ink">
+          <Button variant="brand" onClick={packs.repair}>
+            Download this section again
+          </Button>
+          <Link to={`/library/${type}`} className={LINK}>
             Browse {TYPE_LABELS.get(type)?.toLowerCase() ?? type}
           </Link>
         </div>
@@ -731,21 +747,21 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
 
   const facts = headerFacts(type, entity);
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
+    <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4">
       <BackLink onClick={back} />
       <header className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="text-xl font-bold">{nameOf(entity)}</h1>
-          <span className="flex items-center gap-1.5 pt-1 text-xs text-ink-muted">
+          <h1 className="font-display text-title-page">{nameOf(entity)}</h1>
+          <span className="flex shrink-0 items-center gap-1.5 pt-1.5 text-caption text-ink-muted">
             <SourceBadge source={sourceOf(entity)} titleShownNearby />
             {typeof entity.page === 'number' && <span>p. {entity.page}</span>}
           </span>
         </div>
         {/* Spelled out here because a tooltip is a desktop-only affordance. */}
-        <p className="text-xs text-ink-muted">{sourceName(sourceOf(entity))}</p>
+        <p className="text-caption text-ink-muted">{sourceName(sourceOf(entity))}</p>
       </header>
       {facts.length > 0 && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-surface p-3 text-sm">
+        <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
           {facts.map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-ink-muted">{label}</dt>
@@ -765,11 +781,11 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
 function NoSuchSection({ type }: { type: string }) {
   usePageTitle('No such section', 'Library');
   return (
-    <main className="flex flex-1 flex-col gap-3 p-4">
-      <p className="text-sm text-ink-muted">
+    <main className="flex flex-1 flex-col gap-3 px-4 pt-5 pb-4">
+      <p className={NOTE}>
         There is no <span className="font-semibold text-ink">{type}</span> section in the library.
       </p>
-      <Link to="/library" className="text-sm text-ink-muted underline hover:text-ink">
+      <Link to="/library" className={LINK}>
         Back to the library
       </Link>
     </main>

@@ -58,13 +58,15 @@ export class DecodeBoundary extends Component<DecodeBoundaryProps, DecodeBoundar
   render(): ReactNode {
     const { detail } = this.state;
     if (detail === null) return this.props.children;
+    // The design's `danger` hint (DS-001): a record that needs fixing, with
+    // the way out beside it.
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300/40 bg-surface px-3 py-2">
-        <AlertTriangle size={14} className="shrink-0 text-amber-300" aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-xs text-ink-muted">
+      <div className="flex flex-wrap items-center gap-2 rounded-control bg-danger-soft px-3 py-2">
+        <AlertTriangle size={16} className="shrink-0 text-danger" aria-hidden="true" />
+        <p className="min-w-0 flex-1 text-caption">
           {this.props.label} could not be read, so it is shown this way instead. Everything else
           here is fine.
-          <span className="block truncate font-mono text-[11px]">{detail}</span>
+          <span className="block truncate font-mono text-[11px] text-ink-muted">{detail}</span>
         </p>
         {this.props.action}
       </div>

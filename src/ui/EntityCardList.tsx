@@ -1,4 +1,4 @@
-import { Info } from 'lucide-react';
+import { Check, Info, Search } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import {
@@ -9,9 +9,11 @@ import {
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
+import { buttonClass } from '@/ui/Button';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { SourceBadge } from '@/ui/SourceBadge';
+import { fieldClass } from '@/ui/TextField';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -48,7 +50,20 @@ const isNiche = (e: Entity) =>
   nameOf(e).toLowerCase().includes('sidekick') ||
   nameOf(e).includes(';');
 
-/** Filterable pick-one card grid used by the wizard and the build editor. */
+/**
+ * A way to show more or fewer of the list: a small outline button, the full
+ * width of the list, its label wrapping when long.
+ */
+const MORE = buttonClass({ variant: 'outline', size: 'sm' });
+
+/**
+ * Filterable pick-one card grid used by the wizard and the build editor.
+ *
+ * Each card is the design's option card (DS-001): `surface` with a `line`
+ * edge, the name in `title-card`, the blurb in `caption`, the source badge on
+ * the right. The pick is `ink`, never a hue: a 2px `ink` edge and a filled
+ * check, with `aria-pressed` saying it to a screen reader.
+ */
 export function EntityCardList({
   entities,
   selectedUid,
@@ -157,18 +172,23 @@ export function EntityCardList({
   return (
     <div className="flex flex-col gap-2">
       {entities.length > 10 && (
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label="Filter the list"
-          placeholder="Filter…"
-          className="rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
-        />
+        <div className="relative">
+          <Search
+            size={20}
+            aria-hidden="true"
+            className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
+          />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label="Filter the list"
+            placeholder="Filter…"
+            className={`${fieldClass} pl-10.5`}
+          />
+        </div>
       )}
       <div
-        className={`grid grid-cols-1 gap-1.5 sm:grid-cols-2 ${
-          fill ? '' : 'max-h-96 overflow-y-auto'
-        }`}
+        className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${fill ? '' : 'max-h-96 overflow-y-auto'}`}
       >
         {list.map((e, i) => {
           const blurb = describe?.(e);
@@ -183,10 +203,8 @@ export function EntityCardList({
           return (
             <div
               key={uidOf(e)}
-              className={`flex items-start rounded-lg border text-sm ${
-                selected
-                  ? 'border-accent bg-accent-deep/40'
-                  : 'border-surface-2 bg-surface hover:bg-surface-2'
+              className={`flex items-start rounded-control bg-surface shadow-card ring-inset transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised ${
+                selected ? 'ring-2 ring-ink' : 'ring-1 ring-line'
               }`}
             >
               <button
@@ -203,22 +221,27 @@ export function EntityCardList({
                   else onSelect(e);
                 }}
                 title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
-                className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-left"
+                className="flex min-w-0 flex-1 flex-col gap-0.5 py-3.5 pr-2 pl-4 text-left"
               >
-                <span className={`truncate ${selected ? 'font-semibold' : ''}`}>
+                <span className="truncate font-display text-title-card">
                   {nameOf(e)}
                   {selected && onDeselect !== undefined && (
-                    <span className="ml-1.5 text-xs font-normal text-ink-muted">✕ unselect</span>
+                    <span className="ml-1.5 font-sans text-caption text-ink-muted">✕ unselect</span>
                   )}
                 </span>
                 {blurb !== undefined && (
-                  <span id={blurbFor} className="text-xs leading-snug text-ink-muted">
+                  <span id={blurbFor} className="text-caption text-ink-muted">
                     {blurb}
                   </span>
                 )}
                 {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
-              <div className="flex shrink-0 items-center gap-2.5 py-2.5 pr-2.5">
+              <div className="flex shrink-0 items-center gap-2.5 py-3.5 pr-3">
+                {selected && (
+                  <span className="inline-flex size-5.5 items-center justify-center rounded-full bg-ink text-bg">
+                    <Check size={14} strokeWidth={3} aria-hidden="true" />
+                  </span>
+                )}
                 <SourceBadge source={sourceOf(e)} />
                 {infoType !== undefined && (
                   <EntityInfoSheet
@@ -231,9 +254,9 @@ export function EntityCardList({
                         type="button"
                         aria-label={`${nameOf(e)} details`}
                         title="Full description"
-                        className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-2 hover:text-ink"
+                        className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
                       >
-                        <Info size={16} />
+                        <Info size={18} />
                       </button>
                     }
                   />
@@ -244,38 +267,22 @@ export function EntityCardList({
         })}
       </div>
       {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowAll(true)} className={MORE}>
           Show {hiddenCount} more — other printings, variants & playtest content
         </button>
       )}
       {showAll && dedupe && filter === '' && (
-        <button
-          type="button"
-          onClick={() => setShowAll(false)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowAll(false)} className={MORE}>
           Show fewer — one printing per name
         </button>
       )}
       {sourceHiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowHiddenSources(true)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowHiddenSources(true)} className={MORE}>
           {hiddenSourcesLabel(sourceHiddenCount, scope)}
         </button>
       )}
       {showHiddenSources && (
-        <button
-          type="button"
-          onClick={() => setShowHiddenSources(false)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowHiddenSources(false)} className={MORE}>
           {backToSourcesLabel(scope)}
         </button>
       )}
