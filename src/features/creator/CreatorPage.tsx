@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, History } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronRight, History } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -28,10 +28,13 @@ import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
+import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { GameDataProblem } from '@/ui/GameDataProblem';
 import { PackProblem } from '@/ui/PackProblem';
+import { cardClass } from '@/ui/surfaces';
+import { fieldClass, TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
@@ -97,6 +100,35 @@ function clearKit(d: Draft, source: 'class' | 'bg'): boolean {
 }
 
 const KIT_CLEARED = 'starting equipment cleared, pick it again on the Equipment step';
+
+/**
+ * One of a set of exclusive choices, as an option card (DS-001): the ground
+ * it sits on, a 2px `ink` edge and a check once picked. Selection is ink,
+ * never a hue. `OPTION_ON_PAGE` sits on the page, `OPTION_IN_CARD` inside a
+ * card, a raised step above it.
+ */
+const OPTION =
+  'flex w-full items-center gap-3 rounded-control px-4 py-3 text-left ring-inset transition-colors duration-120 aria-pressed:ring-2 aria-pressed:ring-ink';
+const OPTION_ON_PAGE = `${OPTION} bg-surface shadow-card ring-1 ring-line hover:bg-surface-raised`;
+const OPTION_IN_CARD = `${OPTION} bg-surface-raised hover:bg-surface-hover`;
+
+/** The picked option's check: an `ink` circle, so the pick is not told by the edge alone. */
+function OptionCheck({ on }: { on: boolean }) {
+  return on ? (
+    <span
+      aria-hidden="true"
+      className="ml-auto flex size-5.5 shrink-0 items-center justify-center rounded-full bg-ink text-bg"
+    >
+      <Check size={14} strokeWidth={3} />
+    </span>
+  ) : null;
+}
+
+/** A guide's tip or a step's notice (DS-001's hint): tinted, an icon, 14px words. */
+const HINT = 'flex items-start gap-3 rounded-control p-3 text-sm';
+
+/** A stepper's visible circle, inside its 44px target. */
+const STEP_DOT = 'flex size-8 items-center justify-center rounded-full bg-surface-raised';
 
 /** An undo line's detail from its parts, or nothing when none apply. */
 const detailOf = (...parts: Array<string | undefined>) => {
@@ -319,11 +351,14 @@ export function Component() {
   if (opening !== null) {
     return (
       <main className="flex flex-1 flex-col gap-3 p-4">
-        <p role="status" className="text-sm text-ink-muted">
+        <p role="status" className="text-body text-ink-muted">
           Opening {opening}…
         </p>
         {slowSave && (
-          <Link to="/" className="text-sm text-ink-muted underline hover:text-ink">
+          <Link
+            to="/"
+            className="text-body text-ink-muted underline underline-offset-3 hover:text-ink"
+          >
             Still saving. Back to characters
           </Link>
         )}
@@ -331,19 +366,34 @@ export function Component() {
     );
   }
 
+  // The wizard's progress (DS-001): the step's name, where it sits, and a bar
+  // of one segment per step, done in `ink`, this one in `brand`, the rest on
+  // `track`. The bar repeats the count beside it, so it is decoration.
   const header = (
-    <header className="flex items-center gap-3">
-      <Link
-        to="/"
-        aria-label="Back to characters (your draft is kept)"
-        className="tap -my-2 -ml-3 rounded text-ink-muted hover:text-ink"
-      >
-        <ArrowLeft size={20} aria-hidden />
-      </Link>
-      <h1 className="text-xl font-bold">{STEP_LABELS[step]}</h1>
-      <span className="text-sm text-ink-muted">
-        {stepIdx + 1}/{STEPS.length}
-      </span>
+    <header className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <Link
+          to="/"
+          aria-label="Back to characters (your draft is kept)"
+          className="tap -my-2 -ml-3 rounded-control text-ink-muted hover:text-ink"
+        >
+          <ArrowLeft size={20} aria-hidden />
+        </Link>
+        <h1 className="font-display text-title-page">{STEP_LABELS[step]}</h1>
+        <span className="ml-auto text-caption text-ink-muted tabular-nums">
+          {stepIdx + 1}/{STEPS.length}
+        </span>
+      </div>
+      <div aria-hidden="true" className="flex gap-0.75">
+        {STEPS.map((s, i) => (
+          <span
+            key={s}
+            className={`h-1 flex-1 rounded-full ${
+              i < stepIdx ? 'bg-ink' : i === stepIdx ? 'bg-brand' : 'bg-track'
+            }`}
+          />
+        ))}
+      </div>
     </header>
   );
 
@@ -361,7 +411,7 @@ export function Component() {
             note="Your draft is kept."
           />
         ) : (
-          <p className="text-sm text-ink-muted">Loading game data…</p>
+          <p className="text-body text-ink-muted">Loading game data…</p>
         )}
       </main>
     );
@@ -716,17 +766,14 @@ export function Component() {
       case 'basics':
         return (
           <div className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold">Character name</span>
-              <input
-                value={doc.name}
-                onChange={(e) => update((d) => void (d.name = e.target.value))}
-                placeholder="e.g. Thorin"
-                className="rounded-lg bg-surface px-3 py-2.5 outline-none placeholder:text-ink-muted"
-              />
-            </label>
+            <TextField
+              label="Character name"
+              value={doc.name}
+              onChange={(e) => update((d) => void (d.name = e.target.value))}
+              placeholder="e.g. Thorin"
+            />
             <fieldset className="flex flex-col gap-2">
-              <span className="text-sm font-semibold">Rules version</span>
+              <span className="text-label text-ink-muted">Rules version</span>
               {(
                 [
                   ['2014', 'Classic (2014 Player’s Handbook and expansions)'],
@@ -738,16 +785,13 @@ export function Component() {
                   type="button"
                   aria-pressed={doc.rulesVersion === v}
                   onClick={() => void switchRulesVersion(v)}
-                  className={`rounded-lg border px-3 py-2.5 text-left text-sm ${
-                    doc.rulesVersion === v
-                      ? 'border-accent bg-accent-deep/40 font-semibold'
-                      : 'border-surface-2 bg-surface'
-                  }`}
+                  className={`${OPTION_ON_PAGE} text-body aria-pressed:font-semibold`}
                 >
                   {label}
+                  <OptionCheck on={doc.rulesVersion === v} />
                 </button>
               ))}
-              <p className="text-xs text-ink-muted">
+              <p className="text-caption text-ink-muted">
                 Playing with a group? Match whichever books your table uses. Starting fresh on your
                 own? Either works — 2014 has the most expansion content, 2024 is the newest rules.
               </p>
@@ -779,20 +823,27 @@ export function Component() {
                 {/* Not a <label>: that handed the steppers' "Level" name to the
                     minus alone (and a tap on the word to it), leaving plus nameless.
                     The value says "Level N" itself, and announces each change. */}
-                <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2.5">
-                  <span aria-hidden="true" className="text-sm font-semibold">
+                <div className="flex items-center justify-between rounded-card bg-surface py-1 pr-1 pl-4 shadow-card ring-1 ring-line ring-inset">
+                  <span aria-hidden="true" className="text-body-strong">
                     Level
                   </span>
-                  <span className="flex items-center gap-3">
+                  {/* 44px targets around a 32px circle (A11Y-002), as the
+                      ability steppers draw theirs. */}
+                  <span className="flex items-center">
                     <button
                       type="button"
                       aria-label="Decrease level"
                       onClick={levelDown}
-                      className="h-9 w-9 rounded-full bg-surface-2 text-lg"
+                      className="tap rounded-full text-lg"
                     >
-                      <span aria-hidden="true">−</span>
+                      <span aria-hidden="true" className={STEP_DOT}>
+                        −
+                      </span>
                     </button>
-                    <span aria-live="polite" className="w-8 text-center text-lg font-bold">
+                    <span
+                      aria-live="polite"
+                      className="w-8 text-center text-lg font-bold tabular-nums"
+                    >
                       <span className="sr-only">Level</span> {entry.levels}
                     </span>
                     <button
@@ -806,20 +857,22 @@ export function Component() {
                           c.hp = [...c.hp, 'avg'];
                         })
                       }
-                      className="h-9 w-9 rounded-full bg-surface-2 text-lg"
+                      className="tap rounded-full text-lg"
                     >
-                      <span aria-hidden="true">+</span>
+                      <span aria-hidden="true" className={STEP_DOT}>
+                        +
+                      </span>
                     </button>
                   </span>
                 </div>
                 {subclasses.length > 0 && entry.levels < unlockLevel && (
-                  <p className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
+                  <p className={`${HINT} bg-surface-raised text-ink-muted`}>
                     Subclass unlocks at level {unlockLevel} — you'll pick one when you get there.
                   </p>
                 )}
                 {subclasses.length > 0 && entry.levels >= unlockLevel && (
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-semibold">Subclass</span>
+                    <span className="px-1 text-heading">Subclass</span>
                     <EntityCardList
                       entities={subclasses}
                       describe={makeSubclassBlurb(registry)}
@@ -874,7 +927,7 @@ export function Component() {
             />
             {subraces.length > 0 && (
               <div className="flex flex-col gap-2">
-                <span className="text-sm font-semibold">Subrace</span>
+                <span className="px-1 text-heading">Subrace</span>
                 <EntityCardList
                   entities={subraces}
                   describe={raceBlurb}
@@ -955,7 +1008,7 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             {allEqGroups.length > 0 && (
-              <p className="text-sm text-ink-muted">
+              <p className="text-body text-ink-muted">
                 Pick one option per row — it's added to your inventory and equipped automatically.
               </p>
             )}
@@ -964,9 +1017,9 @@ export function Component() {
               const current = bundleChoices[key] ?? g.bundles[0]?.key;
               const currentBundle = g.bundles.find((b) => b.key === current);
               return (
-                <fieldset key={key} className="flex flex-col gap-1.5 rounded-lg bg-surface p-3">
+                <fieldset key={key} className={`${cardClass} flex flex-col gap-2`}>
                   <legend className="sr-only">Equipment option</legend>
-                  <span className="text-xs font-semibold uppercase text-ink-muted">
+                  <span className="text-overline text-ink-muted uppercase">
                     {g.source === 'class' ? 'Class equipment' : 'Background equipment'}
                   </span>
                   {g.bundles.map((b) => (
@@ -975,11 +1028,10 @@ export function Component() {
                       type="button"
                       aria-pressed={current === b.key}
                       onClick={() => pickBundle(key, b.key)}
-                      className={`rounded-lg border px-3 py-2 text-left text-sm ${
-                        current === b.key ? 'border-accent bg-accent-deep/30' : 'border-surface-2'
-                      }`}
+                      className={`${OPTION_IN_CARD} text-body`}
                     >
-                      {b.label}
+                      <span className="min-w-0">{b.label}</span>
+                      <OptionCheck on={current === b.key} />
                     </button>
                   ))}
                   {/* Open slots ("any martial weapon") get a concrete picker. */}
@@ -993,14 +1045,14 @@ export function Component() {
                     ).sort((a, b) => String(a.name).localeCompare(String(b.name)));
                     if (options.length === 0) return null;
                     return (
-                      <label key={slotKey} className="flex items-center gap-2 text-sm">
-                        <span className="shrink-0 text-xs text-ink-muted">
+                      <label key={slotKey} className="flex items-center gap-2">
+                        <span className="shrink-0 text-caption text-ink-muted">
                           {item.label} — pick one:
                         </span>
                         <select
                           value={slotPicks[slotKey] ?? ''}
                           onChange={(e) => pickSlot(slotKey, e.target.value)}
-                          className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1.5 text-sm outline-none"
+                          className={`${fieldClass} min-w-0 flex-1`}
                         >
                           <option value="" disabled>
                             Choose…
@@ -1021,7 +1073,7 @@ export function Component() {
               );
             })}
             {fallback.length > 0 && (
-              <div className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
+              <div className={`${cardClass} text-sm text-ink-muted`}>
                 <p className="mb-1 font-semibold text-ink">
                   Starting equipment (add manually in Inventory):
                 </p>
@@ -1031,10 +1083,8 @@ export function Component() {
               </div>
             )}
             {doc.equipment.length > 0 && (
-              <div className="rounded-lg border border-emerald-300/30 bg-surface p-3 text-sm">
-                <p className="mb-1 text-xs font-semibold uppercase text-emerald-300">
-                  You'll start with
-                </p>
+              <div className="rounded-control bg-heal-soft p-4 text-sm">
+                <p className="mb-1 text-overline text-heal uppercase">You'll start with</p>
                 <p className="text-ink-muted">
                   {doc.equipment
                     .map(
@@ -1080,9 +1130,12 @@ export function Component() {
         return (
           <div className="flex flex-col gap-3">
             {!hasOther && (
-              <p className="rounded-lg bg-surface p-4 text-sm text-emerald-300">
-                Nothing else to decide here — your skills, languages, and other picks live on the
-                Class, Species, and Background steps.
+              <p className={`${HINT} bg-heal-soft`}>
+                <Check size={18} aria-hidden className="mt-0.5 shrink-0 text-heal" />
+                <span>
+                  Nothing else to decide here — your skills, languages, and other picks live on the
+                  Class, Species, and Background steps.
+                </span>
               </p>
             )}
             {sheet !== null && (
@@ -1164,21 +1217,19 @@ export function Component() {
           .map(([name]) => name);
         return (
           <div className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold">Name</span>
-              <input
-                value={doc.name}
-                onChange={(e) => update((d) => void (d.name = e.target.value))}
-                placeholder="Give your hero a name"
-                className={`rounded-lg bg-surface px-3 py-2.5 outline-none placeholder:text-ink-muted ${
-                  doc.name.trim() === '' ? 'border border-amber-300/50' : ''
-                }`}
-              />
-            </label>
+            {/* An empty name is a choice still to make, so it takes the guide's
+                edge rather than an error's. */}
+            <TextField
+              label="Name"
+              value={doc.name}
+              onChange={(e) => update((d) => void (d.name = e.target.value))}
+              placeholder="Give your hero a name"
+              className={doc.name.trim() === '' ? 'ring-1 ring-guide' : undefined}
+            />
 
             {/* Who you built */}
-            <div className="rounded-lg bg-surface p-3 text-sm">
-              <p className="font-semibold">
+            <div className={cardClass}>
+              <p className="font-display text-title-card">
                 {doc.subrace?.name ?? doc.race?.name ?? 'No species'} ·{' '}
                 {doc.classes
                   .map(
@@ -1188,7 +1239,7 @@ export function Component() {
                   .join(' / ') || 'no class'}
                 {doc.background !== undefined ? ` · ${doc.background.name}` : ''}
               </p>
-              <div className="mt-2 flex flex-col gap-1 text-xs text-ink-muted">
+              <div className="mt-2 flex flex-col gap-1 text-caption text-ink-muted">
                 {profSkills.length > 0 && <p>Skills: {profSkills.join(', ')}</p>}
                 {(sheet?.languages.length ?? 0) > 0 && (
                   <p>Languages: {sheet?.languages.join(', ')}</p>
@@ -1222,9 +1273,12 @@ export function Component() {
                     ['Passive Per.', sheet.passivePerception.value],
                   ] as const
                 ).map(([label, v]) => (
-                  <div key={label} className="rounded-lg bg-surface p-3">
-                    <div className="text-lg font-bold">{v}</div>
-                    <div className="text-xs text-ink-muted">{label}</div>
+                  <div
+                    key={label}
+                    className="rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset"
+                  >
+                    <div className="text-lg font-bold tabular-nums">{v}</div>
+                    <div className="text-caption text-ink-muted">{label}</div>
                   </div>
                 ))}
               </div>
@@ -1237,18 +1291,18 @@ export function Component() {
                     key={issue.key}
                     type="button"
                     onClick={() => navStep(issue.step)}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2.5 text-left text-sm text-amber-200"
+                    className="flex min-h-tap items-center justify-between gap-2 rounded-control bg-guide-soft px-3 py-2.5 text-left text-sm transition-colors duration-120 hover:brightness-108"
                   >
                     <span>{issue.text}</span>
-                    <span className="shrink-0 font-semibold">Fix →</span>
+                    <span className="shrink-0 font-bold text-guide">Fix →</span>
                   </button>
                 ))}
               </div>
             )}
 
             {sheet !== null && sheet.warnings.length > 0 && (
-              <details className="rounded-lg bg-surface p-3 text-xs text-ink-muted">
-                <summary className="cursor-pointer text-sm">
+              <details className={`${cardClass} text-caption text-ink-muted`}>
+                <summary className="cursor-pointer text-body">
                   {sheet.warnings.length} note
                   {sheet.warnings.length > 1 ? 's' : ''}
                 </summary>
@@ -1259,14 +1313,13 @@ export function Component() {
                 ))}
               </details>
             )}
-            <button
-              type="button"
-              onClick={() => void create()}
-              className="flex items-center justify-center gap-2 rounded-lg bg-accent-fill px-4 py-3 font-semibold text-white"
-            >
-              <Check size={18} /> Create character
-              {issues.length > 0 ? ' anyway' : ''}
-            </button>
+            <Button variant="brand" size="lg" onClick={() => void create()}>
+              <Check size={18} aria-hidden />
+              <span>
+                Create character
+                {issues.length > 0 ? ' anyway' : ''}
+              </span>
+            </Button>
           </div>
         );
       }
@@ -1278,26 +1331,30 @@ export function Component() {
       {header}
 
       {continuing && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface px-3 py-2 text-sm text-ink-muted">
-          <History size={16} aria-hidden className="shrink-0" />
-          <span>
-            Continuing your unfinished character,{' '}
-            <strong className="text-ink">{draftSummary(doc)}</strong>
+        <p className="flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-sm text-ink-muted">
+          {/* The icon keeps to the first line while a long name wraps. */}
+          <History size={16} aria-hidden className="mt-0.5 shrink-0" />
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              Continuing your unfinished character,{' '}
+              <strong className="text-ink">{draftSummary(doc)}</strong>
+            </span>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              onClick={startOver}
+              className="font-semibold text-ink underline underline-offset-3"
+            >
+              Start over
+            </button>
           </span>
-          <span aria-hidden="true">·</span>
-          <button
-            type="button"
-            onClick={startOver}
-            className="font-semibold text-ink underline underline-offset-2"
-          >
-            Start over
-          </button>
         </p>
       )}
 
-      {/* Live summary bar — the "like a game" feedback loop */}
+      {/* Live summary bar: the "like a game" feedback loop. Choices still to
+          make are the guide's gold (DS-001), and jump to where they wait. */}
       {sheet !== null && doc.classes.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
+        <div className="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 rounded-control bg-surface px-3 py-2 text-caption text-ink-muted shadow-card tabular-nums ring-1 ring-line ring-inset">
           <span>
             HP <strong className="text-ink">{sheet.maxHp.value}</strong>
           </span>
@@ -1315,11 +1372,11 @@ export function Component() {
             <button
               type="button"
               onClick={() => navStep('choices')}
-              className="text-amber-300 underline decoration-dotted underline-offset-2"
+              className="-my-2 ml-auto inline-flex min-h-tap items-center gap-1 font-bold text-guide"
               aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: go to the Choices step`}
               title="Decisions like skills and languages are waiting on the Choices step"
             >
-              {sheet.pending.length} pending <span aria-hidden="true">→</span>
+              {sheet.pending.length} pending <ChevronRight size={16} aria-hidden />
             </button>
           )}
         </div>
@@ -1342,30 +1399,32 @@ export function Component() {
             focusRequest={undoFocus}
           />
         </div>
-        {/* Step navigation */}
-        <nav className="flex gap-2 border-t border-surface-2 bg-surface p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-          <button
-            type="button"
+        {/* Step navigation: a ghost Back beside the one primary Next (DS-001),
+            above the safe area. */}
+        <nav className="flex gap-2 border-line border-t bg-bg px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <Button
+            variant="ghost"
+            size="lg"
             disabled={stepIdx === 0}
             onClick={() => {
               const prev = STEPS[stepIdx - 1];
               if (prev !== undefined) navStep(prev);
             }}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
           >
-            <ArrowLeft size={16} /> Back
-          </button>
+            <ArrowLeft size={18} aria-hidden /> Back
+          </Button>
           {stepIdx < STEPS.length - 1 && (
-            <button
-              type="button"
+            <Button
+              variant="brand"
+              size="lg"
               onClick={() => {
                 const next = STEPS[stepIdx + 1];
                 if (next !== undefined) navStep(next);
               }}
-              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white"
+              className="flex-1"
             >
-              Next <ArrowRight size={16} />
-            </button>
+              Next <ArrowRight size={18} aria-hidden />
+            </Button>
           )}
         </nav>
       </div>

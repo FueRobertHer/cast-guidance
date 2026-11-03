@@ -19,6 +19,7 @@ import type {
   EffectOrigin,
 } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
+import { buttonClass } from '@/ui/Button';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 
@@ -100,7 +101,7 @@ function featOptionInfo(registry: EntityRegistry) {
             type="button"
             aria-label={`${o.label} details`}
             title="Full description"
-            className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-2 hover:text-ink"
+            className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
           >
             <Info size={16} />
           </button>
@@ -201,7 +202,7 @@ export function OriginChoices({
   );
 
   return (
-    <div className="mt-2 flex flex-col gap-2 border-t border-surface-2/40 pt-2">
+    <div className="mt-2 flex flex-col gap-2 border-line border-t pt-3">
       {pending.map((prompt) => (
         <div key={prompt.id} data-pending-choice="">
           {editor(prompt)}
@@ -215,20 +216,20 @@ export function OriginChoices({
         ) : (
           <div
             key={prompt.id}
-            className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/60 px-3 py-2 text-sm"
+            className="flex items-center justify-between gap-2 rounded-control bg-surface-raised py-1 pr-1 pl-3"
           >
             <div className="min-w-0">
               <div className="truncate">{prompt.label}</div>
-              <div className="truncate text-xs text-ink-muted">{selected.join(', ')}</div>
+              <div className="truncate text-caption text-ink-muted">{selected.join(', ')}</div>
             </div>
             <button
               type="button"
               aria-label={`Change ${prompt.label}`}
               title="Change this pick"
               onClick={() => setEditing(prompt.id)}
-              className="flex shrink-0 items-center gap-1 rounded border border-surface-2 px-2 py-1 text-xs text-ink-muted hover:text-ink"
+              className={`shrink-0 ${buttonClass({ variant: 'outline', size: 'sm' })}`}
             >
-              <RefreshCcw size={12} /> change
+              <RefreshCcw size={14} aria-hidden /> change
             </button>
           </div>
         ),

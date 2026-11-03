@@ -12,9 +12,9 @@ const TONE_ICON: Record<Tone, LucideIcon> = {
 };
 
 const TONE_CLASS: Record<Tone, string> = {
-  good: 'text-emerald-300',
+  good: 'text-heal',
   wait: 'text-ink-muted',
-  warn: 'text-amber-300',
+  warn: 'text-guide',
   off: 'text-ink-muted',
 };
 
@@ -36,7 +36,7 @@ export function Status({
     <span
       ref={ref}
       tabIndex={focusable ? -1 : undefined}
-      className={`inline-flex shrink-0 items-center gap-1 rounded text-xs font-semibold ${TONE_CLASS[tone]}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-chip text-label ${TONE_CLASS[tone]}`}
     >
       <Icon size={14} aria-hidden />
       {label}
