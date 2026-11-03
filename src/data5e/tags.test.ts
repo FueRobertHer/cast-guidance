@@ -96,6 +96,18 @@ describe('parseEntityRef', () => {
       display: 'a big boom',
     });
   });
+  it('takes the display text from args[2], not the last arg', () => {
+    expect(parseEntityRef(['Bard', 'PHB', 'College of Swords', 'Swords', 'XGE']).display).toBe(
+      'College of Swords',
+    );
+  });
+  it('honors a moved display arg, falling back to the name when it is absent', () => {
+    expect(parseEntityRef(['Rage', 'Barbarian', '', '1'], 5).display).toBe('Rage');
+    expect(parseEntityRef(['Rage', 'Barbarian', '', '1', '', 'raging'], 5).display).toBe('raging');
+    expect(
+      parseEntityRef(['undead', 'bestiary', 'type=undead', 'miscellaneous=!swarm'], 0),
+    ).toEqual({ name: 'undead', source: 'bestiary', display: 'undead' });
+  });
   it('empty source falls back to undefined, display still honored', () => {
     expect(parseEntityRef(['prone', '', 'knocked prone'])).toEqual({
       name: 'prone',

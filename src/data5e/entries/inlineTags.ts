@@ -51,6 +51,25 @@ export const PLAIN_REF_TAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Which arg holds a reference tag's display text, for the tags not laid out as
+ * `name|source|display`. 0 is a tag that leads with it and follows with
+ * targets, as `{@filter undead|bestiary|type=undead|miscellaneous=!swarm}`; the
+ * others put more parts before it, as `{@deity name|pantheon|source|display}`.
+ */
+export const DISPLAY_ARG: ReadonlyMap<string, number> = new Map([
+  ['filter', 0],
+  ['5etools', 0],
+  ['book', 0],
+  ['adventure', 0],
+  ['deity', 3],
+  ['card', 3],
+  ['subclass', 4],
+  ['quickref', 4],
+  ['classFeature', 5],
+  ['subclassFeature', 7],
+]);
+
+/**
  * Tags with their own case in the renderer's switch: dice, emphasis, notes and
  * links. A test renders each one and checks it differs from the unknown-tag
  * fallback, so a name here without a case (or a case missing from here) fails.

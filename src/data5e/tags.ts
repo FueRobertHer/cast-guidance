@@ -75,10 +75,15 @@ export interface EntityRefParts {
   display: string;
 }
 
-export function parseEntityRef(args: string[]): EntityRefParts {
+/**
+ * `displayAt` is which arg holds the display text, for tags not laid out as
+ * `name|source|displayText`. It is never simply the last arg: that is a level
+ * in `{@classFeature Rage|Barbarian||1}` and a filter in `{@filter ...}`.
+ */
+export function parseEntityRef(args: string[], displayAt = 2): EntityRefParts {
   const name = args[0] ?? '';
   const source = args[1] !== undefined && args[1] !== '' ? args[1] : undefined;
-  const last = args[args.length - 1];
-  const display = args.length >= 3 && last !== undefined && last !== '' ? last : name;
+  const shown = args[displayAt];
+  const display = shown !== undefined && shown !== '' ? shown : name;
   return { name, source, display };
 }
