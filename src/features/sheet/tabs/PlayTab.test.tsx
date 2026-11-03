@@ -2,9 +2,9 @@
 // FIX-003: the HP damage/heal controls apply an exact, deterministic amount and
 // roll exactly one concentration save per gesture. (The old single/double-tap
 // combo double-fired: a "double-tap −5" applied −6 and rolled up to three saves.)
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
@@ -637,5 +637,55 @@ describe('PlayTab hit point announcements (A11Y-002)', () => {
     await waitFor(() => expect(spoken()).toEqual([`7 of ${max} hit points`]), {
       timeout: HP_SETTLE_MS + 1000,
     });
+  });
+});
+
+describe('PlayTab turn tracker (DS-001 TurnTracker)', () => {
+  it('says Ready or Used in words, and keeps each name whatever its state', () => {
+    renderPlay((d) => {
+      d.play.turn = { action: true, bonus: false, reaction: false };
+    });
+    const action = screen.getByRole('button', { name: 'Action', pressed: true });
+    const bonus = screen.getByRole('button', { name: 'Bonus', pressed: false });
+    expect(action.textContent).toBe('ActionUsed');
+    expect(bonus.textContent).toBe('BonusReady');
+    // Used strikes the name, not the word that says so.
+    expect(within(action).getByText('Action').className).toContain('line-through');
+    expect(within(action).getByText('Used').className).not.toContain('line-through');
+  });
+});
+
+describe('PlayTab HP tip (DS-001 Hint)', () => {
+  const TIP = 'Tap the number to type an exact amount.';
+  // Other tests here tap the number, which dismisses the tip for the file.
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it('shows once, and stays dismissed on this device', () => {
+    const { start } = renderPlay();
+    expect(screen.getByText(TIP)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss tip' }));
+    expect(screen.queryByText(TIP)).toBeNull();
+    // Focus goes to the number the tip was about, not the page.
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: new RegExp(`^${start} / ${start}`) }),
+    );
+    cleanup();
+    renderPlay();
+    expect(screen.queryByText(TIP)).toBeNull();
+  });
+
+  it('goes for good once the number is tapped', () => {
+    const { start } = renderPlay();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${start} / ${start}`) }));
+    expect(screen.queryByText(TIP)).toBeNull();
+    cleanup();
+    renderPlay();
+    expect(screen.queryByText(TIP)).toBeNull();
+  });
+
+  it('no longer puts the old how-to line on the card', () => {
+    renderPlay();
+    expect(screen.queryByText(/tap ±1 or ±5/)).toBeNull();
   });
 });

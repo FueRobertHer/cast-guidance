@@ -18,8 +18,11 @@ export function SegmentedControl<T extends string>({
 }: {
   /** The group's accessible name ("Score method"). */
   label: string;
-  /** One or two words each. */
-  options: ReadonlyArray<{ value: T; label: string }>;
+  /**
+   * One or two words each. `name`, when the label is a short form ("Dis"),
+   * is the whole word a screen reader says; it must contain the label.
+   */
+  options: ReadonlyArray<{ value: T; label: string; name?: string }>;
   value: T;
   onChange: (value: T) => void;
   /** Stretch to the container's width, the segments sharing it equally. */
@@ -36,6 +39,7 @@ export function SegmentedControl<T extends string>({
         <button
           key={option.value}
           type="button"
+          aria-label={option.name}
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
           className={`min-h-9.5 rounded-lg px-3 text-label text-ink-muted transition-colors duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg ${block ? 'flex-1' : ''}`}

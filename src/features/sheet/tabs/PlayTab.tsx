@@ -17,6 +17,7 @@ import { Button, buttonClass } from '@/ui/Button';
 import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
+import { Tip, useTip } from '@/ui/Hint';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass } from '@/ui/surfaces';
@@ -178,6 +179,8 @@ export function Component() {
   }, [spendState]);
   // The cues' "Ignore once", for as long as the tab is open.
   const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
+  const hpTip = useTip('hp-exact');
+  const hpNumber = useRef<HTMLButtonElement>(null);
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   // Look a spell up by its stored printing; when that misses (blank/wrong source
@@ -485,9 +488,12 @@ export function Component() {
               "0 / 0" in two. Never below min-content, though: a floor that
               replaced it let a long total run into the heal pair. */}
           <button
+            ref={hpNumber}
             type="button"
             className="min-w-[max(3.25rem,min-content)] grow basis-0 text-center"
             onClick={async () => {
+              // Used once, the tip has said what it had to.
+              hpTip.dismiss();
               const n = await askNumber({
                 title: 'Set current HP',
                 initial: play.currentHp,
@@ -595,9 +601,22 @@ export function Component() {
               </div>
             );
           })()}
-        <p className="mt-1.5 text-center text-caption text-ink-muted">
-          tap ±1 or ±5 · tap the number to type an exact value
-        </p>
+        {/* How to type an amount is a first-use tip (DS-001 HitPoints), not
+            a line that stays on the card. */}
+        {hpTip.shown && (
+          <div className="mt-3">
+            {/* The dismiss button goes with it: focus moves to what the tip
+                was about rather than drop to the page. */}
+            <Tip
+              onDismiss={() => {
+                hpTip.dismiss();
+                hpNumber.current?.focus();
+              }}
+            >
+              Tap the number to type an exact amount.
+            </Tip>
+          </div>
+        )}
         {/* Wraps whole items onto a second line at 320px rather than
             breaking a hit die chip in two. */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
@@ -630,6 +649,7 @@ export function Component() {
                     d.play.hitDiceSpent[die] = spent + 1;
                     const r = roll(`1${die}${fmt(sheet.abilities.con.mod)}`, {
                       label: `Hit die (${die})`,
+                      kind: 'heal',
                     });
                     rollLogStore.getState().append(r);
                     applyHp(d.play, Math.max(0, r.total), maxHp.value);
@@ -920,10 +940,12 @@ export function Component() {
                 })
               }
               // Three equal slots, so all ink (DS-001 TurnTracker): ready is
-              // an outline, used fills and strikes the name.
-              className={`min-h-tap flex-1 rounded-control px-2 text-label transition-colors duration-120 ${
+              // an outline, used fills and strikes the name. Each says its
+              // state in words; the word is left out of the name, which a
+              // toggle keeps whatever its state (aria-pressed says it).
+              className={`flex min-h-15 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 text-label transition-colors duration-120 ${
                 used
-                  ? 'bg-surface-raised text-ink-muted line-through decoration-[1.5px]'
+                  ? 'bg-surface-raised text-ink-muted'
                   : 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised'
               }`}
               title={
@@ -932,7 +954,13 @@ export function Component() {
                   : `Tap when you use your ${label.toLowerCase()}`
               }
             >
-              {label}
+              <span className={used ? 'line-through decoration-[1.5px]' : undefined}>{label}</span>
+              <span
+                aria-hidden="true"
+                className="font-normal text-[0.6875rem] text-ink-muted leading-3.5"
+              >
+                {used ? 'Used' : 'Ready'}
+              </span>
             </button>
           );
         })}

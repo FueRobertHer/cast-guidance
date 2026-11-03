@@ -360,9 +360,7 @@ export function upcastEffectSummary(
   slotLevel: number,
 ): string | undefined {
   const rollExprs = (level: number) =>
-    spellRollActions(entity, { characterLevel, slotLevel: level })
-      .filter((a) => a.variant === 'damage' || a.variant === 'dice')
-      .map((a) => a.expr);
+    spellRollActions(entity, { characterLevel, slotLevel: level }).map((a) => a.expr);
   const atSlot = rollExprs(slotLevel);
   if (atSlot.length === 0) return undefined;
   const baseLevel = typeof entity?.level === 'number' ? entity.level : slotLevel;

@@ -31,15 +31,18 @@ const LINK = 'underline decoration-line-strong underline-offset-2 hover:decorati
  * One inline tag. `inline` is whether there are words around it, so a roll
  * chip in a sentence keeps the size of its line (WCAG 2.5.8 exempts a target
  * in a sentence) and one alone, in a table cell say, is a 24 px target.
+ * `heals` is whether its sentence says hit points are regained.
  */
 function TagView({
   tag,
   args,
   inline,
+  heals = false,
 }: {
   tag: string;
   args: string[];
   inline: boolean;
+  heals?: boolean;
 }): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {
@@ -50,7 +53,7 @@ function TagView({
           inline={inline}
           expr={body}
           display={args[1]}
-          variant={tag === 'damage' ? 'damage' : 'dice'}
+          variant={tag === 'damage' ? 'damage' : heals ? 'heal' : 'dice'}
         />
       );
     case 'scaledamage':
@@ -61,7 +64,7 @@ function TagView({
         <RollChip
           inline={inline}
           expr={add}
-          variant="damage"
+          variant={tag === 'scaledice' && heals ? 'heal' : 'damage'}
           label={`scaling: +${add} per level`}
         />
       );
@@ -177,18 +180,34 @@ function TagView({
   }
 }
 
+/**
+ * Whether the dice between `before` and `after` are a heal, by their
+ * sentence: "healing" ahead of them ("The healing increases by
+ * {@scaledice 1d8|1-9|1d8}"), or "regain" ahead of them with hit points
+ * either side ("You regain {@dice 2d4 + 2} hit points"). A wand that "regains
+ * {@dice 1d6 + 1} expended charges" is not a heal.
+ */
+function healsBetween(before: string, after: string): boolean {
+  const lead = before.match(/[^.]*$/)?.[0] ?? '';
+  if (/\bhealing\b/i.test(lead)) return true;
+  const sentence = `${lead}${after.split('.')[0] ?? ''}`;
+  return /\bregains?\b/i.test(lead) && /\bhit points?\b/i.test(sentence);
+}
+
 export function InlineText({ text }: { text: string }): ReactNode {
   const tokens = tokenizeEntryText(text);
   const prose = tokens.some((t) => t.kind === 'text' && t.text.trim() !== '');
   return (
     <>
-      {tokens.map((t, i) =>
-        t.kind === 'text' ? (
-          <Fragment key={i}>{t.text}</Fragment>
-        ) : (
-          <TagView key={i} tag={t.tag} args={t.args} inline={prose} />
-        ),
-      )}
+      {tokens.map((t, i) => {
+        if (t.kind === 'text') return <Fragment key={i}>{t.text}</Fragment>;
+        const before = tokens[i - 1];
+        const after = tokens[i + 1];
+        const heals =
+          before?.kind === 'text' &&
+          healsBetween(before.text, after?.kind === 'text' ? after.text : '');
+        return <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} />;
+      })}
     </>
   );
 }

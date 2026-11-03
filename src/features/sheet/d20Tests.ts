@@ -156,7 +156,7 @@ export function rollD20Test(
   const used = { ...kept, advantage: [...kept.advantage, ...advantageFrom] };
   const resolution = resolveD20(currentAdvantage(), used);
   const full = resolution.penalty !== 0 ? `${expr}${resolution.penalty}` : expr;
-  const result = roll(full, { label, advantage: resolution.advantage });
+  const result = roll(full, { label, advantage: resolution.advantage, kind: 'd20' });
   const cue = [
     ignored && conditionsApply ? 'Conditions ignored for this roll' : '',
     rollCue(used, resolution),

@@ -332,8 +332,10 @@ export function Component() {
       c.levels += 1;
       if ((d.hpMethod ?? 'average') === 'rolled') {
         const faces = hdFacesOf(c.ref);
+        // Hit points gained, so a heal (DS-001), not the damage red.
         const r = roll(`1d${faces}`, {
           label: `${c.ref.name} level ${c.levels} hit points (d${faces})`,
+          kind: 'heal',
         });
         rollLogStore.getState().append(r);
         c.hp = [...c.hp, r.total];
@@ -657,6 +659,7 @@ export function Component() {
                           onClick={() => {
                             const r = roll(`1d${faces}`, {
                               label: `${entry.ref.name} level ${i + 1} hit points (d${faces})`,
+                              kind: 'heal',
                             });
                             rollLogStore.getState().append(r);
                             update((d) => {

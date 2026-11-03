@@ -429,12 +429,10 @@ export function Component() {
           ),
         )}
       </nav>
-      {rollsHere && (
-        <>
-          <AdvToggle />
-          <DiceTray />
-        </>
-      )}
+      {rollsHere && <AdvToggle />}
+      {/* On every page of the sheet, so a tap on the roll toast can open its
+          history wherever the roll was made; its button only in the dock. */}
+      <DiceTray dock={rollsHere} />
     </div>
   );
 }

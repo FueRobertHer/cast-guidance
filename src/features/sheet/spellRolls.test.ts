@@ -42,7 +42,20 @@ describe('spellRollActions', () => {
     };
     expect(
       spellRollActions(cureWounds, { characterLevel: 5, slotLevel: 3, abilityModifier: 3 }),
-    ).toEqual([{ expr: '3d8+3', label: 'Cure Wounds healing', variant: 'dice' }]);
+    ).toEqual([{ expr: '3d8+3', label: 'Cure Wounds healing', variant: 'heal' }]);
+  });
+
+  it('names and rolls damage that heals its caster as damage', () => {
+    const vampiricTouch: Entity = {
+      name: 'Vampiric Touch',
+      level: 3,
+      entries: [
+        'On a hit, the target takes {@damage 3d6} necrotic damage, and you regain hit points equal to half the amount of necrotic damage dealt.',
+      ],
+    };
+    expect(spellRollActions(vampiricTouch, { characterLevel: 5 })).toEqual([
+      { expr: '3d6', label: 'Vampiric Touch necrotic damage', variant: 'damage' },
+    ]);
   });
 
   it('keeps distinct rolls for spells with multiple effects', () => {
