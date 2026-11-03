@@ -1,4 +1,4 @@
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Sparkle, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -13,13 +13,28 @@ import {
 import { sourceName } from '@/data5e/sourceNames';
 import type { EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
+import { Button, buttonClass } from '@/ui/Button';
+import { chipClass } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { Sheet } from '@/ui/sheet';
+import { listClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
+
+/**
+ * An offer to show what the source settings hide, or to hide it again: an
+ * outlined control in `line-strong`, dashed because it changes the list
+ * rather than adding anything.
+ */
+const OFFER =
+  'mb-1 min-h-tap rounded-control border border-line-strong border-dashed px-3 py-2 text-left text-caption text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-ink';
+
+/** A section heading inside a screen, as Settings has them. */
+const H2 = 'px-1 text-heading';
 
 /**
  * Where Add item puts focus as it opens (A11Y-003). The sheet's first control
@@ -88,34 +103,31 @@ export function AddItemDrawer({
       }}
     >
       <Sheet.Trigger asChild>
-        <button
-          type="button"
-          className="flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-semibold"
-        >
-          <Plus size={16} /> Add item
+        <button type="button" className={buttonClass({ variant: 'secondary' })}>
+          <Plus size={18} aria-hidden="true" /> Add item
         </button>
       </Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content
-          onOpenAutoFocus={focusSheetOnTouch}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
-        >
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-2 text-base font-semibold">Add item</Sheet.Title>
-          <label className="mb-2 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2">
-            <Search size={16} className="shrink-0 text-ink-muted" />
+        <Sheet.Scrim />
+        <Sheet.Panel onOpenAutoFocus={focusSheetOnTouch} className="flex max-h-[80dvh] flex-col">
+          <Sheet.Heading>Add item</Sheet.Heading>
+          <div className="relative mb-2">
+            <Search
+              size={20}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
+            />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               aria-label="Search items"
               placeholder="Search items…"
-              className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
+              className={`${fieldClass} pl-10.5`}
             />
-          </label>
+          </div>
           {/* role=status so the shift from "downloading" to a result count, and
               from a count to "no match", is announced rather than silent. */}
-          <div role="status" className="px-1 text-sm text-ink-muted empty:hidden">
+          <div role="status" className="px-1 text-body text-ink-muted empty:hidden">
             {!ready && (
               <div className="flex flex-col items-start gap-1 py-3">
                 <p>
@@ -131,7 +143,7 @@ export function AddItemDrawer({
                   <button
                     type="button"
                     onClick={loadItems}
-                    className="-mx-2 rounded px-2 py-2 font-semibold text-ink underline"
+                    className="-mx-2 min-h-tap rounded-control px-2 text-body-strong text-ink underline underline-offset-3 hover:bg-surface-raised"
                   >
                     Try again
                   </button>
@@ -146,20 +158,12 @@ export function AddItemDrawer({
             )}
           </div>
           {sourceHiddenCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHiddenSources(true)}
-              className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
-            >
+            <button type="button" onClick={() => setShowHiddenSources(true)} className={OFFER}>
               {hiddenSourcesLabel(sourceHiddenCount, scope)}
             </button>
           )}
           {showHiddenSources && (
-            <button
-              type="button"
-              onClick={() => setShowHiddenSources(false)}
-              className="mb-1 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted"
-            >
+            <button type="button" onClick={() => setShowHiddenSources(false)} className={OFFER}>
               {backToSourcesLabel(scope)}
             </button>
           )}
@@ -177,7 +181,7 @@ export function AddItemDrawer({
                       attuned: false,
                     })
                   }
-                  className="flex w-full items-center justify-between border-b border-surface-2/40 px-1 py-2.5 text-left text-sm last:border-b-0"
+                  className="flex min-h-tap w-full items-center justify-between gap-2 border-line border-b px-1 py-2 text-left text-body transition-colors duration-120 last:border-b-0 hover:bg-surface-raised"
                 >
                   <span className="truncate">{nameOf(e)}</span>
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -185,14 +189,14 @@ export function AddItemDrawer({
                     {scope === 'character' && !policyAllows(policy, sourceOf(e)) && (
                       <OutsideSourcesChip />
                     )}
-                    <span className="text-xs text-ink-muted">{sourceOf(e)}</span>
+                    <span className="text-caption text-ink-muted">{sourceOf(e)}</span>
                   </span>
                 </button>
               </Sheet.Close>
             ))}
           </div>
           <form
-            className="mt-2 flex gap-1.5 border-t border-surface-2 pt-3"
+            className="mt-2 flex gap-2 border-line border-t pt-3"
             onSubmit={(e) => {
               e.preventDefault();
               if (customName.trim() === '') return;
@@ -211,16 +215,13 @@ export function AddItemDrawer({
               onChange={(e) => setCustomName(e.target.value)}
               aria-label="Custom item name"
               placeholder="Or add a custom item…"
-              className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
+              className={`${fieldClass} min-w-0 flex-1`}
             />
-            <button
-              type="submit"
-              className="rounded-lg bg-accent-fill px-3 py-2 text-sm font-semibold text-white"
-            >
+            <Button type="submit" variant="brand">
               Add
-            </button>
+            </Button>
           </form>
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );
@@ -228,10 +229,18 @@ export function AddItemDrawer({
 
 const COINS = ['pp', 'gp', 'ep', 'sp', 'cp'] as const;
 
+/**
+ * A quantity step: a 28px `surface-raised` square that shows, inside a 32 by
+ * 44 target (A11Y-002), as a pip is. The target's edges space the two apart.
+ */
+const STEP = 'group inline-flex h-tap w-8 items-center justify-center';
+const STEP_FACE =
+  'flex size-7 items-center justify-center rounded-control bg-surface-raised text-ink transition-colors duration-120 group-hover:bg-surface-hover';
+
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
-  if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
+  if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   /**
    * The compendium entry behind a carried item, if there is one. Custom items
@@ -265,11 +274,10 @@ export function Component() {
 
   // Each control names the item it acts on: the rows repeat the same glyphs.
   // The toggles keep a stable verb, so aria-pressed alone says the state.
+  // At a narrow width the trailing controls wrap under the name as one group
+  // rather than squeeze it to a few letters.
   const row = (entry: EquipmentEntry) => (
-    <div
-      key={entry.id}
-      className="flex items-center gap-2 border-b border-surface-2/40 px-3 py-2.5 text-sm last:border-b-0"
-    >
+    <div key={entry.id} className="flex flex-wrap items-center gap-x-2 py-1 pr-1 pl-2.5 text-body">
       <button
         type="button"
         aria-label={`Equip ${displayName(entry)}`}
@@ -280,13 +288,11 @@ export function Component() {
             if (it !== undefined) it.equipped = !it.equipped;
           })
         }
-        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-          entry.equipped ? 'border-accent text-accent' : 'border-surface-2 text-ink-muted'
-        }`}
+        className={`shrink-0 ${chipClass('outline')}`}
       >
         {entry.equipped ? 'equipped' : 'equip'}
       </button>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-24 flex-1">
         {(() => {
           const label = `${displayName(entry)}${entry.qty > 1 ? ` ×${entry.qty}` : ''}`;
           const found = resolve(entry);
@@ -302,7 +308,7 @@ export function Component() {
                 <button
                   type="button"
                   title="What does this do?"
-                  className="block w-full truncate text-left underline decoration-surface-2 decoration-dotted underline-offset-4"
+                  className="block min-h-6 w-full truncate text-left underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
                 >
                   {label}
                 </button>
@@ -311,25 +317,30 @@ export function Component() {
           );
         })()}
         {entry.custom?.note !== undefined && (
-          <div className="truncate text-xs text-ink-muted">{entry.custom.note}</div>
+          <div className="truncate text-caption text-ink-muted">{entry.custom.note}</div>
         )}
       </div>
-      <button
-        type="button"
-        aria-label={`Attune ${displayName(entry)}`}
-        aria-pressed={entry.attuned}
-        title="Attune"
-        onClick={() =>
-          update((d) => {
-            const it = d.equipment.find((x) => x.id === entry.id);
-            if (it !== undefined) it.attuned = !it.attuned;
-          })
-        }
-        className={`shrink-0 text-xs ${entry.attuned ? 'text-amber-300' : 'text-ink-muted/50'}`}
-      >
-        <span aria-hidden="true">✦</span>
-      </button>
-      <div className="flex shrink-0 items-center gap-0.5 text-xs text-ink-muted">
+      <span className="ml-auto flex shrink-0 items-center">
+        <button
+          type="button"
+          aria-label={`Attune ${displayName(entry)}`}
+          aria-pressed={entry.attuned}
+          title="Attune"
+          onClick={() =>
+            update((d) => {
+              const it = d.equipment.find((x) => x.id === entry.id);
+              if (it !== undefined) it.attuned = !it.attuned;
+            })
+          }
+          // Attunement is a lasting state, as Inspiration is: `guide` and a
+          // filled spark when on, an outline in `ink-muted` when off, so the
+          // shape says it as well as the colour.
+          className={`inline-flex h-tap w-8 items-center justify-center rounded-control transition-colors duration-120 hover:bg-surface-raised ${
+            entry.attuned ? 'text-guide' : 'text-ink-muted'
+          }`}
+        >
+          <Sparkle size={16} aria-hidden="true" fill={entry.attuned ? 'currentColor' : 'none'} />
+        </button>
         <button
           type="button"
           aria-label={`Decrease ${displayName(entry)} quantity`}
@@ -339,9 +350,11 @@ export function Component() {
               if (it !== undefined) it.qty = Math.max(1, it.qty - 1);
             })
           }
-          className="rounded bg-surface-2 px-1.5 py-0.5"
+          className={STEP}
         >
-          <span aria-hidden="true">−</span>
+          <span aria-hidden="true" className={STEP_FACE}>
+            −
+          </span>
         </button>
         <button
           type="button"
@@ -352,47 +365,54 @@ export function Component() {
               if (it !== undefined) it.qty += 1;
             })
           }
-          className="rounded bg-surface-2 px-1.5 py-0.5"
+          className={STEP}
         >
-          <span aria-hidden="true">+</span>
+          <span aria-hidden="true" className={STEP_FACE}>
+            +
+          </span>
         </button>
-      </div>
-      <button
-        type="button"
-        aria-label={`Remove ${displayName(entry)}`}
-        title="Remove"
-        onClick={() =>
-          update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== entry.id)))
-        }
-        className="shrink-0 text-ink-muted hover:text-accent"
-      >
-        <Trash2 size={14} />
-      </button>
+        <button
+          type="button"
+          aria-label={`Remove ${displayName(entry)}`}
+          title="Remove"
+          onClick={() =>
+            update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== entry.id)))
+          }
+          className="inline-flex h-tap w-8 items-center justify-center rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-danger"
+        >
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      </span>
     </div>
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="flex flex-col gap-1.5">
-        <h2 className="flex items-baseline justify-between text-sm font-semibold text-ink-muted">
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-2">
+        <h2 className={`flex items-baseline justify-between gap-2 ${H2}`}>
           Equipped
-          <span className={`text-xs ${attunedCount > 3 ? 'text-accent' : ''}`}>
+          {/* Over three is allowed and flagged, in the guide's gold. */}
+          <span
+            className={`text-caption tabular-nums ${
+              attunedCount > 3 ? 'font-semibold text-guide' : 'font-normal text-ink-muted'
+            }`}
+          >
             attunement {attunedCount}/3
           </span>
         </h2>
-        <div className="flex flex-col rounded-lg bg-surface">
+        <div className={listClass}>
           {equipped.length === 0 && (
-            <p className="px-3 py-2.5 text-sm text-ink-muted">Nothing equipped.</p>
+            <p className="px-4 py-3 text-body text-ink-muted">Nothing equipped.</p>
           )}
           {equipped.map(row)}
         </div>
       </section>
 
-      <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">Backpack</h2>
-        <div className="flex flex-col rounded-lg bg-surface">
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Backpack</h2>
+        <div className={listClass}>
           {backpack.length === 0 && (
-            <p className="px-3 py-2.5 text-sm text-ink-muted">Backpack is empty.</p>
+            <p className="px-4 py-3 text-body text-ink-muted">Backpack is empty.</p>
           )}
           {backpack.map(row)}
         </div>
@@ -403,15 +423,15 @@ export function Component() {
         onAdd={(entry) => update((d) => void d.equipment.push(entry))}
       />
 
-      <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">Currency</h2>
-        <div className="grid grid-cols-5 gap-1.5">
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Currency</h2>
+        <div className="grid grid-cols-5 gap-2">
           {COINS.map((coin) => (
             <label
               key={coin}
-              className="flex flex-col items-center gap-1 rounded-lg bg-surface p-2"
+              className="flex flex-col items-center gap-1 rounded-control bg-surface px-1 pt-2 pb-1 shadow-card ring-1 ring-line ring-inset"
             >
-              <span className="text-[10px] font-semibold uppercase text-ink-muted">{coin}</span>
+              <span className="text-ink-muted text-overline uppercase">{coin}</span>
               <input
                 inputMode="numeric"
                 value={doc.play.currency[coin]}
@@ -420,7 +440,7 @@ export function Component() {
                   if (!Number.isNaN(n))
                     update((d) => void (d.play.currency[coin] = Math.max(0, n)));
                 }}
-                className="w-full bg-transparent text-center text-sm font-semibold outline-none"
+                className="h-8 w-full rounded-chip bg-transparent text-center font-semibold tabular-nums hover:bg-surface-raised"
               />
             </label>
           ))}

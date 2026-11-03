@@ -87,7 +87,9 @@ export function CastResourcePicker({
       // The accessible name is unreachable with a mouse, and "L3 SP" explains
       // itself to nobody, so the same sentence is the tooltip.
       title={`Casting with ${castResourceLabel(resource).toLowerCase()}. Press to change.`}
-      className="shrink-0 rounded border border-surface-2 px-1.5 py-0.5 text-xs font-semibold text-ink-muted"
+      // A plain roll chip's shape (DS-001), the size of the chips beside it:
+      // it names a choice and rolls nothing, so it takes no roll colour.
+      className="inline-flex h-8.5 min-w-8.5 shrink-0 items-center justify-center rounded-chip px-2 text-dice text-ink tabular-nums ring-1 ring-line-strong ring-inset transition-colors duration-120 hover:bg-surface-raised"
     >
       {castResourceChipLabel(resource)}
     </button>
