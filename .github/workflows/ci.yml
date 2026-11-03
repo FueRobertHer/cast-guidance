@@ -4,8 +4,12 @@ name: CI
 # typecheck, unit tests with coverage thresholds, a production/PWA build, a
 # bundle budget, and a third-party notices check. Coverage floors live in
 # vite.config.ts and byte budgets in scripts/bundle-budget.json; `bun run ci`
-# runs the same gates locally. The `e2e` job runs the browser suite
-# (`bun run e2e:ci` locally).
+# runs the same gates locally. The `e2e` jobs run the browser suite, one
+# Playwright project each (`bun run e2e:ci` runs them all locally).
+#
+# Every job starts at once, so a run takes as long as its slowest job: the
+# unit tests here, or the slowest e2e project. That is why the unit tests have
+# a job of their own and the browser suite is split across four.
 on:
   push:
     branches: [main]
@@ -20,7 +24,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,6 +46,62 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Production / PWA build
+        run: bun run build
+
+      - name: Bundle budget
+        # Fails when any metric in scripts/bundle-budget.json is exceeded, or
+        # when dist/ cannot be measured. Also writes its table to the summary.
+        run: bun run bundle:budget
+
+      - name: Third-party notices are current
+        # Regenerates THIRD_PARTY_NOTICES.md from what the build ships and
+        # fails when the committed file differs, or when a shipped package has
+        # no license text or a license outside the allowlist. The fix is
+        # `bun run build && bun run notices`. It also fails when dist/.vite/
+        # exists: the build keeps its license records in node_modules/.cache
+        # so no deploy serves them.
+        run: bun run notices:check
+
+      - name: The e2e jobs cover every test
+        # Fails when the suite holds a test that none of the e2e matrix's
+        # projects runs, such as a project added to playwright.config.ts but
+        # not to the matrix. Keep this list in step with the matrix. Only the
+        # list reporter: the CI ones would write reports for a run that is not.
+        run: |
+          total() { bun run e2e -- --list --reporter=list "$@" | grep '^Total:'; }
+          all=$(total)
+          covered=$(total --project=axe --project=a11y --project=flows --project=offline-routes)
+          echo "Whole suite: $all"
+          echo "e2e matrix:  $covered"
+          if [ "$all" != "$covered" ]; then
+            echo "::error file=.github/workflows/ci.yml::the e2e matrix runs '$covered' of '$all'; add the missing project to the matrix and to this list"
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+          if-no-files-found: warn
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
 
       - name: Unit tests + coverage gate
         # Fails when any global coverage metric drops under its threshold.
@@ -66,38 +126,25 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Production / PWA build
-        run: bun run build
-
-      - name: Bundle budget
-        # Fails when any metric in scripts/bundle-budget.json is exceeded, or
-        # when dist/ cannot be measured. Also writes its table to the summary.
-        run: bun run bundle:budget
-
-      - name: Third-party notices are current
-        # Regenerates THIRD_PARTY_NOTICES.md from what the build ships and
-        # fails when the committed file differs, or when a shipped package has
-        # no license text or a license outside the allowlist. The fix is
-        # `bun run build && bun run notices`. It also fails when dist/.vite/
-        # exists: the build keeps its license records in node_modules/.cache
-        # so no deploy serves them.
-        run: bun run notices:check
-
-      - name: Upload build artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 7
-          if-no-files-found: warn
-
   e2e:
     # Browser E2E against the production build, in Chromium (see
-    # e2e/README.md). Runs beside `build`, not after it: one extra build buys
-    # feedback that does not wait on the coverage run.
+    # e2e/README.md), one Playwright project per job. Each job builds dist/
+    # itself rather than waiting for `checks` to: the build is quicker than
+    # the wait.
+    name: e2e (${{ matrix.project }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # A red project does not cancel the others, so one run shows every
+      # failure.
+      fail-fast: false
+      matrix:
+        # Every project in playwright.config.ts but `cache-levels`, which
+        # `offline-routes` runs first as its dependency. The `checks` job fails
+        # when a test falls outside these. Projects rather than `--shard`: a
+        # sharded run turns off the axe reporter's stale-baseline check (see
+        # e2e/a11y/reporter.ts), and every shard would build the cache levels.
+        project: [axe, a11y, flows, offline-routes]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -130,16 +177,18 @@ jobs:
         run: bun run build
 
       - name: E2E
-        run: bun run e2e
+        run: bun run e2e -- --project=${{ matrix.project }}
         env:
           CI: 'true'
 
       - name: E2E summary
         if: always()
+        env:
+          PROJECT: ${{ matrix.project }}
         run: |
           report=test-results/e2e.json
           {
-            echo "### E2E"
+            echo "### E2E: $PROJECT"
             echo ""
             if [ -f "$report" ] && jq -e . "$report" > /dev/null 2>&1; then
               echo "| Passed | Failed | Flaky | Skipped | Duration |"
@@ -161,14 +210,17 @@ jobs:
             fi
             # The axe gate's own table (e2e/a11y/reporter.ts): regressions,
             # improvements to bank in the baseline, and what it still allows.
-            echo ""
-            a11y=test-results/a11y-summary.md
-            if [ -f "$a11y" ]; then
-              cat "$a11y"
-            else
-              echo "### Accessibility (axe)"
+            # Only the axe project scans, so only its job has one.
+            if [ "$PROJECT" = axe ]; then
               echo ""
-              echo "_No axe summary: the a11y specs did not run._"
+              a11y=test-results/a11y-summary.md
+              if [ -f "$a11y" ]; then
+                cat "$a11y"
+              else
+                echo "### Accessibility (axe)"
+                echo ""
+                echo "_No axe summary: the a11y specs did not run._"
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -176,7 +228,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.project }}
           path: |
             playwright-report
             test-results

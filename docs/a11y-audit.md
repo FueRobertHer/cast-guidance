@@ -224,7 +224,7 @@ every selector would be a false change.
   passed in an un-narrowed run, when they are pruned. Commit the diff with the reason. A rule
   kept on purpose can carry a `note` (an issue link), which updates preserve.
   An update is refused when `CI` is set: CI only checks the baseline.
-- **CI:** the `e2e` job's step summary carries the axe table (regressions,
+- **CI:** the `e2e (axe)` job's step summary carries the axe table (regressions,
   improvements, what the baseline still allows) under the E2E counts.
 
 The first run found 14 serious nodes across 9 states. Unmasking the drawers

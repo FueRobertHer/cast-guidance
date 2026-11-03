@@ -61,7 +61,7 @@ failed install), the character lifecycle and its save flushes, import and
 export, and data installs (failed, interrupted and retried, updates and their
 rollback). The server copies `vercel.json`'s headers and rewrites, so the suite
 runs under the enforced CSP, and any console error or CSP violation fails a
-test. CI runs it as the separate `e2e` job. Install the pinned browser once
+test. CI runs it as separate `e2e` jobs, one per Playwright project. Install the pinned browser once
 with `bunx playwright install chromium`; see [`e2e/README.md`](e2e/README.md)
 for how the harness works, debugging, and writing specs.
 

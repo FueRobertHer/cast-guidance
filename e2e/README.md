@@ -9,6 +9,7 @@ bun run e2e            # run every spec
 bun run e2e:ci         # build, then run every spec
 bun run e2e -- e2e/specs/sw-update.spec.ts   # one file
 bun run e2e -- -g "offline"                  # by title
+bun run e2e -- --project=flows               # one project: flows, axe, a11y or offline-routes
 bun run e2e -- --headed --workers=1          # watch it
 bun run e2e -- --debug                       # step through with the inspector
 bun run e2e:a11y                             # the accessibility specs only (axe, keyboard, layout, motion)
@@ -16,8 +17,14 @@ bun run e2e:a11y:update                      # rewrite the axe baseline from a r
 ```
 
 A failing test keeps a trace in `test-results/e2e/`; open it with
-`bunx playwright show-trace <path>/trace.zip`. In CI the `e2e` job uploads
-`playwright-report/` and `test-results/` as the `e2e-report` artifact.
+`bunx playwright show-trace <path>/trace.zip`.
+
+CI runs the suite as four jobs at once, one per Playwright project: `flows`
+(`specs/`), `axe` (`a11y/axe.spec.ts`), `a11y` (the other accessibility specs)
+and `offline-routes` (the route matrix, after its `cache-levels` setup). Each
+job uploads its `playwright-report/` and `test-results/` as the
+`e2e-report-<project>` artifact. A new project needs an entry in the `e2e`
+matrix in `.github/workflows/ci.yml`; the `checks` job fails until it has one.
 
 ## Browsers
 
@@ -167,7 +174,7 @@ its counts will move between runs:
 `gotoRosterSettled` (data install done), `skipOfflineReadyNotice` (before the
 first navigation), the overlay visible and `animationsSettled`. The reporter
 (`a11y/reporter.ts`) writes `test-results/a11y-summary.md`, which CI puts in
-the `e2e` job's step summary. `a11y/baseline.test.ts` (a Vitest unit test, run
+the `e2e (axe)` job's step summary. `a11y/baseline.test.ts` (a Vitest unit test, run
 by `bun run test`) covers the policy. The record of results, decisions and the
 manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 
