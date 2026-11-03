@@ -283,6 +283,11 @@ describe('isNarrowedRun', () => {
     expect(isNarrowedRun({ ...plain, argv: [...plain.argv, 'e2e/a11y/axe.spec.ts'] })).toBe(false);
   });
 
+  it('treats a run of one project as complete, as the e2e (axe) CI job is', () => {
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, '--project=axe'] })).toBe(false);
+    expect(isNarrowedRun({ ...plain, argv: [...plain.argv, '--project', 'axe'] })).toBe(false);
+  });
+
   it('sees a grep on the command line, which the config does not show', () => {
     for (const flag of [['-g', 'roster'], ['--grep=roster'], ['-groster'], ['-G', 'x']]) {
       expect(isNarrowedRun({ ...plain, argv: [...plain.argv, ...flag] }), flag.join(' ')).toBe(

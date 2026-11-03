@@ -19,6 +19,9 @@ const BROWSER = {
 /** The route matrix, which runs in its own project after the cache levels are built. */
 const OFFLINE_ROUTES = 'specs/offline-routes.spec.ts';
 
+/** The axe gate, the one spec that scans the states in the axe baseline. */
+const AXE = 'a11y/axe.spec.ts';
+
 /**
  * Browser E2E against the production build in `dist/` (run `bun run build`
  * first, or `bun run e2e:ci`). There is no `webServer`: each worker starts its
@@ -30,8 +33,6 @@ const OFFLINE_ROUTES = 'specs/offline-routes.spec.ts';
  */
 export default defineConfig({
   testDir: './e2e',
-  // The flows in specs/, and the accessibility gate in a11y/ (A11Y-003).
-  testMatch: ['specs/**/*.spec.ts', 'a11y/**/*.spec.ts'],
   outputDir: './test-results/e2e',
   // Traces, screenshots and persistent profiles are kept for failures only.
   preserveOutput: 'failures-only',
@@ -60,10 +61,27 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
   },
+  // The flows in specs/, and the accessibility gate in a11y/ (A11Y-003), split
+  // so CI can run each project in a job of its own (the `e2e` matrix in
+  // .github/workflows/ci.yml): a project added here needs a matrix entry too.
+  // Each file belongs to one project, so a file argument runs it as before.
   projects: [
     {
-      name: 'chromium',
+      name: 'flows',
+      testMatch: 'specs/**/*.spec.ts',
       testIgnore: OFFLINE_ROUTES,
+      use: BROWSER,
+    },
+    // axe has a project of its own: it takes as long as the rest of a11y/.
+    {
+      name: 'axe',
+      testMatch: AXE,
+      use: BROWSER,
+    },
+    {
+      name: 'a11y',
+      testMatch: 'a11y/**/*.spec.ts',
+      testIgnore: AXE,
       use: BROWSER,
     },
     // The offline route matrix (PWA-001): one profile per cache level, built
