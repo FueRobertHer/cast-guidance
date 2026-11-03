@@ -2,6 +2,7 @@ import { devices, type Locator, type Page } from '@playwright/test';
 import { casterFile } from '../fixtures/caster.ts';
 import { jsonFile } from '../fixtures/characterFile.ts';
 import { MIRROR_PATHS, NEXT_TAG, PINNED_TAG, withNextRelease } from '../fixtures/mirror.ts';
+import { pickOneClericFile } from '../fixtures/pickOneCleric.ts';
 import {
   animationsSettled,
   answerImportPreview,
@@ -298,10 +299,26 @@ test.describe('axe: pages and overlays', () => {
     const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Play');
+    // The HP card's one-time tip, shown until it is dismissed or the number
+    // it explains is tapped.
+    await expect(page.getByText('Tap the number to type an exact amount.')).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-play-hp-tip');
+
     await page.getByRole('button', { name: 'Dice tray' }).click();
     const dice = page.getByRole('dialog', { name: 'Dice' });
     await opened(page, dice);
     await scanState(page, 'dice-tray');
+    // Two rolls, then the toast of the last opens the tray on History: every
+    // roll, each with its remove button, and clear all.
+    await dice.getByRole('button', { name: 'd20', exact: true }).click();
+    await dice.getByRole('button', { name: 'd8', exact: true }).click();
+    await closeWithEscape(page, dice);
+    await page.getByRole('button', { name: /^d8: \d+\. .*Open roll history$/ }).click();
+    await opened(page, dice);
+    await expect(dice.getByRole('button', { name: 'History', pressed: true })).toBeVisible();
+    await expect(dice.getByRole('button', { name: /^Remove d20 roll/ })).toBeVisible();
+    await scanState(page, 'dice-tray-history');
     await closeWithEscape(page, dice);
 
     const history = await openHistory(page);
@@ -323,6 +340,31 @@ test.describe('axe: pages and overlays', () => {
     const info = page.getByRole('dialog', { name: 'Fighter' });
     await opened(page, info);
     await scanState(page, 'entity-info-sheet');
+    await closeWithEscape(page, info);
+  });
+
+  test("Build's picker for a pick-one class feature, and a branch's rules text", async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    const blank = await getCharacter(page, await createBlankCharacter(page));
+    if (blank === undefined) throw new Error('The blank character was not stored');
+    const id = 'axe-pick-one';
+    const { file, previewTitle } = pickOneClericFile(blank, id, 'Oren Vale');
+    await gotoRoster(page);
+    await importCharacterFile(page, file);
+    await answerImportPreview(page, previewTitle);
+
+    await gotoSheetTab(page, id, 'Build');
+    const picker = page.getByRole('group', { name: 'Level 7: Blessed Strikes' });
+    await expect(picker.getByRole('button', { name: /^Divine Strike Once/ })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'build-feature-choice');
+
+    await picker.getByRole('button', { name: 'Divine Strike details' }).click();
+    const info = page.getByRole('dialog', { name: 'Divine Strike' });
+    await opened(page, info);
+    await scanState(page, 'feature-option-info-sheet');
     await closeWithEscape(page, info);
   });
 

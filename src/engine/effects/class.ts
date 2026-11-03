@@ -358,6 +358,38 @@ export function parseSubclassFeatureRef(
   };
 }
 
+/** A `refClassFeature` / `refSubclassFeature` node, by its ref string. */
+interface NestedRef {
+  kind: 'class' | 'subclass';
+  raw: string;
+}
+
+/** One way to take a pick-one feature: its name and the features it grants. */
+interface PickBranch {
+  name: string;
+  refs: NestedRef[];
+  /** A branch that groups several refs under a heading keeps that heading's text. */
+  entries?: unknown;
+}
+
+/** A pick-one list inside a feature: take `count` of the branches. */
+interface PickGroup {
+  count: number;
+  branches: PickBranch[];
+}
+
+function asNestedRef(o: Record<string, unknown>): NestedRef | undefined {
+  if (o.type === 'refClassFeature' && typeof o.classFeature === 'string') {
+    return { kind: 'class', raw: o.classFeature };
+  }
+  if (o.type === 'refSubclassFeature' && typeof o.subclassFeature === 'string') {
+    return { kind: 'subclass', raw: o.subclassFeature };
+  }
+  return undefined;
+}
+
+const refName = (ref: NestedRef) => ref.raw.split('|')[0] ?? ref.raw;
+
 /**
  * Feature refs nested inside a feature's entries tree. Real data routes core
  * mechanics through these: the 2014 paladin's once-per-rest Channel Divinity
@@ -365,13 +397,18 @@ export function parseSubclassFeatureRef(
  * options are `refSubclassFeature`s inside the oath feature. A collector that
  * only reads the class's top-level list never sees them.
  *
- * Refs under a `type: 'options'` node are deliberately skipped: those are
- * pick-one lists (Hunter's Prey, Totem Spirit, an artificer's armor model),
- * and granting every branch would put abilities on the sheet that the
- * character never chose. They belong to the choice system, not here.
+ * Refs under a `type: 'options'` node with a `count` are a pick (Blessed
+ * Strikes, Hunter's Prey, Totem Spirit): they come back as `picks`, which
+ * `collectPick` turns into a `feature` choice, because granting every branch
+ * would put abilities on the sheet that the character never chose. An
+ * `options` node with no `count` asks for no pick (Psi Warrior's Psionic
+ * Power, Genie's Vessel: you have every one), so its refs are granted like
+ * any others. Pick-one features the data does not mark this way are listed
+ * in {@link PICK_ONE}.
  */
-function nestedFeatureRefs(entries: unknown): Array<{ kind: 'class' | 'subclass'; raw: string }> {
-  const out: Array<{ kind: 'class' | 'subclass'; raw: string }> = [];
+function nestedFeatureRefs(entries: unknown): { refs: NestedRef[]; picks: PickGroup[] } {
+  const refs: NestedRef[] = [];
+  const picks: PickGroup[] = [];
   const walk = (v: unknown): void => {
     if (Array.isArray(v)) {
       for (const x of v) walk(x);
@@ -379,12 +416,82 @@ function nestedFeatureRefs(entries: unknown): Array<{ kind: 'class' | 'subclass'
     }
     if (v === null || typeof v !== 'object') return;
     const o = v as Record<string, unknown>;
-    if (o.type === 'options') return;
-    if (o.type === 'refClassFeature' || o.type === 'refSubclassFeature') {
-      const kind = o.type === 'refClassFeature' ? ('class' as const) : ('subclass' as const);
-      const raw = kind === 'class' ? o.classFeature : o.subclassFeature;
-      if (typeof raw === 'string') out.push({ kind, raw });
+    if (o.type === 'options' && typeof o.count === 'number' && o.count >= 1) {
+      // Optional-feature refs (fighting styles, maneuvers) and inline text
+      // are not feature refs: those come from `optionalfeatureProgression`, or
+      // stay as the card's prose.
+      const branches: PickBranch[] = [];
+      for (const x of Array.isArray(o.entries) ? o.entries : []) {
+        const ref = x !== null && typeof x === 'object' ? asNestedRef(x as DataEntity) : undefined;
+        if (ref !== undefined) branches.push({ name: refName(ref), refs: [ref] });
+      }
+      if (branches.length > 0) picks.push({ count: o.count, branches });
       return;
+    }
+    const ref = asNestedRef(o);
+    if (ref !== undefined) {
+      refs.push(ref);
+      return;
+    }
+    walk(o.entries);
+    walk(o.items);
+    walk(o.entry);
+  };
+  walk(entries);
+  return { refs, picks };
+}
+
+/** `feature|class|subclass short name`, lowercased: one key for every printing. */
+function featureIdentity(feature: DataEntity): string {
+  return [feature.name, feature.className, feature.subclassShortName]
+    .map((v) => (typeof v === 'string' ? v : ''))
+    .join('|')
+    .toLowerCase();
+}
+
+/**
+ * Pick-one features the data does not mark with a counted `options` node.
+ * The Armorer's Armor Model lists its models as plain refs (EFA) or as named
+ * groups of refs (TCE), so without this every model would be granted.
+ */
+const PICK_ONE = new Set(['armor model|artificer|armorer']);
+
+/**
+ * Picks that take an earlier pick's answer instead of asking again: Storm Soul
+ * and Raging Storm use the environment chosen for Storm Aura. Keyed like
+ * {@link PICK_ONE}, to the lowercased name of the feature they follow, which
+ * is always gained at a lower level, so a feature list (in level order)
+ * collects it first.
+ */
+const FOLLOWS: Record<string, string> = {
+  'storm soul|barbarian|storm herald': 'storm aura',
+  'raging storm|barbarian|storm herald': 'storm aura',
+};
+
+/**
+ * The branches of a {@link PICK_ONE} feature: each ref is a branch of its own,
+ * unless it sits under a named heading, which makes the heading the branch.
+ */
+function featureBranches(entries: unknown): PickBranch[] {
+  const out: PickBranch[] = [];
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    if (v === null || typeof v !== 'object') return;
+    const o = v as Record<string, unknown>;
+    const ref = asNestedRef(o);
+    if (ref !== undefined) {
+      out.push({ name: refName(ref), refs: [ref] });
+      return;
+    }
+    if (typeof o.name === 'string') {
+      const { refs } = nestedFeatureRefs(o.entries);
+      if (refs.length > 0) {
+        out.push({ name: o.name, refs, entries: o.entries });
+        return;
+      }
     }
     walk(o.entries);
     walk(o.items);
@@ -423,23 +530,83 @@ const subclassFeatureKey = (r: ClassFeatureRef & { shortName: string; shortSourc
 interface FeatureLedger {
   claimed: Set<string>;
   collected: Set<string>;
+  /** Branches picked so far, by `<choice prefix>|<feature name>`, for {@link FOLLOWS}. */
+  picked: Map<string, string[]>;
+}
+
+/** What stays the same while one class entry's features are collected. */
+interface FeatureWalk {
+  col: Collector;
+  cardOrigin: EffectOrigin;
+  curatedLabel: string;
+  classLevel: number;
+  ledger: FeatureLedger;
+}
+
+/** A nested ref, parsed: where it sits and how to find what it points at. */
+interface NestedTarget {
+  name: string;
+  level: number;
+  key: string;
+  find: (col: Collector) => DataEntity | undefined;
+}
+
+function parseNested(nested: NestedRef): NestedTarget | undefined {
+  if (nested.kind === 'class') {
+    const ref = parseClassFeatureRef(nested.raw);
+    if (ref === undefined) return undefined;
+    return {
+      name: ref.name,
+      level: ref.level,
+      key: classFeatureKey(ref),
+      find: (col) => findClassFeature(col, ref),
+    };
+  }
+  const ref = parseSubclassFeatureRef(nested.raw);
+  if (ref === undefined) return undefined;
+  return {
+    name: ref.name,
+    level: ref.level,
+    key: subclassFeatureKey(ref),
+    find: (col) => findSubclassFeature(col, ref),
+  };
+}
+
+/**
+ * Collect one nested feature unless it is above the class level, belongs to
+ * the top-level list, or was collected already. Unresolvable refs are skipped
+ * silently: they can point at printings outside the character's packs.
+ */
+function collectNested(
+  walk: FeatureWalk,
+  target: NestedTarget,
+  entity: DataEntity | undefined,
+  choicePrefix: string,
+): void {
+  const { ledger } = walk;
+  if (target.level > walk.classLevel) return;
+  if (ledger.claimed.has(target.key) || ledger.collected.has(target.key)) return;
+  const found = entity ?? target.find(walk.col);
+  if (found === undefined) return;
+  collectFeatureWithNested(walk, found, target.name, target.level, target.key, choicePrefix);
 }
 
 /**
  * Collect one class/subclass feature (card, curated effects or prose scan),
- * then follow the feature refs nested in its entries, recursively.
+ * then follow the feature refs nested in its entries, recursively. Picks it
+ * holds become choices keyed under `choicePrefix`: the origin's own prefix
+ * (`class:<uid>`, `subclass:<uid>`), or a picked branch's choice id, so a
+ * pick inside a branch is cleared when that branch is swapped.
  */
 function collectFeatureWithNested(
-  col: Collector,
+  walk: FeatureWalk,
   feature: DataEntity,
   name: string,
   level: number,
-  cardOrigin: EffectOrigin,
-  curatedLabel: string,
-  classLevel: number,
-  ledger: FeatureLedger,
   key: string,
+  choicePrefix: string,
 ): void {
+  const { col, cardOrigin, curatedLabel, ledger } = walk;
   if (ledger.collected.has(key)) return;
   ledger.collected.add(key);
   col.features.push({ name, level, origin: cardOrigin, entries: feature.entries });
@@ -447,46 +614,122 @@ function collectFeatureWithNested(
   if (!emitCurated(col, `${name}|${curatedLabel}`.toLowerCase(), featureOrigin)) {
     proseScanFeature(col, name, feature.entries, featureOrigin);
   }
-  for (const nested of nestedFeatureRefs(feature.entries)) {
-    let found: { entity: DataEntity | undefined; name: string; level: number; key: string };
-    if (nested.kind === 'class') {
-      const ref = parseClassFeatureRef(nested.raw);
-      if (ref === undefined || ref.level > classLevel) continue;
-      const nestedKey = classFeatureKey(ref);
-      if (ledger.claimed.has(nestedKey) || ledger.collected.has(nestedKey)) continue;
-      found = {
-        entity: findClassFeature(col, ref),
-        name: ref.name,
-        level: ref.level,
-        key: nestedKey,
-      };
-    } else {
-      const ref = parseSubclassFeatureRef(nested.raw);
-      if (ref === undefined || ref.level > classLevel) continue;
-      const nestedKey = subclassFeatureKey(ref);
-      if (ledger.claimed.has(nestedKey) || ledger.collected.has(nestedKey)) continue;
-      found = {
-        entity: findSubclassFeature(col, ref),
-        name: ref.name,
-        level: ref.level,
-        key: nestedKey,
-      };
-    }
-    // Unresolvable nested refs are skipped silently: they can point at
-    // printings outside the character's packs.
-    if (found.entity === undefined) continue;
-    collectFeatureWithNested(
-      col,
-      found.entity,
-      found.name,
-      found.level,
-      cardOrigin,
-      curatedLabel,
-      classLevel,
-      ledger,
-      found.key,
-    );
+  const identity = featureIdentity(feature);
+  const { refs, picks } = PICK_ONE.has(identity)
+    ? { refs: [], picks: [{ count: 1, branches: featureBranches(feature.entries) }] }
+    : nestedFeatureRefs(feature.entries);
+  for (const nested of refs) {
+    const target = parseNested(nested);
+    if (target !== undefined) collectNested(walk, target, undefined, choicePrefix);
   }
+  picks.forEach((pick, index) => {
+    collectPick(walk, pick, { name, level, identity, index }, choicePrefix);
+  });
+}
+
+/**
+ * Refs inside a heading's text swapped for the features they point at, so a
+ * grouped branch's info sheet reads in full rather than as a list of names.
+ */
+function expandRefs(entries: unknown, resolved: ReadonlyMap<string, DataEntity>): unknown {
+  if (Array.isArray(entries)) return entries.map((x) => expandRefs(x, resolved));
+  if (entries === null || typeof entries !== 'object') return entries;
+  const o = entries as DataEntity;
+  const ref = asNestedRef(o);
+  if (ref !== undefined) {
+    const entity = resolved.get(ref.raw);
+    return entity === undefined
+      ? o
+      : { type: 'entries', name: refName(ref), entries: entity.entries };
+  }
+  const out: DataEntity = { ...o };
+  for (const k of ['entries', 'items', 'entry'] as const) {
+    if (k in o) out[k] = expandRefs(o[k], resolved);
+  }
+  return out;
+}
+
+/**
+ * A pick-one list inside a feature, as a `feature` choice: the picked
+ * branches are collected like any nested feature (card, curated effects,
+ * prose scan) and the others are not. Unpicked, the choice stays pending, so
+ * a saved character from before the pick existed sees it open on Build.
+ */
+function collectPick(
+  walk: FeatureWalk,
+  pick: PickGroup,
+  parent: { name: string; level: number; identity: string; index: number },
+  choicePrefix: string,
+): void {
+  const { col, cardOrigin, ledger } = walk;
+  // Resolved up front: an option needs its text, and a branch whose features
+  // are all above the class level or outside the character's packs cannot be
+  // taken, so it is not offered.
+  const branches = pick.branches.flatMap((b) => {
+    const targets = b.refs.flatMap((r) => {
+      const target = parseNested(r);
+      if (target === undefined || target.level > walk.classLevel) return [];
+      const entity = target.find(col);
+      return entity !== undefined ? [{ target, entity, raw: r.raw }] : [];
+    });
+    return targets.length > 0 ? [{ ...b, targets }] : [];
+  });
+  if (branches.length === 0) return;
+  // Branch names are the ids: a ref string carries sources a later release
+  // can change. A name two branches share is no id at all, so both of those
+  // take their first ref's, whatever order they come in.
+  const names = branches.map((b) => b.name.toLowerCase());
+  const byId = new Map<string, (typeof branches)[number]>();
+  branches.forEach((b, i) => {
+    const name = names[i] ?? '';
+    const shared = names.indexOf(name) !== names.lastIndexOf(name);
+    byId.set(shared ? (b.targets[0]?.raw ?? name).toLowerCase() : name, b);
+  });
+
+  const take = (optionIds: readonly string[], prefix: (optionId: string) => string) => {
+    for (const optionId of optionIds) {
+      for (const { target, entity } of byId.get(optionId)?.targets ?? []) {
+        collectNested(walk, target, entity, prefix(optionId));
+      }
+    }
+  };
+
+  const leader = FOLLOWS[parent.identity];
+  if (leader !== undefined) {
+    // Nothing to ask: the leading pick decides, and while it is unmade its
+    // own prompt is the open choice.
+    take(ledger.picked.get(`${choicePrefix}|${leader}`) ?? [], () => choicePrefix);
+    return;
+  }
+
+  const id =
+    `${choicePrefix}:feature:${parent.name}:${parent.level}${parent.index > 0 ? `:${parent.index}` : ''}`.toLowerCase();
+  col.choice(
+    {
+      id,
+      origin: cardOrigin,
+      kind: 'feature',
+      label: `Level ${parent.level}: ${parent.name}`,
+      count: pick.count,
+      options: [...byId].map(([optionId, b]) => {
+        const single = b.entries === undefined && b.targets.length === 1 ? b.targets[0] : undefined;
+        const entries =
+          single !== undefined
+            ? single.entity.entries
+            : expandRefs(b.entries, new Map(b.targets.map((t) => [t.raw, t.entity])));
+        return {
+          id: optionId,
+          label: b.name,
+          description: summarizeEntries(entries),
+          entries,
+        };
+      }),
+    },
+    (selected) => {
+      ledger.picked.set(`${choicePrefix}|${parent.name.toLowerCase()}`, selected);
+      take(selected, (optionId) => `${id}:${optionId}`);
+    },
+  );
 }
 
 function findSubclassFeature(
@@ -742,7 +985,14 @@ export function collectClasses(col: Collector): void {
     // Class features up to the current level. Every listed ref is claimed up
     // front so a nested ref can't collect a feature this loop will handle.
     const featureRefs = Array.isArray(cls.classFeatures) ? cls.classFeatures : [];
-    const ledger: FeatureLedger = { claimed: new Set(), collected: new Set() };
+    const ledger: FeatureLedger = { claimed: new Set(), collected: new Set(), picked: new Map() };
+    const classWalk: FeatureWalk = {
+      col,
+      cardOrigin: origin,
+      curatedLabel: origin.label,
+      classLevel,
+      ledger,
+    };
     for (const rawRef of featureRefs) {
       const refStr = typeof rawRef === 'string' ? rawRef : str((rawRef as DataEntity).classFeature);
       const ref = refStr !== undefined ? parseClassFeatureRef(refStr) : undefined;
@@ -796,15 +1046,12 @@ export function collectClasses(col: Collector): void {
         );
       }
       collectFeatureWithNested(
-        col,
+        classWalk,
         feature,
         ref.name,
         ref.level,
-        origin,
-        origin.label,
-        classLevel,
-        ledger,
         classFeatureKey(ref),
+        `class:${classUid}`,
       );
     }
 
@@ -831,6 +1078,11 @@ export function collectClasses(col: Collector): void {
             : undefined,
           `subclass:${subOrigin.uid}`,
         );
+        const subWalk: FeatureWalk = {
+          ...classWalk,
+          cardOrigin: subOrigin,
+          curatedLabel: subOrigin.label,
+        };
         const subRefs = Array.isArray(sub.subclassFeatures) ? sub.subclassFeatures : [];
         for (const rawRef of subRefs) {
           if (typeof rawRef !== 'string') continue;
@@ -849,15 +1101,12 @@ export function collectClasses(col: Collector): void {
             continue;
           }
           collectFeatureWithNested(
-            col,
+            subWalk,
             feature,
             ref.name,
             ref.level,
-            subOrigin,
-            subOrigin.label,
-            classLevel,
-            ledger,
             subclassFeatureKey(ref),
+            `subclass:${subOrigin.uid}`,
           );
         }
       }

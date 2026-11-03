@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// A11Y-001: the floating toggle shows DIS/N/ADV, which a screen reader spells
-// out letter by letter, and its only sign of the current mode was colour.
+// A11Y-001: the floating toggle showed DIS/N/ADV, which a screen reader spells
+// out letter by letter, and its only sign of the current mode was colour. It
+// shows Dis, Normal and Adv now (DS-001), still named in full.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { advModeStore } from '@/stores/advMode';

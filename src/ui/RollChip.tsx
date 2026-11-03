@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
-import type { RollResult } from '@/dice/types';
+import type { RollKind, RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 
@@ -32,6 +32,17 @@ export interface RollChipProps {
    */
   inline?: boolean;
 }
+
+/**
+ * The kind a chip's roll is logged with, so the toast and the history colour
+ * it as the chip does. Plain `dice` have no known use, so they get none.
+ */
+const KIND: Record<NonNullable<RollChipProps['variant']>, RollKind | undefined> = {
+  dice: undefined,
+  d20: 'd20',
+  damage: 'damage',
+  heal: 'heal',
+};
 
 /** A chip's tone: its text colour on that colour's tint (DS-001). */
 const TONE: Record<NonNullable<RollChipProps['variant']>, string> = {
@@ -79,6 +90,7 @@ export function RollChip({
       roll(expr, {
         label,
         advantage: variant === 'd20' ? currentAdvantage() : undefined,
+        kind: KIND[variant],
       });
     rollLogStore.getState().append(r);
     onRolled?.(r.total);

@@ -42,10 +42,19 @@ export interface MultiplierDetail {
   detail: DiceRollDetail | ModDetail;
 }
 
+/**
+ * What a roll is for, set where it starts (DS-001): a d20 test, damage, or
+ * healing. It picks the roll's colour and icon, since the dice alone cannot
+ * tell a heal from a hit.
+ */
+export type RollKind = 'd20' | 'damage' | 'heal';
+
 export interface RollResult {
   expr: string;
   label?: string;
   origin?: string;
+  /** Absent on rolls made before kinds existed, and on dice with no known use. */
+  kind?: RollKind;
   total: number;
   /**
    * Collision-proof id, assigned when the roll enters the log. Two rolls in the
@@ -77,6 +86,7 @@ export interface RollOptions {
   critical?: boolean;
   label?: string;
   origin?: string;
+  kind?: RollKind;
   /** Injectable RNG for tests: returns an int in [1, sides]. */
   rng?: (sides: number) => number;
 }

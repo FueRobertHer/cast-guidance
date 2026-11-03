@@ -81,7 +81,9 @@ export function Component() {
           emoji was. */}
       <p className="flex gap-3 rounded-control bg-surface-raised p-3 text-[0.875rem] leading-5">
         <D20Icon size={18} className="mt-px shrink-0 text-ink-muted" />
-        <span>Tap any modifier to roll it — the DIS/N/ADV switch applies to every roll.</span>
+        <span>
+          Tap any modifier to roll it. The Dis, Normal and Adv switch applies to every roll.
+        </span>
       </p>
       {/* Abilities, modifier first: tap the modifier to roll a check, the score
           pill under it for its breakdown; any cue for checks over them. */}

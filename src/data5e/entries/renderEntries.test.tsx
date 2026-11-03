@@ -4,6 +4,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
+import { rollLogStore } from '@/stores/rollLog';
 import {
   DISPLAY_ARG,
   FORMATTING_TAGS,
@@ -185,5 +186,35 @@ describe('InlineText roll chips and target size (A11Y-002)', () => {
   it('makes a chip with no words around it, as in a table cell, a full target', () => {
     expect(inlineChip('{@dice 1d6}')).toBe(false);
     expect(inlineChip(' {@dice 1d6} ')).toBe(false);
+  });
+});
+
+describe('InlineText heal rolls (DS-001)', () => {
+  /** The kind the text's first roll chip logs its roll with. */
+  const kindRolled = (text: string) => {
+    const { container, unmount } = render(<InlineText text={text} />);
+    container.querySelector('button')?.click();
+    unmount();
+    return rollLogStore.getState().rolls[0]?.kind;
+  };
+
+  afterEach(() => rollLogStore.getState().clear());
+
+  it('logs dice that hit points are regained by as a heal', () => {
+    expect(kindRolled('You regain {@dice 2d4 + 2} hit points when you drink this potion.')).toBe(
+      'heal',
+    );
+    expect(kindRolled('A creature regains hit points equal to {@dice 1d8}.')).toBe('heal');
+    expect(kindRolled('The healing increases by {@scaledice 1d8|1-9|1d8} per slot.')).toBe('heal');
+  });
+
+  it('leaves other dice alone, even after a sentence about regaining', () => {
+    expect(kindRolled('You regain your breath. Roll {@dice 1d6}.')).toBeUndefined();
+    expect(
+      kindRolled('The wand regains {@dice 1d6 + 1} expended charges daily at dawn.'),
+    ).toBeUndefined();
+    expect(kindRolled('It regains {@dice 1d4} charges. You regain hit points.')).toBeUndefined();
+    expect(kindRolled('Deals {@damage 1d6} fire damage.')).toBe('damage');
+    expect(kindRolled('The damage increases by {@scaledamage 8d6|3-9|1d6}.')).toBe('damage');
   });
 });
