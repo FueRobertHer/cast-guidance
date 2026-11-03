@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { type SelectHTMLAttributes, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { invalidateRegistry } from '@/data5e/registry';
@@ -10,7 +10,11 @@ import { DMG_TYPES, SCHOOLS } from '@/features/library/fmt';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { errorText, notify } from '@/stores/notices';
+import { Button } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
+import { cardClass, listClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 import {
   DEFAULT_RIDER_TYPE,
   damagePatch,
@@ -69,10 +73,26 @@ const CASTER_CLASSES = [
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: children is always a form control (input/select/textarea)
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-ink-muted">{label}</span>
+    <label className="flex flex-col gap-1.5">
+      <span className="text-label text-ink-muted">{label}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * A dropdown in the design's field (DS-001), with its own chevron: the native
+ * one is drawn by the system and reads as a foreign control on this surface.
+ */
+function Select(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'className'>) {
+  return (
+    <div className="relative">
+      <select {...props} className={`${fieldClass} appearance-none pr-9`} />
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted"
+      />
+    </div>
   );
 }
 
@@ -95,7 +115,9 @@ function CheckField({
 }) {
   return (
     <label
-      className={`flex items-center gap-2.5 rounded-lg bg-surface-2 px-3 py-2.5 text-sm ${
+      // As tall as a field beside it; the box is `ink` when checked, since a
+      // checked box is a selection.
+      className={`flex min-h-12 items-center gap-2.5 rounded-control bg-surface-raised px-4 text-body ${
         wide === true ? 'col-span-2' : ''
       }`}
     >
@@ -103,15 +125,12 @@ function CheckField({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-accent"
+        className="size-4.5 accent-ink"
       />
       {label}
     </label>
   );
 }
-
-const inputCls =
-  'rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted';
 
 /**
  * The spell an item grants: a wand's cantrip, a cloak's daily misty step.
@@ -128,7 +147,7 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
   );
   if (parsed === COMPLEX) {
     return (
-      <p className="col-span-2 rounded-lg border border-dashed border-surface-2 px-3 py-2 text-xs text-ink-muted">
+      <p className="col-span-2 rounded-control bg-surface-raised px-3 py-2 text-caption text-ink-muted">
         This item's spells were written by hand, and say more than these boxes can hold (several
         spells, or a level gate). Edit the file itself to change them.
       </p>
@@ -145,7 +164,7 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
           value={grant.spell}
           onChange={(e) => push({ ...grant, spell: e.target.value })}
           placeholder="misty step"
-          className={inputCls}
+          className={fieldClass}
         />
       </Field>
       {grant.spell.trim() !== '' && (
@@ -159,11 +178,11 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
                 push({ ...grant, perDay: Number.isNaN(n) || n <= 0 ? undefined : n });
               }}
               placeholder="blank = at will"
-              className={inputCls}
+              className={fieldClass}
             />
           </Field>
           <Field label="Spell ability">
-            <select
+            <Select
               value={grant.ability ?? 'none'}
               onChange={(e) =>
                 push({
@@ -171,7 +190,6 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
                   ability: e.target.value === 'none' ? undefined : (e.target.value as Ability),
                 })
               }
-              className={inputCls}
             >
               <option value="none">none</option>
               {ABILITIES.map((a) => (
@@ -179,7 +197,7 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
                   {a.toUpperCase()}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
         </>
       )}
@@ -193,13 +211,13 @@ function SpellGrantFields({ raw, onChange }: { raw: unknown; onChange: (v: unkno
  */
 function DamageTypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)}>
       {Object.entries(DMG_TYPES).map(([code, label]) => (
         <option key={code} value={code}>
           {label}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 
@@ -273,9 +291,9 @@ function EntityForm({
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-purple-300/30 bg-surface p-3">
+    <div className={`${cardClass} flex flex-col gap-3`}>
       <Field label="Name">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+        <input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} />
       </Field>
 
       {/*
@@ -288,25 +306,20 @@ function EntityForm({
       {type === 'item' && (
         <div className="grid grid-cols-2 items-end gap-2">
           <Field label="Type">
-            <select
-              value={String(extra.type ?? 'G')}
-              onChange={(e) => set('type', e.target.value)}
-              className={inputCls}
-            >
+            <Select value={String(extra.type ?? 'G')} onChange={(e) => set('type', e.target.value)}>
               {ITEM_TYPES.map(([code, label]) => (
                 <option key={code} value={code}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Rarity">
-            <select
+            <Select
               value={String(extra.rarity ?? 'none')}
               onChange={(e) =>
                 set('rarity', e.target.value === 'none' ? undefined : e.target.value)
               }
-              className={inputCls}
             >
               <option value="none">mundane</option>
               {RARITIES.map((r) => (
@@ -314,7 +327,7 @@ function EntityForm({
                   {r}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           {isWeaponType(extra.type) && (
             <>
@@ -326,7 +339,7 @@ function EntityForm({
                   value={String(extra.dmg1 ?? '')}
                   onChange={(e) => setMany(damagePatch(e.target.value, extra.dmgType, extra.type))}
                   placeholder="1d8"
-                  className={inputCls}
+                  className={fieldClass}
                 />
               </Field>
               <Field label="Damage type">
@@ -343,7 +356,7 @@ function EntityForm({
                   value={String(riders[0]?.dmg ?? '')}
                   onChange={(e) => setRider('dmg', e.target.value)}
                   placeholder="1d4"
-                  className={inputCls}
+                  className={fieldClass}
                 />
               </Field>
               <Field label="Extra damage type">
@@ -357,7 +370,7 @@ function EntityForm({
                   value={String(extra.bonusWeapon ?? '')}
                   onChange={(e) => set('bonusWeapon', e.target.value)}
                   placeholder="+1"
-                  className={inputCls}
+                  className={fieldClass}
                 />
               </Field>
             </>
@@ -371,7 +384,7 @@ function EntityForm({
                   const n = Number.parseInt(e.target.value, 10);
                   set('ac', Number.isNaN(n) ? undefined : n);
                 }}
-                className={inputCls}
+                className={fieldClass}
               />
             </Field>
           )}
@@ -383,7 +396,7 @@ function EntityForm({
               value={String(extra.bonusAc ?? '')}
               onChange={(e) => set('bonusAc', e.target.value)}
               placeholder={isArmorType(extra.type) ? '+1 (magic armor)' : '+1 (rings, cloaks)'}
-              className={inputCls}
+              className={fieldClass}
             />
           </Field>
           <SpellGrantFields
@@ -402,7 +415,7 @@ function EntityForm({
       {type === 'feat' && (
         <div className="grid grid-cols-2 items-end gap-2">
           <Field label="Ability bonus">
-            <select
+            <Select
               value={
                 Array.isArray(extra.ability) && extra.ability[0] !== undefined
                   ? Object.keys(extra.ability[0] as Json)[0]
@@ -411,7 +424,6 @@ function EntityForm({
               onChange={(e) =>
                 set('ability', e.target.value === 'none' ? undefined : [{ [e.target.value]: 1 }])
               }
-              className={inputCls}
             >
               <option value="none">none</option>
               {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => (
@@ -419,14 +431,14 @@ function EntityForm({
                   {a.toUpperCase()} +1
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Category">
             <input
               value={String(extra.category ?? '')}
               onChange={(e) => set('category', e.target.value || undefined)}
               placeholder="2024: G/O/FS/EB"
-              className={inputCls}
+              className={fieldClass}
             />
           </Field>
         </div>
@@ -443,21 +455,20 @@ function EntityForm({
                 const n = Number.parseInt(e.target.value, 10);
                 set('level', Number.isNaN(n) ? 0 : Math.max(0, Math.min(9, n)));
               }}
-              className={inputCls}
+              className={fieldClass}
             />
           </Field>
           <Field label="School">
-            <select
+            <Select
               value={String(extra.school ?? 'V')}
               onChange={(e) => set('school', e.target.value)}
-              className={inputCls}
             >
               {Object.entries(SCHOOLS).map(([code, label]) => (
                 <option key={code} value={code}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Range">
             <input
@@ -476,7 +487,7 @@ function EntityForm({
                     : { type: 'point', distance: { type: 'feet', amount: n } },
                 );
               }}
-              className={inputCls}
+              className={fieldClass}
             />
           </Field>
           <CheckField
@@ -502,13 +513,18 @@ function EntityForm({
           />
           <div className="col-span-2">
             <Field label="Class lists (who can learn it)">
-              <div className="flex flex-wrap gap-1.5">
+              {/* Chips carry their own 6px of transparent tap border, which
+                  is the gap between them; the row is pulled out by as much so
+                  the first one lines up with the fields. A chosen list is
+                  pressed, an `ink` pill, and says so to a screen reader. */}
+              <div className="-mx-1.5 flex flex-wrap">
                 {CASTER_CLASSES.map((c) => {
                   const active = spellClasses.includes(c);
                   return (
-                    <button
+                    <Chip
                       key={c}
-                      type="button"
+                      tone="outline"
+                      pressed={active}
                       onClick={() => {
                         const next = active
                           ? spellClasses.filter((x) => x !== c)
@@ -520,14 +536,9 @@ function EntityForm({
                             : { fromClassList: next.map((n) => ({ name: n, source: 'PHB' })) },
                         );
                       }}
-                      className={`rounded-full border px-2.5 py-1 text-xs ${
-                        active
-                          ? 'border-purple-300 text-purple-300'
-                          : 'border-surface-2 text-ink-muted'
-                      }`}
                     >
                       {c}
-                    </button>
+                    </Chip>
                   );
                 })}
               </div>
@@ -544,36 +555,26 @@ function EntityForm({
           placeholder={
             "Blank line = new paragraph\nLines starting '- ' = list\n{@dice 1d6} and other tags work"
           }
-          className={inputCls}
+          // The field's 48px is one line; six rows of `input` and its padding
+          // are 156px, and a min-height outranks the field's fixed height.
+          className={`${fieldClass} min-h-39 py-3`}
         />
       </Field>
 
       {/* Live preview through the real renderer */}
-      <div className="rounded-lg bg-surface-2/50 p-3">
-        <div className="mb-1 text-xs font-semibold uppercase text-ink-muted">Preview</div>
-        <div className="text-sm font-bold">{name || '…'}</div>
-        <div className="text-sm">
-          <EntriesView entries={textToEntries(text)} />
-        </div>
+      <div className="rounded-control bg-surface-raised p-3">
+        <div className="mb-1 text-overline text-ink-muted uppercase">Preview</div>
+        <div className="text-body-strong">{name || '…'}</div>
+        <EntriesView entries={textToEntries(text)} />
       </div>
 
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={name.trim() === '' || busy}
-          className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
+        <Button variant="brand" onClick={() => void save()} disabled={name.trim() === '' || busy}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={busy}
-          className="rounded-lg bg-surface-2 px-4 py-2 text-sm disabled:opacity-40"
-        >
+        </Button>
+        <Button onClick={onCancel} disabled={busy}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -675,10 +676,18 @@ function fileTitle(file: HomebrewFile): string {
     : file.fileName.replace(/\.json$/, '');
 }
 
+/** A link in a line of text, as the design's `cg-link` (DS-001). */
+const LINK =
+  'text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
+
+/** An icon-only way back, as the sheet header's, pulled into the gutter. */
+const BACK_ICON =
+  '-ml-3 tap self-start rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink';
+
 /** The way out, on every state of this page: it sits outside the app nav. */
 function BackToHomebrew() {
   return (
-    <Link to="/homebrew" aria-label="Back to homebrew" className="text-ink-muted hover:text-ink">
+    <Link to="/homebrew" aria-label="Back to homebrew" className={BACK_ICON}>
       <ArrowLeft size={20} aria-hidden />
     </Link>
   );
@@ -718,18 +727,18 @@ export function Component() {
 
   if (read === undefined) {
     return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
+      <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
         <BackToHomebrew />
-        <p className="text-sm text-ink-muted">Loading…</p>
+        <p className="text-body text-ink-muted">Loading…</p>
       </main>
     );
   }
   const row = read.file;
   if (row === undefined) {
     return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
+      <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
         <BackToHomebrew />
-        <p className="text-sm text-ink-muted" role="alert">
+        <p className="text-body text-ink-muted" role="alert">
           {read.error === undefined
             ? 'This homebrew file is no longer on this device.'
             : `This homebrew file could not be read: ${read.error.message}. You can remove it from the homebrew list.`}
@@ -737,7 +746,7 @@ export function Component() {
         {/* Both ways: a file that is gone is a dead link (a bookmark, a
             history entry), and the list is the nearest page that has
             anything on it. The icon above is easy to miss as the only way. */}
-        <Link to="/homebrew" className="text-sm text-ink-muted underline hover:text-ink">
+        <Link to="/homebrew" className={LINK}>
           Go to the homebrew list
         </Link>
       </main>
@@ -745,9 +754,9 @@ export function Component() {
   }
   if (!row.editable) {
     return (
-      <main className="flex flex-1 flex-col gap-3 p-4">
+      <main className="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
         <BackToHomebrew />
-        <p className="text-sm text-ink-muted">
+        <p className="text-body text-ink-muted">
           This file was imported, not built here. Only in-app creations are editable.
         </p>
       </main>
@@ -858,12 +867,12 @@ export function Component() {
   };
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
-      <header className="flex items-center gap-3">
+    <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4">
+      <header className="flex items-center gap-2">
         <BackToHomebrew />
-        <div>
-          <h1 className="text-xl font-bold">{fileTitle(row)}</h1>
-          <p className="text-xs text-ink-muted">
+        <div className="min-w-0">
+          <h1 className="font-display text-title-page">{fileTitle(row)}</h1>
+          <p className="text-caption text-ink-muted">
             source: {sourceId}. Everything you build is instantly usable on characters, and exports
             as a standard 5etools file.
           </p>
@@ -872,22 +881,23 @@ export function Component() {
 
       {failure !== undefined && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
+          className="flex flex-wrap items-center gap-2 rounded-control bg-danger-soft px-3 py-2"
           role="alert"
         >
-          <p className="min-w-0 flex-1 text-xs">
+          <p className="min-w-0 flex-1 text-caption">
             {failure.text}
             <span className="block text-ink-muted">{failure.hint}</span>
           </p>
           {retryDelete !== undefined && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               disabled={busy}
               onClick={() => void deleteEntity(retryDelete.type, retryDelete.ref)}
-              className="shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              className="shrink-0"
             >
               {busy ? 'Retrying…' : 'Retry'}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -906,20 +916,19 @@ export function Component() {
           editingRef !== null && isRecord(editingRef.value) ? editingRef.value : undefined;
         return (
           <section key={type} className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
+            <div className="flex items-center justify-between gap-2 pl-1">
+              <h2 className="text-heading">
                 {label}s{' '}
-                <span className="text-xs font-normal text-ink-muted">{entities.length}</span>
+                <span className="font-normal text-caption text-ink-muted tabular-nums">
+                  {entities.length}
+                </span>
               </h2>
-              <button
-                type="button"
-                onClick={() => openEditor({ type, ref: null })}
-                className="flex items-center gap-1 rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold"
-              >
-                <Plus size={14} /> New {lower}
-              </button>
+              <Button variant="outline" size="sm" onClick={() => openEditor({ type, ref: null })}>
+                <Plus size={16} /> New {lower}
+              </Button>
             </div>
-            <div className="flex flex-col gap-1">
+            {/* The card only around rows: an empty one would draw an empty frame. */}
+            <div className={entities.length > 0 ? listClass : undefined}>
               {entities.map((e, i) => {
                 const name = entityName(e);
                 const ref: EntityRef = { index: i, name, value: e };
@@ -930,9 +939,9 @@ export function Component() {
                     title="Delete"
                     disabled={busy}
                     onClick={() => void deleteEntity(type, ref)}
-                    className="shrink-0 text-ink-muted hover:text-accent disabled:opacity-40"
+                    className="tap shrink-0 rounded-control text-ink-muted transition-colors duration-120 enabled:hover:bg-surface-raised enabled:hover:text-danger disabled:cursor-default disabled:text-ink-faint"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={18} />
                   </button>
                 );
                 const key = `${name ?? 'unnamed'}-${String(i)}`;
@@ -943,9 +952,9 @@ export function Component() {
                   return (
                     <div
                       key={key}
-                      className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-surface px-3 py-2"
+                      className="flex items-center gap-2 bg-danger-soft py-1 pr-1 pl-4"
                     >
-                      <p className="min-w-0 flex-1 text-xs text-ink-muted">
+                      <p className="min-w-0 flex-1 text-caption">
                         This {lower} could not be read ({describeValue(e)}). Deleting it leaves the
                         rest of the file alone.
                       </p>
@@ -964,11 +973,11 @@ export function Component() {
                     label={`This ${lower}`}
                     action={remove}
                   >
-                    <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2 text-sm">
+                    <div className="flex items-center gap-1 pr-1">
                       <button
                         type="button"
                         onClick={() => openEditor({ type, ref })}
-                        className="min-w-0 flex-1 truncate text-left hover:text-purple-300"
+                        className="min-h-tap min-w-0 flex-1 truncate py-2 pl-4 text-left decoration-line-strong underline-offset-3 hover:underline"
                       >
                         {name ?? `Unnamed ${lower}`}
                       </button>
@@ -976,7 +985,7 @@ export function Component() {
                         <Link
                           to={`/library/${type}/${encodeURIComponent(`${name}|${sourceId}`.toLowerCase())}`}
                           aria-label={`View ${name} in the library`}
-                          className="shrink-0 text-xs text-ink-muted hover:text-ink"
+                          className="inline-flex min-h-tap shrink-0 items-center px-2 font-semibold text-caption text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink"
                         >
                           view
                         </Link>
@@ -997,13 +1006,9 @@ export function Component() {
                 resetKey={entities.length}
                 label="This entry's form"
                 action={
-                  <button
-                    type="button"
-                    onClick={() => openEditor(null)}
-                    className="shrink-0 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => openEditor(null)}>
                     Close
-                  </button>
+                  </Button>
                 }
               >
                 <EntityForm
@@ -1024,7 +1029,7 @@ export function Component() {
         );
       })}
 
-      <p className="text-xs text-ink-muted">
+      <p className="text-caption text-ink-muted">
         Races, backgrounds, subclasses, and classes: import them as JSON for now. Form editors for
         those are on the roadmap.
       </p>

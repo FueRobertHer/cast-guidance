@@ -13,11 +13,26 @@ import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
+import { Button } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { askConfirm, askText } from '@/ui/dialogs';
+import { fieldClass } from '@/ui/TextField';
 import { REFUSED_HOST_REASON } from './homebrewUrl';
 import type { HomebrewPreview } from './importPreview';
 import { fetchHomebrewFromUrl, HomebrewUrlRefusedError } from './importUrl';
+
+/** One file: a card of its own, as a character on the roster is (DS-001). */
+const FILE_CARD =
+  'flex flex-wrap items-center gap-2 rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset';
+/** A file's icon actions, 44px each (A11Y-002); a removal turns `danger` under the pointer. */
+const ICON_ACTION =
+  'tap -m-1 shrink-0 rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-ink';
+const ICON_REMOVE =
+  'tap -m-1 shrink-0 rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-danger';
+/** A link in a line of text, as the design's `cg-link`. */
+const LINK =
+  'font-semibold text-ink underline decoration-line-strong underline-offset-3 hover:decoration-ink';
 
 /**
  * The import preview (IMP-002), its gathering and its commit, loaded once an
@@ -54,7 +69,8 @@ export function Component() {
   const readErrors = read?.errors ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
-  const [status, setStatusText] = useState<string>();
+  // `failed` draws the line in `danger` (DS-001); the words say it either way.
+  const [status, setStatusText] = useState<{ text: string; failed: boolean }>();
   // A URL the import would not fetch, kept so the guidance can link to it.
   const [refused, setRefusedState] = useState<{ url: string; reason: string }>();
   /**
@@ -65,8 +81,11 @@ export function Component() {
    * so the same words twice are said twice. The check has a key of its own,
    * so its answer is not held behind it by the outcome key's throttle.
    */
-  const setStatus = (text: string | undefined, key = 'import') => {
-    setStatusText(text);
+  const setStatus = (
+    text: string | undefined,
+    { key = 'import', failed = false }: { key?: string; failed?: boolean } = {},
+  ) => {
+    setStatusText(text === undefined ? undefined : { text, failed });
     // An outcome replaces the check, so a check still waiting on its throttle
     // is not heard after its own answer.
     if (key !== 'import-check') cancelAnnouncement('import-check');
@@ -87,7 +106,7 @@ export function Component() {
   const latest = useRef(0);
   const begin = (message: string): number => {
     setRefused(undefined);
-    setStatus(message, 'import-check');
+    setStatus(message, { key: 'import-check' });
     setChecking(true);
     latest.current += 1;
     return latest.current;
@@ -122,7 +141,8 @@ export function Component() {
       const row = await homebrewRepo.prepare(raw, file.name);
       await showPreview(request, row, file.size, 'file');
     } catch (err) {
-      if (request === latest.current) setStatus(`Import failed: ${errorText(err)}`);
+      if (request === latest.current)
+        setStatus(`Import failed: ${errorText(err)}`, { failed: true });
     } finally {
       finish(request);
     }
@@ -150,7 +170,7 @@ export function Component() {
         err instanceof TypeError
           ? ' The host may be down or may not allow the app to read the file; download it and use Import file instead.'
           : '';
-      setStatus(`URL import failed (${errorText(err)}).${advice}`);
+      setStatus(`URL import failed (${errorText(err)}).${advice}`, { failed: true });
     } finally {
       finish(request);
     }
@@ -170,7 +190,7 @@ export function Component() {
     // The URL stays in the field until its file is stored, so a failure can
     // be retried without typing it again.
     if (result.ok && p.source === 'url') setUrl('');
-    setStatus(result.message);
+    setStatus(result.message, { failed: !result.ok });
   };
 
   const cancelImport = () => {
@@ -223,12 +243,12 @@ export function Component() {
       .join(' · ') || 'no recognized entities';
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
+    <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Homebrew</h1>
+        <h1 className="font-display text-title-page">Homebrew</h1>
       </header>
 
-      <p className="text-sm text-ink-muted">
+      <p className="text-body text-ink-muted">
         Import 5etools-format homebrew JSON. Imported content appears alongside official content
         everywhere: in the creator, the library and search. You see what a file adds before it is
         imported.
@@ -236,18 +256,15 @@ export function Component() {
 
       <div className="flex flex-col gap-2">
         {/* aria-disabled rather than disabled while a file is checked, so the
-            button keeps focus: the preview hands focus back to it. */}
-        <button
-          type="button"
-          onClick={chooseFile}
-          aria-disabled={checking}
-          aria-busy={checking}
-          className="tap gap-2 rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white aria-disabled:opacity-60"
-        >
-          <FileUp size={16} /> Import file
-        </button>
-        <button
-          type="button"
+            button keeps focus: the preview hands focus back to it. The
+            screen's one next step, so the one `brand` button. */}
+        <Button variant="brand" onClick={chooseFile} aria-disabled={checking} aria-busy={checking}>
+          <FileUp size={18} /> Import file
+        </Button>
+        {/* An outline, not the violet it was: violet is spellcasting in the
+            design system, and a homebrew mark is a neutral badge. */}
+        <Button
+          variant="outline"
           onClick={async () => {
             const name = await askText({
               title: 'Homebrew collection name',
@@ -272,13 +289,12 @@ export function Component() {
             } catch (err) {
               // Navigating to a collection the database never got would open an
               // editor onto nothing, so the failure stops here and says so.
-              setStatus(`Could not create the collection: ${errorText(err)}`);
+              setStatus(`Could not create the collection: ${errorText(err)}`, { failed: true });
             }
           }}
-          className="tap gap-2 rounded-lg border border-purple-300/40 px-4 py-2.5 text-sm font-semibold text-purple-300"
         >
-          <Hammer size={16} /> Create your own homebrew
-        </button>
+          <Hammer size={18} /> Create your own homebrew
+        </Button>
         <input
           ref={fileInput}
           type="file"
@@ -291,7 +307,7 @@ export function Component() {
           }}
         />
         <form
-          className="flex gap-1.5"
+          className="flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             if (url.trim() !== '' && !checking) void importUrl();
@@ -302,39 +318,37 @@ export function Component() {
             onChange={(e) => setUrl(e.target.value)}
             aria-label="Homebrew JSON URL"
             placeholder="…or paste a GitHub, gist, or jsDelivr JSON URL"
-            className="min-h-11 min-w-0 flex-1 rounded-lg bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
+            className={`${fieldClass} min-w-0 flex-1`}
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
             aria-label="Import from URL"
             title="Import from URL"
             aria-disabled={checking}
             aria-busy={checking}
-            className="tap rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold aria-disabled:opacity-60"
+            className="shrink-0"
           >
-            <LinkIcon size={16} />
-          </button>
+            <LinkIcon size={18} />
+          </Button>
         </form>
         {/* Every import message, as a plain visual: `setStatus` and
             `setRefused` say each one through the announcer, so a live role
             here would say it twice (A11Y-002). */}
-        <div data-import-status="" className="flex flex-col gap-1.5 text-xs text-amber-300">
-          {status !== undefined && <p>{status}</p>}
+        <div data-import-status="" className="flex flex-col gap-1.5 text-caption">
+          {status !== undefined && (
+            <p className={status.failed ? 'text-danger' : 'text-ink-muted'}>{status.text}</p>
+          )}
           {refused !== undefined && (
             <>
-              <p>{refusedText(refused.reason)}</p>
+              <p className="text-danger">{refusedText(refused.reason)}</p>
               <div className="flex gap-3">
                 {refusedHref !== undefined && (
-                  <a
-                    href={refusedHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-semibold underline"
-                  >
+                  <a href={refusedHref} target="_blank" rel="noopener noreferrer" className={LINK}>
                     Open file
                   </a>
                 )}
-                <button type="button" onClick={chooseFile} className="font-semibold underline">
+                <button type="button" onClick={chooseFile} className={LINK}>
                   Import file
                 </button>
               </div>
@@ -355,7 +369,7 @@ export function Component() {
       )}
 
       {readErrors.length > 0 && (
-        <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">
+        <p className="rounded-control bg-danger-soft px-3 py-2 text-caption" role="alert">
           {readErrors.length} file{readErrors.length > 1 ? 's' : ''} on this device could not be
           read and {readErrors.length > 1 ? 'are' : 'is'} not in use. The rest of your homebrew is
           unaffected.
@@ -370,13 +384,14 @@ export function Component() {
           <DecodeBoundary key={r.id} label="This file">
             {/* Below 360px the name takes the first line and the toggle and
                 actions the second, or the name would get about 60px. */}
-            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface p-3">
+            <div className={FILE_CARD}>
               {/* A stable verb for the name, so the state is announced once: by
-                  aria-pressed, not again by the flipping visible text. */}
-              <button
-                type="button"
+                  aria-pressed, not again by the flipping visible text. On is
+                  the filled `ink` pill: a state, so ink rather than a hue. */}
+              <Chip
+                tone="outline"
                 aria-label={`Enable ${r.fileName}`}
-                aria-pressed={r.enabled}
+                pressed={r.enabled}
                 onClick={() => {
                   // The label reads from the row, so a rejected write leaves the
                   // badge saying what is actually stored; the toast is what says
@@ -386,30 +401,22 @@ export function Component() {
                     .then(invalidateRegistry)
                     .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
                 }}
-                className="tap -my-1 mr-auto shrink-0 rounded text-xs"
+                className="-my-1 mr-auto shrink-0"
               >
-                <span
-                  className={`rounded-full border px-2 py-0.5 ${
-                    r.enabled
-                      ? 'border-purple-300 text-purple-300'
-                      : 'border-surface-2 text-ink-muted'
-                  }`}
-                >
-                  {r.enabled ? 'enabled' : 'disabled'}
-                </span>
-              </button>
+                {r.enabled ? 'enabled' : 'disabled'}
+              </Chip>
               <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
-                <div className="truncate text-sm font-semibold">{r.fileName}</div>
-                <div className="truncate text-xs text-ink-muted">{summary(r)}</div>
+                <div className="truncate text-body-strong">{r.fileName}</div>
+                <div className="truncate text-caption text-ink-muted">{summary(r)}</div>
               </div>
               {r.editable && (
                 <Link
                   to={`/homebrew/edit/${r.id}`}
                   aria-label={`Edit ${r.fileName} in the builder`}
                   title="Edit in the builder"
-                  className="tap -m-1 shrink-0 rounded text-purple-300 hover:text-purple-200"
+                  className={ICON_ACTION}
                 >
-                  <Pencil size={15} />
+                  <Pencil size={18} />
                 </Link>
               )}
               <button
@@ -423,18 +430,18 @@ export function Component() {
                     notifyFailure('Download', err);
                   }
                 }}
-                className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-ink"
+                className={ICON_ACTION}
               >
-                <Download size={15} />
+                <Download size={18} />
               </button>
               <button
                 type="button"
                 aria-label={`Delete ${r.fileName}`}
                 title="Delete"
                 onClick={() => void remove(r.id, r.fileName)}
-                className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-accent"
+                className={ICON_REMOVE}
               >
-                <Trash2 size={15} />
+                <Trash2 size={18} />
               </button>
             </div>
           </DecodeBoundary>
@@ -445,14 +452,12 @@ export function Component() {
           return (
             <div
               key={id ?? e.fileName ?? e.message}
-              className="flex items-center gap-2 rounded-lg border border-amber-300/40 bg-surface p-3"
+              className="flex items-center gap-2 rounded-card bg-danger-soft p-3"
             >
-              <AlertTriangle size={15} className="shrink-0 text-amber-300" aria-hidden="true" />
+              <AlertTriangle size={16} className="shrink-0 text-danger" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">
-                  {e.fileName ?? 'An unnamed file'}
-                </div>
-                <div className="truncate text-xs text-ink-muted">{e.message}</div>
+                <div className="truncate text-body-strong">{e.fileName ?? 'An unnamed file'}</div>
+                <div className="truncate text-caption text-ink-muted">{e.message}</div>
               </div>
               {id !== undefined && (
                 <button
@@ -460,16 +465,16 @@ export function Component() {
                   aria-label={`Delete ${e.fileName ?? 'this unreadable file'}`}
                   title="Delete"
                   onClick={() => void remove(id, e.fileName ?? 'this file')}
-                  className="tap -m-1 shrink-0 rounded text-ink-muted hover:text-accent"
+                  className={ICON_REMOVE}
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={18} />
                 </button>
               )}
             </div>
           );
         })}
         {rows !== undefined && rows.length === 0 && readErrors.length === 0 && (
-          <p className="text-sm text-ink-muted">No homebrew imported yet.</p>
+          <p className="text-body text-ink-muted">No homebrew imported yet.</p>
         )}
       </div>
     </main>
