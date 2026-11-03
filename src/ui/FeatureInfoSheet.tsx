@@ -82,17 +82,19 @@ function FeatureInfoSheetContent({ title, subtitle, entries, trigger }: FeatureI
     <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-1 shrink-0 text-base font-semibold">{title}</Sheet.Title>
+        <Sheet.Scrim />
+        <Sheet.Panel className="flex max-h-[80dvh] flex-col">
+          {/* The subtitle (where it comes from, what it costs) can run long,
+              so it takes a line under the title rather than the heading's
+              aside on its right. */}
+          <Sheet.Heading>{title}</Sheet.Heading>
           {subtitle !== undefined && (
-            <p className="mb-2 shrink-0 text-xs text-ink-muted">{subtitle}</p>
+            <p className="-mt-2 mb-3 shrink-0 text-caption text-ink-muted">{subtitle}</p>
           )}
-          <div className="min-h-0 flex-1 overflow-y-auto text-sm">
+          <div className="min-h-0 flex-1 overflow-y-auto text-body">
             <EntriesView entries={entries} />
           </div>
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

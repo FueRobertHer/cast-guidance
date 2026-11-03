@@ -239,26 +239,6 @@ function sources(dir: string): string[] {
  * or a prop is out of reach of any per-attribute check.
  */
 const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
-    what: 'the low HP bar',
-  },
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: ": 'border-accent bg-accent'",
-    what: 'a failed death save',
-  },
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: 'tone="border-accent bg-accent"',
-    what: 'resource pips',
-  },
-  {
-    file: 'features/dice/DiceTray.tsx',
-    line: 'h-12 w-12 items-center justify-center rounded-full bg-accent',
-    what: 'the icon-only dice button',
-  },
   { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
 ];
 
