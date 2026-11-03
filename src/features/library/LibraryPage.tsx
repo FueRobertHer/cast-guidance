@@ -29,6 +29,7 @@ import { fieldClass } from '@/ui/TextField';
 import { VirtualList } from '@/ui/VirtualList';
 import { bookContents, bookIndex } from './books';
 import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
+import { findEntity } from './findEntity';
 import { headerFacts } from './fmt';
 
 function nameOf(e: Entity): string {
@@ -669,15 +670,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
   const registry = reg.registry;
 
   const decoded = decodeURIComponent(uid);
-  const [name, source] = decoded.split('|');
-  const entity =
-    registry === null
-      ? undefined
-      : (registry.get(
-          type,
-          name ?? '',
-          source !== undefined && source !== '' ? source : undefined,
-        ) ?? registry.get(type, decoded));
+  const entity = registry === null ? undefined : findEntity(registry, type, decoded);
 
   const typeLabel = TYPE_LABELS.get(type) ?? type;
   const failed = reg.error !== null || packs.status === 'error';

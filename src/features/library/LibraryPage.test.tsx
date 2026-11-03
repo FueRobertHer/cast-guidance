@@ -280,6 +280,27 @@ describe('the detail view when it works', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('opens a subclass from a {@subclass} link, which names it by its short name and class', () => {
+    reg.current = {
+      ...reg.current,
+      registry: registryOfTypes({
+        subclass: [
+          {
+            name: 'Path of the Berserker',
+            shortName: 'Berserker',
+            source: 'PHB',
+            className: 'Barbarian',
+            classSource: 'PHB',
+            entries: [],
+          },
+        ],
+      }),
+    };
+    renderAt('/library/subclass/berserker%7Cbarbarian%7Cphb%7Cphb');
+
+    expect(screen.getByRole('heading', { name: 'Path of the Berserker' })).toBeTruthy();
+  });
+
   it('still renders it when a later registry rebuild failed', () => {
     // `useRegistryState` keeps the registry it has when a refresh throws, so a
     // single bad row landing later must not blank a page that already works.
@@ -465,6 +486,13 @@ describe('books', () => {
     expect(spells.getAttribute('href')).toBe('/library/spell?source=PHB');
     // One of the two spells carries PHB; the other is a different book's.
     expect(spells.textContent).toContain('1');
+  });
+
+  it('opens from a {@book} link in rules text, which names the book by its id alone', () => {
+    renderAt('/library/book/phb');
+
+    expect(screen.getByRole('heading', { name: "Player's Handbook" })).toBeTruthy();
+    expect(screen.getByText('Step-by-Step Characters')).toBeTruthy();
   });
 });
 
