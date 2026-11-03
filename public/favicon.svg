@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#18181b"/>
-  <path d="M16 3 L28 10 L28 22 L16 29 L4 22 L4 10 Z" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M10.75 15.1 C10.75 13.85 11.65 13.05 12.75 13.05 C13.9 13.05 14.75 13.85 14.75 14.95 C14.75 15.95 14.15 16.65 13.4 17.4 L10.65 20.15 L14.85 20.15" fill="none" stroke="#fafafa" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="17.1" y="13.05" width="4.2" height="7.1" rx="2.1" fill="none" stroke="#fafafa" stroke-width="1.7"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Cast Guidance</title>
+  <rect width="64" height="64" rx="11.52" fill="#18181b"/>
+  <g transform="translate(5.12 5.12) scale(0.84)">
+    <path d="M32 4 L56.25 18 L56.25 46 L32 60 L7.75 46 L7.75 18 Z" fill="none" stroke="#8fb0ea" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M32 20 Q34.08 30.92 45 33 Q34.08 35.08 32 46 Q29.92 35.08 19 33 Q29.92 30.92 32 20 Z" fill="#8fb0ea"/>
+  </g>
 </svg>

@@ -31,7 +31,7 @@ bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after 
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
-bun run icons:generate # render public/icons/*.png from public/favicon.svg (commit the output)
+bun run icons:generate # render public/icons/*.png from scripts/icon-source.svg (commit the output)
 ```
 
 The data audit downloads the real pinned release, runs it through the app's

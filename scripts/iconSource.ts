@@ -2,18 +2,22 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 /**
- * Ties the committed PNGs in `public/icons/` to the `public/favicon.svg` they
- * were rendered from. `scripts/generate-icons.ts` writes the source's hash to
- * {@link ICON_STAMP} beside its output, and `scripts/pwaManifest.test.ts`
+ * Ties the committed PNGs in `public/icons/` to the `scripts/icon-source.svg`
+ * they were rendered from. `scripts/generate-icons.ts` writes the source's hash
+ * to {@link ICON_STAMP} beside its output, and `scripts/pwaManifest.test.ts`
  * fails when the SVG no longer matches it, which means someone changed the
  * SVG without running `bun run icons:generate`.
  *
- * The stamp lives in `scripts/`, not `public/icons/`, so it is never deployed.
+ * The source is the full Spark d20 icon, facet lines and all, for 180 px and
+ * up. `public/favicon.svg` is the same mark drawn for 32 px and below (no
+ * facets, a larger spark) and serves the browser tab and the manifest's SVG
+ * entry. The source and the stamp live in `scripts/`, not `public/`, so
+ * neither is deployed or precached.
  */
 
 const REPO = path.resolve(import.meta.dirname, '..');
 
-export const ICON_SOURCE = path.join(REPO, 'public/favicon.svg');
+export const ICON_SOURCE = path.join(REPO, 'scripts/icon-source.svg');
 export const ICON_STAMP = path.join(REPO, 'scripts/icons-source.json');
 
 export interface IconStamp {
