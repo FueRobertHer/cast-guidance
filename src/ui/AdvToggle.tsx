@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useScrollHidden } from '@/lib/useScrollHidden';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 
@@ -10,36 +11,28 @@ const FULL: Record<AdvMode, string> = {
   adv: 'Advantage',
 };
 
-const ACTIVE: Record<AdvMode, string> = {
-  dis: 'text-accent border-accent',
-  normal: 'text-ink border-ink',
-  adv: 'text-emerald-300 border-emerald-300',
-};
-
 /**
- * Always-visible advantage toggle, stacked above the dice FAB. Applies to
- * every d20 roll made anywhere until switched back. Hidden by scroll, focus
- * inside brings it back, so the keyboard never lands on an invisible button.
+ * Always-visible advantage toggle: the dice dock (DS-001), one capsule above
+ * the tab bar holding the roll mode for every d20 roll made anywhere until
+ * switched back, and at its end the dice tray's button, which DiceTray draws
+ * into the room left for it here. The mode in use is an `ink` pill, as
+ * selection is everywhere, so it reads without colour.
+ *
+ * Each mode is a 44px tap with its pill 40px inside it, as the dice button
+ * is. `data-dice-dock` lets the roll toast rise above it.
  */
 export function AdvToggle() {
   const mode = useAdvMode((s) => s.mode);
   const set = useAdvMode((s) => s.set);
-  const hidden = useScrollHidden();
+  const hidden = useDockHidden();
 
   return (
     // A fieldset (min-w-0 undoes its min-content width) so the buttons are
     // announced as one labelled set.
     <fieldset
-      className={`fixed right-4 bottom-[calc(8.25rem+env(safe-area-inset-bottom))] z-20 flex min-w-0 overflow-hidden rounded-full border bg-surface shadow-lg transition-all duration-200 lg:bottom-20 ${
-        hidden
-          ? 'pointer-events-none translate-x-32 opacity-0 has-focus-visible:pointer-events-auto has-focus-visible:translate-x-0 has-focus-visible:opacity-100'
-          : ''
-      } ${
-        mode === 'adv'
-          ? 'border-emerald-300/60'
-          : mode === 'dis'
-            ? 'border-accent/60'
-            : 'border-surface-2'
+      data-dice-dock=""
+      className={`fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex h-dock min-w-0 items-center gap-0.5 rounded-full bg-surface p-0.5 pr-11.5 shadow-float ring-1 ring-line ring-inset transition-all duration-200 lg:bottom-6 ${
+        hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
       }`}
       title="Advantage / disadvantage for every d20 roll"
     >
@@ -51,13 +44,42 @@ export function AdvToggle() {
           aria-label={FULL[m]}
           aria-pressed={mode === m}
           onClick={() => set(m)}
-          className={`px-2.5 py-1.5 text-[11px] font-bold ${
-            mode === m ? ACTIVE[m] : 'text-ink-muted'
-          }`}
+          className="h-11 min-w-12 rounded-full border-2 border-transparent bg-clip-padding px-2 font-bold text-[0.75rem] text-ink-muted tracking-[0.02em] transition-colors duration-120 [--tap-inset:2px] not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg"
         >
           {LABELS[m]}
         </button>
       ))}
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
     </fieldset>
   );
+}
+
+/**
+ * Whether the dice dock is out of the way: while the page scrolls down, unless
+ * keyboard focus is in either half of it, so the keyboard never lands on an
+ * invisible button and the capsule never comes back without its button (or
+ * the button without its capsule). The dice button marks itself
+ * `data-dice-dock-button`. Tracked here rather than with a `:focus-visible`
+ * selector per half: those cost 700 B of CSS.
+ */
+export function useDockHidden(): boolean {
+  const scrolledAway = useScrollHidden();
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    const update = () => {
+      const el = document.activeElement;
+      setFocused(
+        el !== null &&
+          el.closest('[data-dice-dock], [data-dice-dock-button]') !== null &&
+          el.matches(':focus-visible'),
+      );
+    };
+    document.addEventListener('focusin', update);
+    document.addEventListener('focusout', update);
+    return () => {
+      document.removeEventListener('focusin', update);
+      document.removeEventListener('focusout', update);
+    };
+  }, []);
+  return scrolledAway && !focused;
 }

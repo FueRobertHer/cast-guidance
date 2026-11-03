@@ -259,11 +259,6 @@ const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
     line: 'tone="border-accent bg-accent"',
     what: 'resource pips',
   },
-  {
-    file: 'features/dice/DiceTray.tsx',
-    line: 'h-12 w-12 items-center justify-center rounded-full bg-accent',
-    what: 'the icon-only dice button',
-  },
   { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
 ];
 
