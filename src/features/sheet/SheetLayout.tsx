@@ -329,18 +329,17 @@ export function Component() {
                 Saving, Saved" for every HP tap. A failure or a refused save
                 is announced by the app shell's banners, and the recovery after
                 one by the announcer. Never truncated: the class line gives
-                way to it. */}
-            {saveState !== null && (
-              <span
-                data-save-indicator=""
-                className={`flex shrink-0 items-center gap-1 ${
-                  saveState.failed ? 'font-semibold text-danger' : ''
-                }`}
-              >
-                {saveState.icon}
-                {saveState.word}
-              </span>
-            )}
+                way to it. Always there, empty and out of the layout while
+                nothing has been saved yet, so what waits on it finds it. */}
+            <span
+              data-save-indicator=""
+              className={`flex shrink-0 items-center gap-1 empty:hidden ${
+                saveState?.failed === true ? 'font-semibold text-danger' : ''
+              }`}
+            >
+              {saveState?.icon}
+              {saveState?.word}
+            </span>
           </p>
         </div>
         {/* Build's way in, from every tab. Its count keeps unmade choices in

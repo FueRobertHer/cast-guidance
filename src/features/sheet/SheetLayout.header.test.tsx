@@ -346,6 +346,17 @@ describe('SheetLayout header (design system)', () => {
     expect(indicator?.textContent).toBe('Save failed');
     expect(indicator?.className.split(' ')).toContain('text-danger');
   });
+
+  it('keeps the save state in place, empty and hidden, before anything is saved', () => {
+    sheetState.set({ race: 'Dwarf', saveStatus: 'idle' });
+    renderAt('/c/x');
+    // e2e waits on this element to say a save is over, so it is never removed.
+    const indicator = document.querySelector('[data-save-indicator]');
+    expect(indicator).not.toBeNull();
+    expect(indicator?.childNodes).toHaveLength(0);
+    expect(indicator?.className.split(' ')).toContain('empty:hidden');
+    expect(indicator?.parentElement?.textContent).toBe('Dwarf Warrior 3');
+  });
 });
 
 describe('SheetLayout overflow menu', () => {
