@@ -25,7 +25,12 @@
  * quietly leaves something out.
  */
 
-/** SPDX identifiers the app accepts in shipped code. Anything else fails the build. */
+/**
+ * SPDX identifiers the app accepts in shipped code. Anything else fails the
+ * build. OFL-1.1 is for the self-hosted fonts (DS-001, an owner decision): it
+ * allows bundling them with software as long as the license text ships too,
+ * which the notices file does.
+ */
 export const ALLOWED_LICENSES: readonly string[] = [
   '0BSD',
   'Apache-2.0',
@@ -33,6 +38,7 @@ export const ALLOWED_LICENSES: readonly string[] = [
   'BSD-3-Clause',
   'ISC',
   'MIT',
+  'OFL-1.1',
 ];
 
 export type ShipsIn = 'app' | 'worker' | 'service worker' | 'stylesheet';
@@ -529,7 +535,7 @@ export function renderNotices(entries: NoticeEntry[]): string {
     '',
     "Cast Guidance's own code is released under the MIT License; see [LICENSE](LICENSE).",
     '',
-    'The production build ships code from the open source packages below: the app bundle, the search worker, the service worker and the stylesheet. Their license texts and NOTICE files follow, reproduced as each package publishes them. This file lists only what the build ships, not every dependency in package.json, and it covers code only, not game data, which the app downloads at runtime (see [docs/content-notice.md](docs/content-notice.md)).',
+    'The production build ships code and fonts from the open source packages below: the app bundle, the search worker, the service worker and the stylesheet. Their license texts and NOTICE files follow, reproduced as each package publishes them. This file lists only what the build ships, not every dependency in package.json, and it covers code and fonts only, not game data, which the app downloads at runtime (see [docs/content-notice.md](docs/content-notice.md)).',
     '',
     `${sorted.length} packages.`,
     '',
