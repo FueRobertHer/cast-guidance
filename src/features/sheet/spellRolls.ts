@@ -220,13 +220,14 @@ function heals(roll: TaggedRoll): boolean {
 
 function rollLabel(name: string, roll: TaggedRoll, scalingLabel?: string): string {
   if (scalingLabel !== undefined && scalingLabel !== '') return `${name} ${scalingLabel}`;
-  if (heals(roll)) return `${name} healing`;
+  // Damage first, as the variant is: Vampiric Touch's dice are its damage.
   if (roll.kind === 'damage') {
     const damageType = roll.after.match(
       /^\s*(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\s+damage/i,
     )?.[1];
     return `${name}${damageType !== undefined ? ` ${damageType}` : ''} damage`;
   }
+  if (heals(roll)) return `${name} healing`;
   return `${name} roll`;
 }
 

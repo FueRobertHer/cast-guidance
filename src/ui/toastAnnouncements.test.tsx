@@ -124,6 +124,46 @@ describe('RollToast', () => {
     expect(screen.queryByText('Initiative')).toBeNull();
   });
 
+  describe('where there is hover', () => {
+    const realMatchMedia = window.matchMedia;
+    const realMatches = Element.prototype.matches;
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(hover: hover)',
+      })) as unknown as typeof window.matchMedia;
+      // jsdom never hovers: the toast is under the pointer from the start.
+      vi.spyOn(Element.prototype, 'matches').mockImplementation(function (
+        this: Element,
+        selector: string,
+      ) {
+        return selector === ':hover'
+          ? this.classList.contains('fixed')
+          : realMatches.call(this, selector);
+      });
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      vi.restoreAllMocks();
+    });
+
+    it('waits for a mouse that rested where the toast rose, with no enter event', () => {
+      render(<RollToast />);
+      act(() => rollLogStore.getState().append(roll(15)));
+      act(() => vi.advanceTimersByTime(ROLL_TOAST_MS * 2));
+      expect(screen.queryByText('Initiative')).not.toBeNull();
+    });
+
+    it('does not wait on the hover a finger leaves on what it tapped', () => {
+      render(<RollToast />);
+      act(() => rollLogStore.getState().append(roll(15)));
+      const toast = screen.getByText('Initiative').closest('div.fixed');
+      if (toast === null) throw new Error('no toast');
+      fireEvent.pointerDown(toast, { pointerType: 'touch' });
+      act(() => vi.advanceTimersByTime(ROLL_TOAST_MS));
+      expect(screen.queryByText('Initiative')).toBeNull();
+    });
+  });
+
   it('names a natural 20 only on a d20 roll', () => {
     render(<RollToast />);
     act(() => rollLogStore.getState().append({ ...roll(25, 20), kind: 'damage' }));

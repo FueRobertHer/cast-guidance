@@ -210,6 +210,10 @@ describe('InlineText heal rolls (DS-001)', () => {
 
   it('leaves other dice alone, even after a sentence about regaining', () => {
     expect(kindRolled('You regain your breath. Roll {@dice 1d6}.')).toBeUndefined();
+    expect(
+      kindRolled('The wand regains {@dice 1d6 + 1} expended charges daily at dawn.'),
+    ).toBeUndefined();
+    expect(kindRolled('It regains {@dice 1d4} charges. You regain hit points.')).toBeUndefined();
     expect(kindRolled('Deals {@damage 1d6} fire damage.')).toBe('damage');
     expect(kindRolled('The damage increases by {@scaledamage 8d6|3-9|1d6}.')).toBe('damage');
   });

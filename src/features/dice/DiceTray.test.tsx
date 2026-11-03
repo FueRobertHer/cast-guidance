@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // A11Y-001: the tray's launcher and each log row's remove button were icon or
 // glyph only, named by a tooltip that iOS VoiceOver never reads.
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RollResult } from '@/dice/types';
 import { advModeStore } from '@/stores/advMode';
@@ -151,6 +151,24 @@ describe('DiceTray', () => {
     expect(
       within(tray()).getByRole('button', { name: 'Remove Healing potion roll (5)' }),
     ).toBeTruthy();
+  });
+
+  it('hands focus back to what had it before a toast opened it', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    render(<DiceTray />);
+    act(() => diceTrayStore.getState().show('history', opener));
+    fireEvent.keyDown(tray(), { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    opener.remove();
+  });
+
+  it('falls back to the dock button when that is gone', async () => {
+    const opener = document.createElement('button');
+    render(<DiceTray dock />);
+    act(() => diceTrayStore.getState().show('history', opener));
+    fireEvent.keyDown(tray(), { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTitle('Dice tray')));
   });
 
   it('closes when the sheet it is on goes', () => {

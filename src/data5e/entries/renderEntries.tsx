@@ -181,11 +181,18 @@ function TagView({
 }
 
 /**
- * Words that make the dice after them a heal, earlier in the same sentence:
- * "You regain {@dice 2d4 + 2} hit points" (a potion, Cure Wounds), "The
- * healing increases by {@scaledice 1d8|1-9|1d8}".
+ * Whether the dice between `before` and `after` are a heal, by their
+ * sentence: "healing" ahead of them ("The healing increases by
+ * {@scaledice 1d8|1-9|1d8}"), or "regain" ahead of them with hit points
+ * either side ("You regain {@dice 2d4 + 2} hit points"). A wand that "regains
+ * {@dice 1d6 + 1} expended charges" is not a heal.
  */
-const REGAINS = /\b(?:regains?|healing)\b[^.]*$/i;
+function healsBetween(before: string, after: string): boolean {
+  const lead = before.match(/[^.]*$/)?.[0] ?? '';
+  if (/\bhealing\b/i.test(lead)) return true;
+  const sentence = `${lead}${after.split('.')[0] ?? ''}`;
+  return /\bregains?\b/i.test(lead) && /\bhit points?\b/i.test(sentence);
+}
 
 export function InlineText({ text }: { text: string }): ReactNode {
   const tokens = tokenizeEntryText(text);
@@ -195,7 +202,10 @@ export function InlineText({ text }: { text: string }): ReactNode {
       {tokens.map((t, i) => {
         if (t.kind === 'text') return <Fragment key={i}>{t.text}</Fragment>;
         const before = tokens[i - 1];
-        const heals = before?.kind === 'text' && REGAINS.test(before.text);
+        const after = tokens[i + 1];
+        const heals =
+          before?.kind === 'text' &&
+          healsBetween(before.text, after?.kind === 'text' ? after.text : '');
         return <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} />;
       })}
     </>

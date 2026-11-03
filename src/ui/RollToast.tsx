@@ -98,6 +98,8 @@ export function RollToast() {
   };
   // What had focus before the toast was pressed, for the tray to return to.
   const before = useRef<HTMLElement | null>(null);
+  // What last pressed the toast: a tap leaves `:hover` behind.
+  const pressedBy = useRef<string | null>(null);
 
   useEffect(() => {
     if (seq === shown.current) return;
@@ -109,6 +111,7 @@ export function RollToast() {
     setHovered(false);
     setFocused(false);
     before.current = null;
+    pressedBy.current = null;
     announce(rollAnnouncement(latest), { key: 'roll', repeat: true });
   }, [seq]);
 
@@ -117,9 +120,11 @@ export function RollToast() {
     if (visible === null || held) return;
     const timer = setTimeout(() => {
       // A toast that rose under a resting mouse has had no enter event. Only
-      // where there is hover: a tapped element keeps `:hover` on a phone.
+      // where there is hover, and never after a finger or pen pressed it: a
+      // tapped element keeps `:hover`, on a phone or a touchscreen laptop.
       const resting =
         window.matchMedia?.('(hover: hover)').matches === true &&
+        (pressedBy.current === null || pressedBy.current === 'mouse') &&
         toast.current?.matches(':hover') === true;
       if (resting) setHovered(true);
       else setVisible(null);
@@ -179,6 +184,9 @@ export function RollToast() {
     onPointerLeave: (event: ReactPointerEvent) => {
       if (event.pointerType === 'mouse') setHovered(false);
     },
+    onPointerDown: (event: ReactPointerEvent) => {
+      pressedBy.current = event.pointerType;
+    },
   };
 
   // Keyed on the roll counter so a second roll while the first is still up
@@ -203,7 +211,8 @@ export function RollToast() {
       {...hold}
       // A pressed button takes focus before its click, or never (Safari), so
       // what had it is read on the press; from the keyboard, as it arrives.
-      onPointerDown={() => {
+      onPointerDown={(event) => {
+        hold.onPointerDown(event);
         const el = document.activeElement;
         if (el instanceof HTMLElement && el !== document.body && !toast.current?.contains(el)) {
           before.current = el;
