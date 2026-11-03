@@ -23,7 +23,7 @@ export function exhaustionLevel(conditions: ReadonlyArray<{ id: string; level?: 
 }
 
 /**
- * Set the exhaustion level (clamped to 0–6) in a draft's play-state
+ * Set the exhaustion level (clamped to 0 through 6) in a draft's play-state
  * conditions; 0 removes the condition. Shared by the condition picker and
  * Exhaustion's own sheet.
  */
