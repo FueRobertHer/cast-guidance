@@ -70,7 +70,11 @@ export interface PlayState {
   /** index 0 = level-1 slots spent */
   slotsSpent: number[];
   pactSlotsSpent: number;
-  conditions: Array<{ id: string; level?: number }>;
+  /**
+   * Active conditions. `ignored` is the player switching a condition's effects
+   * off (a ruling at the table): it stays listed, and nothing applies.
+   */
+  conditions: Array<{ id: string; level?: number; ignored?: boolean }>;
   deathSaves: { success: number; fail: number };
   concentratingOn?: { label: string };
   /** keyed to derived resources (rage, ki, …) */

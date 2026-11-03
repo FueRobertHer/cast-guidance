@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
+import type { RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 
@@ -18,6 +19,12 @@ export interface RollChipProps {
   variant?: 'dice' | 'damage' | 'd20' | 'heal';
   /** Fires after a successful roll (e.g. to spend a limited-use resource). */
   onRolled?: (total: number) => void;
+  /**
+   * Makes the roll in place of the chip's own: a sheet's d20 test, which the
+   * character's conditions change (`rollD20Test`). The chip still shows and
+   * logs what it returns.
+   */
+  roller?: () => RollResult;
   /**
    * In running text: sized by the line, as WCAG 2.5.8 allows a target in a
    * sentence. Otherwise (a row of controls) the chip is at least 24 by 24.
@@ -45,6 +52,7 @@ export function RollChip({
   label,
   variant = 'dice',
   onRolled,
+  roller,
   inline,
 }: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
@@ -66,10 +74,12 @@ export function RollChip({
 
   const onRoll = () => {
     // d20-style chips honor the global advantage toggle.
-    const r = roll(expr, {
-      label,
-      advantage: variant === 'd20' ? currentAdvantage() : undefined,
-    });
+    const r =
+      roller?.() ??
+      roll(expr, {
+        label,
+        advantage: variant === 'd20' ? currentAdvantage() : undefined,
+      });
     rollLogStore.getState().append(r);
     onRolled?.(r.total);
     setResult(r.total);

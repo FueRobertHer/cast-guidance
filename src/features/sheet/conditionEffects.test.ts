@@ -5,18 +5,13 @@ const ids = (list: string[]) => list.map((id) => ({ id }));
 
 describe('conditionLimits', () => {
   it('is all-empty with no conditions', () => {
-    expect(conditionLimits([])).toEqual({
-      noActions: [],
-      noVerbal: [],
-      attackDisadvantage: [],
-    });
+    expect(conditionLimits([])).toEqual({ noActions: [], noVerbal: [] });
   });
 
-  it('Paralyzed stops actions and speech but is not an attack-disadvantage source', () => {
+  it('Paralyzed stops actions and speech', () => {
     const l = conditionLimits(ids(['Paralyzed']));
     expect(l.noActions).toEqual(['Paralyzed']);
     expect(l.noVerbal).toEqual(['Paralyzed']);
-    expect(l.attackDisadvantage).toEqual([]);
   });
 
   it('Incapacitated stops actions only', () => {
@@ -25,17 +20,21 @@ describe('conditionLimits', () => {
     expect(l.noVerbal).toEqual([]);
   });
 
-  it('Blinded/Prone give attack disadvantage without blocking actions', () => {
-    const l = conditionLimits(ids(['Blinded', 'Prone']));
-    expect(l.attackDisadvantage).toEqual(['Blinded', 'Prone']);
-    expect(l.noActions).toEqual([]);
+  it('Blinded/Prone block neither actions nor speech', () => {
+    expect(conditionLimits(ids(['Blinded', 'Prone']))).toEqual({ noActions: [], noVerbal: [] });
   });
 
-  it('accumulates every responsible condition across categories', () => {
-    const l = conditionLimits(ids(['Stunned', 'Poisoned']));
-    expect(l.noActions).toEqual(['Stunned']);
-    expect(l.noVerbal).toEqual(['Stunned']);
-    expect(l.attackDisadvantage).toEqual(['Poisoned']);
+  it('leaves out a condition whose effects are switched off', () => {
+    expect(conditionLimits([{ id: 'Stunned', ignored: true }, { id: 'Paralyzed' }])).toEqual({
+      noActions: ['Paralyzed'],
+      noVerbal: ['Paralyzed'],
+    });
+  });
+
+  it('accumulates every responsible condition', () => {
+    const l = conditionLimits(ids(['Stunned', 'Poisoned', 'Unconscious']));
+    expect(l.noActions).toEqual(['Stunned', 'Unconscious']);
+    expect(l.noVerbal).toEqual(['Stunned', 'Unconscious']);
   });
 });
 

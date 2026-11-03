@@ -60,6 +60,13 @@ export interface RollResult {
     critical?: boolean;
     /** Present when the roll leads with a d20 — powers nat 20/1 highlighting. */
     d20?: { natural: number };
+    /**
+     * What the character's conditions did to the roll, in words
+     * ("Disadvantage: Poisoned · −4: Exhaustion 2").
+     */
+    cue?: string;
+    /** A condition makes it fail whatever the dice say (a Stunned DEX save). */
+    autoFail?: boolean;
   };
 }
 

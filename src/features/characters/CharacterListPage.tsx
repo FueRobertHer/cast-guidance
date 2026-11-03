@@ -6,6 +6,7 @@ import { DATA_TAG } from '@/data5e/config';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistryState } from '@/data5e/hooks';
 import { characterRepo, type PreparedCharacterImport } from '@/db/characterRepo';
+import { conditionMaxHp } from '@/engine/conditions';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import {
@@ -264,7 +265,9 @@ export function Component() {
       if (classesOf(c).length === 0) continue;
       try {
         const sheet = deriveSheet(c, ctx);
-        map.set(c.id, { hp: c.play.currentHp, maxHp: sheet.maxHp.value, ac: sheet.ac.value });
+        // The maximum in play, as the sheet shows it (2014 exhaustion halves it).
+        const maxHp = conditionMaxHp(sheet.maxHp.value, c.play.conditions, c.rulesVersion).value;
+        map.set(c.id, { hp: c.play.currentHp, maxHp, ac: sheet.ac.value });
       } catch {
         // skip a character that can't derive (e.g. missing homebrew)
       }

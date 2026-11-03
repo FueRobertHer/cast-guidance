@@ -326,6 +326,26 @@ html {
     scroll-padding-bottom: 0;
   }
 }
+/*
+ * The sheet's dice dock floats above the tab bar (from `lg`, alone at the
+ * bottom right) and moves away only while the page scrolls down, so where it
+ * is drawn the padding clears it too. Without this, Tab could land on a
+ * control under it without scrolling: in landscape, the score of the last
+ * ability tile.
+ */
+html:has([data-dice-dock]) {
+  scroll-padding-bottom: calc(
+    76px +
+    --theme(--spacing-dock) +
+    0.5rem +
+    env(safe-area-inset-bottom)
+  );
+}
+@media (width >= 64rem) {
+  html:has([data-dice-dock]) {
+    scroll-padding-bottom: calc(1.5rem + --theme(--spacing-dock) + 0.5rem);
+  }
+}
 
 body {
   background-color: var(--cg-bg);

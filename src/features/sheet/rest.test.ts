@@ -77,7 +77,7 @@ describe('longRest', () => {
       deathSaves: { success: 1, fail: 2 },
       conditions: [{ id: 'Exhaustion', level: 3 }],
     });
-    const restored = longRest(p, sheet());
+    const restored = longRest(p, sheet(), '2014');
     expect(p.currentHp).toBe(20);
     expect(p.tempHp).toBe(0);
     expect(p.slotsSpent.every((n) => n === 0)).toBe(true);
@@ -90,29 +90,47 @@ describe('longRest', () => {
     );
   });
 
+  it('lowers exhaustion before healing, so the rest that lifts 2014 level 4 heals to full', () => {
+    const p = play({ currentHp: 6, conditions: [{ id: 'Exhaustion', level: 4 }] });
+    const restored = longRest(p, sheet(), '2014');
+    expect(p.conditions).toEqual([{ id: 'Exhaustion', level: 3 }]);
+    expect(p.currentHp).toBe(20);
+    expect(restored).toContain('+14 HP');
+  });
+
+  it('heals to the halved 2014 maximum while exhaustion stays at 4 or more', () => {
+    const p = play({ currentHp: 6, conditions: [{ id: 'Exhaustion', level: 5 }] });
+    longRest(p, sheet(), '2014');
+    expect(p.currentHp).toBe(10);
+    // 2024 exhaustion never touches the maximum.
+    const q = play({ currentHp: 6, conditions: [{ id: 'Exhaustion', level: 5 }] });
+    longRest(q, sheet(), '2024');
+    expect(q.currentHp).toBe(20);
+  });
+
   it('clears exhaustion entirely when it was at level 1', () => {
     const p = play({ conditions: [{ id: 'Exhaustion', level: 1 }] });
-    longRest(p, sheet());
+    longRest(p, sheet(), '2014');
     expect(p.conditions.some((c) => c.id === 'Exhaustion')).toBe(false);
   });
 
   it('regains half of a single-class pool of hit dice (minimum 1)', () => {
     const p = play({ hitDiceSpent: { d8: 4 } });
-    const restored = longRest(p, sheet({ hitDice: { d8: 4 } }));
+    const restored = longRest(p, sheet({ hitDice: { d8: 4 } }), '2014');
     expect(p.hitDiceSpent.d8).toBe(2); // 4 total -> regain 2
     expect(restored).toContain('2 hit dice');
   });
 
   it('regains at least one hit die even for a level-1 character', () => {
     const p = play({ hitDiceSpent: { d10: 1 } });
-    longRest(p, sheet({ hitDice: { d10: 1 } })); // floor(1/2)=0 -> min 1
+    longRest(p, sheet({ hitDice: { d10: 1 } }), '2014'); // floor(1/2)=0 -> min 1
     expect(p.hitDiceSpent.d10).toBe(0);
   });
 
   it('regains half the TOTAL hit dice for a multiclass, largest die first', () => {
     // 3 Fighter d10 + 3 Wizard d6 = 6 total -> regain 3 (not 1-per-type=2).
     const p = play({ hitDiceSpent: { d10: 3, d6: 3 } });
-    const restored = longRest(p, sheet({ hitDice: { d10: 3, d6: 3 } }));
+    const restored = longRest(p, sheet({ hitDice: { d10: 3, d6: 3 } }), '2014');
     // Largest die first: 3 back from d10 exhausts the budget of 3.
     expect(p.hitDiceSpent.d10).toBe(0);
     expect(p.hitDiceSpent.d6).toBe(3);
@@ -121,7 +139,7 @@ describe('longRest', () => {
 
   it('never regains more dice than were spent', () => {
     const p = play({ hitDiceSpent: { d10: 1, d6: 0 } });
-    longRest(p, sheet({ hitDice: { d10: 3, d6: 3 } })); // budget 3, but only 1 spent
+    longRest(p, sheet({ hitDice: { d10: 3, d6: 3 } }), '2014'); // budget 3, but only 1 spent
     expect(p.hitDiceSpent.d10).toBe(0);
     expect(p.hitDiceSpent.d6).toBe(0);
   });
@@ -129,14 +147,14 @@ describe('longRest', () => {
   it('spills leftover budget from the largest die to the next-smaller one', () => {
     // Total 8 -> budget 4. d10 has only 1 spent (regain 1), remaining 3 fills d6.
     const p = play({ hitDiceSpent: { d10: 1, d6: 5 } });
-    longRest(p, sheet({ hitDice: { d10: 2, d6: 6 } }));
+    longRest(p, sheet({ hitDice: { d10: 2, d6: 6 } }), '2014');
     expect(p.hitDiceSpent.d10).toBe(0); // 1 - 1
     expect(p.hitDiceSpent.d6).toBe(2); // 5 - 3
   });
 
   it('still regains an unparseable die key (sorted last, not dropped)', () => {
     const p = play({ hitDiceSpent: { dX: 4 } });
-    longRest(p, sheet({ hitDice: { dX: 4 } })); // total 4 -> budget 2
+    longRest(p, sheet({ hitDice: { dX: 4 } }), '2014'); // total 4 -> budget 2
     expect(p.hitDiceSpent.dX).toBe(2);
   });
 });

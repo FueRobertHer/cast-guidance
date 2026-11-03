@@ -47,10 +47,18 @@ function termSpeech(term: Term, first: boolean): string {
  */
 export function rollAnnouncement(result: RollResult): string {
   const nat = result.meta?.d20?.natural;
-  const flag = nat === 20 ? ', natural 20' : nat === 1 ? ', natural 1' : '';
+  const flag =
+    result.meta?.autoFail === true
+      ? ', automatic failure'
+      : nat === 20
+        ? ', natural 20'
+        : nat === 1
+          ? ', natural 1'
+          : '';
   const dice = result.terms.map((t, i) => termSpeech(t, i === 0)).join(', ');
   const rolled = dice === '' ? '' : `. Rolled ${dice}`;
-  return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}`;
+  const cue = result.meta?.cue === undefined ? '' : `. ${result.meta.cue}`;
+  return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
 }
 
 /**
@@ -85,7 +93,9 @@ export function RollToast() {
   }, [seq, latest]);
 
   if (visible === null) return null;
-  const nat = visible.meta?.d20?.natural;
+  const autoFail = visible.meta?.autoFail === true;
+  // An automatic failure is not a natural 20 to celebrate, nor a natural 1.
+  const nat = autoFail ? undefined : visible.meta?.d20?.natural;
   const tone = rollTone(visible);
   const Icon = tone === 'damage' ? HeartCrack : D20Icon;
 
@@ -110,10 +120,16 @@ export function RollToast() {
             <span className="ml-1.5 font-bold text-dice-small text-heal">Nat 20!</span>
           )}
           {nat === 1 && <span className="ml-1.5 font-bold text-danger text-dice-small">Nat 1</span>}
+          {autoFail && <span className="ml-1.5 font-bold text-danger text-dice-small">Fails</span>}
         </div>
         <div className="truncate text-dice-small text-ink-muted tabular-nums">
           {rollDetail(visible)}
         </div>
+        {/* What the character's conditions did to the roll, whole, since a
+            cut line could hide why the total is what it is. */}
+        {visible.meta?.cue !== undefined && (
+          <div className="text-caption text-guide">{visible.meta.cue}</div>
+        )}
       </div>
       <span
         className={`shrink-0 text-stat tabular-nums motion-safe:animate-total-in ${ROLL_INK[tone]}`}

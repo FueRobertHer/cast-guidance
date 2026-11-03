@@ -78,6 +78,15 @@ describe('historyLabel', () => {
     expect(historyLabel(two, three)).toBe('Exhaustion → 3');
   });
 
+  it("names a condition's effects switched off and back on", () => {
+    const on = base();
+    on.play.conditions = [{ id: 'Poisoned' }];
+    const off = base();
+    off.play.conditions = [{ id: 'Poisoned', ignored: true }];
+    expect(historyLabel(on, off)).toBe('Poisoned effects off');
+    expect(historyLabel(off, on)).toBe('Poisoned effects on');
+  });
+
   it('names an equipment swap and a learned spell', () => {
     const withDagger = base();
     withDagger.equipment = [

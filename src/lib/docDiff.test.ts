@@ -123,6 +123,17 @@ describe('diffDocs', () => {
     ]);
   });
 
+  it("describes a condition's effects switched off", () => {
+    const from = edited((d) => {
+      d.play.conditions = [{ id: 'Poisoned' }];
+    });
+    const to = edited((d) => {
+      d.play.conditions = [{ id: 'Poisoned', ignored: true }];
+    });
+    expect(lines(from, to)).toEqual(['Poisoned effects off']);
+    expect(lines(to, from)).toEqual(['Poisoned effects on']);
+  });
+
   it('matches gear by entry, so a quantity change is not an add and a remove', () => {
     const arrows = { id: 'e1', ref: { name: 'Arrow', source: 'PHB' }, qty: 20 };
     const from = edited((d) => {

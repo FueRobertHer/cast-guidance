@@ -358,6 +358,12 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
     if (prevLevel.has(c.id) && was !== (c.level ?? 0))
       push('conditions', `${c.id} ${was} → ${c.level ?? 0}`);
   }
+  const prevIgnored = new Map(p.conditions.map((c) => [c.id, c.ignored === true]));
+  for (const c of n.conditions) {
+    const was = prevIgnored.get(c.id);
+    if (was !== undefined && was !== (c.ignored === true))
+      push('conditions', `${c.id} effects ${c.ignored === true ? 'off' : 'on'}`);
+  }
 
   for (let i = 0; i < Math.max(p.slotsSpent.length, n.slotsSpent.length); i++) {
     const was = p.slotsSpent[i] ?? 0;

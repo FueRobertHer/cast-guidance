@@ -118,6 +118,26 @@ describe('the condition strip', () => {
     expect(document.activeElement).toBe(button('Condition'));
   });
 
+  it("switches a condition's effects off and back on from its sheet, keeping it listed", async () => {
+    renderStrip([{ id: 'Poisoned' }]);
+    fireEvent.click(button('Poisoned'));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Poisoned' }));
+    const apply = sheet.getByRole('button', { name: /^Apply its effects/ });
+    expect(apply.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(apply);
+    expect(apply.getAttribute('aria-pressed')).toBe('false');
+    expect(apply.textContent).toBe('Apply its effectsOff');
+    await closeSheet();
+    // Still on the strip, saying it is off.
+    expect(strip().getByRole('button', { name: 'Poisoned off' })).toBeTruthy();
+
+    fireEvent.click(button('Poisoned off'));
+    const again = within(await screen.findByRole('dialog', { name: 'Poisoned' }));
+    fireEvent.click(again.getByRole('button', { name: /^Apply its effects/ }));
+    await closeSheet();
+    expect(strip().getByRole('button', { name: 'Poisoned' })).toBeTruthy();
+  });
+
   it("opens what a condition does from its name, in the character's edition, and hands focus back", async () => {
     renderStrip([{ id: 'Poisoned' }]);
     fireEvent.click(button('Poisoned'));

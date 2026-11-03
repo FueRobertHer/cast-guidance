@@ -190,6 +190,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
     expect(screen.getByText('−2 to all d20 tests (checks, attacks, saves)')).toBeTruthy();
     expect(screen.getByText('−5 ft speed')).toBeTruthy();
     await dismiss();
-    expect(screen.getByText('Speed (ft) · exhausted')).toBeTruthy();
+    // The speed caption names what slowed the character.
+    expect(screen.getByText('· Exhaustion 1')).toBeTruthy();
   });
 });

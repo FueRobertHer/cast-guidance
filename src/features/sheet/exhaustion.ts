@@ -1,9 +1,11 @@
+import { conditionSpeed } from '@/engine/conditions';
+
 /**
- * Exhaustion mechanics for both rules editions. 2014 is the cumulative six-step
- * table (disadvantage → half speed → … → death); 2024 is linear (−2 to every
- * d20 test and −5 ft speed per level, death at 6). Effects that a digital sheet
- * can't force on a roll (disadvantage, halved HP max) are surfaced as advisory
- * lines; speed is computed so the sheet can show the reduced number, and death
+ * Exhaustion for the stepper, in both rules editions. 2014 is the cumulative
+ * six-step table (disadvantage → half speed → … → death); 2024 is linear (−2
+ * to every d20 test and −5 ft speed per level, death at 6). The rules
+ * themselves are the engine's (`engine/conditions.ts`), which the rolls,
+ * speed and HP maximum all read; these lines say the same in words. Death
  * (level 6) is flagged so the UI can offer a *user-triggered* drop to 0 HP.
  */
 export interface ExhaustionInfo {
@@ -45,6 +47,9 @@ export function setExhaustionLevel(
 
 export function exhaustionInfo(level: number, edition: '2014' | '2024'): ExhaustionInfo {
   const lvl = Math.max(0, Math.min(6, level));
+  // The engine holds the rule; this is its view for the stepper.
+  const speedAfter = (base: number) =>
+    conditionSpeed(base, [{ id: 'Exhaustion', level: lvl }], edition).value;
 
   if (edition === '2024') {
     const lines: string[] = [];
@@ -53,12 +58,7 @@ export function exhaustionInfo(level: number, edition: '2014' | '2024'): Exhaust
       lines.push(`−${lvl * 5} ft speed`);
     }
     if (lvl >= 6) lines.push('Death');
-    return {
-      level: lvl,
-      dead: lvl >= 6,
-      speedAfter: (base) => (lvl >= 6 ? 0 : Math.max(0, base - lvl * 5)),
-      lines,
-    };
+    return { level: lvl, dead: lvl >= 6, speedAfter, lines };
   }
 
   // 2014 cumulative table.
@@ -69,10 +69,5 @@ export function exhaustionInfo(level: number, edition: '2014' | '2024'): Exhaust
   if (lvl >= 4) lines.push('Hit point maximum halved');
   if (lvl >= 5) lines.push('Speed reduced to 0');
   if (lvl >= 6) lines.push('Death');
-  return {
-    level: lvl,
-    dead: lvl >= 6,
-    speedAfter: (base) => (lvl >= 5 ? 0 : lvl >= 2 ? Math.floor(base / 2) : base),
-    lines,
-  };
+  return { level: lvl, dead: lvl >= 6, speedAfter, lines };
 }

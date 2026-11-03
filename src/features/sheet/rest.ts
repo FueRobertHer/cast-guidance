@@ -12,6 +12,7 @@
  * Not modeled here (left to the player, by design): spending Hit Dice to heal on
  * a short rest, and choosing exactly which Hit Dice to regain on a long rest.
  */
+import { conditionMaxHp, type Edition } from '@/engine/conditions';
 import type { DerivedSheet, PlayState } from '@/engine/types';
 
 /** Faces of a "d10"-style hit-die key (0 when unparseable, so it sorts last). */
@@ -41,24 +42,29 @@ export function shortRest(play: PlayState, sheet: DerivedSheet): string[] {
 }
 
 /** Reset long-rest state and return a human summary of what was restored. */
-export function longRest(play: PlayState, sheet: DerivedSheet): string[] {
+export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition): string[] {
   const restored: string[] = [];
-  const hpHealed = sheet.maxHp.value - play.currentHp;
+
+  // A long rest removes one level of exhaustion (both editions), and the hit
+  // points come back to the maximum after that: the rest that takes 2014's
+  // exhaustion from 4 to 3 lifts the halved maximum it heals up to.
+  const exh = play.conditions.find((c) => c.id === 'Exhaustion');
+  const exhaustionLifted = exh?.level !== undefined && exh.level > 0;
+  if (exh?.level !== undefined && exh.level > 0) {
+    if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
+    else exh.level -= 1;
+  }
+  const maxHp = conditionMaxHp(sheet.maxHp.value, play.conditions, edition).value;
+
+  const hpHealed = maxHp - play.currentHp;
   if (hpHealed > 0) restored.push(`+${hpHealed} HP`);
   if (play.slotsSpent.some((n) => n > 0)) restored.push('spell slots');
   if (play.pactSlotsSpent > 0) restored.push('pact slots');
   if (play.resources.some((r) => r.used > 0)) restored.push('resources');
   if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
+  if (exhaustionLifted) restored.push('1 exhaustion level');
 
-  // A long rest removes one level of exhaustion (both editions).
-  const exh = play.conditions.find((c) => c.id === 'Exhaustion');
-  if (exh?.level !== undefined && exh.level > 0) {
-    if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
-    else exh.level -= 1;
-    restored.push('1 exhaustion level');
-  }
-
-  play.currentHp = sheet.maxHp.value;
+  play.currentHp = maxHp;
   play.tempHp = 0;
   play.slotsSpent = play.slotsSpent.map(() => 0);
   play.pactSlotsSpent = 0;
