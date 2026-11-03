@@ -26,6 +26,14 @@ export interface ChoicePromptRendererProps {
 const KEY_SEP = '\u0000';
 
 /**
+ * The +/− cells: two across, three from `sm`, but never a cell narrower than
+ * its two 44px buttons (5.5rem), so with large text the grid drops to one
+ * column instead of the buttons running out of the card (A11Y-003).
+ */
+const STEPPERS =
+  'grid grid-cols-[repeat(auto-fit,minmax(max(5.5rem,(100%_-_0.375rem)/2),1fr))] gap-1.5 sm:grid-cols-[repeat(auto-fit,minmax(max(5.5rem,(100%_-_0.75rem)/3),1fr))]';
+
+/**
  * Reduce a stored choice to the prompt's own option ids: case-corrected,
  * de-duplicated unless the prompt allows repeats, and capped at `count`.
  */
@@ -147,11 +155,18 @@ export function ChoicePromptRenderer({
   const stepper = prompt.allowRepeat === true && prompt.count > 1;
 
   return (
-    <fieldset className={`${cardClass} flex flex-col gap-3`}>
+    // `min-w-0`: a fieldset is otherwise at least as wide as its content's
+    // longest line, so one wide row pushes the whole card past the screen.
+    <fieldset className={`${cardClass} flex min-w-0 flex-col gap-3`}>
       <legend className="sr-only">{prompt.label}</legend>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-body-strong">{prompt.label}</span>
-        <span className="shrink-0 text-caption text-ink-muted">
+      {/* The label keeps at least 6rem and its longest word beside the
+          origin, which otherwise wraps under it, still at the right (large
+          text). `max-w-full` caps that word at the row, where it breaks. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="max-w-full grow basis-24 text-body-strong wrap-break-word">
+          {prompt.label}
+        </span>
+        <span className="ml-auto text-caption text-ink-muted">
           {prompt.origin.label} · pick {prompt.count}
         </span>
       </div>
@@ -165,7 +180,7 @@ export function ChoicePromptRenderer({
         />
       )}
       {stepper ? (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <div className={STEPPERS}>
           {options.map((o) => {
             const times = selected.filter((s) => s === o.id).length;
             // Two 44px buttons either side of "STR+2" need about 9rem. A cell

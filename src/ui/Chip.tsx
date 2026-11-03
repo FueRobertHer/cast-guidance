@@ -8,6 +8,10 @@ import type { ButtonHTMLAttributes } from 'react';
  * With `pressed`, it is a toggle (`aria-pressed`), and a pressed chip is a
  * filled `ink` pill: selection is ink in this system, never a hue. `outline`
  * is for an empty or "add" chip that invites a first value.
+ *
+ * Its label stays on one line wherever it fits, and wraps (centred) only
+ * where it is wider than the space it has, as with large text on a phone,
+ * rather than running out of the chip and the screen (A11Y-003).
  */
 export type ChipTone = 'raised' | 'outline';
 
@@ -19,7 +23,7 @@ const TONE: Record<ChipTone, string> = {
 };
 
 export function chipClass(tone: ChipTone = 'raised'): string {
-  return `inline-flex min-h-tap min-w-tap items-center justify-center gap-1.5 whitespace-nowrap rounded-full border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 text-label transition-colors duration-120 aria-pressed:bg-ink aria-pressed:text-bg aria-pressed:ring-0 ${TONE[tone]}`;
+  return `inline-flex min-h-tap min-w-tap items-center justify-center gap-1.5 text-center rounded-full border-[0.375rem] border-transparent bg-clip-padding [--tap-inset:0.375rem] px-1.5 text-label transition-colors duration-120 aria-pressed:bg-ink aria-pressed:text-bg aria-pressed:ring-0 ${TONE[tone]}`;
 }
 
 export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {

@@ -90,6 +90,23 @@ const ROWS =
 /** A small group label inside a section (SAVING THROWS). */
 const OVERLINE = 'text-overline text-ink-muted uppercase';
 
+/**
+ * The ability score cells: two across on a phone, three from `sm` and six from
+ * `lg` once that many 7.75rem cells fit (a 44px − and + either side of the
+ * score), but never a cell narrower than 5.75rem, which holds the − and + side
+ * by side. All in rem, with the wrapper as the query container, so with large
+ * text the grid drops to fewer columns instead of the steppers running out of
+ * their cells and the page (A11Y-003).
+ */
+const SCORES =
+  'grid grid-cols-[repeat(auto-fit,minmax(max(5.75rem,(100%_-_0.5rem)/2),1fr))] gap-2 sm:@min-[24.25rem]:grid-cols-3 lg:@min-[49rem]:grid-cols-6';
+/**
+ * A cell's −, score and +: in a row, or where the cell is under 7.5rem, the
+ * score above the two buttons. DOM order stays −, score, +.
+ */
+const SCORE_STEPPER =
+  'grid grid-cols-2 justify-items-center gap-1 @min-[7.5rem]:flex @min-[7.5rem]:items-center';
+
 // ---------------------------------------------------------------------------
 // "What changed" diff — the build-explorer feedback loop
 // ---------------------------------------------------------------------------
@@ -211,10 +228,11 @@ function Section({
       className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
     >
       {/* Wraps so a long summary (six ability scores, no spaces) moves
-          under the title at large text instead of widening the page. */}
+          under the title at large text instead of widening the page, and
+          breaks where even its own line is too narrow. */}
       <summary className="flex min-h-tap cursor-pointer flex-wrap items-center justify-between gap-x-2 px-4 py-2.5">
         <span className="text-heading">{title}</span>
-        <span className="flex items-center gap-2 text-caption text-ink-muted">
+        <span className="flex min-w-0 items-center gap-2 text-caption text-ink-muted wrap-anywhere">
           {summary}
           <ChevronUp size={16} aria-hidden className="transition-transform group-open:rotate-180" />
         </span>
@@ -461,13 +479,15 @@ export function Component() {
         <button
           type="button"
           onClick={openChoices}
-          className="flex min-h-tap items-center justify-between gap-2 rounded-control bg-guide-soft px-3 py-2.5 text-left text-sm transition-colors duration-120 hover:brightness-108"
+          className="flex min-h-tap flex-wrap items-center justify-between gap-x-2 rounded-control bg-guide-soft px-3 py-2.5 text-left text-sm transition-colors duration-120 hover:brightness-108"
         >
-          <span>
+          {/* The summary keeps at least 6rem beside Resolve, which otherwise
+              goes under it, still at the right (large text). */}
+          <span className="min-w-0 grow basis-24">
             <strong>{sheet.pending.length}</strong> decision
             {sheet.pending.length > 1 ? 's' : ''} to make — skills, feats, languages…
           </span>
-          <span className="shrink-0 font-bold text-guide">Resolve →</span>
+          <span className="ml-auto shrink-0 font-bold text-guide">Resolve →</span>
         </button>
       )}
 
@@ -554,7 +574,8 @@ export function Component() {
               key={`${entry.ref.name}|${entry.ref.source}`}
               className="flex flex-col gap-2 rounded-control p-3 ring-1 ring-line ring-inset"
             >
-              <div className="flex items-center justify-between">
+              {/* The level controls wrap under the name where both do not fit. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="flex flex-wrap items-center gap-1.5 text-body-strong">
                   <span>
                     {entry.ref.name} {entry.levels}
@@ -562,7 +583,7 @@ export function Component() {
                   </span>
                   <EditionChip cue={cueFor('class', entry.ref)} version={doc.rulesVersion} />
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -893,72 +914,74 @@ export function Component() {
             );
           })()}
         </div>
-        {/* Two columns on a phone: a 44px − and + either side of the score
-            need about 130px, which a third of a 320px screen does not have. */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {ABILITIES.map((a) => {
-            const final = sheet.abilities[a];
-            return (
-              <div
-                key={a}
-                className="flex flex-col items-center gap-1 rounded-control bg-surface-raised px-1 py-2"
-              >
-                <span className={OVERLINE}>{a}</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label={`Decrease ${a.toUpperCase()}`}
-                    onClick={() =>
-                      update(
-                        (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
-                      )
-                    }
-                    className="tap rounded-full bg-surface"
-                  >
-                    −
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`${a.toUpperCase()} ${doc.abilities.base[a]}: swap with another ability`}
-                    aria-pressed={swapFrom === a}
-                    onClick={() => {
-                      if (swapFrom === null) setSwapFrom(a);
-                      else {
-                        const from = swapFrom;
-                        setSwapFrom(null);
-                        if (from === a) return;
-                        update((d) => {
-                          const t = d.abilities.base[from];
-                          d.abilities.base[from] = d.abilities.base[a];
-                          d.abilities.base[a] = t;
-                        });
+        <div className="@container">
+          <div className={SCORES}>
+            {ABILITIES.map((a) => {
+              const final = sheet.abilities[a];
+              return (
+                // No side padding: the stepper is centred, and where it fills
+                // the cell, padding would only push it out.
+                <div
+                  key={a}
+                  className="@container flex flex-col items-center gap-1 rounded-control bg-surface-raised py-2"
+                >
+                  <span className={OVERLINE}>{a}</span>
+                  <div className={SCORE_STEPPER}>
+                    <button
+                      type="button"
+                      aria-label={`Decrease ${a.toUpperCase()}`}
+                      onClick={() =>
+                        update(
+                          (d) => void (d.abilities.base[a] = Math.max(3, d.abilities.base[a] - 1)),
+                        )
                       }
-                    }}
-                    className="h-11 w-7 shrink-0 rounded-chip text-center font-bold tabular-nums aria-pressed:bg-ink aria-pressed:text-bg"
-                  >
-                    {doc.abilities.base[a]}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Increase ${a.toUpperCase()}`}
-                    onClick={() =>
-                      update(
-                        (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
-                      )
-                    }
-                    className="tap rounded-full bg-surface"
-                  >
-                    +
-                  </button>
+                      className="tap rounded-full bg-surface"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${a.toUpperCase()} ${doc.abilities.base[a]}: swap with another ability`}
+                      aria-pressed={swapFrom === a}
+                      onClick={() => {
+                        if (swapFrom === null) setSwapFrom(a);
+                        else {
+                          const from = swapFrom;
+                          setSwapFrom(null);
+                          if (from === a) return;
+                          update((d) => {
+                            const t = d.abilities.base[from];
+                            d.abilities.base[from] = d.abilities.base[a];
+                            d.abilities.base[a] = t;
+                          });
+                        }
+                      }}
+                      className="col-span-2 row-start-1 h-11 w-7 shrink-0 rounded-chip text-center font-bold tabular-nums aria-pressed:bg-ink aria-pressed:text-bg"
+                    >
+                      {doc.abilities.base[a]}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Increase ${a.toUpperCase()}`}
+                      onClick={() =>
+                        update(
+                          (d) => void (d.abilities.base[a] = Math.min(18, d.abilities.base[a] + 1)),
+                        )
+                      }
+                      className="tap rounded-full bg-surface"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="text-caption text-ink-muted tabular-nums">
+                    {final.value !== doc.abilities.base[a] ? `→ ${final.value} ` : ''}(
+                    {final.mod >= 0 ? '+' : ''}
+                    {final.mod})
+                  </span>
                 </div>
-                <span className="text-caption text-ink-muted tabular-nums">
-                  {final.value !== doc.abilities.base[a] ? `→ ${final.value} ` : ''}(
-                  {final.mod >= 0 ? '+' : ''}
-                  {final.mod})
-                </span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
         <p className="text-caption text-ink-muted">
           {swapFrom !== null
@@ -1058,7 +1081,10 @@ export function Component() {
         <p className="text-caption text-ink-muted">
           Tap any value to see exactly how it's calculated.
         </p>
-        <div className="grid grid-cols-3 gap-2">
+        {/* Three across, but never a tile narrower than 4.75rem, which holds
+            "Initiative": with large text, fewer columns rather than labels
+            spilling out of their tiles and the page (A11Y-003). */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(max(4.75rem,(100%_-_1rem)/3),1fr))] gap-2">
           {(
             [
               ['Max HP', sheet.maxHp],
@@ -1130,15 +1156,18 @@ export function Component() {
                   trigger={
                     <button
                       type="button"
-                      className="flex items-center justify-between px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-raised"
+                      className="flex items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-raised"
                     >
-                      <span className="flex items-center gap-2">
+                      {/* With large text the ability wraps under the name,
+                          and a long name breaks, rather than pushing the total
+                          out of the list's clipped edge. */}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 wrap-anywhere">
                         <ProfDot level={s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
                         {pinned && <span className="text-overline text-guide uppercase">set</span>}
                       </span>
-                      <span className="font-semibold tabular-nums">
+                      <span className="shrink-0 font-semibold tabular-nums">
                         {s.total.value >= 0 ? '+' : ''}
                         {s.total.value}
                       </span>
@@ -1173,10 +1202,12 @@ export function Component() {
                 <Link
                   key={`${g.name}|${g.source}`}
                   to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                  className="flex items-center justify-between px-3 py-1.5 text-sm transition-colors hover:bg-surface-raised"
+                  className="flex flex-wrap items-center justify-between gap-x-2 px-3 py-1.5 text-sm transition-colors hover:bg-surface-raised"
                 >
-                  <span className="capitalize">{g.name}</span>
-                  <span className="text-xs text-ink-muted">
+                  {/* The origin wraps under the name, at the right, where both
+                      do not fit (large text). */}
+                  <span className="min-w-0 capitalize wrap-anywhere">{g.name}</span>
+                  <span className="ml-auto min-w-0 text-xs text-ink-muted wrap-anywhere">
                     {g.origin}
                     {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
                   </span>
