@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { rollDetail } from '@/dice/format';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
-import { useScrollHidden } from '@/lib/useScrollHidden';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
+import { useDockHidden } from '@/ui/AdvToggle';
 import { Button } from '@/ui/Button';
 import { D20Icon } from '@/ui/D20Icon';
 import { ROLL_INK, rollTone } from '@/ui/rollTone';
@@ -28,7 +28,7 @@ export function DiceTray() {
   const advMode = useAdvMode((s) => s.mode);
   const setAdvMode = useAdvMode((s) => s.set);
   const [error, setError] = useState<string>();
-  const hidden = useScrollHidden();
+  const hidden = useDockHidden();
 
   const doRoll = (expression: string, label?: string) => {
     try {
@@ -51,17 +51,16 @@ export function DiceTray() {
       {/* The dice dock's button (DS-001): it sits in the end of the capsule
           AdvToggle draws, 2px in from its right and bottom, so the two read as
           one control. A 44px tap, the brand circle 40px inside it. Hidden by
-          scroll, it is still in the tab order: focus brings it back rather
-          than leaving the keyboard on an invisible button. */}
+          scroll, it is still in the tab order: keyboard focus in either half
+          brings the whole dock back (useDockHidden). */}
       <Sheet.Trigger asChild>
         <button
           type="button"
           aria-label="Dice tray"
           title="Dice tray"
+          data-dice-dock-button=""
           className={`fixed right-[calc(1rem+2px)] bottom-[calc(78px+env(safe-area-inset-bottom))] z-20 flex size-tap items-center justify-center rounded-full border-2 border-transparent bg-brand bg-clip-padding text-on-brand transition-all duration-200 [--tap-inset:2px] hover:bg-brand-hover active:scale-92 lg:bottom-[calc(1.5rem+2px)] ${
-            hidden
-              ? 'pointer-events-none translate-x-20 opacity-0 focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100'
-              : ''
+            hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
           }`}
         >
           <D20Icon size={22} />
