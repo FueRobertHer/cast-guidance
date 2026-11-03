@@ -9,7 +9,7 @@ import { Link } from 'react-router';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
-import { LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
+import { DISPLAY_ARG, LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
 
 // ---------------------------------------------------------------------------
 // Inline tags
@@ -153,7 +153,7 @@ function TagView({
     default: {
       const routeType = LINKED_TYPES[tag];
       if (routeType !== undefined) {
-        const ref = parseEntityRef(args);
+        const ref = parseEntityRef(args, DISPLAY_ARG.get(tag));
         const uid = ref.source ? `${ref.name}|${ref.source}` : ref.name;
         return (
           <Link
@@ -167,7 +167,7 @@ function TagView({
       if (PLAIN_REF_TAGS.has(tag)) {
         // Something the library has no page for: plain words, since a mark
         // with nowhere to go would read as a link that does nothing.
-        const ref = parseEntityRef(args);
+        const ref = parseEntityRef(args, DISPLAY_ARG.get(tag));
         return (
           <span>
             <InlineText text={ref.display} />

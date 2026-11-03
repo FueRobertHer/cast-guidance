@@ -4,7 +4,13 @@
 import { cleanup, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FORMATTING_TAGS, isRenderedTag, LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
+import {
+  DISPLAY_ARG,
+  FORMATTING_TAGS,
+  isRenderedTag,
+  LINKED_TYPES,
+  PLAIN_REF_TAGS,
+} from './inlineTags';
 import { InlineText } from './renderEntries';
 
 afterEach(cleanup);
@@ -65,6 +71,56 @@ describe('InlineText tag coverage agrees with inlineTags', () => {
   ])('renders the reference tag {@%s}', (tag) => {
     expect(isRenderedTag(tag)).toBe(true);
     expect(markup(tag)).not.toBe(markup('zzzUnknownTag'));
+  });
+});
+
+describe('InlineText reference tags show their display text, never their parameters', () => {
+  const text = (s: string) => {
+    const { container, unmount } = render(
+      <MemoryRouter>
+        <InlineText text={s} />
+      </MemoryRouter>,
+    );
+    const shown = container.textContent;
+    unmount();
+    return shown;
+  };
+
+  it('shows a {@filter} by its first part, dropping key=value and !negated filters', () => {
+    // The Cleric's Destroy Undead (PHB), as it is in the data.
+    expect(
+      text(
+        'when an {@filter undead of CR 1/2 or lower|bestiary|challenge rating=[&0;&1/2]|type=undead|miscellaneous=!swarm} fails its saving throw',
+      ),
+    ).toBe('when an undead of CR 1/2 or lower fails its saving throw');
+  });
+
+  it.each([
+    ['{@filter 1/4|bestiary|challenge rating=[&0;&1/4]|type=beast|speed type=!fly;!swim}', '1/4'],
+    ['{@5etools feats|feats.html|blankhash}', 'feats'],
+    ['{@book chapter 5|PHB|4}', 'chapter 5'],
+    ['{@book Making an Attack|phb|9|making an attack}', 'Making an Attack'],
+    ['{@adventure chapter 1|WBtW|1}', 'chapter 1'],
+    ['{@classFeature Divine Sense|Paladin|PHB|1}', 'Divine Sense'],
+    ['{@classFeature Flash of Genius|Artificer|EFA|7|EFA}', 'Flash of Genius'],
+    ['{@classFeature Rage|Barbarian||1||raging}', 'raging'],
+    ['{@subclassFeature Arcane Jolt|Artificer|EFA|Battle Smith|EFA|9|EFA}', 'Arcane Jolt'],
+    ['{@subclass Alchemist|Artificer|EFA|EFA}', 'Alchemist'],
+    ['{@deity Azuth|Faerûnian|SCAG}', 'Azuth'],
+    ['{@card Aberration|Deck of Many More Things|BMT}', 'Aberration'],
+    ['{@quickref difficult terrain||3}', 'difficult terrain'],
+    ['{@quickref Cover||3||half cover}', 'half cover'],
+    ['{@class Bard|PHB|College of Swords|Swords|XGE}', 'College of Swords'],
+    ['{@class fighter|phb|Battle Master|Battle Master|phb|2-0}', 'Battle Master'],
+    ['{@spell fire shield||fire shield (warm shield only)}', 'fire shield (warm shield only)'],
+    ['{@creature commoner||commoners}', 'commoners'],
+  ])('shows %s as "%s"', (tag, shown) => {
+    expect(text(tag)).toBe(shown);
+  });
+
+  it('only moves the display text of tags the renderer draws as references', () => {
+    const refTags = new Set([...PLAIN_REF_TAGS, ...Object.keys(LINKED_TYPES)]);
+    for (const tag of DISPLAY_ARG.keys()) expect(refTags).toContain(tag);
   });
 });
 
