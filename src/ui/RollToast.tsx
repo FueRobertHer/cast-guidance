@@ -1,27 +1,22 @@
-import { Dices } from 'lucide-react';
+import { HeartCrack } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { rollDetail } from '@/dice/format';
 import type { RollResult } from '@/dice/types';
 import { announce } from '@/stores/announcer';
 import { useRollLog } from '@/stores/rollLog';
+import { D20Icon } from './D20Icon';
+import { ROLL_INK, type RollTone, rollTone } from './rollTone';
 
 /**
- * Nat 20 and nat 1 are the two results worth spotting from across the table,
- * so they get the whole snackbar rather than a word at the end of a line.
- * Everything else takes the bright neutral edge, which still has to stand off
- * a page whose cards are the same near-black.
+ * The toast's edge and its tile. A plain result has the `line` hairline every
+ * floating panel has; a nat 20 or nat 1 a 2px edge in its colour instead.
  */
-const TONE = {
-  crit: { edge: 'border-emerald-400 shadow-emerald-500/25', ink: 'text-emerald-300' },
-  fumble: { edge: 'border-accent shadow-accent/25', ink: 'text-accent' },
-  plain: { edge: 'border-ink/30 shadow-black/70', ink: 'text-ink' },
-} as const;
-
-/** Which tone a result gets; see {@link TONE}. */
-export function rollTone(result: RollResult): keyof typeof TONE {
-  const nat = result.meta?.d20?.natural;
-  return nat === 20 ? 'crit' : nat === 1 ? 'fumble' : 'plain';
-}
+const TONE: Record<RollTone, { edge: string; tile: string }> = {
+  d20: { edge: 'ring-1 ring-line', tile: 'bg-roll-soft text-roll' },
+  damage: { edge: 'ring-1 ring-line', tile: 'bg-danger-soft text-danger' },
+  crit: { edge: 'ring-2 ring-heal', tile: 'bg-heal-soft text-heal' },
+  fumble: { edge: 'ring-2 ring-danger', tile: 'bg-danger-soft text-danger' },
+};
 
 type Term = RollResult['terms'][number];
 
@@ -59,10 +54,12 @@ export function rollAnnouncement(result: RollResult): string {
 }
 
 /**
- * Global roll feedback: whenever anything rolls, a snackbar slides up above
- * the tab bar for a moment so the result is never missed.
+ * Global roll feedback: whenever anything rolls, a toast slides up for a
+ * moment so the result is never missed. It sits just above the tab bar, or
+ * where the dice dock is on screen (Play and Stats), just above the dock, so
+ * the roll mode the result was made in stays in sight.
  *
- * The snackbar is a plain visual. It remounts for every roll, and a region
+ * The toast is a plain visual. It remounts for every roll, and a region
  * that mounts with its text is announced unreliably, so the result is said
  * through the announcer (A11Y-002). Every roll is a new event, so the same
  * result twice is said twice; a burst of taps is cut to its first and last.
@@ -89,26 +86,37 @@ export function RollToast() {
 
   if (visible === null) return null;
   const nat = visible.meta?.d20?.natural;
-  const tone = TONE[rollTone(visible)];
+  const tone = rollTone(visible);
+  const Icon = tone === 'damage' ? HeartCrack : D20Icon;
 
   return (
     // Keyed on the roll counter so a second roll while the first is still up
-    // replays the animation instead of silently swapping the number.
+    // replays the animation instead of silently swapping the number. The dock
+    // marks itself `data-dice-dock` (AdvToggle); its top is 124px up, and
+    // the toast clears it by 8.
     <div
       key={seq}
-      className={`fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-xl border-2 ${tone.edge} bg-surface-2 px-4 py-3 shadow-2xl motion-safe:animate-toast-in lg:right-6 lg:left-auto lg:w-80`}
+      className={`fixed inset-x-3 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 flex items-center gap-3 rounded-sheet bg-surface py-3 pr-4 pl-3 shadow-overlay ring-inset ${TONE[tone].edge} motion-safe:animate-toast-in lg:right-6 lg:bottom-6 lg:left-auto lg:w-80 [:root:has([data-dice-dock])_&]:bottom-[calc(132px+env(safe-area-inset-bottom))] lg:[:root:has([data-dice-dock])_&]:bottom-20`}
     >
-      <Dices size={20} aria-hidden className={`shrink-0 ${tone.ink}`} />
+      <div
+        className={`flex size-11 shrink-0 items-center justify-center rounded-[0.875rem] ${TONE[tone].tile}`}
+      >
+        <Icon size={24} strokeWidth={1.75} aria-hidden="true" />
+      </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold">
+        <div className="truncate text-body-strong">
           {visible.label ?? visible.expr}
-          {nat === 20 && <span className="ml-1.5 text-emerald-300">Nat 20!</span>}
-          {nat === 1 && <span className="ml-1.5 text-accent">Nat 1</span>}
+          {nat === 20 && (
+            <span className="ml-1.5 font-bold text-dice-small text-heal">Nat 20!</span>
+          )}
+          {nat === 1 && <span className="ml-1.5 font-bold text-danger text-dice-small">Nat 1</span>}
         </div>
-        <div className="truncate font-mono text-xs text-ink-muted">{rollDetail(visible)}</div>
+        <div className="truncate text-dice-small text-ink-muted tabular-nums">
+          {rollDetail(visible)}
+        </div>
       </div>
       <span
-        className={`shrink-0 text-3xl font-bold tabular-nums motion-safe:animate-total-in ${tone.ink}`}
+        className={`shrink-0 text-stat tabular-nums motion-safe:animate-total-in ${ROLL_INK[tone]}`}
       >
         {visible.total}
       </span>
