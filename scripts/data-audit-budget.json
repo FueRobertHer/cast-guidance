@@ -88,6 +88,101 @@
           "note": "Genie's Kind: the patron is one kind of genie. The wording lives in the subclassFeature."
         }
       ]
+    },
+    "v2.39.0": {
+      "files": 49,
+      "entities": {
+        "race": 222,
+        "subrace": 139,
+        "background": 175,
+        "feat": 305,
+        "optionalfeature": 221,
+        "skill": 36,
+        "language": 201,
+        "sense": 8,
+        "action": 48,
+        "condition": 30,
+        "disease": 29,
+        "status": 5,
+        "variantrule": 231,
+        "book": 67,
+        "baseitem": 230,
+        "itemProperty": 27,
+        "itemType": 67,
+        "item": 2512,
+        "itemGroup": 119,
+        "magicvariant": 230,
+        "class": 30,
+        "subclass": 330,
+        "classFeature": 677,
+        "subclassFeature": 1499,
+        "spell": 969
+      },
+      "warningGroups": {
+        "versions: replaceArr target not found on \"…\": \"…\"": 40
+      },
+      "unresolvedCopies": 0,
+      "spellsWithDice": 420,
+      "invalidSpellRolls": 0,
+      "unhandledTags": {},
+      "underscoreKeys": [
+        "_",
+        "_copy",
+        "_preserve",
+        "_mod",
+        "_subclassFluff",
+        "_variables",
+        "_versions",
+        "_meta",
+        "_abstract",
+        "_implementations"
+      ],
+      "branchAllow": [
+        {
+          "uid": "circle of the land|phb",
+          "key": "subclass",
+          "names": [
+            "Arctic",
+            "Coast",
+            "Desert",
+            "Forest",
+            "Grassland",
+            "Mountain",
+            "Swamp",
+            "Underdark"
+          ],
+          "verdict": "choice",
+          "note": "Circle Spells: the druid chooses the land where they became a druid. The wording lives in the subclassFeature, not the subclass entry."
+        },
+        {
+          "uid": "circle of the land|xphb",
+          "key": "subclass",
+          "names": ["Arid Land", "Polar Land", "Temperate Land", "Tropical Land"],
+          "verdict": "choice",
+          "note": "Circle of the Land Spells: choose one land type, changeable after a Long Rest. The wording lives in the subclassFeature."
+        },
+        {
+          "uid": "divine soul|xge",
+          "key": "subclass",
+          "names": ["Good", "Evil", "Law", "Chaos", "Neutrality"],
+          "verdict": "choice",
+          "note": "Divine Magic: choose one affinity for the source of your power. The wording lives in the subclassFeature."
+        },
+        {
+          "uid": "the genie|tce",
+          "key": "subclass",
+          "names": ["Dao", "Djinni", "Efreeti", "Marid"],
+          "verdict": "choice",
+          "note": "Genie's Kind: the patron is one kind of genie. The wording lives in the subclassFeature."
+        },
+        {
+          "uid": "vestige patron|au",
+          "key": "subclass",
+          "names": ["Life Domain", "Light Domain", "Trickery Domain", "War Domain"],
+          "verdict": "choice",
+          "note": "Vestige Spells: select one of these Cleric domains, whose Domain Spells you always have prepared. The wording lives in the subclassFeature."
+        }
+      ]
     }
   }
 }

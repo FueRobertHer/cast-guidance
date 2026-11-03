@@ -60,6 +60,26 @@ function entryName(e: unknown): string | undefined {
   return typeof n === 'string' ? n : undefined;
 }
 
+/**
+ * A string two JSON values share exactly when 5etools'
+ * `CollectionUtil.deepEquals` calls them equal: object keys in any order,
+ * arrays in order. Comparing keys rather than pairs keeps a homebrew list of
+ * n items against m existing ones linear instead of n times m.
+ */
+function deepKey(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(deepKey).join(',')}]`;
+  if (typeof v === 'object' && v !== null) {
+    const o = v as Record<string, unknown>;
+    const fields = Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${deepKey(o[k])}`);
+    return `{${fields.join(',')}}`;
+  }
+  // JSON can hold -0, which 5etools' `Object.is` keeps apart from 0.
+  if (Object.is(v, -0)) return '-0';
+  return JSON.stringify(v) ?? 'undefined';
+}
+
 // ---------------------------------------------------------------------------
 // replaceTxt: patterns that come from the data
 // ---------------------------------------------------------------------------
@@ -328,6 +348,14 @@ export function applyMod(
         case 'appendArr':
           arr().push(...asArray(o.items));
           break;
+        case 'appendIfNotExistsArr': {
+          // As in 5etools: each item is checked against what the array held
+          // before, not against the other items.
+          const a = arr();
+          const present = new Set(a.map(deepKey));
+          a.push(...asArray(o.items).filter((x) => !present.has(deepKey(x))));
+          break;
+        }
         case 'prependArr':
           arr().unshift(...asArray(o.items));
           break;

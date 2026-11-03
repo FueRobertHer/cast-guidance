@@ -30,6 +30,49 @@ describe('applyMod', () => {
     expect(empty.tags).toEqual(['x']);
   });
 
+  it('appendIfNotExistsArr appends only the items not already there', () => {
+    const t: Entity = { property: ['F|XPHB', 'Evo|AU'] };
+    applyMod(
+      t,
+      { property: { mode: 'appendIfNotExistsArr', items: ['Evo|AU', 'L|XPHB'] } },
+      noWarn,
+    );
+    expect(t.property).toEqual(['F|XPHB', 'Evo|AU', 'L|XPHB']);
+
+    const empty: Entity = {};
+    applyMod(empty, { property: { mode: 'appendIfNotExistsArr', items: 'Evo|AU' } }, noWarn);
+    expect(empty.property).toEqual(['Evo|AU']);
+  });
+
+  it('appendIfNotExistsArr compares deeply, keys in any order and arrays in order', () => {
+    const t: Entity = { entries: [{ name: 'A', v: [1, 2] }, 1] };
+    applyMod(
+      t,
+      {
+        entries: {
+          mode: 'appendIfNotExistsArr',
+          items: [{ v: [1, 2], name: 'A' }, { name: 'A', v: [2, 1] }, 1, '1'],
+        },
+      },
+      noWarn,
+    );
+    expect(t.entries).toEqual([{ name: 'A', v: [1, 2] }, 1, { name: 'A', v: [2, 1] }, '1']);
+  });
+
+  it('appendIfNotExistsArr keeps -0 apart from 0, as 5etools does', () => {
+    const t: Entity = { nums: [0] };
+    applyMod(t, JSON.parse('{"nums": {"mode": "appendIfNotExistsArr", "items": [-0, 0]}}'), noWarn);
+    const nums = t.nums as number[];
+    expect(nums).toHaveLength(2);
+    expect(Object.is(nums[1], -0)).toBe(true);
+  });
+
+  it('appendIfNotExistsArr checks items against the array, not against each other', () => {
+    const t: Entity = { tags: ['a'] };
+    applyMod(t, { tags: { mode: 'appendIfNotExistsArr', items: ['b', 'b', 'a'] } }, noWarn);
+    expect(t.tags).toEqual(['a', 'b', 'b']);
+  });
+
   it('prependArr and insertArr place items correctly', () => {
     const t: Entity = { entries: ['b', 'd'] };
     applyMod(t, { entries: { mode: 'prependArr', items: 'a' } }, noWarn);
@@ -235,6 +278,35 @@ describe('resolveCopies', () => {
     const warnings = resolveCopies(all, byUid(all), 't');
     expect(warnings).toEqual([]);
     expect(c.speed).toBe(30);
+  });
+
+  it('adds a property once down a chain whose every link adds it', () => {
+    // AU's evolving items (v2.39.0): each stage copies the last and adds the
+    // Evolving property, which the first stage already has.
+    const evolve = { property: { mode: 'appendIfNotExistsArr', items: 'Evo|AU' } };
+    const three: Entity = { name: 'Three', source: 'S', property: ['F|XPHB', 'Evo|AU'] };
+    const ten: Entity = {
+      name: 'Ten',
+      source: 'S',
+      _copy: { name: 'Three', source: 'S', _mod: evolve },
+    };
+    const many: Entity = {
+      name: 'Many',
+      source: 'S',
+      _copy: { name: 'Ten', source: 'S', _mod: evolve },
+    };
+    const rod: Entity = { name: 'Rod', source: 'S' };
+    const vigilant: Entity = {
+      name: 'Vigilant',
+      source: 'S',
+      _copy: { name: 'Rod', source: 'S', _mod: evolve },
+    };
+    const all = [many, ten, three, vigilant, rod];
+    expect(resolveCopies(all, byUid(all), 'item')).toEqual([]);
+    expect(many.property).toEqual(['F|XPHB', 'Evo|AU']);
+    expect(ten.property).toEqual(['F|XPHB', 'Evo|AU']);
+    expect(vigilant.property).toEqual(['Evo|AU']);
+    expect(rod.property).toBeUndefined();
   });
 
   it('reports cycles as unresolved instead of hanging', () => {
