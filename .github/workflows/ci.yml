@@ -174,7 +174,9 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Production / PWA build
-        run: bun run build
+        # `vite build` alone: `bun run build` also runs `tsc -b`, which emits
+        # nothing (every tsconfig is noEmit) and which `checks` already runs.
+        run: bunx vite build
 
       - name: E2E
         run: bun run e2e -- --project=${{ matrix.project }}
