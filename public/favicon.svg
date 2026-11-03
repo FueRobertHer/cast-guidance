@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Cast Guidance</title>
-  <rect width="64" height="64" rx="11.52" fill="#18181b"/>
+  <rect width="64" height="64" rx="11.52" fill="#1c1a16"/>
   <g transform="translate(5.12 5.12) scale(0.84)">
     <path d="M32 4 L56.25 18 L56.25 46 L32 60 L7.75 46 L7.75 18 Z" fill="none" stroke="#8fb0ea" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
     <path d="M32 20 Q34.08 30.92 45 33 Q34.08 35.08 32 46 Q29.92 35.08 19 33 Q29.92 30.92 32 20 Z" fill="#8fb0ea"/>

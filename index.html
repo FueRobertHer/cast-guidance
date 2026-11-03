@@ -23,7 +23,16 @@
     -->
     <link rel="dns-prefetch" href="https://api.github.com" />
     <link rel="dns-prefetch" href="https://raw.githubusercontent.com" />
-    <meta name="theme-color" content="#18181b" />
+    <!--
+      The dark theme's `bg`, the default. theme-boot.js sets it to the chosen
+      theme's before first paint, so it has to come first.
+    -->
+    <meta name="theme-color" content="#121110" />
+    <!--
+      Sets `data-theme` before anything paints (DS-001): a classic, blocking
+      script on purpose, ahead of the stylesheet Vite injects. See the file.
+    -->
+    <script src="/theme-boot.js"></script>
     <title>Cast Guidance</title>
   </head>
   <body>

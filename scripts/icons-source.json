@@ -1,5 +1,5 @@
 {
   "$comment": "Written by scripts/generate-icons.ts: the scripts/icon-source.svg the PNGs came from.",
   "source": "scripts/icon-source.svg",
-  "sha256": "409d75d9ae5c2ac95e39ad6cf6c2023a987a49cede863829eccfaf7a1dbd5f21"
+  "sha256": "3dbb1da770d61ce4871a81706fae22f9d433e47d91ce96fa14d598a719652a4c"
 }

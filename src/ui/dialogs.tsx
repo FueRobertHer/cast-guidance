@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import { Button } from './Button';
 import { Sheet } from './sheet';
+import { fieldClass } from './TextField';
 
 /**
  * Themed, promise-based replacements for window.prompt/confirm. One DialogHost
@@ -144,14 +146,11 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
         onChange={(e) => setDraft(e.target.value)}
         aria-label={req.title}
         placeholder={req.kind === 'text' ? req.placeholder : undefined}
-        className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2.5 text-sm outline-none placeholder:text-ink-muted"
+        className={`${fieldClass} min-w-0 flex-1`}
       />
-      <button
-        type="submit"
-        className="rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white"
-      >
+      <Button type="submit" variant="brand" className="min-h-12">
         OK
-      </button>
+      </Button>
     </form>
   );
 }
@@ -178,32 +177,29 @@ export function DialogHost() {
     <DialogFrame title={req.title} onDismiss={dismiss}>
       {req.kind === 'confirm' ? (
         <div className="flex flex-col gap-3">
-          {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
+          {req.detail !== undefined && <p className="text-body text-ink-muted">{req.detail}</p>}
+          {/* The confirm is the sheet's one primary action, or its one
+              destructive one: `danger` says that this cannot be undone. */}
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={dismiss}
-              className="flex-1 rounded-lg bg-surface-2 px-3 py-2.5 text-sm font-semibold"
-            >
+            <Button size="lg" onClick={dismiss} className="flex-1">
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="lg"
+              variant={req.danger === true ? 'danger' : 'brand'}
               onClick={() => {
                 req.resolve(true);
                 close();
               }}
-              className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-white ${
-                req.danger === true ? 'bg-accent-deep' : 'bg-accent-fill'
-              }`}
+              className="flex-1"
             >
               {req.confirmLabel ?? 'Confirm'}
-            </button>
+            </Button>
           </div>
         </div>
       ) : req.kind === 'choice' ? (
         <div className="flex flex-col gap-2">
-          {req.detail !== undefined && <p className="text-sm text-ink-muted">{req.detail}</p>}
+          {req.detail !== undefined && <p className="text-body text-ink-muted">{req.detail}</p>}
           <div className="flex flex-col gap-1.5">
             {req.options.map((o) => (
               <button
@@ -213,15 +209,15 @@ export function DialogHost() {
                   req.resolve(o.id);
                   close();
                 }}
-                className={`flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3 ${
-                  o.danger === true ? 'text-accent-ink' : ''
+                className={`flex min-h-tap items-center justify-between gap-2 rounded-control bg-surface-raised px-4 py-2.5 text-left text-body-strong transition-colors duration-120 hover:bg-surface-hover active:bg-surface-hover ${
+                  o.danger === true ? 'text-danger' : 'text-ink'
                 }`}
               >
                 <span className="min-w-0">{o.label}</span>
                 {/* Wraps rather than running off a phone screen: cast hints
                         carry cost, turn, and edition notes, the last one last. */}
                 {o.hint !== undefined && (
-                  <span className="min-w-0 text-right text-xs font-normal text-ink-muted">
+                  <span className="min-w-0 text-right font-normal text-caption text-ink-muted">
                     {o.hint}
                   </span>
                 )}
@@ -232,7 +228,7 @@ export function DialogHost() {
       ) : (
         <div className="flex flex-col gap-2">
           {req.kind === 'number' && req.hint !== undefined && (
-            <p className="text-xs text-ink-muted">{req.hint}</p>
+            <p className="text-caption text-ink-muted">{req.hint}</p>
           )}
           <InputForm key={req.title} req={req} />
         </div>
@@ -268,12 +264,11 @@ export function DialogFrame({
       }}
     >
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-3 text-base font-semibold">{title}</Sheet.Title>
+        <Sheet.Scrim />
+        <Sheet.Panel>
+          <Sheet.Heading>{title}</Sheet.Heading>
           {children}
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

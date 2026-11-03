@@ -29,13 +29,13 @@ function renderAt(path: string) {
 }
 
 describe('AppNav current section', () => {
-  it('marks only the open section with the bar', () => {
+  it('marks only the open section with the pill and bold weight', () => {
     const nav = renderAt('/library');
     const marked = nav
       .getAllByRole('link')
       .filter((l) => l.querySelector('[data-indicator]') !== null);
     expect(marked.map((l) => l.textContent)).toEqual(['Library']);
     expect(marked[0]?.getAttribute('aria-current')).toBe('page');
-    expect(marked[0]?.className).toContain('font-semibold');
+    expect(marked[0]?.className).toContain('font-bold');
   });
 });

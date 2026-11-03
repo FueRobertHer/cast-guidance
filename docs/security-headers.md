@@ -44,8 +44,11 @@ connect-src 'self'
 What each directive was checked against in the built `dist/`:
 
 - **Scripts:** `index.html` has no inline script (the test checks the source,
-  and the build adds only `src=` module scripts). There is no `eval` or
-  `new Function` in the bundle. Vercel Web Analytics loads
+  and the build adds only `src=` module scripts). The one classic script,
+  `/theme-boot.js`, sets the colour theme before first paint (DS-001); it is a
+  same-origin file for this reason, since an inline one would need a hash or
+  `'unsafe-inline'`. There is no `eval` or `new Function` in the bundle.
+  Vercel Web Analytics loads
   `/_vercel/insights/script.js` and reports to `/_vercel/insights/*` in
   production, both same-origin.
 - **Workers:** the search worker is `/assets/search.worker-*.js` and the
@@ -53,9 +56,11 @@ What each directive was checked against in the built `dist/`:
   worker from a `blob:` URL, so `blob:` is gone from `worker-src`.
 - **Styles:** vaul inserts a `<style>` element at runtime, which needs
   `'unsafe-inline'`. React `style={}` props go through the CSSOM and do not.
-- **Fonts and images:** system fonts only, no `@font-face` or `url()` in the
-  CSS, and the only images are `favicon.svg` and the PWA icons under
-  `/icons/`, all same-origin.
+- **Fonts and images:** the two typefaces (Literata and Atkinson Hyperlegible
+  Next, DS-001) are self-hosted from `@fontsource`: the CSS's only `url()`s
+  are their Latin `.woff2` and `.woff` files under `/assets/`, same-origin, so
+  `font-src 'self'` covers them. The only images are `favicon.svg` and the PWA
+  icons under `/icons/`, all same-origin.
 - **Downloads** use a `blob:` URL on an anchor, which CSP does not govern.
 
 ### Connect hosts

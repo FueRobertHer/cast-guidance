@@ -1,28 +1,318 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens: the Cast Guidance design system (DS-001), both themes.
+ *
+ * The values live here as `--cg-*` custom properties, one block per theme,
+ * and `@theme inline` below turns each into Tailwind utilities under the
+ * token's own name: `bg-surface`, `text-ink-muted`, `ring-line-strong`,
+ * `shadow-card`. `inline` makes a utility read the `--cg-*` property where it
+ * is used rather than where it was declared, so a subtree with its own
+ * `data-theme` (the theme picker's miniatures) is drawn in that theme. In
+ * hand-written CSS, use `var(--cg-*)` for the same reason.
+ *
+ * The theme is `data-theme` on <html>: `dark` (the default, also when the
+ * attribute is missing) or `light`. `public/theme-boot.js` sets it before
+ * first paint from the player's choice, and `src/lib/theme.ts` keeps it in
+ * step afterwards. Both themes share every name, so a component never asks
+ * which theme it is in.
+ *
+ * What each colour is for (the spec's README has the long form):
+ * - grounds: `bg` the page, `surface` cards and panels, `surface-raised`
+ *   controls inside a card, `surface-hover` their hover and pressed step,
+ *   `line` decorative hairlines, `line-strong` the 3:1 edge of an outlined
+ *   control (WCAG 1.4.11), `track` the empty part of a meter.
+ * - text: `ink` anything that must be read, `ink-muted` labels and metadata,
+ *   `ink-faint` disabled labels and placeholders only (under 4.5:1 by design).
+ * - roles, each a text colour with a `-soft` tint to sit on: `brand` action
+ *   (one primary button per screen, the dice button; labels on it are
+ *   `on-brand`), `guide` guidance and the focus ring, `danger` damage and
+ *   errors (`danger-fill` with `on-danger` for destructive buttons), `heal`,
+ *   `ward` temporary HP, `roll` (the brand blue) for rolls, `arcane` for
+ *   spellcasting resources. Selection is never a hue: it is `ink`.
+ *
+ * src/styles/contrast.test.ts holds every pairing the spec promises to its
+ * ratio in both themes; the axe gate (e2e/a11y) measures the rendered pages in
+ * both.
+ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --cg-bg: #121110;
+  --cg-surface: #1b1a17;
+  --cg-surface-raised: #26241f;
+  --cg-surface-hover: #322f29;
+  --cg-line: #2e2b26;
+  --cg-line-strong: #7a7468;
+  --cg-track: #33302a;
+  --cg-ink: #f3efe6;
+  --cg-ink-muted: #aca598;
+  --cg-ink-faint: #7d776c;
+  --cg-brand: #8fb0ea;
+  --cg-brand-hover: #a7c2f1;
+  --cg-on-brand: #121110;
+  --cg-guide: #f0c470;
+  --cg-guide-soft: #352b17;
+  --cg-danger: #ff8170;
+  --cg-danger-fill: #c8372a;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #3b1d18;
+  --cg-heal: #74d39f;
+  --cg-heal-soft: #17301f;
+  --cg-ward: #7fd0e6;
+  --cg-ward-soft: #132d35;
+  --cg-roll-soft: #1b2438;
+  --cg-arcane: #bfa8f8;
+  --cg-arcane-soft: #282042;
+  --cg-scrim: #000000a3;
+  --cg-shadow-float: 0 1px 0 0 #ffffff0f inset, 0 6px 16px #00000073, 0 2px 4px #00000059;
+  --cg-shadow-overlay: 0 1px 0 0 #ffffff12 inset, 0 16px 40px #0000008c;
+  /* No shadow, written as a transparent one: `none` is not valid inside the
+     comma list Tailwind builds when a card also takes a ring. */
+  --cg-shadow-card: 0 0 #0000;
+  /* Shared by both themes: aliases of a role above, resolved per theme. */
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --cg-bg: #eee6d5;
+  --cg-surface: #faf6ec;
+  --cg-surface-raised: #ebe3d1;
+  --cg-surface-hover: #e0d6c1;
+  --cg-line: #ddd2bc;
+  --cg-line-strong: #8a8170;
+  --cg-track: #e2d8c4;
+  --cg-ink: #1c1a16;
+  --cg-ink-muted: #5d564b;
+  --cg-ink-faint: #8a8172;
+  --cg-brand: #2a4d8f;
+  --cg-brand-hover: #22417a;
+  --cg-on-brand: #faf6ec;
+  --cg-guide: #8a4f00;
+  --cg-guide-soft: #f4dfbd;
+  --cg-danger: #b3261e;
+  --cg-danger-fill: #b3261e;
+  --cg-on-danger: #ffffff;
+  --cg-danger-soft: #fbe6e1;
+  --cg-heal: #16703d;
+  --cg-heal-soft: #e1f2e6;
+  --cg-ward: #0b6378;
+  --cg-ward-soft: #ddf0f4;
+  --cg-roll-soft: #e3e8f1;
+  --cg-arcane: #6a40c0;
+  --cg-arcane-soft: #eee8fb;
+  --cg-scrim: #1c1a1666;
+  --cg-shadow-float: 0 6px 16px #1c1a161f, 0 2px 4px #1c1a1614;
+  --cg-shadow-overlay: 0 16px 40px #1c1a1629, 0 2px 6px #1c1a1614;
+  /* Paper on paper needs an edge: cards take a shadow in light only. */
+  --cg-shadow-card: 0 1px 2px #1c1a160f;
+  --cg-focus: var(--cg-guide);
+  --cg-roll: var(--cg-brand);
+  --cg-meter-mid: var(--cg-guide);
+}
+
+@theme inline {
+  --color-bg: var(--cg-bg);
+  --color-surface: var(--cg-surface);
+  --color-surface-raised: var(--cg-surface-raised);
+  --color-surface-hover: var(--cg-surface-hover);
+  --color-line: var(--cg-line);
+  --color-line-strong: var(--cg-line-strong);
+  --color-track: var(--cg-track);
+  --color-ink: var(--cg-ink);
+  --color-ink-muted: var(--cg-ink-muted);
+  --color-ink-faint: var(--cg-ink-faint);
+  --color-brand: var(--cg-brand);
+  --color-brand-hover: var(--cg-brand-hover);
+  --color-on-brand: var(--cg-on-brand);
+  --color-guide: var(--cg-guide);
+  --color-guide-soft: var(--cg-guide-soft);
+  --color-focus: var(--cg-focus);
+  --color-danger: var(--cg-danger);
+  --color-danger-fill: var(--cg-danger-fill);
+  --color-on-danger: var(--cg-on-danger);
+  --color-danger-soft: var(--cg-danger-soft);
+  --color-heal: var(--cg-heal);
+  --color-heal-soft: var(--cg-heal-soft);
+  --color-ward: var(--cg-ward);
+  --color-ward-soft: var(--cg-ward-soft);
+  --color-roll: var(--cg-roll);
+  --color-roll-soft: var(--cg-roll-soft);
+  --color-arcane: var(--cg-arcane);
+  --color-arcane-soft: var(--cg-arcane-soft);
+  --color-meter-mid: var(--cg-meter-mid);
+  --color-scrim: var(--cg-scrim);
+
+  /* Only floating things cast shadows: the dice dock and button (`float`),
+     sheets, dialogs and the roll toast (`overlay`). Cards sit flat in dark. */
+  --shadow-float: var(--cg-shadow-float);
+  --shadow-overlay: var(--cg-shadow-overlay);
+  --shadow-card: var(--cg-shadow-card);
+
+  /*
+   * Temporary aliases (DS-001), so every screen keeps working, and passes
+   * contrast in both themes, until its own restyle moves it to the names
+   * above. New code never uses these; the last design-system session deletes
+   * this block, and the build then fails on anything still using one.
+   *
+   * The old names, onto the new roles:
+   * - `surface-2` (a control's fill) is `surface-raised`; `surface-3` (its
+   *   hover step) is `surface-hover`. `surface` kept its name and its role.
+   * - `accent` was one red for actions, selection and danger alike. Nearly
+   *   every use is an action or a selected or current state, so it follows
+   *   the action blue; its few danger uses are hover colours on remove
+   *   buttons. `accent-deep`, its tint behind selected options, action pills
+   *   and notices, is the blue tint `roll-soft`, which ink reads on in both
+   *   themes. `accent-ink`, the red words of a destructive choice, is
+   *   `danger`. `accent-fill` is a utility below, because its labels did not
+   *   always set their own colour.
+   *
+   * Tailwind's own hues, which some screens use directly, and which would
+   * fail on the light page as written (amber-300 on paper is 1.3:1):
+   * - amber (hints, pending choices, warnings) is `guide`;
+   * - emerald (success, healing, the full HP bar) is `heal`, emerald-900
+   *   (behind it) `heal-soft`;
+   * - sky-300 (roll chips, dice in rules text) is `roll`; sky-400, only the
+   *   temporary HP segment, is `ward`;
+   * - purple (homebrew marks) is `arcane`; orange-300 (damage roll chips) is
+   *   `danger`;
+   * - white only ever labels an accent fill, so it is `on-brand`.
+   */
+  --color-surface-2: var(--cg-surface-raised);
+  --color-surface-3: var(--cg-surface-hover);
+  --color-accent: var(--cg-brand);
+  --color-accent-deep: var(--cg-roll-soft);
+  --color-accent-ink: var(--cg-danger);
+  --color-white: var(--cg-on-brand);
+  --color-amber-100: var(--cg-guide);
+  --color-amber-200: var(--cg-guide);
+  --color-amber-300: var(--cg-guide);
+  --color-amber-400: var(--cg-guide);
+  --color-emerald-300: var(--cg-heal);
+  --color-emerald-400: var(--cg-heal);
+  --color-emerald-500: var(--cg-heal);
+  --color-emerald-900: var(--cg-heal-soft);
+  --color-sky-300: var(--cg-roll);
+  --color-sky-400: var(--cg-ward);
+  --color-purple-200: var(--cg-arcane);
+  --color-purple-300: var(--cg-arcane);
+  --color-orange-300: var(--cg-danger);
+}
+
+/*
+ * The old filled button, alias part two (DS-001). Its call sites write
+ * `bg-accent-fill` and mostly `text-white` (on-brand above), but a few left
+ * the label to inherit `ink`, which reads on no brand fill in either theme.
+ * So the alias brings its label colour with it. Removed with the block above.
+ */
+@utility bg-accent-fill {
+  background-color: var(--cg-brand);
+  color: var(--cg-on-brand);
+}
+
 @theme {
-  /* Semantic palette on top of Tailwind's zinc scale */
-  --color-surface: #18181b; /* zinc-900 */
-  --color-surface-2: #27272a; /* zinc-800 */
-  --color-surface-3: #3f3f46; /* zinc-700, the hover/press step above surface-2 */
-  --color-ink: #fafafa;
-  --color-ink-muted: #a1a1aa; /* zinc-400 */
-  --color-accent: #ef4444; /* red-500 */
-  --color-accent-deep: #7f1d1d; /* red-900 */
   /*
-   * The fill behind a button's label (A11Y-003). `accent` itself is tuned to
-   * read as text and marks on the near-black page, and white text on it is
-   * only 3.8:1, under the 4.5:1 that labels this size need. One step darker
-   * gives 4.8:1 with white and 4.6:1 with ink. Icon-only fills and marks
-   * (the dice button, pips, the tab bar) keep `accent`: they need 3:1.
+   * Two families (DS-001), self-hosted from src/main.tsx. Until one loads,
+   * the stacks fall back to Georgia and the system sans, which share metrics
+   * closely enough that nothing reflows. Literata is for names and titles
+   * only; everything else, numbers included, is Atkinson Hyperlegible Next,
+   * chosen for small sizes in bad light (distinct 0/O and 1/l/I).
    */
-  --color-accent-fill: #dc2626; /* red-600 */
+  --font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+
   /*
-   * Red words on a raised control (a destructive choice in a sheet). `accent`
-   * is 4.7:1 on a sheet but 4.0:1 on surface-2 and 2.8:1 on its hover step;
-   * this lighter red keeps 7.8:1 and 5.5:1.
+   * The type scale, as `text-<name>` utilities carrying size, line height,
+   * weight and tracking. Titles also take `font-display`, numbers
+   * `tabular-nums` so digits do not shift as values tick, overlines
+   * `uppercase`. In rem, so a larger browser text size scales them (WCAG
+   * 1.4.4). Tailwind's own `text-xs` and `text-sm` stay until each screen
+   * moves over.
    */
-  --color-accent-ink: #fca5a5; /* red-300 */
+  --text-title-page: 1.75rem; /* 28px: the one title of a section screen */
+  --text-title-page--line-height: 2.125rem;
+  --text-title-page--font-weight: 600;
+  --text-title-page--letter-spacing: -0.01em;
+  --text-title-sheet: 1.25rem; /* 20px: a character's name, a sheet's title */
+  --text-title-sheet--line-height: 1.625rem;
+  --text-title-sheet--font-weight: 600;
+  --text-title-card: 1.0625rem; /* 17px: a card that is a person or a choice */
+  --text-title-card--line-height: 1.375rem;
+  --text-title-card--font-weight: 600;
+  --text-stat-hero: 3rem; /* 48px: current HP, and only that */
+  --text-stat-hero--line-height: 3.25rem;
+  --text-stat-hero--font-weight: 700;
+  --text-stat-hero--letter-spacing: -0.02em;
+  --text-stat: 1.625rem; /* 26px: AC, initiative, modifiers, roll totals */
+  --text-stat--line-height: 1.875rem;
+  --text-stat--font-weight: 700;
+  --text-stat--letter-spacing: -0.01em;
+  --text-heading: 0.9375rem; /* 15px: a section heading inside a screen */
+  --text-heading--line-height: 1.25rem;
+  --text-heading--font-weight: 700;
+  --text-body: 0.9375rem; /* 15px: prose, and the page default */
+  --text-body--line-height: 1.375rem;
+  --text-body-strong: 0.9375rem; /* row titles and button labels */
+  --text-body-strong--line-height: 1.375rem;
+  --text-body-strong--font-weight: 600;
+  --text-input: 1rem; /* 16px, so iOS Safari never zooms on focus */
+  --text-input--line-height: 1.375rem;
+  --text-caption: 0.8125rem; /* 13px: metadata, helper text, under a number */
+  --text-caption--line-height: 1.125rem;
+  --text-label: 0.8125rem; /* 13px: chips, toggles, segments, badges */
+  --text-label--line-height: 1rem;
+  --text-label--font-weight: 600;
+  --text-overline: 0.6875rem; /* 11px uppercase: STR, HIT POINTS */
+  --text-overline--line-height: 0.875rem;
+  --text-overline--font-weight: 700;
+  --text-overline--letter-spacing: 0.08em;
+  /*
+   * Tab bar labels only, and in px, as they were before DS-001: the phone's
+   * bar holds four or six tabs at a fixed width, and labels that grew with
+   * the text size setting pushed the last tabs off the screen. The platforms'
+   * own tab bars keep their labels fixed the same way.
+   */
+  --text-tab: 11px;
+  --text-tab--line-height: 14px;
+  --text-tab--font-weight: 600;
+  --text-dice: 0.875rem; /* 14px: dice expressions, with tabular-nums */
+  --text-dice--line-height: 1.25rem;
+  --text-dice--font-weight: 600;
+  --text-dice-small: 0.75rem; /* 12px: a roll's breakdown line */
+  --text-dice-small--line-height: 1rem;
+
+  /*
+   * Space is Tailwind's own 4px grid: the spec's space-1 to space-12 are
+   * `p-1` to `p-12` (4 to 48px). The phone gutter and card padding are 4,
+   * sections are 6 apart. These are the fixed sizes layout depends on, as
+   * `h-tabbar`, `min-h-header`, `size-tap` and so on.
+   */
+  --spacing-tap: 2.75rem; /* 44px: the least any tappable thing measures */
+  --spacing-header: 3.5rem; /* 56px: the sheet header, section headers */
+  --spacing-tabbar: 64px; /* the tab bar, before the safe-area inset; px with its labels */
+  --spacing-dock: 3rem; /* 48px: the dice dock */
+  --container-content: 40rem; /* 640px: the widest one column gets */
+
+  /*
+   * Corners, by what they round (the spec's radius-sm to radius-xl), named
+   * apart from Tailwind's `rounded-lg` and friends, which 200-odd call sites
+   * use at their old sizes. Nested corners step down one: a `control` row in
+   * a `card`.
+   */
+  --radius-chip: 0.375rem; /* 6px: chips, badges, a segment's thumb */
+  --radius-control: 0.625rem; /* 10px: buttons, inputs, rows, toggles */
+  --radius-card: 1rem; /* 16px: cards and panels */
+  --radius-sheet: 1.5rem; /* 24px: a bottom sheet's top, the roll toast */
+
+  /*
+   * Motion confirms a result; it never decorates. 120ms for presses and
+   * toggles (`duration-120`), 200ms for rows and tabs, 260ms for a toast,
+   * 320ms for a roll total. Arrivals take this curve, fades `ease-out`.
+   */
+  --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
 
   /*
    * A roll result has to announce itself: it appears while the player is
@@ -82,13 +372,14 @@ body,
  * Keyboard focus clears the fixed and sticky bars (A11Y-003, WCAG 2.4.11).
  * Tab scrolls a control just into view, which below `lg` put it under the
  * bottom tab bar, and Shift+Tab under the sheet's sticky header and the build
- * page's bar beneath it: entirely hidden in landscape. The tab bars are about
- * 3.3rem tall, and from `lg` a side rail. The sticky bars publish their
- * measured heights (useStickyHeight), unset when not on screen.
+ * page's bar beneath it: entirely hidden in landscape. The tab bars are
+ * `tabbar` (64px) tall, so the padding is that and a little air, and from
+ * `lg` a side rail. The sticky bars publish their measured heights
+ * (useStickyHeight), unset when not on screen.
  */
 html {
   scroll-padding-top: calc(var(--sheet-header-h, 0px) + var(--sheet-bar-h, 0px));
-  scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
 }
 @media (width >= 64rem) {
   html {
@@ -97,8 +388,16 @@ html {
 }
 
 body {
-  background-color: #09090b; /* zinc-950 */
-  color: var(--color-ink);
+  background-color: var(--cg-bg);
+  color: var(--cg-ink);
+  font-size: --theme(--text-body);
+  /*
+   * `text-body`'s 22px on 15px, as a ratio rather than its 1.375rem: a length
+   * is inherited as it is, so text that sets only a smaller size (a 10px
+   * badge) would keep a 22px line and grow its row, where a ratio shrinks
+   * with it as Tailwind's 1.5 did.
+   */
+  line-height: calc(22 / 15);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }
@@ -122,23 +421,15 @@ a {
 }
 
 /*
- * iOS Safari zooms the viewport in whenever a focused control's text is under
- * 16px, and it never zooms back out: one tap on a search box and the rest of
- * the session is spent at 1.3x, panning sideways to read the sheet. Android
- * does not do this, which is why the app felt fine there and awful here.
- *
- * The app styles controls at `text-sm` (14px) for density, so this raises them
- * to the threshold on the platform that has one. `-webkit-touch-callout` is
- * WebKit-on-iOS only, so desktop Safari and every other browser keep the
- * 14px design. Unlayered, so it beats Tailwind's layered `text-sm` utility
- * without touching all 40-odd call sites.
+ * Typed text is `input` size (16px) everywhere (DS-001). iOS Safari zooms the
+ * viewport in whenever a focused control's text is under 16px, and it never
+ * zooms back out: one tap on a search box and the rest of the session is spent
+ * at 1.3x. The design system makes 16px the size of every field rather than an
+ * iOS-only override, so a field reads the same on every platform. Unlayered,
+ * so it beats the `text-sm` that 40-odd older inputs still carry.
  */
-@supports (-webkit-touch-callout: none) {
-  input,
-  select,
-  textarea {
-    font-size: 16px;
-  }
+:where(input, select, textarea) {
+  font-size: --theme(--text-input);
 }
 
 /*
@@ -158,9 +449,10 @@ a {
  * One consistent, high-contrast keyboard-focus indicator app-wide (A11Y-001).
  * `:focus-visible` only fires for keyboard/programmatic focus, so pointer users
  * never see it. This rule is unlayered, so it beats Tailwind's layered
- * `outline-none` utility that ~20 inputs use — without touching each call site.
+ * `outline-none` utility that ~20 inputs use, without touching each call site.
  * `:where(...)` keeps specificity at 0 so components can still opt into a
- * stronger custom ring later.
+ * stronger custom ring later. The colour is `focus`, the guidance gold, which
+ * holds 3:1 on every ground in both themes (WCAG 1.4.11).
  */
 :where(
   a,
@@ -175,9 +467,42 @@ a {
   [role="tab"],
   [role="menuitem"]
 ):focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 2px;
+  outline: 2px solid var(--cg-focus);
+  outline-offset: calc(2px - var(--tap-inset));
 }
+
+/*
+ * How far a control's visible shape sits inside its box. One padded out to its
+ * 44px target by a transparent border (DS-001) sets this to the border's
+ * width, so the ring above sits 2px off the shape people see rather than off
+ * the empty border. Not inherited, so nothing inside such a control takes it.
+ */
+@property --tap-inset {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/*
+ * The two grounds the gold ring disappears into (under 3:1, WCAG 1.4.11): the
+ * snackbars' inverted `ink` and the failure banner's `danger-fill`. A
+ * container marks its ground with `data-ground`, and the ring inside it takes
+ * that ground's label colour instead. Unlayered like the rule above, which a
+ * Tailwind `outline-*` utility could not beat.
+ */
+[data-ground="ink"] :focus-visible {
+  outline-color: var(--cg-bg);
+}
+[data-ground="danger"] :focus-visible {
+  outline-color: var(--cg-on-danger);
+}
+
+/*
+ * A control that cannot be used right now, whichever way it says so: native
+ * `disabled`, or `aria-disabled` on one that stays focusable to explain why.
+ * Used as `unavailable:` (DS-001: `ink-faint` label on `surface-raised`).
+ */
+@custom-variant unavailable (&:is(:disabled, [aria-disabled="true"]));
 
 /*
  * A touch target big enough to hit with a thumb at the table (A11Y-002): at

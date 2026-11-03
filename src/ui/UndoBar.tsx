@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef } from 'react';
 import type { UndoNotice } from '@/lib/useUndoOffer';
+import { SnackbarAction, snackbarDetailClass, snackbarProps } from './Snackbar';
 
 /**
  * The line that offers to take back a destructive change, in the page next to
- * where it happened (UX-004). Pair it with `useUndoOffer`.
+ * where it happened (UX-004), in the snackbar style (DS-001). Pair it with
+ * `useUndoOffer`.
  *
  * The status region stays mounted and only its content comes and goes, so a
  * screen reader hears each offer as it is inserted. It is also where focus
@@ -50,33 +52,36 @@ export function UndoBar({
       ref={region}
       role="status"
       tabIndex={-1}
-      className="rounded-lg outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      // The app-wide ring skips `tabindex="-1"`, which this region is, so it
+      // draws its own for the focus it takes after Undo (A11Y-001).
+      className="rounded-control outline-none focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2"
     >
       {pending !== null ? (
-        <div className="flex items-center gap-2 rounded-lg border border-surface-2 bg-surface/95 px-3 py-2 text-xs backdrop-blur">
+        <div {...snackbarProps(true)}>
           <span className="min-w-0 flex-1">
             {pending.title}
+            {/* The detail is a second line to the eye; the separator keeps the
+                two apart in what the status region says. */}
             {pending.detail !== undefined && (
-              <span className="text-ink-muted"> · {pending.detail}</span>
+              <>
+                <span className="sr-only"> · </span>
+                <span className={snackbarDetailClass}>{pending.detail}</span>
+              </>
             )}
           </span>
-          <button
+          <SnackbarAction
             ref={undoButton}
-            type="button"
             aria-label={`Undo: ${pending.title}`}
             onClick={() => {
               focusAfterUndo.current = true;
               onUndo();
             }}
-            className="shrink-0 rounded-lg bg-surface-2 px-3 py-1 font-semibold"
           >
             Undo
-          </button>
+          </SnackbarAction>
         </div>
       ) : undone !== null ? (
-        <div className="rounded-lg bg-surface/95 px-3 py-2 text-xs text-ink-muted backdrop-blur">
-          Undone: {undone}
-        </div>
+        <div {...snackbarProps(false)}>Undone: {undone}</div>
       ) : null}
     </div>
   );

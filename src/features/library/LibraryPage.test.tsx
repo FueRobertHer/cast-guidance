@@ -360,19 +360,19 @@ describe("a row's estimated height", () => {
     document.documentElement.style.fontSize = '';
   });
 
-  // The rendered height of a row (py-3, a 1.5rem line, a 1 px border), which
+  // The rendered height of a row (py-3, a 1.375rem line, a 1 px border), which
   // the list's scroll restore depends on: library-scale.spec.ts checks it
   // against a real row at 16 px and 200%.
   it('follows the root font size, rounded as a measured height is', () => {
     document.documentElement.style.fontSize = '32px';
-    expect(entityRowHeight()).toBe(97);
+    expect(entityRowHeight()).toBe(93);
     document.documentElement.style.fontSize = '17.6px';
-    expect(entityRowHeight()).toBe(54);
+    expect(entityRowHeight()).toBe(52);
   });
 
   it('assumes 16 px when the root font size is not in px', () => {
     // As jsdom reports it, "medium".
-    expect(entityRowHeight()).toBe(49);
+    expect(entityRowHeight()).toBe(47);
   });
 });
 

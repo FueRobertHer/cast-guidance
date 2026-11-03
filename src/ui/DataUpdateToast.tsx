@@ -1,8 +1,10 @@
+import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getActiveTag, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { announce } from '@/stores/announcer';
 import { dataStatusStore, showsDataBanner, useDataStatus } from '@/stores/dataStatus';
+import { Banner, BannerAction, BannerDismiss } from './Banner';
 
 /** What the offer says, on screen and to a screen reader. */
 export function dataUpdateText(tag: string, current: string): string {
@@ -11,6 +13,8 @@ export function dataUpdateText(tag: string, current: string): string {
 
 /**
  * Shows once a boot-time check finds a newer compatible data tag than the installed one.
+ * A `guide` banner (DS-001): something to do, in the page under the storage
+ * banners rather than a card floating over the screen title.
  *
  * A plain visual: a region that mounts with its text is announced unreliably,
  * so the offer is said through the announcer instead (A11Y-002), once per tag,
@@ -39,8 +43,8 @@ export function DataUpdateToast() {
   if (!shown) return null;
 
   const install = () => {
-    // Clear immediately so this toast steps aside for the DataBanner, which
-    // shows install progress (and any failure) at the same fixed position.
+    // Clear immediately so this offer steps aside for the DataBanner, which
+    // shows install progress (and any failure) in its place.
     dataStatusStore.getState().setUpdateAvailableTag(undefined);
     void updateToTag(tag)
       .then(() => invalidateRegistry())
@@ -50,24 +54,19 @@ export function DataUpdateToast() {
   };
 
   return (
-    <div className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-96">
-      <span className="truncate">{dataUpdateText(tag, getActiveTag())}</span>
-      <div className="flex shrink-0 gap-2">
-        <button
-          type="button"
-          onClick={install}
-          className="rounded bg-accent-fill px-2 py-0.5 font-semibold"
-        >
-          Update
-        </button>
-        <button
-          type="button"
-          onClick={() => setDismissed(tag)}
-          className="rounded bg-surface-2 px-2 py-0.5"
-        >
-          Later
-        </button>
-      </div>
-    </div>
+    <Banner
+      tone="guide"
+      icon={Download}
+      actions={
+        <>
+          <BannerAction tone="guide" onClick={install}>
+            Update
+          </BannerAction>
+          <BannerDismiss tone="guide" label="Later" onClick={() => setDismissed(tag)} />
+        </>
+      }
+    >
+      {dataUpdateText(tag, getActiveTag())}
+    </Banner>
   );
 }

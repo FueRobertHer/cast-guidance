@@ -1,17 +1,20 @@
+import { CircleAlert, CircleCheck, Info, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { NOTICE_MS, type Notice, useNotices } from '@/stores/notices';
+import { snackbarDetailClass, snackbarProps } from './Snackbar';
 
-const TONE: Record<Notice['tone'], string> = {
-  info: 'border-surface-2',
-  good: 'border-emerald-300/60',
-  warn: 'border-accent/60',
+// In the snackbar's own ink, like its text: the theme's hues fall under 3:1 on
+// an inverted ground (WCAG 1.4.11), and the title says the rest.
+const ICON: Record<Notice['tone'], LucideIcon> = {
+  info: Info,
+  good: CircleCheck,
+  warn: CircleAlert,
 };
 
-const ICON: Record<Notice['tone'], string> = { info: '›', good: '✓', warn: '!' };
-
 /**
- * App-wide snackbar for one-shot notices (rest summaries, imports, …).
- * Sits just above the roll toast so both can coexist briefly.
+ * App-wide snackbar for one-shot notices (rest summaries, imports, …), in the
+ * snackbar's inverted style (DS-001). Sits just above the roll toast so both
+ * can coexist briefly.
  */
 export function NoticeToast() {
   const seq = useNotices((s) => s.seq);
@@ -29,6 +32,8 @@ export function NoticeToast() {
 
   if (visible === null) return null;
 
+  const Icon = ICON[visible.tone];
+  const snackbar = snackbarProps(false);
   return (
     // A plain visual: `notify` says the notice through the announcer, since
     // an <output> that mounts with its text is announced unreliably.
@@ -36,13 +41,14 @@ export function NoticeToast() {
     // live-region attributes are free to change, the handle is not.
     <div
       data-testid="notice-toast"
-      className={`fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex items-start gap-3 rounded-lg border ${TONE[visible.tone]} bg-surface/95 px-4 py-2.5 shadow-lg backdrop-blur lg:left-auto lg:right-6 lg:w-80`}
+      {...snackbar}
+      className={`${snackbar.className} fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 lg:left-auto lg:right-6 lg:w-80`}
     >
-      <span className="shrink-0 text-lg leading-6 text-ink-muted">{ICON[visible.tone]}</span>
+      <Icon size={18} aria-hidden="true" className="mt-0.5 shrink-0 self-start" />
       <div className="min-w-0">
-        <div className="text-sm font-semibold">{visible.title}</div>
+        <div className="font-semibold">{visible.title}</div>
         {visible.detail !== undefined && (
-          <div className="text-xs text-ink-muted">{visible.detail}</div>
+          <div className={snackbarDetailClass}>{visible.detail}</div>
         )}
       </div>
     </div>

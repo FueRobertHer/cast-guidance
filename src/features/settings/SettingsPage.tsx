@@ -22,9 +22,13 @@ import { dbLifecycleStore } from '@/stores/dbLifecycle';
 import { errorText } from '@/stores/notices';
 import { offlineReadyAnnounced } from '@/stores/offlineReady';
 import { onboardingStore } from '@/stores/onboarding';
+import { Button, buttonClass } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
+import { cardClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
+import { ThemePicker } from './ThemePicker';
 
 /** Said once a requested download completes; it matches the line that turns to "ready". */
 export const OFFLINE_DOWNLOADED_TEXT = 'Game data downloaded. The offline compendium is ready.';
@@ -77,6 +81,9 @@ export const ABOUT_LINKS = [
 ] as const;
 
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** A section's heading, in the screen's `heading` style (DS-001). */
+const H2 = 'px-1 text-heading';
 
 export function Component() {
   usePageTitle('Settings');
@@ -248,14 +255,22 @@ export function Component() {
   };
 
   return (
-    <main className="flex flex-1 flex-col gap-6 p-4">
+    <main className="flex flex-1 flex-col gap-6 px-4 pt-5 pb-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Settings</h1>
+        <h1 className="font-display text-title-page">Settings</h1>
       </header>
 
+      {/* First (DS-001): the one setting that changes every screen. */}
       <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Game data</h2>
-        <dl className="grid grid-cols-2 gap-y-1 text-sm">
+        <h2 className={H2}>Appearance</h2>
+        <div className={cardClass}>
+          <ThemePicker />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Game data</h2>
+        <dl className={`${cardClass} grid grid-cols-2 gap-y-1 text-body`}>
           <dt className="text-ink-muted">Dataset version</dt>
           <dd>
             {getActiveTag()}
@@ -292,9 +307,9 @@ export function Component() {
         </dl>
 
         {tags === null ? (
-          <button
-            type="button"
+          <Button
             disabled={updating}
+            className="self-start"
             onClick={() => {
               // `maxAgeMs: 0` skips the remembered list: someone who pressed
               // "check for updates" is owed a live answer, not this morning's.
@@ -307,25 +322,24 @@ export function Component() {
                   }),
                 );
             }}
-            className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
           >
             Check for data updates
-          </button>
+          </Button>
         ) : tags.length === 0 ? (
-          <p className="text-sm text-ink-muted">
+          <p className="text-body text-ink-muted">
             No compatible data versions available. Newer releases with a different schema are not
             shown because this app build cannot read them safely.
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <label htmlFor="data-tag" className="text-sm text-ink-muted">
+            <label htmlFor="data-tag" className="text-body text-ink-muted">
               Switch version
             </label>
             {/*
              * `appearance-none` + our own chevron: the native control paints a
-             * light system dropdown that reads as a foreign element on this
-             * dark surface. Options still use OS chrome in the popup, so they
-             * carry explicit colors too.
+             * system dropdown that reads as a foreign element on this surface.
+             * Options still use OS chrome in the popup, so they carry explicit
+             * colors too.
              */}
             <div className="relative">
               <select
@@ -336,10 +350,10 @@ export function Component() {
                   const t = e.target.value;
                   if (t !== getActiveTag()) void runUpdate(t);
                 }}
-                className="w-full appearance-none rounded-lg bg-surface-2 py-2 pr-9 pl-3 text-sm outline-none disabled:opacity-40"
+                className={`${fieldClass} appearance-none pr-9`}
               >
                 {(tags.includes(getActiveTag()) ? tags : [getActiveTag(), ...tags]).map((t) => (
-                  <option key={t} value={t} className="bg-surface-2 text-ink">
+                  <option key={t} value={t} className="bg-surface-raised text-ink">
                     {t}
                     {t === getActiveTag() ? ' (installed)' : ''}
                   </option>
@@ -347,15 +361,15 @@ export function Component() {
               </select>
               <ChevronDown
                 aria-hidden
-                className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-muted"
+                className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-muted"
               />
             </div>
-            {updating && <span className="text-xs text-ink-muted">Installing…</span>}
+            {updating && <span className="text-caption text-ink-muted">Installing…</span>}
           </div>
         )}
         {updateMsg !== undefined &&
           (updateMsg.failed !== true ? (
-            <p className="text-xs text-ink-muted">{updateMsg.text}</p>
+            <p className="text-caption text-ink-muted">{updateMsg.text}</p>
           ) : (
             // An alert unless the shell's DataBanner is alerting this same
             // install failure ("Update to … failed"); see `alertsHere`.
@@ -363,19 +377,18 @@ export function Component() {
               className="flex flex-wrap items-center gap-2"
               role={updateMsg.alert === false ? undefined : 'alert'}
             >
-              <p className="text-xs text-amber-300">
+              <p className="text-caption text-danger">
                 {updateMsg.text}
                 {failedInstallTag !== undefined && ' Your current version is untouched.'}
               </p>
               {failedInstallTag !== undefined && (
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   disabled={updating}
                   onClick={() => void install(failedInstallTag)}
-                  className="rounded-lg bg-surface px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
                 >
                   Retry install
-                </button>
+                </Button>
               )}
             </div>
           ))}
@@ -384,8 +397,7 @@ export function Component() {
             with the control that makes it true and the reason it is not. */}
         {(offlineError !== undefined || (offline !== undefined && !offlineReady)) && (
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
+            <Button
               disabled={downloading || updating}
               // Busy while it runs, and described by the queue line that
               // counts the files, so the count is there to read on demand
@@ -393,19 +405,18 @@ export function Component() {
               aria-busy={downloading}
               aria-describedby={queueId}
               onClick={() => void downloadEverything()}
-              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-40"
             >
               {downloading
                 ? 'Downloading…'
                 : downloadFailed === undefined
                   ? 'Make available offline'
                   : 'Retry download'}
-            </button>
+            </Button>
             {/* An alert unless the shell's DataBanner is alerting the same
                 failure ("Game data download failed"); one alert is enough. */}
             {downloadFailed !== undefined && !downloading && (
               <p
-                className="text-xs text-amber-300"
+                className="text-caption text-danger"
                 role={downloadFailed.alert ? 'alert' : undefined}
               >
                 Download failed: {downloadFailed.text}
@@ -413,7 +424,7 @@ export function Component() {
             )}
           </div>
         )}
-        <p className="text-xs text-ink-muted">
+        <p className="px-1 text-caption text-ink-muted">
           Game data is downloaded from the 5etools mirror and cached on this device. Nothing ships
           with the app itself. Characters store name references, so they survive data updates.
         </p>
@@ -422,72 +433,68 @@ export function Component() {
       <SourcesSection />
 
       <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Your data &amp; privacy</h2>
-        <p className="text-xs text-ink-muted">
+        <h2 className={H2}>Your data &amp; privacy</h2>
+        <p className="px-1 text-caption text-ink-muted">
           Everything (your characters, homebrew, dice history, and the downloaded compendium) lives
           only in this browser on this device. Nothing is sent to a server and there are no
           accounts. Back a character up any time from its ⋯ menu on Characters, then Export; that
           file is the only copy that leaves the device.
         </p>
-        <p className="text-xs text-ink-muted">
+        <p className="px-1 text-caption text-ink-muted">
           Because it&rsquo;s browser storage, clearing site data or heavy storage pressure can evict
           it. Export characters you care about, and use “Make available offline” above so the
           compendium is cached.
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-sm text-ink-muted">Persistent storage</span>
+          <span className="text-body text-ink-muted">Persistent storage</span>
           <PersistStatus state={persist.state} ref={persist.statusRef} />
           {persist.state === 'best-effort' && (
-            <button
-              type="button"
-              aria-disabled={persist.requesting}
-              onClick={() => void persist.request()}
-              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold aria-disabled:opacity-40"
-            >
+            <Button aria-disabled={persist.requesting} onClick={() => void persist.request()}>
               Ask the browser to keep my data
-            </button>
+            </Button>
           )}
         </div>
         {persist.state === 'denied' && (
-          <p className="text-xs text-ink-muted">{PERSIST_DENIED_TEXT} Export to keep a copy.</p>
+          <p className="px-1 text-caption text-ink-muted">
+            {PERSIST_DENIED_TEXT} Export to keep a copy.
+          </p>
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <button
-            type="button"
+          <Button
             onClick={() => {
               onboardingStore.getState().reopen();
               setGuideShown(true);
             }}
-            className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold"
           >
             Show the getting-started guide
-          </button>
+          </Button>
           {/* Mounted empty so the confirmation is announced when it arrives. */}
-          <p aria-live="polite" className="text-xs text-ink-muted">
+          <p aria-live="polite" className="text-caption text-ink-muted">
             {guideShown ? 'Shown on the Characters page.' : ''}
           </p>
         </div>
-        <button
-          type="button"
+        {/* The screen's one destructive control, so it is the red one. */}
+        <Button
+          variant="danger"
           disabled={resetting}
+          className="self-start"
           onClick={() => void resetAll()}
-          className="w-fit rounded-lg border border-accent px-3 py-2 text-sm font-semibold text-accent disabled:opacity-40"
         >
           {resetting ? 'Resetting…' : 'Reset app data'}
-        </button>
-        <p className="text-xs text-ink-muted">
+        </Button>
+        <p className="px-1 text-caption text-ink-muted">
           Permanently deletes all characters, homebrew, and cached data on this device, then
           reloads. This cannot be undone. Export anything you want to keep first.
         </p>
-        {resetMsg !== undefined && <p className="text-xs text-amber-300">{resetMsg}</p>}
+        {resetMsg !== undefined && <p className="px-1 text-caption text-danger">{resetMsg}</p>}
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">About</h2>
-        <p className="text-xs text-ink-muted">
+        <h2 className={H2}>About</h2>
+        <p className="px-1 text-caption text-ink-muted">
           Cast Guidance is open source under the MIT License.
         </p>
-        {/* Button-sized links: they meet the target size that inline text-xs
+        {/* Button-sized links: they meet the target size that inline caption
             links would not, and they wrap on a narrow screen. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {ABOUT_LINKS.map(({ label, path }) => (
@@ -496,7 +503,7 @@ export function Component() {
               href={`${REPO_BLOB_URL}/${path}`}
               target="_blank"
               rel="noreferrer noopener"
-              className="w-fit rounded-lg bg-surface px-3 py-2 text-sm font-semibold"
+              className={buttonClass({})}
             >
               {label}
               {/* The space sits outside the span: some name computations

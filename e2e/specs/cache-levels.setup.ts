@@ -48,6 +48,10 @@ async function importCaster(page: Page, blankId: string): Promise<string> {
   await gotoRoster(page);
   await importCharacterFile(page, file);
   await answerImportPreview(page, previewTitle);
+  // The preview closes before the import is written, and the next step
+  // navigates away, which can drop a write still in flight: the level then
+  // had no caster ("Character not found" in the full cache's spell cells).
+  await expect.poll(async () => (await getCharacter(page, CASTER_ID)) !== undefined).toBe(true);
   return CASTER_ID;
 }
 

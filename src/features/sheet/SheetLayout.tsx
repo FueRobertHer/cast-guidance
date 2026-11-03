@@ -2,21 +2,24 @@ import {
   ArrowLeft,
   Backpack,
   Check,
-  CircleAlert,
+  CloudAlert,
   Gauge,
+  Info,
   LoaderCircle,
   ScrollText,
   Sparkles,
   Swords,
   Wrench,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useResolvedPath } from 'react-router';
 import { DiceTray } from '@/features/dice/DiceTray';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { announce } from '@/stores/announcer';
 import { AdvToggle } from '@/ui/AdvToggle';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
 import { GameDataProblem } from '@/ui/GameDataProblem';
 import { HistoryDrawer } from './HistoryDrawer';
 import { useCharacterSheet } from './useCharacterSheet';
@@ -60,24 +63,26 @@ export function tabTitle(tab: string): string | undefined {
   return tabs.find((t) => (t.to === '.' ? '' : t.to) === tab)?.title;
 }
 
-/**
- * Marks the open tab with a bar along its top edge (bottom bar) or its left
- * edge (side rail), so it is not told apart by colour alone (A11Y-002).
- * Decorative: NavLink reports the page through `aria-current`. AppNav draws
- * the same one. Sharing a module between the two pulled the data registry
- * chunk into the entry bundle (+140 KB), so each keeps its own copy.
- */
 /** The warning when the same character is open in another tab, shown and said. */
 export const OPEN_ELSEWHERE_TEXT =
   'This character is open in another tab. If both change it, you will be asked which version to keep.';
 
-function ActiveTabBar() {
+/**
+ * The pill behind a tab's icon, filled `surface-raised` for the open tab
+ * (DS-001). With the label's bold weight it marks the open tab by more than
+ * colour alone (A11Y-002). Decorative: NavLink reports the page through
+ * `aria-current`. On the side rail the whole row takes the fill instead.
+ * AppNav draws the same one. Sharing a module between the two pulled the data
+ * registry chunk into the entry bundle (+140 KB), so each keeps its own copy.
+ */
+function TabPill({ active, children }: { active: boolean; children: ReactNode }) {
   return (
     <span
-      aria-hidden="true"
-      data-indicator=""
-      className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-accent lg:inset-x-auto lg:inset-y-2 lg:left-0 lg:h-auto lg:w-0.5"
-    />
+      {...(active ? { 'data-indicator': '' } : {})}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -109,7 +114,7 @@ export function Component() {
 
   if (state.loadStatus === 'loading' || state.loadStatus === 'idle') {
     return (
-      <main className="flex flex-1 items-center gap-2 p-4 text-sm text-ink-muted" role="status">
+      <main className="flex flex-1 items-center gap-2 p-4 text-body text-ink-muted" role="status">
         <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
         Loading character…
       </main>
@@ -119,16 +124,12 @@ export function Component() {
   if (state.loadStatus === 'error') {
     return (
       <main className="flex flex-1 flex-col gap-3 p-4" role="alert">
-        <p className="text-sm text-accent">Could not load this character: {state.error}</p>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={state.retryLoad}
-            className="text-sm font-semibold text-accent"
-          >
+        <p className="text-body text-danger">Could not load this character: {state.error}</p>
+        <div className="flex items-center gap-3">
+          <Button variant="brand" onClick={state.retryLoad}>
             Retry
-          </button>
-          <Link to="/" className="text-sm text-ink-muted">
+          </Button>
+          <Link to="/" className="tap px-2 text-body-strong text-ink-muted hover:text-ink">
             Back to characters
           </Link>
         </div>
@@ -139,8 +140,8 @@ export function Component() {
   if (state.missing) {
     return (
       <main className="flex flex-1 flex-col gap-3 p-4">
-        <p className="text-sm text-ink-muted">Character not found.</p>
-        <Link to="/" className="text-sm text-accent">
+        <p className="text-body text-ink-muted">Character not found.</p>
+        <Link to="/" className="tap self-start text-body-strong text-brand">
           Back to characters
         </Link>
       </main>
@@ -151,28 +152,42 @@ export function Component() {
     <div className="flex flex-1 flex-col">
       <header
         ref={header}
-        className="sticky top-0 z-20 flex items-center gap-2 bg-zinc-950/90 px-4 py-3 backdrop-blur lg:pl-40"
+        // Opaque `bg` (DS-001): content scrolling under a translucent wash
+        // showed through behind the name.
+        className="sticky top-0 z-20 flex min-h-header items-center gap-2 bg-bg py-1 pr-2 pl-1 lg:pl-40"
       >
         <Link
           to="/"
           aria-label="Back to characters"
-          className="tap -my-2 -ml-3 rounded text-ink-muted hover:text-ink"
+          className="tap rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink"
         >
           <ArrowLeft size={20} />
         </Link>
         <div className="min-w-0 flex-1">
           {/* Focusable, so resolving a save conflict (SaveConflictBanner) can
               land here once the banner and its buttons go away. */}
-          <h1 id="sheet-title" tabIndex={-1} className="truncate text-lg font-bold outline-none">
+          <h1
+            id="sheet-title"
+            tabIndex={-1}
+            className="truncate font-display text-title-sheet outline-none"
+          >
             {state.doc?.name ?? '…'}
           </h1>
-          <p className="truncate text-xs text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
+          <p className="truncate text-caption text-ink-muted">{state.sheet?.classLabel ?? ''}</p>
         </div>
         {/* Visual only (A11Y-002). As a live region it said "Unsaved, Saving,
             Saved" for every HP tap. A failure or a refused save is announced
             by the app shell's banners, and the recovery after one by the
             announcer. */}
-        <span data-save-indicator="" className="flex items-center gap-1 text-xs text-ink-muted">
+        <span
+          data-save-indicator=""
+          // A failure in `danger`: the one state that needs the person.
+          className={`flex items-center gap-1 px-1 text-[0.75rem] leading-4 ${
+            state.saveStatus === 'error' || state.saveStatus === 'conflict'
+              ? 'font-semibold text-danger'
+              : 'text-ink-muted'
+          }`}
+        >
           {state.saveStatus === 'pending' && 'Unsaved'}
           {state.saveStatus === 'saving' && (
             <>
@@ -184,23 +199,27 @@ export function Component() {
               <Check size={13} aria-hidden="true" /> Saved
             </>
           )}
+          {/* Not CircleAlert, which the app shell's banners use: an icon
+              imported both here and by the entry had Vite's bundler fold the
+              data registry chunk into the entry (+150 KB, DS-001), as sharing
+              the tab marker did (see TabPill). */}
           {state.saveStatus === 'error' && (
             <>
-              <CircleAlert size={13} aria-hidden="true" /> Save failed
+              <CloudAlert size={13} aria-hidden="true" /> Save failed
             </>
           )}
           {state.saveStatus === 'conflict' && (
             <>
-              <CircleAlert size={13} aria-hidden="true" /> Not saved
+              <CloudAlert size={13} aria-hidden="true" /> Not saved
             </>
           )}
         </span>
         {id !== undefined && <HistoryDrawer charId={id} />}
       </header>
       {openElsewhere && (
-        <div className="bg-amber-400/10 px-4 py-1.5 text-xs text-amber-200 lg:pl-40">
+        <Banner tone="neutral" icon={Info}>
           {OPEN_ELSEWHERE_TEXT}
-        </div>
+        </Banner>
       )}
       <main className="flex-1 px-4 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4 lg:pl-40">
         {state.sheet === null && state.data.status === 'error' ? (
@@ -216,9 +235,10 @@ export function Component() {
           <Outlet context={state} />
         )}
       </main>
+      {/* Boxed as the app nav is (see AppNav). */}
       <nav
         aria-label="Character sheet"
-        className="fixed inset-x-0 bottom-0 z-10 flex border-t border-surface-2 bg-surface pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:right-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4"
+        className="fixed inset-x-0 bottom-0 z-10 box-content flex h-tabbar border-line border-t bg-surface px-1 pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:box-border lg:right-auto lg:h-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4 lg:pb-0"
       >
         {tabs.map(({ to, label, icon: Icon, end }) => (
           <NavLink
@@ -226,17 +246,20 @@ export function Component() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `relative flex flex-1 flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 text-[11px] lg:flex-none lg:flex-row lg:justify-start lg:gap-2.5 lg:rounded-lg lg:px-3 lg:py-2 lg:text-sm ${
-                isActive ? 'font-semibold text-accent' : 'font-medium text-ink-muted hover:text-ink'
+              `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+                isActive
+                  ? 'font-bold text-ink lg:bg-surface-raised'
+                  : 'text-ink-muted hover:text-ink'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                {/* The current tab is marked by weight and a bar, not by
+                {/* The current tab is marked by weight and a pill, not by
                     colour alone (A11Y-002); NavLink sets aria-current. */}
-                {isActive && <ActiveTabBar />}
-                <Icon size={20} aria-hidden className="lg:size-[17px]" />
+                <TabPill active={isActive}>
+                  <Icon size={20} aria-hidden className="lg:size-4.5" />
+                </TabPill>
                 {label}
               </>
             )}

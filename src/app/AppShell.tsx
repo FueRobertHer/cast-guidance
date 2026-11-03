@@ -1,8 +1,10 @@
 import { Analytics } from '@vercel/analytics/react';
+import { CircleAlert } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { initDataLayer } from '@/data5e/loader';
 import { OfflineReadyNotice } from '@/features/onboarding/OfflineReadyNotice';
+import { installThemeSync } from '@/lib/theme';
 import { announce } from '@/stores/announcer';
 import {
   characterSessionStore,
@@ -11,6 +13,7 @@ import {
 } from '@/stores/characterSession';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { notify } from '@/stores/notices';
+import { Banner, BannerAction } from '@/ui/Banner';
 import { DataBanner } from '@/ui/DataBanner';
 import { DataUpdateToast } from '@/ui/DataUpdateToast';
 import { DbLifecycleBanner } from '@/ui/DbLifecycleBanner';
@@ -61,27 +64,27 @@ function SaveErrorBanner() {
   if (!failing) return null;
   const [, message] = entries[0] ?? [];
   return (
-    <div
-      className="flex items-center justify-between gap-2 bg-accent-deep px-3 py-1.5 text-xs"
+    <Banner
+      tone="danger"
+      icon={CircleAlert}
       role="alert"
+      actions={
+        <BannerAction
+          tone="danger"
+          onClick={() => {
+            void characterSessionStore
+              .getState()
+              .retryFailedSaves()
+              .catch(() => undefined);
+          }}
+        >
+          Retry
+        </BannerAction>
+      }
     >
-      <span className="truncate">
-        Character changes could not be saved{message === undefined ? '.' : `: ${message}`}
-        {entries.length > 1 ? ` (${entries.length} characters affected)` : ''}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          void characterSessionStore
-            .getState()
-            .retryFailedSaves()
-            .catch(() => undefined);
-        }}
-        className="shrink-0 rounded bg-accent-fill px-2 py-0.5 font-semibold"
-      >
-        Retry
-      </button>
-    </div>
+      Character changes could not be saved{message === undefined ? '.' : `: ${message}`}
+      {entries.length > 1 ? ` (${entries.length} characters affected)` : ''}
+    </Banner>
   );
 }
 
@@ -91,6 +94,10 @@ function SaveErrorBanner() {
  * fails with "Database has been closed", which explains nothing and offers a
  * Retry that cannot work. The lifecycle banner says what happened instead, and
  * the ones that would echo it stand aside. Exported for tests.
+ *
+ * They stack failures first (DS-001), so what is going wrong is read before
+ * what is on offer: the save banners, then the data download (a failure or
+ * its progress), then the data update offer.
  */
 export function StorageBanners() {
   const dbOpen = useDbLifecycle((s) => s.state === 'open');
@@ -99,10 +106,10 @@ export function StorageBanners() {
       <DbLifecycleBanner />
       {dbOpen && (
         <>
+          <SaveErrorBanner />
+          <SaveConflictBanner />
           <DataBanner />
           <DataUpdateToast />
-          <SaveConflictBanner />
-          <SaveErrorBanner />
         </>
       )}
     </>
@@ -113,6 +120,10 @@ export function AppShell() {
   useEffect(() => {
     void initDataLayer();
   }, []);
+
+  // The boot script drew the first frame in the chosen theme; this keeps it
+  // in step with the device and with other tabs (DS-001).
+  useEffect(() => installThemeSync(), []);
 
   useEffect(
     () =>
@@ -136,12 +147,14 @@ export function AppShell() {
       <ScrollRestoration />
       {/* First, so its regions are in the page before anything announces. */}
       <LiveAnnouncer />
+      {/* Banners sit in the page above the screen, never over it (DS-001):
+          the app update offer is one, after the storage banners. */}
       <StorageBanners />
+      <PwaUpdateToast />
       <Outlet />
       <DialogHost />
       <NoticeToast />
       <RollToast />
-      <PwaUpdateToast />
       <OfflineReadyNotice />
       <Analytics />
     </div>

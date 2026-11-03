@@ -38,17 +38,61 @@ export interface ScanOptions {
   exclude?: Readonly<Record<string, string>>;
 }
 
+/** The themes every state is scanned in (DS-001), and the state id each one uses. */
+export const SCAN_THEMES = [
+  { theme: 'dark', suffix: '' },
+  { theme: 'light', suffix: '@light' },
+] as const;
+
 /**
- * Runs axe on the page as it is now, as the state `state`, and holds it to the
- * baseline: a rule the baseline does not list for this state, or more nodes
- * than it allows, fails the test (softly, so every state in a test reports).
- * Fewer nodes, or a rule gone, is an annotation asking for a baseline update.
+ * Draws the page in `theme` for the length of `run`, then puts back what it
+ * was. Transitions are held off meanwhile, so axe reads the theme's colours
+ * and not a frame part way from one to the other.
+ */
+async function inTheme<T>(page: Page, theme: string, run: () => Promise<T>): Promise<T> {
+  const before = await page.evaluate((next) => {
+    const root = document.documentElement;
+    const was = root.getAttribute('data-theme');
+    const still = document.createElement('style');
+    still.id = 'axe-theme-still';
+    still.textContent = '*, *::before, *::after { transition: none !important; }';
+    document.head.append(still);
+    root.setAttribute('data-theme', next);
+    // Reading a computed style applies the new tokens now, not next frame.
+    void getComputedStyle(root).color;
+    return was;
+  }, theme);
+  try {
+    return await run();
+  } finally {
+    await page.evaluate((was) => {
+      const root = document.documentElement;
+      if (was === null) root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', was);
+      void getComputedStyle(root).color;
+      document.getElementById('axe-theme-still')?.remove();
+    }, before);
+  }
+}
+
+/**
+ * Runs axe on the page as it is now, once in each theme, as the state `state`
+ * (dark) and `state@light`, and holds each to the baseline: a rule the
+ * baseline does not list for that state, or more nodes than it allows, fails
+ * the test (softly, so every state in a test reports). Fewer nodes, or a rule
+ * gone, is an annotation asking for a baseline update.
  *
  * Call it only once the state is settled: the overlay open and its content
  * drawn, toasts gone, the data install done. Counts that move between runs
  * are a flake in the spec, not in axe.
  */
 export async function scanState(page: Page, state: string, options: ScanOptions = {}) {
+  for (const { theme, suffix } of SCAN_THEMES) {
+    await inTheme(page, theme, () => scanOne(page, `${state}${suffix}`, options));
+  }
+}
+
+async function scanOne(page: Page, state: string, options: ScanOptions) {
   let builder = new AxeBuilder({ page }).withTags(AXE_TAGS);
   if (options.include !== undefined) builder = builder.include(options.include);
   for (const selector of Object.keys(options.exclude ?? {})) builder = builder.exclude(selector);
