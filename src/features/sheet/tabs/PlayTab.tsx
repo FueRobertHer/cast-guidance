@@ -53,10 +53,12 @@ const LINK =
 const RULES = 'underline decoration-line-strong decoration-dashed';
 /**
  * A lasting state, on or off (Inspiration, Concentration): ToggleChip's look,
- * without its On and Off words, which would change the buttons' names.
+ * without its On and Off words, which would change the buttons' names. Each
+ * grows from 8rem, so the pair stacks where both do not fit (large text)
+ * rather than push the page sideways (A11Y-003).
  */
 const TOGGLE =
-  'flex min-h-tap flex-1 items-center justify-center gap-2 rounded-control px-4 text-label transition-colors duration-120';
+  'flex min-h-tap min-w-0 grow basis-32 items-center justify-center gap-2 rounded-control px-4 text-label transition-colors duration-120';
 const TOGGLE_OFF = 'text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink';
 /** The HP card's ±1: round `surface-raised` steppers, the icon in `danger` or `heal`. */
 const STEP =
@@ -777,7 +779,7 @@ export function Component() {
       </section>
 
       {/* Inspiration + concentration */}
-      <section className="flex gap-2">
+      <section className="flex flex-wrap gap-2">
         <button
           type="button"
           aria-pressed={play.inspiration}
@@ -787,7 +789,7 @@ export function Component() {
         >
           {/* Filled while held: a change of shape as well as colour. */}
           <Star size={16} fill={play.inspiration ? 'currentColor' : 'none'} className="shrink-0" />
-          Inspiration
+          <span className="truncate">Inspiration</span>
         </button>
         <button
           type="button"
@@ -805,20 +807,22 @@ export function Component() {
               update((d) => void (d.play.concentratingOn = { label: label.trim() }));
             }
           }}
-          className={`${TOGGLE} min-w-0 ${
+          className={`${TOGGLE} ${
             play.concentratingOn !== undefined ? 'bg-arcane-soft text-arcane' : TOGGLE_OFF
           }`}
           title="Concentration — tap to set or clear"
         >
           <Brain size={16} className="shrink-0" />
           {/* The visible label is the spell alone; the prefix says what it means. */}
-          {play.concentratingOn !== undefined ? (
-            <span className="truncate">
-              <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
-            </span>
-          ) : (
-            'Concentration'
-          )}
+          <span className="truncate">
+            {play.concentratingOn !== undefined ? (
+              <>
+                <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
+              </>
+            ) : (
+              'Concentration'
+            )}
+          </span>
         </button>
       </section>
 
