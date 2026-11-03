@@ -87,7 +87,7 @@ async function switchTo(
   version: '2014' | '2024',
   { expectPrompt = true } = {},
 ) {
-  await sheet.tab('Build');
+  await sheet.edit();
   fireEvent.click(screen.getByRole('button', { name: version }));
   if (expectPrompt)
     await (await dialog(`Switch to ${version} rules?`)).press(`Switch to ${version}`);

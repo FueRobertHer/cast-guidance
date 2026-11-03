@@ -124,7 +124,10 @@ describe('SheetLayout without game data', () => {
   });
 
   it('keeps a derived sheet on screen if a later refresh fails', () => {
-    loaded({ status: 'error', error: 'HTTP 503', retry }, { classLabel: 'Fighter 1' });
+    loaded(
+      { status: 'error', error: 'HTTP 503', retry },
+      { classLabel: 'Fighter 1', pending: [], spellcasting: [] },
+    );
     renderSheet();
     expect(screen.getByText('tab content')).toBeTruthy();
   });

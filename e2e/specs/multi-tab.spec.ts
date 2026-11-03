@@ -10,7 +10,9 @@ import {
   handleOverlays,
   importCharacterFile,
   onScreen,
+  openBuild,
   openCharacterActions,
+  openHistory,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
 import { getCharacter } from '../support/idb.ts';
@@ -187,7 +189,7 @@ test.describe('one character in two tabs', () => {
     await expect(hpMeter(b)).toHaveAttribute('aria-valuenow', String(max - 5));
 
     // B's rename builds on it, and A follows in turn.
-    await switchSheetTab(b, 'Build');
+    await openBuild(b);
     await b.getByRole('textbox', { name: 'Name' }).fill(RENAMED);
     await expect(heading(b)).toHaveText(RENAMED);
     await expect(saveIndicator(b)).toHaveText('Saved');
@@ -223,8 +225,7 @@ test.describe('one character in two tabs', () => {
     await expect(hpMeter(b)).toHaveAttribute('aria-valuenow', String(max - 5));
 
     // The rename B did not keep is in its history.
-    await b.getByRole('button', { name: 'Character history' }).click();
-    const history = b.getByRole('dialog', { name: 'History' });
+    const history = await openHistory(b);
     await expect(history.getByText('Not saved: the stored copy had changed')).toBeVisible();
     const stored = await getCharacter(a, ID);
     expect(stored?.name).toBe(NAME);

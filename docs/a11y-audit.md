@@ -33,7 +33,7 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 | Area | States |
 |---|---|
 | Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
-| Character sheet | `sheet-play`, `sheet-stats`, `sheet-items`, `sheet-spells`, `sheet-more`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell) |
+| Character sheet | `sheet-play`, `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete) |
 | Sheet overlays | `dice-tray`, `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
@@ -93,7 +93,7 @@ spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
 exhaustion), the same at 0 HP (the death saves), Build with every section
 and picker open, Homebrew with one file of your own, and the creator's
 abilities step on point buy. Not measured yet: spell rows on Play (the
-caster knows no spells), the Stats, Items, Spells and More tabs, the
+caster knows no spells), the Stats, Spells, Items and Features tabs, the
 library, Settings, and the creator's other steps. axe's `target-size` still
 runs on every scanned state.
 
@@ -118,7 +118,8 @@ runs on every scanned state.
 
 - **Dialogs and drawers:** the roster's actions sheet, Rename, the Delete
   confirm, the character import preview, the homebrew import preview, the dice
-  tray, the history drawer, the long rest confirm, a number's breakdown (STR),
+  tray, the history drawer (opened from the sheet header's overflow menu, so
+  focus comes back to the menu button), the long rest confirm, a number's breakdown (STR),
   an entity's info sheet (Fighter, a sheet deferred until first used) and
   Add item (whose focus must land on its search box). Each is opened by Enter
   on its trigger, and must take focus; Tab and Shift+Tab, each pressed two
@@ -129,8 +130,12 @@ runs on every scanned state.
 - **Pages by Tab and Enter:** the roster (the character, its Actions, the
   blank sheet and wizard options and Import, in that order; Enter creates a
   character and opens one), the library (search, a result, a type tile, the
-  list's filter, a row, each opening with Enter), and the sheet's tab bar
-  (each tab the next Tab stop after the one before, Enter opening it).
+  list's filter, a row, each opening with Enter), the sheet's tab bar
+  (a caster's five tabs, each the next Tab stop after the one before, Enter
+  opening it), and the sheet header (Back, Edit and the overflow menu in that
+  order; Edit opening Build and Back there returning to the tab it came from;
+  the menu opened by Down and Up, its items gone round by the arrows, Escape
+  closing it onto its button, and Delete's confirm handing focus back there).
 - **The library's long list:** 150 generated spells, tabbed through first to
   last and 30 back with Shift+Tab: every press lands on the next row, which
   is rendered and inside both the list's box and the window, says its place

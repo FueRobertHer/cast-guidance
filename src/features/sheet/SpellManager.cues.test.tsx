@@ -87,7 +87,7 @@ describe('the spellcasting mode badge (TEST-003)', () => {
     });
     expect(screen.getByText('This character has no spellcasting.')).toBeTruthy();
 
-    await sheet.tab('Build');
+    await sheet.edit();
     const add = screen.getByText('Add a class (multiclass)').closest('details');
     if (add === null) throw new Error('no class picker');
     fireEvent.click(within(add).getByRole('button', { name: 'Mage' }));
@@ -220,7 +220,7 @@ describe('the out-of-sources chip (#102, TEST-003)', () => {
     expect(chipFor('Ember Lance')).toContain("Not in this character's sources");
     expect(chipFor('Searing Bolt')).not.toContain("Not in this character's sources");
 
-    await sheet.tab('Build');
+    await sheet.edit();
     fireEvent.click(screen.getByText('Sources'));
     press('No restriction');
     await sheet.tab('Spells');

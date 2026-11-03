@@ -275,29 +275,71 @@ export async function skipOfflineReadyNotice(page: Page): Promise<void> {
   }, OFFLINE_ANNOUNCED_KEY);
 }
 
-/** The sheet's tabs, by their label in the tab bar, and their paths. */
+/**
+ * The sheet's tab bar, in order, by label, and their paths. Spells is there
+ * for a character with spellcasting, and on its own route for any character.
+ */
 export const SHEET_TABS = {
   Play: '',
   Stats: '/stats',
-  Items: '/inventory',
   Spells: '/spells',
-  More: '/features',
-  Build: '/build',
+  Items: '/inventory',
+  Features: '/features',
 } as const;
 export type SheetTab = keyof typeof SHEET_TABS;
 
+/** Every screen of the sheet: the tabs, and Build, which the header's Edit opens. */
+export const SHEET_PAGES = { ...SHEET_TABS, Build: '/build' } as const;
+export type SheetPage = keyof typeof SHEET_PAGES;
+
+/** The sheet header's way into Build, named for the choices left to make. */
+export function editLink(page: Page): Locator {
+  return page.getByRole('banner').getByRole('link', { name: /^Edit character/ });
+}
+
+/** The sheet header's overflow menu button (History, Export, Delete). */
+export function sheetMenuButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'More: history, export, delete' });
+}
+
 /**
- * Opens a character sheet tab by its label in the tab bar, and waits for it:
- * the tab marked current (the router renders a lazy route only once its
- * module is in) and the character loaded into the header.
+ * Opens a character sheet screen by its label, and waits for it: its tab in
+ * the bar marked current, or Edit on Build (the router renders a lazy route
+ * only once its module is in), and the character loaded into the header.
  */
-export async function gotoSheetTab(page: Page, id: string, label: SheetTab): Promise<void> {
-  await page.goto(`/c/${id}${SHEET_TABS[label]}`);
-  const tab = page
-    .getByRole('navigation', { name: 'Character sheet' })
-    .getByRole('link', { name: label, exact: true });
-  await expect(tab).toHaveAttribute('aria-current', 'page');
+export async function gotoSheetTab(page: Page, id: string, label: SheetPage): Promise<void> {
+  await page.goto(`/c/${id}${SHEET_PAGES[label]}`);
+  const current =
+    label === 'Build'
+      ? editLink(page)
+      : page
+          .getByRole('navigation', { name: 'Character sheet' })
+          .getByRole('link', { name: label, exact: true });
+  await expect(current).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('…');
+}
+
+/** Opens Build from the header's Edit, as from any tab, and waits for it. */
+export async function openBuild(page: Page): Promise<void> {
+  await editLink(page).click();
+  await expect(editLink(page)).toHaveAttribute('aria-current', 'page');
+}
+
+/** Opens the sheet header's overflow menu and returns it. */
+export async function openSheetMenu(page: Page): Promise<Locator> {
+  await sheetMenuButton(page).click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/** Opens the character's history from the overflow menu and returns its drawer. */
+export async function openHistory(page: Page): Promise<Locator> {
+  const menu = await openSheetMenu(page);
+  await menu.getByRole('menuitem', { name: 'History' }).click();
+  const history = page.getByRole('dialog', { name: 'History' });
+  await expect(history).toBeVisible();
+  return history;
 }
 
 function escapeRegExp(text: string): string {
