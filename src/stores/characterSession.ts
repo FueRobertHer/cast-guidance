@@ -105,6 +105,15 @@ export interface CharacterSessionState {
   retryFailedSaves(): Promise<void>;
   close(): Promise<void>;
   /**
+   * Let go of a character that is about to be deleted: its edits waiting on
+   * the debounce, a failed save kept for Retry, a refused save's conflict and
+   * its journal entry, and the character itself if it is the one loaded. A
+   * save left owing would otherwise run after the delete, find the row gone
+   * and raise "deleted in another tab". Resolves once a write already under
+   * way has settled, so the delete lands after it.
+   */
+  forget(characterId: string): Promise<void>;
+  /**
    * End a refused save. `reload` keeps the stored copy and puts this tab's
    * edits in history; `overwrite` puts the stored copy in history and saves
    * the edits over it as it is at the moment of the choice (or brings a
@@ -741,6 +750,34 @@ export function createCharacterSessionStore({
         loadError: null,
       });
       if (id !== undefined) await flushCharacter(id);
+    },
+
+    async forget(characterId) {
+      const slot = slots.get(characterId);
+      if (slot !== undefined) {
+        clearTimeout(slot.timer);
+        slot.timer = undefined;
+        // Without a snapshot waiting, a drain ends after the write it is on.
+        slot.pending = undefined;
+        await slot.inFlight?.catch(() => undefined);
+        dropJournaled(slot, characterId);
+        slots.delete(characterId);
+      }
+      const state = get();
+      if (state.doc?.id === characterId || state.requestedId === characterId) {
+        ++loadGeneration;
+        set({ doc: null, rev: 0, requestedId: null, loadStatus: 'idle', loadError: null });
+      }
+      const { [characterId]: _error, ...saveErrors } = get().saveErrors;
+      const { [characterId]: _conflict, ...saveConflicts } = get().saveConflicts;
+      set({
+        saveErrors,
+        saveConflicts,
+        ...(get().saveCharacterId === characterId && {
+          saveStatus: 'idle' as const,
+          saveCharacterId: null,
+        }),
+      });
     },
 
     async resolveConflict(id, choice) {

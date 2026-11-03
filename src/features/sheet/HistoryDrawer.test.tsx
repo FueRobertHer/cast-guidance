@@ -5,6 +5,7 @@
 // a query left running here re-read the fifty kept character documents on
 // every change the player made and re-rendered a list nobody had opened.
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 
@@ -37,6 +38,23 @@ window.matchMedia ??= ((query: string) => ({
 
 import { HistoryDrawer } from './HistoryDrawer';
 
+/**
+ * The drawer opens from the sheet header's overflow menu; this button stands
+ * in for that menu, and is where focus goes back to on close.
+ */
+function Opener() {
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={opener} type="button" onClick={() => setOpen(true)}>
+        Character history
+      </button>
+      <HistoryDrawer charId="c1" open={open} onOpenChange={setOpen} returnFocus={opener} />
+    </>
+  );
+}
+
 afterEach(() => {
   cleanup();
   list.mockReset();
@@ -47,18 +65,29 @@ afterEach(() => {
 describe('the history drawer while closed', () => {
   it('does not query the history', () => {
     list.mockReturnValue([]);
-    render(<HistoryDrawer charId="c1" />);
+    render(<Opener />);
     expect(list).not.toHaveBeenCalled();
   });
 
   it('queries once it is opened', async () => {
     list.mockReturnValue([{ id: 'h1', charId: 'c1', at: Date.now(), label: 'Edited', doc: {} }]);
-    render(<HistoryDrawer charId="c1" />);
+    render(<Opener />);
 
     fireEvent.click(screen.getByRole('button', { name: /history/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
     expect(list).toHaveBeenCalledWith('c1');
     expect(screen.getByText('Edited')).toBeTruthy();
+  });
+
+  it('hands focus back to the menu button it was opened from', async () => {
+    list.mockReturnValue([]);
+    render(<Opener />);
+    const opener = screen.getByRole('button', { name: 'Character history' });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 });
 
@@ -76,7 +105,7 @@ describe('restoring from history (UX-005)', () => {
     doc,
   });
   const open = async () => {
-    render(<HistoryDrawer charId="c1" />);
+    render(<Opener />);
     fireEvent.click(screen.getByRole('button', { name: 'Character history' }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
   };

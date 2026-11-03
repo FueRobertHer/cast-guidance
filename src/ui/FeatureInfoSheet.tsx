@@ -51,7 +51,7 @@ export function findFeatureInfo(
 
 /**
  * Tap-to-explain bottom sheet: shows a feature's full rules text right where
- * the player is, instead of sending them hunting through the More tab.
+ * the player is, instead of sending them hunting through the Features tab.
  */
 export interface FeatureInfoSheetProps {
   title: string;

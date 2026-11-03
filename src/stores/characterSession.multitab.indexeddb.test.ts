@@ -790,3 +790,100 @@ describe('what resolving a refused save must never lose', () => {
     expect(pair(b.state().doc)).toEqual(['Wren', 3]);
   });
 });
+
+// Deleting a character this tab has open (the roster's Delete, or the sheet's
+// overflow menu). The session lets go of it first: a save it still owed would
+// otherwise run after the delete, find the row gone, and say the character
+// was deleted in another tab.
+describe('deleted from this tab', () => {
+  async function forgetAndDelete(tab: Tab): Promise<void> {
+    await tab.state().forget('c1');
+    await characterRepo.delete('c1');
+  }
+
+  it('drops an edit still waiting to save, so the delete stays quiet', async () => {
+    const tab = openTab();
+    await tab.state().load('c1');
+    tab.state().update(rename);
+    expect(tab.state().saveStatus).toBe('pending');
+
+    await forgetAndDelete(tab);
+    await tab.state().flush('c1');
+
+    expect(await db.characters.get('c1')).toBeUndefined();
+    expect(tab.state()).toMatchObject({
+      doc: null,
+      loadStatus: 'idle',
+      saveStatus: 'idle',
+      saveConflicts: {},
+      saveErrors: {},
+    });
+  });
+
+  it('drops a failed save kept for Retry, so Retry writes nothing back', async () => {
+    const save = vi
+      .fn<SessionCharacters['save']>()
+      .mockRejectedValueOnce(new Error('quota exceeded'))
+      .mockImplementation((doc, expect) => characterRepo.save(doc, expect));
+    const tab = openTab({
+      characters: { getWithRevision: (id) => characterRepo.getWithRevision(id), save },
+    });
+    await tab.state().load('c1');
+    await expect(tab.edit(rename)).rejects.toThrow('quota exceeded');
+    expect(tab.state().saveErrors).toEqual({ c1: expect.any(String) });
+
+    await forgetAndDelete(tab);
+    await tab.state().retryFailedSaves();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(await db.characters.get('c1')).toBeUndefined();
+    expect(tab.state()).toMatchObject({ saveStatus: 'idle', saveErrors: {} });
+  });
+
+  it("ends a refused save's conflict", async () => {
+    const { b } = await conflicted();
+    await forgetAndDelete(b);
+    expect(b.state()).toMatchObject({ saveStatus: 'idle', saveConflicts: {} });
+    expect(await db.characters.get('c1')).toBeUndefined();
+  });
+
+  it('waits for a write already under way, and writes nothing after it', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { saves, repo } = countingRepo();
+    const tab = openTab({
+      characters: {
+        getWithRevision: repo.getWithRevision,
+        save: async (doc, expect) => {
+          await gate;
+          return repo.save(doc, expect);
+        },
+      },
+    });
+    await tab.state().load('c1');
+    tab.state().update(hp(4));
+    const writing = tab.state().flush('c1');
+    // An edit made while the first is being written, which would be next.
+    tab.state().update(hp(3));
+
+    let forgotten = false;
+    const forgetting = tab
+      .state()
+      .forget('c1')
+      .then(() => {
+        forgotten = true;
+      });
+    await Promise.resolve();
+    expect(forgotten).toBe(false);
+
+    release();
+    await writing;
+    await forgetting;
+    expect(saves).toHaveLength(1);
+    expect(await storedPair()).toEqual(['Wren', 4]);
+    await characterRepo.delete('c1');
+    expect(await db.characters.get('c1')).toBeUndefined();
+  });
+});

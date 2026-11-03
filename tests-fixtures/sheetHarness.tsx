@@ -167,8 +167,10 @@ export interface SheetHarness {
   router: ReturnType<typeof createMemoryRouter>;
   /** Go somewhere in the app, as a link or the back button would. */
   visit(path: string): Promise<void>;
-  /** Open a sheet tab from the sheet's own tab bar ("Play", "Spells", "Build"…). */
+  /** Open a sheet tab from the sheet's own tab bar ("Play", "Spells"…). */
   tab(label: string): Promise<void>;
+  /** Open Build from the header's Edit, as the player does from any tab. */
+  edit(): Promise<void>;
   /** The saved character, once every pending write has landed. */
   saved(): Promise<CharacterDoc>;
   /** History labels, newest first, once every pending write has landed. */
@@ -225,6 +227,15 @@ export async function renderSheet(
         },
         { timeout: LOAD_MS },
       );
+      await sheetReady(doc.name);
+    },
+    async edit() {
+      const edit = () => screen.getByRole('link', { name: /^Edit character/ });
+      fireEvent.click(edit());
+      // As a tab: current once Build's module is in.
+      await waitFor(() => expect(edit().getAttribute('aria-current')).toBe('page'), {
+        timeout: LOAD_MS,
+      });
       await sheetReady(doc.name);
     },
     async saved() {

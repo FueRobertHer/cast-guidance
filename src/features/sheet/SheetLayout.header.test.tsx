@@ -2,7 +2,7 @@
 // UX-004: the sheet header sticks on top of the page, so a tab's own sticky bar
 // (the build page's undo bar) has to sit under it. The header publishes its
 // height for that; a bar at top-0 hid behind it once the page scrolled.
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -12,19 +12,34 @@ import { OPEN_ELSEWHERE_TEXT, Component as SheetLayout } from './SheetLayout';
 
 // The layout's own data comes from the session store and IndexedDB; a loaded
 // character stands in, so the header and the tab bar are what is under test.
-// Its save status and the other-tab flag are settable, for the announcement tests.
+// Its save status and the other-tab flag are settable, for the announcement
+// tests, and so are its pending choices, species and spellcasting.
 const sheetState = vi.hoisted(() => {
   const listeners = new Set<() => void>();
-  const state = { saveStatus: 'saved', openElsewhere: false };
+  const initial = {
+    saveStatus: 'saved',
+    openElsewhere: false,
+    pending: 0,
+    casts: false,
+    race: undefined as string | undefined,
+  };
+  const state = { ...initial };
+  // Bumped on every change, so the mocked hook below re-renders for any field.
+  let version = 0;
   return {
     state,
+    version: () => version,
     subscribe: (fn: () => void) => {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
     set(next: Partial<typeof state>) {
       Object.assign(state, next);
+      version++;
       for (const fn of listeners) fn();
+    },
+    reset() {
+      Object.assign(state, initial);
     },
   };
 });
@@ -32,15 +47,30 @@ vi.mock('./useCharacterSheet', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
     useCharacterSheet: () => ({
+      _version: useSyncExternalStore(sheetState.subscribe, sheetState.version),
       loadStatus: 'ready',
       missing: false,
       error: null,
       saveStatus: useSyncExternalStore(sheetState.subscribe, () => sheetState.state.saveStatus),
-      doc: { name: 'Hero' },
-      sheet: { classLabel: 'Warrior 3' },
+      doc: {
+        id: 'x',
+        name: 'Hero',
+        race: sheetState.state.race === undefined ? undefined : { name: sheetState.state.race },
+      },
+      sheet: {
+        classLabel: 'Warrior 3',
+        pending: Array.from({ length: sheetState.state.pending }, (_, i) => ({ id: `p${i}` })),
+        spellcasting: sheetState.state.casts ? [{ classUid: 'c' }] : [],
+      },
     }),
   };
 });
+const actions = vi.hoisted(() => ({
+  confirmDeleteCharacter: vi.fn(async () => true),
+  deleteCharacter: vi.fn(async () => undefined),
+  exportCharacter: vi.fn(async () => undefined),
+}));
+vi.mock('../characters/characterActions', () => actions);
 vi.mock('./useOpenElsewhere', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
@@ -48,7 +78,10 @@ vi.mock('./useOpenElsewhere', async () => {
       useSyncExternalStore(sheetState.subscribe, () => sheetState.state.openElsewhere),
   };
 });
-vi.mock('./HistoryDrawer', () => ({ HistoryDrawer: () => null }));
+vi.mock('./HistoryDrawer', () => ({
+  HistoryDrawer: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="History" /> : null,
+}));
 vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
 vi.mock('@/ui/AdvToggle', () => ({ AdvToggle: () => null }));
 
@@ -56,7 +89,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   resetAnnouncer();
-  sheetState.set({ saveStatus: 'saved', openElsewhere: false });
+  sheetState.reset();
+  for (const fn of Object.values(actions)) fn.mockClear();
 });
 
 function Probe() {
@@ -101,28 +135,36 @@ describe('useStickyHeight', () => {
   });
 });
 
-describe('SheetLayout tab bar (A11Y-002)', () => {
-  function renderAt(path: string) {
-    const router = createMemoryRouter(
-      [
-        {
-          path: '/c/:id',
-          element: <SheetLayout />,
-          children: [
-            { index: true, element: null },
-            { path: 'stats', element: null },
-            { path: 'build', element: null },
-          ],
-        },
-      ],
-      { initialEntries: [path] },
-    );
-    render(<RouterProvider router={router} />);
-    return within(screen.getByRole('navigation', { name: 'Character sheet' }));
-  }
+function renderAt(path: string) {
+  const router = createMemoryRouter(
+    [
+      { path: '/', element: <p>Roster</p> },
+      {
+        path: '/c/:id',
+        element: <SheetLayout />,
+        children: [
+          { index: true, element: null },
+          { path: 'stats', element: null },
+          { path: 'spells', element: null },
+          { path: 'inventory', element: null },
+          { path: 'features', element: null },
+          { path: 'build', element: null },
+        ],
+      },
+    ],
+    { initialEntries: [path] },
+  );
+  render(<RouterProvider router={router} />);
+  return router;
+}
 
+const tabBar = () => within(screen.getByRole('navigation', { name: 'Character sheet' }));
+const editLink = () => screen.getByRole('link', { name: /^Edit character/ });
+
+describe('SheetLayout tab bar (A11Y-002)', () => {
   it('marks the open tab with a pill and weight as well as colour, and only that tab', () => {
-    const nav = renderAt('/c/x/stats');
+    renderAt('/c/x/stats');
+    const nav = tabBar();
     const links = nav.getAllByRole('link');
     const marked = links.filter((l) => l.querySelector('[data-indicator]') !== null);
     expect(marked.map((l) => l.textContent)).toEqual(['Stats']);
@@ -200,5 +242,159 @@ describe('SheetLayout announcements (A11Y-002)', () => {
     expect(listener.heard).toEqual([OPEN_ELSEWHERE_TEXT]);
     const banner = screen.getByText(OPEN_ELSEWHERE_TEXT);
     expect(banner.closest('[aria-live],[role="status"],[role="alert"],output')).toBeNull();
+  });
+});
+
+// The design system's sheet: five tabs, with Build behind the header's Edit.
+describe('SheetLayout tabs (design system)', () => {
+  const labels = () =>
+    tabBar()
+      .getAllByRole('link')
+      .map((l) => l.textContent);
+
+  it('lists the five tabs in order for a caster, with Build not among them', () => {
+    sheetState.set({ casts: true });
+    renderAt('/c/x');
+    expect(labels()).toEqual(['Play', 'Stats', 'Spells', 'Items', 'Features']);
+  });
+
+  it('hides Spells for a character with no spellcasting', () => {
+    renderAt('/c/x');
+    expect(labels()).toEqual(['Play', 'Stats', 'Items', 'Features']);
+  });
+
+  it("still shows where a link straight to a non-caster's Spells landed", () => {
+    renderAt('/c/x/spells');
+    expect(labels()).toEqual(['Play', 'Stats', 'Spells', 'Items', 'Features']);
+    expect(tabBar().getByRole('link', { name: 'Spells' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+  });
+
+  it('marks no tab current on Build, and Edit instead', () => {
+    renderAt('/c/x/build');
+    for (const link of tabBar().getAllByRole('link')) {
+      expect(link.getAttribute('aria-current'), link.textContent ?? '').toBeNull();
+    }
+    expect(editLink().getAttribute('aria-current')).toBe('page');
+  });
+});
+
+describe('SheetLayout header (design system)', () => {
+  it('opens Build from Edit, from any tab', async () => {
+    const router = renderAt('/c/x/inventory');
+    expect(editLink().getAttribute('href')).toBe('/c/x/build');
+    expect(editLink().getAttribute('aria-current')).toBeNull();
+    fireEvent.click(editLink());
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/x/build'));
+  });
+
+  it('says the pending count in Edit, on screen and in its name', () => {
+    renderAt('/c/x');
+    expect(editLink().textContent).toBe('Edit');
+    expect(editLink().getAttribute('aria-label')).toBe('Edit character');
+
+    act(() => sheetState.set({ pending: 2 }));
+    expect(editLink().textContent).toBe('Edit2');
+    expect(editLink().getAttribute('aria-label')).toBe('Edit character, 2 choices to make');
+
+    act(() => sheetState.set({ pending: 1 }));
+    expect(editLink().getAttribute('aria-label')).toBe('Edit character, 1 choice to make');
+  });
+
+  it('returns from Build to the tab Edit was pressed on, a step back through history', async () => {
+    const router = renderAt('/c/x/stats');
+    fireEvent.click(editLink());
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/x/build'));
+
+    const back = screen.getByRole('link', { name: 'Back to Stats' });
+    expect(back.getAttribute('href')).toBe('/c/x/stats');
+    fireEvent.click(back);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/x/stats'));
+    expect(router.state.historyAction).toBe('POP');
+  });
+
+  it('keeps where Build came from when Edit is pressed again on Build', async () => {
+    const router = renderAt('/c/x/features');
+    fireEvent.click(editLink());
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/x/build'));
+    fireEvent.click(editLink());
+    await waitFor(() => expect(router.state.historyAction).toBe('REPLACE'));
+    expect(screen.getByRole('link', { name: 'Back to Features' })).toBeTruthy();
+  });
+
+  it('goes up to the roster from Build opened from outside the sheet', async () => {
+    const router = renderAt('/c/x/build');
+    fireEvent.click(screen.getByRole('link', { name: 'Back to characters' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+  });
+
+  it('puts species, class and level over the save state, which never truncates', () => {
+    sheetState.set({ race: 'Dwarf' });
+    renderAt('/c/x');
+    const indicator = document.querySelector('[data-save-indicator]');
+    const caption = indicator?.parentElement;
+    expect(caption?.textContent).toBe('Dwarf Warrior 3·Saved');
+    expect(caption?.querySelector('.truncate')?.textContent).toBe('Dwarf Warrior 3');
+    expect(indicator?.className.split(' ')).toContain('shrink-0');
+  });
+
+  it('shows a failed save in danger', () => {
+    sheetState.set({ saveStatus: 'error' });
+    renderAt('/c/x');
+    const indicator = document.querySelector('[data-save-indicator]');
+    expect(indicator?.textContent).toBe('Save failed');
+    expect(indicator?.className.split(' ')).toContain('text-danger');
+  });
+});
+
+describe('SheetLayout overflow menu', () => {
+  const openMenu = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'More: history, export, delete' }));
+    return within(screen.getByRole('menu'));
+  };
+
+  it('holds History, Export and Delete', () => {
+    renderAt('/c/x');
+    const menu = openMenu();
+    expect(menu.getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
+      'History',
+      'Export',
+      'Delete',
+    ]);
+  });
+
+  it('opens History from the menu', () => {
+    renderAt('/c/x');
+    fireEvent.click(openMenu().getByRole('menuitem', { name: 'History' }));
+    expect(screen.getByRole('dialog', { name: 'History' })).toBeTruthy();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('exports the character on screen', async () => {
+    renderAt('/c/x');
+    fireEvent.click(openMenu().getByRole('menuitem', { name: 'Export' }));
+    await waitFor(() =>
+      expect(actions.exportCharacter).toHaveBeenCalledWith(expect.objectContaining({ id: 'x' })),
+    );
+  });
+
+  it('deletes only once confirmed, then leaves for the roster', async () => {
+    const router = renderAt('/c/x/stats');
+    fireEvent.click(openMenu().getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    expect(actions.confirmDeleteCharacter).toHaveBeenCalledWith('Hero');
+    await waitFor(() => expect(actions.deleteCharacter).toHaveBeenCalledWith('x'));
+    // Replaced, so Back from the roster does not reopen a deleted character.
+    expect(router.state.historyAction).toBe('REPLACE');
+  });
+
+  it('keeps the character when the delete is cancelled', async () => {
+    actions.confirmDeleteCharacter.mockResolvedValueOnce(false);
+    const router = renderAt('/c/x');
+    fireEvent.click(openMenu().getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(actions.confirmDeleteCharacter).toHaveBeenCalled());
+    expect(actions.deleteCharacter).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe('/c/x');
   });
 });

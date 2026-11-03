@@ -1,20 +1,26 @@
 import { devices, type Locator, type Page } from '@playwright/test';
+import { casterFile } from '../fixtures/caster.ts';
 import { jsonFile } from '../fixtures/characterFile.ts';
 import { manySpells, spellName } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
+  answerImportPreview,
   characterLink,
   createBlankCharacter,
+  editLink,
   exportCharacter,
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
+  importCharacterFile,
   importPreview,
   renameCharacter,
   SHEET_TABS,
   type SheetTab,
+  sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
+import { getCharacter } from '../support/idb.ts';
 import { expect, test } from '../support/test.ts';
 
 /**
@@ -158,6 +164,21 @@ async function checkDialog(
   await escapeReturnsTo(page, dialog, opener);
 }
 
+/**
+ * Stores the caster (fixtures/caster.ts), built on a blank character, and
+ * returns its id: a character whose tab bar has all five tabs.
+ */
+async function importCaster(page: Page): Promise<string> {
+  const blank = await getCharacter(page, await createBlankCharacter(page));
+  if (blank === undefined) throw new Error('The blank character was not stored');
+  const id = 'keyboard-caster';
+  const { file, previewTitle } = casterFile(blank, id, 'Vela Quill');
+  await gotoRoster(page);
+  await importCharacterFile(page, file);
+  await answerImportPreview(page, previewTitle);
+  return id;
+}
+
 /** One homebrew collection holding one spell, as a file to import. */
 const HOMEBREW = jsonFile('key-brew.json', {
   _meta: {
@@ -224,11 +245,18 @@ test.describe('keyboard: dialogs and drawers', () => {
       page.getByRole('button', { name: 'Dice tray' }),
       page.getByRole('dialog', { name: 'Dice' }),
     );
-    await checkDialog(
-      page,
-      page.getByRole('button', { name: 'Character history' }),
-      page.getByRole('dialog', { name: 'History' }),
-    );
+    // History is the overflow menu's first item: Enter opens the menu on it,
+    // Enter again opens the drawer, and focus comes back to the menu button.
+    const menuButton = sheetMenuButton(page);
+    await menuButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'History' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    const history = page.getByRole('dialog', { name: 'History' });
+    await expect(history).toBeVisible();
+    await animationsSettled(page);
+    await expectTrapped(page, history);
+    await escapeReturnsTo(page, history, menuButton);
     await checkDialog(
       page,
       page.getByRole('button', { name: 'Long rest' }),
@@ -336,7 +364,8 @@ test.describe('keyboard: pages', () => {
 
   test('the sheet: every tab, in order, by Tab and Enter', async ({ page }) => {
     await gotoRosterSettled(page);
-    const id = await createBlankCharacter(page);
+    // A caster, so Spells is in the bar too.
+    const id = await importCaster(page);
     await gotoSheetTab(page, id, 'Play');
     const bar = page.getByRole('navigation', { name: 'Character sheet' });
     const labels = Object.keys(SHEET_TABS) as SheetTab[];
@@ -354,6 +383,76 @@ test.describe('keyboard: pages', () => {
       await expect(tab).toHaveAttribute('aria-current', 'page');
       await expect(page).toHaveURL(new RegExp(`/c/${id}${SHEET_TABS[label]}$`));
     }
+  });
+
+  test('the sheet header: Edit, Back from Build, and the overflow menu', async ({ page }) => {
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+    await gotoSheetTab(page, id, 'Stats');
+    const back = page.getByRole('banner').getByRole('link', { name: /^Back to/ });
+    const menuButton = sheetMenuButton(page);
+
+    // Back, Edit and the menu button, in that order.
+    await focusPageStart(page);
+    await tabTo(page, back);
+    await page.keyboard.press('Tab');
+    await expect(editLink(page)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(menuButton).toBeFocused();
+
+    // Edit opens Build; Back there returns to the tab it was opened from.
+    await editLink(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/c/${id}/build$`));
+    await expect(back).toHaveAccessibleName('Back to Stats');
+    await back.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/c/${id}/stats$`));
+
+    // The menu: Down opens it on the first item, the arrows go round, and
+    // Escape closes it with focus back on its button.
+    const item = (name: string) => page.getByRole('menuitem', { name });
+    await menuButton.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(item('History')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(item('Export')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(item('Delete')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(item('History')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toBeHidden();
+    await expect(menuButton).toBeFocused();
+
+    // Space opens it too, and Tab closes it and moves on to the control after
+    // the menu button, as Tab from the button itself does: focus is not lost.
+    await page.keyboard.press('Tab');
+    const moved = await page.evaluate(() => {
+      const after = document.activeElement;
+      after?.setAttribute('data-after-menu', '');
+      return after !== null && after !== document.body;
+    });
+    expect(moved).toBe(true);
+    await menuButton.focus();
+    await page.keyboard.press('Space');
+    await expect(item('History')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('menu')).toBeHidden();
+    await expect(page.locator('[data-after-menu]')).toBeFocused();
+
+    // Delete keeps its confirmation, and backing out of it returns focus to
+    // the menu button, with the character still here.
+    await menuButton.focus();
+    await page.keyboard.press('ArrowUp');
+    await expect(item('Delete')).toBeFocused();
+    await page.keyboard.press('Enter');
+    const confirm = page.getByRole('dialog', { name: 'Delete New hero?' });
+    await expect(confirm).toBeVisible();
+    await animationsSettled(page);
+    await expectTrapped(page, confirm);
+    await escapeReturnsTo(page, confirm, menuButton);
+    await expect(page).toHaveURL(new RegExp(`/c/${id}/stats$`));
   });
 });
 

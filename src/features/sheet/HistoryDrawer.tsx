@@ -1,6 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { History } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { type RefObject, useMemo, useRef, useState } from 'react';
 import { historyRepo } from '@/db/historyRepo';
 import { contentKey, diffDocs, summarizeChanges } from '@/lib/docDiff';
 import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
@@ -20,9 +19,22 @@ function timeLabel(at: number): string {
  * Restore is never one tap (UX-005): an entry first previews what restoring it
  * would change, measured against the character as it is on screen right now
  * rather than the newest entry, which can lag an edit still waiting to save.
+ *
+ * Opened from the sheet header's overflow menu, so it has no trigger of its
+ * own: Radix hands focus back to a dialog's trigger on close, and with none it
+ * dropped focus to the page. `returnFocus` (the menu button) takes it instead.
  */
-export function HistoryDrawer({ charId }: { charId: string }) {
-  const [open, setOpen] = useState(false);
+export function HistoryDrawer({
+  charId,
+  open,
+  onOpenChange: setOpen,
+  returnFocus,
+}: {
+  charId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  returnFocus: RefObject<HTMLElement | null>;
+}) {
   const [previewing, setPreviewing] = useState<string | null>(null);
   const sessionDoc = useCharacterSession((s) => s.doc);
   // For a render after a route change the session can still hold the last character.
@@ -72,19 +84,15 @@ export function HistoryDrawer({ charId }: { charId: string }) {
 
   return (
     <Sheet.Root open={open} onOpenChange={onOpenChange}>
-      <Sheet.Trigger asChild>
-        <button
-          type="button"
-          aria-label="Character history"
-          title="Character history: restore any earlier state"
-          className="tap rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink"
-        >
-          <History size={20} />
-        </button>
-      </Sheet.Trigger>
       <Sheet.Portal>
         <Sheet.Scrim />
-        <Sheet.Panel className="flex max-h-[80dvh] flex-col">
+        <Sheet.Panel
+          className="flex max-h-[80dvh] flex-col"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            returnFocus.current?.focus();
+          }}
+        >
           <Sheet.Heading>History</Sheet.Heading>
           <p className="-mt-2 mb-2 text-caption text-ink-muted">
             Every change is saved automatically (last 50), and a quick run of the same kind of edit

@@ -6,6 +6,7 @@ import { flattenEntries } from '@/engine/effects/proseScan';
 import type { FeatureCard } from '@/engine/types';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
+import type { BuildFrom } from '../SheetLayout';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const GROUPS: Array<{ types: Array<FeatureCard['origin']['type']>; title: string }> = [
@@ -78,14 +79,16 @@ export function Component() {
       {sheet.pending.length > 0 && (
         // Choices waiting on the player are guidance (DS-001): `guide-soft`,
         // with the guide's lightbulb.
+        // From Features, so Back on Build returns here (SheetLayout's BuildFrom).
         <Link
           to="../build"
+          state={{ sheetFrom: 'features' } satisfies BuildFrom}
           className="flex gap-3 rounded-control bg-guide-soft px-3 py-3 text-body text-ink"
         >
           <Lightbulb size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-guide" />
           <span>
-            {sheet.pending.length} unresolved choice{sheet.pending.length > 1 ? 's' : ''} — tap to
-            resolve in the Build tab.
+            {sheet.pending.length} unresolved choice{sheet.pending.length > 1 ? 's' : ''}. Tap to
+            resolve {sheet.pending.length > 1 ? 'them' : 'it'} in Build.
           </span>
         </Link>
       )}

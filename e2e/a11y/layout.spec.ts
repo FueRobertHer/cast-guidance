@@ -6,12 +6,14 @@ import {
   answerImportPreview,
   characterLink,
   createBlankCharacter,
+  editLink,
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
   importCharacterFile,
-  SHEET_TABS,
-  type SheetTab,
+  SHEET_PAGES,
+  type SheetPage,
+  sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
 import { getCharacter } from '../support/idb.ts';
@@ -36,6 +38,12 @@ interface Route {
   open: (page: Page, id: string) => Promise<void>;
   /** The controls the page exists for, which must stay reachable. */
   primary: (page: Page) => Locator[];
+  /**
+   * Text that shares a row with controls and must keep room to be read at a
+   * large text size: at least a quarter of the screen's width. A row that
+   * only truncates can squeeze it to nothing and still scroll nowhere.
+   */
+  keepsRoom?: (page: Page) => Locator[];
 }
 
 async function gotoHeading(page: Page, url: string, heading: string | RegExp): Promise<void> {
@@ -45,12 +53,15 @@ async function gotoHeading(page: Page, url: string, heading: string | RegExp): P
 
 const tabBar = (page: Page) => page.getByRole('navigation', { name: 'Character sheet' });
 
-const sheetTab = (tab: SheetTab): Route => ({
+const sheetTab = (tab: SheetPage): Route => ({
   name: `sheet ${tab}`,
   open: (page, id) => gotoSheetTab(page, id, tab),
   primary: (page) => [
-    tabBar(page).getByRole('link', { name: tab, exact: true }),
+    // Build is not in the tab bar: the header's Edit is its way in.
+    ...(tab === 'Build' ? [] : [tabBar(page).getByRole('link', { name: tab, exact: true })]),
     page.getByRole('link', { name: 'Back to characters' }),
+    editLink(page),
+    sheetMenuButton(page),
     ...(tab === 'Play'
       ? [
           page.getByRole('button', { name: 'Dice tray' }),
@@ -58,6 +69,8 @@ const sheetTab = (tab: SheetTab): Route => ({
         ]
       : []),
   ],
+  // The character's name, beside Back, Edit and the menu in the header.
+  keepsRoom: (page) => [page.getByRole('heading', { level: 1 })],
 });
 
 const ROUTES: Route[] = [
@@ -125,7 +138,7 @@ const ROUTES: Route[] = [
     open: (page) => gotoHeading(page, '/no-such-page', 'Page not found'),
     primary: () => [],
   },
-  ...(Object.keys(SHEET_TABS) as SheetTab[]).map(sheetTab),
+  ...(Object.keys(SHEET_PAGES) as SheetPage[]).map(sheetTab),
 ];
 
 /** A character to open the sheet with, on a settled install. Returns its id. */
@@ -277,6 +290,14 @@ test.describe('text at 200%', () => {
           await control.scrollIntoViewIfNeeded();
           await expect(control, `${route.name}: ${control}`).toBeInViewport({ ratio: 1 });
         }
+        const viewport = page.viewportSize();
+        if (viewport === null) throw new Error('No viewport');
+        for (const text of route.keepsRoom?.(page) ?? []) {
+          const { width } = await box(text);
+          expect(width, `${route.name}: ${text} keeps room to be read`).toBeGreaterThanOrEqual(
+            viewport.width / 4,
+          );
+        }
       }
     });
   }
@@ -354,7 +375,7 @@ const LONG_LIST = 150;
 test.describe('landscape on a phone', () => {
   test.use({ viewport: { width: 851, height: 393 } });
 
-  for (const tab of Object.keys(SHEET_TABS) as SheetTab[]) {
+  for (const tab of Object.keys(SHEET_PAGES) as SheetPage[]) {
     test(`sheet ${tab}: the header and tab bar leave the page in sight`, async ({ page }) => {
       const id = await setUp(page);
       await gotoSheetTab(page, id, tab);

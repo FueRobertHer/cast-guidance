@@ -8,6 +8,7 @@ import {
   createBlankCharacter,
   dataFailureBanner,
   dataUpdateToast,
+  editLink,
   exportCharacter,
   gettingStartedDismiss,
   gotoRoster,
@@ -19,9 +20,11 @@ import {
   offlineReadyNotice,
   onScreen,
   openCharacterActions,
+  openHistory,
+  openSheetMenu,
   renameCharacter,
-  SHEET_TABS,
-  type SheetTab,
+  SHEET_PAGES,
+  type SheetPage,
   settingsValue,
   skipOfflineReadyNotice,
   startDataInstall,
@@ -76,12 +79,13 @@ async function gotoHeading(page: Page, url: string, heading: string | RegExp): P
  * Stores the caster (fixtures/caster.ts), knowing Fireball, built on a blank
  * character, and returns its id.
  */
-async function importCaster(page: Page): Promise<string> {
+async function importCaster(page: Page, { filled = false } = {}): Promise<string> {
   const blank = await getCharacter(page, await createBlankCharacter(page));
   if (blank === undefined) throw new Error('The blank character was not stored');
   const id = 'axe-caster';
   const { file, previewTitle } = casterFile(blank, id, 'Vela Quill', {
     known: [{ name: 'Fireball', source: 'PHB' }],
+    filled,
   });
   await gotoRoster(page);
   await importCharacterFile(page, file);
@@ -169,11 +173,31 @@ test.describe('axe: pages and overlays', () => {
     await gotoRosterSettled(page);
     const id = await createBlankCharacter(page);
 
-    for (const tab of Object.keys(SHEET_TABS) as SheetTab[]) {
+    for (const tab of Object.keys(SHEET_PAGES) as SheetPage[]) {
       await gotoSheetTab(page, id, tab);
       await animationsSettled(page);
       await scanState(page, `sheet-${tab.toLowerCase()}`);
     }
+  });
+
+  test('character sheet: the header, with choices to make and its menu open', async ({ page }) => {
+    await gotoRosterSettled(page);
+    // The filled caster still has its class skills to pick.
+    const id = await importCaster(page, { filled: true });
+
+    await gotoSheetTab(page, id, 'Play');
+    await expect(editLink(page)).toHaveAccessibleName(
+      /^Edit character, [1-9]\d* choices? to make$/,
+    );
+    await animationsSettled(page);
+    await scanState(page, 'sheet-header-edit-count');
+
+    const menu = await openSheetMenu(page);
+    await expect(menu.getByRole('menuitem', { name: 'History' })).toBeFocused();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-header-menu');
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
   });
 
   test('character sheet: its drawers and info sheets', async ({ page }) => {
@@ -187,8 +211,7 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'dice-tray');
     await closeWithEscape(page, dice);
 
-    await page.getByRole('button', { name: 'Character history' }).click();
-    const history = page.getByRole('dialog', { name: 'History' });
+    const history = await openHistory(page);
     await opened(page, history);
     await scanState(page, 'history-drawer');
     await closeWithEscape(page, history);

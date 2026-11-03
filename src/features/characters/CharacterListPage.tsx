@@ -6,7 +6,6 @@ import { DATA_TAG } from '@/data5e/config';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistryState } from '@/data5e/hooks';
 import { characterRepo, type PreparedCharacterImport } from '@/db/characterRepo';
-import { homebrewRepo } from '@/db/homebrewRepo';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import {
@@ -20,17 +19,17 @@ import {
   restoreDraft,
 } from '@/features/creator/draft';
 import { readFileTextBounded } from '@/lib/boundedRead';
-import { downloadJson } from '@/lib/download';
-import { CHARACTER_EXPORT_FORMAT, IMPORT_LIMITS } from '@/lib/guards';
+import { IMPORT_LIMITS } from '@/lib/guards';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { Button, buttonClass } from '@/ui/Button';
-import { askChoice, askConfirm, askText } from '@/ui/dialogs';
+import { askChoice, askText } from '@/ui/dialogs';
 import { cardClass } from '@/ui/surfaces';
 import { UndoBar } from '@/ui/UndoBar';
 import { GettingStarted } from '../onboarding/GettingStarted';
+import { confirmDeleteCharacter, deleteCharacter, exportCharacter } from './characterActions';
 import type { CharacterPreview } from './importPreview';
 
 /**
@@ -46,21 +45,6 @@ interface PendingImport {
   prepared: PreparedCharacterImport;
   preview: CharacterPreview;
   sourceSpellingOf: (lower: string) => string;
-}
-
-async function exportCharacter(doc: CharacterDoc): Promise<void> {
-  // Embed only the homebrew this character depends on, as a minimal public DTO
-  // (no local-only fields). That keeps exports self-contained without shipping all
-  // of the user's unrelated homebrew. Loaded on use, as the import preview
-  // shares it: a static import would split it into a chunk of its own that
-  // the entry chunk has to list for this page.
-  const [{ homebrewForExport }, enabled] = await Promise.all([
-    import('./homebrewExport'),
-    homebrewRepo.enabledSafe(),
-  ]);
-  const homebrew = homebrewForExport(doc, enabled.files);
-  const payload = { $format: CHARACTER_EXPORT_FORMAT, character: doc, homebrew };
-  downloadJson(doc.name.replaceAll(/[^\w-]+/g, '_') || 'character', payload);
 }
 
 /**
@@ -313,15 +297,9 @@ export function Component() {
   };
 
   const remove = async (c: CharacterDoc) => {
-    const ok = await askConfirm({
-      title: `Delete ${c.name}?`,
-      detail: 'This cannot be undone.',
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (!ok) return;
+    if (!(await confirmDeleteCharacter(c.name))) return;
     try {
-      await characterRepo.delete(c.id);
+      await deleteCharacter(c.id);
     } catch (err) {
       notifyFailure('Delete', err);
     }

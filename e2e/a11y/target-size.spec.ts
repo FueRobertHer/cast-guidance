@@ -4,10 +4,12 @@ import {
   animationsSettled,
   answerImportPreview,
   createBlankCharacter,
+  editLink,
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
   importCharacterFile,
+  sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
 import { getCharacter } from '../support/idb.ts';
@@ -142,6 +144,8 @@ test.describe('touch target sizes', () => {
     await expect(button(page, 'Level 1 slot 1')).toBeVisible();
     await animationsSettled(page);
     await expectTargets(page.getByRole('link', { name: 'Back to characters', exact: true }), 1);
+    await expectTargets(editLink(page), 1);
+    await expectTargets(sheetMenuButton(page), 1);
     await expectTargets(button(page, /^(Damage|Heal) [15] hit points?$/), 4);
     await expectTargets(button(page, /^(Decrease|Increase) exhaustion$/), 2);
     await expectTargets(button(page, /^(Spend|Restore) [15] Sorcery Points$/), 4);

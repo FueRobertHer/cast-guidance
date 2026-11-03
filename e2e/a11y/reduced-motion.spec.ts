@@ -3,6 +3,7 @@ import {
   createBlankCharacter,
   gotoRosterSettled,
   gotoSheetTab,
+  openHistory,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
 import { expect, test } from '../support/test.ts';
@@ -80,9 +81,7 @@ async function moveThroughTheSheet(page: Page): Promise<Motion[]> {
   await page.keyboard.press('Escape');
   await expect(dice).toBeHidden();
 
-  await page.getByRole('button', { name: 'Character history' }).click();
-  const history = page.getByRole('dialog', { name: 'History' });
-  await expect(history).toBeVisible();
+  const history = await openHistory(page);
   await page.keyboard.press('Escape');
   await expect(history).toBeHidden();
 
