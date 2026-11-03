@@ -1,8 +1,13 @@
-import { Check, Info, TriangleAlert } from 'lucide-react';
+import { Check, Info, Lightbulb, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useId, useRef, useState } from 'react';
 import { POINT_BUY_BUDGET, POINT_BUY_COSTS, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { ABILITIES, type Ability, type CharacterDoc, type DerivedAbility } from '@/engine/types';
 import { listJoin } from '@/lib/describeRemoval';
+import { badgeClass } from '@/ui/Badge';
+import { Button, buttonClass } from '@/ui/Button';
+import { SegmentedControl } from '@/ui/SegmentedControl';
+import { cardClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 import {
   ABILITY_NAMES,
   allAt,
@@ -22,11 +27,11 @@ import { classAbilityHint, pointBuyFocusFor, standardArrayFor } from './pickerHi
 
 export type ShownMethod = 'standard' | 'pointbuy' | 'manual';
 
-const METHOD_LABELS: Readonly<Record<ShownMethod, string>> = {
-  standard: 'Standard array',
-  pointbuy: 'Point buy',
-  manual: 'Manual',
-};
+const METHODS: ReadonlyArray<{ value: ShownMethod; label: string }> = [
+  { value: 'standard', label: 'Standard array' },
+  { value: 'pointbuy', label: 'Point buy' },
+  { value: 'manual', label: 'Manual' },
+];
 
 /** The line under the method row: what the picked method is, in one breath. */
 const METHOD_NOTES: Readonly<Record<ShownMethod, string>> = {
@@ -35,10 +40,12 @@ const METHOD_NOTES: Readonly<Record<ShownMethod, string>> = {
   manual: 'Manual: rolled or house-rule scores. No budget or array checks.',
 };
 
-const SECONDARY =
-  'self-start rounded-lg bg-surface-2 px-3 py-1.5 text-left text-xs font-semibold text-ink';
+/** A small secondary action; its tap border pulls it in by 4px to line up with the text. */
+const SECONDARY = `${buttonClass({ size: 'sm' })} -ml-1 self-start`;
 const STEP = 'tap rounded-full';
-const STEP_DOT = 'flex h-8 w-8 items-center justify-center rounded-full bg-surface-2';
+const STEP_DOT = 'flex size-8 items-center justify-center rounded-full bg-surface-raised';
+/** A score's card: the scores sit on the page, each a card of its own. */
+const SCORE_CARD = 'rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset';
 
 /** The point-buy status in words, for the summary line and the live region. */
 export function pointBuyText(status: PointBuyStatus): string {
@@ -111,41 +118,34 @@ export function AbilitiesStep({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* The guide's tip (DS-001's hint): led by the class it is about. */}
       {hint !== undefined && (
-        <p className="rounded-lg bg-surface p-3 text-sm text-ink-muted">
-          💡 As a <strong className="text-ink">{className}</strong>, put your highest score in{' '}
-          <strong className="text-ink">{hint}</strong>: they power your attacks and key features.
+        <p className="flex items-start gap-3 rounded-control bg-guide-soft p-3 text-sm">
+          <Lightbulb size={18} aria-hidden className="mt-0.5 shrink-0 text-guide" />
+          <span>
+            As a <strong>{className}</strong>, put your highest score in <strong>{hint}</strong>:
+            they power your attacks and key features.
+          </span>
         </p>
       )}
       <div className="flex flex-col gap-1.5">
-        <div className="flex gap-1.5">
-          {(['standard', 'pointbuy', 'manual'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={method === m}
-              onClick={() => onMethod(m)}
-              className={`rounded-full border px-3 py-1.5 text-sm ${
-                method === m
-                  ? 'border-accent bg-accent-deep/40 font-semibold'
-                  : 'border-surface-2 text-ink-muted'
-              }`}
-            >
-              {METHOD_LABELS[m]}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-ink-muted">{METHOD_NOTES[method]}</p>
+        <SegmentedControl
+          label="Score method"
+          options={METHODS}
+          value={method}
+          onChange={onMethod}
+          block
+        />
+        <p className="px-1 text-caption text-ink-muted">{METHOD_NOTES[method]}</p>
       </div>
 
+      {/* Secondary: the step's one primary action is Next, in the footer. */}
       {method === 'standard' && autoArray !== undefined && (
-        <button
-          type="button"
+        <Button
           onClick={() => onReplace(autoArray, `Applied the standard array for a ${className}`)}
-          className="rounded-lg bg-accent-fill px-4 py-2.5 text-sm font-semibold text-white"
         >
           Auto-assign the standard array for a {className}
-        </button>
+        </Button>
       )}
 
       {method === 'standard' && isStandardArray(base) && (
@@ -156,7 +156,7 @@ export function AbilitiesStep({
             onScores={onScores}
             onAnnounce={setAnnounce}
           />
-          <p className="flex items-center gap-1.5 text-sm text-emerald-300">
+          <p className="flex items-center gap-1.5 text-sm text-heal">
             <Check size={16} aria-hidden className="shrink-0" /> Standard array: each value used
             once
           </p>
@@ -164,7 +164,7 @@ export function AbilitiesStep({
       )}
 
       {method === 'standard' && !isStandardArray(base) && (
-        <div className="flex flex-col gap-2 rounded-lg bg-surface p-3">
+        <div className={`${cardClass} flex flex-col gap-2`}>
           <p className="flex items-start gap-1.5 text-sm">
             <Info size={16} aria-hidden className="mt-0.5 shrink-0 text-ink-muted" />
             {allAt(base, 10)
@@ -227,27 +227,29 @@ function PointBuySummary({ status }: { status: PointBuyStatus }) {
   let icon: ReactNode;
   let tone: string;
   let after: string | undefined;
+  // DS-001's hint tones: the guide's gold for a spread to fix, neutral while
+  // points are left, healing's green once all are spent.
   switch (status.kind) {
     case 'range':
-      icon = <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" />;
-      tone = 'border border-amber-300/40 bg-amber-300/10 text-amber-200';
+      icon = <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0 text-guide" />;
+      tone = 'bg-guide-soft';
       break;
     case 'over':
-      icon = <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" />;
-      tone = 'border border-amber-300/40 bg-amber-300/10 text-amber-200';
+      icon = <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0 text-guide" />;
+      tone = 'bg-guide-soft';
       after = 'Lower a score, or keep them as Manual scores.';
       break;
     case 'under':
       icon = <Info size={16} aria-hidden className="mt-0.5 shrink-0" />;
-      tone = 'bg-surface text-ink-muted';
+      tone = 'bg-surface-raised text-ink-muted';
       break;
     case 'exact':
-      icon = <Check size={16} aria-hidden className="mt-0.5 shrink-0" />;
-      tone = 'bg-surface text-emerald-300';
+      icon = <Check size={16} aria-hidden className="mt-0.5 shrink-0 text-heal" />;
+      tone = 'bg-heal-soft';
       break;
   }
   return (
-    <p className={`flex items-start gap-1.5 rounded-lg px-3 py-2 text-sm ${tone}`}>
+    <p className={`flex items-start gap-1.5 rounded-control px-3 py-2 text-sm ${tone}`}>
       {icon}
       <span>
         {text}
@@ -262,11 +264,11 @@ function FinalLine({ score, final }: { score: number; final?: DerivedAbility }) 
   if (final === undefined) return null;
   const mod = `${final.mod >= 0 ? '+' : ''}${final.mod}`;
   return final.value !== score ? (
-    <span className="text-xs text-emerald-300">
+    <span className="text-caption text-heal tabular-nums">
       → {final.value} ({mod})
     </span>
   ) : (
-    <span className="text-xs text-ink-muted">mod {mod}</span>
+    <span className="text-caption text-ink-muted tabular-nums">mod {mod}</span>
   );
 }
 
@@ -336,8 +338,8 @@ function StandardAllocator({
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       {ABILITIES.map((a) => (
-        <div key={a} className="flex flex-col gap-1 rounded-lg bg-surface p-3">
-          <label htmlFor={`${id}-${a}`} className="text-xs font-semibold text-ink-muted">
+        <div key={a} className={`${SCORE_CARD} flex flex-col gap-1`}>
+          <label htmlFor={`${id}-${a}`} className="text-label text-ink-muted">
             {ABILITY_NAMES[a]} ({a.toUpperCase()})
           </label>
           <select
@@ -370,7 +372,7 @@ function StandardAllocator({
                   .join(', '),
               );
             }}
-            className="rounded-lg bg-surface-2 px-2 py-1.5 text-lg font-bold outline-none"
+            className={`${fieldClass} font-bold tabular-nums`}
           >
             {STANDARD_ARRAY.map((v) => {
               const holder = holderOf(labels, v);
@@ -433,11 +435,13 @@ function StepperCard({
   const upId = `${id}-up`;
   return (
     <div
-      className={`flex flex-col items-center gap-1 rounded-lg bg-surface p-3 ${
-        out !== undefined ? 'border border-dashed border-amber-300/60' : ''
+      className={`flex flex-col items-center gap-1 ${
+        out !== undefined
+          ? 'rounded-card border border-guide border-dashed bg-surface p-3'
+          : SCORE_CARD
       }`}
     >
-      <span className="text-xs font-semibold uppercase text-ink-muted">{ability}</span>
+      <span className="text-overline text-ink-muted uppercase">{ability}</span>
       {/* 44px targets around a 32px circle (A11Y-002), with no gap, so the
           pair and the score still fit half of a 320px screen. */}
       <div className="flex items-center">
@@ -452,7 +456,7 @@ function StepperCard({
             −
           </span>
         </button>
-        <span className="w-7 text-center text-lg font-bold">{score}</span>
+        <span className="w-7 text-center text-lg font-bold tabular-nums">{score}</span>
         <button
           type="button"
           aria-label={`Increase ${label}`}
@@ -468,15 +472,12 @@ function StepperCard({
         </button>
       </div>
       {pointBuy && cost !== undefined && (
-        <span className="text-xs text-ink-muted">
+        <span className="text-caption text-ink-muted tabular-nums">
           {cost} {cost === 1 ? 'pt' : 'pts'}
         </span>
       )}
       {out !== undefined && (
-        <span
-          id={badgeId}
-          className="flex items-center gap-1 rounded bg-amber-300/10 px-1.5 text-xs font-semibold text-amber-200"
-        >
+        <span id={badgeId} className={badgeClass('guide')}>
           <TriangleAlert size={12} aria-hidden /> {out}
         </span>
       )}

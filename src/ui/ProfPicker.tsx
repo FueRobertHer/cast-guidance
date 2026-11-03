@@ -35,7 +35,9 @@ export function ProfPicker({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-ink-muted">Proficiency</span>
+      <span className="text-label text-ink-muted">Proficiency</span>
+      {/* Picked takes the 2px `ink` edge of a selection (DS-001), so the
+          level's own dot keeps showing beside its name. */}
       <div className="flex gap-1.5">
         {LEVELS.map(({ level, label }) => (
           <button
@@ -43,11 +45,7 @@ export function ProfPicker({
             type="button"
             aria-pressed={value === level}
             onClick={() => onChange(level)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-sm ${
-              value === level
-                ? 'border-accent bg-accent-deep/40 font-semibold'
-                : 'border-surface-2 text-ink-muted'
-            }`}
+            className="flex min-h-tap flex-1 items-center justify-center gap-1.5 rounded-control bg-surface-raised px-2 py-2 text-sm ring-inset transition-colors duration-120 not-aria-pressed:text-ink-muted not-aria-pressed:hover:text-ink aria-pressed:font-semibold aria-pressed:ring-2 aria-pressed:ring-ink"
           >
             <ProfDot level={level} decorative />
             {label}
@@ -58,12 +56,12 @@ export function ProfPicker({
         <button
           type="button"
           onClick={() => onChange(null)}
-          className="self-start rounded px-1 py-1 text-xs text-ink-muted underline"
+          className="self-start rounded-chip px-1 py-1 text-caption text-ink-muted underline underline-offset-3 hover:text-ink"
         >
           Set manually. Clear to go back to {NAMES[base]}.
         </button>
       ) : (
-        <p className="text-xs text-ink-muted">From your class, species, and background.</p>
+        <p className="text-caption text-ink-muted">From your class, species, and background.</p>
       )}
     </div>
   );

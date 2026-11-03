@@ -240,11 +240,6 @@ function sources(dir: string): string[] {
  */
 const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
   {
-    file: 'features/characters/CharacterListPage.tsx',
-    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
-    what: 'the low HP bar',
-  },
-  {
     file: 'features/sheet/tabs/PlayTab.tsx',
     line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
     what: 'the low HP bar',

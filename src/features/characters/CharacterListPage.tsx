@@ -26,7 +26,9 @@ import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
+import { Button, buttonClass } from '@/ui/Button';
 import { askChoice, askConfirm, askText } from '@/ui/dialogs';
+import { cardClass } from '@/ui/surfaces';
 import { UndoBar } from '@/ui/UndoBar';
 import { GettingStarted } from '../onboarding/GettingStarted';
 import type { CharacterPreview } from './importPreview';
@@ -86,9 +88,24 @@ function classSummary(doc: CharacterDoc): string {
 /**
  * The row's one action control. Square and 44px because it is the only thing on
  * the row a thumb has to hit precisely; the rest of the row is the character.
+ * Its hover is a step above the card's own, which the card takes under it.
  */
 const ROW_ACTION =
-  'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink';
+  'flex size-tap shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink active:bg-surface-hover active:text-ink';
+
+/**
+ * Up to two initials for the card's monogram (DS-001's character card), in
+ * place of a portrait. Decoration: the name beside it is what gets read.
+ */
+function initials(name: string): string {
+  const letters = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join('');
+  return letters === '' ? '?' : letters;
+}
 
 /**
  * The pair of ways into a new character, as one string shared by a `<button>`
@@ -98,7 +115,7 @@ const ROW_ACTION =
  * wraps, exactly the moment nobody is looking.
  */
 const CREATE_OPTION =
-  'flex flex-col items-center justify-center gap-0.5 rounded-lg bg-surface-2 px-2 py-3 text-center transition-colors hover:bg-surface-3 active:bg-surface-3';
+  'flex flex-col items-center justify-center gap-0.5 rounded-control bg-surface-raised px-2 py-3 text-center transition-colors hover:bg-surface-hover active:bg-surface-hover';
 
 interface Vitals {
   hp: number;
@@ -119,12 +136,13 @@ interface Vitals {
  */
 function VitalsLine({ v }: { v?: Vitals }) {
   const ratio = v === undefined || v.maxHp <= 0 ? 0 : Math.max(0, Math.min(1, v.hp / v.maxHp));
-  const color = ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
+  // The sheet's HP bar colours (DS-001): healthy, then the mid range, then low.
+  const color = ratio > 0.5 ? 'bg-heal' : ratio > 0.25 ? 'bg-meter-mid' : 'bg-danger';
   return (
     // Nowrap because the line is a fixed 16px: letting "AC 19" fall to a second
     // line at the narrowest widths spills it out of the space held for it.
-    <div className="mt-1 flex h-4 items-center gap-2 text-xs whitespace-nowrap text-ink-muted">
-      <span className="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
+    <div className="mt-1.5 flex h-4 items-center gap-2 text-xs whitespace-nowrap text-ink-muted tabular-nums">
+      <span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-track">
         {v !== undefined && (
           <span
             className={`block h-full motion-safe:animate-fade-in ${color}`}
@@ -134,12 +152,12 @@ function VitalsLine({ v }: { v?: Vitals }) {
       </span>
       {v === undefined ? (
         <>
-          <span className="h-2 w-9 rounded-full bg-surface-2" />
-          <span className="h-2 w-7 rounded-full bg-surface-2" />
+          <span className="h-2 w-9 rounded-full bg-track" />
+          <span className="h-2 w-7 rounded-full bg-track" />
         </>
       ) : (
         <>
-          <span className="font-mono motion-safe:animate-fade-in">
+          <span className="motion-safe:animate-fade-in">
             {v.hp}/{v.maxHp}
           </span>
           <span className="motion-safe:animate-fade-in">AC {v.ac}</span>
@@ -363,7 +381,7 @@ export function Component() {
       <header className="flex items-center justify-between">
         {/* Focusable so hiding the getting-started card hands focus back here
             instead of dropping it to the page body. */}
-        <h1 ref={heading} tabIndex={-1} className="text-xl font-bold outline-none">
+        <h1 ref={heading} tabIndex={-1} className="font-display text-title-page outline-none">
           Characters
         </h1>
       </header>
@@ -373,11 +391,11 @@ export function Component() {
       {characters.length > 0 && <GettingStarted onDismiss={() => heading.current?.focus()} />}
 
       {characters.length === 0 && result !== undefined && readErrors.length === 0 && (
-        <p className="text-sm text-ink-muted">No characters yet. Create your first hero.</p>
+        <p className="text-body text-ink-muted">No characters yet. Create your first hero.</p>
       )}
 
       {readErrors.length > 0 && (
-        <p className="rounded-lg bg-accent-deep px-3 py-2 text-xs" role="alert">
+        <p className="rounded-control bg-danger-soft px-3 py-2 text-caption" role="alert">
           {readErrors.length} character{readErrors.length > 1 ? 's' : ''} could not be read and{' '}
           {readErrors.length > 1 ? 'are' : 'is'} hidden. The rest are safe to use.
         </p>
@@ -385,20 +403,31 @@ export function Component() {
 
       <div className="flex flex-col gap-2">
         {characters.map((c) => (
-          <div key={c.id} className="flex items-center gap-2 rounded-lg bg-surface p-3">
-            <Link to={`/c/${c.id}`} className="min-w-0 flex-1">
-              <div className="truncate font-semibold">{c.name}</div>
-              <div className="truncate text-xs text-ink-muted">
-                {classSummary(c)}
-                {c.race !== undefined ? ` · ${c.race.name}` : ''}
-                {` · ${c.rulesVersion}`}
+          <div
+            key={c.id}
+            className="flex items-center gap-2 rounded-card bg-surface py-3 pr-2 pl-4 shadow-card ring-1 ring-line ring-inset transition-colors hover:bg-surface-raised"
+          >
+            <Link to={`/c/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+              <span
+                aria-hidden="true"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-raised font-display text-title-sheet ring-1 ring-line ring-inset"
+              >
+                {initials(c.name)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-display text-title-card">{c.name}</div>
+                <div className="truncate text-caption text-ink-muted">
+                  {classSummary(c)}
+                  {c.race !== undefined ? ` · ${c.race.name}` : ''}
+                  {` · ${c.rulesVersion}`}
+                </div>
+                {/* Nothing to wait for on a classless character, and nothing
+                    coming if the compendium failed to load. */}
+                {(vitals.get(c.id) !== undefined ||
+                  (registryStatus === 'loading' && classesOf(c).length > 0)) && (
+                  <VitalsLine v={vitals.get(c.id)} />
+                )}
               </div>
-              {/* Nothing to wait for on a classless character, and nothing
-                  coming if the compendium failed to load. */}
-              {(vitals.get(c.id) !== undefined ||
-                (registryStatus === 'loading' && classesOf(c).length > 0)) && (
-                <VitalsLine v={vitals.get(c.id)} />
-              )}
             </Link>
             {/* `title` for the mouse, `aria-label` for the screen reader: four
                 rows of "More" otherwise announce identically, with nothing to
@@ -411,7 +440,7 @@ export function Component() {
               onClick={() => void rowActions(c)}
               className={ROW_ACTION}
             >
-              <Ellipsis size={18} />
+              <Ellipsis size={20} aria-hidden="true" />
             </button>
           </div>
         ))}
@@ -441,34 +470,30 @@ export function Component() {
        * where the hierarchy on this page actually lives.
        */}
       <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">New character</h2>
+        <h2 className="px-1 text-heading">New character</h2>
         {/* The explicit choice point for a draft left in the wizard: Resume
             goes back to the step it was left on, Discard drops it with an
             undo. The wizard tile below still continues it, and says so. */}
         {unfinished !== null && (
-          <div className="flex items-center gap-2 rounded-lg border border-surface-2 bg-surface p-3">
+          <div className={`${cardClass} flex items-center gap-2`}>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold">
+              <div className="truncate text-body-strong">
                 Unfinished character: {draftSummary(unfinished.doc)}
               </div>
-              <div className="text-xs text-ink-muted">
+              <div className="text-caption text-ink-muted">
                 Kept in this tab until you create it or close the tab.
               </div>
             </div>
             <Link
               to={unfinished.step !== undefined ? `/create?step=${unfinished.step}` : '/create'}
               state={RESUME_STATE}
-              className="shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold transition-colors hover:bg-surface-3 active:bg-surface-3"
+              className={`shrink-0 ${buttonClass({ size: 'sm' })}`}
             >
               Resume
             </Link>
-            <button
-              type="button"
-              onClick={discardDraft}
-              className="shrink-0 rounded-lg px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2"
-            >
+            <Button variant="ghost" size="sm" onClick={discardDraft} className="shrink-0">
               Discard
-            </button>
+            </Button>
           </div>
         )}
         {hadDraft && (
@@ -486,7 +511,7 @@ export function Component() {
             onClick={() => void createBlank()}
             className={CREATE_OPTION}
           >
-            <span className="text-sm font-semibold whitespace-nowrap">Blank sheet</span>
+            <span className="text-body-strong whitespace-nowrap">Blank sheet</span>
             {/* Short enough to keep its padding at 320px, which is why the
                 longer sell lives in the heading and the aria-label. */}
             <span className="text-[11px] whitespace-nowrap text-ink-muted">change anything</span>
@@ -496,7 +521,7 @@ export function Component() {
             aria-label="New character with the guided wizard"
             className={CREATE_OPTION}
           >
-            <span className="text-sm font-semibold whitespace-nowrap">Guided wizard</span>
+            <span className="text-body-strong whitespace-nowrap">Guided wizard</span>
             <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
           </Link>
         </div>
@@ -510,9 +535,9 @@ export function Component() {
         }}
         aria-disabled={checking}
         aria-busy={checking}
-        className="tap gap-2 rounded-lg bg-surface px-4 aria-disabled:opacity-60 py-2.5 text-sm text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink active:bg-surface-2 active:text-ink"
+        className={buttonClass({ variant: 'outline' })}
       >
-        <FileUp size={15} aria-hidden /> Import from a file
+        <FileUp size={18} aria-hidden /> Import from a file
       </button>
       <input
         ref={importInput}
@@ -527,7 +552,7 @@ export function Component() {
       />
       {/* A plain visual: `setImportStatus` says each outcome through the
           announcer, so a live role here would say it twice. */}
-      <p data-import-status="" className="text-xs text-amber-300 empty:hidden">
+      <p data-import-status="" className="text-caption text-guide empty:hidden">
         {importStatus}
       </p>
       {pendingImport !== undefined && (

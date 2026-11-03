@@ -12,11 +12,9 @@
 // Icons the app already ships elsewhere, so the preview adds no icon chunks.
 import { Check, ChevronRight, Plus, TriangleAlert } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useState } from 'react';
+import { Button } from './Button';
 import { DialogFrame } from './dialogs';
 import { Sheet } from './sheet';
-
-/** 44px targets (A11Y-002's `tap`). */
-const BUTTON = 'tap flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold';
 
 /**
  * Puts focus back on what had it when the preview opened (the import button,
@@ -64,7 +62,7 @@ export function ImportPreviewDialog({
   useReturnFocus();
   return (
     <DialogFrame title={title} onDismiss={onDismiss}>
-      <Sheet.Description className="-mt-2 mb-3 text-xs text-ink-muted">
+      <Sheet.Description className="-mt-2 mb-3 text-caption text-ink-muted">
         {description}
       </Sheet.Description>
       {/* Below the sheet's handle and title, so the actions stay on screen
@@ -77,18 +75,21 @@ export function ImportPreviewDialog({
           tabIndex={0}
           className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4"
         >
-          <div className="flex flex-col gap-4 pb-3 text-sm">{children}</div>
+          <div className="flex flex-col gap-4 pb-3 text-body">{children}</div>
         </section>
-        <div className="flex shrink-0 gap-2 border-t border-surface-2 pt-3">
+        {/* A sheet's confirm row: the primary action in the brand fill, the
+            other beside it (DS-001), as the confirm dialog lays them out. */}
+        <div className="flex shrink-0 gap-2 border-line border-t pt-3">
           {actions.map((a) => (
-            <button
+            <Button
               key={a.label}
-              type="button"
+              size="lg"
+              variant={a.primary === true ? 'brand' : 'secondary'}
               onClick={a.onClick}
-              className={`${BUTTON} ${a.primary === true ? 'bg-accent-fill text-white' : 'bg-surface-2'}`}
+              className="flex-1"
             >
               {a.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -101,7 +102,7 @@ export function PreviewSection({ heading, children }: { heading: string; childre
   const id = useId();
   return (
     <section aria-labelledby={id} className="flex flex-col gap-1.5">
-      <h3 id={id} className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+      <h3 id={id} className="text-overline text-ink-muted uppercase">
         {heading}
       </h3>
       {children}
@@ -117,10 +118,10 @@ export function PreviewList({ children }: { children: ReactNode }) {
 export type Tone = 'good' | 'info' | 'warn' | 'new';
 
 const TONE: Record<Tone, { Icon: typeof Check; className: string }> = {
-  good: { Icon: Check, className: 'text-emerald-400' },
-  new: { Icon: Plus, className: 'text-emerald-400' },
+  good: { Icon: Check, className: 'text-heal' },
+  new: { Icon: Plus, className: 'text-heal' },
   info: { Icon: ChevronRight, className: 'text-ink-muted' },
-  warn: { Icon: TriangleAlert, className: 'text-amber-300' },
+  warn: { Icon: TriangleAlert, className: 'text-guide' },
 };
 
 /**

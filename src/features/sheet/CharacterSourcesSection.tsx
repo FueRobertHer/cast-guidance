@@ -20,6 +20,8 @@ import { homebrewRepo } from '@/db/homebrewRepo';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { useDataStatus } from '@/stores/dataStatus';
+import { buttonClass } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
 import { outOfPolicyPicks } from './sourceCues';
 
 const sorted = (list: Iterable<string>) => [...list].sort();
@@ -94,49 +96,47 @@ export function CharacterSourcesSection({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group scroll-mt-4 rounded-lg bg-surface"
+      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
     >
-      <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
-        <span className="text-sm font-semibold">Sources</span>
-        <span className="flex items-center gap-2 text-xs text-ink-muted">
+      <summary className="flex min-h-tap cursor-pointer items-center justify-between px-4 py-2.5">
+        <span className="text-heading">Sources</span>
+        <span className="flex items-center gap-2 text-caption text-ink-muted">
           {list.length === 0
             ? 'No restriction'
             : `${list.length} book${list.length === 1 ? '' : 's'}`}
-          <ChevronUp size={14} className="transition-transform group-open:rotate-180" />
+          <ChevronUp size={16} aria-hidden className="transition-transform group-open:rotate-180" />
         </span>
       </summary>
-      <div className="flex flex-col gap-3 border-t border-surface-2/40 p-3">
-        <p className="text-xs text-ink-muted">
+      <div className="flex flex-col gap-3 border-line border-t p-4">
+        <p className="text-caption text-ink-muted">
           The books this character&apos;s table allows. With a list here, this character&apos;s
           pickers show only these books instead of this device&apos;s source settings. Nothing
           already on the character is removed.
         </p>
-        <fieldset className="flex flex-wrap gap-1.5">
+        {/* Chips with a 44px tap from their transparent border, so the row
+            pulls in by that border to line up with the text (as Settings'
+            presets do). */}
+        <fieldset className="-mx-1.5 flex flex-wrap">
           <legend className="sr-only">Source presets</legend>
           {PRESETS.map((p) => (
-            <button
+            <Chip
               key={p.id}
-              type="button"
-              aria-pressed={active?.id === p.id}
+              tone="outline"
+              pressed={active?.id === p.id}
               onClick={() => write(p.sources())}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                active?.id === p.id
-                  ? 'border-accent bg-accent-deep/40'
-                  : 'border-surface-2 text-ink-muted hover:text-ink'
-              }`}
             >
               {p.label}
-            </button>
+            </Chip>
           ))}
         </fieldset>
         {list.length > 0 && (
-          <p className="text-xs text-ink-muted">
+          <p className="text-caption text-ink-muted">
             A list is fixed: books added later and homebrew imported afterwards are not on it until
             you add them.
           </p>
         )}
         {outside.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-lg border border-surface-2 p-2.5 text-xs">
+          <div className="flex flex-col gap-1 rounded-control p-3 text-caption ring-1 ring-line ring-inset">
             <span className="font-semibold text-ink-muted">
               Already on this character from books outside its sources ({outside.length})
             </span>
@@ -217,21 +217,22 @@ function SourceChecklist({
     // restriction at all: the opposite of what the tap asked for.
     const last = restricted && list.length === 1 && list[0] === r.source;
     return (
-      <label key={r.source} className="flex items-center gap-2.5 px-3 py-2 text-sm">
+      <label
+        key={r.source}
+        className="flex min-h-tap items-center gap-2.5 px-3 py-2 text-body hover:bg-surface-raised"
+      >
         <input
           type="checkbox"
           checked={isOn(r.source)}
           disabled={last}
           aria-describedby={last ? lastHintId : undefined}
           onChange={(e) => toggle(r.source, e.target.checked)}
-          className="size-4 shrink-0 accent-accent"
+          className="size-4 shrink-0 accent-brand"
         />
         <span className={`min-w-0 flex-1 truncate ${isOn(r.source) ? '' : 'text-ink-muted'}`}>
           {r.name}
         </span>
-        {!r.onDevice && (
-          <span className="shrink-0 text-[10px] text-ink-muted">Not on this device</span>
-        )}
+        {!r.onDevice && <span className="shrink-0 text-xs text-ink-muted">Not on this device</span>}
         <span className="shrink-0 font-mono text-[10px] uppercase text-ink-muted">{r.source}</span>
       </label>
     );
@@ -245,27 +246,29 @@ function SourceChecklist({
           if (fromDeviceList !== undefined) onChange(fromDeviceList);
         }}
         disabled={fromDeviceList === undefined || sameList(fromDeviceList, list)}
-        className="self-start rounded-lg border border-surface-2 px-3 py-1 text-xs text-ink-muted hover:text-ink disabled:opacity-50"
+        className={`${buttonClass({ variant: 'outline', size: 'sm' })} -ml-1 self-start`}
       >
         Copy this device&apos;s settings
       </button>
       {downloading && (
-        <p className="text-xs text-ink-muted">
+        <p className="text-caption text-ink-muted">
           Game data is still downloading. Unticking a book from No restriction, or copying a device
           setting that hides a few books, writes out the books here now, so it can miss some that
           are still on the way. Check the list again once the download finishes.
         </p>
       )}
       {restricted && list.length === 1 && (
-        <p id={lastHintId} className="text-xs text-ink-muted">
+        <p id={lastHintId} className="text-caption text-ink-muted">
           A list needs at least one book. Choose No restriction to clear it.
         </p>
       )}
       {rows.length === 0 && (
-        <p className="text-sm text-ink-muted">Waiting for game data to download.</p>
+        <p className="text-body text-ink-muted">Waiting for game data to download.</p>
       )}
       {missing.length > 0 && (
-        <div className="flex flex-col rounded-lg bg-surface-2/40">{missing.map(checkbox)}</div>
+        <div className="flex flex-col overflow-hidden rounded-control ring-1 ring-line ring-inset">
+          {missing.map(checkbox)}
+        </div>
       )}
       {SECTION_ORDER.map((section) => {
         const inGroup = rows.filter((r) => r.onDevice && r.section === section);
@@ -277,14 +280,14 @@ function SourceChecklist({
             open={section === 'core' || section === 'homebrew'}
             className="group/books"
           >
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg bg-surface-2/40 px-3 py-2 text-sm font-semibold">
+            <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 rounded-control bg-surface-raised px-3 py-2 text-body-strong">
               <ChevronRight
                 aria-hidden
                 size={14}
                 className="shrink-0 text-ink-muted transition-transform group-open/books:rotate-90"
               />
               <span className="min-w-0 flex-1 truncate">{SECTION_LABELS[section]}</span>
-              <span className="shrink-0 text-xs font-normal text-ink-muted">
+              <span className="shrink-0 font-normal text-caption text-ink-muted">
                 {on}/{inGroup.length}
               </span>
             </summary>
