@@ -18,6 +18,27 @@ export function gettingStartedDismiss(page: Page): Locator {
 }
 
 /**
+ * The getting-started checklist, named by its heading, which goes on to say
+ * how many of its items are done.
+ */
+export function gettingStartedCard(page: Page): Locator {
+  return page.getByRole('region', { name: /^Ready for the table/ });
+}
+
+/** `ONBOARDING_KEY` in `src/stores/onboarding.ts`. */
+const ONBOARDING_KEY = 'cast-guidance:onboarding';
+
+/**
+ * Brings the getting-started card back on the next roster load and keeps it
+ * there: the specs otherwise hide it as soon as it shows, and the hiding is
+ * remembered. Call on a page already at the app's origin.
+ */
+export async function keepGettingStarted(page: Page): Promise<void> {
+  await page.removeLocatorHandler(gettingStartedDismiss(page));
+  await page.evaluate((key) => localStorage.removeItem(key), ONBOARDING_KEY);
+}
+
+/**
  * Everything but the announcer's screen-reader-only lines (A11Y-002). A toast
  * is a plain visual whose words are also said through the announcer, so a
  * text locator for the toast matches its spoken copy too; this is the one
@@ -44,8 +65,9 @@ export function announcements(
  * screen that hides itself after a few seconds.
  */
 export function offlineReadyNotice(page: Page): Locator {
-  // The notice toast only: the getting-started card has a lasting line with
-  // the same words, which would hold the overlay handler waiting forever.
+  // The notice toast only: a lasting line elsewhere with the same words (the
+  // getting-started card has had one) would hold the overlay handler waiting
+  // forever.
   return page.getByTestId('notice-toast').filter({ hasText: 'Ready to use offline' });
 }
 
@@ -145,9 +167,33 @@ export function characterLink(page: Page, name: string): Locator {
     .getByRole('link', { name: new RegExp(`^${escapeRegExp(name)}\\b`) });
 }
 
+/** The roster's one primary action, which asks which way to make a character. */
+export function newCharacterButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'New character', exact: true });
+}
+
+/** The New character sheet: the guided wizard or a blank sheet. */
+export function newCharacterSheet(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'New character' });
+}
+
+/** The roster header's import button. */
+export function importButton(page: Page): Locator {
+  return page.getByRole('button', { name: 'Import a character file' });
+}
+
+/** Opens New character's choice of how to make one and returns the sheet. */
+export async function openNewCharacter(page: Page): Promise<Locator> {
+  await newCharacterButton(page).click();
+  const sheet = newCharacterSheet(page);
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
 /** Creates a character from a blank sheet on the roster and returns its id. */
 export async function createBlankCharacter(page: Page): Promise<string> {
-  await page.getByRole('button', { name: 'New character from a blank sheet' }).click();
+  const sheet = await openNewCharacter(page);
+  await sheet.getByRole('button', { name: /^Blank sheet/ }).click();
   await page.waitForURL(/\/c\/[^/]+\/build$/);
   const id = /\/c\/([^/]+)\/build$/.exec(new URL(page.url()).pathname)?.[1];
   if (id === undefined) throw new Error(`No character id in ${page.url()}`);
@@ -195,10 +241,10 @@ export async function exportCharacter(
   return { download, json };
 }
 
-/** Imports a file through the roster's "Import from a file" button. */
+/** Imports a file through the roster header's import button. */
 export async function importCharacterFile(page: Page, file: FilePayload | string): Promise<void> {
   const choosing = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Import from a file' }).click();
+  await importButton(page).click();
   const chooser = await choosing;
   await chooser.setFiles(file);
 }

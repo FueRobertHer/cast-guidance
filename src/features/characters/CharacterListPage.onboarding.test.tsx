@@ -36,6 +36,9 @@ vi.mock('@/data5e/hooks', () => ({
 
 import { Component as CharacterListPage } from './CharacterListPage';
 
+/** The checklist's region, named by its heading, which says how far along it is. */
+const CHECKLIST = /^Ready for the table/;
+
 function renderRoster() {
   return render(
     <MemoryRouter>
@@ -59,15 +62,15 @@ afterEach(() => {
 describe('CharacterListPage getting-started card', () => {
   it('sits below New character on an empty roster', async () => {
     renderRoster();
-    const card = await screen.findByRole('region', { name: 'Getting started' });
-    const create = screen.getByRole('heading', { name: 'New character' });
+    const card = await screen.findByRole('region', { name: CHECKLIST });
+    const create = screen.getByRole('button', { name: 'New character' });
     expect(precedes(create, card)).toBe(true);
   });
 
   it('comes before an existing roster', async () => {
     list.characters = [newCharacterDoc('a', 'Aria', 'v2.32.0')];
     renderRoster();
-    const card = await screen.findByRole('region', { name: 'Getting started' });
+    const card = await screen.findByRole('region', { name: CHECKLIST });
     expect(precedes(card, screen.getByRole('link', { name: /Aria/ }))).toBe(true);
   });
 
@@ -77,9 +80,7 @@ describe('CharacterListPage getting-started card', () => {
     // Waited for, not read at once: the card that appeared inside `findByRole`
     // can be clicked before its store subscription is in place (its effects
     // ran outside act), and it then hides a scheduler task later.
-    await waitFor(() =>
-      expect(screen.queryByRole('region', { name: 'Getting started' })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole('region', { name: CHECKLIST })).toBeNull());
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Characters' }));
   });
 });

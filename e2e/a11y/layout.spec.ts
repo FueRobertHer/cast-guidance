@@ -8,10 +8,15 @@ import {
   characterLink,
   createBlankCharacter,
   editLink,
+  gettingStartedCard,
+  gettingStartedDismiss,
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
+  importButton,
   importCharacterFile,
+  keepGettingStarted,
+  newCharacterButton,
   SHEET_PAGES,
   type SheetPage,
   sheetMenuButton,
@@ -83,9 +88,24 @@ const ROUTES: Route[] = [
     primary: (page) => [
       characterLink(page, 'New hero'),
       page.getByRole('button', { name: 'Actions for New hero' }),
-      page.getByRole('button', { name: 'New character from a blank sheet' }),
-      page.getByRole('button', { name: 'Import from a file' }),
+      newCharacterButton(page),
+      importButton(page),
     ],
+    // The name, beside the actions button laid over its card.
+    keepsRoom: (page) => [characterLink(page, 'New hero').getByText('New hero', { exact: true })],
+  },
+  {
+    name: 'roster checklist',
+    open: async (page) => {
+      await keepGettingStarted(page);
+      await gotoHeading(page, '/', 'Characters');
+      await expect(gettingStartedCard(page)).toBeVisible();
+    },
+    primary: (page) => [
+      gettingStartedDismiss(page),
+      gettingStartedCard(page).getByRole('link', { name: 'Storage details' }),
+    ],
+    keepsRoom: (page) => [gettingStartedCard(page).getByRole('heading', { name: 'Works offline' })],
   },
   {
     name: 'library',

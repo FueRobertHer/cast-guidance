@@ -67,3 +67,10 @@ export function PersistStatus({ state, ref }: { state: PersistState; ref?: Ref<H
  */
 export const PERSIST_DENIED_TEXT =
   'Your browser decides this itself; installing the app or using it often helps.';
+
+/**
+ * Settings' Storage details disclosure, which holds the longer why behind the
+ * roster's checklist (Safari's seven-day rule, backups). The checklist links
+ * to it by this id, and Settings opens it when the page is opened that way.
+ */
+export const STORAGE_DETAILS_ID = 'storage-details';

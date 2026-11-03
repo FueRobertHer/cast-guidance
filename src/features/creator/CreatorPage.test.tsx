@@ -176,6 +176,21 @@ describe('stepping through the creator', () => {
     renderCreator(walkedToReview);
     expect(document.title).toBe('Review · Step 9 of 9 · New character · Cast Guidance');
   });
+
+  it('says which step this is and names the one Next goes to', async () => {
+    const router = renderCreator(['/', '/create']);
+    expect(screen.getByText('Step 1 of 9')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next: Class' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?step=class'));
+    expect(screen.getByText('Step 2 of 9')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next: Species / Race' })).toBeTruthy();
+    cleanup();
+
+    // The last step has nowhere further to go.
+    renderCreator(walkedToReview);
+    expect(screen.getByText('Step 9 of 9')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Next/ })).toBeNull();
+  });
 });
 
 describe('creating a character', () => {

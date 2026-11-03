@@ -12,8 +12,11 @@ import {
   gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
+  importButton,
   importCharacterFile,
   importPreview,
+  newCharacterButton,
+  newCharacterSheet,
   renameCharacter,
   SHEET_TABS,
   type SheetTab,
@@ -198,6 +201,9 @@ test.describe('keyboard: dialogs and drawers', () => {
     await gotoRoster(page);
     await renameCharacter(page, 'New hero', NAME);
 
+    // New character's choice of the wizard or a blank sheet.
+    await checkDialog(page, newCharacterButton(page), newCharacterSheet(page));
+
     const opener = page.getByRole('button', { name: `Actions for ${NAME}` });
     const actions = page.getByRole('dialog', { name: NAME });
     await checkDialog(page, opener, actions);
@@ -223,8 +229,8 @@ test.describe('keyboard: dialogs and drawers', () => {
     // A character file's preview (IMP-002), opened from the import button.
     const { json } = await exportCharacter(page, NAME);
     await expect(actions).toBeHidden();
-    const importButton = page.getByRole('button', { name: 'Import from a file' });
-    await importButton.focus();
+    const importer = importButton(page);
+    await importer.focus();
     const choosing = page.waitForEvent('filechooser');
     await page.keyboard.press('Enter');
     await (await choosing).setFiles(jsonFile('brin.json', json));
@@ -232,7 +238,7 @@ test.describe('keyboard: dialogs and drawers', () => {
     await expect(preview).toBeVisible();
     await animationsSettled(page);
     await expectTrapped(page, preview);
-    await escapeReturnsTo(page, preview, importButton);
+    await escapeReturnsTo(page, preview, importer);
   });
 
   test('the Play tab: dice tray, history and long rest', async ({ page }) => {
@@ -372,18 +378,22 @@ test.describe('keyboard: pages', () => {
   test('the roster: Tab reaches its actions, and Enter uses them', async ({ page }) => {
     await gotoRosterSettled(page);
     await focusPageStart(page);
-    await tabTo(page, page.getByRole('button', { name: 'New character from a blank sheet' }));
+    await tabTo(page, newCharacterButton(page));
+    await page.keyboard.press('Enter');
+    const how = newCharacterSheet(page);
+    await expect(how).toBeVisible();
+    await tabTo(page, how.getByRole('button', { name: /^Blank sheet/ }), 10);
     await page.keyboard.press('Enter');
     await page.waitForURL(/\/c\/[^/]+\/build$/);
 
     await gotoRoster(page);
     await focusPageStart(page);
-    // In reading order: the character, its actions, then the ways to add one.
+    // In reading order: import in the header, the character, its actions,
+    // then the way to add one.
+    await tabTo(page, importButton(page));
     await tabTo(page, characterLink(page, 'New hero'));
     await tabTo(page, page.getByRole('button', { name: 'Actions for New hero' }));
-    await tabTo(page, page.getByRole('button', { name: 'New character from a blank sheet' }));
-    await tabTo(page, page.getByRole('link', { name: 'New character with the guided wizard' }));
-    await tabTo(page, page.getByRole('button', { name: 'Import from a file' }));
+    await tabTo(page, newCharacterButton(page));
 
     await focusPageStart(page);
     await tabTo(page, characterLink(page, 'New hero'));
