@@ -13,7 +13,9 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
  *
  * Labels are sentence case and start with the verb ("Create character"), with
  * an optional 18px Lucide icon before them. A disabled button needs its reason
- * nearby ("Pick 1 more to confirm").
+ * nearby ("Pick 1 more to confirm"). A label wraps rather than run off a
+ * narrow screen at a large text size (WCAG 1.4.10); the vertical padding only
+ * shows once it does, since one line stays inside the minimum height.
  *
  * Sizes: `md` is 44px tall, `lg` 52px (a wizard's footer, a sheet's confirm),
  * `icon` a 44px square. `sm` looks 36px tall for header and row actions but
@@ -32,7 +34,7 @@ export type ButtonVariant =
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 const BASE =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-[background-color,color,transform,filter] duration-120 ease-out active:scale-97 unavailable:cursor-default unavailable:bg-surface-raised unavailable:text-ink-faint unavailable:ring-0 unavailable:filter-none unavailable:active:scale-100';
+  'inline-flex items-center justify-center gap-2 text-center transition-[background-color,color,transform,filter] duration-120 ease-out active:scale-97 unavailable:cursor-default unavailable:bg-surface-raised unavailable:text-ink-faint unavailable:ring-0 unavailable:filter-none unavailable:active:scale-100';
 
 const VARIANT: Record<ButtonVariant, string> = {
   brand: 'bg-brand text-on-brand hover:bg-brand-hover',
@@ -45,10 +47,10 @@ const VARIANT: Record<ButtonVariant, string> = {
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  md: 'min-h-tap min-w-tap rounded-control px-4 text-body-strong',
+  md: 'min-h-tap min-w-tap rounded-control px-4 py-2 text-body-strong',
   // 10px corners on the visible fill: 4px of border plus the fill's own 10.
-  sm: 'min-h-tap min-w-tap rounded-[0.875rem] border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 text-label',
-  lg: 'min-h-13 min-w-tap rounded-[0.75rem] px-5 text-body-strong',
+  sm: 'min-h-tap min-w-tap rounded-[0.875rem] border-4 border-transparent bg-clip-padding [--tap-inset:0.25rem] px-2 py-1 text-label',
+  lg: 'min-h-13 min-w-tap rounded-[0.75rem] px-5 py-2.5 text-body-strong',
   icon: 'size-tap rounded-control',
 };
 

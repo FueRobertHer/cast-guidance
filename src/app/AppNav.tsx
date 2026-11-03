@@ -22,7 +22,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
   return (
     <span
       {...(active ? { 'data-indicator': '' } : {})}
-      className={`flex h-7.5 w-14 items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
     >
       {children}
     </span>
@@ -38,7 +38,7 @@ export function AppNavLayout() {
   return (
     <>
       {/* Clears the tab bar: `tabbar` and its hairline, plus the inset. */}
-      <div className="flex flex-1 flex-col pb-[calc(4rem+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
+      <div className="flex flex-1 flex-col pb-[calc(var(--spacing-tabbar)+1px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-40">
         <Outlet />
       </div>
       {/* Content-box as a bar, so the inset adds to its 64px; border-box as
@@ -56,7 +56,7 @@ export function AppNavLayout() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center gap-0.75 pt-1.5 text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+              `flex flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
                 isActive
                   ? 'font-bold text-ink lg:bg-surface-raised'
                   : 'text-ink-muted hover:text-ink'

@@ -269,8 +269,14 @@
   --text-overline--line-height: 0.875rem;
   --text-overline--font-weight: 700;
   --text-overline--letter-spacing: 0.08em;
-  --text-tab: 0.6875rem; /* 11px: tab bar labels only */
-  --text-tab--line-height: 0.875rem;
+  /*
+   * Tab bar labels only, and in px, as they were before DS-001: the phone's
+   * bar holds four or six tabs at a fixed width, and labels that grew with
+   * the text size setting pushed the last tabs off the screen. The platforms'
+   * own tab bars keep their labels fixed the same way.
+   */
+  --text-tab: 11px;
+  --text-tab--line-height: 14px;
   --text-tab--font-weight: 600;
   --text-dice: 0.875rem; /* 14px: dice expressions, with tabular-nums */
   --text-dice--line-height: 1.25rem;
@@ -286,7 +292,7 @@
    */
   --spacing-tap: 2.75rem; /* 44px: the least any tappable thing measures */
   --spacing-header: 3.5rem; /* 56px: the sheet header, section headers */
-  --spacing-tabbar: 4rem; /* 64px: the tab bar, before the safe-area inset */
+  --spacing-tabbar: 64px; /* the tab bar, before the safe-area inset; px with its labels */
   --spacing-dock: 3rem; /* 48px: the dice dock */
   --container-content: 40rem; /* 640px: the widest one column gets */
 
@@ -367,7 +373,7 @@ body,
  * Tab scrolls a control just into view, which below `lg` put it under the
  * bottom tab bar, and Shift+Tab under the sheet's sticky header and the build
  * page's bar beneath it: entirely hidden in landscape. The tab bars are
- * `tabbar` (4rem) tall, so the padding is that and a little air, and from
+ * `tabbar` (64px) tall, so the padding is that and a little air, and from
  * `lg` a side rail. The sticky bars publish their measured heights
  * (useStickyHeight), unset when not on screen.
  */

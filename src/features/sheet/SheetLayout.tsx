@@ -79,7 +79,7 @@ function TabPill({ active, children }: { active: boolean; children: ReactNode })
   return (
     <span
       {...(active ? { 'data-indicator': '' } : {})}
-      className={`flex h-7.5 w-14 items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
+      className={`flex h-[30px] w-[56px] items-center justify-center rounded-full transition-colors duration-200 ease-out lg:size-auto lg:bg-transparent ${active ? 'bg-surface-raised' : ''}`}
     >
       {children}
     </span>
@@ -246,7 +246,7 @@ export function Component() {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex min-w-0 flex-1 flex-col items-center gap-0.75 pt-1.5 text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+              `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
                 isActive
                   ? 'font-bold text-ink lg:bg-surface-raised'
                   : 'text-ink-muted hover:text-ink'
