@@ -1,6 +1,8 @@
 import { type ReactNode, useState } from 'react';
 import type { DerivedValue } from '@/engine/types';
+import { Button } from './Button';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
+import { fieldClass } from './TextField';
 
 /** Bottom sheet showing how a derived number was computed, with optional override. */
 export interface BreakdownSheetProps {
@@ -42,36 +44,38 @@ function BreakdownSheetContent({
     <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-2 flex items-baseline justify-between text-base font-semibold">
-            {title}
-            <span className="text-2xl font-bold">{value.value}</span>
+        <Sheet.Scrim />
+        <Sheet.Panel>
+          {/* The total stays inside the title, so the sheet's name carries its
+              result, as it always has: not `Sheet.Heading`, whose aside sits
+              outside the name. */}
+          <Sheet.Title className="mb-3 flex items-baseline justify-between gap-3">
+            <span className="min-w-0 font-display text-title-sheet">{title}</span>
+            <span className="shrink-0 text-stat tabular-nums">{value.value}</span>
           </Sheet.Title>
-          <dl className="flex flex-col gap-1 text-sm">
+          <dl className="flex flex-col gap-1 text-body">
             {value.parts.map((p, i) => (
-              <div key={`${p.label}-${String(i)}`} className="flex justify-between">
+              <div key={`${p.label}-${String(i)}`} className="flex justify-between gap-3">
                 <dt className="text-ink-muted">{p.label}</dt>
-                <dd className="font-mono">
+                <dd className="font-semibold tabular-nums">
                   {p.amount >= 0 ? '+' : ''}
                   {p.amount}
                 </dd>
               </div>
             ))}
             {value.overridden && (
-              <div className="mt-1 flex justify-between border-t border-surface-2 pt-1 text-amber-300">
+              <div className="mt-1 flex justify-between gap-3 border-line border-t pt-2 text-guide">
                 <dt>Manual override (computed: {value.base})</dt>
-                <dd className="font-mono">= {value.value}</dd>
+                <dd className="font-semibold tabular-nums">= {value.value}</dd>
               </div>
             )}
           </dl>
           {children !== undefined && (
-            <div className="mt-3 border-t border-surface-2 pt-3">{children}</div>
+            <div className="mt-3 border-line border-t pt-3">{children}</div>
           )}
           {onOverride !== undefined && (
             <form
-              className="mt-3 flex gap-1.5 border-t border-surface-2 pt-3"
+              className="mt-3 flex gap-2 border-line border-t pt-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 const n = Number.parseInt(draft, 10);
@@ -87,26 +91,19 @@ function BreakdownSheetContent({
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={`Override ${title}`}
                 placeholder={`Override (${value.base})`}
-                className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-muted"
+                className={`${fieldClass} min-w-0 flex-1`}
               />
-              <button
-                type="submit"
-                className="rounded-lg bg-accent-fill px-3 py-2 text-sm font-semibold text-white"
-              >
+              <Button type="submit" variant="brand">
                 Set
-              </button>
+              </Button>
               {value.overridden && (
-                <button
-                  type="button"
-                  onClick={() => onOverride(null)}
-                  className="rounded-lg bg-surface-2 px-3 py-2 text-sm"
-                >
+                <Button variant="secondary" onClick={() => onOverride(null)}>
                   Clear
-                </button>
+                </Button>
               )}
             </form>
           )}
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

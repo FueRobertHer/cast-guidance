@@ -87,22 +87,18 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
     <Sheet.Root open={open} onOpenChange={setOpen}>
       <Sheet.Trigger asChild>{trigger}</Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content
+        <Sheet.Scrim />
+        <Sheet.Panel
           // With no spell to show, the line saying why is the sheet's
           // description: focus lands on Retry or the sheet itself, and the
           // line would otherwise go unread.
           aria-describedby={spell === undefined ? messageId : undefined}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+          className="flex max-h-[80dvh] flex-col"
         >
-          <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-1 shrink-0 text-base font-semibold capitalize">
-            {spell !== undefined ? String(spell.name) : name}
-          </Sheet.Title>
-          {subtitle !== undefined && (
-            <p className="mb-2 shrink-0 text-xs text-ink-muted">{subtitle}</p>
-          )}
-          <div className="min-h-0 flex-1 overflow-y-auto text-sm">
+          <Sheet.Heading aside={subtitle}>
+            <span className="capitalize">{spell !== undefined ? String(spell.name) : name}</span>
+          </Sheet.Heading>
+          <div className="min-h-0 flex-1 overflow-y-auto text-body">
             {spell === undefined ? (
               packs.status === 'error' ? (
                 // Inside the modal the shell's banner is hidden, so this is
@@ -123,10 +119,10 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
             ) : (
               <>
                 {facts.length > 0 && (
-                  <div className="mb-3 flex flex-col gap-0.5 text-xs">
+                  <div className="mb-3 flex flex-col gap-0.5 text-caption">
                     {facts.map(([label, value]) => (
                       <div key={label} className="text-ink-muted">
-                        <span className="font-medium text-ink">{label}:</span> {value}
+                        <span className="font-semibold text-ink">{label}:</span> {value}
                       </div>
                     ))}
                   </div>
@@ -136,7 +132,7 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
               </>
             )}
           </div>
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

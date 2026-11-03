@@ -238,9 +238,7 @@ function sources(dir: string): string[] {
  * which is the point: a class list split across a conditional, a variable
  * or a prop is out of reach of any per-attribute check.
  */
-const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
-  { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
-];
+const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [];
 
 /**
  * Bare `bg-accent` class tokens, opacity variants (`bg-accent/90`) included:

@@ -8,8 +8,13 @@ const LABELS: Record<ProfLevel, string> = {
 
 /**
  * Proficiency marker that reads without color: an empty ring (none), a filled
- * dot (proficient), and a ringed filled dot (expertise). Carries the state as
- * text for screen readers so the meaning never depends on hue alone.
+ * dot (proficient), and a filled dot inside a ring (expertise). Carries the
+ * state as text for screen readers so the meaning never depends on hue alone.
+ *
+ * The ring is `line-strong`; the dot takes its control's text colour, which is
+ * `ink` in a skill row (DS-001: selection and proficiency are ink, told apart
+ * by shape), and stays visible on a pressed `ink` pill. The expertise ring is
+ * an outline, so the gap inside it shows whatever ground the dot sits on.
  *
  * `decorative` drops that text where the surrounding control already says the
  * level in words (otherwise a "Proficient" button reads "proficient Proficient").
@@ -17,11 +22,11 @@ const LABELS: Record<ProfLevel, string> = {
 export function ProfDot({ level, decorative }: { level: ProfLevel; decorative?: boolean }) {
   const shape =
     level === 2
-      ? 'bg-amber-300 ring-2 ring-amber-300/40 ring-offset-1 ring-offset-surface'
+      ? 'bg-current outline-[1.5px] outline-current outline-offset-2'
       : level === 1
-        ? 'bg-accent'
-        : 'border border-ink-muted/50';
-  const dot = <span aria-hidden className={`inline-block h-2 w-2 rounded-full ${shape}`} />;
+        ? 'bg-current'
+        : 'ring-[1.5px] ring-line-strong ring-inset';
+  const dot = <span aria-hidden className={`inline-block size-2.5 rounded-full ${shape}`} />;
   if (decorative === true) return <span className="inline-flex items-center">{dot}</span>;
   return (
     <span className="inline-flex items-center" title={LABELS[level]}>
