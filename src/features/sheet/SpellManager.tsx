@@ -491,10 +491,12 @@ function ClassSpells({
                         {nameOf(s)}
                       </Link>
                       {/* The row's marks and actions, kept together: at a
-                          narrow width they wrap under the name as one group.
-                          No gap: the controls' transparent tap borders space
-                          them already. */}
-                      <span className="ml-auto flex shrink-0 items-center">
+                          narrow width they wrap under the name as one group,
+                          and with large text they wrap within it rather than
+                          run past the card's clipped edge. No gap: the
+                          controls' transparent tap borders space them
+                          already. */}
+                      <span className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end">
                         <span className="mr-1 flex items-center gap-1">
                           {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
                             <OutsideSourcesChip />

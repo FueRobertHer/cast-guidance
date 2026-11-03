@@ -28,6 +28,17 @@ const ROW = 'px-4 py-3';
 /** A press rolls: one fill step on hover, the roll tint while held. */
 const ROLLS = 'transition-colors duration-120 hover:bg-surface-raised active:bg-roll-soft';
 
+/**
+ * The saves: three across, but never a tile narrower than 5.75rem, which
+ * holds "● CHA +3" on one line; six across from `sm` once six such tiles fit
+ * (37rem, gaps included). Both are in rem, so with larger text the grid drops
+ * to two columns, then one, instead of the row spilling out sideways (WCAG
+ * 1.4.4, `layout.spec.ts`), and it is always 6, 3, 2 or 1 across, never a
+ * row of four over two. The section is the query container.
+ */
+const SAVES =
+  'grid grid-cols-[repeat(auto-fit,minmax(max(5.75rem,(100%_-_1rem)/3),1fr))] gap-2 sm:@min-[37rem]:grid-cols-6';
+
 export function Component() {
   const { sheet } = useOutletContext<CharacterSheetState>();
   if (sheet === null) return <p className="text-body text-ink-muted">Deriving…</p>;
@@ -90,9 +101,9 @@ export function Component() {
 
       {/* Saves: a proficiency dot where the old fill was. The button's name
           stays "STR +2", which never said the level either. */}
-      <section className="flex flex-col gap-2">
+      <section className="@container flex flex-col gap-2">
         <h2 className={H2}>Saving throws</h2>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        <div className={SAVES}>
           {ABILITIES.map((a) => {
             const save = sheet.saves[a];
             return (

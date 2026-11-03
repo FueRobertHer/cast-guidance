@@ -20,6 +20,9 @@ const GROUPS: Array<{ types: Array<FeatureCard['origin']['type']>; title: string
 const H2 = 'px-1 text-heading';
 
 function FeatureDetails({ f, open }: { f: FeatureCard; open: boolean }) {
+  const origin = `${f.origin.label !== f.name ? f.origin.label : ''}${
+    f.level !== undefined ? ` · level ${f.level}` : ''
+  }`;
   return (
     <details
       className="group rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
@@ -31,15 +34,18 @@ function FeatureDetails({ f, open }: { f: FeatureCard; open: boolean }) {
           aria-hidden="true"
           className="shrink-0 self-center text-ink-muted transition-transform duration-200 group-open:rotate-90"
         />
-        <span className="min-w-0">
-          {f.name}
-          <span className="ml-2 font-normal text-caption text-ink-muted">
-            {f.origin.label !== f.name ? f.origin.label : ''}
-            {f.level !== undefined ? ` · level ${f.level}` : ''}
-          </span>
+        {/* Name and origin wrap as two pieces, so with large text the origin
+            drops to its own line instead of pushing past the card. */}
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="min-w-0">{f.name}</span>
+          {origin !== '' && (
+            <span className="min-w-0 font-normal text-caption text-ink-muted">{origin}</span>
+          )}
         </span>
       </summary>
-      <div className="px-4 pb-4 text-body">
+      {/* `wrap-anywhere`: rules text can hold one long unbroken token (a
+          raw tag), which at large text would push past the card. */}
+      <div className="px-4 pb-4 text-body wrap-anywhere">
         <EntriesView entries={f.entries} />
       </div>
     </details>
