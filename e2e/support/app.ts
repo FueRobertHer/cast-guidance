@@ -211,7 +211,14 @@ export function importPreview(page: Page, title: string): Locator {
   return page.getByRole('dialog', { name: title });
 }
 
-/** Answers an open import preview with Import (or Cancel) and waits for it to close. */
+/**
+ * Answers an open import preview with Import (or Cancel) and waits for the
+ * outcome. The roster and Homebrew close the preview before they write and
+ * put the outcome on their import line after the write commits, so a closed
+ * dialog is not enough: a navigation then (a `page.goto`) could abort the
+ * write, and the character would not be there. The line is empty while the
+ * preview is open.
+ */
 export async function answerImportPreview(
   page: Page,
   title: string,
@@ -220,6 +227,7 @@ export async function answerImportPreview(
   const dialog = importPreview(page, title);
   await dialog.getByRole('button', { name: answer, exact: true }).click();
   await expect(dialog).toBeHidden();
+  await expect(page.locator('[data-import-status]')).not.toBeEmpty();
 }
 
 /** Imports a homebrew file through the Homebrew page's "Import file" button. */
