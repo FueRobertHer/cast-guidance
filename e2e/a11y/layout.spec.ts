@@ -1,15 +1,20 @@
 import type { Locator, Page } from '@playwright/test';
+import { casterFile } from '../fixtures/caster.ts';
 import { manySpells } from '../fixtures/manySpells.ts';
 import {
   animationsSettled,
+  answerImportPreview,
   characterLink,
   createBlankCharacter,
+  gotoRoster,
   gotoRosterSettled,
   gotoSheetTab,
+  importCharacterFile,
   SHEET_TABS,
   type SheetTab,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
+import { getCharacter } from '../support/idb.ts';
 import { expect, test } from '../support/test.ts';
 
 /**
@@ -131,6 +136,23 @@ async function setUp(page: Page): Promise<string> {
 }
 
 /**
+ * A played character to open the sheet with: the caster (fixtures/caster.ts),
+ * filled out with a long spell and its rolls, a prepared tag, a versatile
+ * weapon and a choice to make. A blank character's tabs fit where a played
+ * one's rows ran off the screen. Returns its id.
+ */
+async function setUpFilled(page: Page): Promise<string> {
+  const blank = await getCharacter(page, await setUp(page));
+  if (blank === undefined) throw new Error('The blank character was not stored');
+  const id = 'layout-caster';
+  const { file, previewTitle } = casterFile(blank, id, 'Vela Quill', { filled: true });
+  await gotoRoster(page);
+  await importCharacterFile(page, file);
+  await answerImportPreview(page, previewTitle);
+  return id;
+}
+
+/**
  * How far the page is wider than its viewport, in CSS px (0 when it is not),
  * and the innermost elements that stick out past its right edge, for the
  * failure message.
@@ -165,8 +187,8 @@ async function expectNoSidewaysScroll(page: Page, route: Route): Promise<void> {
 const SHEET = ROUTES.filter((r) => r.name.startsWith('sheet '));
 const PAGES = ROUTES.filter((r) => !SHEET.includes(r));
 const GROUPS = [
-  ['the main routes', PAGES],
-  ['the sheet tabs', SHEET],
+  ['the main routes', PAGES, setUp],
+  ['the sheet tabs', SHEET, setUpFilled],
 ] as const;
 
 /**
@@ -222,9 +244,9 @@ async function applyMeasuredFont(page: Page, extra = ''): Promise<void> {
 test.describe('reflow at 320 CSS px', () => {
   test.use({ viewport: { width: 320, height: 640 } });
 
-  for (const [group, routes] of GROUPS) {
+  for (const [group, routes, open] of GROUPS) {
     test(`${group} do not scroll sideways, folds open`, async ({ page }) => {
-      const id = await setUp(page);
+      const id = await open(page);
       for (const route of routes) {
         await route.open(page, id);
         await applyMeasuredFont(page);
@@ -237,11 +259,11 @@ test.describe('reflow at 320 CSS px', () => {
 });
 
 test.describe('text at 200%', () => {
-  for (const [group, routes] of GROUPS) {
+  for (const [group, routes, open] of GROUPS) {
     test(`${group} do not scroll sideways, folds open, and keep primary controls whole`, async ({
       page,
     }) => {
-      const id = await setUp(page);
+      const id = await open(page);
       for (const route of routes) {
         await route.open(page, id);
         // The browser's text-size setting, as a page sees it: a larger root
