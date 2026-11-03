@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { historyRepo } from '@/db/historyRepo';
 import { contentKey, diffDocs, summarizeChanges } from '@/lib/docDiff';
 import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
+import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/sheet';
 
 function timeLabel(at: number): string {
@@ -76,66 +77,64 @@ export function HistoryDrawer({ charId }: { charId: string }) {
           type="button"
           aria-label="Character history"
           title="Character history: restore any earlier state"
-          className="rounded p-2 text-ink-muted hover:text-ink"
+          className="tap rounded-control text-ink-muted hover:bg-surface-raised hover:text-ink"
         >
-          <History size={18} />
+          <History size={20} />
         </button>
       </Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-1 text-base font-semibold">History</Sheet.Title>
-          <p className="mb-2 text-xs text-ink-muted">
+        <Sheet.Scrim />
+        <Sheet.Panel className="flex max-h-[80dvh] flex-col">
+          <Sheet.Heading>History</Sheet.Heading>
+          <p className="-mt-2 mb-2 text-caption text-ink-muted">
             Every change is saved automatically (last 50), and a quick run of the same kind of edit
             is kept as one entry. Preview an entry to see what restoring it would change; restoring
             adds a new entry, so you can always come back.
           </p>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {rows === undefined && <p className="text-sm text-ink-muted">Loading…</p>}
+            {rows === undefined && <p className="text-body text-ink-muted">Loading…</p>}
             {rows?.length === 0 && (
-              <p className="text-sm text-ink-muted">No history yet. Make a change first.</p>
+              <p className="text-body text-ink-muted">No history yet. Make a change first.</p>
             )}
             {rows?.map((row) => {
               const same = matching.has(row.id);
               const expanded = !same && previewing === row.id && current !== null;
               const panelId = `history-preview-${row.id}`;
               return (
-                <div
-                  key={row.id}
-                  className="border-b border-surface-2/40 py-2 text-sm last:border-b-0"
-                >
+                <div key={row.id} className="border-line border-b py-2 last:border-b-0">
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate">{row.label}</div>
-                      <div className="text-xs text-ink-muted">{timeLabel(row.at)}</div>
+                      <div className="text-caption text-ink-muted">{timeLabel(row.at)}</div>
                     </div>
                     {same ? (
-                      <span className="shrink-0 text-xs text-emerald-300">same as now</span>
+                      <span className="shrink-0 text-caption text-heal">same as now</span>
                     ) : current === null ? null : (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         aria-expanded={expanded}
                         aria-controls={expanded ? panelId : undefined}
                         aria-label={`Preview "${row.label}" from ${timeLabel(row.at)}`}
                         onClick={() => setPreviewing(expanded ? null : row.id)}
-                        className="shrink-0 rounded border border-surface-2 px-2.5 py-1 text-xs font-semibold hover:border-accent hover:text-accent"
+                        className="-my-1 shrink-0"
                       >
                         Preview
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {expanded && (
-                    <div id={panelId} className="mt-2 rounded bg-surface-2/40 p-2">
-                      <p className="text-xs text-ink-muted">Restoring this changes:</p>
-                      <ul className="my-1 list-disc pl-5 text-xs">
+                    <div id={panelId} className="mt-2 rounded-control bg-surface-raised p-3">
+                      <p className="text-caption text-ink-muted">Restoring this changes:</p>
+                      <ul className="my-1 list-disc pl-5 text-caption">
                         {summarizeChanges(diffDocs(current, row.doc)).map((line, i) => (
                           // biome-ignore lint/suspicious/noArrayIndexKey: lines can repeat, and the list is rebuilt whole
                           <li key={i}>{line}</li>
                         ))}
                       </ul>
-                      <button
-                        type="button"
+                      <Button
+                        variant="brand"
+                        size="sm"
                         aria-label={`Restore "${row.label}" from ${timeLabel(row.at)}`}
                         onClick={async () => {
                           const session = characterSessionStore.getState();
@@ -145,17 +144,17 @@ export function HistoryDrawer({ charId }: { charId: string }) {
                           session.restore(row.doc);
                           onOpenChange(false);
                         }}
-                        className="mt-1 rounded bg-accent-fill px-2.5 py-1 text-xs font-semibold text-white"
+                        className="-mb-1 -ml-1"
                       >
                         Restore
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

@@ -1,4 +1,4 @@
-import { AlertTriangle, Minus, Moon, Plus, Sun } from 'lucide-react';
+import { AlertTriangle, Brain, Hourglass, Minus, Moon, Plus, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
@@ -9,11 +9,17 @@ import { currentAdvantage } from '@/stores/advMode';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
+import { Badge, badgeClass } from '@/ui/Badge';
+import { BannerAction } from '@/ui/Banner';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { Button, buttonClass } from '@/ui/Button';
+import { Chip, chipClass } from '@/ui/Chip';
+import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
+import { cardClass, listClass } from '@/ui/surfaces';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   availableCastResources,
@@ -36,6 +42,39 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
+
+/** A section's heading and the helper line under it (DS-001 `heading`, `caption`). */
+const H2 = 'px-1 text-heading';
+const HELP = 'px-1 text-caption text-ink-muted';
+/** A quiet text link in a card's footer (temp HP, breakdown). */
+const LINK =
+  'min-h-6 whitespace-nowrap text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
+/** A name that opens its rules: dashed, so it reads as tappable without shouting. */
+const RULES = 'underline decoration-line-strong decoration-dashed';
+/**
+ * A lasting state, on or off (Inspiration, Concentration): ToggleChip's look,
+ * without its On and Off words, which would change the buttons' names. Each
+ * grows from 8rem, so the pair stacks where both do not fit (large text)
+ * rather than push the page sideways (A11Y-003).
+ */
+const TOGGLE =
+  'flex min-h-tap min-w-0 grow basis-32 items-center justify-center gap-2 rounded-control px-4 text-label transition-colors duration-120';
+const TOGGLE_OFF = 'text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink';
+/** The HP card's ±1: round `surface-raised` steppers, the icon in `danger` or `heal`. */
+const STEP =
+  'flex h-12 w-12 items-center justify-center rounded-full bg-surface-raised transition-[background-color,scale] duration-120 hover:bg-surface-hover active:scale-92';
+/** Its ±5: a 36px tint of the same role inside a 44px target (A11Y-002). */
+const FIVE =
+  'tap rounded-full text-label tabular-nums transition-[filter] duration-120 hover:brightness-112';
+/** A card without its padding (surfaces' `cardClass`), for one whose rows pad themselves. */
+const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
+/** A cell of the AC / Initiative / Speed strip. */
+const TILE = 'flex min-h-19 flex-col items-center justify-center gap-0.5 px-1 py-2';
+/** Exhaustion's −/+: a 32px raised circle in a 44px target, `ink-faint` when it cannot go further. */
+const EX_STEP = 'tap rounded-full text-ink disabled:text-ink-faint';
+/** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
+const POOL_STEP =
+  'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
 
 // Exhaustion is leveled, so it gets its own stepper below — not a plain chip.
 const CONDITIONS = [
@@ -140,7 +179,7 @@ export function Component() {
     lastSpendState.current = spendState;
     setCastChoice({});
   }, [spendState]);
-  if (sheet === null || doc === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
+  if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   // Look a spell up by its stored printing; when that misses (blank/wrong source
   // on a granted spell) fall back to the printing matching the character's rules
@@ -243,11 +282,11 @@ export function Component() {
     );
     return pickForVersion(cands, doc.rulesVersion);
   };
-  /** Amber "you normally can't do this" line for a condition limit. */
+  /** A `guide` "you normally can't do this" line for a condition limit. */
   const limitWarning = (text: string, reasons: readonly string[]) =>
     reasons.length > 0 ? (
-      <span className="flex items-center gap-1 text-xs text-amber-300">
-        <AlertTriangle size={12} className="shrink-0" /> {text} ({reasons.join(', ')})
+      <span className="flex items-center gap-1 px-1 text-caption text-guide">
+        <AlertTriangle size={14} className="shrink-0" /> {text} ({reasons.join(', ')})
       </span>
     ) : null;
 
@@ -362,33 +401,36 @@ export function Component() {
   return (
     <div className="flex flex-col gap-4">
       {overages.length > 0 && (
-        <section className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3" role="alert">
-          <p className="text-sm font-semibold text-amber-200">
+        <section className="rounded-control bg-guide-soft p-3" role="alert">
+          <p className="flex items-center gap-2 text-body-strong">
+            <AlertTriangle size={16} className="shrink-0 text-guide" />
             Some tracked values are above their new limits
           </p>
-          <p className="mt-0.5 text-xs text-ink-muted">
+          <p className="mt-0.5 text-caption text-ink-muted">
             A build change lowered these. You can keep them as-is (house rule) or bring them back
             within range.
           </p>
-          <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+          <ul className="mt-2 flex flex-col gap-0.5 text-caption">
             {overages.map((o) => (
               <li key={`${o.kind}:${o.label}`}>
-                {o.label}: <span className="font-mono">{o.current}</span> → max{' '}
-                <span className="font-mono">{o.max}</span>
+                {o.label}: <span className="tabular-nums">{o.current}</span> → max{' '}
+                <span className="tabular-nums">{o.max}</span>
               </li>
             ))}
           </ul>
-          <button
-            type="button"
+          {/* The guide ground's own action, as on a guide banner: an outline
+              would sit under 3:1 on the tint. */}
+          <BannerAction
+            tone="guide"
             onClick={() => update((d) => clampPlayStateToMax(d.play, sheet))}
-            className="mt-2 rounded bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/30"
+            className="mt-1 -mb-1.5 -ml-1.5"
           >
             Bring within limits
-          </button>
+          </BannerAction>
         </section>
       )}
-      {/* HP */}
-      <section className="rounded-lg bg-surface p-4">
+      {/* HP: the hero card (DS-001 HitPoints). */}
+      <section className={cardClass}>
         {/* Wraps where the row cannot fit (large text), the heal pair kept
             at the right, rather than push the page sideways (A11Y-003). */}
         <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -398,15 +440,16 @@ export function Component() {
               exact value. */}
           <div className="flex items-center gap-0.5">
             {/* ±5 keep their smaller circle so ±1 still reads as the main
-                control, inside a 44px target (A11Y-002). */}
+                control, inside a 44px target (A11Y-002). They are the HP
+                card's damage and heal tints; ±1 are its round steppers. */}
             <button
               type="button"
               aria-label="Damage 5 hit points"
               onClick={() => void hpDelta(-5)}
-              className="tap rounded-full text-sm font-semibold"
+              className={FIVE}
               title="Damage 5"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-deep/70">
+              <span className="flex size-9 items-center justify-center rounded-full bg-danger-soft text-danger">
                 −5
               </span>
             </button>
@@ -414,10 +457,10 @@ export function Component() {
               type="button"
               aria-label="Damage 1 hit point"
               onClick={() => void hpDelta(-1)}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-deep text-xl"
+              className={`${STEP} text-danger`}
               title="Damage 1"
             >
-              <Minus size={22} />
+              <Minus size={24} />
             </button>
           </div>
           {/* Zero basis: the row wraps only when the HP's narrowest layout
@@ -463,18 +506,18 @@ export function Component() {
               if (notice !== null) notify(notice);
             }}
           >
-            {/* One size down under 360px: three-digit HP between two 94px
-                button pairs has about 50px there (A11Y-002). The total may
-                break before "/ max" and nowhere else: kept on one line
-                whole, even a two-digit total would push the heal pair onto
-                a line of its own at 320px. */}
-            <div className="text-3xl font-bold min-[360px]:text-4xl">
+            {/* `stat` under 360px and `stat-hero` from there: three-digit HP
+                between two 94px button pairs has about 50px at 320
+                (A11Y-002). The total may break before "/ max" and nowhere
+                else: kept on one line whole, even a two-digit total would
+                push the heal pair onto a line of its own at 320px. */}
+            <div className="text-stat tabular-nums min-[360px]:text-stat-hero">
               {play.currentHp}{' '}
-              <span className="text-xl whitespace-nowrap text-ink-muted">
+              <span className="whitespace-nowrap text-title-sheet text-ink-muted">
                 / {sheet.maxHp.value}
               </span>
             </div>
-            <div className="text-xs text-ink-muted">
+            <div className="text-caption text-ink-muted">
               hit points{play.tempHp > 0 ? ` · +${play.tempHp} temp` : ''}
               {sheet.maxHp.overridden ? ' •' : ''}
             </div>
@@ -484,19 +527,19 @@ export function Component() {
               type="button"
               aria-label="Heal 1 hit point"
               onClick={() => void hpDelta(1)}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/70 text-xl"
+              className={`${STEP} text-heal`}
               title="Heal 1"
             >
-              <Plus size={22} />
+              <Plus size={24} />
             </button>
             <button
               type="button"
               aria-label="Heal 5 hit points"
               onClick={() => void hpDelta(5)}
-              className="tap rounded-full text-sm font-semibold"
+              className={FIVE}
               title="Heal 5"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900/50">
+              <span className="flex size-9 items-center justify-center rounded-full bg-heal-soft text-heal">
                 +5
               </span>
             </button>
@@ -509,8 +552,7 @@ export function Component() {
           (() => {
             const max = sheet.maxHp.value;
             const ratio = Math.max(0, Math.min(1, play.currentHp / max));
-            const color =
-              ratio > 0.5 ? 'bg-emerald-500' : ratio > 0.25 ? 'bg-amber-400' : 'bg-accent';
+            const color = ratio > 0.5 ? 'bg-heal' : ratio > 0.25 ? 'bg-meter-mid' : 'bg-danger';
             const tempPct = play.tempHp > 0 ? Math.min(100, (play.tempHp / max) * 100) : 0;
             // valuenow has to sit inside the range, but the text says what the
             // screen says: a house rule can leave HP above max (140 / 136).
@@ -526,25 +568,32 @@ export function Component() {
                 aria-valuetext={`${play.currentHp} of ${max}${
                   play.tempHp > 0 ? `, plus ${play.tempHp} temporary` : ''
                 }`}
-                className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-2"
+                className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-track"
               >
                 <div
-                  className={`h-full ${color} transition-all`}
+                  className={`h-full ${color} transition-[width,background-color] duration-200 ease-arrive`}
                   style={{ width: `${ratio * 100}%` }}
                 />
+                {/* Striped `ward`, so temp HP differs from the fill in
+                    pattern as well as hue. */}
                 {tempPct > 0 && (
-                  <div className="h-full bg-sky-400/70" style={{ width: `${tempPct}%` }} />
+                  <div
+                    className="h-full rounded-r-full bg-[repeating-linear-gradient(135deg,var(--cg-ward)_0_4px,transparent_4px_7px)] shadow-[inset_0_0_0_1.5px_var(--cg-ward)]"
+                    style={{ width: `${tempPct}%` }}
+                  />
                 )}
               </div>
             );
           })()}
-        <p className="mt-1.5 text-center text-[10px] text-ink-muted">
+        <p className="mt-1.5 text-center text-caption text-ink-muted">
           tap ±1 or ±5 · tap the number to type an exact value
         </p>
-        <div className="mt-3 flex items-center justify-between text-xs">
+        {/* Wraps whole items onto a second line at 320px rather than
+            breaking a hit die chip in two. */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <button
             type="button"
-            className="min-h-6 text-ink-muted underline"
+            className={LINK}
             onClick={async () => {
               const n = await askNumber({
                 title: 'Temporary HP',
@@ -557,7 +606,7 @@ export function Component() {
           >
             temp HP
           </button>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {Object.entries(sheet.hitDice).map(([die, total]) => (
               <button
                 key={die}
@@ -576,7 +625,7 @@ export function Component() {
                     applyHp(d.play, Math.max(0, r.total), sheet.maxHp.value);
                   })
                 }
-                className="rounded bg-surface-2 px-2 py-1 font-mono"
+                className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-dice tabular-nums hover:bg-surface-hover"
               >
                 {die} × {total - (play.hitDiceSpent[die] ?? 0)}
               </button>
@@ -592,7 +641,7 @@ export function Component() {
               })
             }
             trigger={
-              <button type="button" className="min-h-6 text-ink-muted underline">
+              <button type="button" className={LINK}>
                 breakdown
               </button>
             }
@@ -602,15 +651,15 @@ export function Component() {
 
       {/* Death saves */}
       {dying && (
-        <section className="rounded-lg border border-accent/50 bg-surface p-3">
-          <div className="mb-2 text-sm font-semibold text-accent">Death saving throws</div>
+        <section className={cardClass}>
+          <div className="mb-2 text-heading text-danger">Death saving throws</div>
           {/* Successes over failures, each circle in a 44px target
               (A11Y-002); Roll save wraps under them on a narrow phone. */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               {(['success', 'fail'] as const).map((kind) => (
                 <div key={kind} className="flex items-center">
-                  <span className="w-14 text-xs capitalize text-ink-muted">{kind}</span>
+                  <span className="w-14 text-caption text-ink-muted capitalize">{kind}</span>
                   {[1, 2, 3].map((n) => (
                     <button
                       key={n}
@@ -622,16 +671,18 @@ export function Component() {
                           d.play.deathSaves[kind] = d.play.deathSaves[kind] >= n ? n - 1 : n;
                         })
                       }
-                      className="tap rounded"
+                      className="tap rounded-full"
                     >
+                      {/* Marked: filled `heal` or `danger`. Unmarked: an empty
+                          `line-strong` ring, so the two differ in shape. */}
                       <span
                         aria-hidden="true"
-                        className={`h-5 w-5 rounded-full border ${
+                        className={`size-5 rounded-full border-2 ${
                           play.deathSaves[kind] >= n
                             ? kind === 'success'
-                              ? 'border-emerald-300 bg-emerald-300'
-                              : 'border-accent bg-accent'
-                            : 'border-surface-2'
+                              ? 'border-heal bg-heal'
+                              : 'border-danger bg-danger'
+                            : 'border-line-strong'
                         }`}
                       />
                     </button>
@@ -639,8 +690,9 @@ export function Component() {
                 </div>
               ))}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="brand"
+              size="sm"
               onClick={() =>
                 update((d) => {
                   // Durable (2024) grants advantage on death saves.
@@ -667,17 +719,17 @@ export function Component() {
                   }
                 })
               }
-              className="rounded-lg bg-accent-deep px-3 py-1.5 text-xs font-semibold"
               title="Roll a death save — successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
             >
-              <span aria-hidden="true">🎲</span> Roll save
-            </button>
+              {/* The one next step while dying, so the one `brand` button. */}
+              <D20Icon size={16} /> Roll save
+            </Button>
           </div>
         </section>
       )}
 
-      {/* Core tiles */}
-      <section className="grid grid-cols-3 gap-2 text-center">
+      {/* Core tiles: one strip, its cells divided by `line` hairlines. */}
+      <section className={`grid grid-cols-3 overflow-hidden text-center ${FLUSH}`}>
         <BreakdownSheet
           title={`Armor Class (${sheet.acFormulaLabel})`}
           value={sheet.ac}
@@ -688,9 +740,9 @@ export function Component() {
             })
           }
           trigger={
-            <button type="button" className="rounded-lg bg-surface p-3">
-              <div className="text-2xl font-bold">{sheet.ac.value}</div>
-              <div className="text-xs text-ink-muted">AC{sheet.ac.overridden ? ' •' : ''}</div>
+            <button type="button" className={TILE}>
+              <div className="text-stat tabular-nums">{sheet.ac.value}</div>
+              <div className="text-caption text-ink-muted">AC{sheet.ac.overridden ? ' •' : ''}</div>
             </button>
           }
         />
@@ -704,42 +756,40 @@ export function Component() {
               }),
             )
           }
-          className="rounded-lg bg-surface p-3"
+          className={`${TILE} border-line border-l`}
         >
-          <div className="text-2xl font-bold">{fmt(sheet.initiative.value)}</div>
-          <div className="text-xs text-ink-muted">
-            Initiative <span aria-hidden="true">🎲</span>
+          <div className="text-stat tabular-nums">{fmt(sheet.initiative.value)}</div>
+          <div className="flex items-center justify-center gap-1 text-caption text-ink-muted">
+            Initiative <D20Icon size={14} />
           </div>
         </button>
-        <div className="rounded-lg bg-surface p-3">
-          <div className="text-2xl font-bold">
+        <div className={`${TILE} border-line border-l`}>
+          <div className="text-stat tabular-nums">
             {displaySpeed}
             {displaySpeed !== sheet.speedWalk.value && (
-              <span className="ml-1.5 align-middle text-sm font-normal text-ink-muted line-through">
+              <span className="ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
                 {sheet.speedWalk.value}
               </span>
             )}
           </div>
-          <div className="text-xs text-ink-muted">
+          <div className="text-caption text-ink-muted">
             Speed (ft){displaySpeed !== sheet.speedWalk.value ? ' · exhausted' : ''}
           </div>
         </div>
       </section>
 
       {/* Inspiration + concentration */}
-      <section className="flex gap-2">
+      <section className="flex flex-wrap gap-2">
         <button
           type="button"
           aria-pressed={play.inspiration}
           onClick={() => update((d) => void (d.play.inspiration = !d.play.inspiration))}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${
-            play.inspiration
-              ? 'border-amber-300 bg-amber-300/10 text-amber-300'
-              : 'border-surface-2 text-ink-muted'
-          }`}
+          className={`${TOGGLE} ${play.inspiration ? 'bg-guide-soft text-guide' : TOGGLE_OFF}`}
           title="Heroic Inspiration — reroll a d20"
         >
-          <span aria-hidden="true">{play.inspiration ? '★' : '☆'}</span> Inspiration
+          {/* Filled while held: a change of shape as well as colour. */}
+          <Star size={16} fill={play.inspiration ? 'currentColor' : 'none'} className="shrink-0" />
+          <span className="truncate">Inspiration</span>
         </button>
         <button
           type="button"
@@ -757,31 +807,29 @@ export function Component() {
               update((d) => void (d.play.concentratingOn = { label: label.trim() }));
             }
           }}
-          className={`flex flex-1 items-center justify-center gap-1.5 truncate rounded-lg border px-3 py-2 text-sm font-semibold ${
-            play.concentratingOn !== undefined
-              ? 'border-sky-300 bg-sky-300/10 text-sky-300'
-              : 'border-surface-2 text-ink-muted'
+          className={`${TOGGLE} ${
+            play.concentratingOn !== undefined ? 'bg-arcane-soft text-arcane' : TOGGLE_OFF
           }`}
           title="Concentration — tap to set or clear"
         >
+          <Brain size={16} className="shrink-0" />
           {/* The visible label is the spell alone; the prefix says what it means. */}
-          {play.concentratingOn !== undefined ? (
-            <>
-              <span aria-hidden="true">◈</span>
-              <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
-            </>
-          ) : (
-            <>
-              <span aria-hidden="true">◇</span> Concentration
-            </>
-          )}
+          <span className="truncate">
+            {play.concentratingOn !== undefined ? (
+              <>
+                <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
+              </>
+            ) : (
+              'Concentration'
+            )}
+          </span>
         </button>
       </section>
 
       {/* Turn tracker: action economy. Wraps End turn onto a line of its own,
           at the right, where the row is too narrow for all four (320px, or
           large text) instead of pushing the page sideways (A11Y-003). */}
-      <section className="flex flex-wrap items-center gap-2 rounded-lg bg-surface p-3">
+      <section className={`flex flex-wrap items-center gap-2 ${cardClass}`}>
         {(
           [
             ['action', 'Action'],
@@ -802,14 +850,12 @@ export function Component() {
                   d.play.turn = turn;
                 })
               }
-              className={`flex-1 rounded-lg border px-2 py-2 text-sm font-semibold transition-colors ${
+              // Three equal slots, so all ink (DS-001 TurnTracker): ready is
+              // an outline, used fills and strikes the name.
+              className={`min-h-tap flex-1 rounded-control px-2 text-label transition-colors duration-120 ${
                 used
-                  ? 'border-surface-2 bg-surface-2 text-ink-muted line-through'
-                  : key === 'bonus'
-                    ? 'border-emerald-300/50 text-emerald-300'
-                    : key === 'reaction'
-                      ? 'border-sky-300/50 text-sky-300'
-                      : 'border-accent/60 text-ink'
+                  ? 'bg-surface-raised text-ink-muted line-through decoration-[1.5px]'
+                  : 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised'
               }`}
               title={
                 used
@@ -821,43 +867,47 @@ export function Component() {
             </button>
           );
         })}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() =>
             update((d) => {
               d.play.turn = { action: false, bonus: false, reaction: false };
             }, 'Turn ended')
           }
-          className="ml-auto shrink-0 rounded-lg bg-surface-2 px-3 py-2 text-xs font-semibold"
+          className="-mr-1 ml-auto shrink-0"
           title="Reset action, bonus action, and reaction"
         >
           End turn
-        </button>
+        </Button>
       </section>
 
       {/* Conditions — active ones stay visible; the full list is behind a fold */}
-      <details className="group rounded-lg bg-surface" open={play.conditions.length > 0}>
-        <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5">
-          <span className="text-sm font-semibold text-ink-muted">
+      <details className={`group ${FLUSH}`} open={play.conditions.length > 0}>
+        <summary className="flex min-h-tap cursor-pointer items-center justify-between gap-2 px-4 py-2">
+          <span className="text-heading">
             Conditions
             {play.conditions.length > 0 && (
-              <span className="ml-2 font-normal text-amber-300">
+              <span className="ml-2 font-normal text-body text-guide">
                 {play.conditions
                   .map((c) => `${c.id}${c.level !== undefined ? ` ${c.level}` : ''}`)
                   .join(', ')}
               </span>
             )}
           </span>
-          <span className="text-xs text-ink-muted group-open:hidden">tap to edit</span>
+          <span className="shrink-0 text-caption text-ink-muted group-open:hidden">
+            tap to edit
+          </span>
         </summary>
-        <div className="flex flex-wrap gap-1.5 border-t border-surface-2/40 p-3">
+        {/* Chips pad themselves to 44px with a 6px clear border, so the
+            row needs no gap and less padding of its own. */}
+        <div className="flex flex-wrap border-line border-t px-2.5 py-2">
           {CONDITIONS.map((c) => {
             const active = play.conditions.find((x) => x.id === c);
             return (
-              <button
+              <Chip
                 key={c}
-                type="button"
-                aria-pressed={active !== undefined}
+                pressed={active !== undefined}
                 onClick={() =>
                   update((d) => {
                     const idx = d.play.conditions.findIndex((x) => x.id === c);
@@ -865,37 +915,32 @@ export function Component() {
                     else d.play.conditions.splice(idx, 1);
                   })
                 }
-                className={`rounded-full border px-2.5 py-1 text-xs ${
-                  active !== undefined
-                    ? 'border-amber-300 bg-amber-300/10 font-semibold text-amber-300'
-                    : 'border-surface-2 text-ink-muted'
-                }`}
               >
                 {c}
-              </button>
+              </Chip>
             );
           })}
         </div>
         {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
-        <div className="flex flex-col gap-2 border-t border-surface-2/40 p-3">
+        <div className="flex flex-col gap-2 border-line border-t px-4 py-3">
           {/* Wraps the stepper under the name, at the right, where both do not
               fit (large text), and the count grows with its text rather than
               push the + out of the card (A11Y-003). */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-semibold">Exhaustion</span>
+            <span className="text-body-strong">Exhaustion</span>
             <div className="-my-2 ml-auto flex items-center">
               <button
                 type="button"
                 aria-label="Decrease exhaustion"
                 onClick={() => setExhaustion(exLevel - 1)}
                 disabled={exLevel === 0}
-                className="tap rounded-full text-lg leading-none disabled:opacity-30"
+                className={EX_STEP}
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2">
-                  −
+                <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised">
+                  <Minus size={16} />
                 </span>
               </button>
-              <span className="min-w-10 text-center text-sm font-bold whitespace-nowrap">
+              <span className="min-w-10 whitespace-nowrap text-center text-body-strong tabular-nums">
                 {exLevel} / 6
               </span>
               <button
@@ -903,19 +948,19 @@ export function Component() {
                 aria-label="Increase exhaustion"
                 onClick={() => setExhaustion(exLevel + 1)}
                 disabled={exLevel >= 6}
-                className="tap rounded-full text-lg leading-none disabled:opacity-30"
+                className={EX_STEP}
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2">
-                  +
+                <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised">
+                  <Plus size={16} />
                 </span>
               </button>
             </div>
           </div>
           {exInfo.lines.length > 0 && (
-            <ul className="flex flex-col gap-0.5 text-xs text-amber-300">
+            <ul className="flex flex-col gap-0.5 text-caption text-guide">
               {exInfo.lines.map((l) => (
                 <li key={l} className="flex items-center gap-1">
-                  <AlertTriangle size={11} className="shrink-0" /> {l}
+                  <AlertTriangle size={14} className="shrink-0" /> {l}
                 </li>
               ))}
             </ul>
@@ -931,7 +976,7 @@ export function Component() {
                   d.play.concentratingOn = undefined;
                 })
               }
-              className="self-start rounded-lg border border-accent/60 px-3 py-1.5 text-xs font-semibold text-accent"
+              className="min-h-8 self-start rounded-control px-3 py-1 text-danger text-label ring-1 ring-line-strong ring-inset transition-colors duration-120 hover:bg-danger-soft"
             >
               Apply death — drop to 0 HP
             </button>
@@ -939,8 +984,8 @@ export function Component() {
         </div>
         {/* Rules text for whatever's currently active — no rulebook needed. */}
         {play.conditions.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-surface-2/40 p-3">
-            <span className="w-full text-[10px] font-semibold uppercase text-ink-muted">
+          <div className="flex flex-wrap items-center border-line border-t px-2.5 py-2">
+            <span className="w-full px-1.5 pt-1 text-ink-muted text-overline uppercase">
               What these do
             </span>
             {play.conditions.map((c) => {
@@ -955,7 +1000,7 @@ export function Component() {
                     <button
                       type="button"
                       aria-label={`What ${c.id} does`}
-                      className="rounded-full border border-surface-2 px-2.5 py-1 text-xs text-ink-muted underline decoration-dashed underline-offset-2"
+                      className={`${chipClass('outline')} ${RULES} underline-offset-2`}
                     >
                       {c.id}
                     </button>
@@ -981,9 +1026,9 @@ export function Component() {
               tone: restored.length > 0 ? 'good' : 'info',
             });
           }}
-          className="flex items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2.5 text-sm font-semibold"
+          className={buttonClass({ variant: 'outline' })}
         >
-          <Sun size={16} /> Short rest
+          <Hourglass size={18} /> Short rest
         </button>
         <button
           type="button"
@@ -1002,23 +1047,29 @@ export function Component() {
               tone: 'good',
             });
           }}
-          className="flex items-center justify-center gap-2 rounded-lg bg-surface px-3 py-2.5 text-sm font-semibold"
+          className={buttonClass({ variant: 'outline' })}
         >
-          <Moon size={16} /> Long rest
+          <Moon size={18} /> Long rest
         </button>
       </section>
 
       {/* Resources with pips */}
       {sheet.resources.length > 0 && (
         <section className="flex flex-col gap-1.5">
-          <h2 className="text-sm font-semibold text-ink-muted">Resources</h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <h2 className={H2}>Resources</h2>
+          {/* One list, a row per pool: its name and when it comes back on the
+              left, the pips (or a point pool's stepper) at the end, wrapping
+              under the name where a long pool does not fit beside it. */}
+          <div className={listClass}>
             {sheet.resources.map((r) => {
               const used = usedOf(r.key);
               const info = findFeatureInfo(sheet.features, r.label, r.origin);
               return (
-                <div key={r.key} className="rounded-lg bg-surface p-3">
-                  <div className="mb-1.5 flex items-baseline justify-between text-sm">
+                <div
+                  key={r.key}
+                  className="flex min-h-14 flex-wrap items-center justify-end gap-x-2 py-1 pr-2 pl-4"
+                >
+                  <div className="flex min-w-0 flex-1 basis-32 flex-col items-start py-1">
                     {info !== undefined ? (
                       <FeatureInfoSheet
                         title={info.title}
@@ -1027,7 +1078,7 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className="min-h-6 font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            className={`min-h-6 text-left text-body-strong ${RULES} underline-offset-4`}
                             title="What does this do?"
                           >
                             {r.label}
@@ -1035,9 +1086,9 @@ export function Component() {
                         }
                       />
                     ) : (
-                      <span className="font-semibold">{r.label}</span>
+                      <span className="text-body-strong">{r.label}</span>
                     )}
-                    <span className="text-xs text-ink-muted">{r.resetOn} rest</span>
+                    <span className="text-caption text-ink-muted">{r.resetOn} rest</span>
                   </div>
                   {r.max > 12 ? (
                     // Point pools (Lay on Hands, ki, sorcery points) outgrow
@@ -1053,12 +1104,12 @@ export function Component() {
                           aria-label={`Spend ${step} ${r.label}`}
                           onClick={() => setUsed(r.key, Math.min(r.max, used + step))}
                           disabled={used >= r.max}
-                          className="tap rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                          className={POOL_STEP}
                         >
                           −{step}
                         </button>
                       ))}
-                      <span className="min-w-16 text-center text-sm font-bold">
+                      <span className="min-w-16 text-center text-body-strong tabular-nums">
                         {r.max - used}
                         <span className="font-normal text-ink-muted"> / {r.max}</span>
                       </span>
@@ -1069,20 +1120,20 @@ export function Component() {
                           aria-label={`Restore ${step} ${r.label}`}
                           onClick={() => setUsed(r.key, Math.max(0, used - step))}
                           disabled={used === 0}
-                          className="tap rounded-full bg-surface-2 px-2 text-sm font-semibold leading-none disabled:opacity-30"
+                          className={POOL_STEP}
                         >
                           +{step}
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-wrap">
+                    <div className="flex flex-wrap justify-end">
                       <Pips
                         total={r.max}
                         spent={used}
                         onChange={(next) => setUsed(r.key, next)}
                         label={(use) => `${r.label} use ${use}`}
-                        tone="border-accent bg-accent"
+                        tone="ink"
                         title={`${r.max - used} of ${r.max} left`}
                       />
                     </div>
@@ -1097,14 +1148,14 @@ export function Component() {
       {/* Attacks */}
       {sheet.attacks.length > 0 && (
         <section className="flex flex-col gap-1.5">
-          <h2 className="text-sm font-semibold text-ink-muted">Attacks</h2>
+          <h2 className={H2}>Attacks</h2>
           {limitWarning("Can't take actions", limits.noActions)}
           {limitWarning('Disadvantage on attack rolls', limits.attackDisadvantage)}
-          <div className="flex flex-col rounded-lg bg-surface">
+          <div className={listClass}>
             {sheet.attacks.map((a) => (
               <div
                 key={a.label}
-                className="flex items-center justify-between gap-2 border-b border-surface-2/40 px-3 py-2.5 text-sm last:border-b-0"
+                className="flex min-h-15 items-center justify-between gap-2 py-2 pr-3 pl-4"
               >
                 <div className="min-w-0">
                   {(() => {
@@ -1121,17 +1172,17 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className="min-h-6 truncate text-left font-semibold underline decoration-surface-2 decoration-dashed underline-offset-4"
+                            className={`min-h-6 max-w-full truncate text-left text-body-strong ${RULES} underline-offset-4`}
                           >
                             {a.label}
                           </button>
                         }
                       />
                     ) : (
-                      <div className="truncate font-semibold">{a.label}</div>
+                      <div className="truncate text-body-strong">{a.label}</div>
                     );
                   })()}
-                  <div className="truncate text-xs text-ink-muted">{attackSubtitle(a)}</div>
+                  <div className="truncate text-caption text-ink-muted">{attackSubtitle(a)}</div>
                 </div>
                 {/* Wraps rather than squeezing the name: a versatile weapon
                     with a damage rider carries four chips, which is one more
@@ -1178,10 +1229,8 @@ export function Component() {
       {/* Action economy */}
       {sheet.actions.length > 0 && (
         <section className="flex flex-col gap-1.5">
-          <h2 className="text-sm font-semibold text-ink-muted">Actions</h2>
-          <p className="text-xs text-ink-muted">
-            Tap a name for rules; tap Use / roll to spend it.
-          </p>
+          <h2 className={H2}>Actions</h2>
+          <p className={HELP}>Tap a name for rules; tap Use / roll to spend it.</p>
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
@@ -1224,7 +1273,7 @@ export function Component() {
                     trigger={
                       <button
                         type="button"
-                        className="min-h-6 underline decoration-surface-2 decoration-dashed underline-offset-4"
+                        className={`min-h-6 text-left ${RULES} underline-offset-4`}
                       >
                         {a.label}
                       </button>
@@ -1236,24 +1285,22 @@ export function Component() {
               return (
                 <span
                   key={`${a.origin}:${a.label}`}
-                  className={`flex flex-col rounded-2xl border px-3 py-1.5 text-sm ${
-                    a.economy === 'bonus'
-                      ? 'border-emerald-300/40 text-emerald-300'
-                      : a.economy === 'reaction'
-                        ? 'border-sky-300/40 text-sky-300'
-                        : 'border-surface-2'
-                  }`}
+                  // Ink, whatever the economy: green and blue outlines read as
+                  // statuses, and colour alone is no way to say which slot an
+                  // action spends (DS-001 TurnTracker). The Use button's
+                  // title says it.
+                  className={`flex flex-col ${FLUSH} px-3 py-1.5`}
                 >
                   <span className="flex items-center gap-1.5">
                     {name}
                     {blocked.length > 0 && (
                       <span
-                        className="text-amber-300"
+                        className="text-guide"
                         title={`${blocked.join(', ')}: you normally can't take ${
                           a.economy === 'action' ? 'an' : 'a'
                         } ${economyLabel}`}
                       >
-                        <AlertTriangle size={11} />
+                        <AlertTriangle size={14} />
                         {/* lucide hides the icon, so without this nothing is read. */}
                         <span className="sr-only">
                           {`${blocked.join(', ')}: you normally can't take ${
@@ -1265,12 +1312,13 @@ export function Component() {
                     {a.roll !== undefined ? (
                       <RollChip expr={a.roll} label={a.label} variant="damage" onRolled={trigger} />
                     ) : (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         aria-label={`Use ${a.label}`}
                         onClick={trigger}
                         disabled={depleted}
-                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
+                        className="-my-1.5"
                         title={
                           depleted
                             ? 'No uses left'
@@ -1282,11 +1330,11 @@ export function Component() {
                         }
                       >
                         Use
-                      </button>
+                      </Button>
                     )}
                   </span>
                   {mechanics !== '' && (
-                    <span className="text-[11px] leading-tight text-ink-muted">{mechanics}</span>
+                    <span className="text-caption text-ink-muted">{mechanics}</span>
                   )}
                 </span>
               );
@@ -1305,9 +1353,9 @@ export function Component() {
         if (caps.length === 0) return null;
         return (
           <section className="flex flex-col gap-1.5">
-            <h2 className="text-sm font-semibold text-ink-muted">Combat options</h2>
-            <p className="text-xs text-ink-muted">Things you can always do. Tap for full rules.</p>
-            <div className="flex flex-col gap-1">
+            <h2 className={H2}>Combat options</h2>
+            <p className={HELP}>Things you can always do. Tap for full rules.</p>
+            <div className={listClass}>
               {caps.map((cap) => (
                 <FeatureInfoSheet
                   key={cap.key}
@@ -1317,12 +1365,12 @@ export function Component() {
                   trigger={
                     <button
                       type="button"
-                      className="flex flex-col rounded-lg bg-surface px-3 py-2 text-left text-sm"
+                      className="flex min-h-14 flex-col justify-center px-4 py-2 text-left"
                     >
-                      <span className="font-medium underline decoration-surface-2 decoration-dashed underline-offset-2">
+                      <span className={`text-body-strong ${RULES} underline-offset-4`}>
                         {cap.name}
                       </span>
-                      <span className="text-xs text-ink-muted">{cap.blurb}</span>
+                      <span className="text-caption text-ink-muted">{cap.blurb}</span>
                     </button>
                   }
                 />
@@ -1335,17 +1383,17 @@ export function Component() {
       {/* Spell slots (spend/restore) — the leveled pool is character-wide,
           so render its pips only on the first casting class. */}
       {sheet.spellcasting.map((sc, scIdx) => (
-        <section key={sc.classUid} className="rounded-lg bg-surface p-3 text-sm">
-          <div className="mb-1.5 flex justify-between">
-            <span className="font-semibold">{sc.className} spellcasting</span>
-            <span className="text-ink-muted">
-              DC <strong className="text-ink">{sc.saveDc.value}</strong> · Atk{' '}
-              <strong className="text-ink">{fmt(sc.attackMod.value)}</strong>
-            </span>
+        <section key={sc.classUid} className={cardClass}>
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <span className="text-heading">{sc.className} spellcasting</span>
+            {/* Spell DC in `arcane`, the colour of what spellcasting spends. */}
+            <Badge tone="arcane">
+              DC <strong>{sc.saveDc.value}</strong> · Atk <strong>{fmt(sc.attackMod.value)}</strong>
+            </Badge>
           </div>
           {sc.pactSlots !== undefined && (
             <div className="flex flex-wrap items-center">
-              <span className="mr-1.5 text-xs text-ink-muted">
+              <span className="mr-1.5 text-label text-ink-muted">
                 Pact (level {sc.pactSlots.level})
               </span>
               <Pips
@@ -1357,19 +1405,19 @@ export function Component() {
                   })
                 }
                 label={(slot) => `Pact slot ${slot}`}
-                tone="border-sky-300 bg-sky-300"
+                tone="arcane"
               />
             </div>
           )}
           {scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0)) && (
             <div className="flex flex-col gap-1">
               {sheet.spellcasting.length > 1 && (
-                <span className="text-xs text-ink-muted">Slots (shared across classes)</span>
+                <span className="text-caption text-ink-muted">Slots (shared across classes)</span>
               )}
               {sc.slots.map((count, lvlIdx) =>
                 count > 0 ? (
                   <div key={`slots-${String(lvlIdx)}`} className="flex flex-wrap items-center">
-                    <span className="w-8 shrink-0 text-xs text-ink-muted">L{lvlIdx + 1}</span>
+                    <span className="w-8 shrink-0 text-label text-ink-muted">L{lvlIdx + 1}</span>
                     <Pips
                       total={count}
                       spent={play.slotsSpent[lvlIdx] ?? 0}
@@ -1379,7 +1427,7 @@ export function Component() {
                         })
                       }
                       label={(slot) => `Level ${lvlIdx + 1} slot ${slot}`}
-                      tone="border-sky-300 bg-sky-300"
+                      tone="arcane"
                     />
                   </div>
                 ) : null,
@@ -1401,7 +1449,7 @@ export function Component() {
                 a.name.localeCompare(b.name),
             );
             return (
-              <div className="mt-2 flex flex-col gap-1 border-t border-surface-2/40 pt-2">
+              <div className="mt-2 flex flex-col gap-1 border-line border-t pt-2">
                 {registrySpells.map((ref) => {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
                   const prepared = preparedUids.has(uid);
@@ -1433,8 +1481,8 @@ export function Component() {
                     );
                   };
                   return (
-                    <div key={uid} className="flex items-center gap-2 text-sm">
-                      <span className="w-6 shrink-0 text-xs text-ink-muted">
+                    <div key={uid} className="flex min-h-10 items-center gap-2">
+                      <span className="w-6 shrink-0 text-caption text-ink-muted">
                         {level === 0 ? 'c' : `L${level}`}
                       </span>
                       <SpellInfoSheet
@@ -1445,23 +1493,23 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className={`min-w-0 flex-1 truncate text-left underline decoration-surface-2 decoration-dashed underline-offset-2 ${
+                            className={`min-w-0 flex-1 truncate text-left ${RULES} underline-offset-2 ${
                               prepared ? '' : 'text-ink-muted'
                             }`}
                           >
                             {ref.name}
                             {prepared && (
-                              <span className="ml-1.5 text-xs text-emerald-300">prepared</span>
+                              <span className="ml-1.5 text-caption text-heal">prepared</span>
                             )}
                           </button>
                         }
                       />
                       {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
                         <span
-                          className="shrink-0 text-amber-300"
+                          className="shrink-0 text-guide"
                           title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
                         >
-                          <AlertTriangle size={12} />
+                          <AlertTriangle size={14} />
                           <span className="sr-only">
                             {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
                           </span>
@@ -1501,11 +1549,12 @@ export function Component() {
                           />
                         ))}
                         {!hasAttack && rolls.length === 0 && (
-                          <button
-                            type="button"
+                          <Button
+                            variant="outline"
+                            size="sm"
                             aria-label={`Cast ${ref.name}`}
                             onClick={cast}
-                            className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
+                            className="-my-1"
                             title={
                               level === 0
                                 ? 'Cast cantrip (marks the action economy its casting time uses)'
@@ -1515,7 +1564,7 @@ export function Component() {
                             }
                           >
                             Cast
-                          </button>
+                          </Button>
                         )}
                       </span>
                     </div>
@@ -1529,8 +1578,8 @@ export function Component() {
 
       {/* Innate / granted spells — cast per their own rules (no slots) */}
       {sheet.grantedSpells.length > 0 && (
-        <section className="rounded-lg bg-surface p-3 text-sm">
-          <div className="mb-1.5 font-semibold">Innate &amp; granted spells</div>
+        <section className={cardClass}>
+          <div className="mb-1 text-heading">Innate &amp; granted spells</div>
           <div className="flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
@@ -1598,7 +1647,7 @@ export function Component() {
               return (
                 <div
                   key={`${g.name}|${g.source}`}
-                  className="flex items-center gap-2 border-b border-surface-2/40 py-1.5 last:border-b-0"
+                  className="flex min-h-11 items-center gap-2 border-line border-b py-1.5 last:border-b-0"
                 >
                   <SpellInfoSheet
                     name={g.name}
@@ -1610,13 +1659,11 @@ export function Component() {
                         type="button"
                         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                       >
-                        <span className="truncate capitalize underline decoration-surface-2 decoration-dashed underline-offset-2">
+                        <span className={`truncate capitalize ${RULES} underline-offset-2`}>
                           {g.name}
                         </span>
                         {g.usage === 'prepared' && (
-                          <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                            Always prepared
-                          </span>
+                          <Badge className="shrink-0">Always prepared</Badge>
                         )}
                         {remaining !== undefined && limited !== undefined && (
                           <span
@@ -1625,9 +1672,9 @@ export function Component() {
                                 ? 'No uses left until you rest'
                                 : `${g.usage} from ${g.origin}`
                             }
-                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                              depleted ? 'bg-surface-2 text-ink-muted' : 'bg-accent-deep text-ink'
-                            }`}
+                            // Uses left of an innate spell are magic's to spend,
+                            // so `arcane`; spent, a neutral badge.
+                            className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
                           >
                             {remaining}/{limited.max} per {g.usage?.split('/')[1]}
                           </span>
@@ -1635,15 +1682,15 @@ export function Component() {
                       </button>
                     }
                   />
-                  <span className="shrink-0 text-xs text-ink-muted">
+                  <span className="shrink-0 text-caption text-ink-muted">
                     {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
                   </span>
                   {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
                     <span
-                      className="shrink-0 text-amber-300"
+                      className="shrink-0 text-guide"
                       title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
                     >
-                      <AlertTriangle size={12} />
+                      <AlertTriangle size={14} />
                       <span className="sr-only">
                         {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
                       </span>
@@ -1685,12 +1732,13 @@ export function Component() {
                       />
                     ))}
                     {!hasAttack && rolls.length === 0 && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="sm"
                         aria-label={`Cast ${g.name}`}
                         onClick={cast}
                         disabled={depleted}
-                        className="rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
+                        className="-my-1"
                         title={
                           depleted
                             ? 'No uses left until you rest'
@@ -1702,7 +1750,7 @@ export function Component() {
                         }
                       >
                         Cast
-                      </button>
+                      </Button>
                     )}
                   </span>
                 </div>

@@ -244,21 +244,6 @@ const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
     line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
     what: 'the low HP bar',
   },
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
-    what: 'the low HP bar',
-  },
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: ": 'border-accent bg-accent'",
-    what: 'a failed death save',
-  },
-  {
-    file: 'features/sheet/tabs/PlayTab.tsx',
-    line: 'tone="border-accent bg-accent"',
-    what: 'resource pips',
-  },
   { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
 ];
 
