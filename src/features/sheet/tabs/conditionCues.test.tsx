@@ -122,7 +122,7 @@ describe('the cue on the Stats tab', () => {
     expect(latest()?.meta).toMatchObject({ autoFail: true });
     // The toast says it fails, and never celebrates the die.
     expect(screen.getByText('Fails')).toBeTruthy();
-    expect(screen.queryByText('Nat 20!')).toBeNull();
+    expect(screen.queryByText('Natural 20!')).toBeNull();
     fireEvent.click(within(saves).getByRole('button', { name: /^WIS/ }));
     expect(latest()?.meta?.autoFail).toBeUndefined();
   });

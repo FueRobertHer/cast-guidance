@@ -291,10 +291,26 @@ test.describe('axe: pages and overlays', () => {
     const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Play');
+    // The HP card's one-time tip, shown until it is dismissed or the number
+    // it explains is tapped.
+    await expect(page.getByText('Tap the number to type an exact amount.')).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-play-hp-tip');
+
     await page.getByRole('button', { name: 'Dice tray' }).click();
     const dice = page.getByRole('dialog', { name: 'Dice' });
     await opened(page, dice);
     await scanState(page, 'dice-tray');
+    // Two rolls, then the toast of the last opens the tray on History: every
+    // roll, each with its remove button, and clear all.
+    await dice.getByRole('button', { name: 'd20', exact: true }).click();
+    await dice.getByRole('button', { name: 'd8', exact: true }).click();
+    await closeWithEscape(page, dice);
+    await page.getByRole('button', { name: /^d8: \d+\. .*Open roll history$/ }).click();
+    await opened(page, dice);
+    await expect(dice.getByRole('button', { name: 'History', pressed: true })).toBeVisible();
+    await expect(dice.getByRole('button', { name: /^Remove d20 roll/ })).toBeVisible();
+    await scanState(page, 'dice-tray-history');
     await closeWithEscape(page, dice);
 
     const history = await openHistory(page);

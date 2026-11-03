@@ -39,16 +39,12 @@ describe('advantage controls', () => {
 
   it('orders the floating toggle that way', () => {
     render(<AdvToggle />);
-    expect(orderOf(['DIS', 'N', 'ADV'])).toEqual(['DIS', 'N', 'ADV']);
+    expect(orderOf(['Dis', 'Normal', 'Adv'])).toEqual(['Dis', 'Normal', 'Adv']);
   });
 
   it('orders the tray copy the same way', () => {
-    render(<DiceTray />);
+    render(<DiceTray dock />);
     fireEvent.click(screen.getByTitle('Dice tray'));
-    expect(orderOf(['Disadvantage', 'Normal', 'Advantage'])).toEqual([
-      'Disadvantage',
-      'Normal',
-      'Advantage',
-    ]);
+    expect(orderOf(['Dis', 'Normal', 'Adv'])).toEqual(['Dis', 'Normal', 'Adv']);
   });
 });

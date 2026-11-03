@@ -3,7 +3,8 @@ import type { Entity } from '@/data5e/copyMod';
 export interface SpellRollAction {
   expr: string;
   label: string;
-  variant: 'dice' | 'damage';
+  /** `heal` for dice its label calls healing (DS-001), so they show green. */
+  variant: 'dice' | 'damage' | 'heal';
 }
 
 export interface SpellRollOptions {
@@ -212,10 +213,14 @@ function withAbilityModifier(roll: TaggedRoll, modifier: number | undefined): Ta
   return { ...roll, expr: `${roll.expr}${modifier > 0 ? '+' : ''}${modifier}` };
 }
 
+/** Whether a roll restores hit points, by the words around it. */
+function heals(roll: TaggedRoll): boolean {
+  return /\bregains?\b|\bhealing\b/.test(roll.source.toLowerCase());
+}
+
 function rollLabel(name: string, roll: TaggedRoll, scalingLabel?: string): string {
   if (scalingLabel !== undefined && scalingLabel !== '') return `${name} ${scalingLabel}`;
-  const source = roll.source.toLowerCase();
-  if (/\bregains?\b|\bhealing\b/.test(source)) return `${name} healing`;
+  if (heals(roll)) return `${name} healing`;
   if (roll.kind === 'damage') {
     const damageType = roll.after.match(
       /^\s*(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\s+damage/i,
@@ -261,7 +266,10 @@ export function spellRollActions(
     const key = `${roll.kind}|${roll.expr}|${label}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ expr: roll.expr, label, variant: roll.kind === 'damage' ? 'damage' : 'dice' });
+    // Damage first: a spell that hurts and heals (Vampiric Touch) still
+    // rolls its damage dice as damage.
+    const variant = roll.kind === 'damage' ? 'damage' : heals(roll) ? 'heal' : 'dice';
+    out.push({ expr: roll.expr, label, variant });
   }
   return out;
 }

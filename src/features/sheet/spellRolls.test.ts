@@ -42,7 +42,7 @@ describe('spellRollActions', () => {
     };
     expect(
       spellRollActions(cureWounds, { characterLevel: 5, slotLevel: 3, abilityModifier: 3 }),
-    ).toEqual([{ expr: '3d8+3', label: 'Cure Wounds healing', variant: 'dice' }]);
+    ).toEqual([{ expr: '3d8+3', label: 'Cure Wounds healing', variant: 'heal' }]);
   });
 
   it('keeps distinct rolls for spells with multiple effects', () => {

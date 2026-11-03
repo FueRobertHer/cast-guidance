@@ -134,6 +134,7 @@ export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResul
     expr: ast.expr,
     ...(opts.label ? { label: opts.label } : {}),
     ...(opts.origin ? { origin: opts.origin } : {}),
+    ...(opts.kind ? { kind: opts.kind } : {}),
     total,
     at: Date.now(),
     terms,
