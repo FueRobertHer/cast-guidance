@@ -56,8 +56,8 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
 
 /**
  * An {@link EntityRow}'s height in px at the current root font size: its
- * `py-3` (1.5rem), one 1.5rem line of text and the 1 px border, rounded as
- * a measured height is. The source badge is shorter than the line, so it
+ * `py-3` (1.5rem), one line of body text (1.375rem, DS-001) and the 1 px
+ * border, rounded as a measured height is. The source badge is shorter than the line, so it
  * never sets the height. The list's restored scroll offset depends on this
  * being exact (see `VirtualList`), so a class change to the row has to
  * change this too; `library-scale.spec.ts` compares it to the rendered row.
@@ -65,7 +65,7 @@ function EntityRow({ type, e }: { type: string; e: Entity }) {
  */
 export function entityRowHeight(): number {
   const px = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-  return Math.round(3 * (Number.isNaN(px) ? 16 : px) + 1);
+  return Math.round(2.875 * (Number.isNaN(px) ? 16 : px) + 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -121,13 +121,13 @@ describe('SheetLayout tab bar (A11Y-002)', () => {
     return within(screen.getByRole('navigation', { name: 'Character sheet' }));
   }
 
-  it('marks the open tab with a bar as well as colour, and only that tab', () => {
+  it('marks the open tab with a pill and weight as well as colour, and only that tab', () => {
     const nav = renderAt('/c/x/stats');
     const links = nav.getAllByRole('link');
     const marked = links.filter((l) => l.querySelector('[data-indicator]') !== null);
     expect(marked.map((l) => l.textContent)).toEqual(['Stats']);
     expect(marked[0]?.getAttribute('aria-current')).toBe('page');
-    expect(marked[0]?.className).toContain('font-semibold');
+    expect(marked[0]?.className).toContain('font-bold');
   });
 
   it('has a heading that focus can land on once a save conflict is resolved', () => {

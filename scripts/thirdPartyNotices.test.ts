@@ -171,6 +171,21 @@ describe('collectInventory', () => {
     );
   });
 
+  // Catches: the theme boot script (DS-001), copied from public/, failing
+  // coverage; and the exception widening to any script at the root.
+  it('accepts a listed first-party script from public/, and no other unrecorded one', () => {
+    const ours = input({
+      jsFiles: [...input().jsFiles, { path: 'theme-boot.js', text: '' }],
+    });
+    expect(() => collectInventory(ours, fakeSource(PACKAGES))).not.toThrow();
+    const theirs = input({
+      jsFiles: [...input().jsFiles, { path: 'vendor-boot.js', text: '' }],
+    });
+    expect(() => collectInventory(theirs, fakeSource(PACKAGES))).toThrow(
+      /vendor-boot\.js is not in shipped-modules\.json/,
+    );
+  });
+
   it('fails when the record names a chunk the build did not emit (a stale record)', () => {
     const data = input({
       jsFiles: input().jsFiles.filter((file) => !file.path.includes('worker')),

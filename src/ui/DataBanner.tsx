@@ -1,9 +1,11 @@
+import { CircleAlert, Download, Info, WifiOff } from 'lucide-react';
 import { useEffect } from 'react';
 import { dismissRollbackNotice, getActiveTag, retryDataLayer, updateToTag } from '@/data5e/loader';
 import { invalidateRegistry } from '@/data5e/registry';
 import { useOnline, useOnReconnect } from '@/lib/useOnline';
 import { announce } from '@/stores/announcer';
 import { dataStatusStore, showsDataBanner, useDataStatus } from '@/stores/dataStatus';
+import { Banner, BannerAction, BannerIcon, bannerProps } from './Banner';
 
 /** What the rollback notice says, on screen and to a screen reader. */
 export function rollbackText(from: string, to: string): string {
@@ -84,31 +86,31 @@ export function DataBanner() {
               // updateToTag has already put the reason back in this banner.
               .catch(() => undefined);
           };
+    // Offline is not the app failing, so it is said as something to know,
+    // not in the failure's red.
+    const tone = offlineFailure ? 'neutral' : 'danger';
     return (
-      <div
-        className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-accent-deep px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
+      <Banner
+        tone={tone}
+        icon={offlineFailure ? WifiOff : CircleAlert}
         role="alert"
+        actions={
+          <BannerAction tone={tone} onClick={retry}>
+            Retry
+          </BannerAction>
+        }
       >
-        <span className={offlineFailure ? undefined : 'truncate'}>
-          {/* Offline, the reason is the network and so is the remedy. The
-              fetch error under it (a list of mirror URLs that each "failed to
-              fetch") says neither, and read as the app being broken. */}
-          {!offlineFailure
-            ? failedTag === undefined
-              ? `Game data download failed: ${error}`
-              : `Update to ${failedTag} failed: ${error}`
-            : failedTag === undefined
-              ? "You're offline, so the game data download can't finish yet. It picks up by itself once you're back online."
-              : `You're offline, so the update to ${failedTag} can't install yet. Retry once you're back online.`}
-        </span>
-        <button
-          type="button"
-          onClick={retry}
-          className="shrink-0 rounded bg-accent-fill px-2 py-0.5 font-semibold"
-        >
-          Retry
-        </button>
-      </div>
+        {/* Offline, the reason is the network and so is the remedy. The
+            fetch error under it (a list of mirror URLs that each "failed to
+            fetch") says neither, and read as the app being broken. */}
+        {!offlineFailure
+          ? failedTag === undefined
+            ? `Game data download failed: ${error}`
+            : `Update to ${failedTag} failed: ${error}`
+          : failedTag === undefined
+            ? "You're offline, so the game data download can't finish yet. It picks up by itself once you're back online."
+            : `You're offline, so the update to ${failedTag} can't install yet. Retry once you're back online.`}
+      </Banner>
     );
   }
   // Ahead of the progress bar: a version that moved backwards on its own is
@@ -116,16 +118,17 @@ export function DataBanner() {
   // rollback would otherwise cover the only explanation for it.
   if (rolledBackFrom !== undefined) {
     return (
-      <div className="fixed inset-x-4 top-3 z-40 flex items-center justify-between gap-3 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96">
-        <span>{rollbackText(rolledBackFrom, getActiveTag())}</span>
-        <button
-          type="button"
-          onClick={() => void dismissRollbackNotice()}
-          className="shrink-0 rounded bg-surface-2 px-2 py-0.5 font-semibold"
-        >
-          Dismiss
-        </button>
-      </div>
+      <Banner
+        tone="neutral"
+        icon={Info}
+        actions={
+          <BannerAction tone="neutral" onClick={() => void dismissRollbackNotice()}>
+            Dismiss
+          </BannerAction>
+        }
+      >
+        {rollbackText(rolledBackFrom, getActiveTag())}
+      </Banner>
     );
   }
   // `phase` turns 'working' when the boot routine starts, not when it knows
@@ -142,9 +145,11 @@ export function DataBanner() {
     // and a screen reader was left saying "13 of 5 files".
     const counted = Math.min(done, total);
     const pct = Math.round((counted / total) * 100);
+    const banner = bannerProps('neutral');
     return (
       <div
-        className="fixed inset-x-4 top-3 z-40 rounded-lg border border-surface-2 bg-surface/95 px-4 py-2.5 text-xs text-ink-muted shadow-lg backdrop-blur lg:right-6 lg:left-auto lg:w-96"
+        {...banner}
+        className={`${banner.className} relative min-h-10`}
         role="progressbar"
         aria-label="Downloading game data"
         aria-valuemin={0}
@@ -152,14 +157,18 @@ export function DataBanner() {
         aria-valuenow={counted}
         aria-valuetext={`${counted} of ${total} files`}
       >
-        <div className="flex items-center justify-between">
-          <span>Downloading game data…</span>
-          <span>
-            {counted}/{total}
-          </span>
-        </div>
-        <div className="mt-1 h-0.5 overflow-hidden rounded bg-surface-2">
-          <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+        <BannerIcon tone="neutral" icon={Download} />
+        <span className="min-w-0 flex-1">Downloading game data…</span>
+        <span className="pr-2 text-ink-muted tabular-nums">
+          {counted}/{total}
+        </span>
+        {/* Along the banner's foot: the meter's `track`, filled in the
+            action blue, since the download is something the app is doing. */}
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-track">
+          <div
+            className="h-full bg-brand transition-[width] duration-200 ease-out"
+            style={{ width: `${pct}%` }}
+          />
         </div>
       </div>
     );

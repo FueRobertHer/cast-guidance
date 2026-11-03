@@ -27,6 +27,8 @@
     "icons:generate": "bun scripts/generate-icons.ts"
   },
   "dependencies": {
+    "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource/literata": "^5.3.0",
     "@tanstack/react-virtual": "^3.14.5",
     "@vercel/analytics": "^2.0.1",
     "dexie": "^4.4.4",

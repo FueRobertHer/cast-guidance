@@ -16,8 +16,10 @@ export const pwaManifest: Partial<ManifestOptions> = {
   description: 'Mobile-first D&D 5e character creator and play sheet',
   start_url: '/',
   scope: '/',
-  theme_color: '#18181b',
-  background_color: '#18181b',
+  // The dark theme's `bg` (DS-001): the default theme, and what the splash
+  // screen shows before the app can read the player's choice.
+  theme_color: '#121110',
+  background_color: '#121110',
   display: 'standalone',
   icons: [
     { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },

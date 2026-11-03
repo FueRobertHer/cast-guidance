@@ -44,8 +44,12 @@ import {
 const REPO = path.resolve(import.meta.dirname, '..');
 const OUT_DIR = path.join(REPO, 'public/icons');
 
-/** The manifest's `background_color` and the SVG's own square. */
-const BACKGROUND = '#18181b';
+/**
+ * The SVG's own square, the logo's tile (DS-001). A shade above the dark
+ * theme's `bg`, which is the manifest's `background_color`, so the icon reads
+ * as a tile on the splash screen rather than melting into it.
+ */
+const BACKGROUND = '#1c1a16';
 
 type Kind = 'any' | 'maskable' | 'apple';
 

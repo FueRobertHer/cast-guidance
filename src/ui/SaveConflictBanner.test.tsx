@@ -91,9 +91,12 @@ describe('SaveConflictBanner', () => {
     );
     const buttons = screen.getAllByRole('button').map((b) => b.textContent);
     expect(buttons).toEqual(['Reload stored version', 'Keep mine (overwrite)']);
-    // The main action is the filled one.
-    expect(screen.getByRole('button', { name: 'Reload stored version' }).className).toContain(
-      'bg-accent-fill',
+    // The main action is the filled one, and Keep mine the outline.
+    expect(screen.getByRole('button', { name: 'Reload stored version' }).dataset.emphasis).toBe(
+      'primary',
+    );
+    expect(screen.getByRole('button', { name: 'Keep mine (overwrite)' }).dataset.emphasis).toBe(
+      'secondary',
     );
   });
 

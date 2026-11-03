@@ -250,6 +250,16 @@ function isServiceWorkerFile(filePath: string): boolean {
 }
 
 /**
+ * Scripts copied from `public/` into `dist/` as written: this repository's own
+ * code, with no package in it, so no chunk record. Named one by one rather
+ * than allowed by folder, so a third-party file dropped into `public/` still
+ * fails the coverage check below.
+ */
+export const FIRST_PARTY_SCRIPTS: ReadonlyArray<{ file: string; why: string }> = [
+  { file: 'theme-boot.js', why: 'sets the colour theme before first paint (DS-001)' },
+];
+
+/**
  * Every package the build ships, keyed by `name@version`, with where it
  * ships. Throws on any gap described in the module comment.
  */
@@ -276,12 +286,14 @@ export function collectInventory(
     return record;
   };
 
-  // Coverage: every emitted script is either a recorded chunk or part of the
-  // service worker. A chunk the collector never saw (a new worker type, a
-  // plugin that emits its own script) would otherwise ship unlisted.
+  // Coverage: every emitted script is a recorded chunk, part of the service
+  // worker, or a listed first-party script. A chunk the collector never saw
+  // (a new worker type, a plugin that emits its own script) would otherwise
+  // ship unlisted.
   const recorded = new Set(chunks.map((chunk) => chunk.fileName));
+  const ours = new Set(FIRST_PARTY_SCRIPTS.map((script) => script.file));
   for (const file of input.jsFiles) {
-    if (!recorded.has(file.path) && !isServiceWorkerFile(file.path)) {
+    if (!recorded.has(file.path) && !isServiceWorkerFile(file.path) && !ours.has(file.path)) {
       errors.push(
         `${file.path} is not in shipped-modules.json, so its packages are unknown. Register the collector for the build that emits it (see vite.config.ts).`,
       );

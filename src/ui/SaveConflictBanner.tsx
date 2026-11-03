@@ -1,3 +1,4 @@
+import { CircleAlert } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { announce } from '@/stores/announcer';
 import {
@@ -8,6 +9,7 @@ import {
   useCharacterSession,
 } from '@/stores/characterSession';
 import { notifyFailure } from '@/stores/notices';
+import { BannerAction, BannerIcon, bannerProps } from './Banner';
 
 /** What a screen reader hears once a conflict is resolved, by what came of it. */
 export const CONFLICT_RESOLVED_TEXT: Readonly<Record<ConflictOutcome, string>> = {
@@ -130,28 +132,18 @@ export function SaveConflictBanner({
 
   return (
     // Keyed by character, so the next refused save is a new alert, said anew.
-    <div
-      key={id}
-      ref={banner}
-      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-accent-deep px-3 py-1.5 text-xs"
-      role="alert"
-    >
-      <p className="min-w-0">{conflictText(conflict, entries.length)}</p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => choose('reload')}
-          className="min-h-11 shrink-0 rounded bg-accent-fill px-3 font-semibold"
-        >
+    // A danger banner (DS-001), the one with two actions, since the edits here
+    // are not saved until a choice is made.
+    <div key={id} ref={banner} {...bannerProps('danger')} role="alert">
+      <BannerIcon tone="danger" icon={CircleAlert} />
+      <p className="min-w-0 flex-1">{conflictText(conflict, entries.length)}</p>
+      <div className="flex flex-wrap gap-1">
+        <BannerAction tone="danger" onClick={() => choose('reload')}>
           {deleted ? 'Discard my edits' : 'Reload stored version'}
-        </button>
-        <button
-          type="button"
-          onClick={() => choose('overwrite')}
-          className="min-h-11 shrink-0 rounded border border-accent px-3 font-semibold"
-        >
+        </BannerAction>
+        <BannerAction tone="danger" emphasis="secondary" onClick={() => choose('overwrite')}>
           {deleted ? 'Keep mine (restore it)' : 'Keep mine (overwrite)'}
-        </button>
+        </BannerAction>
       </div>
     </div>
   );

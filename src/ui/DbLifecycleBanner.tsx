@@ -1,4 +1,6 @@
+import { CircleAlert } from 'lucide-react';
 import { type DbLifecycle, useDbLifecycle } from '@/stores/dbLifecycle';
+import { BannerAction, BannerIcon, bannerProps } from './Banner';
 
 /** What the banner says for each closed state. None of them is something the person did wrong. */
 export const DB_LIFECYCLE_COPY: Readonly<Record<Exclude<DbLifecycle, 'open'>, string>> = {
@@ -37,25 +39,17 @@ function reloadPage(): void {
 export function DbLifecycleBanner({ onReload = reloadPage }: { onReload?: () => void }) {
   const state = useDbLifecycle((s) => s.state);
   const closed = state !== 'open';
+  // A danger banner (DS-001): this tab has stopped saving.
   return (
-    <div
-      className={
-        closed
-          ? 'flex items-center justify-between gap-2 bg-accent-deep px-3 py-1.5 text-xs'
-          : undefined
-      }
-    >
-      <p role="status" className={closed ? 'min-w-0' : 'sr-only'}>
+    <div {...(closed ? bannerProps('danger') : {})}>
+      {closed && <BannerIcon tone="danger" icon={CircleAlert} />}
+      <p role="status" className={closed ? 'min-w-0 flex-1' : 'sr-only'}>
         {closed ? DB_LIFECYCLE_COPY[state] : ''}
       </p>
       {closed && (
-        <button
-          type="button"
-          onClick={onReload}
-          className="min-h-11 shrink-0 rounded bg-accent-fill px-3 font-semibold"
-        >
+        <BannerAction tone="danger" onClick={onReload}>
           Reload
-        </button>
+        </BannerAction>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import {
+  type ComponentProps,
   cloneElement,
   isValidElement,
   type MouseEvent as ReactMouseEvent,
@@ -56,7 +57,62 @@ function SheetNestedRoot(props: DialogProps) {
   return <Drawer.NestedRoot autoFocus {...props} disablePreventScroll={false} />;
 }
 
-export const Sheet = { ...Drawer, Root: SheetRoot, NestedRoot: SheetNestedRoot };
+/**
+ * The look every bottom sheet shares (DS-001), so a sheet's own file only
+ * holds what goes inside it:
+ *
+ *   <Sheet.Portal>
+ *     <Sheet.Scrim />
+ *     <Sheet.Panel aria-describedby={undefined}>
+ *       <Sheet.Heading aside="Level 3">Fireball</Sheet.Heading>
+ *       …
+ *     </Sheet.Panel>
+ *   </Sheet.Portal>
+ *
+ * `Scrim` is the overlay (it is what holds the page still; see SheetRoot), in
+ * `scrim`. `Panel` is the content: `surface`, `sheet` top corners,
+ * `shadow-overlay` and the grab handle, one column wide at most, its bottom
+ * padding clear of the home indicator. vaul slides it up; reduced motion turns
+ * that off app-wide. `Heading` is the sheet's title (its accessible name) in
+ * `title-sheet`, with optional context on the right in `caption`. The confirm
+ * goes last, as a `lg` block button in reach of a thumb, saying exactly what
+ * will happen ("Take 7 damage").
+ */
+const SCRIM = 'fixed inset-0 z-40 bg-scrim';
+
+function SheetScrim({ className, ...props }: ComponentProps<typeof Drawer.Overlay>) {
+  return <Drawer.Overlay className={className ? `${SCRIM} ${className}` : SCRIM} {...props} />;
+}
+
+const PANEL =
+  'fixed inset-x-0 bottom-0 z-50 mx-auto max-w-content rounded-t-sheet bg-surface px-4 pt-2 pb-[max(env(safe-area-inset-bottom),1.25rem)] text-ink shadow-overlay';
+
+function SheetPanel({ className, children, ...props }: ComponentProps<typeof Drawer.Content>) {
+  return (
+    <Drawer.Content className={className ? `${PANEL} ${className}` : PANEL} {...props}>
+      <div aria-hidden="true" className="mx-auto mb-3 h-1 w-9 rounded-full bg-line-strong" />
+      {children}
+    </Drawer.Content>
+  );
+}
+
+function SheetHeading({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-baseline justify-between gap-2">
+      <Drawer.Title className="min-w-0 font-display text-title-sheet">{children}</Drawer.Title>
+      {aside !== undefined && <span className="shrink-0 text-caption text-ink-muted">{aside}</span>}
+    </div>
+  );
+}
+
+export const Sheet = {
+  ...Drawer,
+  Root: SheetRoot,
+  NestedRoot: SheetNestedRoot,
+  Scrim: SheetScrim,
+  Panel: SheetPanel,
+  Heading: SheetHeading,
+};
 
 /**
  * A sheet's trigger, standing in for the sheet itself until it is first used.
