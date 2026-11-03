@@ -7,6 +7,7 @@ import type { CharacterDoc } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { Chip, chipClass } from '@/ui/Chip';
 import { Sheet } from '@/ui/sheet';
+import { ToggleChip } from '@/ui/ToggleChip';
 import { CONDITIONS, conditionEffect } from './conditionEffects';
 import { ExhaustionStepper } from './ExhaustionStepper';
 import { exhaustionLevel, setExhaustionLevel } from './exhaustion';
@@ -28,7 +29,10 @@ const sheetTitle = () => document.getElementById('sheet-title');
  *
  * Each is a `surface-raised` chip: its name opens a sheet with what it does
  * (a line on the rolls it changes, then its rules text in the character's
- * edition, and Exhaustion's stepper), and its x removes it. "+ Condition"
+ * edition, and Exhaustion's stepper), and its x removes it. The sheet also
+ * switches its effects off and on: a ruling at the table that it does not
+ * apply for now, which leaves it listed (the chip says "off") but takes it out
+ * of every roll, speed and hit point the sheet works out. "+ Condition"
  * opens the picker, which holds every condition and the exhaustion stepper.
  * The row scrolls sideways when it overflows. With nothing active it is gone,
  * except on Play (`addable`), where the add chip stays.
@@ -86,6 +90,13 @@ export function ConditionStrip({
   };
   const setExhaustion = (level: number) =>
     update((d) => setExhaustionLevel(d.play.conditions, level));
+  const setApplied = (id: string, applied: boolean) =>
+    update((d) => {
+      const c = d.play.conditions.find((x) => x.id === id);
+      if (c === undefined) return;
+      if (applied) delete c.ignored;
+      else c.ignored = true;
+    });
   const applyDeath = () => {
     update((d) => {
       d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
@@ -119,6 +130,8 @@ export function ConditionStrip({
   );
   const effect = shown === null ? undefined : conditionEffect(shown, edition);
   const entries = shown === null ? undefined : rules(shown);
+  // Exhaustion at 0 has no entry, and so nothing to switch.
+  const shownEntry = conditions.find((c) => c.id === shown);
 
   return (
     <>
@@ -163,6 +176,12 @@ export function ConditionStrip({
                           <>
                             {' '}
                             <span className="font-normal text-ink-muted tabular-nums">{level}</span>
+                          </>
+                        )}
+                        {c.ignored === true && (
+                          <>
+                            {' '}
+                            <span className="font-normal text-ink-muted">off</span>
                           </>
                         )}
                       </span>
@@ -218,6 +237,20 @@ export function ConditionStrip({
                     {effect}
                   </p>
                 )
+              )}
+              {shownEntry !== undefined && (
+                <div className="mb-3">
+                  <ToggleChip
+                    label="Apply its effects"
+                    on={shownEntry.ignored !== true}
+                    onChange={(on) => setApplied(shownEntry.id, on)}
+                    tone="guide"
+                  />
+                  <p className="mt-1 text-caption text-ink-muted">
+                    Off keeps it listed, but the sheet leaves it out of your rolls, speed, hit
+                    points and warnings until you switch it back on.
+                  </p>
+                </div>
               )}
               {entries !== undefined && <EntriesView entries={entries} />}
             </div>

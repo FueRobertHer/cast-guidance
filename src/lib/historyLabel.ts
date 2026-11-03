@@ -38,6 +38,13 @@ function conditionsLabel(prev: CharacterDoc, next: CharacterDoc): string | undef
   for (const c of next.play.conditions) {
     if (c.level !== prevLevel.get(c.id)) return `${c.id} → ${c.level ?? 0}`;
   }
+  // Or its effects were switched off or back on.
+  const prevIgnored = new Map(prev.play.conditions.map((c) => [c.id, c.ignored === true]));
+  for (const c of next.play.conditions) {
+    if ((c.ignored === true) !== prevIgnored.get(c.id)) {
+      return `${c.id} effects ${c.ignored === true ? 'off' : 'on'}`;
+    }
+  }
   return undefined;
 }
 

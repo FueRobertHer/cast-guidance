@@ -228,7 +228,62 @@ test.describe('axe: pages and overlays', () => {
     const rules = page.getByRole('dialog', { name: 'Poisoned' });
     await opened(page, rules);
     await scanState(page, 'condition-info-sheet');
+
+    // Switched off, it stays on the strip, marked off.
+    await rules.getByRole('button', { name: /^Apply its effects/ }).click();
+    await expect(rules.getByRole('button', { name: /^Apply its effects/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
     await closeWithEscape(page, rules);
+    await expect(strip.getByRole('button', { name: 'Poisoned off' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-conditions-effects-off');
+  });
+
+  test('character sheet: condition cues where the rolls they change start', async ({ page }) => {
+    await gotoRosterSettled(page);
+    // The filled caster has a sword and a spell attack beside the unarmed strike.
+    const id = await importCaster(page, { filled: true });
+
+    await gotoSheetTab(page, id, 'Play');
+    await page.getByRole('button', { name: 'Condition', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await opened(page, picker);
+    for (const name of ['Poisoned', 'Prone', 'Restrained']) {
+      const toggle = picker.getByRole('button', { name, exact: true });
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    }
+    await closeWithEscape(page, picker);
+
+    // Attack and initiative cues, attacks against the character, and speed 0.
+    await expect(page.getByRole('list', { name: 'Attacks against you' })).toBeVisible();
+    // The attack cue again over the spells with attack rolls.
+    await expect(page.getByText('Spell attacks', { exact: true })).toBeVisible();
+    const ignoreAttacks = page.getByRole('button', {
+      name: 'Ignore once: your next attack roll without these effects',
+    });
+    // Over the attack list and over the spells: one override for both.
+    await expect(ignoreAttacks).toHaveCount(2);
+    await ignoreAttacks.first().click();
+    await expect(ignoreAttacks.last()).toHaveAttribute('aria-pressed', 'true');
+    await animationsSettled(page);
+    await scanState(page, 'sheet-play-condition-cues');
+
+    await gotoSheetTab(page, id, 'Stats');
+    await expect(page.getByText('Disadvantage on DEX saves: Restrained')).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-stats-condition-cues');
+
+    // A cued roll, as the dice tray's history keeps it.
+    await page.getByRole('button', { name: /^Roll STR check/ }).click();
+    await page.getByRole('button', { name: 'Dice tray' }).click();
+    const dice = page.getByRole('dialog', { name: 'Dice' });
+    await opened(page, dice);
+    await expect(dice.getByText('Disadvantage: Poisoned')).toBeVisible();
+    await scanState(page, 'dice-tray-roll-cue');
+    await closeWithEscape(page, dice);
   });
 
   test('character sheet: its drawers and info sheets', async ({ page }) => {

@@ -6,6 +6,7 @@ import type { RollResult } from '@/dice/types';
  * dice were for, and on a sheet they nearly always are damage. Nat 20 and nat
  * 1 are the two results worth spotting from across the table, so they take a
  * colour of their own, `heal` and `danger`, and always their words too.
+ * An automatic failure is `danger` too, and says so in words.
  *
  * A module of its own, shared by the roll toast and the dice tray's history:
  * the tray importing it from RollToast, an entry module, made Rolldown fold
@@ -14,6 +15,9 @@ import type { RollResult } from '@/dice/types';
 export type RollTone = 'crit' | 'fumble' | 'd20' | 'damage';
 
 export function rollTone(result: RollResult): RollTone {
+  // A save a condition fails outright (Stunned, say) is a failure whatever
+  // the die shows, a natural 20 included.
+  if (result.meta?.autoFail === true) return 'fumble';
   const nat = result.meta?.d20?.natural;
   if (nat === 20) return 'crit';
   if (nat === 1) return 'fumble';

@@ -4,8 +4,9 @@ import { useOutletContext } from 'react-router';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
+import type { RollResult } from '@/dice/types';
+import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
 import type { PlayState, SpellcastingBlock } from '@/engine/types';
-import { currentAdvantage } from '@/stores/advMode';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -31,8 +32,9 @@ import {
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
-import { exhaustionInfo, exhaustionLevel } from '../exhaustion';
+import { effectLines, noteLines, rollD20Test, useIgnoreOnce } from '../d20Tests';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
+import { RollEffectCue } from '../RollEffectCue';
 import { longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
@@ -122,29 +124,28 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
 
 /**
  * A concentrating character who takes damage must make a CON save
- * (DC = max(10, half the damage taken)). Rolls it, logs it, and breaks
- * concentration on a failure. Mutates the draft; returns a notice to show.
- * No-op when not concentrating or already dropped to 0 HP (that breaks it too).
+ * (DC = max(10, half the damage taken)). Rolls it with `rollSave` (the sheet's
+ * d20 test, so War Caster and the character's conditions count), logs it, and
+ * breaks concentration on a failure. Mutates the draft; returns a notice to
+ * show. No-op when not concentrating or already dropped to 0 HP (that breaks
+ * it too).
  */
 function rollConcentration(
   play: PlayState,
   damageTaken: number,
-  conSave: number,
-  adv: 'adv' | 'dis' | undefined,
+  rollSave: (label: string) => RollResult,
 ): Notice | null {
   const label = play.concentratingOn?.label;
   if (label === undefined || damageTaken <= 0 || play.currentHp === 0) return null;
   const dc = Math.max(10, Math.floor(damageTaken / 2));
-  const r = roll(`1d20${fmt(conSave)}`, {
-    label: `Concentration save (DC ${dc})`,
-    advantage: adv,
-  });
+  const r = rollSave(`Concentration save (DC ${dc})`);
   rollLogStore.getState().append(r);
-  const held = r.total >= dc;
+  const held = r.meta?.autoFail !== true && r.total >= dc;
   if (!held) play.concentratingOn = undefined;
+  const cue = r.meta?.cue === undefined ? '' : ` · ${r.meta.cue}`;
   return {
     title: held ? 'Concentration held' : 'Concentration broken',
-    detail: `${label} · rolled ${r.total} vs DC ${dc}`,
+    detail: `${label} · rolled ${r.total} vs DC ${dc}${cue}`,
     tone: held ? 'good' : 'warn',
   };
 }
@@ -175,6 +176,8 @@ export function Component() {
     lastSpendState.current = spendState;
     setCastChoice({});
   }, [spendState]);
+  // The cues' "Ignore once", for as long as the tab is open.
+  const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   // Look a spell up by its stored printing; when that misses (blank/wrong source
@@ -200,9 +203,43 @@ export function Component() {
 
   const play = doc.play;
 
+  // What the character's conditions do to their own rolls, speed and hit
+  // point maximum (engine/conditions.ts): applied, said in a cue where each
+  // roll starts, and never more than guidance (see RollEffectCue).
+  const conditions = play.conditions;
+  const effectsFor = (test: Parameters<typeof d20Effects>[2]) =>
+    d20Effects(conditions, doc.rulesVersion, test);
+  const maxHp = conditionMaxHp(sheet.maxHp.value, conditions, doc.rulesVersion);
+  const speed = conditionSpeed(sheet.speedWalk.value, conditions, doc.rulesVersion);
+  const attackEffects = effectsFor({ kind: 'attack' });
+  const initiativeEffects = effectsFor({ kind: 'initiative' });
+  const deathEffects = effectsFor({ kind: 'save' });
+  const against = attacksAgainst(conditions, doc.rulesVersion);
+  /** A d20 test in the attack group: the weapon and spell attack chips. */
+  const rollAttack = (modifier: number, label: string) => () =>
+    rollD20Test(`1d20${fmt(modifier)}`, {
+      label,
+      effects: attackEffects,
+      ignored: ignore.take('attack', attackEffects),
+    });
+  /** The attack rolls' cue: over the attack list, and again over spells with attack rolls. */
+  const attackCue = (heading?: string) => (
+    <RollEffectCue
+      heading={heading}
+      lines={effectLines(attackEffects)}
+      notes={noteLines(attackEffects)}
+      rolls="attack roll"
+      ignored={ignore.armed('attack')}
+      onIgnore={() => ignore.toggle('attack')}
+    />
+  );
+  const hasSpellAttack = (entity: ReturnType<typeof spellEntity>) =>
+    Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
+
   // After a build change lowers a limit, stored play state can hold values above
   // the new maxima — surface them and offer a non-destructive clamp (GAME-007).
-  const overages = detectPlayStateOverages(play, sheet);
+  // Exhaustion's halved maximum (2014) is one more such limit.
+  const overages = detectPlayStateOverages(play, sheet, maxHp.value);
 
   /**
    * Mark a slice of the action economy used (attacks, casting). `label` names
@@ -277,19 +314,23 @@ export function Component() {
       </span>
     ) : null;
 
-  // Exhaustion slows the character (its stepper is in the condition strip's sheets).
-  const exInfo = exhaustionInfo(exhaustionLevel(play.conditions), doc.rulesVersion);
-  const displaySpeed = exInfo.speedAfter(sheet.speedWalk.value);
-  const dying = play.currentHp === 0 && sheet.maxHp.value > 0;
+  const dying = play.currentHp === 0 && maxHp.value > 0;
 
   /** Does the character have one of these feats/features (by `name|source` uid)? */
   const hasFeature = (...uids: string[]) => sheet.features.some((f) => uids.includes(f.origin.uid));
-  // War Caster: advantage on concentration saves (a global DIS cancels it).
-  const concAdv = (): 'adv' | 'dis' | undefined => {
-    const base = currentAdvantage();
-    if (!hasFeature('war caster|phb', 'war caster|xphb')) return base;
-    return base === 'dis' ? undefined : 'adv';
-  };
+  const concentrationEffects = effectsFor({ kind: 'save', ability: 'con' });
+  // War Caster: advantage on concentration saves, which the dock's mode and
+  // the character's conditions combine with and can cancel.
+  const warCaster = hasFeature('war caster|phb', 'war caster|xphb') ? ['War Caster'] : [];
+  // Durable (2024): advantage on death saves.
+  const durable = hasFeature('durable|xphb') ? ['Durable'] : [];
+  const rollConcentrationSave = (label: string) =>
+    rollD20Test(`1d20${fmt(sheet.saves.con.total.value)}`, {
+      label,
+      effects: concentrationEffects,
+      ignored: ignore.take('concentration', concentrationEffects),
+      advantageFrom: warCaster,
+    });
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
 
@@ -313,13 +354,13 @@ export function Component() {
 
   /** Say where HP ended up, once the taps stop; see {@link HP_SETTLE_MS}. */
   const sayHp = (after: Pick<PlayState, 'currentHp' | 'tempHp'>) =>
-    announce(hpSpeech(after, sheet.maxHp.value), { key: hpKey, settleMs: HP_SETTLE_MS });
+    announce(hpSpeech(after, maxHp.value), { key: hpKey, settleMs: HP_SETTLE_MS });
   const hpDelta = async (delta: number) => {
     const after = { currentHp: play.currentHp, tempHp: play.tempHp };
     // Healing is a plain apply; damage may force a concentration save.
     if (delta >= 0) {
       update((d) => {
-        applyHp(d.play, delta, sheet.maxHp.value);
+        applyHp(d.play, delta, maxHp.value);
         after.currentHp = d.play.currentHp;
         after.tempHp = d.play.tempHp;
       });
@@ -342,7 +383,7 @@ export function Component() {
     let notice: Notice | null = null;
     update((d) => {
       const concentration = d.play.concentratingOn;
-      applyHp(d.play, delta, sheet.maxHp.value);
+      applyHp(d.play, delta, maxHp.value);
       if (useRelentless && d.play.currentHp === 0) {
         d.play.currentHp = 1;
         d.play.concentratingOn = concentration; // never actually hit 0
@@ -350,7 +391,7 @@ export function Component() {
         if (entry !== undefined) entry.used += 1;
         else d.play.resources.push({ key: 'relentless-endurance', used: 1 });
       }
-      notice = rollConcentration(d.play, -delta, sheet.saves.con.total.value, concAdv());
+      notice = rollConcentration(d.play, -delta, rollConcentrationSave);
       after.currentHp = d.play.currentHp;
       after.tempHp = d.play.tempHp;
     });
@@ -380,8 +421,8 @@ export function Component() {
             Some tracked values are above their new limits
           </p>
           <p className="mt-0.5 text-caption text-ink-muted">
-            A build change lowered these. You can keep them as-is (house rule) or bring them back
-            within range.
+            A build change or exhaustion lowered these. You can keep them as-is (house rule) or
+            bring them back within range.
           </p>
           <ul className="mt-2 flex flex-col gap-0.5 text-caption">
             {overages.map((o) => (
@@ -395,7 +436,7 @@ export function Component() {
               would sit under 3:1 on the tint. */}
           <BannerAction
             tone="guide"
-            onClick={() => update((d) => clampPlayStateToMax(d.play, sheet))}
+            onClick={() => update((d) => clampPlayStateToMax(d.play, sheet, maxHp.value))}
             className="mt-1 -mb-1.5 -ml-1.5"
           >
             Bring within limits
@@ -451,26 +492,21 @@ export function Component() {
                 title: 'Set current HP',
                 initial: play.currentHp,
                 min: 0,
-                max: sheet.maxHp.value,
-                hint: `0–${sheet.maxHp.value}`,
+                max: maxHp.value,
+                hint: `0–${maxHp.value}`,
               });
               if (n === null) return;
               let notice: Notice | null = null;
               const after = { currentHp: play.currentHp, tempHp: play.tempHp };
               update((d) => {
-                const target = Math.max(0, Math.min(sheet.maxHp.value, n));
+                const target = Math.max(0, Math.min(maxHp.value, n));
                 const damageTaken = d.play.currentHp - target;
                 d.play.currentHp = target;
                 d.play.hpInitialized = true;
                 if (target === 0) d.play.concentratingOn = undefined;
                 else {
                   d.play.deathSaves = { success: 0, fail: 0 };
-                  notice = rollConcentration(
-                    d.play,
-                    damageTaken,
-                    sheet.saves.con.total.value,
-                    concAdv(),
-                  );
+                  notice = rollConcentration(d.play, damageTaken, rollConcentrationSave);
                 }
                 after.currentHp = d.play.currentHp;
                 after.tempHp = d.play.tempHp;
@@ -487,12 +523,13 @@ export function Component() {
             <div className="text-stat tabular-nums min-[360px]:text-stat-hero">
               {play.currentHp}{' '}
               <span className="whitespace-nowrap text-title-sheet text-ink-muted">
-                / {sheet.maxHp.value}
+                / {maxHp.value}
               </span>
             </div>
             <div className="text-caption text-ink-muted">
               hit points{play.tempHp > 0 ? ` · +${play.tempHp} temp` : ''}
               {sheet.maxHp.overridden ? ' •' : ''}
+              {maxHp.source !== undefined && <span className="text-guide"> · max halved</span>}
             </div>
           </button>
           <div className="ml-auto flex items-center gap-0.5">
@@ -521,9 +558,9 @@ export function Component() {
         {/* HP bar: green → amber → red as it drops; temp HP shows as a cyan cap.
             The colour is a glance cue only: the numbers above say the same
             thing, and the bar is a meter that reports them (A11Y-002). */}
-        {sheet.maxHp.value > 0 &&
+        {maxHp.value > 0 &&
           (() => {
-            const max = sheet.maxHp.value;
+            const max = maxHp.value;
             const ratio = Math.max(0, Math.min(1, play.currentHp / max));
             const color = ratio > 0.5 ? 'bg-heal' : ratio > 0.25 ? 'bg-meter-mid' : 'bg-danger';
             const tempPct = play.tempHp > 0 ? Math.min(100, (play.tempHp / max) * 100) : 0;
@@ -595,7 +632,7 @@ export function Component() {
                       label: `Hit die (${die})`,
                     });
                     rollLogStore.getState().append(r);
-                    applyHp(d.play, Math.max(0, r.total), sheet.maxHp.value);
+                    applyHp(d.play, Math.max(0, r.total), maxHp.value);
                   })
                 }
                 className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-dice tabular-nums hover:bg-surface-hover"
@@ -618,7 +655,15 @@ export function Component() {
                 breakdown
               </button>
             }
-          />
+          >
+            {/* 2014 exhaustion halves the maximum on top of all of this. */}
+            {maxHp.source !== undefined ? (
+              <p className="text-body text-guide">
+                {maxHp.source} halves it to <strong className="tabular-nums">{maxHp.value}</strong>.
+                Exhaustion&apos;s sheet, from the condition strip, can switch that off.
+              </p>
+            ) : undefined}
+          </BreakdownSheet>
         </div>
       </section>
 
@@ -626,6 +671,15 @@ export function Component() {
       {dying && (
         <section className={cardClass}>
           <div className="mb-2 text-heading text-danger">Death saving throws</div>
+          <div className="mb-2 -mx-1">
+            <RollEffectCue
+              lines={effectLines(deathEffects, durable)}
+              notes={noteLines(deathEffects)}
+              rolls="death save"
+              ignored={ignore.armed('death')}
+              onIgnore={() => ignore.toggle('death')}
+            />
+          </div>
           {/* Successes over failures, each circle in a 44px target
               (A11Y-002); Roll save wraps under them on a narrow phone. */}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -668,14 +722,12 @@ export function Component() {
               size="sm"
               onClick={() =>
                 update((d) => {
-                  // Durable (2024) grants advantage on death saves.
-                  const base = currentAdvantage();
-                  const adv = hasFeature('durable|xphb')
-                    ? base === 'dis'
-                      ? undefined
-                      : 'adv'
-                    : base;
-                  const r = roll('1d20', { label: 'Death save', advantage: adv });
+                  const r = rollD20Test('1d20', {
+                    label: 'Death save',
+                    effects: deathEffects,
+                    ignored: ignore.take('death', deathEffects),
+                    advantageFrom: durable,
+                  });
                   rollLogStore.getState().append(r);
                   const nat = r.meta?.d20?.natural;
                   const saves = d.play.deathSaves;
@@ -723,9 +775,10 @@ export function Component() {
           type="button"
           onClick={() =>
             rollLogStore.getState().append(
-              roll(`1d20${fmt(sheet.initiative.value)}`, {
+              rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
                 label: 'Initiative',
-                advantage: currentAdvantage(),
+                effects: initiativeEffects,
+                ignored: ignore.take('initiative', initiativeEffects),
               }),
             )
           }
@@ -738,18 +791,49 @@ export function Component() {
         </button>
         <div className={`${TILE} border-line border-l`}>
           <div className="text-stat tabular-nums">
-            {displaySpeed}
-            {displaySpeed !== sheet.speedWalk.value && (
+            {speed.value}
+            {speed.value !== sheet.speedWalk.value && (
               <span className="ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
+                <span className="sr-only">, down from </span>
                 {sheet.speedWalk.value}
               </span>
             )}
           </div>
           <div className="text-caption text-ink-muted">
-            Speed (ft){displaySpeed !== sheet.speedWalk.value ? ' · exhausted' : ''}
+            Speed (ft)
+            {speed.sources.length > 0 && (
+              <span className="text-guide"> · {speed.sources.join(', ')}</span>
+            )}
           </div>
         </div>
       </section>
+
+      {/* Under the strip, what conditions say about it: initiative's cue, and
+          attacks against the character, which their sheet cannot roll and so
+          only states. */}
+      {(effectLines(initiativeEffects).length > 0 ||
+        noteLines(initiativeEffects).length > 0 ||
+        against.length > 0) && (
+        <section className="-mt-2 flex flex-col gap-1">
+          <RollEffectCue
+            heading="Initiative"
+            lines={effectLines(initiativeEffects)}
+            notes={noteLines(initiativeEffects)}
+            rolls="initiative roll"
+            ignored={ignore.armed('initiative')}
+            onIgnore={() => ignore.toggle('initiative')}
+          />
+          {against.length > 0 && (
+            <ul aria-label="Attacks against you" className={`flex flex-col ${HELP}`}>
+              {against.map((line) => (
+                <li key={line.text}>
+                  {line.text}: {line.sources.join(', ')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* Inspiration + concentration */}
       <section className="flex flex-wrap gap-2">
@@ -797,6 +881,18 @@ export function Component() {
             )}
           </span>
         </button>
+        {play.concentratingOn !== undefined && (
+          <div className="basis-full">
+            <RollEffectCue
+              heading="Concentration saves"
+              lines={effectLines(concentrationEffects, warCaster)}
+              notes={noteLines(concentrationEffects)}
+              rolls="concentration save"
+              ignored={ignore.armed('concentration')}
+              onIgnore={() => ignore.toggle('concentration')}
+            />
+          </div>
+        )}
       </section>
 
       {/* Turn tracker: action economy. Wraps End turn onto a line of its own,
@@ -883,7 +979,7 @@ export function Component() {
             });
             if (!ok) return;
             let restored: string[] = [];
-            update((d) => void (restored = longRest(d.play, sheet)), 'Long rest');
+            update((d) => void (restored = longRest(d.play, sheet, doc.rulesVersion)), 'Long rest');
             notify({
               title: 'Long rest complete',
               detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
@@ -993,7 +1089,7 @@ export function Component() {
         <section className="flex flex-col gap-1.5">
           <h2 className={H2}>Attacks</h2>
           {limitWarning("Can't take actions", limits.noActions)}
-          {limitWarning('Disadvantage on attack rolls', limits.attackDisadvantage)}
+          {attackCue()}
           <div className={`@container ${listClass}`}>
             {sheet.attacks.map((a) => (
               <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
@@ -1033,6 +1129,7 @@ export function Component() {
                     display={fmt(a.toHit.value)}
                     label={`${a.label} attack`}
                     variant="d20"
+                    roller={rollAttack(a.toHit.value, `${a.label} attack`)}
                     onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                   />
                   <RollChip
@@ -1291,6 +1388,8 @@ export function Component() {
             );
             return (
               <div className="@container mt-2 flex flex-col gap-1 border-line border-t pt-2">
+                {registrySpells.some((ref) => hasSpellAttack(spellEntity(ref.name, ref.source))) &&
+                  attackCue('Spell attacks')}
                 {registrySpells.map((ref) => {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
                   const prepared = preparedUids.has(uid);
@@ -1305,8 +1404,7 @@ export function Component() {
                     slotLevel: resource.level,
                     abilityModifier: sheet.abilities[sc.ability].mod,
                   });
-                  const hasAttack =
-                    Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
+                  const hasAttack = hasSpellAttack(entity);
                   const cast = () => {
                     castSpell(
                       update,
@@ -1387,6 +1485,7 @@ export function Component() {
                             display={`Atk ${fmt(sc.attackMod.value)}`}
                             label={`${ref.name} spell attack`}
                             variant="d20"
+                            roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`)}
                             onRolled={cast}
                           />
                         )}
@@ -1432,6 +1531,9 @@ export function Component() {
         <section className={cardClass}>
           <div className="mb-1 text-heading">Innate &amp; granted spells</div>
           <div className="@container flex flex-col gap-1">
+            {sheet.grantedSpells.some(
+              (g) => g.ability !== undefined && hasSpellAttack(spellEntity(g.name, g.source)),
+            ) && attackCue('Spell attacks')}
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
               const level = spellLevelOf(g.name, g.source);
@@ -1456,10 +1558,7 @@ export function Component() {
                 slotLevel: resource?.level,
                 abilityModifier,
               });
-              const hasAttack =
-                attackModifier !== undefined &&
-                Array.isArray(entity?.spellAttack) &&
-                entity.spellAttack.length > 0;
+              const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
               // "1/day" grants carry their own pool; casting spends from it.
               const limited =
                 g.resourceKey !== undefined
@@ -1576,6 +1675,7 @@ export function Component() {
                         display={`Atk ${fmt(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
+                        roller={rollAttack(attackModifier, `${g.name} spell attack`)}
                         onRolled={depleted ? undefined : cast}
                       />
                     )}

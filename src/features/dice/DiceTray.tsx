@@ -165,6 +165,11 @@ export function DiceTray() {
                         <div className="truncate text-caption text-ink-muted tabular-nums">
                           {time} · {r.expr} · {rollDetail(r)}
                         </div>
+                        {/* What the character's conditions did, whole: a cut
+                            "Fails automatic…" would hide what the total means. */}
+                        {r.meta?.cue !== undefined && (
+                          <div className="text-caption text-guide">{r.meta.cue}</div>
+                        )}
                       </div>
                       <span
                         className={`shrink-0 font-bold text-[1.25rem] tabular-nums ${ROLL_INK[rollTone(r)]}`}

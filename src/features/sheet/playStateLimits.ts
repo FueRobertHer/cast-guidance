@@ -2,7 +2,8 @@
  * Detect play-state values that exceed the character's newly derived maxima
  * (GAME-007). After a build change lowers a limit — fewer spell slots, a
  * smaller resource pool, less HP — the stored play state can hold spent/current
- * values above the new max. This surfaces those mismatches and offers a
+ * values above the new max. So can 2014's exhaustion 4, which halves the HP
+ * maximum and is guidance like the rest: nothing is cut until the player says. This surfaces those mismatches and offers a
  * non-destructive clamp (only over-limit values change).
  */
 import type { DerivedSheet, PlayState } from '@/engine/types';
@@ -38,12 +39,19 @@ function resourceMax(sheet: DerivedSheet, key: string): number {
   return sheet.resources.find((x) => x.key === key)?.max ?? 0;
 }
 
-/** List every play-state value currently above its derived maximum. */
-export function detectPlayStateOverages(play: PlayState, sheet: DerivedSheet): PlayStateOverage[] {
+/**
+ * List every play-state value currently above its derived maximum. `maxHp` is
+ * the maximum in play, which 2014's exhaustion can halve (`conditionMaxHp`).
+ */
+export function detectPlayStateOverages(
+  play: PlayState,
+  sheet: DerivedSheet,
+  maxHp: number = sheet.maxHp.value,
+): PlayStateOverage[] {
   const out: PlayStateOverage[] = [];
 
-  if (play.currentHp > sheet.maxHp.value) {
-    out.push({ kind: 'hp', label: 'Current HP', current: play.currentHp, max: sheet.maxHp.value });
+  if (play.currentHp > maxHp) {
+    out.push({ kind: 'hp', label: 'Current HP', current: play.currentHp, max: maxHp });
   }
 
   const slotMax = leveledSlotMax(sheet);
@@ -91,8 +99,12 @@ export function detectPlayStateOverages(play: PlayState, sheet: DerivedSheet): P
  * Clamp only the over-limit values to their maxima; everything within range is
  * left exactly as-is. Mutates the given play state (call inside a draft update).
  */
-export function clampPlayStateToMax(play: PlayState, sheet: DerivedSheet): void {
-  if (play.currentHp > sheet.maxHp.value) play.currentHp = sheet.maxHp.value;
+export function clampPlayStateToMax(
+  play: PlayState,
+  sheet: DerivedSheet,
+  maxHp: number = sheet.maxHp.value,
+): void {
+  if (play.currentHp > maxHp) play.currentHp = maxHp;
 
   const slotMax = leveledSlotMax(sheet);
   play.slotsSpent = play.slotsSpent.map((spent, i) => Math.min(spent, slotMax[i] ?? 0));
