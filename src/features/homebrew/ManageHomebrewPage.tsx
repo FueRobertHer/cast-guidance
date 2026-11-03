@@ -261,10 +261,10 @@ export function Component() {
         <Button variant="brand" onClick={chooseFile} aria-disabled={checking} aria-busy={checking}>
           <FileUp size={18} /> Import file
         </Button>
-        {/* An outline, not the violet it was: violet is spellcasting in the
-            design system, and a homebrew mark is a neutral badge. */}
+        {/* `secondary`, the action beside the primary one, not the violet it
+            was: `arcane` is only spell slots, Concentration and spell DC, and
+            homebrew is neutral. */}
         <Button
-          variant="outline"
           onClick={async () => {
             const name = await askText({
               title: 'Homebrew collection name',
