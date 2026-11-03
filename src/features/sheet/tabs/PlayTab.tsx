@@ -52,6 +52,23 @@ const LINK =
 /** A name that opens its rules: dashed, so it reads as tappable without shouting. */
 const RULES = 'underline decoration-line-strong decoration-dashed';
 /**
+ * A list row of a name and its roll chips (attacks, spells). The name keeps at
+ * least 4.5rem, and the chips (ROW_ACTIONS) drop under it as one group where
+ * both do not fit (large text, several chips on a narrow phone), wrapping among
+ * themselves past the row's width, rather than squeezing the name to a letter
+ * or two and pushing the page sideways (A11Y-003). ROW_NAME is a spell's side:
+ * its 1.5rem level and a gap, then the name.
+ */
+const ROW = 'flex flex-wrap items-center gap-x-2 gap-y-1';
+const ROW_NAME = 'flex min-w-0 flex-1 basis-26 items-center gap-2';
+const ROW_ACTIONS = 'ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end';
+/**
+ * A row's name: one line cut short while its list is at least 15rem wide, and
+ * wrapped once narrower (large text), so none of it is lost where an ellipsis
+ * would leave a few letters. The list is the query container.
+ */
+const NAME = 'wrap-anywhere @min-[15rem]:truncate';
+/**
  * A lasting state, on or off (Inspiration, Concentration): ToggleChip's look,
  * without its On and Off words, which would change the buttons' names. Each
  * grows from 8rem, so the pair stacks where both do not fit (large text)
@@ -887,6 +904,10 @@ export function Component() {
         <summary className="flex min-h-tap cursor-pointer items-center justify-between gap-2 px-4 py-2">
           <span className="text-heading">
             Conditions
+            {/* With nothing between them, the heading and the list are one
+                word to the line breaker, wider than a phone with large text;
+                `wbr` lets the list go under it, the text unchanged. */}
+            <wbr />
             {play.conditions.length > 0 && (
               <span className="ml-2 font-normal text-body text-guide">
                 {play.conditions
@@ -922,13 +943,15 @@ export function Component() {
           })}
         </div>
         {/* Exhaustion — leveled, with a real +/- stepper (decrease, not just cycle). */}
-        <div className="flex flex-col gap-2 border-line border-t px-4 py-3">
+        <div className="@container flex flex-col gap-2 border-line border-t px-4 py-3">
           {/* Wraps the stepper under the name, at the right, where both do not
               fit (large text), and the count grows with its text rather than
-              push the + out of the card (A11Y-003). */}
+              push the + out of the card (A11Y-003). Where even the stepper
+              does not fit on a line (8.5rem), the count goes above its two
+              buttons; DOM order stays −, count, +. */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-body-strong">Exhaustion</span>
-            <div className="-my-2 ml-auto flex items-center">
+            <div className="-my-2 ml-auto flex flex-wrap items-center justify-center @min-[8.5rem]:flex-nowrap">
               <button
                 type="button"
                 aria-label="Decrease exhaustion"
@@ -940,7 +963,7 @@ export function Component() {
                   <Minus size={16} />
                 </span>
               </button>
-              <span className="min-w-10 whitespace-nowrap text-center text-body-strong tabular-nums">
+              <span className="order-first min-w-10 basis-full whitespace-nowrap text-center text-body-strong tabular-nums @min-[8.5rem]:order-none @min-[8.5rem]:basis-auto">
                 {exLevel} / 6
               </span>
               <button
@@ -1151,13 +1174,10 @@ export function Component() {
           <h2 className={H2}>Attacks</h2>
           {limitWarning("Can't take actions", limits.noActions)}
           {limitWarning('Disadvantage on attack rolls', limits.attackDisadvantage)}
-          <div className={listClass}>
+          <div className={`@container ${listClass}`}>
             {sheet.attacks.map((a) => (
-              <div
-                key={a.label}
-                className="flex min-h-15 items-center justify-between gap-2 py-2 pr-3 pl-4"
-              >
-                <div className="min-w-0">
+              <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
+                <div className="min-w-0 flex-1 basis-18">
                   {(() => {
                     const info = weaponInfoEntries(
                       registry,
@@ -1172,22 +1192,22 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className={`min-h-6 max-w-full truncate text-left text-body-strong ${RULES} underline-offset-4`}
+                            className={`min-h-6 max-w-full text-left text-body-strong ${NAME} ${RULES} underline-offset-4`}
                           >
                             {a.label}
                           </button>
                         }
                       />
                     ) : (
-                      <div className="truncate text-body-strong">{a.label}</div>
+                      <div className={`text-body-strong ${NAME}`}>{a.label}</div>
                     );
                   })()}
-                  <div className="truncate text-caption text-ink-muted">{attackSubtitle(a)}</div>
+                  <div className={`text-caption text-ink-muted ${NAME}`}>{attackSubtitle(a)}</div>
                 </div>
-                {/* Wraps rather than squeezing the name: a versatile weapon
-                    with a damage rider carries four chips, which is one more
-                    than a narrow phone fits on a line. */}
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                {/* Drops under the name rather than squeezing it: a versatile
+                    weapon with a damage rider carries four chips, which is one
+                    more than a narrow phone fits on a line. */}
+                <div className={`${ROW_ACTIONS} gap-1.5`}>
                   <RollChip
                     expr={`1d20${fmt(a.toHit.value)}`}
                     display={fmt(a.toHit.value)}
@@ -1291,7 +1311,8 @@ export function Component() {
                   // title says it.
                   className={`flex flex-col ${FLUSH} px-3 py-1.5`}
                 >
-                  <span className="flex items-center gap-1.5">
+                  {/* With large text, Use or the roll wraps under the name. */}
+                  <span className="flex flex-wrap items-center gap-1.5">
                     {name}
                     {blocked.length > 0 && (
                       <span
@@ -1449,7 +1470,7 @@ export function Component() {
                 a.name.localeCompare(b.name),
             );
             return (
-              <div className="mt-2 flex flex-col gap-1 border-line border-t pt-2">
+              <div className="@container mt-2 flex flex-col gap-1 border-line border-t pt-2">
                 {registrySpells.map((ref) => {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
                   const prepared = preparedUids.has(uid);
@@ -1481,41 +1502,51 @@ export function Component() {
                     );
                   };
                   return (
-                    <div key={uid} className="flex min-h-10 items-center gap-2">
-                      <span className="w-6 shrink-0 text-caption text-ink-muted">
-                        {level === 0 ? 'c' : `L${level}`}
-                      </span>
-                      <SpellInfoSheet
-                        name={ref.name}
-                        source={ref.source}
-                        version={doc.rulesVersion}
-                        subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
-                        trigger={
-                          <button
-                            type="button"
-                            className={`min-w-0 flex-1 truncate text-left ${RULES} underline-offset-2 ${
-                              prepared ? '' : 'text-ink-muted'
-                            }`}
-                          >
-                            {ref.name}
-                            {prepared && (
-                              <span className="ml-1.5 text-caption text-heal">prepared</span>
-                            )}
-                          </button>
-                        }
-                      />
-                      {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
-                        <span
-                          className="shrink-0 text-guide"
-                          title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
-                        >
-                          <AlertTriangle size={14} />
-                          <span className="sr-only">
-                            {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
-                          </span>
+                    <div key={uid} className={`min-h-10 ${ROW}`}>
+                      <div className={ROW_NAME}>
+                        <span className="w-6 shrink-0 text-caption text-ink-muted">
+                          {level === 0 ? 'c' : `L${level}`}
                         </span>
-                      )}
-                      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                        <SpellInfoSheet
+                          name={ref.name}
+                          source={ref.source}
+                          version={doc.rulesVersion}
+                          subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                          trigger={
+                            <button
+                              type="button"
+                              className={`min-w-0 flex-1 text-left ${NAME} ${RULES} underline-offset-2 ${
+                                prepared ? '' : 'text-ink-muted'
+                              }`}
+                            >
+                              {ref.name}
+                              {/* Where the name wraps, `wbr` lets the tag move
+                                  to the next line whole rather than break
+                                  mid-word, with no space added to the name.
+                                  Hidden where the name truncates, since
+                                  Chromium breaks at a `wbr` even then. */}
+                              {prepared && (
+                                <>
+                                  <wbr className="@min-[15rem]:hidden" />
+                                  <span className="ml-1.5 text-caption text-heal">prepared</span>
+                                </>
+                              )}
+                            </button>
+                          }
+                        />
+                        {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
+                          <span
+                            className="shrink-0 text-guide"
+                            title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                          >
+                            <AlertTriangle size={14} />
+                            <span className="sr-only">
+                              {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                      <span className={`${ROW_ACTIONS} gap-1`}>
                         <CastResourcePicker
                           spellName={ref.name}
                           resource={resource}
@@ -1580,7 +1611,7 @@ export function Component() {
       {sheet.grantedSpells.length > 0 && (
         <section className={cardClass}>
           <div className="mb-1 text-heading">Innate &amp; granted spells</div>
-          <div className="flex flex-col gap-1">
+          <div className="@container flex flex-col gap-1">
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
               const level = spellLevelOf(g.name, g.source);
@@ -1647,56 +1678,62 @@ export function Component() {
               return (
                 <div
                   key={`${g.name}|${g.source}`}
-                  className="flex min-h-11 items-center gap-2 border-line border-b py-1.5 last:border-b-0"
+                  className={`min-h-11 ${ROW} border-line border-b py-1.5 last:border-b-0`}
                 >
-                  <SpellInfoSheet
-                    name={g.name}
-                    source={g.source}
-                    version={doc.rulesVersion}
-                    subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
-                    trigger={
-                      <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                      >
-                        <span className={`truncate capitalize ${RULES} underline-offset-2`}>
-                          {g.name}
-                        </span>
-                        {g.usage === 'prepared' && (
-                          <Badge className="shrink-0">Always prepared</Badge>
-                        )}
-                        {remaining !== undefined && limited !== undefined && (
+                  <div className={ROW_NAME}>
+                    <SpellInfoSheet
+                      name={g.name}
+                      source={g.source}
+                      version={doc.rulesVersion}
+                      subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                      trigger={
+                        // Name and badges on one line while there is room;
+                        // with large text the badges wrap under the name.
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left @min-[15rem]:flex-nowrap"
+                        >
                           <span
-                            title={
-                              depleted
-                                ? 'No uses left until you rest'
-                                : `${g.usage} from ${g.origin}`
-                            }
-                            // Uses left of an innate spell are magic's to spend,
-                            // so `arcane`; spent, a neutral badge.
-                            className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
+                            className={`min-w-0 capitalize ${NAME} ${RULES} underline-offset-2`}
                           >
-                            {remaining}/{limited.max} per {g.usage?.split('/')[1]}
+                            {g.name}
                           </span>
-                        )}
-                      </button>
-                    }
-                  />
-                  <span className="shrink-0 text-caption text-ink-muted">
-                    {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
-                  </span>
-                  {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
-                    <span
-                      className="shrink-0 text-guide"
-                      title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
-                    >
-                      <AlertTriangle size={14} />
-                      <span className="sr-only">
-                        {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
-                      </span>
+                          {g.usage === 'prepared' && (
+                            <Badge className="shrink-0">Always prepared</Badge>
+                          )}
+                          {remaining !== undefined && limited !== undefined && (
+                            <span
+                              title={
+                                depleted
+                                  ? 'No uses left until you rest'
+                                  : `${g.usage} from ${g.origin}`
+                              }
+                              // Uses left of an innate spell are magic's to spend,
+                              // so `arcane`; spent, a neutral badge.
+                              className={`shrink-0 ${badgeClass(depleted ? 'neutral' : 'arcane')}`}
+                            >
+                              {remaining}/{limited.max} per {g.usage?.split('/')[1]}
+                            </span>
+                          )}
+                        </button>
+                      }
+                    />
+                    <span className="shrink-0 text-caption text-ink-muted">
+                      {g.ability !== undefined ? g.ability.toUpperCase() : g.origin}
                     </span>
-                  )}
-                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                    {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
+                      <span
+                        className="shrink-0 text-guide"
+                        title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                      >
+                        <AlertTriangle size={14} />
+                        <span className="sr-only">
+                          {`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <span className={`${ROW_ACTIONS} gap-1`}>
                     {slotChoice !== undefined && resource !== undefined && block !== undefined && (
                       <CastResourcePicker
                         spellName={g.name}

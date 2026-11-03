@@ -98,7 +98,9 @@ export function CharacterSourcesSection({
       onToggle={(e) => setOpen(e.currentTarget.open)}
       className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
     >
-      <summary className="flex min-h-tap cursor-pointer items-center justify-between px-4 py-2.5">
+      {/* As the Build page's other sections: the summary wraps under the
+          title where both do not fit (large text). */}
+      <summary className="flex min-h-tap cursor-pointer flex-wrap items-center justify-between gap-x-2 px-4 py-2.5">
         <span className="text-heading">Sources</span>
         <span className="flex items-center gap-2 text-caption text-ink-muted">
           {list.length === 0

@@ -201,9 +201,13 @@ export function EntityCardList({
           const describedBy =
             [blurbFor, outsideFor].filter((id) => id !== undefined).join(' ') || undefined;
           return (
+            // Under 12rem wide (large text on a phone), the name takes the
+            // card's width and the check, badge and info button go under it,
+            // at the right, wrapping where even they do not fit (A11Y-003).
+            // The card is the query container.
             <div
               key={uidOf(e)}
-              className={`flex items-start rounded-control bg-surface shadow-card ring-inset transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised ${
+              className={`@container flex flex-wrap items-start rounded-control bg-surface shadow-card ring-inset transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised ${
                 selected ? 'ring-2 ring-ink' : 'ring-1 ring-line'
               }`}
             >
@@ -221,9 +225,11 @@ export function EntityCardList({
                   else onSelect(e);
                 }}
                 title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
-                className="flex min-w-0 flex-1 flex-col gap-0.5 py-3.5 pr-2 pl-4 text-left"
+                className="flex min-w-0 flex-1 basis-full flex-col gap-0.5 py-3.5 pr-2 pl-4 text-left @min-[12rem]:basis-0"
               >
-                <span className="truncate font-display text-title-card">
+                {/* One line cut short, but wrapped in a narrow card, where an
+                    ellipsis would leave a few letters. */}
+                <span className="font-display text-title-card wrap-anywhere @min-[12rem]:truncate">
                   {nameOf(e)}
                   {selected && onDeselect !== undefined && (
                     <span className="ml-1.5 font-sans text-caption text-ink-muted">✕ unselect</span>
@@ -236,7 +242,7 @@ export function EntityCardList({
                 )}
                 {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
-              <div className="flex shrink-0 items-center gap-2.5 py-3.5 pr-3">
+              <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2.5 py-3.5 pr-3">
                 {selected && (
                   <span className="inline-flex size-5.5 items-center justify-center rounded-full bg-ink text-bg">
                     <Check size={14} strokeWidth={3} aria-hidden="true" />
