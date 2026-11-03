@@ -2,6 +2,10 @@ import { Check, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { ChoiceOption, ChoicePrompt } from '@/engine/types';
+import { Button } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
+import { cardClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 
 export interface ChoicePromptRendererProps {
   prompt: ChoicePrompt;
@@ -143,11 +147,11 @@ export function ChoicePromptRenderer({
   const stepper = prompt.allowRepeat === true && prompt.count > 1;
 
   return (
-    <fieldset className="flex flex-col gap-2 rounded-lg bg-surface p-3">
+    <fieldset className={`${cardClass} flex flex-col gap-3`}>
       <legend className="sr-only">{prompt.label}</legend>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-semibold">{prompt.label}</span>
-        <span className="shrink-0 text-xs text-ink-muted">
+        <span className="text-body-strong">{prompt.label}</span>
+        <span className="shrink-0 text-caption text-ink-muted">
           {prompt.origin.label} · pick {prompt.count}
         </span>
       </div>
@@ -157,7 +161,7 @@ export function ChoicePromptRenderer({
           onChange={(e) => setFilter(e.target.value)}
           aria-label={`Filter ${prompt.label}`}
           placeholder="Filter…"
-          className="rounded bg-surface-2 px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted"
+          className={fieldClass}
         />
       )}
       {stepper ? (
@@ -169,10 +173,11 @@ export function ChoicePromptRenderer({
             // puts the name on its own line above them, so the buttons never
             // overlap the next cell (A11Y-002). DOM order stays −, name, +.
             return (
+              // Picked at least once: the 2px `ink` edge of a selection (DS-001).
               <div
                 key={o.id}
-                className={`@container rounded-lg border ${
-                  times > 0 ? 'border-accent bg-accent-deep/40' : 'border-surface-2 bg-surface-2/40'
+                className={`@container rounded-control bg-surface-raised ring-inset ${
+                  times > 0 ? 'ring-2 ring-ink' : ''
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between @min-[9rem]:flex-nowrap">
@@ -181,24 +186,24 @@ export function ChoicePromptRenderer({
                     aria-label={`Decrease ${o.label}`}
                     onClick={() => removeOne(o.id)}
                     disabled={times === 0}
-                    className="tap shrink-0 rounded-lg text-sm disabled:opacity-30"
+                    className="tap shrink-0 rounded-control text-sm unavailable:text-ink-faint"
                   >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-surface">
                       −
                     </span>
                   </button>
-                  <span className="order-first basis-full pt-1.5 text-center text-sm font-semibold @min-[9rem]:order-none @min-[9rem]:basis-auto @min-[9rem]:pt-0">
+                  <span className="order-first basis-full pt-1.5 text-center text-label @min-[9rem]:order-none @min-[9rem]:basis-auto @min-[9rem]:pt-0">
                     {o.label}
-                    {times > 0 && <span className="ml-1 text-emerald-300">+{times}</span>}
+                    {times > 0 && <span className="ml-1 text-heal tabular-nums">+{times}</span>}
                   </span>
                   <button
                     type="button"
                     aria-label={`Increase ${o.label}`}
                     onClick={() => addOne(o.id)}
                     disabled={selected.length >= prompt.count}
-                    className="tap shrink-0 rounded-lg text-sm disabled:opacity-30"
+                    className="tap shrink-0 rounded-control text-sm unavailable:text-ink-faint"
                   >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-surface">
                       +
                     </span>
                   </button>
@@ -213,12 +218,12 @@ export function ChoicePromptRenderer({
             const active = selected.includes(o.id);
             const info = renderOptionInfo?.(o);
             return (
+              // An option card on the card's raised step; picked, the 2px
+              // `ink` edge of a selection (DS-001).
               <div
                 key={o.id}
-                className={`flex items-start rounded-lg border transition-colors ${
-                  active
-                    ? 'border-accent bg-accent-deep/40'
-                    : 'border-surface-2 bg-surface-2/40 hover:bg-surface-2'
+                className={`flex items-start rounded-control bg-surface-raised ring-inset transition-colors duration-120 ${
+                  active ? 'ring-2 ring-ink' : 'hover:bg-surface-hover'
                 } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
               >
                 <button
@@ -229,14 +234,14 @@ export function ChoicePromptRenderer({
                   onClick={() => toggle(o.id)}
                   className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 text-left"
                 >
-                  <span className="text-sm font-semibold">{o.label}</span>
+                  <span className="text-body-strong">{o.label}</span>
                   {o.description !== undefined && o.description !== '' && (
-                    <span className="text-xs text-ink-muted">{o.description}</span>
+                    <span className="text-caption text-ink-muted">{o.description}</span>
                   )}
                   {o.advisory !== undefined && (
                     // Selectable, not disabled — a color-independent (icon + word)
-                    // "guidance, not gatekeeping" cue.
-                    <span className="text-xs font-medium text-amber-300">⚠ {o.advisory}</span>
+                    // "guidance, not gatekeeping" cue, in the guide's gold.
+                    <span className="text-caption font-semibold text-guide">⚠ {o.advisory}</span>
                   )}
                 </button>
                 {/* p-2.5 matches the info button's -m-2.5, so its 44px target
@@ -247,27 +252,26 @@ export function ChoicePromptRenderer({
           })}
         </div>
       ) : (
-        <div className={`flex flex-wrap gap-1.5 ${searchable ? 'max-h-48 overflow-y-auto' : ''}`}>
+        // Chips with a 44px tap from their transparent border, so the row
+        // pulls in by that border to line up with the text. Picked is the
+        // filled `ink` pill.
+        <div className={`-mx-1.5 flex flex-wrap ${searchable ? 'max-h-48 overflow-y-auto' : ''}`}>
           {options.map((o) => {
             const times = selected.filter((s) => s === o.id).length;
             const active = times > 0;
             return (
-              <button
+              <Chip
                 key={o.id}
-                type="button"
+                tone="outline"
+                pressed={active}
                 disabled={o.disabled !== undefined}
                 title={o.disabled?.reason}
-                aria-pressed={active}
                 onClick={() => toggle(o.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                  active
-                    ? 'border-accent bg-accent-deep/60 font-semibold'
-                    : 'border-surface-2 bg-surface-2/50 text-ink-muted hover:text-ink'
-                } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
+                className={o.disabled !== undefined ? 'opacity-40' : undefined}
               >
                 {o.label}
-                {times > 1 && <span className="ml-1 text-xs">×{times}</span>}
-              </button>
+                {times > 1 && <span className="tabular-nums">×{times}</span>}
+              </Chip>
             );
           })}
         </div>
@@ -280,30 +284,28 @@ export function ChoicePromptRenderer({
         <p
           id={statusId}
           aria-live="polite"
-          className={`text-xs ${status.urgent ? 'text-amber-300' : 'text-ink-muted'}`}
+          className={`text-caption ${status.urgent ? 'text-guide' : 'text-ink-muted'}`}
         >
           {status.text}
         </p>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {onCancel !== undefined && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex items-center gap-1 rounded-lg border border-surface-2 px-3 py-2 text-sm text-ink-muted hover:text-ink"
-            >
-              <X size={14} /> Cancel
-            </button>
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              <X size={16} aria-hidden /> Cancel
+            </Button>
           )}
-          <button
-            type="button"
+          {/* The card's own action, so an outline (DS-001): the step's one
+              primary action is the wizard's Next. */}
+          <Button
+            variant="outline"
+            size="sm"
             onClick={confirm}
             disabled={!canConfirm}
             aria-label={`Confirm ${prompt.label}`}
             aria-describedby={status.text === '' ? undefined : statusId}
-            className="flex items-center gap-1 rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold disabled:opacity-40"
           >
-            <Check size={14} /> Confirm
-          </button>
+            <Check size={16} aria-hidden /> Confirm
+          </Button>
         </div>
       </div>
     </fieldset>

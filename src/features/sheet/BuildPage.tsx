@@ -1,4 +1,4 @@
-import { ChevronUp, Dices } from 'lucide-react';
+import { ChevronUp, Dices, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -35,12 +35,15 @@ import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
+import { badgeClass } from '@/ui/Badge';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
 import { EntityCardList } from '@/ui/EntityCardList';
 import { PackProblem } from '@/ui/PackProblem';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
+import { TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { CharacterSourcesSection } from './CharacterSourcesSection';
 import {
@@ -70,6 +73,22 @@ const sourceOf = (e: Entity) => String(e.source ?? '?');
  */
 const pickerKey = (ref: { name: string; source: string } | undefined) =>
   ref === undefined ? 'none' : `${ref.name}|${ref.source}`;
+
+/**
+ * A segmented control's track and segments (DS-001), for a choice of modes
+ * that keeps its `fieldset` and the legend naming it. The pressed segment is
+ * an `ink` pill, as `SegmentedControl` draws its own.
+ */
+const SEGMENTS = 'flex flex-wrap gap-0.5 rounded-control bg-surface-raised p-0.75';
+const SEGMENT =
+  'min-h-9.5 flex-1 rounded-lg px-3 text-label text-ink-muted transition-colors duration-120 not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg';
+
+/** A list of rows inside a section: hairline-divided, each row pads itself. */
+const ROWS =
+  'flex flex-col divide-y divide-line overflow-hidden rounded-control ring-1 ring-line ring-inset';
+
+/** A small group label inside a section (SAVING THROWS). */
+const OVERLINE = 'text-overline text-ink-muted uppercase';
 
 // ---------------------------------------------------------------------------
 // "What changed" diff — the build-explorer feedback loop
@@ -122,27 +141,32 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
 
   if (diff.length === 0) {
     return (
-      <div className="rounded-lg bg-surface/95 px-3 py-2 text-xs text-ink-muted backdrop-blur">
+      <div className="rounded-control bg-surface/95 px-3 py-2 text-caption text-ink-muted shadow-card ring-1 ring-line ring-inset backdrop-blur">
         Change anything below — the effects on your stats show up here instantly.
       </div>
     );
   }
+  // What just changed is guidance, so the guide's tint; a stat that rose is
+  // healing's green, one that fell damage's red, and the numbers say which.
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-300/30 bg-surface/95 px-3 py-2 backdrop-blur">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-control bg-guide-soft py-1.5 pr-1.5 pl-3">
       {diff.map((d) => (
-        <span key={d.label} className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
+        <span
+          key={d.label}
+          className="rounded-full bg-surface px-2 py-0.5 text-caption tabular-nums"
+        >
           {d.label} <span className="text-ink-muted">{d.from}</span>
-          <span className={d.to > d.from ? 'text-emerald-300' : 'text-accent'}> → {d.to}</span>
+          <span className={d.to > d.from ? 'text-heal' : 'text-danger'}> → {d.to}</span>
         </span>
       ))}
       <button
         type="button"
         onClick={() => setDiff([])}
-        className="ml-auto text-xs text-ink-muted"
+        className="ml-auto flex size-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface hover:text-ink"
         aria-label="Dismiss stat changes"
         title="Dismiss"
       >
-        <span aria-hidden="true">✕</span>
+        <X size={16} aria-hidden />
       </button>
     </div>
   );
@@ -161,10 +185,7 @@ function EditionChip({ cue, version }: { cue: EditionCue | undefined; version: R
   const chip = cue === undefined ? undefined : editionFitChip(cue.fit, version);
   if (chip === undefined) return null;
   return (
-    <span
-      title={chip.title}
-      className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
-    >
+    <span title={chip.title} className={`shrink-0 ${badgeClass('guide')}`}>
       {chip.text}
     </span>
   );
@@ -184,17 +205,21 @@ function Section({
   id?: string;
 }) {
   return (
-    <details id={id} open={defaultOpen} className="group scroll-mt-4 rounded-lg bg-surface">
+    <details
+      id={id}
+      open={defaultOpen}
+      className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+    >
       {/* Wraps so a long summary (six ability scores, no spaces) moves
           under the title at large text instead of widening the page. */}
-      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-x-2 px-3 py-2.5">
-        <span className="text-sm font-semibold">{title}</span>
-        <span className="flex items-center gap-2 text-xs text-ink-muted">
+      <summary className="flex min-h-tap cursor-pointer flex-wrap items-center justify-between gap-x-2 px-4 py-2.5">
+        <span className="text-heading">{title}</span>
+        <span className="flex items-center gap-2 text-caption text-ink-muted">
           {summary}
-          <ChevronUp size={14} className="transition-transform group-open:rotate-180" />
+          <ChevronUp size={16} aria-hidden className="transition-transform group-open:rotate-180" />
         </span>
       </summary>
-      <div className="flex flex-col gap-3 border-t border-surface-2/40 p-3">{children}</div>
+      <div className="flex flex-col gap-3 border-line border-t p-4">{children}</div>
     </details>
   );
 }
@@ -213,7 +238,7 @@ export function Component() {
   const classPacks = useTypePacks('class');
 
   if (sheet === null || doc === null || registry === null) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-body text-ink-muted">Loading…</p>;
   }
 
   // Prompts the player can see now, so "N picks cleared" counts only those.
@@ -436,53 +461,46 @@ export function Component() {
         <button
           type="button"
           onClick={openChoices}
-          className="flex items-center justify-between gap-2 rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2.5 text-left text-sm text-amber-200"
+          className="flex min-h-tap items-center justify-between gap-2 rounded-control bg-guide-soft px-3 py-2.5 text-left text-sm transition-colors duration-120 hover:brightness-108"
         >
           <span>
             <strong>{sheet.pending.length}</strong> decision
             {sheet.pending.length > 1 ? 's' : ''} to make — skills, feats, languages…
           </span>
-          <span className="shrink-0 font-semibold">Resolve →</span>
+          <span className="shrink-0 font-bold text-guide">Resolve →</span>
         </button>
       )}
 
       <Section title="Identity" summary={`${doc.rulesVersion} rules`} defaultOpen>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-ink-muted">Name</span>
-          <input
-            value={doc.name}
-            onChange={(e) => update((d) => void (d.name = e.target.value))}
-            className="rounded-lg bg-surface-2 px-3 py-2 text-sm outline-none"
-          />
-        </label>
-        <fieldset className="flex gap-1.5">
-          <legend className="mb-1 text-xs text-ink-muted">
+        <TextField
+          label="Name"
+          value={doc.name}
+          onChange={(e) => update((d) => void (d.name = e.target.value))}
+        />
+        <fieldset className="min-w-0">
+          <legend className="mb-1.5 text-caption text-ink-muted">
             Rules version: switching re-derives everything and keeps every pick. You get a preview
             of what changes first.
           </legend>
-          {(['2014', '2024'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={doc.rulesVersion === v}
-              onClick={() => void switchRulesVersion(v)}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
-                doc.rulesVersion === v
-                  ? 'border-accent bg-accent-deep/40 font-semibold'
-                  : 'border-surface-2 text-ink-muted'
-              }`}
-            >
-              {v}
-            </button>
-          ))}
+          <div className={SEGMENTS}>
+            {(['2014', '2024'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={doc.rulesVersion === v}
+                onClick={() => void switchRulesVersion(v)}
+                className={SEGMENT}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
         </fieldset>
         {cueNotes.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-lg border border-surface-2 p-2.5">
-            <span className="text-xs font-semibold text-ink-muted">
-              Mixed editions ({cueNotes.length})
-            </span>
+          <div className="flex flex-col gap-1 rounded-control p-3 ring-1 ring-line ring-inset">
+            <span className="text-label text-ink-muted">Mixed editions ({cueNotes.length})</span>
             {cueNotes.map(({ key, note }) => (
-              <p key={key} className="text-xs text-ink-muted">
+              <p key={key} className="text-caption text-ink-muted">
                 {note}
               </p>
             ))}
@@ -501,10 +519,10 @@ export function Component() {
             text sizes holds it wider than the screen; min-w-0 lets it and
             its legend wrap, and the choices wrap rather than overflow. */}
         <fieldset className="flex min-w-0 flex-col gap-1.5">
-          <legend className="mb-1 text-xs text-ink-muted">
+          <legend className="mb-1.5 text-caption text-ink-muted">
             HP per level (level 1 of your first class is always the full die)
           </legend>
-          <div className="flex flex-wrap gap-1.5">
+          <div className={SEGMENTS}>
             {(
               [
                 ['average', 'Average'],
@@ -517,11 +535,7 @@ export function Component() {
                 type="button"
                 aria-pressed={hpMethod === m}
                 onClick={() => update((d) => void (d.hpMethod = m))}
-                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
-                  hpMethod === m
-                    ? 'border-accent bg-accent-deep/40'
-                    : 'border-surface-2 text-ink-muted'
-                }`}
+                className={SEGMENT}
               >
                 {label}
               </button>
@@ -538,13 +552,13 @@ export function Component() {
           return (
             <div
               key={`${entry.ref.name}|${entry.ref.source}`}
-              className="flex flex-col gap-2 rounded-lg border border-surface-2 p-3"
+              className="flex flex-col gap-2 rounded-control p-3 ring-1 ring-line ring-inset"
             >
               <div className="flex items-center justify-between">
-                <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                <span className="flex flex-wrap items-center gap-1.5 text-body-strong">
                   <span>
                     {entry.ref.name} {entry.levels}
-                    <span className="ml-1.5 text-xs font-normal text-ink-muted">d{faces}</span>
+                    <span className="ml-1.5 font-normal text-caption text-ink-muted">d{faces}</span>
                   </span>
                   <EditionChip cue={cueFor('class', entry.ref)} version={doc.rulesVersion} />
                 </span>
@@ -555,7 +569,7 @@ export function Component() {
                       if (entry.levels <= 1) void removeClass(entry);
                       else levelDownClass(idx);
                     }}
-                    className="tap rounded-full bg-surface-2 text-lg"
+                    className="tap rounded-full bg-surface-raised text-lg transition-colors hover:bg-surface-hover"
                     aria-label={
                       entry.levels <= 1
                         ? `Remove ${entry.ref.name}`
@@ -565,19 +579,20 @@ export function Component() {
                   >
                     <span aria-hidden="true">−</span>
                   </button>
-                  <button
-                    type="button"
+                  {/* The class's own action, so an outline (DS-001). */}
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => levelUpClass(idx)}
                     disabled={totalLevels >= 20}
-                    className="rounded-lg bg-accent-fill px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                   >
                     Level up
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {doc.classes.length > 1 && reqText !== undefined && (
-                <p className={`text-xs ${reqMet ? 'text-ink-muted' : 'text-amber-300'}`}>
+                <p className={`text-caption ${reqMet ? 'text-ink-muted' : 'text-guide'}`}>
                   Multiclass requirement: {reqText}
                   {reqMet ? ' ✓' : ' — not met (allowed anyway, ask your DM)'}
                 </p>
@@ -589,7 +604,7 @@ export function Component() {
                     idx === 0 && i === 0 ? (
                       <span
                         key="hp-l1"
-                        className="rounded bg-surface-2 px-2 py-1 font-mono text-xs text-ink-muted"
+                        className="rounded-chip bg-surface-raised px-2 py-1 text-xs text-ink-muted tabular-nums"
                         title="Level 1 is always the maximum"
                       >
                         L1: {faces}
@@ -597,7 +612,7 @@ export function Component() {
                     ) : (
                       <span
                         key={`hp-l${String(i + 1)}`}
-                        className="flex items-center gap-1 rounded bg-surface-2 px-1.5 py-1 text-xs"
+                        className="flex items-center gap-1 rounded-chip bg-surface-raised px-1.5 py-1 text-xs tabular-nums"
                       >
                         L{i + 1}:
                         <input
@@ -612,7 +627,7 @@ export function Component() {
                               if (c !== undefined) c.hp[i] = Number.isNaN(n) ? 'avg' : n;
                             });
                           }}
-                          className="w-8 bg-transparent text-center font-mono outline-none"
+                          className="w-8 bg-transparent text-center outline-none"
                         />
                         <button
                           type="button"
@@ -630,7 +645,7 @@ export function Component() {
                           }}
                           className="text-ink-muted hover:text-ink"
                         >
-                          <Dices size={13} />
+                          <Dices size={14} />
                         </button>
                       </span>
                     ),
@@ -646,7 +661,7 @@ export function Component() {
                 </p>
               ) : subclasses.length > 0 ? (
                 <details open={entry.subclass === undefined}>
-                  <summary className="cursor-pointer py-1 text-xs text-ink-muted">
+                  <summary className="cursor-pointer py-1 text-caption text-ink-muted">
                     Subclass: {entry.subclass?.name ?? 'none picked'}{' '}
                     <EditionChip
                       cue={cueFor('subclass', entry.subclass)}
@@ -690,8 +705,8 @@ export function Component() {
 
         <details open={doc.classes.length === 0}>
           <summary
-            className={`cursor-pointer py-1 text-xs ${
-              doc.classes.length === 0 ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            className={`cursor-pointer py-1 text-caption ${
+              doc.classes.length === 0 ? 'font-semibold text-guide' : 'text-ink-muted'
             }`}
           >
             {doc.classes.length === 0 ? 'Pick a class — start here' : 'Add a class (multiclass)'}
@@ -728,8 +743,8 @@ export function Component() {
       <Section title="Species / Race" summary={doc.subrace?.name ?? doc.race?.name ?? 'none'}>
         <details key={pickerKey(doc.race)} open={doc.race === undefined}>
           <summary
-            className={`cursor-pointer py-1 text-xs ${
-              doc.race === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            className={`cursor-pointer py-1 text-caption ${
+              doc.race === undefined ? 'font-semibold text-guide' : 'text-ink-muted'
             }`}
           >
             {doc.race === undefined ? 'Pick a species to start' : 'Change species'}{' '}
@@ -774,7 +789,7 @@ export function Component() {
         </details>
         {subraces.length > 0 && (
           <details key={pickerKey(doc.subrace)} open={doc.subrace === undefined}>
-            <summary className="cursor-pointer py-1 text-xs text-ink-muted">
+            <summary className="cursor-pointer py-1 text-caption text-ink-muted">
               Subrace: {doc.subrace?.name ?? 'none picked'}{' '}
               <EditionChip cue={cueFor('subrace', doc.subrace)} version={doc.rulesVersion} />
             </summary>
@@ -805,9 +820,9 @@ export function Component() {
       </Section>
 
       <Section title="Abilities" summary={ABILITIES.map((a) => doc.abilities.base[a]).join('/')}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
+        <div className="-ml-1 flex flex-wrap items-center gap-1">
+          <Button
+            size="sm"
             onClick={() =>
               undoable(
                 (d) => {
@@ -823,12 +838,11 @@ export function Component() {
                 'Applied standard array',
               )
             }
-            className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
           >
             Standard array
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="sm"
             onClick={() => {
               const scores = ABILITIES.map(() => {
                 const dice = [1, 2, 3, 4].map(() => roll('1d6').total);
@@ -849,10 +863,12 @@ export function Component() {
                 'Rolled ability scores',
               );
             }}
-            className="flex items-center gap-1 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold"
           >
-            <Dices size={12} /> Roll 4d6
-          </button>
+            {/* Lucide's Dices, not DS-001's D20Icon, for now: with no Dices
+                import left here, Rolldown folds the 145 KB data registry into
+                the entry chunk (over the entry budget). */}
+            <Dices size={16} /> Roll 4d6
+          </Button>
           {(() => {
             // Passive point-buy meter — shows only when all scores are in range.
             const COST: Record<number, number> = {
@@ -870,7 +886,7 @@ export function Component() {
             const total = costs.reduce<number>((s, c) => s + (c ?? 0), 0);
             return (
               <span
-                className={`ml-auto text-xs ${total === 27 ? 'text-emerald-300' : total > 27 ? 'text-amber-300' : 'text-ink-muted'}`}
+                className={`ml-auto text-caption tabular-nums ${total === 27 ? 'text-heal' : total > 27 ? 'text-guide' : 'text-ink-muted'}`}
               >
                 Point buy: {total}/27
               </span>
@@ -885,9 +901,9 @@ export function Component() {
             return (
               <div
                 key={a}
-                className="flex flex-col items-center gap-1 rounded-lg bg-surface-2 px-1 py-2"
+                className="flex flex-col items-center gap-1 rounded-control bg-surface-raised px-1 py-2"
               >
-                <span className="text-[10px] font-semibold uppercase text-ink-muted">{a}</span>
+                <span className={OVERLINE}>{a}</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
@@ -918,9 +934,7 @@ export function Component() {
                         });
                       }
                     }}
-                    className={`h-11 w-7 shrink-0 rounded text-center font-bold ${
-                      swapFrom === a ? 'bg-accent-deep/60 ring-1 ring-accent' : ''
-                    }`}
+                    className="h-11 w-7 shrink-0 rounded-chip text-center font-bold tabular-nums aria-pressed:bg-ink aria-pressed:text-bg"
                   >
                     {doc.abilities.base[a]}
                   </button>
@@ -937,7 +951,7 @@ export function Component() {
                     +
                   </button>
                 </div>
-                <span className="text-xs text-ink-muted">
+                <span className="text-caption text-ink-muted tabular-nums">
                   {final.value !== doc.abilities.base[a] ? `→ ${final.value} ` : ''}(
                   {final.mod >= 0 ? '+' : ''}
                   {final.mod})
@@ -946,7 +960,7 @@ export function Component() {
             );
           })}
         </div>
-        <p className="text-xs text-ink-muted">
+        <p className="text-caption text-ink-muted">
           {swapFrom !== null
             ? `Swapping ${swapFrom.toUpperCase()} — tap another score to trade values.`
             : 'Tip: tap a score, then another, to swap the two values.'}
@@ -956,8 +970,8 @@ export function Component() {
       <Section title="Background" summary={doc.background?.name ?? 'none'}>
         <details key={pickerKey(doc.background)} open={doc.background === undefined}>
           <summary
-            className={`cursor-pointer py-1 text-xs ${
-              doc.background === undefined ? 'font-semibold text-amber-200' : 'text-ink-muted'
+            className={`cursor-pointer py-1 text-caption ${
+              doc.background === undefined ? 'font-semibold text-guide' : 'text-ink-muted'
             }`}
           >
             {doc.background === undefined ? 'Pick a background to start' : 'Change background'}{' '}
@@ -1041,7 +1055,9 @@ export function Component() {
         title="Derived stats & skills"
         summary={`HP ${sheet.maxHp.value} · AC ${sheet.ac.value}`}
       >
-        <p className="text-xs text-ink-muted">Tap any value to see exactly how it's calculated.</p>
+        <p className="text-caption text-ink-muted">
+          Tap any value to see exactly how it's calculated.
+        </p>
         <div className="grid grid-cols-3 gap-2">
           {(
             [
@@ -1058,9 +1074,12 @@ export function Component() {
               title={label}
               value={value}
               trigger={
-                <button type="button" className="rounded-lg bg-surface-2 p-2 text-center">
-                  <div className="text-lg font-bold">{value.value}</div>
-                  <div className="text-[10px] text-ink-muted">{label}</div>
+                <button
+                  type="button"
+                  className="rounded-control bg-surface-raised p-2 text-center transition-colors hover:bg-surface-hover"
+                >
+                  <div className="text-lg font-bold tabular-nums">{value.value}</div>
+                  <div className="text-xs text-ink-muted">{label}</div>
                 </button>
               }
             />
@@ -1068,7 +1087,7 @@ export function Component() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase text-ink-muted">Saving throws</span>
+          <span className={OVERLINE}>Saving throws</span>
           <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
             {ABILITIES.map((a) => (
               <BreakdownSheet
@@ -1078,10 +1097,10 @@ export function Component() {
                 trigger={
                   <button
                     type="button"
-                    className={`rounded-lg px-2 py-1.5 text-sm ${
+                    className={`rounded-control bg-surface-raised px-2 py-1.5 text-sm tabular-nums transition-colors hover:bg-surface-hover ${
                       sheet.saves[a].prof
-                        ? 'bg-accent-deep/40 font-semibold'
-                        : 'bg-surface-2 text-ink-muted'
+                        ? 'font-semibold ring-1 ring-line-strong ring-inset'
+                        : 'text-ink-muted'
                     }`}
                   >
                     {a.toUpperCase()} {sheet.saves[a].total.value >= 0 ? '+' : ''}
@@ -1094,11 +1113,11 @@ export function Component() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase text-ink-muted">Skills</span>
-          <p className="text-xs text-ink-muted">
+          <span className={OVERLINE}>Skills</span>
+          <p className="text-caption text-ink-muted">
             Tap a skill to see its math and to set proficiency by hand.
           </p>
-          <div className="flex flex-col rounded-lg bg-surface-2/40">
+          <div className={ROWS}>
             {SKILLS.map(({ name }) => {
               const s = sheet.skills[name];
               if (s === undefined) return null;
@@ -1111,17 +1130,15 @@ export function Component() {
                   trigger={
                     <button
                       type="button"
-                      className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-left text-sm last:border-b-0"
+                      className="flex items-center justify-between px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-raised"
                     >
                       <span className="flex items-center gap-2">
                         <ProfDot level={s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
-                        {pinned && (
-                          <span className="text-[10px] uppercase text-amber-300">set</span>
-                        )}
+                        {pinned && <span className="text-overline text-guide uppercase">set</span>}
                       </span>
-                      <span className="font-mono font-semibold">
+                      <span className="font-semibold tabular-nums">
                         {s.total.value >= 0 ? '+' : ''}
                         {s.total.value}
                       </span>
@@ -1150,15 +1167,13 @@ export function Component() {
 
         {sheet.grantedSpells.length > 0 && (
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase text-ink-muted">
-              Innate & granted spells
-            </span>
-            <div className="flex flex-col rounded-lg bg-surface-2/40">
+            <span className={OVERLINE}>Innate & granted spells</span>
+            <div className={ROWS}>
               {sheet.grantedSpells.map((g) => (
                 <Link
                   key={`${g.name}|${g.source}`}
                   to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                  className="flex items-center justify-between border-b border-surface-2/40 px-3 py-1.5 text-sm last:border-b-0"
+                  className="flex items-center justify-between px-3 py-1.5 text-sm transition-colors hover:bg-surface-raised"
                 >
                   <span className="capitalize">{g.name}</span>
                   <span className="text-xs text-ink-muted">
@@ -1173,8 +1188,8 @@ export function Component() {
       </Section>
 
       {sheet.warnings.length > 0 && (
-        <details className="rounded-lg bg-surface p-3 text-xs text-ink-muted">
-          <summary className="cursor-pointer text-sm">
+        <details className="rounded-card bg-surface p-4 text-caption text-ink-muted shadow-card ring-1 ring-line ring-inset">
+          <summary className="cursor-pointer text-body">
             {sheet.warnings.length} note{sheet.warnings.length > 1 ? 's' : ''}
           </summary>
           {sheet.warnings.map((w) => (

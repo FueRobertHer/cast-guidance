@@ -5,6 +5,8 @@ import { usePersistentStorage } from '@/lib/persistentStorage';
 import { showsDataBanner, useDataStatus } from '@/stores/dataStatus';
 import { onboardingStore, useOnboarding } from '@/stores/onboarding';
 import type { OfflineReadiness } from '@/stores/swStatus';
+import { Button } from '@/ui/Button';
+import { cardClass } from '@/ui/surfaces';
 import { PERSIST_DENIED_TEXT, PersistStatus, Status, type Tone } from './Status';
 import { type CompendiumState, type ShellStatus, useOfflineReadiness } from './useOfflineReadiness';
 
@@ -25,15 +27,15 @@ function Item({
 }) {
   return (
     <li
-      className="flex flex-col gap-1"
+      className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0"
       aria-live={live ? 'polite' : undefined}
       aria-atomic={live ? true : undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-2">
-        <h3 className="text-sm font-semibold">{lead}</h3>
+        <h3 className="text-body-strong">{lead}</h3>
         {status}
       </div>
-      <div className="flex flex-col gap-1.5 text-xs text-ink-muted">{children}</div>
+      <div className="flex flex-col gap-1.5 text-caption text-ink-muted">{children}</div>
     </li>
   );
 }
@@ -110,18 +112,20 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
   return (
     <section
       aria-labelledby="getting-started-heading"
-      className="flex flex-col gap-3 rounded-lg border border-surface-2 bg-surface p-3"
+      className={`${cardClass} flex flex-col gap-3`}
     >
       <div>
-        <h2 id="getting-started-heading" className="font-semibold">
+        <h2 id="getting-started-heading" className="text-heading">
           Getting started
         </h2>
-        <p className="text-xs text-ink-muted">
+        <p className="text-caption text-ink-muted">
           How this app keeps your data, and when it works without a connection.
         </p>
       </div>
 
-      <ul className="flex flex-col gap-3">
+      {/* A checklist (DS-001): each item its state in words and one line of
+          why, divided by hairlines. */}
+      <ul className="flex flex-col divide-y divide-line">
         <Item lead="Saved on this device">
           <p>
             No account, and nothing is uploaded. Your characters, homebrew and dice history live in
@@ -164,14 +168,17 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
           <p>Browsers can clear site data when storage runs low or when you clear browsing data.</p>
           {persist.state === 'best-effort' && (
             <>
-              <button
-                type="button"
+              {/* The item's one action, as an outline button. Its tap border
+                  pulls it in by 4px to line up with the text. */}
+              <Button
+                variant="outline"
+                size="sm"
                 aria-disabled={persist.requesting}
                 onClick={() => void persist.request()}
-                className="w-fit rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold text-ink aria-disabled:opacity-40"
+                className="-ml-1 self-start"
               >
                 Ask the browser to keep my data
-              </button>
+              </Button>
               <p>
                 Your browser may ask to allow persistent storage. Choosing Allow keeps your data
                 safer.
@@ -198,21 +205,22 @@ export function GettingStarted({ onDismiss }: { onDismiss?: () => void }) {
       </ul>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <button
-          type="button"
+        <Button
           onClick={() => {
             onboardingStore.getState().dismiss();
             onDismiss?.();
           }}
-          className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-semibold"
         >
           Got it, hide this
-        </button>
-        <Link to="/settings" className="text-sm text-ink-muted underline underline-offset-2">
+        </Button>
+        <Link
+          to="/settings"
+          className="inline-flex min-h-tap items-center text-ink-muted underline underline-offset-3 hover:text-ink"
+        >
           Storage details
         </Link>
       </div>
-      <p className="text-xs text-ink-muted">You can reopen this from Settings.</p>
+      <p className="text-caption text-ink-muted">You can reopen this from Settings.</p>
     </section>
   );
 }

@@ -239,11 +239,6 @@ function sources(dir: string): string[] {
  * or a prop is out of reach of any per-attribute check.
  */
 const MARKS: ReadonlyArray<{ file: string; line: string; what: string }> = [
-  {
-    file: 'features/characters/CharacterListPage.tsx',
-    line: "ratio > 0.25 ? 'bg-amber-400' : 'bg-accent'",
-    what: 'the low HP bar',
-  },
   { file: 'ui/ProfDot.tsx', line: "? 'bg-accent'", what: 'the proficiency dot' },
 ];
 
