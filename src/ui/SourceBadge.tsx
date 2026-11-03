@@ -1,5 +1,6 @@
 import { SOURCES_2024 } from '@/data5e/rulesVersion';
 import { sourceName } from '@/data5e/sourceNames';
+import { badgeClass } from './Badge';
 
 /** Titles like "Player's Handbook (2024)" already carry the year. */
 const HAS_YEAR = /\(20\d\d\)/;
@@ -21,6 +22,9 @@ export function sourceBadgeLabel(source: string): string {
  * app is built for that markup would have expanded to nothing. Real (hidden)
  * text is announced everywhere. Touch users, who have no hover either, get the
  * title as visible text on the library detail page and in every ⓘ drawer.
+ *
+ * Every book's badge is the neutral one, the newest book's included (DS-001):
+ * a green 2024 badge read as a status rather than as where a rule comes from.
  */
 export function SourceBadge({
   source,
@@ -34,11 +38,8 @@ export function SourceBadge({
   source: string;
   titleShownNearby?: boolean;
 }) {
-  const is2024 = SOURCES_2024.has(source);
   const label = sourceBadgeLabel(source);
-  const className = `inline-block rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-    is2024 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-surface-2 text-ink-muted'
-  }`;
+  const className = `${badgeClass()} uppercase`;
 
   if (titleShownNearby) {
     return (

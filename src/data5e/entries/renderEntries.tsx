@@ -16,6 +16,13 @@ import { LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
 // ---------------------------------------------------------------------------
 
 /**
+ * A link in rules text (DS-001): `ink` with a `line-strong` underline, so it
+ * is told from the words around it by its underline, not by a hue. Blue is
+ * for rolls in this system, and the gold it used to be is guidance.
+ */
+const LINK = 'underline decoration-line-strong underline-offset-2 hover:decoration-ink';
+
+/**
  * Every explicit case below is listed in `FORMATTING_TAGS` (inlineTags.ts), so
  * the data audit counts it as handled; the renderer test keeps the two in step.
  */
@@ -138,7 +145,7 @@ function TagView({
       const href = safeExternalHref(args[1] ?? body);
       if (href === undefined) return <InlineText text={body} />;
       return (
-        <a href={href} target="_blank" rel="noreferrer noopener" className="text-sky-300 underline">
+        <a href={href} target="_blank" rel="noreferrer noopener" className={LINK}>
           {body}
         </a>
       );
@@ -151,16 +158,18 @@ function TagView({
         return (
           <Link
             to={`/library/${routeType}/${encodeURIComponent(uid.toLowerCase())}`}
-            className="text-amber-200 underline decoration-amber-200/40 underline-offset-2"
+            className={LINK}
           >
             <InlineText text={ref.display} />
           </Link>
         );
       }
       if (PLAIN_REF_TAGS.has(tag)) {
+        // Something the library has no page for: plain words, since a mark
+        // with nowhere to go would read as a link that does nothing.
         const ref = parseEntityRef(args);
         return (
-          <span className="text-amber-200/80">
+          <span>
             <InlineText text={ref.display} />
           </span>
         );
@@ -193,10 +202,12 @@ export function InlineText({ text }: { text: string }): ReactNode {
 
 type Node = Record<string, unknown>;
 
+/**
+ * A named block's heading: `heading` at the top, a section of the rules, and
+ * `body-strong` below it, so nested names stay the reading size (DS-001).
+ */
 function headingClass(depth: number): string {
-  if (depth <= 0) return 'text-lg font-bold';
-  if (depth === 1) return 'text-base font-semibold';
-  return 'text-sm font-semibold';
+  return depth <= 0 ? 'text-heading' : 'text-body-strong';
 }
 
 function NamedBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
@@ -228,7 +239,7 @@ function TableBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
   const rows = Array.isArray(node.rows) ? node.rows : [];
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-caption">
         {caption !== undefined && (
           <caption className="pb-1 text-left font-semibold">{caption}</caption>
         )}
@@ -238,7 +249,7 @@ function TableBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
               {colLabels.map((c, i) => (
                 <th
                   key={i}
-                  className="border-b border-surface-2 px-2 py-1 text-left text-ink-muted"
+                  className="border-b border-line-strong px-2 py-1 text-left text-ink-muted"
                 >
                   {typeof c === 'string' ? <InlineText text={c} /> : null}
                 </th>
@@ -248,7 +259,7 @@ function TableBlock({ node, depth }: { node: Node; depth: number }): ReactNode {
         )}
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="odd:bg-surface/40">
+            <tr key={i} className="border-b border-line">
               {(Array.isArray(row) ? row : []).map((cell, j) => (
                 <td key={j} className="px-2 py-1 align-top">
                   <EntryNode node={cell} depth={depth + 1} />
@@ -285,15 +296,17 @@ function EntryNode({ node, depth }: { node: unknown; depth: number }): ReactNode
     case 'inset':
     case 'insetReadaloud':
       return (
-        <div className="rounded-lg border border-surface-2 bg-surface p-3">
+        // A sidebar: `surface-raised`, which reads apart from both grounds
+        // rules text sits on (the library's `bg` and a sheet's `surface`).
+        <div className="rounded-control bg-surface-raised p-3">
           <NamedBlock node={n} depth={depth + 1} />
         </div>
       );
     case 'quote':
       return (
-        <blockquote className="border-l-2 border-surface-2 pl-3 italic text-ink-muted">
+        <blockquote className="border-l-2 border-line-strong pl-3 italic text-ink-muted">
           <EntriesView entries={n.entries} depth={depth + 1} />
-          {typeof n.by === 'string' && <div className="mt-1 text-xs">— {n.by}</div>}
+          {typeof n.by === 'string' && <div className="mt-1 text-caption">— {n.by}</div>}
         </blockquote>
       );
     case 'item':
@@ -361,7 +374,9 @@ export function EntriesView({
   if (entries === null || entries === undefined) return null;
   const list = Array.isArray(entries) ? entries : [entries];
   return (
-    <div className="flex flex-col gap-2 leading-relaxed">
+    // Rules text is `body` (DS-001), whichever sheet or page shows it, so the
+    // top level sets it; nested blocks inherit it, or a table's smaller size.
+    <div className={depth <= 0 ? 'flex flex-col gap-2 text-body' : 'flex flex-col gap-2'}>
       {list.map((node, i) =>
         // Bare strings become paragraphs; blocks manage their own layout.
         typeof node === 'string' ? (
