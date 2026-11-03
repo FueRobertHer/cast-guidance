@@ -40,6 +40,7 @@ import {
   deleteCharacter,
   exportCharacter,
 } from '../characters/characterActions';
+import { ConditionStrip } from './ConditionStrip';
 import { HistoryDrawer } from './HistoryDrawer';
 import { SheetMenu } from './SheetMenu';
 import { type CharacterSheetState, useCharacterSheet } from './useCharacterSheet';
@@ -361,6 +362,12 @@ export function Component() {
           </NavLink>
           <SheetMenu label="More: history, export, delete" items={menu} buttonRef={menuButton} />
         </div>
+        {/* Its own row, inside the header so it sticks with it and counts in
+            the height the header publishes. Not on Build, which edits the
+            character rather than plays it. */}
+        {doc !== null && !onBuild && (
+          <ConditionStrip doc={doc} update={state.update} addable={tab === ''} />
+        )}
         {id !== undefined && (
           <HistoryDrawer
             charId={id}

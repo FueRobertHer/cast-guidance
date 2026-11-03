@@ -264,6 +264,60 @@ test.describe('keyboard: dialogs and drawers', () => {
     );
   });
 
+  test("the condition strip: its picker, a condition's rules, and removing one", async ({
+    page,
+  }) => {
+    await gotoRosterSettled(page);
+    const id = await createBlankCharacter(page);
+
+    await gotoSheetTab(page, id, 'Play');
+    const add = page.getByRole('button', { name: 'Condition', exact: true });
+    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await checkDialog(page, add, picker);
+
+    // Two conditions on from the picker, by keyboard alone.
+    await add.focus();
+    await page.keyboard.press('Enter');
+    await expect(picker).toBeVisible();
+    await animationsSettled(page);
+    for (const name of ['Poisoned', 'Prone']) {
+      const toggle = picker.getByRole('button', { name, exact: true });
+      await toggle.focus();
+      await page.keyboard.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    }
+    // Exhaustion up to 6 and back to 0: the press that reaches a limit keeps
+    // focus on its button, which says it goes no further.
+    for (const [name, level] of [
+      ['Increase exhaustion', '6 / 6'],
+      ['Decrease exhaustion', '0 / 6'],
+    ] as const) {
+      const step = picker.getByRole('button', { name });
+      await step.focus();
+      for (let i = 0; i < 6; i++) await page.keyboard.press('Enter');
+      await expect(picker.getByText(level)).toBeVisible();
+      await expect(step).toBeFocused();
+      await expect(step).toHaveAttribute('aria-disabled', 'true');
+    }
+    await escapeReturnsTo(page, picker, add);
+
+    const strip = page.getByRole('list', { name: 'Active conditions' });
+    await checkDialog(
+      page,
+      strip.getByRole('button', { name: 'Poisoned', exact: true }),
+      page.getByRole('dialog', { name: 'Poisoned' }),
+    );
+
+    // Removing a chip puts focus on the chip that takes its place, and the
+    // last one's going puts it on the add chip.
+    await strip.getByRole('button', { name: 'Remove Poisoned' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(strip.getByRole('button', { name: 'Remove Prone' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(strip).toBeHidden();
+    await expect(add).toBeFocused();
+  });
+
   test('the info sheets, and Add item', async ({ page }) => {
     await gotoRosterSettled(page);
     const id = await createBlankCharacter(page);

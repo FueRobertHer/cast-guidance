@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { CONDITIONS } from '../../src/features/sheet/conditionEffects.ts';
 import { casterFile } from '../fixtures/caster.ts';
 import { manySpells } from '../fixtures/manySpells.ts';
 import {
@@ -66,6 +67,8 @@ const sheetTab = (tab: SheetPage): Route => ({
       ? [
           page.getByRole('button', { name: 'Dice tray' }),
           page.getByRole('button', { name: 'Long rest' }),
+          // The condition strip's add chip, in the header's own row.
+          page.getByRole('button', { name: 'Condition', exact: true }),
         ]
       : []),
   ],
@@ -163,6 +166,27 @@ async function setUpFilled(page: Page): Promise<string> {
   await importCharacterFile(page, file);
   await answerImportPreview(page, previewTitle);
   return id;
+}
+
+/**
+ * Turns on `names` (and `exhaustion` levels of exhaustion) from the picker
+ * behind Play's add chip, so the condition strip is drawn on every tab.
+ */
+async function addConditions(page: Page, id: string, names: string[], exhaustion = 0) {
+  await gotoSheetTab(page, id, 'Play');
+  await page.getByRole('button', { name: 'Condition', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await expect(picker).toBeVisible();
+  for (const name of names) {
+    const toggle = picker.getByRole('button', { name, exact: true });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  }
+  for (let i = 0; i < exhaustion; i++) {
+    await picker.getByRole('button', { name: 'Increase exhaustion' }).click();
+  }
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
 }
 
 /**
@@ -303,6 +327,45 @@ test.describe('text at 200%', () => {
   }
 });
 
+test.describe('the condition strip, every condition on', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test('scrolls sideways inside itself, never the page, at 320 px and with text at 200%', async ({
+    page,
+  }) => {
+    const id = await setUp(page);
+    await addConditions(page, id, [...CONDITIONS], 2);
+    const strip = page.getByRole('list', { name: 'Active conditions' });
+    const route = { name: 'the condition strip', open: async () => {}, primary: () => [] };
+
+    for (const extra of ['', 'html { font-size: 200% !important; }']) {
+      await gotoSheetTab(page, id, 'Stats');
+      await applyMeasuredFont(page, extra);
+      await animationsSettled(page);
+      await expectNoSidewaysScroll(page, route);
+      // Its row runs past the screen and scrolls, so this measured the case.
+      const row = strip.locator('..');
+      const { scrollWidth, clientWidth } = await row.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(scrollWidth).toBeGreaterThan(clientWidth);
+      // One line, however many chips, so the header grows by no more than a
+      // row: the first chip and the add chip after the last, scrolled to,
+      // share it.
+      const add = page.getByRole('button', { name: 'Condition', exact: true });
+      await add.scrollIntoViewIfNeeded();
+      await expect(add).toBeInViewport({ ratio: 1 });
+      const first = await box(strip.getByRole('listitem').first());
+      const end = await box(add);
+      expect(
+        Math.abs(end.y + end.height / 2 - (first.y + first.height / 2)),
+        'the chips share a line',
+      ).toBeLessThan(1);
+    }
+  });
+});
+
 /** Where `locator` is drawn; fails if it is not. */
 async function box(locator: Locator): Promise<DOMRectLike> {
   const b = await locator.boundingBox();
@@ -378,6 +441,9 @@ test.describe('landscape on a phone', () => {
   for (const tab of Object.keys(SHEET_PAGES) as SheetPage[]) {
     test(`sheet ${tab}: the header and tab bar leave the page in sight`, async ({ page }) => {
       const id = await setUp(page);
+      // A condition on, so the header carries the condition strip's row on
+      // every tab: its tallest.
+      await addConditions(page, id, ['Poisoned']);
       await gotoSheetTab(page, id, tab);
       await animationsSettled(page);
 

@@ -13,7 +13,7 @@ import { OPEN_ELSEWHERE_TEXT, Component as SheetLayout } from './SheetLayout';
 // The layout's own data comes from the session store and IndexedDB; a loaded
 // character stands in, so the header and the tab bar are what is under test.
 // Its save status and the other-tab flag are settable, for the announcement
-// tests, and so are its pending choices, species and spellcasting.
+// tests, and so are its pending choices, species, spellcasting and conditions.
 const sheetState = vi.hoisted(() => {
   const listeners = new Set<() => void>();
   const initial = {
@@ -22,6 +22,7 @@ const sheetState = vi.hoisted(() => {
     pending: 0,
     casts: false,
     race: undefined as string | undefined,
+    conditions: [] as { id: string; level?: number }[],
   };
   const state = { ...initial };
   // Bumped on every change, so the mocked hook below re-renders for any field.
@@ -56,6 +57,8 @@ vi.mock('./useCharacterSheet', async () => {
         id: 'x',
         name: 'Hero',
         race: sheetState.state.race === undefined ? undefined : { name: sheetState.state.race },
+        rulesVersion: '2024',
+        play: { conditions: sheetState.state.conditions },
       },
       sheet: {
         classLabel: 'Warrior 3',
@@ -356,6 +359,36 @@ describe('SheetLayout header (design system)', () => {
     expect(indicator?.childNodes).toHaveLength(0);
     expect(indicator?.className.split(' ')).toContain('empty:hidden');
     expect(indicator?.parentElement?.textContent).toBe('Dwarf Warrior 3');
+  });
+});
+
+describe('SheetLayout condition strip (design system)', () => {
+  const activeList = () => screen.queryByRole('list', { name: 'Active conditions' });
+  const addChip = () => screen.queryByRole('button', { name: 'Condition' });
+
+  it('keeps active conditions in the header on every tab, and off Build', () => {
+    sheetState.set({ conditions: [{ id: 'Poisoned' }] });
+    for (const path of ['/c/x', '/c/x/stats', '/c/x/inventory', '/c/x/features']) {
+      renderAt(path);
+      const list = activeList();
+      expect(list?.closest('header'), path).toBe(screen.getByRole('banner'));
+      expect(within(list as HTMLElement).getByRole('button', { name: 'Poisoned' })).toBeTruthy();
+      expect(addChip(), path).not.toBeNull();
+      cleanup();
+    }
+    renderAt('/c/x/build');
+    expect(activeList()).toBeNull();
+    expect(addChip()).toBeNull();
+  });
+
+  it('leaves only the add chip on Play when nothing is active, and nothing on another tab', () => {
+    renderAt('/c/x');
+    expect(activeList()).toBeNull();
+    expect(addChip()).not.toBeNull();
+    cleanup();
+    renderAt('/c/x/stats');
+    expect(activeList()).toBeNull();
+    expect(addChip()).toBeNull();
   });
 });
 

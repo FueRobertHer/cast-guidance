@@ -171,6 +171,8 @@ export interface SheetHarness {
   tab(label: string): Promise<void>;
   /** Open Build from the header's Edit, as the player does from any tab. */
   edit(): Promise<void>;
+  /** Open the condition picker from the strip's "+ Condition", always there on Play. */
+  conditions(): Promise<void>;
   /** The saved character, once every pending write has landed. */
   saved(): Promise<CharacterDoc>;
   /** History labels, newest first, once every pending write has landed. */
@@ -237,6 +239,10 @@ export async function renderSheet(
         timeout: LOAD_MS,
       });
       await sheetReady(doc.name);
+    },
+    async conditions() {
+      fireEvent.click(screen.getByRole('button', { name: 'Condition' }));
+      await screen.findByRole('dialog', { name: 'Conditions' }, { timeout: LOAD_MS });
     },
     async saved() {
       await flushed();
@@ -364,6 +370,12 @@ export function notice(): string | undefined {
     (d) => d.textContent,
   );
   return detail === undefined ? (title ?? undefined) : `${title}: ${detail}`;
+}
+
+/** Close the open sheet as Escape does, and wait for it to go. */
+export async function dismiss(): Promise<void> {
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: LOAD_MS });
 }
 
 /** The open dialog, for reading its text or pressing one of its buttons. */

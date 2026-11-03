@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   classEntry,
   dialog,
+  dismiss,
   HARNESS_TIMEOUT,
   hitDiceLeft,
   hp,
@@ -122,8 +123,10 @@ describe('long rest (TEST-003)', () => {
     press('Level 1 slot 1');
     press('Level 3 slot 2');
     press('Sorcery Points use 2');
+    await sheet.conditions();
     press('Increase exhaustion');
     press('Increase exhaustion');
+    await dismiss();
     expect(hp()).toEqual({ current: 17, max: 27, temp: 0 });
     expect(hitDiceLeft('d6')).toBe(2);
     expect(pips('Level 3 slot')).toEqual(['spent', 'spent']);
@@ -136,7 +139,8 @@ describe('long rest (TEST-003)', () => {
     expect(pips('Level 1 slot')).toEqual(['available', 'available', 'available', 'available']);
     expect(pips('Level 3 slot')).toEqual(['available', 'available']);
     expect(left('Sorcery Points use')).toBe(5);
-    expect(screen.getByText('1 / 6')).toBeTruthy();
+    // One level of the two is left, on the condition strip's chip.
+    expect(screen.getByRole('button', { name: 'Exhausted 1' })).toBeTruthy();
     // Half of five dice, rounded down: two of the three spent come back.
     expect(hitDiceLeft('d6')).toBe(4);
     expect(notice()).toBe(

@@ -488,7 +488,8 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     expect(
       screen.getByRole('button', { name: `Spend a ${die} hit die, ${total} left` }),
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'What Stunned does' })).toBeTruthy();
+    // Stunned's own controls (its rules, its removal) are on the condition
+    // strip now; ConditionStrip.test.tsx names them.
 
     // Portaled sheet content renders outside the tab, so sweep it once open.
     fireEvent.click(screen.getByRole('button', { name: 'breakdown' }));
@@ -526,7 +527,7 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     expect(screen.getByRole('button', { name: 'Inspiration', pressed: false })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Concentration', pressed: false })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Action', pressed: false })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Poisoned', pressed: false })).toBeTruthy();
+    // The condition toggles are in the condition picker: ConditionStrip.test.tsx.
   });
 
   it('reports each toggle that is on as pressed', () => {
@@ -544,7 +545,6 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Action', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Bonus', pressed: false })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Poisoned', pressed: true })).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Death save success 1', pressed: true }),
     ).toBeTruthy();
