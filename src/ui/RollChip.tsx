@@ -11,7 +11,11 @@ export interface RollChipProps {
   display?: string;
   /** Log label, e.g. "Fireball damage". */
   label?: string;
-  variant?: 'dice' | 'damage' | 'd20';
+  /**
+   * The chip's colour: `roll` for a d20 (`d20`) and other dice (`dice`),
+   * `danger` for damage, `heal` for healing.
+   */
+  variant?: 'dice' | 'damage' | 'd20' | 'heal';
   /** Fires after a successful roll (e.g. to spend a limited-use resource). */
   onRolled?: (total: number) => void;
   /**
@@ -22,7 +26,19 @@ export interface RollChipProps {
   inline?: boolean;
 }
 
-/** Tappable dice roll. Shows the result on the chip for a moment. */
+/** A chip's tone: its text colour on that colour's tint (DS-001). */
+const TONE: Record<NonNullable<RollChipProps['variant']>, string> = {
+  dice: 'bg-roll-soft text-roll',
+  d20: 'bg-roll-soft text-roll',
+  damage: 'bg-danger-soft text-danger',
+  heal: 'bg-heal-soft text-heal',
+};
+
+/**
+ * Tappable dice roll. Shows the result on the chip for a moment, landing as
+ * the toast's total does. In a row of controls it is 34px tall, a tap past
+ * WCAG 2.5.8's 24 without crowding an attack row's other chips.
+ */
 export function RollChip({
   expr,
   display,
@@ -61,11 +77,6 @@ export function RollChip({
     timer.current = setTimeout(() => setResult(null), 1600);
   };
 
-  const color =
-    variant === 'damage'
-      ? 'text-orange-300 border-orange-300/30'
-      : 'text-sky-300 border-sky-300/30';
-
   return (
     <button
       type="button"
@@ -73,12 +84,16 @@ export function RollChip({
       data-inline-target={inline ? '' : undefined}
       className={`${
         inline
-          ? 'inline-block align-baseline'
-          : 'inline-flex min-h-6 min-w-6 items-center justify-center'
-      } cursor-pointer rounded border bg-surface px-1 font-mono text-[0.85em] leading-snug hover:bg-surface-2 ${color}`}
+          ? 'inline-block px-1.25 py-px align-baseline text-[0.92em] leading-snug'
+          : 'inline-flex h-8.5 min-w-13 items-center justify-center px-2 text-dice'
+      } rounded-chip font-semibold tabular-nums transition-[filter,transform] duration-120 ease-out hover:brightness-112 active:scale-95 ${TONE[variant]}`}
       title={label ?? expr}
     >
-      {result !== null ? <strong>{result}</strong> : (display ?? expr)}
+      {result !== null ? (
+        <strong className="inline-block motion-safe:animate-total-in">{result}</strong>
+      ) : (
+        (display ?? expr)
+      )}
     </button>
   );
 }

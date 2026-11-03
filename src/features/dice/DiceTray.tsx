@@ -1,4 +1,4 @@
-import { Dices } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useState } from 'react';
 import { rollDetail } from '@/dice/format';
 import { parseDice } from '@/dice/parse';
@@ -6,22 +6,21 @@ import { roll } from '@/dice/roll';
 import { useScrollHidden } from '@/lib/useScrollHidden';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
+import { Button } from '@/ui/Button';
+import { D20Icon } from '@/ui/D20Icon';
+import { ROLL_INK, rollTone } from '@/ui/rollTone';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/sheet';
+import { listClass, listRowClass } from '@/ui/surfaces';
+import { fieldClass } from '@/ui/TextField';
 
 const QUICK = [4, 6, 8, 10, 12, 20, 100];
 
 /** Spelled out here, where there is room for words rather than DIS/N/ADV. */
-const LABELS: Record<AdvMode, string> = {
-  dis: 'Disadvantage',
-  normal: 'Normal',
-  adv: 'Advantage',
-};
-
-const ACTIVE: Record<AdvMode, string> = {
-  dis: 'border-accent text-accent',
-  normal: 'border-ink text-ink',
-  adv: 'border-emerald-300 text-emerald-300',
-};
+const MODES: ReadonlyArray<{ value: AdvMode; label: string }> = ADV_MODES.map((mode) => ({
+  value: mode,
+  label: { dis: 'Disadvantage', normal: 'Normal', adv: 'Advantage' }[mode],
+}));
 
 export function DiceTray() {
   const rolls = useRollLog((s) => s.rolls);
@@ -49,154 +48,147 @@ export function DiceTray() {
 
   return (
     <Sheet.Root>
-      {/* Hidden by scroll, it is still in the tab order: focus brings it back
-          rather than leaving the keyboard on an invisible button. */}
+      {/* The dice dock's button (DS-001): it sits in the end of the capsule
+          AdvToggle draws, 2px in from its right and bottom, so the two read as
+          one control. A 44px tap, the brand circle 40px inside it. Hidden by
+          scroll, it is still in the tab order: focus brings it back rather
+          than leaving the keyboard on an invisible button. */}
       <Sheet.Trigger asChild>
         <button
           type="button"
           aria-label="Dice tray"
           title="Dice tray"
-          className={`fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-all duration-200 lg:bottom-6 ${
+          className={`fixed right-[calc(1rem+2px)] bottom-[calc(78px+env(safe-area-inset-bottom))] z-20 flex size-tap items-center justify-center rounded-full border-2 border-transparent bg-brand bg-clip-padding text-on-brand transition-all duration-200 [--tap-inset:2px] hover:bg-brand-hover active:scale-92 lg:bottom-[calc(1.5rem+2px)] ${
             hidden
               ? 'pointer-events-none translate-x-20 opacity-0 focus-visible:pointer-events-auto focus-visible:translate-x-0 focus-visible:opacity-100'
               : ''
           }`}
         >
-          <Dices size={22} />
+          <D20Icon size={22} />
         </button>
       </Sheet.Trigger>
       <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-40 bg-black/60" />
-        <Sheet.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col rounded-t-xl bg-surface p-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-2" />
-          <Sheet.Title className="mb-2 text-base font-semibold">Dice</Sheet.Title>
+        <Sheet.Scrim />
+        <Sheet.Panel aria-describedby={undefined} className="flex max-h-[80dvh] flex-col">
+          <Sheet.Heading>Dice</Sheet.Heading>
 
-          {/* Adv/dis toggle for d20 rolls, in the same order as the floating one */}
-          <div className="mb-2 flex gap-1.5">
-            {ADV_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={advMode === mode}
-                onClick={() => {
-                  setAdvMode(mode);
-                }}
-                className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
-                  advMode === mode ? ACTIVE[mode] : 'border-surface-2 text-ink-muted'
-                }`}
-              >
-                {LABELS[mode]}
-              </button>
-            ))}
-          </div>
-
-          {/*
-           * One column per die so the set stays a single row: wrapping put
-           * d100 alone on a second line, which read as a separate control.
-           * Equal columns mean the label shrinks, not the button, so the
-           * height stays where a thumb expects it.
-           */}
-          <div className="mb-2 grid grid-cols-7 gap-1">
-            {QUICK.map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => doRoll(`1d${d}`, `d${d}`)}
-                className="rounded-lg bg-surface-2 px-0.5 py-2.5 font-mono text-xs font-semibold"
-              >
-                d{d}
-              </button>
-            ))}
-          </div>
-
-          <form
-            className="mb-3 flex gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (expr.trim() !== '') doRoll(expr.trim());
-            }}
-          >
-            <input
-              value={expr}
-              onChange={(e) => setExpr(e.target.value)}
-              aria-label="Dice expression"
-              placeholder="e.g. 4d6dl1+2"
-              className="min-w-0 flex-1 rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm outline-none placeholder:text-ink-muted"
+          <div className="mb-3 flex flex-col gap-3">
+            {/* Adv/dis for d20 rolls, in the same order as the dock's */}
+            <SegmentedControl
+              label="Roll mode"
+              options={MODES}
+              value={advMode}
+              onChange={setAdvMode}
+              block
             />
-            <button
-              type="submit"
-              className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-semibold text-white"
+
+            {/*
+             * Four across with room to hit (DS-001): seven across gave each
+             * die a sliver of a label. Equal columns keep every die the same
+             * size, so the last row's three line up under the first four.
+             */}
+            <div className="grid grid-cols-4 gap-2">
+              {QUICK.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => doRoll(`1d${d}`, `d${d}`)}
+                  className="h-15 rounded-control bg-surface-raised font-bold text-body transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-97"
+                >
+                  d{d}
+                </button>
+              ))}
+            </div>
+
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (expr.trim() !== '') doRoll(expr.trim());
+              }}
             >
-              Roll
-            </button>
-          </form>
-          {error !== undefined && <p className="mb-2 text-xs text-accent">{error}</p>}
+              <div className="relative min-w-0 flex-1">
+                <D20Icon
+                  size={20}
+                  className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
+                />
+                <input
+                  value={expr}
+                  onChange={(e) => setExpr(e.target.value)}
+                  aria-label="Dice expression"
+                  aria-invalid={error !== undefined ? true : undefined}
+                  placeholder="e.g. 4d6dl1+2"
+                  className={`${fieldClass} pl-10.5 tabular-nums`}
+                />
+              </div>
+              <Button type="submit" variant="brand" className="h-12">
+                Roll
+              </Button>
+            </form>
+            {error !== undefined && <p className="-mt-1 text-caption text-danger">{error}</p>}
+          </div>
 
           {/* Roll log */}
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-ink-muted">History</span>
+            <span className="text-ink-muted text-overline uppercase">History</span>
             {rolls.length > 0 && (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => rollLogStore.getState().clear()}
-                className="text-xs text-ink-muted underline hover:text-ink"
+                className="-mr-1"
               >
                 clear all
-              </button>
+              </Button>
             )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {rolls.length === 0 && <p className="text-sm text-ink-muted">No rolls yet.</p>}
-            {rolls.map((r) => {
-              const nat = r.meta?.d20?.natural;
-              const time = new Date(r.at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-              });
-              return (
-                <div
-                  key={r.id ?? r.at}
-                  className="group flex items-center justify-between gap-2 border-b border-surface-2/40 py-2 text-sm last:border-b-0"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate">
-                      {r.label ?? r.expr}
-                      {r.meta?.advantage !== undefined && (
-                        <span
-                          className={`ml-1 text-xs ${r.meta.advantage === 'adv' ? 'text-emerald-300' : 'text-accent'}`}
-                        >
-                          ({r.meta.advantage})
-                        </span>
-                      )}
+            {rolls.length === 0 && <p className="text-body text-ink-muted">No rolls yet.</p>}
+            {rolls.length > 0 && (
+              <div className={listClass}>
+                {rolls.map((r) => {
+                  const time = new Date(r.at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  });
+                  return (
+                    <div key={r.id ?? r.at} className={`${listRowClass} pr-1`}>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-body-strong">
+                          {r.label ?? r.expr}
+                          {r.meta?.advantage !== undefined && (
+                            <span className="ml-1 font-normal text-caption text-ink-muted">
+                              ({r.meta.advantage})
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate text-caption text-ink-muted tabular-nums">
+                          {time} · {r.expr} · {rollDetail(r)}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 font-bold text-[1.25rem] tabular-nums ${ROLL_INK[rollTone(r)]}`}
+                      >
+                        {r.total}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove ${r.label ?? r.expr} roll (${r.total})`}
+                        title="Remove roll (accidental click?)"
+                        onClick={() => r.id !== undefined && rollLogStore.getState().remove(r.id)}
+                        className="shrink-0"
+                      >
+                        <X size={16} aria-hidden="true" />
+                      </Button>
                     </div>
-                    <div className="truncate font-mono text-xs text-ink-muted">
-                      {time} · {r.expr} · {rollDetail(r)}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      className={`text-lg font-bold ${
-                        nat === 20 ? 'text-emerald-300' : nat === 1 ? 'text-accent' : ''
-                      }`}
-                    >
-                      {r.total}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${r.label ?? r.expr} roll (${r.total})`}
-                      title="Remove roll (accidental click?)"
-                      onClick={() => r.id !== undefined && rollLogStore.getState().remove(r.id)}
-                      className="rounded px-1 text-ink-muted/60 hover:text-accent"
-                    >
-                      <span aria-hidden="true">✕</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </Sheet.Content>
+        </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>
   );

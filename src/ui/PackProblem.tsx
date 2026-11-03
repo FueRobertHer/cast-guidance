@@ -1,7 +1,21 @@
+import { CircleAlert, Info } from 'lucide-react';
 import type { TypePacksState } from '@/data5e/hooks';
 import { useOnReconnect } from '@/lib/useOnline';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { Button } from './Button';
 import { useFailureAlert } from './failureAlert';
+
+/**
+ * A missing download, drawn as a `danger` hint (DS-001): CircleAlert, the
+ * message in `ink` at 14px, Retry, on `danger-soft`. Shared with
+ * GameDataProblem.
+ */
+export const PROBLEM_CLASS =
+  'flex gap-3 rounded-control bg-danger-soft py-3 pr-2 pl-3 text-ink text-sm';
+
+/** The same shape as a neutral hint, for a failure Retry cannot fix. */
+export const NOTE_CLASS =
+  'flex gap-3 rounded-control bg-surface-raised py-3 pr-2 pl-3 text-ink text-sm';
 
 interface PackProblemProps {
   packs: TypePacksState;
@@ -47,11 +61,8 @@ export function PackProblem({ packs, what, alert = 'auto', messageId, message }:
   // one it is hidden, so this line is the alert.
   if (!dbOpen) {
     return (
-      <p
-        id={messageId}
-        role={alert === 'always' ? 'alert' : undefined}
-        className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted"
-      >
+      <p id={messageId} role={alert === 'always' ? 'alert' : undefined} className={NOTE_CLASS}>
+        <Info size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-muted" />
         Reload this tab to load {what}.
       </p>
     );
@@ -72,24 +83,24 @@ function PackProblemPanel({ packs, what, alert, messageId, message }: PackProble
   const alerts = useFailureAlert() || alert === 'always';
   const capitalized = what.charAt(0).toUpperCase() + what.slice(1);
   return (
-    <div
-      className="flex flex-wrap items-center gap-2 rounded-lg bg-accent-deep px-3 py-2"
-      role={alerts ? 'alert' : undefined}
-    >
-      <p id={messageId} className="min-w-0 flex-1 text-xs">
-        {message !== undefined
-          ? message
-          : packs.offline
-            ? `You're offline, so ${what} can't be downloaded yet.`
-            : `${capitalized} couldn't be downloaded${packs.error === null ? '.' : `: ${packs.error}`}`}
-      </p>
-      <button
-        type="button"
-        onClick={packs.retry}
-        className="tap shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-white"
+    <div className={PROBLEM_CLASS}>
+      <CircleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-danger" />
+      {/* The role sits on the message's own box: the icon says nothing. */}
+      <div
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1"
+        role={alerts ? 'alert' : undefined}
       >
-        Retry
-      </button>
+        <p id={messageId} className="min-w-0 flex-1 basis-48">
+          {message !== undefined
+            ? message
+            : packs.offline
+              ? `You're offline, so ${what} can't be downloaded yet.`
+              : `${capitalized} couldn't be downloaded${packs.error === null ? '.' : `: ${packs.error}`}`}
+        </p>
+        <Button variant="outline" size="sm" onClick={packs.retry} className="shrink-0">
+          Retry
+        </Button>
+      </div>
     </div>
   );
 }
