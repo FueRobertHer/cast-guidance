@@ -21,6 +21,7 @@ import type {
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { buttonClass } from '@/ui/Button';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
+import { FeatureInfoSheet } from '@/ui/FeatureInfoSheet';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 
 /**
@@ -85,6 +86,20 @@ export function filterEntityPrompt(
   };
 }
 
+/** The ⓘ on an option card: opens its rules text without picking it. */
+function infoTrigger(o: ChoiceOption) {
+  return (
+    <button
+      type="button"
+      aria-label={`${o.label} details`}
+      title="Full description"
+      className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
+    >
+      <Info size={16} />
+    </button>
+  );
+}
+
 /** ⓘ full-description drawer for a feat option (id is `name|source`). */
 function featOptionInfo(registry: EntityRegistry) {
   return (o: ChoiceOption) => {
@@ -96,19 +111,23 @@ function featOptionInfo(registry: EntityRegistry) {
         type="feat"
         entity={feat}
         subtitle={`${String(feat.name)} · ${sourceName(String(feat.source))}`}
-        trigger={
-          <button
-            type="button"
-            aria-label={`${o.label} details`}
-            title="Full description"
-            className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
-          >
-            <Info size={16} />
-          </button>
-        }
+        trigger={infoTrigger(o)}
       />
     );
   };
+}
+
+/** ⓘ rules text for a branch of a pick-one feature, which the engine carries. */
+function featureOptionInfo(prompt: ChoicePrompt) {
+  return (o: ChoiceOption) =>
+    o.entries === undefined ? null : (
+      <FeatureInfoSheet
+        title={o.label}
+        subtitle={`${prompt.origin.label} · ${prompt.label}`}
+        entries={o.entries}
+        trigger={infoTrigger(o)}
+      />
+    );
 }
 
 /** Do two stored choice values name the same picks, in the same order? */
@@ -197,7 +216,13 @@ export function OriginChoices({
       value={doc.choices[prompt.id]}
       onChange={(v) => commit(prompt.id, v)}
       onCancel={onCancel}
-      renderOptionInfo={prompt.kind === 'feat' ? featInfo : undefined}
+      renderOptionInfo={
+        prompt.kind === 'feat'
+          ? featInfo
+          : prompt.kind === 'feature'
+            ? featureOptionInfo(prompt)
+            : undefined
+      }
     />
   );
 
@@ -220,7 +245,12 @@ export function OriginChoices({
           >
             <div className="min-w-0">
               <div className="truncate">{prompt.label}</div>
-              <div className="truncate text-caption text-ink-muted">{selected.join(', ')}</div>
+              {/* Labels, not ids: "Divine Strike", not "divine strike". */}
+              <div className="truncate text-caption text-ink-muted">
+                {selected
+                  .map((id) => prompt.options.find((o) => o.id === id)?.label ?? id)
+                  .join(', ')}
+              </div>
             </div>
             <button
               type="button"

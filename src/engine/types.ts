@@ -234,6 +234,11 @@ export interface ChoiceOption {
    * "guidance, not gatekeeping".
    */
   advisory?: string;
+  /**
+   * The option's full rules text, for an info sheet beside it, when it is a
+   * class or subclass feature (a branch of Blessed Strikes, Hunter's Prey, …).
+   */
+  entries?: unknown;
 }
 
 export interface ChoicePrompt {
@@ -250,6 +255,8 @@ export interface ChoicePrompt {
     | 'asiOrFeat'
     | 'feat'
     | 'optionalfeature'
+    /** One branch of a pick-one class or subclass feature (see `collectPick`). */
+    | 'feature'
     | 'generic';
   label: string;
   count: number;
