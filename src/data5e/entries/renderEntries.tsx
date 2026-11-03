@@ -9,7 +9,8 @@ import { Link } from 'react-router';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
-import { DISPLAY_ARG, LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
+import { DISPLAY_ARG, PLAIN_REF_TAGS } from './inlineTags';
+import { libraryPath } from './libraryPath';
 
 // ---------------------------------------------------------------------------
 // Inline tags
@@ -151,15 +152,11 @@ function TagView({
       );
     }
     default: {
-      const routeType = LINKED_TYPES[tag];
-      if (routeType !== undefined) {
+      const path = libraryPath(tag, args);
+      if (path !== undefined) {
         const ref = parseEntityRef(args, DISPLAY_ARG.get(tag));
-        const uid = ref.source ? `${ref.name}|${ref.source}` : ref.name;
         return (
-          <Link
-            to={`/library/${routeType}/${encodeURIComponent(uid.toLowerCase())}`}
-            className={LINK}
-          >
+          <Link to={path} className={LINK}>
             <InlineText text={ref.display} />
           </Link>
         );

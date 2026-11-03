@@ -124,6 +124,51 @@ describe('InlineText reference tags show their display text, never their paramet
   });
 });
 
+describe('InlineText reference tags link to the Library page that holds them', () => {
+  const href = (s: string) => {
+    const { container, unmount } = render(
+      <MemoryRouter>
+        <InlineText text={s} />
+      </MemoryRouter>,
+    );
+    const to = container.querySelector('a')?.getAttribute('href');
+    unmount();
+    return to;
+  };
+
+  it.each([
+    ['{@spell Fireball|PHB}', '/library/spell/fireball%7Cphb'],
+    ['{@spell fire shield||fire shield (warm shield only)}', '/library/spell/fire%20shield'],
+    ['{@optfeature Agonizing Blast|PHB}', '/library/optionalfeature/agonizing%20blast%7Cphb'],
+    // A book by its id, whatever the display text: the book's name is
+    // "Player's Handbook (2014)", and the chapter and section are dropped.
+    ["{@book Player's Handbook|PHB}", '/library/book/phb'],
+    ['{@book chapter 5|PHB|4}', '/library/book/phb'],
+    ['{@book Making an Attack|phb|9|making an attack}', '/library/book/phb'],
+    // An id is not always the source: this book's source is PSK.
+    ['{@book Inventing and Manufacturing Devices|PS-K|1}', '/library/book/ps-k'],
+    // A subclass by short name, class, class source and source, never by the
+    // class name taken for a source.
+    [
+      '{@subclass Alchemist|Artificer|EFA|EFA}',
+      '/library/subclass/alchemist%7Cartificer%7Cefa%7Cefa',
+    ],
+    // 5etools reads both sources as PHB when they are left empty, the
+    // subclass's too, not the class's (`DataUtil.class.unpackUidSubclass`).
+    ['{@subclass Berserker|Barbarian}', '/library/subclass/berserker%7Cbarbarian%7Cphb%7Cphb'],
+    [
+      '{@subclass Artillerist|Artificer|TCE}',
+      '/library/subclass/artillerist%7Cartificer%7Ctce%7Cphb',
+    ],
+    [
+      '{@subclass Champion|Fighter||XPHB|the Champion}',
+      '/library/subclass/champion%7Cfighter%7Cphb%7Cxphb',
+    ],
+  ])('links %s to %s', (tag, to) => {
+    expect(href(tag)).toBe(to);
+  });
+});
+
 describe('InlineText roll chips and target size (A11Y-002)', () => {
   /** Whether the text's roll chip is marked as sized by its line. */
   const inlineChip = (text: string) => {
