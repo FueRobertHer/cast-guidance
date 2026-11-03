@@ -511,7 +511,9 @@ export function Component() {
             onClick={() => void createBlank()}
             className={CREATE_OPTION}
           >
-            <span className="text-body-strong whitespace-nowrap">Blank sheet</span>
+            {/* The titles may wrap: at a large text size, kept to one line,
+                they ran into each other and past the screen's edge. */}
+            <span className="text-body-strong">Blank sheet</span>
             {/* Short enough to keep its padding at 320px, which is why the
                 longer sell lives in the heading and the aria-label. */}
             <span className="text-[11px] whitespace-nowrap text-ink-muted">change anything</span>
@@ -521,7 +523,7 @@ export function Component() {
             aria-label="New character with the guided wizard"
             className={CREATE_OPTION}
           >
-            <span className="text-body-strong whitespace-nowrap">Guided wizard</span>
+            <span className="text-body-strong">Guided wizard</span>
             <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
           </Link>
         </div>
