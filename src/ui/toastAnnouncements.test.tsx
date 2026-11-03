@@ -2,14 +2,15 @@
 // A11Y-002: the roll and notice snackbars mount with their text, and a live
 // region that mounts with its text is announced unreliably. So both are plain
 // visuals and their words go through the announcer, which is mounted from boot.
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RollResult } from '@/dice/types';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
+import { diceTrayStore } from '@/stores/diceTray';
 import { noticeStore, notify, notifyFailure } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { NoticeToast } from './NoticeToast';
-import { RollToast, rollAnnouncement } from './RollToast';
+import { ROLL_TOAST_MS, RollToast, rollAnnouncement } from './RollToast';
 
 const LIVE = '[aria-live],[role="status"],[role="alert"],output';
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
@@ -73,6 +74,159 @@ describe('RollToast', () => {
     act(() => rollLogStore.getState().remove(newest));
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     expect(getAnnouncerState().emitted).toBe(2);
+    // Nor does it show it: the toast still has the roll that was made.
+    expect(screen.queryByText('12')).not.toBeNull();
+    expect(screen.queryByText('15')).toBeNull();
+  });
+
+  it('says a natural 20 and a natural 1 in words', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(25, 20)));
+    expect(screen.getByText('Natural 20!')).toBeTruthy();
+    act(() => rollLogStore.getState().append(roll(6, 1)));
+    expect(screen.getByText('Natural 1')).toBeTruthy();
+    expect(screen.queryByText('Natural 20!')).toBeNull();
+  });
+
+  it('stays four seconds', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(15)));
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS - 1));
+    expect(screen.queryByText('Initiative')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('Initiative')).toBeNull();
+  });
+
+  it('waits while the pointer is on it, then gives four seconds more (WCAG 2.2.1)', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(15)));
+    const toast = screen.getByText('Initiative').closest('div.fixed');
+    if (toast === null) throw new Error('no toast');
+    fireEvent.pointerEnter(toast, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS * 3));
+    expect(screen.queryByText('Initiative')).not.toBeNull();
+    fireEvent.pointerLeave(toast, { pointerType: 'mouse' });
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS - 1));
+    expect(screen.queryByText('Initiative')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('Initiative')).toBeNull();
+    // Waiting is not a second announcement.
+    expect(getAnnouncerState().emitted).toBe(1);
+  });
+
+  it('does not wait for a tap, which has no leave after it', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(15)));
+    const toast = screen.getByText('Initiative').closest('div.fixed');
+    if (toast === null) throw new Error('no toast');
+    fireEvent.pointerEnter(toast, { pointerType: 'touch' });
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS));
+    expect(screen.queryByText('Initiative')).toBeNull();
+  });
+
+  describe('where there is hover', () => {
+    const realMatchMedia = window.matchMedia;
+    const realMatches = Element.prototype.matches;
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(hover: hover)',
+      })) as unknown as typeof window.matchMedia;
+      // jsdom never hovers: the toast is under the pointer from the start.
+      vi.spyOn(Element.prototype, 'matches').mockImplementation(function (
+        this: Element,
+        selector: string,
+      ) {
+        return selector === ':hover'
+          ? this.classList.contains('fixed')
+          : realMatches.call(this, selector);
+      });
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+      vi.restoreAllMocks();
+    });
+
+    it('waits for a mouse that rested where the toast rose, with no enter event', () => {
+      render(<RollToast />);
+      act(() => rollLogStore.getState().append(roll(15)));
+      act(() => vi.advanceTimersByTime(ROLL_TOAST_MS * 2));
+      expect(screen.queryByText('Initiative')).not.toBeNull();
+    });
+
+    it('does not wait on the hover a finger leaves on what it tapped', () => {
+      render(<RollToast />);
+      act(() => rollLogStore.getState().append(roll(15)));
+      const toast = screen.getByText('Initiative').closest('div.fixed');
+      if (toast === null) throw new Error('no toast');
+      fireEvent.pointerDown(toast, { pointerType: 'touch' });
+      act(() => vi.advanceTimersByTime(ROLL_TOAST_MS));
+      expect(screen.queryByText('Initiative')).toBeNull();
+    });
+  });
+
+  it('names a natural 20 only on a d20 roll', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append({ ...roll(25, 20), kind: 'damage' }));
+    expect(screen.queryByText('Natural 20!')).toBeNull();
+    expect(spoken()).toEqual(['Initiative: 25. Rolled 20, plus 5']);
+  });
+
+  it('shows a heal as a heal', () => {
+    render(<RollToast />);
+    act(() =>
+      rollLogStore.getState().append({
+        ...roll(9),
+        label: 'Hit die (d8)',
+        kind: 'heal',
+        meta: undefined,
+      }),
+    );
+    const total = screen.getByText('9');
+    expect(total.className).toContain('text-heal');
+  });
+});
+
+describe('RollToast with a dice tray on the page', () => {
+  let unmountTray: () => void = () => undefined;
+  beforeEach(() => {
+    unmountTray = diceTrayStore.getState().mount();
+  });
+  afterEach(() => {
+    unmountTray();
+    diceTrayStore.setState({ open: false, view: 'roll', returnTo: null });
+  });
+
+  const toastButton = () => screen.getByRole('button', { name: /^Initiative: 15\./ });
+
+  it('is a button named as the roll is said, that opens the tray on History', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(15)));
+    expect(toastButton().getAttribute('aria-label')).toBe(
+      'Initiative: 15. Rolled 10, plus 5. Open roll history',
+    );
+    expect(toastButton().closest(LIVE)).toBeNull();
+    fireEvent.pointerDown(toastButton());
+    fireEvent.click(toastButton());
+    expect(diceTrayStore.getState()).toMatchObject({ open: true, view: 'history' });
+    // The tray hands focus back to what had it before the toast was pressed.
+    expect(diceTrayStore.getState().returnTo).toBe(opener);
+    expect(screen.queryByText('Initiative')).toBeNull();
+    opener.remove();
+  });
+
+  it('waits while it has focus', () => {
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(roll(15)));
+    act(() => toastButton().focus());
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS * 2));
+    expect(screen.queryByText('Initiative')).not.toBeNull();
+    act(() => toastButton().blur());
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS));
+    expect(screen.queryByText('Initiative')).toBeNull();
+    expect(getAnnouncerState().emitted).toBe(1);
   });
 });
 

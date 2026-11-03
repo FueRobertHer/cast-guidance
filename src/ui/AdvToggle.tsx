@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useScrollHidden } from '@/lib/useScrollHidden';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 
-const LABELS: Record<AdvMode, string> = { dis: 'DIS', normal: 'N', adv: 'ADV' };
+/** Words a new player can read (DS-001 DiceDock), short enough for the dock. */
+export const MODE_LABELS: Record<AdvMode, string> = { dis: 'Dis', normal: 'Normal', adv: 'Adv' };
 
-/** Spoken names: the abbreviations above read as letters, and each is inside its word. */
-const FULL: Record<AdvMode, string> = {
+/** Spoken names: "Dis" and "Adv" are not words a screen reader knows, and each is inside its name. */
+export const MODE_NAMES: Record<AdvMode, string> = {
   dis: 'Disadvantage',
   normal: 'Normal',
   adv: 'Advantage',
@@ -41,12 +42,12 @@ export function AdvToggle() {
         <button
           key={m}
           type="button"
-          aria-label={FULL[m]}
+          aria-label={MODE_NAMES[m]}
           aria-pressed={mode === m}
           onClick={() => set(m)}
           className="h-11 min-w-12 rounded-full border-2 border-transparent bg-clip-padding px-2 font-bold text-[0.75rem] text-ink-muted tracking-[0.02em] transition-colors duration-120 [--tap-inset:2px] not-aria-pressed:hover:text-ink aria-pressed:bg-ink aria-pressed:text-bg"
         >
-          {LABELS[m]}
+          {MODE_LABELS[m]}
         </button>
       ))}
       <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />

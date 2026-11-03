@@ -432,6 +432,72 @@ async function hiddenWhileFocused(page: Page, region: Locator, minSteps = 1): Pr
   return hidden;
 }
 
+/**
+ * The elements of a fixed panel that stick out past its right edge. A fixed
+ * panel never widens the page, so `expectNoSidewaysScroll` cannot see them.
+ */
+function pastRightEdge(panel: Locator): Promise<string[]> {
+  return panel.evaluate((el) => {
+    const edge = el.getBoundingClientRect().right;
+    return [...el.querySelectorAll('*')]
+      .filter((child) => child.getBoundingClientRect().right > edge + 0.5)
+      .slice(0, 5)
+      .map((child) => `${child.tagName.toLowerCase()} "${child.textContent?.trim().slice(0, 30)}"`);
+  });
+}
+
+test.describe('the dice tray and the roll toast', () => {
+  for (const [when, viewport, extra] of [
+    ['at 320 CSS px', { width: 320, height: 640 }, ''],
+    ['with text at 200%', undefined, 'html { font-size: 200% !important; }'],
+  ] as const) {
+    test(`keep both views and the toast whole ${when}`, async ({ page }) => {
+      if (viewport !== undefined) await page.setViewportSize(viewport);
+      const id = await setUp(page);
+      await gotoSheetTab(page, id, 'Play');
+      await applyMeasuredFont(page, extra);
+      await page.getByRole('button', { name: 'Dice tray' }).click();
+      const dice = page.getByRole('dialog', { name: 'Dice' });
+      await expect(dice).toBeVisible();
+      await animationsSettled(page);
+
+      await dice.getByRole('button', { name: 'd20', exact: true }).click();
+      await dice.getByRole('button', { name: 'd8', exact: true }).click();
+      expect(await pastRightEdge(dice), 'Roll: past the sheet').toEqual([]);
+      for (const control of [
+        dice.getByRole('button', { name: 'History' }),
+        dice.getByRole('button', { name: 'Advantage', exact: true }),
+        dice.getByRole('button', { name: 'd100', exact: true }),
+        dice.getByRole('button', { name: 'Custom dice' }),
+        dice.getByRole('textbox', { name: 'Dice expression' }),
+        dice.getByRole('button', { name: 'Roll', exact: true }).last(),
+      ]) {
+        await control.scrollIntoViewIfNeeded();
+        await expect(control, `Roll: ${control}`).toBeInViewport({ ratio: 1 });
+      }
+
+      await dice.getByRole('button', { name: 'History' }).click();
+      expect(await pastRightEdge(dice), 'History: past the sheet').toEqual([]);
+      for (const control of [
+        dice.getByRole('button', { name: 'clear all' }),
+        dice.getByRole('button', { name: /^Remove d8 roll/ }),
+      ]) {
+        await control.scrollIntoViewIfNeeded();
+        await expect(control, `History: ${control}`).toBeInViewport({ ratio: 1 });
+      }
+
+      // A roll, closed straight after, so its toast is up to measure.
+      await dice.getByRole('button', { name: 'Roll', exact: true }).first().click();
+      await dice.getByRole('button', { name: 'd6', exact: true }).click();
+      await page.keyboard.press('Escape');
+      await expect(dice).toBeHidden();
+      const toast = page.getByRole('button', { name: /^d6: \d+\. .*Open roll history$/ });
+      await expect(toast).toBeInViewport({ ratio: 1 });
+      expect(await pastRightEdge(toast), 'the toast: past its edge').toEqual([]);
+    });
+  }
+});
+
 /** Spells in the landscape walk of a long list, enough that most are not rendered at once. */
 const LONG_LIST = 150;
 
