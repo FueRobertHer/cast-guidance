@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react';
+import { ChevronRight, Search, Star } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -26,10 +26,14 @@ import type {
 } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import type { DocUpdater } from '@/stores/characterSession';
+import { badgeClass } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { chipClass } from '@/ui/Chip';
 import { askChoice, askConfirm } from '@/ui/dialogs';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { PackProblem } from '@/ui/PackProblem';
 import { SourceBadge } from '@/ui/SourceBadge';
+import { fieldClass } from '@/ui/TextField';
 import {
   availableCastResources,
   castResourceId,
@@ -63,6 +67,17 @@ const MODE_HINT: Record<SpellcastingMode, string> = {
 function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
 }
+
+/** A count past its limit: allowed, and flagged in the guide's gold (DS-001). */
+const OVER = 'font-semibold text-guide';
+
+/**
+ * An offer to show what the source settings hide, or to hide it again: an
+ * outlined control in `line-strong`, dashed because it changes the list
+ * rather than acting on a spell.
+ */
+const OFFER =
+  'min-h-tap rounded-control border border-line-strong border-dashed px-3 py-2 text-left text-caption text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-ink';
 
 /**
  * Split a caster's known-spell list into cantrip vs leveled counts using a
@@ -302,24 +317,25 @@ function ClassSpells({
 
   return (
     <section className="flex flex-col gap-2">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 ref={heading} tabIndex={-1} className="flex items-baseline gap-2 text-sm font-semibold">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 px-1">
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className="flex items-baseline gap-2 font-display text-title-card"
+        >
           {block.className} spells
           {MODE_LABEL[block.mode] !== undefined && (
-            <span
-              className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted"
-              title={MODE_HINT[block.mode]}
-            >
+            <span className={`self-center font-sans ${badgeClass()}`} title={MODE_HINT[block.mode]}>
               {MODE_LABEL[block.mode]}
             </span>
           )}
         </h2>
-        <span className="text-xs text-ink-muted">
+        <span className="text-caption text-ink-muted tabular-nums">
           DC {block.saveDc.value} · Atk +{block.attackMod.value}
           {cantripMax !== undefined && (
             <>
               {' · cantrips '}
-              <span className={overCantrips ? 'font-semibold text-amber-300' : undefined}>
+              <span className={overCantrips ? OVER : undefined}>
                 {cantripsKnown}/{cantripMax}
               </span>
             </>
@@ -327,7 +343,7 @@ function ClassSpells({
           {prepMax !== undefined && (
             <>
               {' · prepared '}
-              <span className={overPrepared ? 'font-semibold text-amber-300' : undefined}>
+              <span className={overPrepared ? OVER : undefined}>
                 {state.prepared.length}/{prepMax}
               </span>
             </>
@@ -335,7 +351,7 @@ function ClassSpells({
           {knownMax !== undefined && (
             <>
               {' · known '}
-              <span className={overKnown ? 'font-semibold text-amber-300' : undefined}>
+              <span className={overKnown ? OVER : undefined}>
                 {knownLeveled}/{knownMax}
               </span>
             </>
@@ -343,7 +359,7 @@ function ClassSpells({
         </span>
       </header>
       {over && (
-        <p role="status" className="text-xs text-amber-300">
+        <p role="status" className="rounded-control bg-guide-soft px-3 py-2 text-caption text-ink">
           {overPrepared
             ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
             : ''}
@@ -354,16 +370,17 @@ function ClassSpells({
       )}
       {/* A sibling of the cue, not inside it, so the live region doesn't read the button. */}
       {over && (
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => {
             void trim();
           }}
           aria-label={`Trim to limit, ${block.className} spells`}
-          className="self-start rounded-lg border border-surface-2 px-3 py-1 text-xs text-ink-muted hover:text-ink"
+          className="self-start"
         >
           Trim to limit…
-        </button>
+        </Button>
       )}
       {(() => {
         const rec = recommendedStarters(block.className);
@@ -373,42 +390,46 @@ function ClassSpells({
         const visible = new Set([...byLevel.values()].flat().map((s) => nameOf(s).toLowerCase()));
         const picks = [...rec.cantrips, ...rec.level1].filter((p) => visible.has(p.toLowerCase()));
         if (picks.length === 0) return null;
+        // The guide's voice (DS-001): `guide-soft`, a Star where the ★ was.
         return (
-          <p className="rounded-lg bg-surface px-3 py-2 text-xs text-ink-muted">
-            <span className="text-amber-300">★ New to {block.className}?</span> Solid first picks:{' '}
-            {picks.join(', ')}.
+          <p className="rounded-control bg-guide-soft px-3 py-2 text-caption text-ink">
+            <span className="font-semibold text-guide">
+              <Star size={14} aria-hidden="true" className="mr-1 inline align-[-2px]" />
+              New to {block.className}?
+            </span>{' '}
+            Solid first picks: {picks.join(', ')}.
           </p>
         );
       })()}
-      <label className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
-        <Search size={14} className="shrink-0 text-ink-muted" />
+      <div className="relative">
+        <Search
+          size={20}
+          aria-hidden="true"
+          className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
+        />
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           aria-label={`Search ${block.className} spell list`}
           placeholder={`Search ${block.className} spell list…`}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted"
+          className={`${fieldClass} pl-10.5`}
         />
-      </label>
+      </div>
       {classUids === null && waiting && (
-        <p className="text-sm text-ink-muted">Loading spell list…</p>
+        <p className="px-1 text-body text-ink-muted">Loading spell list…</p>
       )}
       {/* Said, not left as a bare heading: a homebrew class with no list, or a
           search or sources that leave nothing (the offer below then says how
           many are hidden). */}
       {complete && classUids !== null && byLevel.size === 0 && (
-        <p className="text-sm text-ink-muted">
+        <p className="px-1 text-body text-ink-muted">
           {filter.trim() === ''
             ? `No spells on the ${block.className} list to show.`
             : `No ${block.className} spells match “${filter.trim()}”.`}
         </p>
       )}
       {sourceHiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowHiddenSources(true)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowHiddenSources(true)} className={OFFER}>
           {hiddenSourcesLabel(
             sourceHiddenCount,
             scope,
@@ -417,11 +438,7 @@ function ClassSpells({
         </button>
       )}
       {showHiddenSources && (
-        <button
-          type="button"
-          onClick={() => setShowHiddenSources(false)}
-          className="rounded-lg border border-dashed border-surface-2 px-3 py-2 text-left text-xs text-ink-muted hover:text-ink"
-        >
+        <button type="button" onClick={() => setShowHiddenSources(false)} className={OFFER}>
           {backToSourcesLabel(scope)}
         </button>
       )}
@@ -431,15 +448,24 @@ function ClassSpells({
           const knownAtLevel = spells.filter((s) => knownUids.has(uidOf(s)));
           const open = filter !== '' || knownAtLevel.length > 0;
           return (
-            <details key={lvl} open={open} className="rounded-lg bg-surface">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">
+            <details
+              key={lvl}
+              open={open}
+              className="group overflow-hidden rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+            >
+              <summary className="flex min-h-tap cursor-pointer list-none items-center gap-2 px-4 py-2 text-body-strong">
+                <ChevronRight
+                  size={16}
+                  aria-hidden="true"
+                  className="shrink-0 text-ink-muted transition-transform duration-200 group-open:rotate-90"
+                />
                 {levelLabel(lvl)}
-                <span className="ml-2 text-xs font-normal text-ink-muted">
+                <span className="font-normal text-caption text-ink-muted">
                   {knownAtLevel.length > 0 ? `${knownAtLevel.length} known · ` : ''}
                   {spells.length} available
                 </span>
               </summary>
-              <div className="flex flex-col border-t border-surface-2/40">
+              <div className="flex flex-col divide-y divide-line border-line border-t">
                 {spells.map((s) => {
                   const uid = uidOf(s);
                   const known = knownUids.has(uid);
@@ -447,77 +473,79 @@ function ClassSpells({
                   return (
                     <div
                       key={uid}
-                      className="flex items-center gap-2 border-b border-surface-2/30 px-3 py-2 text-sm last:border-b-0"
+                      className="flex flex-wrap items-center gap-x-2 py-1 pr-2 pl-4 text-body"
                     >
                       <Link
                         to={`/library/spell/${encodeURIComponent(uid)}`}
-                        className="min-w-0 flex-1 truncate hover:text-amber-200"
+                        className="min-h-6 min-w-24 flex-1 truncate font-semibold underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
                       >
                         {isRecommendedStarter(block.className, nameOf(s), lvl) && (
                           <span
-                            className="mr-1 text-amber-300"
+                            className="mr-1 text-guide"
                             title={`Recommended first pick for ${block.className}`}
                           >
-                            <span aria-hidden="true">★</span>
+                            <Star size={14} aria-hidden="true" className="inline align-[-2px]" />
                             <span className="sr-only">Recommended:</span>
                           </span>
                         )}
                         {nameOf(s)}
                       </Link>
-                      {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
-                        <OutsideSourcesChip />
-                      )}
-                      <SourceBadge source={sourceOf(s)} />
-                      {/* Stable verbs for the names, so aria-pressed alone says the state. */}
-                      <button
-                        type="button"
-                        aria-label={`Learn ${nameOf(s)}`}
-                        aria-pressed={known}
-                        onClick={() => toggle(s, 'known')}
-                        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-                          known ? 'border-sky-300 text-sky-300' : 'border-surface-2 text-ink-muted'
-                        }`}
-                      >
-                        {known ? 'known' : 'learn'}
-                      </button>
-                      {lvl > 0 && (
+                      {/* The row's marks and actions, kept together: at a
+                          narrow width they wrap under the name as one group.
+                          No gap: the controls' transparent tap borders space
+                          them already. */}
+                      <span className="ml-auto flex shrink-0 items-center">
+                        <span className="mr-1 flex items-center gap-1">
+                          {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
+                            <OutsideSourcesChip />
+                          )}
+                          <SourceBadge source={sourceOf(s)} />
+                        </span>
+                        {/* Stable verbs for the names, so aria-pressed alone says the state. */}
                         <button
                           type="button"
-                          aria-label={`Prepare ${nameOf(s)}`}
-                          aria-pressed={prepared}
-                          onClick={() => toggle(s, 'prepared')}
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-                            prepared
-                              ? 'border-emerald-300 text-emerald-300'
-                              : 'border-surface-2 text-ink-muted'
-                          }`}
+                          aria-label={`Learn ${nameOf(s)}`}
+                          aria-pressed={known}
+                          onClick={() => toggle(s, 'known')}
+                          className={chipClass('outline')}
                         >
-                          {prepared ? 'prepared' : 'prepare'}
+                          {known ? 'known' : 'learn'}
                         </button>
-                      )}
-                      {allowCasting &&
-                        (known || prepared) &&
-                        // Leveled spells spend a slot; cantrips only get a Cast
-                        // button when they concentrate (so the tracker fires).
-                        (lvl > 0 || spellNeedsConcentration(s)) && (
+                        {lvl > 0 && (
                           <button
                             type="button"
-                            aria-label={`Cast ${nameOf(s)}`}
-                            onClick={() => {
-                              void cast(lvl, s);
-                            }}
-                            className="shrink-0 rounded bg-accent-deep px-2 py-0.5 text-xs font-semibold"
-                            title={
-                              lvl === 0
-                                ? 'Cast cantrip (starts concentration)'
-                                : `Cast at level ${lvl} (spends a slot${
-                                    spellNeedsConcentration(s) ? ', starts concentration' : ''
-                                  })`
-                            }
+                            aria-label={`Prepare ${nameOf(s)}`}
+                            aria-pressed={prepared}
+                            onClick={() => toggle(s, 'prepared')}
+                            className={chipClass('outline')}
                           >
-                            Cast
+                            {prepared ? 'prepared' : 'prepare'}
                           </button>
                         )}
+                        {allowCasting &&
+                          (known || prepared) &&
+                          // Leveled spells spend a slot; cantrips only get a Cast
+                          // button when they concentrate (so the tracker fires).
+                          (lvl > 0 || spellNeedsConcentration(s)) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Cast ${nameOf(s)}`}
+                              onClick={() => {
+                                void cast(lvl, s);
+                              }}
+                              title={
+                                lvl === 0
+                                  ? 'Cast cantrip (starts concentration)'
+                                  : `Cast at level ${lvl} (spends a slot${
+                                      spellNeedsConcentration(s) ? ', starts concentration' : ''
+                                    })`
+                              }
+                            >
+                              Cast
+                            </Button>
+                          )}
+                      </span>
                     </div>
                   );
                 })}
@@ -609,7 +637,7 @@ export function SpellManager({
   const packs = useTypePacks(caster ? 'spell' : undefined);
   const { lookup, problem } = useClassLookup(caster, packs.status);
   if (!caster) {
-    return <p className="text-sm text-ink-muted">This character has no spellcasting.</p>;
+    return <p className="text-body text-ink-muted">This character has no spellcasting.</p>;
   }
   // Always-prepared grants aren't tied to a class, so they only say which of a
   // class's preparations are redundant when there is just the one class.
@@ -618,7 +646,7 @@ export function SpellManager({
       ? sheet.grantedSpells.filter((g) => g.usage === 'prepared')
       : [];
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <PackProblem packs={packs} what="the spell list" />
       {/* Only with the spell files in: while they are failing or being
           retried, the spell list's panel speaks for both (its Retry reads

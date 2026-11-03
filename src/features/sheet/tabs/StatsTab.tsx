@@ -4,7 +4,9 @@ import { ABILITIES } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { D20Icon } from '@/ui/D20Icon';
 import { ProfDot } from '@/ui/ProfDot';
+import { listClass } from '@/ui/surfaces';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 function rollCheck(label: string, modifier: number) {
@@ -14,27 +16,46 @@ function rollCheck(label: string, modifier: number) {
 
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
+/** A tile on `bg` (DS-001): `surface`, a `line` hairline, `shadow-card` in light. */
+const TILE = 'bg-surface shadow-card ring-1 ring-line ring-inset';
+
+/** A section heading inside a screen, as Settings has them. */
+const H2 = 'px-1 text-heading';
+
+/** One line of the senses and proficiencies list. */
+const ROW = 'px-4 py-3';
+
+/** A press rolls: one fill step on hover, the roll tint while held. */
+const ROLLS = 'transition-colors duration-120 hover:bg-surface-raised active:bg-roll-soft';
+
 export function Component() {
   const { sheet } = useOutletContext<CharacterSheetState>();
-  if (sheet === null) return <p className="text-sm text-ink-muted">Deriving…</p>;
+  if (sheet === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   return (
-    <div className="flex flex-col gap-5">
-      <p className="text-xs text-ink-muted">
-        🎲 Tap any modifier to roll it — the DIS/N/ADV switch applies to every roll.
+    <div className="flex flex-col gap-6">
+      {/* A neutral tip (DS-001): `surface-raised`, with the die where the
+          emoji was. */}
+      <p className="flex gap-3 rounded-control bg-surface-raised p-3 text-[0.875rem] leading-5">
+        <D20Icon size={18} className="mt-px shrink-0 text-ink-muted" />
+        <span>Tap any modifier to roll it — the DIS/N/ADV switch applies to every roll.</span>
       </p>
-      {/* Abilities: tap = check roll, ⓘ = breakdown */}
+      {/* Abilities, modifier first: tap the modifier to roll a check, the score
+          pill under it for its breakdown. */}
       <section className="grid grid-cols-3 gap-2 sm:grid-cols-6">
         {ABILITIES.map((a) => {
           const ability = sheet.abilities[a];
           return (
-            <div key={a} className="flex flex-col items-center rounded-lg bg-surface p-2">
-              <span className="text-[10px] font-semibold uppercase text-ink-muted">{a}</span>
+            <div
+              key={a}
+              className={`flex flex-col items-center rounded-card px-1 pt-3 pb-2 ${TILE}`}
+            >
+              <span className="text-ink-muted text-overline uppercase">{a}</span>
               <button
                 type="button"
                 onClick={() => rollCheck(`${a.toUpperCase()} check`, ability.mod)}
                 aria-label={`Roll ${a.toUpperCase()} check (${fmt(ability.mod)})`}
-                className="text-xl font-bold hover:text-accent"
+                className={`min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
                 title={`Roll ${a.toUpperCase()} check`}
               >
                 {fmt(ability.mod)}
@@ -48,14 +69,17 @@ export function Component() {
                     aria-label={`${a.toUpperCase()} score ${ability.value}${
                       ability.overridden ? ' (set manually)' : ''
                     }: breakdown`}
-                    // A thumb-sized target around the small score (A11Y-003:
-                    // it was 13 by 16, under even axe's 24px floor). The
-                    // negative margin spends the card's bottom padding, so the
-                    // card grows less than the target does.
-                    className="tap -mb-2 text-xs text-ink-muted"
+                    // A thumb-sized target around the small score pill
+                    // (A11Y-003: it was 13 by 16, under even axe's 24px floor):
+                    // the pill is what shows, the transparent rest takes the
+                    // tap. The negative margin spends the card's bottom
+                    // padding, so the card grows less than the target does.
+                    className="group tap -mb-2"
                   >
-                    {ability.value}
-                    {ability.overridden ? '•' : ''}
+                    <span className="h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
+                      {ability.value}
+                      {ability.overridden ? '•' : ''}
+                    </span>
                   </button>
                 }
               />
@@ -64,10 +88,11 @@ export function Component() {
         })}
       </section>
 
-      {/* Saves */}
-      <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">Saving throws</h2>
-        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+      {/* Saves: a proficiency dot where the old fill was. The button's name
+          stays "STR +2", which never said the level either. */}
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Saving throws</h2>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {ABILITIES.map((a) => {
             const save = sheet.saves[a];
             return (
@@ -75,59 +100,67 @@ export function Component() {
                 key={a}
                 type="button"
                 onClick={() => rollCheck(`${a.toUpperCase()} save`, save.total.value)}
-                className={`rounded-lg px-2 py-1.5 text-sm ${
-                  save.prof ? 'bg-accent-deep/40 font-semibold' : 'bg-surface text-ink-muted'
-                }`}
+                className={`flex min-h-tap items-center justify-between gap-2 rounded-control px-3 text-ink ${TILE} ${ROLLS}`}
               >
-                {a.toUpperCase()} {fmt(save.total.value)}
+                <span className="inline-flex items-center gap-2 text-label">
+                  <ProfDot level={save.prof ? 1 : 0} decorative />
+                  <span className="text-ink-muted">{a.toUpperCase()}</span>
+                </span>{' '}
+                <span className="font-bold tabular-nums">{fmt(save.total.value)}</span>
               </button>
             );
           })}
         </div>
       </section>
 
-      {/* Skills */}
-      <section className="flex flex-col gap-1.5">
-        <h2 className="text-sm font-semibold text-ink-muted">Skills</h2>
-        <div className="flex flex-col rounded-lg bg-surface">
+      {/* Skills: whole-row rolls in ink rather than the roll blue, so 18 rows
+          do not read as links, with a faint die that says the row rolls. */}
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Skills</h2>
+        <div className={listClass}>
           {Object.entries(sheet.skills).map(([name, s]) => (
             <button
               key={name}
               type="button"
               onClick={() => rollCheck(`${name} check`, s.total.value)}
-              className="flex items-center justify-between border-b border-surface-2/40 px-3 py-2 text-sm last:border-b-0 hover:bg-surface-2/50"
+              className={`flex min-h-tap items-center gap-3 pr-3 pl-4 text-left text-ink ${ROLLS}`}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-1 items-center gap-3">
                 <ProfDot level={s.prof} />
                 {name}
-                <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
+                <span className="font-semibold text-[0.75rem] text-ink-muted uppercase leading-4 tracking-[0.04em]">
+                  {s.ability}
+                </span>
               </span>
-              <span className="font-mono font-semibold">{fmt(s.total.value)}</span>
+              <span className="min-w-9 text-right font-bold tabular-nums">
+                {fmt(s.total.value)}
+              </span>
+              <D20Icon size={16} className="shrink-0 text-ink-faint" />
             </button>
           ))}
         </div>
       </section>
 
       {/* Passives, senses, proficiencies, languages */}
-      <section className="flex flex-col gap-2 text-sm">
-        <div className="flex justify-between rounded-lg bg-surface px-3 py-2">
+      <section className={`${listClass} text-body`}>
+        <div className={`flex items-center justify-between gap-3 ${ROW}`}>
           <span className="text-ink-muted">Passive Perception</span>
-          <strong>{sheet.passivePerception.value}</strong>
+          <strong className="font-bold tabular-nums">{sheet.passivePerception.value}</strong>
         </div>
         {sheet.senses.length > 0 && (
-          <div className="rounded-lg bg-surface px-3 py-2">
+          <div className={ROW}>
             <span className="text-ink-muted">Senses: </span>
             {sheet.senses.map((s) => `${s.sense} ${s.range} ft.`).join(', ')}
           </div>
         )}
         {sheet.resists.length > 0 && (
-          <div className="rounded-lg bg-surface px-3 py-2">
+          <div className={ROW}>
             <span className="text-ink-muted">Resistances: </span>
             {sheet.resists.map((r) => r.damageType).join(', ')}
           </div>
         )}
         {sheet.languages.length > 0 && (
-          <div className="rounded-lg bg-surface px-3 py-2">
+          <div className={ROW}>
             <span className="text-ink-muted">Languages: </span>
             {sheet.languages.join(', ')}
           </div>
@@ -135,7 +168,7 @@ export function Component() {
         {(sheet.armorProfs.length > 0 ||
           sheet.weaponProfs.length > 0 ||
           sheet.toolProfs.length > 0) && (
-          <div className="rounded-lg bg-surface px-3 py-2">
+          <div className={ROW}>
             <span className="text-ink-muted">Proficiencies: </span>
             {[...sheet.armorProfs, ...sheet.weaponProfs, ...sheet.toolProfs].join(', ')}
           </div>
