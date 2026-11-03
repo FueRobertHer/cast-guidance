@@ -61,6 +61,12 @@ export default defineConfig({
     // Headroom for a loaded 4-vCPU runner with coverage on: component tests
     // that take a second locally ran past the 5 s default there.
     testTimeout: 15_000,
+    // CI's runners have 4 vCPUs, and Vitest's default of one worker per CPU
+    // but one leaves a CPU to the main process, which mostly waits once the
+    // modules are transformed. Pinned to 4 CPUs, 3 workers took 105 s and 4
+    // took 86 s. More ran faster still (72 s at 6), but they slow each test
+    // toward the 1 s `waitFor` default and the e2e jobs take longer anyway.
+    maxWorkers: process.env.CI ? 4 : undefined,
     // Node 25 and later define their own `localStorage` (undefined without
     // `--localstorage-file`) and `sessionStorage`. Vitest's jsdom environment
     // leaves alone most globals Node already has, these two included, so tests
