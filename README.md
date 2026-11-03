@@ -109,7 +109,7 @@ license is outside the allowlist in `scripts/thirdPartyNotices.ts`.
 - `src/db/`: Dexie tables behind repo interfaces (cloud sync can slot in later).
 - `src/features/`: UI for the character list, creator wizard, sheet tabs, library, homebrew, and settings.
 - `src/styles/app.css`: the design tokens for both themes (colour, type, spacing, radii,
-  shadows, motion) and the temporary aliases still in use; `src/ui/` holds the shared
+  shadows, motion); `src/ui/` holds the shared
   controls built on them (Button, Chip, Badge, TextField, SegmentedControl, ToggleChip,
   Banner, Snackbar, sheet). `src/lib/theme.ts` owns the System/Light/Dark choice.
 

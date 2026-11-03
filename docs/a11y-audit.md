@@ -99,12 +99,13 @@ runs on every scanned state.
 
 ### Unit guards
 
-- `src/styles/contrast.test.ts`: the button fill (`accent-fill`) clears 4.5:1
-  with white and with the ink colour, `accent-ink` clears it on a raised
-  control and its hover step, and every bare `bg-accent` token in the source
-  (opacity variants included) is on one of a listed set of unlabelled mark
-  lines. A token in a conditional or a variable counts too, and moving one
-  from a mark onto a label in the same file fails.
+- `src/styles/contrast.test.ts`: every pairing the design system promises
+  (text on each ground, labels on the fills, edges, marks and the focus ring)
+  holds its ratio in both themes, and no source line uses a colour name
+  DS-001 retired (`accent`, `surface-2`, `white`, `amber-300` and the like),
+  which would now draw Tailwind's own palette or nothing. A name in a
+  conditional, under a variant, with an opacity or as a `--color-` variable
+  counts too.
 - `src/features/sheet/tabs/targetSize.test.tsx`: the sheet's small controls,
   the Stats ability scores and the death saves included, carry a thumb-sized
   class. The E2E spec above is the real guard; this one only fails fast.
