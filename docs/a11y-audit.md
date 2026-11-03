@@ -32,12 +32,12 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 
 | Area | States |
 |---|---|
-| Roster | `roster-empty` (with the getting-started card), `roster`, `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
+| Roster | `roster-empty` (with the getting-started checklist), `roster`, `roster-new-character` (New character's sheet: the guided wizard or a blank sheet), `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
 | Character sheet | `sheet-play`, `sheet-play-hp-tip` (the HP card's one-time tip, before it is dismissed), `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete), `sheet-conditions` (the condition strip under the header with Poisoned and a level of exhaustion), `sheet-conditions-effects-off` (the strip with Poisoned switched off), `sheet-play-condition-cues` (the caster's Play under Poisoned, Prone and Restrained: the initiative, attack and spell attack cues with one Ignore once pressed, attacks against the character, and speed 0), `sheet-stats-condition-cues` (the same character's Stats: the check and save cues), `build-feature-choice` (Build with a Cleric 7's Blessed Strikes still to pick: the option cards, each with its info button) |
 | Sheet overlays | `dice-tray`, `dice-tray-roll-cue` (the tray's latest rolls, under its dice, with a roll a condition changed and its cue), `dice-tray-history` (the tray opened from the roll toast on History: every roll, each with its remove button, and clear all), `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `feature-option-info-sheet` (a pick-one feature's branch, its rules text, from its option card on Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `condition-picker` (the strip's add chip's sheet: every condition's toggle and the exhaustion stepper), `condition-info-sheet` (a condition's rules, what it does to rolls and its "Apply its effects" switch, from its chip), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
-| Other routes | `settings`, `creator` (step 1), `not-found` |
+| Other routes | `settings`, `settings-storage-details` (Settings opened from the checklist's Storage details link, the disclosure open), `creator` (step 1), `not-found` |
 | Sheet confirm | `long-rest-confirm` (a confirm that is not destructive, so its button is the red fill) |
 | Banners and toasts | `toast-offline-ready`, `banner-data-download`, `banner-data-error`, `settings-update-failed` (a newer release that fails to install: Settings' alert and the "Update to ... failed" banner), `toast-data-update` ("Game data ... available"), `toast-app-update` ("A new version of the app is ready.", from a new build on the variant server), `banner-save-error` (character writes refused, as a full disk would), `banner-save-conflict` (a save refused because another tab saved the character first: its alert, Reload stored version and Keep mine), `banner-db-closed` (the database deleted, as clearing site data from another tab does) |
 | Desktop layout | `desktop-roster`, `desktop-library`, `desktop-settings`, `desktop-sheet-play` |
@@ -118,7 +118,7 @@ runs on every scanned state.
 [`e2e/a11y/keyboard.spec.ts`](../e2e/a11y/keyboard.spec.ts), at a desktop size
 (no touch, the app nav and the sheet's tabs in a side rail):
 
-- **Dialogs and drawers:** the roster's actions sheet, Rename, the Delete
+- **Dialogs and drawers:** the roster's New character sheet, its actions sheet, Rename, the Delete
   confirm, the character import preview, the homebrew import preview, the dice
   tray, the history drawer (opened from the sheet header's overflow menu, so
   focus comes back to the menu button), the long rest confirm, a number's breakdown (STR),
@@ -133,9 +133,9 @@ runs on every scanned state.
   actions sheet, the row's Actions button the chain started from). Removing
   a condition by Enter on its x puts focus on the chip that takes its place,
   and removing the last one puts it on the add chip.
-- **Pages by Tab and Enter:** the roster (the character, its Actions, the
-  blank sheet and wizard options and Import, in that order; Enter creates a
-  character and opens one), the library (search, a result, a type tile, the
+- **Pages by Tab and Enter:** the roster (Import in the header, the character, its Actions
+  and New character, in that order; Enter on New character and then Blank sheet
+  creates a character, and Enter on the character opens it), the library (search, a result, a type tile, the
   list's filter, a row, each opening with Enter), the sheet's tab bar
   (a caster's five tabs, each the next Tab stop after the one before, Enter
   opening it), and the sheet header (Back, Edit and the overflow menu in that
@@ -177,7 +177,7 @@ list role while empty.
   `page.addStyleTag`, so everything sized in rem grows as with the browser's
   text-size setting: the same routes, folds open, do not scroll sideways, and
   each one's
-  primary controls (the roster's create and import buttons, the library's
+  primary controls (the roster's New character and import buttons, the library's
   search and filter, Settings' update check, the creator's Next, the sheet's
   tab and Back link, the dice tray, Long rest and the condition strip's add
   chip) are whole on screen once scrolled to.

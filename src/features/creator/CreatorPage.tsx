@@ -341,6 +341,7 @@ export function Component() {
     setParams({ step: s }, { replace: false, state: wizardState(wizardDepth(location.state) + 1) });
   };
   const stepIdx = STEPS.indexOf(step);
+  const nextStep: Step | undefined = STEPS[stepIdx + 1];
 
   usePageTitle(
     ...(opening !== null
@@ -371,7 +372,9 @@ export function Component() {
   // `track`. The bar repeats the count beside it, so it is decoration.
   const header = (
     <header className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
+      {/* Wraps, so at a large text size the count drops under the title
+          rather than pushing the page sideways. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link
           to="/"
           aria-label="Back to characters (your draft is kept)"
@@ -380,8 +383,8 @@ export function Component() {
           <ArrowLeft size={20} aria-hidden />
         </Link>
         <h1 className="font-display text-title-page">{STEP_LABELS[step]}</h1>
-        <span className="ml-auto text-caption text-ink-muted tabular-nums">
-          {stepIdx + 1}/{STEPS.length}
+        <span className="ml-auto text-caption whitespace-nowrap text-ink-muted tabular-nums">
+          Step {stepIdx + 1} of {STEPS.length}
         </span>
       </div>
       <div aria-hidden="true" className="flex gap-0.75">
@@ -794,6 +797,7 @@ export function Component() {
               <p className="text-caption text-ink-muted">
                 Playing with a group? Match whichever books your table uses. Starting fresh on your
                 own? Either works — 2014 has the most expansion content, 2024 is the newest rules.
+                Older books still work in a 2024 game.
               </p>
             </fieldset>
           </div>
@@ -1400,7 +1404,8 @@ export function Component() {
           />
         </div>
         {/* Step navigation: a ghost Back beside the one primary Next (DS-001),
-            above the safe area. */}
+            above the safe area. Next names the step it goes to, as that
+            step's heading does, so a press never lands somewhere unsaid. */}
         <nav className="flex gap-2 border-line border-t bg-bg px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
           <Button
             variant="ghost"
@@ -1413,17 +1418,9 @@ export function Component() {
           >
             <ArrowLeft size={18} aria-hidden /> Back
           </Button>
-          {stepIdx < STEPS.length - 1 && (
-            <Button
-              variant="brand"
-              size="lg"
-              onClick={() => {
-                const next = STEPS[stepIdx + 1];
-                if (next !== undefined) navStep(next);
-              }}
-              className="flex-1"
-            >
-              Next <ArrowRight size={18} aria-hidden />
+          {nextStep !== undefined && (
+            <Button variant="brand" size="lg" onClick={() => navStep(nextStep)} className="flex-1">
+              Next: {STEP_LABELS[nextStep]} <ArrowRight size={18} aria-hidden />
             </Button>
           )}
         </nav>

@@ -26,7 +26,7 @@ import { Button, buttonClass } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
 import { cardClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
-import { PERSIST_DENIED_TEXT, PersistStatus } from '../onboarding/Status';
+import { PERSIST_DENIED_TEXT, PersistStatus, STORAGE_DETAILS_ID } from '../onboarding/Status';
 import { SourcesSection } from './SourcesSection';
 import { ThemePicker } from './ThemePicker';
 
@@ -82,6 +82,12 @@ export const ABOUT_LINKS = [
 
 const mb = (n?: number) => (n === undefined ? '?' : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+/**
+ * Whether the address links to Storage details. Read from the address rather
+ * than the router, so the page renders without one.
+ */
+const linkedToDetails = () => window.location.hash === `#${STORAGE_DETAILS_ID}`;
+
 /** A section's heading, in the screen's `heading` style (DS-001). */
 const H2 = 'px-1 text-heading';
 
@@ -116,6 +122,23 @@ export function Component() {
   const { estimate, cachedBytes } = useStorageUsage(phase);
   const persist = usePersistentStorage();
   const [guideShown, setGuideShown] = useState(false);
+  // Opened by a link to it: on arrival, and on a jump to it with the page
+  // already open (Back or Forward, or the address bar), which keeps the page
+  // mounted and so is only heard as a hash change.
+  const [detailsOpen, setDetailsOpen] = useState(linkedToDetails);
+  const detailsSummary = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const arrive = () => {
+      if (!linkedToDetails()) return;
+      setDetailsOpen(true);
+      // Focus follows the link (the browser has already scrolled to it), so
+      // a keyboard or screen reader carries on from the details.
+      detailsSummary.current?.focus();
+    };
+    arrive();
+    window.addEventListener('hashchange', arrive);
+    return () => window.removeEventListener('hashchange', arrive);
+  }, []);
 
   const resetAll = async () => {
     const ok = await askConfirm({
@@ -440,11 +463,6 @@ export function Component() {
           accounts. Back a character up any time from its ⋯ menu on Characters, then Export; that
           file is the only copy that leaves the device.
         </p>
-        <p className="px-1 text-caption text-ink-muted">
-          Because it&rsquo;s browser storage, clearing site data or heavy storage pressure can evict
-          it. Export characters you care about, and use “Make available offline” above so the
-          compendium is cached.
-        </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-body text-ink-muted">Persistent storage</span>
           <PersistStatus state={persist.state} ref={persist.statusRef} />
@@ -459,6 +477,43 @@ export function Component() {
             {PERSIST_DENIED_TEXT} Export to keep a copy.
           </p>
         )}
+        {/* The why behind the roster's checklist, which links here: closed
+            unless that link opened the page, so Settings stays short. */}
+        <details
+          id={STORAGE_DETAILS_ID}
+          open={detailsOpen}
+          onToggle={(e) => setDetailsOpen(e.currentTarget.open)}
+          className="group scroll-mt-4 rounded-card bg-surface shadow-card ring-1 ring-line ring-inset"
+        >
+          <summary
+            ref={detailsSummary}
+            className="flex min-h-tap cursor-pointer list-none items-center justify-between gap-x-2 px-4 py-2.5 text-body-strong"
+          >
+            Storage details
+            <ChevronDown
+              size={16}
+              aria-hidden
+              className="shrink-0 text-ink-muted transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="flex flex-col gap-2 border-line border-t p-4 text-caption text-ink-muted">
+            <p>
+              Because it&rsquo;s browser storage, the browser can clear it when storage runs low or
+              when you clear browsing data. Export characters you care about, and use “Make
+              available offline” above so the compendium is cached.
+            </p>
+            <p>
+              Your browser may ask to allow persistent storage. Choosing Allow keeps your data
+              safer.
+            </p>
+            <p>Back up a character any time: open its ⋯ menu on Characters and choose Export.</p>
+            <p>
+              On iPhone and iPad, Safari can clear a site&rsquo;s data after about a week without a
+              visit. Add Cast Guidance to your Home Screen before you build characters. The Home
+              Screen app has its own storage, so Export from Safari and Import there.
+            </p>
+          </div>
+        </details>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Button
             onClick={() => {

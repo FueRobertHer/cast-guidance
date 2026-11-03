@@ -3,6 +3,7 @@ import {
   announcements,
   emptyRosterLine,
   expectDataSettled,
+  gettingStartedCard,
   gettingStartedDismiss,
   offlineReadyNotice,
   rosterHeading,
@@ -82,7 +83,7 @@ test.describe('first load', () => {
   test('the roster shows the getting-started card until it is dismissed', async ({ page }) => {
     await page.removeLocatorHandler(gettingStartedDismiss(page));
     await page.goto('/');
-    const card = page.getByRole('region', { name: 'Getting started' });
+    const card = gettingStartedCard(page);
     await expect(card).toBeVisible();
     await gettingStartedDismiss(page).click();
     await expect(card).toBeHidden();
@@ -92,6 +93,20 @@ test.describe('first load', () => {
     // the card's absence is settled.
     await expect(emptyRosterLine(page)).toBeVisible();
     await expect(card).toHaveCount(0);
+  });
+
+  test("the checklist's Storage details opens the longer explanations in Settings", async ({
+    page,
+  }) => {
+    await page.removeLocatorHandler(gettingStartedDismiss(page));
+    await page.goto('/');
+    await gettingStartedCard(page).getByRole('link', { name: 'Storage details' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+    // Opened, and focus carries on from there.
+    await expect(page.getByText('Storage details', { exact: true })).toBeFocused();
+    const safari = page.getByText(/Safari can clear a site’s data after about a week/);
+    await expect(safari).toBeVisible();
+    await expect(safari).toBeInViewport();
   });
 
   test('an unknown deep link renders the not-found screen with a way back', async ({ page }) => {

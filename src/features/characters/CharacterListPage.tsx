@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Ellipsis, FileUp } from 'lucide-react';
+import { ChevronRight, Ellipsis, FileUp, UserPlus } from 'lucide-react';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { DATA_TAG } from '@/data5e/config';
@@ -21,6 +21,7 @@ import {
 } from '@/features/creator/draft';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { IMPORT_LIMITS } from '@/lib/guards';
+import { useLongPress } from '@/lib/useLongPress';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
@@ -71,12 +72,14 @@ function classSummary(doc: CharacterDoc): string {
 }
 
 /**
- * The row's one action control. Square and 44px because it is the only thing on
- * the row a thumb has to hit precisely; the rest of the row is the character.
- * Its hover is a step above the card's own, which the card takes under it.
+ * The card's one action control. Square and 44px because it is the only thing
+ * on the card a thumb has to hit precisely; the rest of the card is the
+ * character. Its hover is a step above the card's own, which the card takes
+ * under it. It sits over the slot the link holds for it, clear of the card's
+ * padding, the 20px chevron and the gap before it (see `CharacterCard`).
  */
 const ROW_ACTION =
-  'flex size-tap shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink active:bg-surface-hover active:text-ink';
+  'absolute top-1/2 right-[calc(1.5rem+20px)] flex size-tap -translate-y-1/2 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink active:bg-surface-hover active:text-ink';
 
 /**
  * Up to two initials for the card's monogram (DS-001's character card), in
@@ -91,16 +94,6 @@ function initials(name: string): string {
     .join('');
   return letters === '' ? '?' : letters;
 }
-
-/**
- * The pair of ways into a new character, as one string shared by a `<button>`
- * and a `<Link>`. They are meant to read as twins, and twins written out twice
- * drift apart on the next edit; `text-center` is here because a button centres
- * its text by default and an anchor does not, which only shows once a label
- * wraps, exactly the moment nobody is looking.
- */
-const CREATE_OPTION =
-  'flex flex-col items-center justify-center gap-0.5 rounded-control bg-surface-raised px-2 py-3 text-center transition-colors hover:bg-surface-hover active:bg-surface-hover';
 
 interface Vitals {
   hp: number;
@@ -148,6 +141,83 @@ function VitalsLine({ v }: { v?: Vitals }) {
           <span className="motion-safe:animate-fade-in">AC {v.ac}</span>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * One character on the roster (DS-001's character card). The whole card is the
+ * link, and the chevron says so. Its actions open from the ⋯ button or from a
+ * long press on the card; the button is the way that can be seen and reached
+ * by keyboard, so it stays, beside the link rather than inside it (a button in
+ * a link is two controls in one, which neither a click nor a screen reader can
+ * tell apart). The link holds an empty slot that the button is laid over.
+ */
+function CharacterCard({
+  c,
+  vitals,
+  vitalsDue,
+  onActions,
+}: {
+  c: CharacterDoc;
+  vitals?: Vitals;
+  /** The numbers are on their way, so the line holds their place. */
+  vitalsDue: boolean;
+  onActions: () => void;
+}) {
+  const actions = useRef<HTMLButtonElement>(null);
+  const hold = useLongPress(() => {
+    // The sheet hands focus back to whatever had it when it opened, so give
+    // it to the button this hold stands in for, as a tap on it would.
+    actions.current?.focus();
+    onActions();
+  });
+  return (
+    <div className="group @container relative">
+      {/* Not draggable and no callout, so a held finger opens the actions
+          instead of picking the link up or showing the browser's own menu. */}
+      <Link
+        to={`/c/${c.id}`}
+        draggable={false}
+        {...hold}
+        className="flex items-center gap-3 rounded-card bg-surface py-3 pr-3 pl-4 shadow-card ring-1 ring-line ring-inset transition-colors select-none [-webkit-touch-callout:none] group-hover:bg-surface-raised"
+      >
+        {/* Decoration, so it is the first thing to go when a large text size
+            leaves the card narrow (under 15rem, so measured in text): the
+            actions slot and the chevron hold their width, and the name
+            needs the rest. */}
+        <span
+          aria-hidden="true"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-raised font-display text-title-sheet ring-1 ring-line ring-inset @max-[15rem]:hidden"
+        >
+          {initials(c.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-display text-title-card">{c.name}</div>
+          <div className="truncate text-caption text-ink-muted">
+            {classSummary(c)}
+            {c.race !== undefined ? ` · ${c.race.name}` : ''}
+            {` · ${c.rulesVersion}`}
+          </div>
+          {(vitals !== undefined || vitalsDue) && <VitalsLine v={vitals} />}
+        </div>
+        <span aria-hidden="true" className="w-tap shrink-0 self-stretch" />
+        <ChevronRight size={20} aria-hidden className="shrink-0 text-ink-faint" />
+      </Link>
+      {/* `title` for the mouse, `aria-label` for the screen reader: four
+          rows of "More" otherwise announce identically, with nothing to
+          say which character each one belongs to. */}
+      <button
+        ref={actions}
+        type="button"
+        title="More"
+        aria-label={`Actions for ${c.name}`}
+        aria-haspopup="dialog"
+        onClick={onActions}
+        className={ROW_ACTION}
+      >
+        <Ellipsis size={20} aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -287,6 +357,26 @@ export function Component() {
     void navigate(`/c/${doc.id}/build`);
   };
 
+  /**
+   * The screen's one primary action (DS-001), and behind it the two ways to
+   * make a character. They are the same decision approached differently, so
+   * neither is picked for you: which suits you depends on how you like to
+   * work, not on which is better. Asked in a sheet rather than shown as two
+   * buttons, so the page keeps one primary action and both ways stay a tap
+   * apart with room to say how they differ.
+   */
+  const newCharacter = async () => {
+    const how = await askChoice({
+      title: 'New character',
+      options: [
+        { id: 'wizard', label: 'Guided wizard', hint: 'Step by step' },
+        { id: 'blank', label: 'Blank sheet', hint: 'Change anything' },
+      ],
+    });
+    if (how === 'wizard') void navigate('/create');
+    else if (how === 'blank') await createBlank();
+  };
+
   const rename = async (c: CharacterDoc) => {
     const name = await askText({ title: 'Rename hero', initial: c.name });
     if (name === null || name.trim() === '') return;
@@ -359,13 +449,50 @@ export function Component() {
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4">
-      <header className="flex items-center justify-between">
+      {/* Wraps, so at a large text size Import drops under the title rather
+          than pushing the page sideways. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-2">
         {/* Focusable so hiding the getting-started card hands focus back here
             instead of dropping it to the page body. */}
         <h1 ref={heading} tabIndex={-1} className="font-display text-title-page outline-none">
           Characters
         </h1>
+        {/* Bringing in a character that already exists, not a way to make
+            one, so it sits apart from New character and quieter. Its glyph
+            lines up with the gutter. aria-disabled rather than disabled while
+            a file is checked, so it keeps focus: the preview hands focus back
+            to it. */}
+        <button
+          type="button"
+          title="Import a character file"
+          aria-label="Import a character file"
+          onClick={() => {
+            if (!checking) importInput.current?.click();
+          }}
+          aria-disabled={checking}
+          aria-busy={checking}
+          className={`-mr-3 ${buttonClass({ variant: 'ghost', size: 'icon' })}`}
+        >
+          <FileUp size={20} aria-hidden />
+        </button>
       </header>
+      <input
+        ref={importInput}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f !== undefined) void previewImport(f);
+          e.target.value = '';
+        }}
+      />
+      {/* Under the button it answers. A plain visual: `setImportStatus` says
+          each outcome through the announcer, so a live role here would say it
+          twice. */}
+      <p data-import-status="" className="text-caption text-guide empty:hidden">
+        {importStatus}
+      </p>
 
       {/* Above an existing roster; for a new one it waits below the ways to make
           a character, so New character stays above the fold on a phone. */}
@@ -384,77 +511,23 @@ export function Component() {
 
       <div className="flex flex-col gap-2">
         {characters.map((c) => (
-          <div
+          <CharacterCard
             key={c.id}
-            className="flex items-center gap-2 rounded-card bg-surface py-3 pr-2 pl-4 shadow-card ring-1 ring-line ring-inset transition-colors hover:bg-surface-raised"
-          >
-            <Link to={`/c/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-              <span
-                aria-hidden="true"
-                className="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-raised font-display text-title-sheet ring-1 ring-line ring-inset"
-              >
-                {initials(c.name)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-display text-title-card">{c.name}</div>
-                <div className="truncate text-caption text-ink-muted">
-                  {classSummary(c)}
-                  {c.race !== undefined ? ` · ${c.race.name}` : ''}
-                  {` · ${c.rulesVersion}`}
-                </div>
-                {/* Nothing to wait for on a classless character, and nothing
-                    coming if the compendium failed to load. */}
-                {(vitals.get(c.id) !== undefined ||
-                  (registryStatus === 'loading' && classesOf(c).length > 0)) && (
-                  <VitalsLine v={vitals.get(c.id)} />
-                )}
-              </div>
-            </Link>
-            {/* `title` for the mouse, `aria-label` for the screen reader: four
-                rows of "More" otherwise announce identically, with nothing to
-                say which character each one belongs to. */}
-            <button
-              type="button"
-              title="More"
-              aria-label={`Actions for ${c.name}`}
-              aria-haspopup="dialog"
-              onClick={() => void rowActions(c)}
-              className={ROW_ACTION}
-            >
-              <Ellipsis size={20} aria-hidden="true" />
-            </button>
-          </div>
+            c={c}
+            vitals={vitals.get(c.id)}
+            // Nothing to wait for on a classless character, and nothing
+            // coming if the compendium failed to load.
+            vitalsDue={registryStatus === 'loading' && classesOf(c).length > 0}
+            onActions={() => void rowActions(c)}
+          />
         ))}
       </div>
 
-      {/*
-       * Two ways to make a character, side by side at one size, because they
-       * are the same decision approached differently: pick the door that suits
-       * how you like to work. They used to sit on separate rows at roughly
-       * triple the size difference, which read as one real option and one
-       * afterthought, while Import shared a row with the wizard as though the
-       * two were siblings. Importing is not a third way to make a character, it
-       * is bringing in one that already exists, so it sits apart and quieter.
-       *
-       * The heading is what names the outcome. Calling one button "New
-       * character" made the other look like it did something else, when both
-       * make exactly the same thing, so the shared result is said once above
-       * and the buttons are left to say only how they differ. Each still spells
-       * it out through `aria-label`, where there is no heading nearby to lean
-       * on and "Blank sheet" alone would be a riddle.
-       *
-       * One treatment across the pair, because there is no default here. The
-       * accent on one of them read as a recommendation the app has no basis to
-       * make: which door suits you depends on how you like to work, not on
-       * which is better. They lift off the page together instead, a step
-       * brighter than the roster above and the import row below, which is
-       * where the hierarchy on this page actually lives.
-       */}
-      <section className="flex flex-col gap-1.5">
-        <h2 className="px-1 text-heading">New character</h2>
+      <div className="flex flex-col gap-2">
         {/* The explicit choice point for a draft left in the wizard: Resume
             goes back to the step it was left on, Discard drops it with an
-            undo. The wizard tile below still continues it, and says so. */}
+            undo. The guided wizard behind New character still continues it,
+            and says so. */}
         {unfinished !== null && (
           <div className={`${cardClass} flex items-center gap-2`}>
             <div className="min-w-0 flex-1">
@@ -485,59 +558,16 @@ export function Component() {
             focusRequest={undoFocus}
           />
         )}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            aria-label="New character from a blank sheet"
-            onClick={() => void createBlank()}
-            className={CREATE_OPTION}
-          >
-            {/* The titles may wrap: at a large text size, kept to one line,
-                they ran into each other and past the screen's edge. */}
-            <span className="text-body-strong">Blank sheet</span>
-            {/* Short enough to keep its padding at 320px, which is why the
-                longer sell lives in the heading and the aria-label. */}
-            <span className="text-[11px] whitespace-nowrap text-ink-muted">change anything</span>
-          </button>
-          <Link
-            to="/create"
-            aria-label="New character with the guided wizard"
-            className={CREATE_OPTION}
-          >
-            <span className="text-body-strong">Guided wizard</span>
-            <span className="text-[11px] whitespace-nowrap text-ink-muted">step by step</span>
-          </Link>
-        </div>
-      </section>
-      {/* aria-disabled rather than disabled while a file is checked, so the
-          button keeps focus: the preview hands focus back to it. */}
-      <button
-        type="button"
-        onClick={() => {
-          if (!checking) importInput.current?.click();
-        }}
-        aria-disabled={checking}
-        aria-busy={checking}
-        className={buttonClass({ variant: 'outline' })}
-      >
-        <FileUp size={18} aria-hidden /> Import from a file
-      </button>
-      <input
-        ref={importInput}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f !== undefined) void previewImport(f);
-          e.target.value = '';
-        }}
-      />
-      {/* A plain visual: `setImportStatus` says each outcome through the
-          announcer, so a live role here would say it twice. */}
-      <p data-import-status="" className="text-caption text-guide empty:hidden">
-        {importStatus}
-      </p>
+        <Button
+          variant="brand"
+          size="lg"
+          block
+          aria-haspopup="dialog"
+          onClick={() => void newCharacter()}
+        >
+          <UserPlus size={18} aria-hidden /> New character
+        </Button>
+      </div>
       {pendingImport !== undefined && (
         <Suspense fallback={null}>
           <CharacterImportPreview

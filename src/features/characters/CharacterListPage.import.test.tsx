@@ -123,7 +123,7 @@ function renderRoster() {
 }
 
 function chooseFile(content: unknown) {
-  const button = screen.getByRole('button', { name: 'Import from a file', hidden: true });
+  const button = screen.getByRole('button', { name: 'Import a character file', hidden: true });
   button.focus();
   const text = typeof content === 'string' ? content : JSON.stringify(content);
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');

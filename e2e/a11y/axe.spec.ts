@@ -22,6 +22,7 @@ import {
   onScreen,
   openCharacterActions,
   openHistory,
+  openNewCharacter,
   openSheetMenu,
   renameCharacter,
   SHEET_PAGES,
@@ -142,6 +143,12 @@ test.describe('axe: pages and overlays', () => {
     await renameCharacter(page, 'New hero', NAME);
     await animationsSettled(page);
     await scanState(page, 'roster');
+
+    // New character's choice: the guided wizard or a blank sheet.
+    const create = await openNewCharacter(page);
+    await opened(page, create);
+    await scanState(page, 'roster-new-character');
+    await closeWithEscape(page, create);
 
     const actions = await openCharacterActions(page, NAME);
     await animationsSettled(page);
@@ -461,6 +468,11 @@ test.describe('axe: pages and overlays', () => {
     await gotoHeading(page, '/settings', 'Settings');
     await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
     await scanState(page, 'settings');
+
+    // Opened as the roster's checklist opens it, with its longer text showing.
+    await gotoHeading(page, '/settings#storage-details', 'Settings');
+    await expect(page.getByText(/Safari can clear a site’s data/)).toBeVisible();
+    await scanState(page, 'settings-storage-details');
 
     await gotoHeading(page, '/create', /.+/);
     await scanState(page, 'creator');

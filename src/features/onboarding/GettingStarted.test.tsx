@@ -57,11 +57,27 @@ function renderCard() {
   );
 }
 
-/** The live offline line: its item, found by its heading. */
-function offlineItem(): HTMLElement {
-  const item = screen.getByRole('heading', { name: 'Works offline' }).closest('li');
-  if (item === null) throw new Error('no offline item');
-  return item;
+/** The checklist's region, named by its heading, which says how far along it is. */
+const CHECKLIST = /^Ready for the table/;
+
+/** A checklist item, found by its title. */
+function item(title: string): HTMLElement {
+  const li = screen.getByRole('heading', { name: title }).closest('li');
+  if (li === null) throw new Error(`no item ${title}`);
+  return li;
+}
+
+/** The live offline line. */
+const offlineItem = () => item('Works offline');
+
+/**
+ * Where an item stands, as a screen reader hears it: the icon beside it is
+ * decoration, so the word is what says it. Undefined while it has no answer.
+ */
+function state(li: HTMLElement): 'done' | 'todo' | undefined {
+  if (within(li).queryByText('Done') !== null) return 'done';
+  if (within(li).queryByText('To do') !== null) return 'todo';
+  return undefined;
 }
 
 beforeEach(() => {
@@ -89,45 +105,77 @@ afterEach(() => {
 describe('GettingStarted', () => {
   it('is an inline section with a heading that leaves focus alone', () => {
     renderCard();
-    const section = screen.getByRole('region', { name: 'Getting started' });
-    expect(within(section).getByRole('heading', { level: 2 }).textContent).toBe('Getting started');
+    const section = screen.getByRole('region', { name: CHECKLIST });
+    expect(within(section).getByRole('heading', { level: 2 }).textContent).toMatch(
+      /^Ready for the table/,
+    );
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(document.body);
     expect(namelessControls()).toEqual([]);
   });
 
-  it('says Not yet while the download runs and Ready once it is done', () => {
+  it('says in its heading how many of the three are done, once all three have answered', async () => {
+    stub('storage', { persisted: () => Promise.resolve(true), persist: vi.fn() });
+    renderCard();
+    // The data is still downloading, and storage has yet to answer: no count.
+    const heading = () => screen.getByRole('heading', { level: 2 });
+    expect(heading().textContent).toBe('Ready for the table');
+
+    await waitFor(() => expect(state(item('Keep your data safe'))).toBe('done'));
+    expect(heading().textContent).toBe('Ready for the table, 1 of 3');
+    expect(screen.getByRole('region', { name: 'Ready for the table, 1 of 3' })).toBeTruthy();
+
+    act(() => dataStatusStore.setState({ phase: 'done' }));
+    expect(heading().textContent).toBe('Ready for the table, 3 of 3');
+  });
+
+  it('marks each item done with a check and to do with a dashed circle', async () => {
+    stub('storage', { persisted: () => Promise.resolve(false), persist: vi.fn() });
+    dataStatusStore.setState({ phase: 'done' });
+    renderCard();
+    await waitFor(() => expect(state(item('Keep your data safe'))).toBe('todo'));
+    expect(state(item('Game data saved'))).toBe('done');
+    expect(
+      item('Game data saved').querySelector('svg.lucide-circle-check.text-heal'),
+    ).not.toBeNull();
+    const todo = item('Keep your data safe').querySelector('svg.lucide-circle-dashed');
+    expect(todo?.classList.contains('text-ink-faint')).toBe(true);
+    // Decoration: the word beside it is what is read.
+    expect(todo?.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('marks Works offline to do while the download runs, and done once it is', () => {
     renderCard();
     const line = offlineItem();
     expect(line.getAttribute('aria-live')).toBe('polite');
-    // Atomic, so the update is read with the lead that says what it is about.
+    // Atomic, so the update is read with the title that says what it is about.
     expect(line.getAttribute('aria-atomic')).toBe('true');
     expect(line.getAttribute('role')).toBeNull();
-    expect(within(line).getByText('Not yet')).toBeTruthy();
+    expect(state(line)).toBe('todo');
     expect(within(line).getByText(/Keep the app open/)).toBeTruthy();
 
     act(() => dataStatusStore.setState({ phase: 'done' }));
-    expect(within(offlineItem()).getByText('Ready')).toBeTruthy();
-    expect(within(offlineItem()).getByText(/without a connection/)).toBeTruthy();
+    expect(state(offlineItem())).toBe('done');
+    expect(within(offlineItem()).getByText(/no signal needed/)).toBeTruthy();
   });
 
-  it('needs the shell as well as the data before it says Ready', async () => {
+  it('needs the shell as well as the data before it marks Works offline done', async () => {
     swStatusStore.setState({ state: 'pending' });
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
-    expect(await within(offlineItem()).findByText('Not yet')).toBeTruthy();
-    expect(within(offlineItem()).queryByText('Ready')).toBeNull();
+    await waitFor(() => expect(state(offlineItem())).toBe('todo'));
+    expect(within(offlineItem()).queryByText(/no signal needed/)).toBeNull();
   });
 
-  it('says "next time" when everything is cached but this tab is not controlled', () => {
+  it('offers a reload when everything is cached but this tab is not controlled', () => {
     // A first visit: the install finished, but without clientsClaim this tab
     // still fetches screens it has not opened from the network.
     stub('serviceWorker', workerContainer(true, false));
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
-    expect(within(offlineItem()).getByText('Ready next time')).toBeTruthy();
+    expect(state(offlineItem())).toBe('todo');
     expect(within(offlineItem()).getByText(/next time you open the app\. Reload now/)).toBeTruthy();
-    expect(within(offlineItem()).queryByText('Ready')).toBeNull();
+    expect(within(offlineItem()).getByRole('button', { name: 'Reload' })).toBeTruthy();
   });
 
   it('survives a worker API that throws, as Firefox does with storage blocked', async () => {
@@ -140,46 +188,48 @@ describe('GettingStarted', () => {
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
     // Not provably controlled, so it does not claim this tab works offline.
-    expect(within(offlineItem()).getByText('Ready next time')).toBeTruthy();
+    expect(state(offlineItem())).toBe('todo');
+    expect(within(offlineItem()).getByText(/next time you open the app/)).toBeTruthy();
     cleanup();
 
     // And the registration lookup a pending shell makes is guarded too.
     swStatusStore.setState({ state: 'pending' });
     renderCard();
-    expect(await within(offlineItem()).findByText('Not yet')).toBeTruthy();
+    await waitFor(() => expect(state(offlineItem())).toBe('todo'));
   });
 
   it('shows no offline state, and is not live, until both sides have answered', async () => {
     // A warm boot: before the first registration lookup and before the boot
-    // routine has said anything, "Not yet" would be a guess, and changing it a
+    // routine has said anything, a to-do would be a guess, and changing it a
     // moment later would announce on every launch.
     stub('serviceWorker', workerContainer(true));
     swStatusStore.setState({ state: 'pending' });
     dataStatusStore.setState({ phase: 'idle' });
     renderCard();
     expect(offlineItem().getAttribute('aria-live')).toBeNull();
-    expect(within(offlineItem()).queryByText('Not yet')).toBeNull();
-    const download = screen.getByRole('heading', { name: 'Game data' }).closest('li');
-    expect(download?.textContent).not.toContain('In progress');
+    expect(state(offlineItem())).toBeUndefined();
+    expect(offlineItem().querySelector('svg')).toBeNull();
+    expect(state(item('Game data saved'))).toBeUndefined();
 
     act(() => dataStatusStore.setState({ phase: 'done' }));
-    expect(await within(offlineItem()).findByText('Ready')).toBeTruthy();
+    await waitFor(() => expect(state(offlineItem())).toBe('done'));
     expect(offlineItem().getAttribute('aria-live')).toBe('polite');
   });
 
   it('does not call a complete release stopped because an update to another failed', async () => {
     dataStatusStore.setState({ phase: 'error', error: 'HTTP 500', failedTag: 'v2.33.0' });
     renderCard();
-    const download = () => screen.getByRole('heading', { name: 'Game data' }).closest('li');
-    await waitFor(() => expect(download()?.textContent).toContain('Done'));
-    expect(download()?.textContent).not.toContain('Stopped');
-    expect(within(offlineItem()).getByText('Ready')).toBeTruthy();
+    const download = () => item('Game data saved');
+    await waitFor(() => expect(state(download())).toBe('done'));
+    expect(download().textContent).not.toContain('stopped');
+    expect(state(offlineItem())).toBe('done');
     cleanup();
 
     // The same failure over a release that is itself incomplete is a stop.
     loader.verifyFullOffline.mockResolvedValueOnce({ cached: 31, total: 48 });
     renderCard();
-    await waitFor(() => expect(download()?.textContent).toContain('Stopped'));
+    await waitFor(() => expect(download().textContent).toContain('The download stopped'));
+    expect(state(download())).toBe('todo');
   });
 
   it('answers a warm boot from the existing registration', async () => {
@@ -187,51 +237,58 @@ describe('GettingStarted', () => {
     swStatusStore.setState({ state: 'pending' });
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
-    await waitFor(() => expect(within(offlineItem()).getByText('Ready')).toBeTruthy());
+    await waitFor(() => expect(state(offlineItem())).toBe('done'));
   });
 
   it('says plainly when this browser cannot open the app offline', () => {
     Reflect.deleteProperty(navigator, 'serviceWorker');
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
-    expect(within(offlineItem()).getByText('Not available')).toBeTruthy();
+    expect(state(offlineItem())).toBe('todo');
     expect(within(offlineItem()).getByText(/needs a connection to open/)).toBeTruthy();
+    // Nothing a press could fix.
+    expect(within(offlineItem()).queryByRole('button')).toBeNull();
   });
 
   it('treats a dev build as having no worker, whatever the store says', () => {
     vi.stubEnv('DEV', true);
     dataStatusStore.setState({ phase: 'done' });
     renderCard();
-    expect(within(offlineItem()).getByText('Not available')).toBeTruthy();
+    expect(state(offlineItem())).toBe('todo');
+    expect(within(offlineItem()).getByText(/needs a connection to open/)).toBeTruthy();
   });
 
   it('suggests a reload when the worker fails or never finishes installing', () => {
     swStatusStore.setState({ state: 'error' });
     const { unmount } = renderCard();
     expect(within(offlineItem()).getByText(/could not install/)).toBeTruthy();
+    expect(within(offlineItem()).getByRole('button', { name: 'Reload' })).toBeTruthy();
     unmount();
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
     swStatusStore.setState({ state: 'pending' });
     renderCard();
     expect(within(offlineItem()).queryByText(/Reload the page/)).toBeNull();
+    expect(within(offlineItem()).queryByRole('button', { name: 'Reload' })).toBeNull();
     act(() => vi.advanceTimersByTime(SHELL_STALL_MS));
     expect(within(offlineItem()).getByText(/has not finished installing/)).toBeTruthy();
+    expect(within(offlineItem()).getByRole('button', { name: 'Reload' })).toBeTruthy();
   });
 
   it('points a stopped download at Retry', () => {
     dataStatusStore.setState({ phase: 'error', error: 'HTTP 500' });
     renderCard();
-    const item = screen.getByRole('heading', { name: 'Game data' }).closest('li');
-    expect(item?.textContent).toContain('Stopped');
-    expect(item?.textContent).toContain('Retry');
+    const download = item('Game data saved');
+    expect(state(download)).toBe('todo');
+    expect(download.textContent).toContain('The download stopped');
+    expect(download.textContent).toContain('Retry');
   });
 
   it('leaves the progress count and bar to the banner', () => {
     dataStatusStore.setState({ phase: 'working', filesDone: 3, filesTotal: 10 });
     renderCard();
-    const section = screen.getByRole('region', { name: 'Getting started' });
-    expect(within(section).getByText('In progress')).toBeTruthy();
+    const section = screen.getByRole('region', { name: CHECKLIST });
+    expect(state(item('Game data saved'))).toBe('todo');
     expect(section.textContent).not.toMatch(/\b3\s*(\/|of)\s*10\b/);
     expect(within(section).queryByRole('progressbar')).toBeNull();
     // It points at the banner only while the banner is there to point at.
@@ -244,11 +301,13 @@ describe('GettingStarted', () => {
     const persist = vi.fn(() => Promise.resolve(true));
     stub('storage', { persisted: () => Promise.resolve(false), persist });
     renderCard();
-    const ask = await screen.findByRole('button', { name: 'Ask the browser to keep my data' });
+    const ask = await screen.findByRole('button', { name: 'Keep my data' });
+    expect(ask.className).toContain('ring-line-strong');
     expect(persist).not.toHaveBeenCalled();
     fireEvent.click(ask);
-    expect(await screen.findByText('Protected')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Ask the browser to keep my data' })).toBeNull();
+    await waitFor(() => expect(state(item('Keep your data safe'))).toBe('done'));
+    expect(screen.getByText(/Your browser will keep your characters/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Keep my data' })).toBeNull();
   });
 
   it('keeps focus while asking, then hands it to the answer instead of the body', async () => {
@@ -256,7 +315,7 @@ describe('GettingStarted', () => {
     const persist = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
     stub('storage', { persisted: () => Promise.resolve(false), persist });
     renderCard();
-    const ask = await screen.findByRole('button', { name: 'Ask the browser to keep my data' });
+    const ask = await screen.findByRole('button', { name: 'Keep my data' });
     ask.focus();
     fireEvent.click(ask);
     // Disabled for real, the button would drop focus while the prompt is up.
@@ -267,8 +326,8 @@ describe('GettingStarted', () => {
     expect(persist).toHaveBeenCalledOnce();
 
     await act(async () => answer(true));
-    const status = screen.getByText('Protected');
-    await waitFor(() => expect(document.activeElement).toBe(status));
+    const line = screen.getByText(/Your browser will keep your characters/);
+    await waitFor(() => expect(document.activeElement).toBe(line));
   });
 
   it('leaves focus where the player moved it while the prompt was open', async () => {
@@ -276,31 +335,33 @@ describe('GettingStarted', () => {
     const persist = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
     stub('storage', { persisted: () => Promise.resolve(false), persist });
     renderCard();
-    const ask = await screen.findByRole('button', { name: 'Ask the browser to keep my data' });
+    const ask = await screen.findByRole('button', { name: 'Keep my data' });
     ask.focus();
     fireEvent.click(ask);
     const hide = screen.getByRole('button', { name: 'Got it, hide this' });
     hide.focus();
 
     await act(async () => answer(true));
-    expect(await screen.findByText('Protected')).toBeTruthy();
+    expect(await screen.findByText(/Your browser will keep your characters/)).toBeTruthy();
     expect(document.activeElement).toBe(hide);
   });
 
-  it('after a refusal, says the browser decides and points at backups', async () => {
+  it('after a refusal, says the browser decides and links to the storage details', async () => {
     stub('storage', {
       persisted: () => Promise.resolve(false),
       persist: () => Promise.resolve(false),
     });
     renderCard();
-    fireEvent.click(await screen.findByRole('button', { name: 'Ask the browser to keep my data' }));
-    expect(await screen.findByText('Not protected')).toBeTruthy();
-    const item = screen.getByRole('heading', { name: 'Protect your data' }).closest('li');
-    expect(item?.textContent).toContain('Your browser decides this itself');
-    expect(item?.textContent).toContain('choose Export');
-    // One pointer at backups, not "Back up instead:" and then the same again.
-    expect(item?.textContent?.match(/Back up/g)).toHaveLength(1);
-    expect(item?.textContent).toContain('Home Screen app has its own storage');
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep my data' }));
+    await waitFor(() =>
+      expect(item('Keep your data safe').textContent).toContain('Your browser decides this itself'),
+    );
+    expect(state(item('Keep your data safe'))).toBe('todo');
+    // The longer why (backups, Safari's seven days) is behind Storage details.
+    const section = screen.getByRole('region', { name: CHECKLIST });
+    expect(section.textContent).not.toContain('Home Screen');
+    const details = within(section).getByRole('link', { name: 'Storage details' });
+    expect(details.getAttribute('href')).toBe('/settings#storage-details');
   });
 
   it('counts itself as on screen only while it is shown', () => {
@@ -317,12 +378,12 @@ describe('GettingStarted', () => {
   it('hides on "Got it", remembers it, and hands focus to the roster heading', () => {
     const { unmount } = renderCard();
     fireEvent.click(screen.getByRole('button', { name: 'Got it, hide this' }));
-    expect(screen.queryByRole('region', { name: 'Getting started' })).toBeNull();
+    expect(screen.queryByRole('region', { name: CHECKLIST })).toBeNull();
     expect(localStorage.getItem(ONBOARDING_KEY)).not.toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Characters' }));
 
     unmount();
     renderCard();
-    expect(screen.queryByRole('region', { name: 'Getting started' })).toBeNull();
+    expect(screen.queryByRole('region', { name: CHECKLIST })).toBeNull();
   });
 });

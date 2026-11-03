@@ -416,6 +416,56 @@ describe('SettingsPage data and privacy', () => {
     expect(persist).toHaveBeenCalledOnce();
   });
 
+  it('keeps the longer storage explanations behind Storage details', () => {
+    render(<SettingsPage />);
+    const summary = screen.getByText('Storage details');
+    const details = summary.closest('details');
+    if (details === null) throw new Error('no Storage details disclosure');
+    // Closed unless the roster's checklist sent someone here.
+    expect(details.open).toBe(false);
+    expect(details.id).toBe('storage-details');
+    // What the roster's getting-started card used to say at length.
+    for (const text of [
+      'when storage runs low or when you clear browsing data',
+      'Your browser may ask to allow persistent storage.',
+      'open its ⋯ menu on Characters and choose Export',
+      'Safari can clear a site’s data after about a week without a visit.',
+      'The Home Screen app has its own storage, so Export from Safari and Import there.',
+    ]) {
+      expect(details.textContent).toContain(text);
+    }
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('opens Storage details and moves focus to it when linked there', () => {
+    window.history.replaceState(null, '', '/settings#storage-details');
+    try {
+      render(<SettingsPage />);
+      const summary = screen.getByText('Storage details');
+      expect(summary.closest('details')?.open).toBe(true);
+      expect(document.activeElement).toBe(summary);
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
+  it('opens Storage details on a jump to it with the page already open', () => {
+    render(<SettingsPage />);
+    const summary = screen.getByText('Storage details');
+    expect(summary.closest('details')?.open).toBe(false);
+    try {
+      // Back or Forward to it, or the address bar: the page stays mounted.
+      act(() => {
+        window.history.replaceState(null, '', '/settings#storage-details');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      expect(summary.closest('details')?.open).toBe(true);
+      expect(document.activeElement).toBe(summary);
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('keeps focus on the ask while it runs, then moves it to the answer', async () => {
     Object.defineProperty(navigator, 'storage', {
       value: { persisted: () => Promise.resolve(false), persist: () => Promise.resolve(false) },
