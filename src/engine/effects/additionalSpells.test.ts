@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
-import { collectAdditionalSpells } from './additionalSpells';
+import { collectAdditionalSpells, parseSpellRef } from './additionalSpells';
 import { Collector } from './base';
 
 const origin: EffectOrigin = { label: 'Tiefling', uid: 'race|tiefling', type: 'race' };
@@ -42,6 +42,30 @@ describe('collectAdditionalSpells', () => {
   it('parses a spell ref, stripping the cast-level hint and reading the source', () => {
     const col = collect([{ innate: { '1': ['hellish rebuke#2|xge'] } }]);
     expect(granted(col.effects)[0]?.spell).toEqual({ name: 'hellish rebuke', source: 'xge' });
+  });
+
+  it('strips a hint written after the source, as 5etools writes it', () => {
+    // The XPHB Tiefling's "thaumaturgy|xphb#c" kept "xphb#c" as its source,
+    // so the Features and Build links named a printing that does not exist.
+    const col = collect([
+      { known: { '1': ['thaumaturgy|xphb#c', 'chill touch|XPHB#c', 'ray of frost#c'] } },
+    ]);
+    expect(granted(col.effects).map((e) => e.spell)).toEqual([
+      { name: 'thaumaturgy', source: 'xphb' },
+      { name: 'chill touch', source: 'XPHB' },
+      { name: 'ray of frost', source: '' },
+    ]);
+  });
+
+  it.each([
+    ['thaumaturgy|xphb#c', { name: 'thaumaturgy', source: 'xphb' }],
+    ['hellish rebuke|xphb#2', { name: 'hellish rebuke', source: 'xphb' }],
+    ['hellish rebuke#2|xge', { name: 'hellish rebuke', source: 'xge' }],
+    ['guidance#c', { name: 'guidance', source: '' }],
+    [' mage hand | phb ', { name: 'mage hand', source: 'phb' }],
+    ['fireball', { name: 'fireball', source: '' }],
+  ])('reads %j as its name and source', (ref, expected) => {
+    expect(parseSpellRef(ref)).toEqual(expected);
   });
 
   it('surfaces expanded lists and {choose} filters as warnings, not grants', () => {
