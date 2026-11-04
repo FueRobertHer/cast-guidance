@@ -10,9 +10,10 @@ import {
 import { sourceName } from '@/data5e/sourceNames';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { Button, buttonClass } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
-import { SourceBadge } from '@/ui/SourceBadge';
+import { SourceBadge, sourceBadgeLabel } from '@/ui/SourceBadge';
 import { fieldClass } from '@/ui/TextField';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -29,11 +30,17 @@ const cardShell = (selected: boolean) =>
 /** A card's right-hand side: the pick's check, the source badge, and ⓘ when asked for. */
 function CardSide({
   entity,
+  label = nameOf(entity),
+  badge = true,
   selected,
   infoType,
   infoEntries,
 }: {
   entity: Entity;
+  /** The card's name as a screen reader hears it, which ⓘ's name starts with. */
+  label?: string;
+  /** False where the card's printing switch already shows the book. */
+  badge?: boolean;
   selected: boolean;
   infoType?: string;
   infoEntries?: (e: Entity) => unknown;
@@ -45,7 +52,7 @@ function CardSide({
           <Check size={14} strokeWidth={3} aria-hidden="true" />
         </span>
       )}
-      <SourceBadge source={sourceOf(entity)} />
+      {badge && <SourceBadge source={sourceOf(entity)} />}
       {infoType !== undefined && (
         <EntityInfoSheet
           type={infoType}
@@ -55,7 +62,7 @@ function CardSide({
           trigger={
             <button
               type="button"
-              aria-label={`${nameOf(entity)} details`}
+              aria-label={`${label} details`}
               title="Full description"
               className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
             >
@@ -119,7 +126,7 @@ export function PickedEntityCard({
   );
 }
 
-/** Preferred printing when the same name exists in several books (lower = better). */
+/** The order books come in, core books first (lower = earlier). */
 const SOURCE_RANK = [
   'xphb',
   'phb',
@@ -143,12 +150,91 @@ const rankOf = (e: Entity) => {
   const i = SOURCE_RANK.indexOf(sourceOf(e).toLowerCase());
   return i === -1 ? 99 : i;
 };
+const byName = (a: Entity, b: Entity) => nameOf(a).localeCompare(nameOf(b));
+/** Two printings of one name: by rank, then by title for the unranked books. */
+const byBook = (a: Entity, b: Entity) =>
+  rankOf(a) - rankOf(b) || sourceName(sourceOf(a)).localeCompare(sourceName(sourceOf(b)));
 
 /** Playtest material, sidekicks, and named variants belong behind the fold. */
 const isNiche = (e: Entity) =>
   sourceOf(e).toLowerCase().startsWith('ua') ||
   nameOf(e).toLowerCase().includes('sidekick') ||
   nameOf(e).includes(';');
+
+/** What makes two entities printings of one title: the name, ignoring case. */
+const titleKeyOf = (e: Entity) => nameOf(e).toLowerCase();
+
+/** One card: a name and every printing of it in the list, in book order. */
+interface Title {
+  key: string;
+  printings: readonly Entity[];
+}
+
+/**
+ * Group a sorted list into titles, in the order each first appears. A second
+ * entity with a uid already seen is dropped, since the registry answers that
+ * uid with the first and a chip for it would pick the other one.
+ */
+function groupTitles(list: readonly Entity[]): Title[] {
+  const byKey = new Map<string, Entity[]>();
+  for (const e of list) {
+    const printings = byKey.get(titleKeyOf(e));
+    if (printings === undefined) byKey.set(titleKeyOf(e), [e]);
+    else if (!printings.some((p) => uidOf(p) === uidOf(e))) printings.push(e);
+  }
+  return [...byKey].map(([key, printings]) => ({ key, printings }));
+}
+
+/**
+ * The books a card's title is printed in, as the library entry's switch draws
+ * them: a code chip each, the full title in its name. The pressed chip is the
+ * printing the card shows, and so the one a tap on the card picks.
+ */
+function PrintingSwitch({
+  name,
+  printings,
+  shownUid,
+  onShow,
+}: {
+  name: string;
+  printings: readonly Entity[];
+  shownUid: string;
+  onShow: (e: Entity) => void;
+}) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of toggle buttons, not a fieldset of inputs
+    <div
+      role="group"
+      aria-label={`${name}, printed in`}
+      className="-mt-1.5 flex basis-full flex-wrap items-center gap-x-2 px-4 pb-2"
+    >
+      <span aria-hidden="true" className="text-caption text-ink-muted">
+        Printed in
+      </span>
+      {/* Chips with a 44px tap from their transparent border, so the row
+          pulls in by that border to line up with the text. */}
+      <div className="-mx-1.5 flex flex-wrap">
+        {printings.map((p) => {
+          const source = sourceOf(p);
+          return (
+            <Chip
+              key={uidOf(p)}
+              tone="outline"
+              className="uppercase"
+              pressed={uidOf(p) === shownUid}
+              // The code is what shows; the title is what it means.
+              aria-label={`${source}, ${sourceBadgeLabel(source)}`}
+              title={sourceBadgeLabel(source)}
+              onClick={() => onShow(p)}
+            >
+              {source}
+            </Chip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /**
  * A way to show more or fewer of the list: a small outline button, the full
@@ -163,6 +249,13 @@ const MORE = buttonClass({ variant: 'outline', size: 'sm' });
  * edge, the name in `title-card`, the blurb in `caption`, the source badge on
  * the right. The pick is `ink`, never a hue: a 2px `ink` edge and a filled
  * check, with `aria-pressed` saying it to a screen reader.
+ *
+ * A card is a title, not a printing. Each book has its own rules for a name
+ * (VGM's Goblin is not MPMM's), so the player has to be able to choose which
+ * to play, but a card per printing made the species list half again as long.
+ * A title in several books has a "Printed in" switch in place of the badge:
+ * it changes which printing the card shows (blurb, ⓘ) and so which one a tap
+ * on the card picks. It opens on the current pick, else on the first book.
  */
 export function EntityCardList({
   entities,
@@ -170,7 +263,7 @@ export function EntityCardList({
   onSelect,
   onDeselect,
   onReselect,
-  dedupe = false,
+  curated = false,
   describe,
   infoType,
   infoEntries,
@@ -188,11 +281,11 @@ export function EntityCardList({
    */
   onReselect?: () => void;
   /**
-   * Curate the default view: one printing per name (best source first) with
-   * UA / sidekicks / variants behind a "show everything" toggle, core books
-   * sorted before setting-specific ones. Filtering always searches everything.
+   * Curate the default view: titles printed in a core book first (PHB before
+   * setting books), then A→Z, with playtest material, sidekicks and named
+   * variants behind a "show more" toggle. Filtering always searches everything.
    */
-  dedupe?: boolean;
+  curated?: boolean;
   /** One-line summary rendered under the name — decision support. */
   describe?: (e: Entity) => string | undefined;
   /**
@@ -225,8 +318,11 @@ export function EntityCardList({
   const [showAll, setShowAll] = useState(false);
   const [showHiddenSources, setShowHiddenSources] = useState(false);
   const { policy, scope } = usePickSourcePolicy(sources);
+  // The printing each switched card shows, by title key. Only what the
+  // player switched to is kept: the rest open on the pick or the first book.
+  const [shownByTitle, setShownByTitle] = useState<Readonly<Record<string, string>>>({});
 
-  const { list, hiddenCount, sourceHiddenCount } = useMemo(() => {
+  const { titles, hiddenCount, sourceHiddenCount } = useMemo(() => {
     const f = filter.trim().toLowerCase();
     const matchesText = (e: Entity) => f === '' || nameOf(e).toLowerCase().includes(f);
     const isCurrentPick = (e: Entity) => uidOf(e) === selectedUid;
@@ -247,33 +343,36 @@ export function EntityCardList({
           (e) => matchesText(e) && !policyAllows(policy, sourceOf(e)) && !isCurrentPick(e),
         ).length;
 
-    // Curated view: core books first (PHB before setting books), then A→Z —
-    // a new player should see Human before Aarakocra. Full lists stay A→Z.
-    const sorted = allowed.sort((a, b) =>
-      dedupe
-        ? rankOf(a) - rankOf(b) || nameOf(a).localeCompare(nameOf(b))
-        : nameOf(a).localeCompare(nameOf(b)) || rankOf(a) - rankOf(b),
-    );
-    if (f !== '') {
-      // Searching means the user wants something specific — search everything.
-      return { list: sorted.filter(matchesText), hiddenCount: 0, sourceHiddenCount };
+    // Curated view: titles in a core book first (PHB before setting books),
+    // then A→Z, so a new player sees Human before Aarakocra. A title sits by
+    // its best book: a Goblin in MPMM and GGR is filed with MPMM, not GGR.
+    // Full lists stay A→Z. Either way a title's printings end up side by side,
+    // in book order, which is the order its switch offers them in.
+    const bestRank = new Map<string, number>();
+    if (curated) {
+      for (const e of allowed) {
+        const key = titleKeyOf(e);
+        bestRank.set(key, Math.min(bestRank.get(key) ?? rankOf(e), rankOf(e)));
+      }
     }
-    if (!dedupe || showAll) return { list: sorted, hiddenCount: 0, sourceHiddenCount };
-    const bestByName = new Map<string, Entity>();
-    for (const e of sorted) {
-      if (isNiche(e)) continue;
-      const key = nameOf(e).toLowerCase();
-      const cur = bestByName.get(key);
-      if (cur === undefined || rankOf(e) < rankOf(cur)) bestByName.set(key, e);
-    }
-    const primary = sorted.filter(
-      (e) =>
-        bestByName.get(nameOf(e).toLowerCase()) === e ||
-        // never hide the current selection
-        uidOf(e) === selectedUid,
+    const rankOfTitle = (e: Entity) => bestRank.get(titleKeyOf(e)) ?? 0;
+    const sorted = allowed.sort(
+      (a, b) => rankOfTitle(a) - rankOfTitle(b) || byName(a, b) || byBook(a, b),
     );
-    return { list: primary, hiddenCount: sorted.length - primary.length, sourceHiddenCount };
-  }, [entities, filter, dedupe, showAll, selectedUid, policy, showHiddenSources]);
+    // Searching means the user wants something specific, so search everything.
+    // Otherwise the curated view folds the niche away, but never the pick.
+    const searching = f !== '';
+    const shown = searching
+      ? sorted.filter(matchesText)
+      : !curated || showAll
+        ? sorted
+        : sorted.filter((e) => !isNiche(e) || isCurrentPick(e));
+    return {
+      titles: groupTitles(shown),
+      hiddenCount: searching ? 0 : sorted.length - shown.length,
+      sourceHiddenCount,
+    };
+  }, [entities, filter, curated, showAll, selectedUid, policy, showHiddenSources]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -296,7 +395,15 @@ export function EntityCardList({
       <div
         className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${fill ? '' : 'max-h-96 overflow-y-auto'}`}
       >
-        {list.map((e, i) => {
+        {titles.map(({ key, printings }, i) => {
+          const e =
+            printings.find((p) => uidOf(p) === shownByTitle[key]) ??
+            printings.find((p) => uidOf(p) === selectedUid) ??
+            (printings[0] as Entity);
+          const switched = printings.length > 1;
+          // Several cards' names would otherwise be the same "Goblin", and
+          // what a tap picks is this one book's.
+          const label = switched ? `${nameOf(e)}, ${sourceBadgeLabel(sourceOf(e))}` : nameOf(e);
           const blurb = describe?.(e);
           const selected = selectedUid === uidOf(e);
           const outside = scope === 'character' && !policyAllows(policy, sourceOf(e));
@@ -312,12 +419,12 @@ export function EntityCardList({
             // at the right, wrapping where even they do not fit (A11Y-003).
             // The card is the query container.
             <div
-              key={uidOf(e)}
+              key={key}
               className={`${cardShell(selected)} transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised`}
             >
               <button
                 type="button"
-                aria-label={nameOf(e)}
+                aria-label={label}
                 aria-pressed={selected}
                 aria-describedby={describedBy}
                 onClick={() => {
@@ -348,22 +455,32 @@ export function EntityCardList({
               </button>
               <CardSide
                 entity={e}
+                label={label}
+                badge={!switched}
                 selected={selected}
                 infoType={infoType}
                 infoEntries={infoEntries}
               />
+              {switched && (
+                <PrintingSwitch
+                  name={nameOf(e)}
+                  printings={printings}
+                  shownUid={uidOf(e)}
+                  onShow={(p) => setShownByTitle((shown) => ({ ...shown, [key]: uidOf(p) }))}
+                />
+              )}
             </div>
           );
         })}
       </div>
       {hiddenCount > 0 && (
         <button type="button" onClick={() => setShowAll(true)} className={MORE}>
-          Show {hiddenCount} more — other printings, variants & playtest content
+          Show {hiddenCount} more: playtest content, sidekicks and variants
         </button>
       )}
-      {showAll && dedupe && filter === '' && (
+      {showAll && curated && filter === '' && (
         <button type="button" onClick={() => setShowAll(false)} className={MORE}>
-          Show fewer — one printing per name
+          Show fewer: hide playtest content, sidekicks and variants
         </button>
       )}
       {sourceHiddenCount > 0 && (

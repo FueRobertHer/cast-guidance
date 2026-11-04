@@ -6,6 +6,7 @@ import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
 import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
+import { subraceOptions } from '@/data5e/subraceOptions';
 import { roll } from '@/dice/roll';
 import {
   meetsMulticlassRequirements,
@@ -268,15 +269,7 @@ export function Component() {
   const subclassEntries = makeSubclassEntries(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
-    doc.race !== undefined
-      ? registry
-          .byType('subrace')
-          .filter(
-            (s) =>
-              String(s.raceName ?? '').toLowerCase() === doc.race?.name.toLowerCase() &&
-              typeof s.name === 'string',
-          )
-      : [];
+    doc.race !== undefined ? subraceOptions(registry.byType('subrace'), doc.race, doc.subrace) : [];
   const backgrounds = filterByRulesVersion([...registry.byType('background')], doc.rulesVersion);
 
   // Edition standing of the identity picks, against the version this character
@@ -739,7 +732,7 @@ export function Component() {
             <PackProblem packs={classPacks} what="the class list" />
             <EntityCardList
               sources={doc.allowedSources}
-              dedupe
+              curated
               describe={classBlurb}
               infoType="class"
               entities={classes.filter(
@@ -777,7 +770,7 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               sources={doc.allowedSources}
-              dedupe
+              curated
               describe={raceBlurb}
               infoType="race"
               entities={races}
@@ -1006,7 +999,7 @@ export function Component() {
           <div className="pt-2">
             <EntityCardList
               sources={doc.allowedSources}
-              dedupe
+              curated
               describe={makeBackgroundBlurb(sheet.skills)}
               infoType="background"
               entities={backgrounds}

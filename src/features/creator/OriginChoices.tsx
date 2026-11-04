@@ -27,8 +27,8 @@ import { ChoicePromptRenderer } from './ChoicePromptRenderer';
 
 /**
  * Narrow an entity-backed prompt to what the player should be choosing from:
- * their rules version (the engine builds the ASI feat list from every edition)
- * and their source settings. Keeps any already-chosen or unresolvable option so
+ * their rules version (the engine builds feat and optional-feature lists from
+ * every edition) and their source settings. Keeps any already-chosen or unresolvable option so
  * a pick never vanishes.
  *
  * These prompts have no "show hidden anyway" affordance, and some of them are
@@ -64,8 +64,11 @@ export function filterEntityPrompt(
   const uidsOf = (list: readonly Entity[]) =>
     new Set(list.map((e) => `${String(e.name)}|${String(e.source)}`.toLowerCase()));
 
-  // Feats span editions; optional features already come from the chosen class.
-  const byVersion = prompt.kind === 'feat' ? filterByRulesVersion(entities, version) : entities;
+  // Both span editions. The engine offers every feat, and every optional
+  // feature of the class's types, which the 2014 and 2024 printings share
+  // (invocations are "EI" in both), so a 2014 Warlock was offered the XPHB
+  // Agonizing Blast beside the PHB one.
+  const byVersion = filterByRulesVersion(entities, version);
   const bySource = applySourcePolicy(byVersion, policy, (e) => String(e.source));
   const kept = uidsOf(bySource.length > 0 ? bySource : byVersion);
 
