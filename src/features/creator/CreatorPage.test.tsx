@@ -360,7 +360,7 @@ describe('accessible names and states', () => {
     expect(namelessControls()).toEqual([]);
     expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: /^\d+ pending decisions?: go to the Choices step$/ }),
+      screen.getByRole('button', { name: /^\d+ pending decisions?: go to the Class step$/ }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Point buy', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Manual', pressed: false })).toBeTruthy();
@@ -370,6 +370,44 @@ describe('accessible names and states', () => {
     renderStep('basics');
     expect(screen.getByRole('button', { name: /^Classic/, pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Revised/, pressed: false })).toBeTruthy();
+  });
+});
+
+// The pending count and Review's fix both led to the Choices step, which shows
+// only the picks no other step does: a class's skills or a species' language
+// waiting sent the player to a page with nothing to pick.
+describe('picks still to make', () => {
+  /** A Testfolk Warrior, with class and species picks waiting, opened on `step`. */
+  function renderPending(step: string) {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    doc.race = { name: 'Testfolk', source: 'TST' };
+    seedDoc(doc);
+    renderCreator(['/', { pathname: '/create', search: `?step=${step}`, state: wizardState(1) }]);
+  }
+
+  it('leads from a step without any to the first step that has them', async () => {
+    renderPending('choices');
+    fireEvent.click(
+      screen.getByRole('button', { name: /pending decisions: go to the Class step$/ }),
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Class' })).toBeTruthy());
+    expect(document.querySelector('[data-pending-choice]')).not.toBeNull();
+    expect(
+      screen.getByRole('button', { name: /pending decisions: show the first on this step$/ }),
+    ).toBeTruthy();
+  });
+
+  it('lists a fix on Review for each step with picks waiting, each leading there', async () => {
+    renderPending('review');
+    expect(screen.getByRole('button', { name: /^2 choices still pending on Class/ })).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole('button', { name: /^1 choice still pending on Species \/ Race/ }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Species / Race' })).toBeTruthy(),
+    );
+    expect(document.querySelector('[data-pending-choice]')).not.toBeNull();
   });
 });
 

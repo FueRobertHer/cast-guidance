@@ -193,3 +193,31 @@ describe("OriginChoices under a character's own sources (GAME-005)", () => {
     expect(screen.getByText('Alert').closest('button')?.textContent).not.toContain('outside');
   });
 });
+
+// Every option-less pick used to be left out, as the subclass pointer is, so a
+// pick the data gave nothing to choose from counted as pending on a step that
+// showed nothing at all.
+describe('OriginChoices listing pending picks', () => {
+  it('leaves out only the subclass pointer, which the subclass picker answers', () => {
+    const pointer: ChoicePrompt = {
+      id: `class:${origin.uid}:subclass`,
+      origin,
+      kind: 'generic',
+      label: 'Choose a Rogue subclass (level 3)',
+      count: 1,
+      options: [],
+    };
+    const empty: ChoicePrompt = {
+      id: 'race:x|tst:weapon:0',
+      origin: { label: 'X', uid: 'x|tst', type: 'race' },
+      kind: 'generic',
+      label: 'Weapon proficiency',
+      count: 2,
+      options: [],
+    };
+    harness({}, [], [pointer, empty]);
+    expect(screen.queryByText('Choose a Rogue subclass (level 3)')).toBeNull();
+    expect(screen.getAllByText('Weapon proficiency').length).toBeGreaterThan(0);
+    expect(screen.getByText('Nothing here is still available to pick.')).toBeTruthy();
+  });
+});

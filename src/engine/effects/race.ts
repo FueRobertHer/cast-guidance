@@ -11,6 +11,7 @@ import {
   readResistList,
   skillOptions,
   toolOptions,
+  weaponOptions,
 } from './readers';
 
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
@@ -89,7 +90,7 @@ function collectFrom(
     'generic',
     'Weapon proficiency',
     (name) => col.add({ kind: 'weaponProf', name, origin }),
-    genericOptions,
+    weaponOptions(col.ctx),
   );
   readProficiencyList(
     col,

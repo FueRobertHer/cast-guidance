@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ChoicePrompt,
+  type DataEntity,
   type EffectOrigin,
   type EngineContext,
   newCharacterDoc,
@@ -12,6 +13,7 @@ import {
   MUSICAL_INSTRUMENTS,
   readProficiencyList,
   toolOptions,
+  weaponOptions,
 } from './readers';
 
 const ctx: EngineContext = {
@@ -129,5 +131,108 @@ describe('stored choice validation', () => {
     const result = collect({ ...prompt, allowRepeat: true }, ['a', 'a']);
     expect(result.applied).toEqual(['a', 'a']);
     expect(result.col.resolved).toHaveLength(1);
+  });
+});
+
+// Hobgoblin (VGM, ERLW) and Weapon Master (PHB) name their weapons with a
+// `fromFilter` instead of a `from` list, and the pick used to have no options.
+describe('weapon proficiency choices', () => {
+  const weapons: DataEntity[] = [
+    {
+      name: 'Longsword',
+      source: 'PHB',
+      type: 'M',
+      weaponCategory: 'martial',
+      dmg1: '1d8',
+      dmgType: 'S',
+    },
+    {
+      name: 'Longsword',
+      source: 'XPHB',
+      type: 'M|XPHB',
+      weaponCategory: 'martial',
+      dmg1: '1d8',
+      dmgType: 'S',
+    },
+    {
+      name: 'Longbow',
+      source: 'PHB',
+      type: 'R',
+      weaponCategory: 'martial',
+      dmg1: '1d8',
+      dmgType: 'P',
+    },
+    {
+      name: 'Dagger',
+      source: 'PHB',
+      type: 'M',
+      weaponCategory: 'simple',
+      dmg1: '1d4',
+      dmgType: 'P',
+    },
+    { name: 'Laser Rifle', source: 'DMG', type: 'R', weaponCategory: 'martial', age: 'futuristic' },
+    { name: 'Chain Mail', source: 'PHB', type: 'HA' },
+  ];
+  const weaponCtx: EngineContext = {
+    get: () => undefined,
+    byType: (type) => (type === 'baseitem' ? weapons : []),
+  };
+
+  function weaponCollector(raw: unknown): Collector {
+    const col = new Collector(newCharacterDoc('id', 'Test', 'test-tag'), weaponCtx);
+    readProficiencyList(
+      col,
+      raw,
+      origin,
+      'race:test|tst:weapon',
+      'generic',
+      'Weapon proficiency',
+      (name) => col.add({ kind: 'weaponProf', name, origin }),
+      weaponOptions(weaponCtx),
+    );
+    return col;
+  }
+
+  it('offers the base weapons a filter names, each once, without optional firearms', () => {
+    const col = weaponCollector([
+      { choose: { fromFilter: 'type=martial weapon|miscellaneous=mundane', count: 2 } },
+    ]);
+    expect(col.pending).toHaveLength(1);
+    expect(col.pending[0]?.count).toBe(2);
+    expect(col.pending[0]?.options).toEqual([
+      { id: 'Longbow', label: 'Longbow', description: 'Martial ranged · 1d8 piercing' },
+      { id: 'Longsword', label: 'Longsword', description: 'Martial melee · 1d8 slashing' },
+    ]);
+  });
+
+  it('reads a type it does not know, but that names a weapon, as any weapon', () => {
+    const col = weaponCollector([
+      { choose: { fromFilter: 'type=martial weapon;mundane weapon|miscellaneous=mundane' } },
+    ]);
+    expect(col.pending[0]?.options.map((o) => o.id)).toEqual(['Dagger', 'Longbow', 'Longsword']);
+  });
+
+  it('grants what is picked, and still offers a plain from list as given', () => {
+    const col = new Collector(
+      {
+        ...newCharacterDoc('id', 'Test', 'test-tag'),
+        choices: { 'race:test|tst:weapon:0': ['Longsword'] },
+      },
+      weaponCtx,
+    );
+    readProficiencyList(
+      col,
+      [{ choose: { fromFilter: 'type=martial weapon' } }],
+      origin,
+      'race:test|tst:weapon',
+      'generic',
+      'Weapon proficiency',
+      (name) => col.add({ kind: 'weaponProf', name, origin }),
+      weaponOptions(weaponCtx),
+    );
+    expect(col.effects).toContainEqual({ kind: 'weaponProf', name: 'Longsword', origin });
+    expect(
+      weaponCollector([{ choose: { from: ['whip', 'net'] } }]).pending[0]?.options.map((o) => o.id),
+    ).toEqual(['whip', 'net']);
   });
 });

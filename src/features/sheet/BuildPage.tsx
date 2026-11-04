@@ -21,7 +21,7 @@ import {
   refUid,
   SKILLS,
 } from '@/engine/types';
-import { OriginChoices } from '@/features/creator/OriginChoices';
+import { listsPick, OriginChoices } from '@/features/creator/OriginChoices';
 import {
   backgroundBlurb,
   classBlurb,
@@ -1060,9 +1060,8 @@ export function Component() {
           !(o.type === 'class' && classUids.has(o.uid)) &&
           !(o.type === 'subclass' && subclassUids.has(o.uid));
         const hasOther =
-          sheet.pending.some(
-            (p) => isOther(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
-          ) || sheet.resolvedChoices.some((r) => isOther(r.prompt.origin));
+          sheet.pending.some((p) => isOther(p.origin) && listsPick(p)) ||
+          sheet.resolvedChoices.some((r) => isOther(r.prompt.origin));
         if (!hasOther) return null;
         return (
           <Section id="build-choices" title="Feat & other choices" defaultOpen>
