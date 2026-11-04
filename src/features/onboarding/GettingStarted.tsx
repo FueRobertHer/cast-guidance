@@ -74,7 +74,7 @@ function Item({
 function downloadLine(compendium: CompendiumState, bannerShowing: boolean): Line {
   switch (compendium) {
     case 'complete':
-      return [true, `${GAME_DATA_DOWNLOAD_SIZE}, kept on this device.`];
+      return [true, 'Downloaded and kept on this device.'];
     case 'downloading':
       return [
         false,

@@ -67,7 +67,7 @@ export const dataStatusStore = createStore<DataStatusState>((set) => ({
   addTotal: (n) => set((s) => ({ filesTotal: s.filesTotal + n })),
   // Clears `failedTag` too: it belongs to the failure being replaced, and a
   // stale one made the background queue's next error render as "Update to
-  // v2.33.0 failed" with a Retry that started a 2.5 MB install nobody asked
+  // v2.33.0 failed" with a Retry that started a full install nobody asked
   // for. Whoever reports a failed install re-arms it immediately after.
   setPhase: (phase, error) => set({ phase, error, failedTag: undefined }),
   setUpdateAvailableTag: (tag) => set({ updateAvailableTag: tag }),

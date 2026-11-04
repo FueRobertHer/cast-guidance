@@ -1,5 +1,6 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
-import { db } from '@/db/db';
+import { type DataFileRow, db } from '@/db/db';
+import type { CharacterDataNeeds } from '@/engine/dataNeeds';
 import { readJsonBounded } from '@/lib/boundedRead';
 import { jsonByteSize } from '@/lib/byteSize';
 import { assertJsonWithinLimits, DATA_FILE_LIMITS, ValidationError } from '@/lib/guards';
@@ -27,6 +28,7 @@ import {
   type PackId,
   spellsPackId,
 } from './packs';
+import { changedFilesBetween } from './releaseDiff';
 import { GithubTagSource } from './source';
 import { assertComplete, indexEntries, requiredFiles, validateDataFile } from './validate';
 
@@ -644,7 +646,7 @@ async function pruneStaleTags(): Promise<void> {
 /**
  * Boot entry: make essentials available, then drain every remaining pack in
  * idle time so the app becomes fully offline-capable (about
- * `GAME_DATA_DOWNLOAD_SIZE` on disk, a little less on the wire).
+ * `GAME_DATA_DOWNLOAD_SIZE` on the wire, several times that once unpacked).
  */
 export async function initDataLayer(): Promise<void> {
   if (backgroundStarted) return;
@@ -771,6 +773,37 @@ export async function ensureTypePacks(type: string): Promise<void> {
     // A page is waiting on this type, so what landed for it reaches the
     // registry before the page hears the download is over, not up to a flush
     // interval later. Failed or not: whatever did land is worth showing.
+    flushLanded();
+  }
+}
+
+/**
+ * Download the packs that hold what a character's numbers are missing. The
+ * boot drain gets to them too, but a sheet cannot wait on "eventually, unless
+ * it failed": this resolves once they are on disk and rejects with the reason
+ * they are not.
+ */
+export async function ensureCharacterPacks(needs: CharacterDataNeeds): Promise<void> {
+  try {
+    // First and alone, as in `ensureTypePacks`: the class packs are listed in it.
+    await ensurePack('essentials');
+    const classPacks = (await allPackIds()).filter((p) => p.startsWith('class:'));
+    const packs = new Set<PackId>();
+    for (const name of needs.classes) {
+      const own = classPackId(name);
+      if (classPacks.includes(own)) {
+        packs.add(own);
+      } else {
+        // Not every class is named after its file (the three Sidekicks share
+        // one), so a name that matches none could be in any of them.
+        for (const pack of classPacks) packs.add(pack);
+      }
+    }
+    if (needs.items) packs.add('items-full');
+    const onDisk = await dataCacheRepo.cachedPaths(activeTag);
+    await Promise.all([...packs].map((pack) => ensurePack(pack, onDisk)));
+  } finally {
+    // A sheet is waiting on these, and what did land is worth showing.
     flushLanded();
   }
 }
@@ -938,9 +971,10 @@ export async function checkForDataUpdate(): Promise<void> {
 }
 
 /**
- * Install a different data tag: download everything under the new keyspace
- * (old data stays live until the swap), validate every file and check none is
- * missing, then flip in one transaction. The old release's rows stay until
+ * Install a different data tag: stage everything under the new keyspace,
+ * downloading what changed and copying what did not (old data stays live until
+ * the swap), validate every file and check none is missing, then flip in one
+ * transaction. The old release's rows stay until
  * the new one has been built into a registry (see `noteRegistryBuilt`), so
  * a release that passes these checks and still cannot start has somewhere
  * to go back to.
@@ -989,6 +1023,31 @@ export async function updateToTag(newTag: string): Promise<void> {
   const newSource = new GithubTagSource(newTag);
   status.beginRun();
 
+  /**
+   * The release this one is replacing and what changed since it, once known. A
+   * file a release left alone is byte for byte what is already on the device,
+   * and most of a release is: downloading the whole of it again cost a full
+   * install for every update, including ones that touched nothing the app reads.
+   */
+  let previous: { tag: string; changed: ReadonlySet<string> } | undefined;
+
+  /**
+   * This file's row from the release being replaced, if the file did not change
+   * and the row still passes the checks. A local copy that fails them is not a
+   * failed install, only one more file to download.
+   */
+  const reusableRow = async (path: string): Promise<DataFileRow | undefined> => {
+    if (previous === undefined || previous.changed.has(path)) return undefined;
+    const row = await dataCacheRepo.getFile(previous.tag, path);
+    if (row === undefined) return undefined;
+    try {
+      validateDataFile(path, acceptDataFile(path, row.json));
+      return row;
+    } catch {
+      return undefined;
+    }
+  };
+
   // Every file is held to the full check, whether it was fetched just now or
   // is already staged (from an earlier attempt, or because this is the release
   // a previous install kept to roll back to): a staged row predating these
@@ -1001,6 +1060,18 @@ export async function updateToTag(newTag: string): Promise<void> {
       // the done count stalled the bar short of full on every resumed install.
       status.fileDone();
       return cached.json;
+    }
+    const reused = await reusableRow(path);
+    if (reused !== undefined) {
+      // A copy under the new release's key, so the old one's rows stay whole
+      // for a rollback and are swept on the same terms as ever.
+      await dataCacheRepo.putFile({
+        ...reused,
+        key: dataCacheRepo.key(newTag, path),
+        tag: newTag,
+      });
+      status.fileDone();
+      return reused.json;
     }
     // Through the same gate as every other fetch. Bypassing it let an install
     // open its own connection alongside the four the background queue was
@@ -1037,6 +1108,11 @@ export async function updateToTag(newTag: string): Promise<void> {
     // one used to take this slot and then release it in the `finally`, which
     // let the stale-tag sweep run over a concurrent install's staged rows.
     installingTag = newTag;
+
+    // Not behind the fetch gate, like the release list: one small request that
+    // says how much of the download queue is needed at all.
+    const changed = await changedFilesBetween(activeTag, newTag);
+    if (changed !== undefined) previous = { tag: activeTag, changed };
 
     // Static packs (the indexes among them), then everything the indexes list.
     // One at a time: the gate bounds the wire either way, and a sibling fetch

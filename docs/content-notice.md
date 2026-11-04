@@ -38,7 +38,10 @@ downloaded at runtime, on the user's device:
   releases are offered as updates the user can accept or decline.
 - **How.** Files come through jsDelivr
   (`cdn.jsdelivr.net/gh/5etools-mirror-3/5etools-src@<tag>/data/`), with
-  `raw.githubusercontent.com` as the fallback.
+  `raw.githubusercontent.com` as the fallback. An update first asks GitHub's API
+  (`api.github.com/repos/5etools-mirror-3/5etools-src/compare/<from>...<to>`)
+  which files the new release changed, downloads those, and copies the rest from
+  the release already on the device. If GitHub does not say, it downloads them all.
 - **Where it is kept.** Only in the browser's IndexedDB on that device. The app
   has no server of its own that stores or serves the data.
 

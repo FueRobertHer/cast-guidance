@@ -1,12 +1,13 @@
 import { AlertTriangle, Brain, Hourglass, Minus, Moon, Plus, Star } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { useRegistry } from '@/data5e/hooks';
-import { pickForVersion } from '@/data5e/rulesVersion';
+import { useRegistry, useRegistryRefreshing, useTypePacks } from '@/data5e/hooks';
+import type { EntityRegistry } from '@/data5e/normalize';
+import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
-import type { PlayState, SpellcastingBlock } from '@/engine/types';
+import type { CharacterDoc, PlayState, SpellcastingBlock } from '@/engine/types';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -18,6 +19,7 @@ import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askNumber, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Tip, useTip } from '@/ui/Hint';
+import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass } from '@/ui/surfaces';
@@ -152,9 +154,86 @@ function rollConcentration(
   };
 }
 
+/**
+ * Look a spell up by its stored printing; when that misses (blank/wrong source
+ * on a granted spell) fall back to the printing matching the character's rules
+ * version, so a 2024 sheet shows 2024 text.
+ */
+function findSpell(
+  registry: EntityRegistry | null,
+  name: string,
+  source: string,
+  version: CharacterDoc['rulesVersion'],
+) {
+  if (registry === null) return undefined;
+  const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
+  if (bySource !== undefined) return bySource;
+  const cands = registry
+    .byType('spell')
+    .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
+  return pickForVersion(cands, version);
+}
+
+/**
+ * A spell whose file has not arrived. Its level decides what casting it spends,
+ * and guessing that spent a slot on a cantrip, so until the file is here the row
+ * offers no way to cast it. The name still opens the rules sheet, which says what
+ * became of the file and can ask again. The slot pips above still work.
+ */
+function PendingSpellRow({
+  name,
+  source,
+  version,
+  subtitle,
+  className,
+}: {
+  name: string;
+  source: string;
+  version: RulesVersion;
+  subtitle: string;
+  className: string;
+}) {
+  return (
+    <div className={`${className} ${ROW}`}>
+      <div className={ROW_NAME}>
+        <span aria-hidden="true" className="w-6 shrink-0 text-caption text-ink-muted">
+          …
+        </span>
+        <SpellInfoSheet
+          name={name}
+          source={source}
+          version={version}
+          subtitle={subtitle}
+          trigger={
+            <button
+              type="button"
+              className={`min-w-0 flex-1 text-left ${NAME} ${RULES} text-ink-muted underline-offset-2`}
+            >
+              {name}
+            </button>
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
+  // Only this character's own spells, and only when one is missing: every other
+  // page that needs spell files asks for them itself, and this one used to rely
+  // on the boot drain having finished.
+  const spellsMissing =
+    sheet !== null &&
+    doc !== null &&
+    registry !== null &&
+    [
+      ...sheet.spellcasting.flatMap((sc) => doc.spellcasting[sc.classUid]?.known ?? []),
+      ...sheet.grantedSpells,
+    ].some((s) => findSpell(registry, s.name, s.source, doc.rulesVersion) === undefined);
+  const spellPacks = useTypePacks(spellsMissing ? 'spell' : undefined);
+  const registryRefreshing = useRegistryRefreshing();
   // Keyed by character, so a settling HP line is only ever about the one it
   // was for; leaving the tab or the character drops one still settling.
   const hpKey = `hp:${doc?.id ?? ''}`;
@@ -186,18 +265,10 @@ export function Component() {
   const hpNumber = useRef<HTMLButtonElement>(null);
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
-  // Look a spell up by its stored printing; when that misses (blank/wrong source
-  // on a granted spell) fall back to the printing matching the character's rules
-  // version, so a 2024 sheet shows 2024 text.
-  const spellEntity = (name: string, source: string) => {
-    if (registry === null) return undefined;
-    const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
-    if (bySource !== undefined) return bySource;
-    const cands = registry
-      .byType('spell')
-      .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
-    return pickForVersion(cands, doc.rulesVersion);
-  };
+  const spellEntity = (name: string, source: string) =>
+    findSpell(registry, name, source, doc.rulesVersion);
+  /** A spell with no entry may yet get one, so its row waits rather than guesses. */
+  const spellsSettling = registry === null || spellPacks.status !== 'ready' || registryRefreshing;
   const spellLevelOf = (name: string, source: string): number => {
     const e = spellEntity(name, source);
     return typeof e?.level === 'number' ? e.level : 1;
@@ -1349,6 +1420,8 @@ export function Component() {
         );
       })()}
 
+      {spellsMissing && <PackProblem packs={spellPacks} what="spell details" />}
+
       {/* Spell slots (spend/restore) — the leveled pool is character-wide,
           so render its pips only on the first casting class. */}
       {sheet.spellcasting.map((sc, scIdx) => (
@@ -1449,6 +1522,18 @@ export function Component() {
                   const prepared = preparedUids.has(uid);
                   const level = spellLevelOf(ref.name, ref.source);
                   const entity = spellEntity(ref.name, ref.source);
+                  if (entity === undefined && spellsSettling) {
+                    return (
+                      <PendingSpellRow
+                        key={uid}
+                        name={ref.name}
+                        source={ref.source}
+                        version={doc.rulesVersion}
+                        subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                        className="min-h-10"
+                      />
+                    );
+                  }
                   const choiceKey = `${sc.classUid}::${uid}`;
                   const { resource, options } = castResourceFor(choiceKey, sc, level);
                   // The dice follow the chosen slot, which is the whole reason
@@ -1477,7 +1562,15 @@ export function Component() {
                     <div key={uid} className={`min-h-10 ${ROW}`}>
                       <div className={ROW_NAME}>
                         <span className="w-6 shrink-0 text-caption text-ink-muted">
-                          {level === 0 ? 'c' : `L${level}`}
+                          {typeof entity?.level !== 'number' ? (
+                            <span title="Level unknown: this spell isn't in the downloaded data">
+                              ?<span className="sr-only"> level unknown</span>
+                            </span>
+                          ) : level === 0 ? (
+                            'c'
+                          ) : (
+                            `L${level}`
+                          )}
                         </span>
                         <SpellInfoSheet
                           name={ref.name}
@@ -1590,6 +1683,18 @@ export function Component() {
             ) && attackCue('Spell attacks')}
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
+              if (entity === undefined && spellsSettling) {
+                return (
+                  <PendingSpellRow
+                    key={`${g.name}|${g.source}`}
+                    name={g.name}
+                    source={g.source}
+                    version={doc.rulesVersion}
+                    subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                    className="min-h-11 border-line border-b py-1.5 last:border-b-0"
+                  />
+                );
+              }
               const level = spellLevelOf(g.name, g.source);
               const block =
                 sheet.spellcasting.find((sc) => sc.ability === g.ability) ??

@@ -52,6 +52,7 @@ vi.mock('./useCharacterSheet', async () => {
       loadStatus: 'ready',
       missing: false,
       error: null,
+      data: { status: 'ready', error: null, retry: () => undefined },
       saveStatus: useSyncExternalStore(sheetState.subscribe, () => sheetState.state.saveStatus),
       doc: {
         id: 'x',

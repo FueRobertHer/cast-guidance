@@ -37,7 +37,7 @@ worker-src 'self';                   /* the search worker and the service worker
 manifest-src 'self';
 connect-src 'self'
   https://cdn.jsdelivr.net https://raw.githubusercontent.com   /* data mirror and homebrew URL import */
-  https://api.github.com                                       /* release list */
+  https://api.github.com                                       /* release list, what a release changed */
   https://gist.githubusercontent.com                           /* homebrew URL import */
 ```
 
@@ -69,7 +69,7 @@ What each directive was checked against in the built `dist/`:
 |---|---|
 | `https://cdn.jsdelivr.net` | data mirror, first choice (`ENDPOINTS` in `src/data5e/config.ts`), and homebrew URL import |
 | `https://raw.githubusercontent.com` | data mirror fallback, and homebrew URL import |
-| `https://api.github.com` | compatible release list (`TAGS_API_URL`) |
+| `https://api.github.com` | compatible release list (`TAGS_API_URL`), and the files an update changed (`COMPARE_API_URL`) |
 | `https://gist.githubusercontent.com` | homebrew URL import |
 
 Homebrew URL import fetches only from `HOMEBREW_FETCH_ORIGINS` in

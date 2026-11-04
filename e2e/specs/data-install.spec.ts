@@ -30,6 +30,10 @@ import { expect, test } from '../support/test.ts';
  *   release again; the old release stays active and usable until the swap;
  * - after the swap, the old release's rows stay (with `dataTagRollback`) until
  *   a registry builds under the new one, then they are swept.
+ *
+ * The mirror answers comparisons with nothing an install can use unless a spec
+ * turns that on, so these exercise the whole-release download, and the one spec
+ * that does covers copying what a release left alone.
  */
 
 /** A species both releases have, so a page that lists it has finished reading. */
@@ -173,6 +177,39 @@ test.describe('data installs', () => {
     await expect(libraryEntry(page, NEXT_ONLY_RACE)).toBeVisible();
     await expectDataSettled(page);
     await expect(settingsValue(page, 'Dataset version')).toHaveText(NEXT_TAG);
+    expect(mirror.totalHits()).toBe(hits);
+  });
+
+  test('an update downloads only the files the release changed, and installs all of it', async ({
+    page,
+    mirror,
+  }) => {
+    await installPinned(page);
+    mirror.setTags([NEXT_TAG, PINNED_TAG]);
+    mirror.setBodies(withNextRelease);
+    mirror.setListsChanges(true);
+
+    await startDataInstall(page, NEXT_TAG);
+    await expect(
+      page.getByText(`Now on ${NEXT_TAG}. Characters re-derive automatically.`).and(onScreen(page)),
+    ).toBeVisible();
+
+    // Races are all that differ between the two releases.
+    expect(mirror.hits.get(`${NEXT_TAG}:races.json`)).toBe(1);
+    for (const path of pathsExcept('races.json')) {
+      expect(mirror.hits.get(`${NEXT_TAG}:${path}`) ?? 0, path).toBe(0);
+    }
+    expect(await cachedPaths(page, NEXT_TAG)).toEqual([...MIRROR_PATHS].sort());
+
+    // The result reads like any install: the new species, the unchanged ones,
+    // the old release swept once confirmed, and nothing to fetch after a reload.
+    await gotoRaces(page, NEXT_ONLY_RACE);
+    await expect(libraryEntry(page, SHARED_RACE)).toBeVisible();
+    await expectConfirmedOn(page, NEXT_TAG, PINNED_TAG);
+    const hits = mirror.totalHits();
+    await page.reload();
+    await expect(libraryEntry(page, NEXT_ONLY_RACE)).toBeVisible();
+    await expectDataSettled(page);
     expect(mirror.totalHits()).toBe(hits);
   });
 

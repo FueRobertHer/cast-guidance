@@ -11,6 +11,7 @@ import {
   type DocUpdater,
   useCharacterSession,
 } from '@/stores/characterSession';
+import { type CharacterDataState, useCharacterData } from './useCharacterData';
 
 export interface CharacterSheetState {
   doc: CharacterDoc | null;
@@ -26,9 +27,15 @@ export interface CharacterSheetState {
   /**
    * The game data the sheet is derived from. Until it is here `sheet` stays
    * null, and an `error` is the difference between waiting for it and never
-   * getting it (not downloaded, and offline or failing).
+   * getting it (not downloaded, and offline or failing). That includes this
+   * character's class files and equipped gear, not only the essentials.
    */
-  data: { status: AsyncStatus; error: string | null; retry: () => void };
+  data: {
+    status: AsyncStatus;
+    error: string | null;
+    retry: () => void;
+    equipment?: CharacterDataState['equipment'];
+  };
 }
 
 /** Load the character for a route id and derive its sheet reactively. */
@@ -60,11 +67,14 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     };
   }, [id]);
 
+  const characterData = useCharacterData(doc, registry, rev);
+  const dataReady = characterData.status === 'ready';
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
   const sheet = useMemo(() => {
-    if (doc === null || registry === null) return null;
+    if (doc === null || registry === null || !dataReady) return null;
     return deriveSheet(doc, engineContextFor(registry));
-  }, [doc, registry, rev]);
+  }, [doc, registry, rev, dataReady]);
 
   // While a character is still being built (HP never manually touched),
   // currentHp tracks the derived max — so leveling up keeps you at full.
@@ -98,6 +108,15 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     retryLoad: () => {
       if (id !== undefined) void characterSessionStore.getState().load(id);
     },
-    data: { status: registryState.status, error: registryState.error, retry: registryState.retry },
+    data: {
+      // The essentials come first: nothing can say what else is missing without them.
+      status: registryState.status === 'ready' ? characterData.status : registryState.status,
+      error: registryState.status === 'ready' ? characterData.error : registryState.error,
+      retry: () => {
+        registryState.retry();
+        characterData.retry();
+      },
+      equipment: characterData.equipment,
+    },
   };
 }

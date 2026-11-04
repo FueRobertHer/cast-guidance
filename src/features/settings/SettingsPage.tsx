@@ -244,7 +244,7 @@ export function Component() {
   const runUpdate = async (tag: string) => {
     const ok = await askConfirm({
       title: `Install data version ${tag}?`,
-      detail: `The current version stays until the new one downloads and passes checks (about ${GAME_DATA_DOWNLOAD_SIZE}).`,
+      detail: `The current version stays until the new one downloads and passes checks (up to about ${GAME_DATA_DOWNLOAD_SIZE}).`,
       confirmLabel: 'Install',
     });
     if (!ok) return;
@@ -321,7 +321,7 @@ export function Component() {
                   ? 'ready ✓'
                   : `${offline.cached}/${offline.total} files`}
           </dd>
-          <dt className="text-ink-muted">Game data size</dt>
+          <dt className="text-ink-muted">Unpacked game data</dt>
           <dd>{mb(cachedBytes)}</dd>
           <dt className="text-ink-muted">Browser storage</dt>
           <dd>

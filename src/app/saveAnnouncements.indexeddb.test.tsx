@@ -30,6 +30,14 @@ vi.mock('@/data5e/hooks', () => {
   const shared = () => (registry ??= makeTestContext());
   return {
     useRegistry: shared,
+    useRegistryRefreshing: () => false,
+    useTypePacks: () => ({
+      status: 'ready',
+      error: null,
+      offline: false,
+      retry: () => undefined,
+      repair: () => undefined,
+    }),
     useRegistryState: () => ({
       registry: shared(),
       status: 'ready',

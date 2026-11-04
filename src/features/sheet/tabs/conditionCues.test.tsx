@@ -17,7 +17,17 @@ import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
 import { Component as StatsTab } from './StatsTab';
 
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
+vi.mock('@/data5e/hooks', () => ({
+  useRegistry: () => makeTestContext(),
+  useRegistryRefreshing: () => false,
+  useTypePacks: () => ({
+    status: 'ready',
+    error: null,
+    offline: false,
+    retry: () => undefined,
+    repair: () => undefined,
+  }),
+}));
 
 beforeAll(() => {
   // vaul asks for matchMedia, which jsdom does not have.

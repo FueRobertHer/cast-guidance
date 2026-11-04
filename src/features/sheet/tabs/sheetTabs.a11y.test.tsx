@@ -17,6 +17,7 @@ import { Component as StatsTab } from './StatsTab';
 
 vi.mock('@/data5e/hooks', () => ({
   useRegistry: () => makeTestContext(),
+  useRegistryRefreshing: () => false,
   useTypePacks: () => ({
     status: 'ready',
     error: null,

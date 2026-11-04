@@ -28,7 +28,11 @@ export function parseBonus(v: unknown): number {
   return 0;
 }
 
-export function lookupItem(col: Collector, name: string, source?: string): DataEntity | undefined {
+export function lookupItem(
+  col: Pick<Collector, 'ctx'>,
+  name: string,
+  source?: string,
+): DataEntity | undefined {
   return (
     col.ctx.get('item', name, source) ??
     col.ctx.get('baseitem', name, source) ??
