@@ -219,6 +219,119 @@ describe("EntityCardList under a character's own sources (GAME-005)", () => {
   });
 });
 
+describe('EntityCardList printings of one name', () => {
+  // Three books' Goblins, each with its own rules, and one name in one book.
+  const goblins: Entity[] = [
+    { name: 'Goblin', source: 'VGM', blurb: 'VGM rules' },
+    { name: 'Goblin', source: 'MPMM', blurb: 'MPMM rules' },
+    { name: 'Goblin', source: 'DMG', blurb: 'DMG rules' },
+    { name: 'Human', source: 'PHB', blurb: 'PHB rules' },
+  ];
+  const describe_ = (e: Entity) => String(e.blurb);
+  const cardOf = (name: RegExp) => screen.getByRole('button', { name });
+  const switchOf = (name: string) => screen.getByRole('group', { name: `${name}, printed in` });
+
+  it('gives a name one card, with a switch between its books', () => {
+    render(<EntityCardList entities={goblins} describe={describe_} onSelect={vi.fn()} />);
+    expect(screen.getAllByRole('button', { name: /^Goblin/ })).toHaveLength(1);
+    const books = switchOf('Goblin').querySelectorAll('button');
+    // Book order: the core books by rank, so the MPMM printing leads.
+    expect([...books].map((b) => b.textContent)).toEqual(['MPMM', 'VGM', 'DMG']);
+    // A name in one book keeps its badge and has no switch.
+    expect(screen.queryByRole('group', { name: 'Human, printed in' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Human' })).toBeTruthy();
+  });
+
+  it('shows the switched-to printing and picks that one', () => {
+    const onSelect = vi.fn();
+    render(<EntityCardList entities={goblins} describe={describe_} onSelect={onSelect} />);
+    // Opens on the first book, its rules and its title in the card's name.
+    expect(cardOf(/^Goblin, Mordenkainen Presents/)).toBeTruthy();
+    expect(screen.queryByText('MPMM rules')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /^VGM,/ }));
+    expect(screen.getByRole('button', { name: /^VGM,/, pressed: true })).toBeTruthy();
+    expect(screen.queryByText('MPMM rules')).toBeNull();
+    expect(screen.queryByText('VGM rules')).not.toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+
+    fireEvent.click(cardOf(/^Goblin, Volo's Guide/));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]).toMatchObject({ name: 'Goblin', source: 'VGM' });
+  });
+
+  it('opens on the current pick, picked, and shows another book unpicked', () => {
+    const onSelect = vi.fn();
+    render(
+      <EntityCardList
+        entities={goblins}
+        describe={describe_}
+        selectedUid="goblin|dmg"
+        onSelect={onSelect}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /^Goblin, Dungeon Master/, pressed: true }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^MPMM,/ }));
+    // What the card shows is what a tap picks, so it is not the pick.
+    const mpmm = screen.getByRole('button', { name: /^Goblin, Mordenkainen/, pressed: false });
+    fireEvent.click(mpmm);
+    expect(onSelect.mock.calls[0]?.[0]).toMatchObject({ source: 'MPMM' });
+  });
+
+  it('switches between the books in the player sources only, keeping the pick', () => {
+    policyState.current = { mode: 'all', except: ['VGM', 'DMG'] };
+    const { unmount } = render(<EntityCardList entities={goblins} onSelect={vi.fn()} />);
+    // One book left, so a plain card with its badge.
+    expect(screen.queryByRole('group', { name: 'Goblin, printed in' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Goblin' })).toBeTruthy();
+    unmount();
+
+    render(<EntityCardList entities={goblins} selectedUid="goblin|vgm" onSelect={vi.fn()} />);
+    const books = switchOf('Goblin').querySelectorAll('button');
+    expect([...books].map((b) => b.textContent)).toEqual(['MPMM', 'VGM']);
+  });
+
+  it('files a title under its best book in a curated list', () => {
+    const list: Entity[] = [
+      { name: 'Aarakocra', source: 'EEPC' },
+      { name: 'Goblin', source: 'GGR' },
+      { name: 'Goblin', source: 'PHB' },
+      { name: 'Human', source: 'PHB' },
+    ];
+    render(<EntityCardList curated entities={list} onSelect={vi.fn()} />);
+    // The cards' own buttons, not the books in a switch.
+    const names = screen
+      .getAllByRole('button', { pressed: false })
+      .filter((b) => b.closest('[role="group"]') === null)
+      .map((b) => b.getAttribute('aria-label'));
+    expect(names).toEqual(["Goblin, Player's Handbook (2014)", 'Human', 'Aarakocra']);
+  });
+
+  it('keeps playtest content behind the fold in a curated list, and the pick out of it', () => {
+    const list: Entity[] = [
+      { name: 'Human', source: 'PHB' },
+      { name: 'Gremlin', source: 'UAGremlins' },
+      { name: 'Sprite', source: 'UASprites' },
+    ];
+    render(
+      <EntityCardList curated entities={list} selectedUid="sprite|uasprites" onSelect={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Gremlin' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sprite' })).not.toBeNull();
+    fireEvent.click(screen.getByText('Show 1 more: playtest content, sidekicks and variants'));
+    expect(screen.queryByRole('button', { name: 'Gremlin' })).not.toBeNull();
+    fireEvent.click(screen.getByText('Show fewer: hide playtest content, sidekicks and variants'));
+    expect(screen.queryByRole('button', { name: 'Gremlin' })).toBeNull();
+  });
+
+  it('names the shown book in the details button', () => {
+    render(<EntityCardList entities={goblins} infoType="race" onSelect={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /^Goblin, Mordenkainen.* details$/ })).toBeTruthy();
+  });
+});
+
 describe('EntityCardList info button (A11Y-002)', () => {
   it('gives the details button a 44px target without growing the row', () => {
     render(<EntityCardList entities={entities} onSelect={vi.fn()} infoType="race" />);

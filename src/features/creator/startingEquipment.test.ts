@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { DataEntity } from '@/engine/types';
-import { bundleGoldCp, bundleToEquipment, parseStartingEquipment } from './startingEquipment';
+import {
+  bundleGoldCp,
+  bundleToEquipment,
+  itemsForEquipmentType,
+  parseStartingEquipment,
+} from './startingEquipment';
 
 // A 2024-style class: option A is gear (+ a little gold), option B is "gold instead".
 const classEntity = {
@@ -29,5 +34,35 @@ describe('startingEquipment — gold alternative', () => {
     expect(bundleToEquipment(goldBundle ?? { key: '', label: '', items: [] })).toHaveLength(0);
     // Gear bundle keeps the weapon but drops the +10 gp entry.
     expect(bundleToEquipment(gearBundle ?? { key: '', label: '', items: [] })).toHaveLength(1);
+  });
+});
+
+describe('itemsForEquipmentType', () => {
+  // items-base.json lists the PHB printing of each weapon before the XPHB one,
+  // and only the XPHB one carries a mastery.
+  const baseitems: DataEntity[] = [
+    { name: 'Longsword', source: 'PHB', weaponCategory: 'martial', type: 'M' },
+    {
+      name: 'Longsword',
+      source: 'XPHB',
+      weaponCategory: 'martial',
+      type: 'M|XPHB',
+      mastery: ['Sap|XPHB'],
+    },
+    { name: 'Whip', source: 'PHB', weaponCategory: 'martial', type: 'M' },
+    { name: 'Laser Rifle', source: 'DMG', weaponCategory: 'martial', type: 'R' },
+  ];
+  const uids = (list: DataEntity[]) => list.map((e) => `${String(e.name)}|${String(e.source)}`);
+
+  it("offers each weapon in the printing for the character's rules", () => {
+    expect(uids(itemsForEquipmentType('weaponMartial', baseitems, [], '2024'))).toEqual([
+      'Longsword|XPHB',
+      // Printed only in the 2014 book, so that one.
+      'Whip|PHB',
+    ]);
+    expect(uids(itemsForEquipmentType('weaponMartial', baseitems, [], '2014'))).toEqual([
+      'Longsword|PHB',
+      'Whip|PHB',
+    ]);
   });
 });

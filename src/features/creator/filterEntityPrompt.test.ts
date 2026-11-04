@@ -16,6 +16,10 @@ registry.addAll('feat', [
 registry.addAll('optionalfeature', [
   { name: 'Defense', source: 'XPHB' },
   { name: 'Blind Fighting', source: 'TCE' },
+  // Both printings carry featureType "EI", so the engine offers both.
+  { name: 'Agonizing Blast', source: 'PHB', reprintedAs: ['Agonizing Blast|XPHB'] },
+  { name: 'Agonizing Blast', source: 'XPHB' },
+  { name: 'Eldritch Smite', source: 'XGE' },
 ]);
 
 const promptOf = (kind: ChoicePrompt['kind'], ids: string[]): ChoicePrompt => ({
@@ -60,6 +64,27 @@ describe('filterEntityPrompt', () => {
     expect(idsOf(filterEntityPrompt(prompt, registry, '2024', policy, undefined))).toEqual([
       'defense|xphb',
     ]);
+  });
+
+  it("offers optional features from the character's own edition", () => {
+    const prompt = promptOf('optionalfeature', [
+      'agonizing blast|phb',
+      'agonizing blast|xphb',
+      'eldritch smite|xge',
+    ]);
+    expect(idsOf(filterEntityPrompt(prompt, registry, '2014', ALLOW_ALL, undefined))).toEqual([
+      'agonizing blast|phb',
+      'eldritch smite|xge',
+    ]);
+    // The 2014 printing the 2024 book reprinted gives way; one it did not stays.
+    expect(idsOf(filterEntityPrompt(prompt, registry, '2024', ALLOW_ALL, undefined))).toEqual([
+      'agonizing blast|xphb',
+      'eldritch smite|xge',
+    ]);
+    // A pick already made from the other edition is kept.
+    expect(
+      idsOf(filterEntityPrompt(prompt, registry, '2014', ALLOW_ALL, ['agonizing blast|xphb'])),
+    ).toContain('agonizing blast|xphb');
   });
 
   it('skips the source narrowing rather than leaving a mandatory pick empty', () => {

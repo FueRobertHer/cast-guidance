@@ -6,6 +6,7 @@ import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistryState, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
+import { subraceOptions } from '@/data5e/subraceOptions';
 import { characterRepo } from '@/db/characterRepo';
 import { deriveSheet } from '@/engine/derive';
 import { subclassUnlockLevel } from '@/engine/multiclass';
@@ -470,15 +471,7 @@ export function Component() {
       : [];
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
   const subraces =
-    doc.race !== undefined
-      ? registry
-          .byType('subrace')
-          .filter(
-            (s) =>
-              String(s.raceName ?? '').toLowerCase() === doc.race?.name.toLowerCase() &&
-              typeof s.name === 'string',
-          )
-      : [];
+    doc.race !== undefined ? subraceOptions(registry.byType('subrace'), doc.race, doc.subrace) : [];
   const backgrounds = filterByRulesVersion([...registry.byType('background')], doc.rulesVersion);
 
   // --- Starting equipment (shared by the step body, auto-grant, and review) --
@@ -865,7 +858,7 @@ export function Component() {
             <CollapsingCardList
               noun="class"
               fill
-              dedupe
+              curated
               describe={classBlurb}
               infoType="class"
               entities={classes}
@@ -975,7 +968,7 @@ export function Component() {
             <CollapsingCardList
               noun="species"
               fill
-              dedupe
+              curated
               describe={raceBlurb}
               infoType="race"
               entities={races}
@@ -1049,7 +1042,7 @@ export function Component() {
             <CollapsingCardList
               noun="background"
               fill
-              dedupe
+              curated
               describe={makeBackgroundBlurb(sheet?.skills)}
               infoType="background"
               entities={backgrounds}
@@ -1119,6 +1112,7 @@ export function Component() {
                       item.equipmentType,
                       baseitems,
                       itemEntities,
+                      doc.rulesVersion,
                     ).sort((a, b) => String(a.name).localeCompare(String(b.name)));
                     if (options.length === 0) return null;
                     return (

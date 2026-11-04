@@ -310,9 +310,16 @@ describe('BuildPage subclass picker (GAME-009)', () => {
       const c = d.classes[0];
       if (c !== undefined) c.subclass = { name: 'Path of Old', source: 'TST' };
     });
-    // Both printings stay: the held one so the picker can show what is chosen,
-    // the reprint so the player can move to it.
-    expect(screen.getAllByRole('button', { name: 'Path of Old', hidden: true })).toHaveLength(2);
+    // Both printings stay, as one card's books: the held one, which the card
+    // opens on so the picker shows what is chosen, and the reprint to move to.
+    const books = screen.getByRole('group', { name: 'Path of Old, printed in', hidden: true });
+    expect([...books.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'TST',
+      'XTST',
+    ]);
+    expect(
+      screen.getByRole('button', { name: 'Path of Old, TST', pressed: true, hidden: true }),
+    ).toBeTruthy();
     expect(screen.getByText('Mixed editions (4)')).toBeTruthy();
     expect(
       screen.getByText(

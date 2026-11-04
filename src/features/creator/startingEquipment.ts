@@ -3,6 +3,7 @@
  * wizard can grant; anything unparseable becomes a labeled note item —
  * never blocks character creation.
  */
+import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import type { DataEntity, EquipmentEntry } from '@/engine/types';
 
 export interface ParsedBundleItem {
@@ -130,12 +131,17 @@ export function bundleToEquipment(
 
 /**
  * Concrete items that satisfy an `equipmentType` slot, drawn from baseitems
- * (weapons/armor) or items (instruments, tools, gaming sets).
+ * (weapons/armor) or items (instruments, tools, gaming sets), one per name in
+ * the printing for the character's rules version. The PHB and XPHB print most
+ * of the same gear, but only the 2024 weapons carry a mastery property, so a
+ * 2024 character handed the first printing in the data got a Longsword with
+ * none. A name printed only in the other book is still offered.
  */
 export function itemsForEquipmentType(
   type: string,
   baseitems: readonly DataEntity[],
   items: readonly DataEntity[],
+  version: RulesVersion,
 ): DataEntity[] {
   const typeCode = (e: DataEntity) => String(e.type ?? '').split('|')[0];
   const isWeapon = (e: DataEntity) => e.weaponCategory !== undefined;
@@ -161,14 +167,16 @@ export function itemsForEquipmentType(
     type.startsWith('weapon') || type === 'armorLight' ? baseitems : [...baseitems, ...items];
   // Core printings only — starting gear means longswords, not laser rifles.
   const coreSources = new Set(['phb', 'xphb']);
-  const seen = new Set<string>();
-  return pool.filter((e) => {
-    if (!coreSources.has(String(e.source ?? '').toLowerCase())) return false;
-    if (!filter(e)) return false;
+  const printings = new Map<string, DataEntity[]>();
+  for (const e of pool) {
+    if (!coreSources.has(String(e.source ?? '').toLowerCase())) continue;
+    if (!filter(e)) continue;
     const key = String(e.name ?? '').toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    printings.set(key, [...(printings.get(key) ?? []), e]);
+  }
+  return [...printings.values()].flatMap((list) => {
+    const picked = pickForVersion(list, version);
+    return picked === undefined ? [] : [picked];
   });
 }
 
