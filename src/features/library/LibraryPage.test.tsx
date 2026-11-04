@@ -60,10 +60,17 @@ vi.mock('@/data5e/hooks', () => ({
 }));
 vi.mock('@/data5e/sourceFilter', () => ({
   useSourcePolicy: () => policy.current,
-  applySourcePolicy: <T,>(list: readonly T[], p: TestPolicy, sourceOf: (e: T) => string) =>
-    p.mode === 'all'
-      ? list.filter((e) => !p.except.includes(sourceOf(e)))
-      : list.filter((e) => p.sources.includes(sourceOf(e))),
+  applySourcePolicy: <T,>(
+    list: readonly T[],
+    p: TestPolicy,
+    sourceOf: (e: T) => string,
+    keep?: (e: T) => boolean,
+  ) =>
+    list.filter(
+      (e) =>
+        (p.mode === 'all' ? !p.except.includes(sourceOf(e)) : p.sources.includes(sourceOf(e))) ||
+        keep?.(e) === true,
+    ),
   policyForSearch: () => undefined,
 }));
 vi.mock('@/data5e/search/client', () => ({ searchAll }));
@@ -71,7 +78,12 @@ vi.mock('@/data5e/search/client', () => ({ searchAll }));
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { dbLifecycleStore } from '@/stores/dbLifecycle';
-import { entityRowHeight, Component as LibraryPage, SEARCH_SETTLE_MS } from './LibraryPage';
+import {
+  entityRowHeight,
+  Component as LibraryPage,
+  SEARCH_SETTLE_MS,
+  searchSpeech,
+} from './LibraryPage';
 
 /** A registry holding one spell, which is all the detail view reads. */
 const registryWith = (entities: Array<Record<string, unknown>>) => ({
@@ -818,5 +830,231 @@ describe('library search announcements', () => {
     type('');
     await settled();
     expect(getAnnouncerState().emitted).toBe(0);
+  });
+});
+
+// A title printed in several books was a row per book, so the 2014 core and
+// its 2024 revision doubled most sections. A row is a title now, and its page
+// switches between the books.
+describe('a title printed in more than one book', () => {
+  const fireball2014 = {
+    name: 'Fireball',
+    source: 'PHB',
+    reprintedAs: ['Fireball|XPHB'],
+    entries: ['The 2014 text.'],
+  };
+  const fireball2024 = { name: 'Fireball', source: 'XPHB', entries: ['The 2024 text.'] };
+  const toll = { name: 'Toll the Dead', source: 'XGE', entries: [] };
+
+  /** A registry whose lookups honour the source, which switching printings needs. */
+  const compendium = (byType: Record<string, Array<Record<string, unknown>>>) => ({
+    byType: (type: string) => byType[type] ?? [],
+    get: (type: string, name: string, source?: string) =>
+      (byType[type] ?? []).find(
+        (e) =>
+          String(e.name).toLowerCase() === name.toLowerCase() &&
+          (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+      ),
+    counts: () => Object.fromEntries(Object.entries(byType).map(([t, list]) => [t, list.length])),
+    sourceCounts: () => new Map(),
+  });
+  const shownCount = () =>
+    screen.getByRole('heading', { name: 'Spells' }).nextElementSibling?.textContent;
+  const onlyRow = () => within(screen.getByRole('list', { name: 'Spells' })).getByRole('link');
+  const switcher = () => screen.getByRole('group', { name: 'Printed in' });
+  const printing = (name: RegExp) => within(switcher()).getByRole('button', { name });
+
+  beforeEach(() => {
+    reg.current = {
+      ...reg.current,
+      registry: compendium({ spell: [fireball2014, fireball2024, toll] }),
+    };
+  });
+
+  describe('in its section', () => {
+    beforeEach(() => {
+      reg.current = {
+        ...reg.current,
+        registry: compendium({ spell: [fireball2014, fireball2024] }),
+      };
+    });
+
+    it('is one row naming every book, opening the printing the others were reprinted as', () => {
+      renderAt('/library/spell');
+
+      expect(shownCount()).toBe('1');
+      expect(onlyRow().getAttribute('href')).toBe('/library/spell/fireball%7Cxphb');
+      expect(onlyRow().textContent).toContain("Player's Handbook (2014)");
+      expect(onlyRow().textContent).toContain("Player's Handbook (2024)");
+    });
+
+    it('leaves out a book the settings hide, and opens the printing that is left', () => {
+      policy.current = { mode: 'all', except: ['XPHB'] };
+      renderAt('/library/spell');
+
+      expect(onlyRow().getAttribute('href')).toBe('/library/spell/fireball%7Cphb');
+      expect(onlyRow().textContent).not.toContain('(2024)');
+    });
+
+    it('has one printing per row when it is scoped to one book', () => {
+      renderAt('/library/spell?source=PHB');
+
+      expect(onlyRow().getAttribute('href')).toBe('/library/spell/fireball%7Cphb');
+      expect(onlyRow().textContent).not.toContain('(2024)');
+    });
+
+    it('counts the books past what a row has room for', () => {
+      const printings = ['PHB', 'XPHB', 'XGE', 'TCE'].map((source) => ({
+        name: 'Fireball',
+        source,
+      }));
+      reg.current = { ...reg.current, registry: compendium({ spell: printings }) };
+      renderAt('/library/spell');
+
+      expect(onlyRow().textContent).toContain('+2');
+      expect(onlyRow().textContent).toContain('and 2 more books');
+    });
+  });
+
+  it('is counted once on the library home', () => {
+    renderAt('/library');
+    // Fireball in two books, and Toll the Dead.
+    expect(screen.getByRole('link', { name: /Spells/ }).textContent).toBe('Spells2');
+  });
+
+  describe('on its page', () => {
+    it('switches between its books in place, the URL naming the one on screen', () => {
+      renderAt('/library/spell/fireball%7Cphb');
+
+      expect(printing(/^PHB/).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByText('The 2014 text.')).toBeTruthy();
+
+      fireEvent.click(printing(/^XPHB, Player's Handbook \(2024\)$/));
+      expect(locationNow()).toBe('/library/spell/fireball%7Cxphb');
+      expect(screen.getByText('The 2024 text.')).toBeTruthy();
+      expect(printing(/^XPHB/).getAttribute('aria-pressed')).toBe('true');
+      expect(printing(/^PHB/).getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('is still one Back from the list however many printings were read', async () => {
+      renderAtEntries(['/library/spell', '/library/spell/fireball%7Cphb'], 1);
+      fireEvent.click(printing(/^XPHB/));
+      fireEvent.click(printing(/^PHB/));
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+      await waitFor(() => expect(locationNow()).toBe('/library/spell'));
+    });
+
+    it('offers no switch for a title in one book', () => {
+      renderAt('/library/spell/toll%20the%20dead%7Cxge');
+      expect(screen.getByRole('heading', { name: 'Toll the Dead' })).toBeTruthy();
+      expect(screen.queryByRole('group', { name: 'Printed in' })).toBeNull();
+    });
+
+    it('offers only the books the settings show', () => {
+      policy.current = { mode: 'all', except: ['XPHB'] };
+      renderAt('/library/spell/fireball%7Cphb');
+      expect(screen.queryByRole('group', { name: 'Printed in' })).toBeNull();
+    });
+
+    it('still shows where it is when a link opened a book the settings hide', () => {
+      policy.current = { mode: 'all', except: ['XPHB'] };
+      renderAt('/library/spell/fireball%7Cxphb');
+      expect(printing(/^XPHB/).getAttribute('aria-pressed')).toBe('true');
+      expect(printing(/^PHB/)).toBeTruthy();
+    });
+
+    it("never offers another class's subclass of the same name as a printing", () => {
+      reg.current = {
+        ...reg.current,
+        registry: compendium({
+          subclass: [
+            { name: 'Guardian', source: 'BrewA', className: 'Fighter', entries: [] },
+            { name: 'Guardian', source: 'BrewB', className: 'Ranger', entries: [] },
+          ],
+        }),
+      };
+      renderAt('/library/subclass/guardian%7Cbrewa');
+      expect(screen.getByRole('heading', { name: 'Guardian' })).toBeTruthy();
+      expect(screen.queryByRole('group', { name: 'Printed in' })).toBeNull();
+    });
+  });
+
+  it("is one of a class's subclasses, not one per book", () => {
+    // The 2024 classes carry their 2014 subclasses beside the 2024 printings.
+    const champion = {
+      name: 'Champion',
+      shortName: 'Champion',
+      className: 'Fighter',
+      classSource: 'XPHB',
+      entries: [],
+    };
+    reg.current = {
+      ...reg.current,
+      registry: compendium({
+        class: [{ name: 'Fighter', source: 'XPHB', entries: [] }],
+        subclass: [
+          { ...champion, source: 'PHB', reprintedAs: ['Champion|Fighter|XPHB|XPHB'] },
+          { ...champion, source: 'XPHB' },
+        ],
+      }),
+    };
+    renderAt('/library/class/fighter%7Cxphb');
+
+    const [link, ...more] = screen.getAllByRole('link', { name: /^Champion/ });
+    expect(more).toEqual([]);
+    expect(link?.getAttribute('href')).toBe('/library/subclass/champion%7Cxphb');
+    expect(link?.textContent).toContain("Player's Handbook (2014)");
+  });
+
+  describe('in search', () => {
+    const hit = (source: string) => ({
+      id: `spell:fireball|${source.toLowerCase()}`,
+      type: 'spell',
+      uid: `fireball|${source.toLowerCase()}`,
+      name: 'Fireball',
+      source,
+    });
+
+    beforeEach(resetAnnouncer);
+    afterEach(resetAnnouncer);
+
+    it('is one result naming every book, and is counted once', async () => {
+      searchAll.mockResolvedValue({ hits: [hit('PHB'), hit('XPHB')], hiddenCount: 0 });
+      renderAt('/library');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search everything' }), {
+        target: { value: 'fireball' },
+      });
+
+      const result = await screen.findByRole('link', { name: /^Fireball/ });
+      expect(screen.getAllByRole('link', { name: /^Fireball/ })).toHaveLength(1);
+      expect(result.getAttribute('href')).toBe('/library/spell/fireball%7Cxphb');
+      expect(result.textContent).toContain("Player's Handbook (2014)");
+      expect(result.textContent).toContain("Player's Handbook (2024)");
+      await waitFor(
+        () => expect(getAnnouncerState().messages.map((m) => m.text)).toEqual(['1 result']),
+        { timeout: SEARCH_SETTLE_MS + 1000 },
+      );
+    });
+  });
+});
+
+describe('searchSpeech', () => {
+  const page = (n: number) => ({
+    hits: Array.from({ length: n }, (_, i) => ({
+      id: String(i),
+      type: 'spell',
+      uid: String(i),
+      name: String(i),
+      source: 'PHB',
+    })),
+    hiddenCount: 0,
+  });
+
+  it('counts the rows the hits make', () => {
+    expect(searchSpeech('fire', page(4), 2)).toBe('2 results');
+  });
+
+  it('says "or more" when the search stopped at its limit, however few rows that made', () => {
+    expect(searchSpeech('fire', page(30), 18)).toBe('18 or more results');
   });
 });
