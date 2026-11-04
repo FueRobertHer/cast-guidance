@@ -1,5 +1,5 @@
-import { Check, Info, Search } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { Check, Info, RefreshCcw, Search } from 'lucide-react';
+import { type Ref, useId, useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import {
   applySourcePolicy,
@@ -9,7 +9,7 @@ import {
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
-import { buttonClass } from '@/ui/Button';
+import { Button, buttonClass } from '@/ui/Button';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { SourceBadge } from '@/ui/SourceBadge';
@@ -17,7 +17,107 @@ import { fieldClass } from '@/ui/TextField';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
-const uidOf = (e: Entity) => `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
+/** An entity's id as `selectedUid` spells it: `name|source`, lower case. */
+export const uidOf = (e: Entity) => `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
+
+/** An option card's ground and edge: picked takes the 2px `ink` edge. */
+const cardShell = (selected: boolean) =>
+  `@container flex flex-wrap items-start rounded-control bg-surface shadow-card ring-inset ${
+    selected ? 'ring-2 ring-ink' : 'ring-1 ring-line'
+  }`;
+
+/** A card's right-hand side: the pick's check, the source badge, and ⓘ when asked for. */
+function CardSide({
+  entity,
+  selected,
+  infoType,
+  infoEntries,
+}: {
+  entity: Entity;
+  selected: boolean;
+  infoType?: string;
+  infoEntries?: (e: Entity) => unknown;
+}) {
+  return (
+    <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2.5 py-3.5 pr-3">
+      {selected && (
+        <span className="inline-flex size-5.5 items-center justify-center rounded-full bg-ink text-bg">
+          <Check size={14} strokeWidth={3} aria-hidden="true" />
+        </span>
+      )}
+      <SourceBadge source={sourceOf(entity)} />
+      {infoType !== undefined && (
+        <EntityInfoSheet
+          type={infoType}
+          entity={entity}
+          entriesOverride={infoEntries?.(entity)}
+          subtitle={`${nameOf(entity)} · ${sourceName(sourceOf(entity))}`}
+          trigger={
+            <button
+              type="button"
+              aria-label={`${nameOf(entity)} details`}
+              title="Full description"
+              className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
+            >
+              <Info size={18} />
+            </button>
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A pick standing in for the list it was made from: the same option card,
+ * picked, with one way back to the list. Its name is the heading of what
+ * follows the pick, and where focus lands once the list folds away.
+ */
+export function PickedEntityCard({
+  entity,
+  describe,
+  infoType,
+  infoEntries,
+  heading: Heading = 'h2',
+  headingRef,
+  changeLabel,
+  onChange,
+}: {
+  entity: Entity;
+  describe?: (e: Entity) => string | undefined;
+  infoType?: string;
+  infoEntries?: (e: Entity) => unknown;
+  /** The name's heading level, under whatever heads the page around it. */
+  heading?: 'h2' | 'h3' | 'h4';
+  headingRef?: Ref<HTMLHeadingElement>;
+  /** The button's words, which say what it changes ("Change class"). */
+  changeLabel: string;
+  onChange: () => void;
+}) {
+  const blurb = describe?.(entity);
+  return (
+    <div className={cardShell(true)}>
+      <div className="flex min-w-0 flex-1 basis-full flex-col gap-0.5 pt-3.5 pr-2 pl-4 @min-[12rem]:basis-0">
+        {/* Focused from script only, and the app-wide ring skips tabindex -1. */}
+        <Heading
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-display text-title-card wrap-anywhere outline-none"
+        >
+          {nameOf(entity)}
+        </Heading>
+        {blurb !== undefined && <p className="text-caption text-ink-muted">{blurb}</p>}
+      </div>
+      <CardSide entity={entity} selected infoType={infoType} infoEntries={infoEntries} />
+      {/* The small button's own 4px border is the rest of the card's 16px inset. */}
+      <div className="basis-full px-3 pt-1 pb-2.5">
+        <Button variant="outline" size="sm" onClick={onChange}>
+          <RefreshCcw size={14} aria-hidden /> {changeLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** Preferred printing when the same name exists in several books (lower = better). */
 const SOURCE_RANK = [
@@ -69,6 +169,7 @@ export function EntityCardList({
   selectedUid,
   onSelect,
   onDeselect,
+  onReselect,
   dedupe = false,
   describe,
   infoType,
@@ -81,6 +182,11 @@ export function EntityCardList({
   onSelect: (e: Entity) => void;
   /** When provided, tapping the selected card clears the pick (optional fields). */
   onDeselect?: () => void;
+  /**
+   * Without `onDeselect`, what tapping the selected card does: picks it again,
+   * for a list that closes on its pick. Absent, the tap does nothing.
+   */
+  onReselect?: () => void;
   /**
    * Curate the default view: one printing per name (best source first) with
    * UA / sidekicks / variants behind a "show everything" toggle, core books
@@ -207,9 +313,7 @@ export function EntityCardList({
             // The card is the query container.
             <div
               key={uidOf(e)}
-              className={`@container flex flex-wrap items-start rounded-control bg-surface shadow-card ring-inset transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised ${
-                selected ? 'ring-2 ring-ink' : 'ring-1 ring-line'
-              }`}
+              className={`${cardShell(selected)} transition-[background-color,box-shadow] duration-120 hover:bg-surface-raised`}
             >
               <button
                 type="button"
@@ -220,8 +324,8 @@ export function EntityCardList({
                   // Re-tapping the current pick must never re-fire onSelect:
                   // race/background re-run pruneChoicesFor and the class picker
                   // clears every choice, silently discarding picks. Deselect when
-                  // that's offered, otherwise do nothing.
-                  if (selected) onDeselect?.();
+                  // that's offered, else reselect when that is, else do nothing.
+                  if (selected) (onDeselect ?? onReselect)?.();
                   else onSelect(e);
                 }}
                 title={selected && onDeselect !== undefined ? 'Tap again to unselect' : undefined}
@@ -242,32 +346,12 @@ export function EntityCardList({
                 )}
                 {outsideFor !== undefined && <OutsideSourcesChip id={outsideFor} />}
               </button>
-              <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2.5 py-3.5 pr-3">
-                {selected && (
-                  <span className="inline-flex size-5.5 items-center justify-center rounded-full bg-ink text-bg">
-                    <Check size={14} strokeWidth={3} aria-hidden="true" />
-                  </span>
-                )}
-                <SourceBadge source={sourceOf(e)} />
-                {infoType !== undefined && (
-                  <EntityInfoSheet
-                    type={infoType}
-                    entity={e}
-                    entriesOverride={infoEntries?.(e)}
-                    subtitle={`${nameOf(e)} · ${sourceName(sourceOf(e))}`}
-                    trigger={
-                      <button
-                        type="button"
-                        aria-label={`${nameOf(e)} details`}
-                        title="Full description"
-                        className="tap -m-2.5 rounded-full text-ink-muted hover:bg-surface-hover hover:text-ink"
-                      >
-                        <Info size={18} />
-                      </button>
-                    }
-                  />
-                )}
-              </div>
+              <CardSide
+                entity={e}
+                selected={selected}
+                infoType={infoType}
+                infoEntries={infoEntries}
+              />
             </div>
           );
         })}

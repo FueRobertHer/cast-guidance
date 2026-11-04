@@ -140,6 +140,14 @@ function featureOptionInfo(prompt: ChoicePrompt) {
 export const listsPick = (p: ChoicePrompt): boolean =>
   !(p.origin.type === 'class' && p.id === subclassPromptId(p.origin.uid));
 
+/** Whether `OriginChoices` with this `match` shows anything, made or not. */
+export const hasOriginChoices = (
+  sheet: DerivedSheet,
+  match: (origin: EffectOrigin) => boolean,
+): boolean =>
+  sheet.pending.some((p) => match(p.origin) && listsPick(p)) ||
+  sheet.resolvedChoices.some((r) => match(r.prompt.origin));
+
 /** Do two stored choice values name the same picks, in the same order? */
 function sameChoice(a: unknown, b: unknown): boolean {
   const norm = (v: unknown) =>
