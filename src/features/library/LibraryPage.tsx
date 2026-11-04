@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import {
@@ -21,9 +21,11 @@ import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
+import { badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
+import { Chip } from '@/ui/Chip';
 import { useFailureAlert } from '@/ui/failureAlert';
-import { SourceBadge } from '@/ui/SourceBadge';
+import { SourceBadge, sourceBadgeLabel } from '@/ui/SourceBadge';
 import { cardClass, listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { VirtualList } from '@/ui/VirtualList';
@@ -31,16 +33,18 @@ import { bookContents, bookIndex } from './books';
 import { BROWSE_TYPES, TYPE_LABELS } from './browseTypes';
 import { findEntity } from './findEntity';
 import { headerFacts } from './fmt';
+import {
+  countTitles,
+  groupHits,
+  groupTitles,
+  type Hit,
+  nameOf,
+  sourceOf,
+  type Title,
+  titleKey,
+  uidOf,
+} from './printings';
 
-function nameOf(e: Entity): string {
-  return typeof e.name === 'string' ? e.name : '?';
-}
-function sourceOf(e: Entity): string {
-  return typeof e.source === 'string' ? e.source : '?';
-}
-function uidOf(e: Entity): string {
-  return `${nameOf(e)}|${sourceOf(e)}`.toLowerCase();
-}
 /** Source codes compare case-insensitively; only their display keeps the case. */
 function sourceKey(e: Entity): string {
   return sourceOf(e).toLowerCase();
@@ -72,23 +76,52 @@ const PROBLEM = 'flex flex-wrap items-center gap-2 rounded-control bg-danger-sof
  */
 const ROWS = `${listClass} [&_li:first-child>a]:border-t-transparent`;
 
-function EntityRow({ type, e }: { type: string; e: Entity }) {
+/** The most books a row names; past it, the last badge counts the rest ("+2"). */
+const ROW_BADGES = 3;
+
+/**
+ * Every book a title is printed in, as badges on one line. A row has room for
+ * three beside a long name at 320px, so a title in more than that names two
+ * and counts the others, which its page lists in full.
+ */
+function SourceBadges({ sources }: { sources: readonly string[] }) {
+  const shown = sources.length > ROW_BADGES ? sources.slice(0, ROW_BADGES - 1) : sources;
+  const more = sources.length - shown.length;
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {shown.map((s) => (
+        <SourceBadge key={s} source={s} />
+      ))}
+      {more > 0 && (
+        <span className={badgeClass()}>
+          <span aria-hidden="true">+{more}</span>
+          <span className="sr-only">and {more} more books</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Stable, so the virtual list does not re-key its rows on every render. */
+const keyOfTitle = (t: Title) => t.key;
+
+function TitleRow({ type, title }: { type: string; title: Title }) {
   return (
     <Link
-      to={`/library/${type}/${encodeURIComponent(uidOf(e))}`}
+      to={`/library/${type}/${encodeURIComponent(uidOf(title.preferred))}`}
       className="flex items-center justify-between gap-2 border-t border-line px-4 py-3 transition-colors duration-120 hover:bg-surface-raised"
     >
-      <span className="truncate">{nameOf(e)}</span>
-      <SourceBadge source={sourceOf(e)} />
+      <span className="truncate">{title.name}</span>
+      <SourceBadges sources={title.printings.map(sourceOf)} />
     </Link>
   );
 }
 
 /**
- * An {@link EntityRow}'s height in px at the current root font size: its
+ * A {@link TitleRow}'s height in px at the current root font size: its
  * `py-3` (1.5rem), one line of body text (1.375rem, DS-001) and the 1 px
- * line above it, rounded as a measured height is. The source badge is as tall
- * as the line (1.375rem), so it never sets the height. The list's restored
+ * line above it, rounded as a measured height is. The source badges are as
+ * tall as the line (1.375rem), so they never set the height. The list's restored
  * scroll offset depends on this being exact (see `VirtualList`), so a class
  * change to the row has to change this too; `library-scale.spec.ts` compares
  * it to the rendered row.
@@ -104,20 +137,38 @@ export function entityRowHeight(): number {
 /** How long the query has to stay put before its result count is said (A11Y-002). */
 export const SEARCH_SETTLE_MS = 750;
 
-/** "30 or more" for a page the search cut short, since it stops at its limit. */
-function countSpeech(n: number): string {
-  return n >= DEFAULT_QUERY_LIMIT ? `${n} or more` : String(n);
+/** "30 or more" for a count of a page the search cut short, since it stops at its limit. */
+function countSpeech(n: number, cut: boolean): string {
+  return cut ? `${n} or more` : String(n);
 }
 
-/** A search's outcome as a screen reader hears it, matching what the page lists. */
-export function searchSpeech(query: string, result: SearchResult): string {
+/**
+ * A search's outcome as a screen reader hears it, matching what the page
+ * lists. `rows` is how many titles the hits make, since a spell in two books
+ * is one row; it is one per hit when not given.
+ */
+export function searchSpeech(
+  query: string,
+  result: SearchResult,
+  rows: number = result.hits.length,
+): string {
   const { hits, hiddenCount } = result;
   const hidden =
-    hiddenCount > 0 ? `${countSpeech(hiddenCount)} more in sources you have hidden` : '';
+    hiddenCount > 0
+      ? `${countSpeech(hiddenCount, hiddenCount >= DEFAULT_QUERY_LIMIT)} more in sources you have hidden`
+      : '';
   if (hits.length === 0)
     return hidden === '' ? `No matches for "${query}"` : `No matches. ${hidden}`;
-  const shown = `${countSpeech(hits.length)} result${hits.length === 1 ? '' : 's'}`;
+  const shown = `${countSpeech(rows, hits.length >= DEFAULT_QUERY_LIMIT)} result${rows === 1 ? '' : 's'}`;
   return hidden === '' ? shown : `${shown}, and ${hidden}`;
+}
+
+/** Finds a search hit's entity, which is what says which title it is. */
+function hitResolver(registry: EntityRegistry | null): (hit: Hit) => Entity | undefined {
+  return (hit) =>
+    registry !== null && isEntityType(hit.type)
+      ? registry.get(hit.type, hit.name, hit.source)
+      : undefined;
 }
 
 function GlobalSearch() {
@@ -144,10 +195,15 @@ function GlobalSearch() {
   // nobody is on any more.
   useEffect(() => () => cancelAnnouncement('search'), []);
 
+  // The hits as the page lists them: one row per title, a spell in two books
+  // being one spell.
+  const rows = useMemo(() => groupHits(result.hits, hitResolver(registry)), [result, registry]);
+
   // The index rebuilds behind a `ready` status as a download lands files, so
   // `indexVersion` asks the query again whenever one of those finishes:
   // otherwise the results on screen stay those of the index that was current
-  // when the query was typed, missing everything that has arrived since.
+  // when the query was typed, missing everything that has arrived since. The
+  // registry is what groups the hits for the count that is said.
   // biome-ignore lint/correctness/useExhaustiveDependencies: sourcesKey stands in for the sources object; indexVersion re-asks after a rebuild
   useEffect(() => {
     if (!ready || trimmed.length < 2) {
@@ -169,7 +225,8 @@ function GlobalSearch() {
         // letter. A repeat, because a new query with the same count ("30 or
         // more results" twice) is a new answer; `spokenFor` already keeps a
         // rebuild behind the same query quiet.
-        announce(searchSpeech(trimmed, res), {
+        const titles = groupHits(res.hits, hitResolver(registry)).length;
+        announce(searchSpeech(trimmed, res, titles), {
           key: 'search',
           settleMs: SEARCH_SETTLE_MS,
           repeat: true,
@@ -180,7 +237,7 @@ function GlobalSearch() {
       alive = false;
       clearTimeout(t);
     };
-  }, [trimmed, ready, sourcesKey, indexVersion]);
+  }, [trimmed, ready, sourcesKey, indexVersion, registry]);
 
   // A new query starts back inside the player's chosen sources.
   // biome-ignore lint/correctness/useExhaustiveDependencies: resetting on query change is the point
@@ -245,19 +302,23 @@ function GlobalSearch() {
           hidden. Show them
         </button>
       )}
-      {result.hits.length > 0 && (
+      {rows.length > 0 && (
         <div className={listClass}>
-          {result.hits.map((h) => (
+          {rows.map((h) => (
             <Link
-              key={h.id}
+              key={h.key}
               to={`/library/${h.type}/${encodeURIComponent(h.uid)}`}
-              className="flex items-center justify-between gap-2 px-4 py-2.5 transition-colors duration-120 hover:bg-surface-raised"
+              // One line while the name keeps 6rem beside the section and its
+              // books, as the longest section and two books do at 375px; past
+              // that (three books, 200% text) they wrap under the name rather
+              // than run off the screen.
+              className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 py-2.5 transition-colors duration-120 hover:bg-surface-raised"
               onClick={() => setQ('')}
             >
-              <span className="truncate">{h.name}</span>
-              <span className="flex shrink-0 items-center gap-1.5 text-caption text-ink-muted">
+              <span className="min-w-0 flex-1 basis-24 truncate">{h.name}</span>
+              <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 text-caption text-ink-muted">
                 {TYPE_LABELS.get(h.type) ?? h.type}
-                <SourceBadge source={h.source} />
+                <SourceBadges sources={h.sources} />
               </span>
             </Link>
           ))}
@@ -269,7 +330,21 @@ function GlobalSearch() {
 
 function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
   usePageTitle('Library');
-  const counts = registry?.counts() ?? {};
+  const policy = useSourcePolicy();
+  // The titles in the player's sources, which is the list each tile opens to.
+  // Counting every printing promised a list nearly twice the length of the one
+  // it opened, since most of the 2014 core is reprinted in 2024.
+  const counts = useMemo(() => {
+    const out: Partial<Record<EntityType, number>> = {};
+    if (registry === null) return out;
+    // A type with no files yet stays "…" rather than reading as an empty 0.
+    const present = registry.counts();
+    for (const { type } of BROWSE_TYPES) {
+      if (present[type] === undefined) continue;
+      out[type] = countTitles(type, applySourcePolicy(registry.byType(type), policy, sourceOf));
+    }
+    return out;
+  }, [registry, policy]);
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
       <header className="flex items-center justify-between">
@@ -398,7 +473,7 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
   usePageTitle(TYPE_LABELS.get(type) ?? type, 'Library');
   const headingId = useId();
 
-  const { items, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
+  const { titles, sources, hiddenBySettings, hiddenPick, selected } = useMemo(() => {
     const all = [...(registry?.byType(type) ?? [])].sort((a, b) =>
       nameOf(a).localeCompare(nameOf(b)),
     );
@@ -458,15 +533,22 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         : picked === EVERY_SOURCE
           ? all
           : all.filter((e) => sourceKey(e) === picked.toLowerCase());
-    const f = filter.trim().toLowerCase();
     return {
-      items: f === '' ? scoped : scoped.filter((e) => nameOf(e).toLowerCase().includes(f)),
+      // Grouped after scoping, so a list of one book's spells has one printing
+      // per row, and "my sources" never names a book the settings hide.
+      titles: groupTitles(type, scoped),
       sources,
       hiddenBySettings: all.length - mine.length,
       hiddenPick,
       selected: picked,
     };
-  }, [registry, type, filter, policy, pickedSource]);
+  }, [registry, type, policy, pickedSource]);
+
+  // Its own step, so typing in the filter does not group the section again.
+  const items = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    return f === '' ? titles : titles.filter((t) => t.name.toLowerCase().includes(f));
+  }, [titles, filter]);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4">
@@ -536,9 +618,9 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
         <VirtualList
           items={items}
           estimateSize={entityRowHeight}
-          getKey={uidOf}
+          getKey={keyOfTitle}
           labelledBy={headingId}
-          renderRow={(e) => <EntityRow type={type} e={e} />}
+          renderRow={(t) => <TitleRow type={type} title={t} />}
         />
       </div>
     </main>
@@ -548,13 +630,18 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
 function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: Entity }) {
   const name = nameOf(entity);
   const source = sourceOf(entity);
-  const subclasses = registry
-    .byType('subclass')
-    .filter(
-      (s) =>
-        String(s.className).toLowerCase() === name.toLowerCase() &&
-        String(s.classSource).toLowerCase() === source.toLowerCase(),
-    );
+  // By title, as the subclass list is: the 2024 classes carry their 2014
+  // subclasses beside the 2024 printings, so a Fighter offered Champion twice.
+  const subclasses = groupTitles(
+    'subclass',
+    registry
+      .byType('subclass')
+      .filter(
+        (s) =>
+          String(s.className).toLowerCase() === name.toLowerCase() &&
+          String(s.classSource).toLowerCase() === source.toLowerCase(),
+      ),
+  );
   const features = registry
     .byType('classFeature')
     .filter(
@@ -575,13 +662,15 @@ function ClassExtras({ registry, entity }: { registry: EntityRegistry; entity: E
         <section className="flex flex-col gap-2">
           <h3 className="text-heading">Subclasses</h3>
           <div className="flex flex-wrap gap-2">
-            {subclasses.map((s) => (
+            {subclasses.map((t) => (
               <Link
-                key={uidOf(s)}
-                to={`/library/subclass/${encodeURIComponent(uidOf(s))}`}
-                className="inline-flex min-h-tap items-center gap-2 rounded-control bg-surface px-3 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
+                key={t.key}
+                to={`/library/subclass/${encodeURIComponent(uidOf(t.preferred))}`}
+                // Wraps the books under the name where both do not fit, as a
+                // one-word name and two books do not at 200% text (A11Y-003).
+                className="inline-flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-surface px-3 py-1 text-label shadow-card ring-1 ring-line ring-inset transition-colors duration-120 hover:bg-surface-raised"
               >
-                {nameOf(s)} <SourceBadge source={sourceOf(s)} />
+                {t.name} <SourceBadges sources={t.printings.map(sourceOf)} />
               </Link>
             ))}
           </div>
@@ -663,14 +752,83 @@ function BookExtras({ registry, entity }: { registry: EntityRegistry; entity: En
   );
 }
 
+/**
+ * Every book a title is printed in, one pressed at a time, to flip the page
+ * between them. Chips rather than a segmented control: a title can be in more
+ * books than the four that control holds, and chips wrap where a row of book
+ * codes would run off a phone at 200% text.
+ *
+ * A press replaces the URL rather than adding to the history, so a title read
+ * in three printings is still one Back from the list, while the URL names the
+ * printing on screen for a reload or a shared link.
+ */
+function PrintingSwitch({
+  type,
+  printings,
+  current,
+}: {
+  type: EntityType;
+  printings: readonly Entity[];
+  current: Entity;
+}) {
+  const navigate = useNavigate();
+  const labelId = useId();
+  if (printings.length < 2) return null;
+  const currentUid = uidOf(current);
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a group of toggle buttons, not a fieldset of inputs
+    <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-x-2">
+      <span id={labelId} className="text-caption text-ink-muted">
+        Printed in
+      </span>
+      {/* Chips with a 44px tap from their transparent border, so the row
+          pulls in by that border to line up with the text. */}
+      <div className="-mx-1.5 flex flex-wrap">
+        {printings.map((p) => {
+          const source = sourceOf(p);
+          const uid = uidOf(p);
+          return (
+            <Chip
+              key={uid}
+              tone="outline"
+              className="uppercase"
+              pressed={uid === currentUid}
+              // The code is what shows; the title is what it means.
+              aria-label={`${source}, ${sourceBadgeLabel(source)}`}
+              title={sourceBadgeLabel(source)}
+              onClick={() =>
+                navigate(`/library/${type}/${encodeURIComponent(uid)}`, { replace: true })
+              }
+            >
+              {source}
+            </Chip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: RegistryState }) {
   const back = useBack(`/library/${type}`);
   const packs = useTypePacks(type, reg.retry);
   const refreshing = useRegistryRefreshing();
+  const policy = useSourcePolicy();
   const registry = reg.registry;
 
   const decoded = decodeURIComponent(uid);
   const entity = registry === null ? undefined : findEntity(registry, type, decoded);
+
+  // This title's printings in the player's sources, and the one on screen
+  // even from a book they hide: a link can lead there, and the switch has to
+  // show where the page is.
+  const printings = useMemo(() => {
+    if (registry === null || entity === undefined) return [];
+    const key = titleKey(type, entity);
+    const same = registry.byType(type).filter((e) => titleKey(type, e) === key);
+    const mine = applySourcePolicy(same, policy, sourceOf, (e) => uidOf(e) === uidOf(entity));
+    return groupTitles(type, mine)[0]?.printings ?? [];
+  }, [registry, type, entity, policy]);
 
   const typeLabel = TYPE_LABELS.get(type) ?? type;
   const failed = reg.error !== null || packs.status === 'error';
@@ -753,6 +911,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         {/* Spelled out here because a tooltip is a desktop-only affordance. */}
         <p className="text-caption text-ink-muted">{sourceName(sourceOf(entity))}</p>
       </header>
+      <PrintingSwitch type={type} printings={printings} current={entity} />
       {facts.length > 0 && (
         <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
           {facts.map(([label, value]) => (
