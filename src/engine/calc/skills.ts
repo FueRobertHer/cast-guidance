@@ -10,7 +10,54 @@ import {
   type ProfLevel,
   SKILLS,
 } from '../types';
-import { effectsOf, withOverride } from './core';
+import { bonusAmount, effectsOf, withOverride } from './core';
+
+type Part = { label: string; amount: number };
+
+/**
+ * Half proficiency for a check of `ability` that adds no proficiency bonus of
+ * its own, or undefined when nothing grants it there. `skill` says whether the
+ * check uses a skill (the 2024 Jack of All Trades reaches only those). Two
+ * sources never stack, since each reaches only a check without the bonus and
+ * the first one adds half of it, so the larger wins: a Bard/Champion takes
+ * Remarkable Athlete's rounding up.
+ */
+export function halfProfPart(
+  effects: readonly EffectInput[],
+  ability: Ability,
+  profBonus: number,
+  skill: boolean,
+): Part | undefined {
+  let best: Part | undefined;
+  for (const e of effectsOf(effects, 'halfProf')) {
+    if (e.skillsOnly === true && !skill) continue;
+    if (e.abilities !== undefined && !e.abilities.includes(ability)) continue;
+    const amount = e.round === 'up' ? Math.ceil(profBonus / 2) : Math.floor(profBonus / 2);
+    if (best === undefined || amount > best.amount) best = { label: e.origin.label, amount };
+  }
+  return best;
+}
+
+/** Bonuses to a check of `ability`, using `skill` when there is one, each under its source. */
+export function checkBonusParts(
+  effects: readonly EffectInput[],
+  abilities: Record<Ability, DerivedAbility>,
+  profBonus: number,
+  ability: Ability,
+  skill?: string,
+): Part[] {
+  const out: Part[] = [];
+  for (const e of effectsOf(effects, 'checkBonus')) {
+    const reaches =
+      'ability' in e
+        ? e.ability === ability
+        : skill !== undefined && e.skills.some((s) => s.toLowerCase() === skill.toLowerCase());
+    if (reaches) {
+      out.push({ label: e.origin.label, amount: bonusAmount(e.amount, abilities, profBonus) });
+    }
+  }
+  return out;
+}
 
 export function calcSaves(
   doc: CharacterDoc,
@@ -69,6 +116,9 @@ export function calcSkills(
         amount: profBonus * 2,
       });
     }
+    const half = prof === 0 ? halfProfPart(effects, ability, profBonus, true) : undefined;
+    if (half !== undefined) parts.push(half);
+    parts.push(...checkBonusParts(effects, abilities, profBonus, ability, name));
     const base = parts.reduce((s, p) => s + p.amount, 0);
     const total = withOverride(
       { value: base, base, overridden: false, parts },
@@ -78,6 +128,7 @@ export function calcSkills(
       total,
       prof,
       profBase,
+      halfProf: half !== undefined,
       sources: sources.get(key) ?? [],
       sourcesBesideBackground: besideBackground.get(key) ?? [],
       ability,
@@ -86,15 +137,40 @@ export function calcSkills(
   return out;
 }
 
+/** Plain ability checks: no skill, so no proficiency, but half proficiency can reach them. */
+export function calcChecks(
+  effects: readonly EffectInput[],
+  abilities: Record<Ability, DerivedAbility>,
+  profBonus: number,
+): DerivedSheet['checks'] {
+  const out = {} as DerivedSheet['checks'];
+  for (const a of ABILITIES) {
+    const parts: Part[] = [{ label: `${a.toUpperCase()} modifier`, amount: abilities[a].mod }];
+    const half = halfProfPart(effects, a, profBonus, false);
+    if (half !== undefined) parts.push(half);
+    parts.push(...checkBonusParts(effects, abilities, profBonus, a));
+    const value = parts.reduce((s, p) => s + p.amount, 0);
+    out[a] = {
+      total: { value, base: value, overridden: false, parts },
+      halfProf: half !== undefined,
+    };
+  }
+  return out;
+}
+
 export function calcPassivePerception(
   doc: CharacterDoc,
   skills: DerivedSheet['skills'],
+  effects: readonly EffectInput[],
 ): DerivedValue {
   const perception = skills.Perception;
   const parts = [
     { label: 'Base', amount: 10 },
     { label: 'Perception', amount: perception?.total.value ?? 0 },
   ];
+  for (const e of effectsOf(effects, 'passivePerceptionBonus')) {
+    parts.push({ label: e.origin.label, amount: e.amount });
+  }
   const base = parts.reduce((s, p) => s + p.amount, 0);
   return withOverride(
     { value: base, base, overridden: false, parts },

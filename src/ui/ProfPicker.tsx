@@ -22,17 +22,21 @@ const NAMES: Record<ProfLevel, string> = {
  * character's own class/race/background grants) is named on the clear button:
  * it is the thing the player gets back, and without it they cannot tell what
  * they are giving up. `sources` names what grants it, so a player about to
- * add a proficiency by hand can see the build already has it.
+ * add a proficiency by hand can see the build already has it. `half` says a
+ * feature adds half proficiency at this level, so "nothing grants this" is not
+ * the whole story; the breakdown above the picker names the feature.
  */
 export function ProfPicker({
   value,
   base,
+  half,
   sources,
   overridden,
   onChange,
 }: {
   value: ProfLevel;
   base: ProfLevel;
+  half?: boolean;
   sources: readonly EffectOrigin[];
   overridden: boolean;
   onChange: (level: ProfLevel | null) => void;
@@ -68,7 +72,11 @@ export function ProfPicker({
         </button>
       ) : (
         <p className="text-caption text-ink-muted">
-          {from !== undefined ? `From ${from}.` : 'Nothing in your build grants this.'}
+          {from !== undefined
+            ? `From ${from}.`
+            : half === true
+              ? 'Half proficiency only: nothing in your build grants the full bonus.'
+              : 'Nothing in your build grants this.'}
         </p>
       )}
     </div>

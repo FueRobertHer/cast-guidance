@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import type { EffectInput, EffectOrigin } from '../types';
-import { dv, effectsOf, withOverride } from './core';
+import type { Ability, DerivedAbility, EffectInput, EffectOrigin } from '../types';
+import { bonusAmount, dv, effectsOf, withOverride } from './core';
 
 const origin: EffectOrigin = { label: 'x', uid: 'x', type: 'custom' };
+
+describe('bonusAmount', () => {
+  const abilities = { wis: { mod: -1 }, cha: { mod: 3 } } as Record<Ability, DerivedAbility>;
+
+  it.each([
+    [4, 4],
+    ['profBonus', 2],
+    ['equalToProfBonus', 2],
+    ['abilityMod:wis', -1],
+    ['abilityModMin0:wis', 0],
+    ['abilityModMin1:wis', 1],
+    ['abilityMod:cha', 3],
+    ['abilityModMin0:cha', 3],
+    ['abilityModMin1:cha', 3],
+  ] as const)('%s comes to %i', (amount, expected) => {
+    expect(bonusAmount(amount, abilities, 2)).toBe(expected);
+  });
+});
 
 describe('dv', () => {
   it('sums parts into value and base', () => {

@@ -7,10 +7,17 @@
 import { calcAbilities } from './calc/abilities';
 import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
-import { effectsOf, withOverride } from './calc/core';
+import { bonusAmount, effectsOf, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
 import { calcResources } from './calc/resources';
-import { calcPassivePerception, calcSaves, calcSkills } from './calc/skills';
+import {
+  calcChecks,
+  calcPassivePerception,
+  calcSaves,
+  calcSkills,
+  checkBonusParts,
+  halfProfPart,
+} from './calc/skills';
 import { calcSpellcasting } from './calc/slots';
 import { calcWalkSpeed } from './calc/speed';
 import { collectBackground } from './effects/background';
@@ -57,16 +64,35 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   );
 
   const saves = calcSaves(doc, effects, abilities, profBonus.value);
+  const checks = calcChecks(effects, abilities, profBonus.value);
   const skills = calcSkills(doc, effects, abilities, profBonus.value, fromBackground);
-  const passivePerception = calcPassivePerception(doc, skills);
+  const passivePerception = calcPassivePerception(doc, skills, effects);
   const speedWalk = calcWalkSpeed(doc, col, effects);
   const { maxHp, hitDice } = calcMaxHp(doc, col, effects, abilities.con.mod);
   const { ac, label: acFormulaLabel } = calcAc(doc, col, effects, abilities);
 
   const initiativeParts = [{ label: 'DEX modifier', amount: abilities.dex.mod }];
+  // The proficiency bonus goes on a roll once, however many features add it
+  // (2024 Alert beside a Harengon's Hare-Trigger). A bonus that only equals it
+  // (Aura of the Sentinel) is not that bonus, so it counts for neither limit.
+  let addsProf = false;
   for (const b of effectsOf(effects, 'initiativeBonus')) {
-    initiativeParts.push({ label: b.origin.label, amount: b.amount });
+    if (b.amount === 'profBonus') {
+      if (addsProf) continue;
+      addsProf = true;
+    }
+    initiativeParts.push({
+      label: b.origin.label,
+      amount: bonusAmount(b.amount, abilities, profBonus.value),
+    });
   }
+  // Initiative is a Dexterity check: what reaches every DEX check reaches it,
+  // and half proficiency does too unless the bonus itself is already there.
+  const initiativeHalf = addsProf
+    ? undefined
+    : halfProfPart(effects, 'dex', profBonus.value, false);
+  if (initiativeHalf !== undefined) initiativeParts.push(initiativeHalf);
+  initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
   const initBase = initiativeParts.reduce((s, p) => s + p.amount, 0);
   const initiative = withOverride(
     { value: initBase, base: initBase, overridden: false, parts: initiativeParts },
@@ -115,6 +141,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     abilities,
     profBonus,
     saves,
+    checks,
     skills,
     passivePerception,
     ac,
