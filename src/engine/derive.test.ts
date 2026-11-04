@@ -11,7 +11,9 @@ it('deduplicates repeated builder notes', () => {
     { ref: { name: 'Missing', source: 'TST' }, levels: 1, hp: ['avg'] },
     { ref: { name: 'Missing', source: 'TST' }, levels: 1, hp: ['avg'] },
   ];
-  expect(deriveSheet(doc, ctx).warnings).toEqual(['Class not found: missing|tst']);
+  const sheet = deriveSheet(doc, ctx);
+  expect(sheet.warnings).toEqual(['Class not found: missing|tst']);
+  expect(sheet.classDataMissing).toBe(true);
 });
 
 /** Level-5 warrior: Testfolk race, Scholar background, sword & board. */

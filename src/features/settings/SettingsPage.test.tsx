@@ -96,7 +96,7 @@ describe('SettingsPage data section', () => {
     await waitFor(() => expect(loader.downloadAllPacks).toHaveBeenCalledOnce());
     // Once every file is cached the claim is true, so the control retires.
     await waitFor(() => expect(screen.queryByText('31/48 files')).toBeNull());
-    expect(screen.getByText('ready ✓')).toBeTruthy();
+    expect(screen.getByText('Ready')).toBeTruthy();
   });
 
   it('counts the compendium again when the background download finishes', async () => {
@@ -107,7 +107,7 @@ describe('SettingsPage data section', () => {
 
     loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
     act(() => dataStatusStore.getState().setPhase('done'));
-    expect(await screen.findByText('ready ✓')).toBeTruthy();
+    expect(await screen.findByText('Ready')).toBeTruthy();
   });
 
   it('counts the compendium again as downloaded files land', async () => {
@@ -135,11 +135,11 @@ describe('SettingsPage data section', () => {
 
     loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
     act(() => dataStatusStore.getState().setPhase('done'));
-    expect(await screen.findByText('ready ✓')).toBeTruthy();
+    expect(await screen.findByText('Ready')).toBeTruthy();
 
     // The mount's count, taken before the drain finished, arrives last.
     await act(async () => finishFirst({ cached: 13, total: 48 }));
-    expect(screen.getByText('ready ✓')).toBeTruthy();
+    expect(screen.getByText('Ready')).toBeTruthy();
     expect(screen.queryByText('13/48 files')).toBeNull();
   });
 
@@ -324,7 +324,7 @@ describe('SettingsPage data announcements', () => {
     render(<SettingsPage />);
     loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
     fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
-    await screen.findByText('ready ✓');
+    await screen.findByText('Ready');
     expect(getAnnouncerState().messages.map((m) => m.text)).toEqual([OFFLINE_DOWNLOADED_TEXT]);
     localStorage.removeItem(OFFLINE_ANNOUNCED_KEY);
   });
@@ -337,7 +337,7 @@ describe('SettingsPage data announcements', () => {
     render(<SettingsPage />);
     loader.verifyFullOffline.mockResolvedValue({ cached: 48, total: 48 });
     fireEvent.click(await screen.findByRole('button', { name: 'Make available offline' }));
-    await screen.findByText('ready ✓');
+    await screen.findByText('Ready');
     expect(getAnnouncerState().emitted).toBe(0);
   });
 

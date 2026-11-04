@@ -27,6 +27,17 @@ describe('emitCuratedEffects', () => {
     );
   });
 
+  it('marks the rolls that give hit points back as heals, and no others', () => {
+    const rolls = (key: string, className?: string) => {
+      const c = col(className);
+      emitCuratedEffects(c, key, origin);
+      return c.effects.flatMap((e) => (e.kind === 'action' && e.roll ? [e.heals === true] : []));
+    };
+    expect(rolls('healer|phb')).toEqual([true]);
+    expect(rolls('healer|xphb')).toEqual([true]);
+    expect(rolls('polearm master|phb')).toEqual([false]);
+  });
+
   it('emits the Lay on Hands pool as 5 x paladin level with an action', () => {
     const c = col('Paladin', 5);
     expect(emitCuratedEffects(c, 'lay on hands|paladin', origin)).toBe(true);

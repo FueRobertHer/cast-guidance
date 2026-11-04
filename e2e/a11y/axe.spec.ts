@@ -466,7 +466,7 @@ test.describe('axe: pages and overlays', () => {
   test('settings, the creator and the not-found page', async ({ page }) => {
     await gotoRosterSettled(page);
     await gotoHeading(page, '/settings', 'Settings');
-    await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
+    await expect(settingsValue(page, 'Offline compendium')).toHaveText('Ready');
     await scanState(page, 'settings');
 
     // Opened as the roster's checklist opens it, with its longer text showing.
@@ -569,6 +569,9 @@ test.describe('axe: banners and toasts', () => {
     await page.getByRole('button', { name: 'Inspiration' }).click();
     const failed = page.getByRole('alert').filter({ hasText: 'could not be saved' });
     await expect(failed).toBeVisible();
+    // The banner heads the page, and Long rest, at the page's end, scrolled it
+    // off: bring it back, so the scan sees what its name says.
+    await failed.scrollIntoViewIfNeeded();
     await animationsSettled(page);
     await scanState(page, 'banner-save-error');
   });
@@ -649,7 +652,7 @@ test.describe('axe: desktop layout', () => {
     await scanState(page, 'desktop-library');
 
     await gotoHeading(page, '/settings', 'Settings');
-    await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
+    await expect(settingsValue(page, 'Offline compendium')).toHaveText('Ready');
     await scanState(page, 'desktop-settings');
 
     await gotoSheetTab(page, id, 'Play');

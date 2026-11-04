@@ -198,7 +198,7 @@ test.describe('back online, each offline state recovers', () => {
     await expect(offlineBanner(launch.page)).toBeVisible();
     await backOnline(launch);
     await expect(settingsValue(launch.page, 'Download queue')).toHaveText('done');
-    await expect(settingsValue(launch.page, 'Offline compendium')).toHaveText('ready ✓');
+    await expect(settingsValue(launch.page, 'Offline compendium')).toHaveText('Ready');
     await expect(launch.page.getByRole('alert')).toHaveCount(0);
   });
 });

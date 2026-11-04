@@ -27,6 +27,7 @@ import {
 } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { signed } from '@/lib/signed';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
@@ -417,7 +418,9 @@ export function Component() {
         >
           <ArrowLeft size={20} aria-hidden />
         </Link>
-        <h1 className="font-display text-title-page">{STEP_LABELS[step]}</h1>
+        <h1 className="font-display font-semibold text-[1.5rem] leading-7.5">
+          {STEP_LABELS[step]}
+        </h1>
         <span className="ml-auto text-caption whitespace-nowrap text-ink-muted tabular-nums">
           Step {stepIdx + 1} of {STEPS.length}
         </span>
@@ -819,7 +822,7 @@ export function Component() {
               label="Character name"
               value={doc.name}
               onChange={(e) => update((d) => void (d.name = e.target.value))}
-              placeholder="e.g. Thorin"
+              placeholder="For example, Thorin"
             />
             <fieldset className="flex flex-col gap-2">
               <span className="text-label text-ink-muted">Rules version</span>
@@ -842,7 +845,7 @@ export function Component() {
               ))}
               <p className="text-caption text-ink-muted">
                 Playing with a group? Match whichever books your table uses. Starting fresh on your
-                own? Either works — 2014 has the most expansion content, 2024 is the newest rules.
+                own? Either works: 2014 has the most expansion content, 2024 is the newest rules.
                 Older books still work in a 2024 game.
               </p>
             </fieldset>
@@ -919,7 +922,7 @@ export function Component() {
                 </div>
                 {subclasses.length > 0 && entry.levels < unlockLevel && (
                   <p className={`${HINT} bg-surface-raised text-ink-muted`}>
-                    Subclass unlocks at level {unlockLevel} — you'll pick one when you get there.
+                    Subclass unlocks at level {unlockLevel}. You'll pick one when you get there.
                   </p>
                 )}
                 {subclasses.length > 0 && entry.levels >= unlockLevel && (
@@ -1079,7 +1082,7 @@ export function Component() {
           <div className="flex flex-col gap-4">
             {allEqGroups.length > 0 && (
               <p className="text-body text-ink-muted">
-                Pick one option per row — it's added to your inventory and equipped automatically.
+                Pick one option per row. It's added to your inventory and equipped automatically.
               </p>
             )}
             {allEqGroups.map((g) => {
@@ -1118,7 +1121,7 @@ export function Component() {
                     return (
                       <label key={slotKey} className="flex items-center gap-2">
                         <span className="shrink-0 text-caption text-ink-muted">
-                          {item.label} — pick one:
+                          {item.label}: pick one
                         </span>
                         <select
                           value={slotPicks[slotKey] ?? ''}
@@ -1190,7 +1193,7 @@ export function Component() {
               <p className={`${HINT} bg-heal-soft`}>
                 <Check size={18} aria-hidden className="mt-0.5 shrink-0 text-heal" />
                 <span>
-                  Nothing else to decide here — your skills, languages, and other picks live on the
+                  Nothing else to decide here: your skills, languages, and other picks live on the
                   Class, Species, and Background steps.
                 </span>
               </p>
@@ -1258,7 +1261,7 @@ export function Component() {
         ) {
           issues.push({
             key: 'weapon',
-            text: 'No weapon — only Unarmed Strike',
+            text: 'No weapon: only Unarmed Strike',
             step: 'equipment',
           });
         }
@@ -1281,7 +1284,7 @@ export function Component() {
               label="Name"
               value={doc.name}
               onChange={(e) => update((d) => void (d.name = e.target.value))}
-              placeholder="Give your hero a name"
+              placeholder="For example, Thorin"
               className={doc.name.trim() === '' ? 'ring-1 ring-guide' : undefined}
             />
 
@@ -1322,10 +1325,7 @@ export function Component() {
                   [
                     ['HP', sheet.maxHp.value],
                     ['AC', sheet.ac.value],
-                    [
-                      'Initiative',
-                      `${sheet.initiative.value >= 0 ? '+' : ''}${sheet.initiative.value}`,
-                    ],
+                    ['Initiative', signed(sheet.initiative.value)],
                     ['Prof', `+${sheet.profBonus.value}`],
                     ['Speed', `${sheet.speedWalk.value} ft`],
                     ['Passive Per.', sheet.passivePerception.value],
@@ -1335,7 +1335,7 @@ export function Component() {
                     key={label}
                     className="rounded-card bg-surface p-3 shadow-card ring-1 ring-line ring-inset"
                   >
-                    <div className="text-lg font-bold tabular-nums">{v}</div>
+                    <div className="text-stat tabular-nums">{v}</div>
                     <div className="text-caption text-ink-muted">{label}</div>
                   </div>
                 ))}
@@ -1352,7 +1352,9 @@ export function Component() {
                     className="flex min-h-tap items-center justify-between gap-2 rounded-control bg-guide-soft px-3 py-2.5 text-left text-sm transition-colors duration-120 hover:brightness-108"
                   >
                     <span>{issue.text}</span>
-                    <span className="shrink-0 font-bold text-guide">Fix →</span>
+                    <span className="inline-flex shrink-0 items-center gap-0.5 font-bold text-guide">
+                      Fix <ChevronRight size={16} aria-hidden="true" />
+                    </span>
                   </button>
                 ))}
               </div>
@@ -1420,25 +1422,21 @@ export function Component() {
             AC <strong className="text-ink">{sheet.ac.value}</strong>
           </span>
           <span>
-            Init{' '}
-            <strong className="text-ink">
-              {sheet.initiative.value >= 0 ? '+' : ''}
-              {sheet.initiative.value}
-            </strong>
+            Init <strong className="text-ink">{signed(sheet.initiative.value)}</strong>
           </span>
           {pendingTarget !== undefined && (
             <button
               type="button"
               onClick={showPending}
               className="-my-2 ml-auto inline-flex min-h-tap items-center gap-1 font-bold text-guide"
-              aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
+              aria-label={`${sheet.pending.length} to choose: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
               title={
                 pendingHere
                   ? 'Decisions like skills and languages are waiting on this step'
                   : `Decisions like skills and languages are waiting on the ${STEP_LABELS[pendingTarget]} step`
               }
             >
-              {sheet.pending.length} pending <ChevronRight size={16} aria-hidden />
+              {sheet.pending.length} to choose <ChevronRight size={16} aria-hidden />
             </button>
           )}
         </div>

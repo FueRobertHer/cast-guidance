@@ -188,6 +188,13 @@ describe('InventoryTab rows', () => {
     expect(screen.getByRole('textbox', { name: 'Search items' })).toBeTruthy();
   });
 
+  it('offers to take back a removed item, and moves focus to the offer', () => {
+    renderRows();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Rope' }));
+    const undo = screen.getByRole('button', { name: 'Undo: Removed Rope' });
+    expect(document.activeElement).toBe(undo);
+  });
+
   it('reports equipped and attuned as pressed states', () => {
     renderRows();
     expect(screen.getByRole('button', { name: 'Equip Longsword', pressed: true })).toBeTruthy();

@@ -1,15 +1,16 @@
-import { Plus, X } from 'lucide-react';
+import { CircleAlert, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { rollDetail } from '@/dice/format';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
+import { relativeTime } from '@/lib/relativeTime';
 import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
 import { type DiceTrayView, diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 import { MODE_LABELS, MODE_NAMES, useDockHidden } from '@/ui/AdvToggle';
 import { Button } from '@/ui/Button';
 import { D20Icon } from '@/ui/D20Icon';
+import { RollDetail } from '@/ui/RollDetail';
 import { ROLL_INK, rollTone } from '@/ui/rollTone';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/sheet';
@@ -39,18 +40,6 @@ const VIEWS: ReadonlyArray<{ value: DiceTrayView; label: string }> = [
 
 /** A die and its use: a d20 is a d20 roll, any other die damage (DS-001 DiceTray). */
 const kindOf = (sides: number): RollKind => (sides === 20 ? 'd20' : 'damage');
-
-/**
- * When a roll was made, as a player says it: "just now", "2 min ago",
- * "3 h ago", and past a day the clock time it was made at.
- */
-export function relativeTime(at: number, now: number, clock: string): string {
-  const minutes = Math.floor((now - at) / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours} h ago` : clock;
-}
 
 /** The time now, moving on every TICK_MS while `active`. */
 function useNow(active: boolean): number {
@@ -133,8 +122,9 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
 
           {/* One scroll for the whole view, not the log alone: with large
               text, or a phone on its side, the dice and the field are more
-              than the sheet's height. Its padding keeps focus rings in. */}
-          <div className="-mx-4 -mt-1 min-h-0 flex-1 overflow-y-auto px-4 pt-1">
+              than the sheet's height. Its padding keeps focus rings in, and
+              its scroll padding does the same for a control scrolled to. */}
+          <div className="-mx-4 -mt-1 min-h-0 flex-1 scroll-py-1 overflow-y-auto px-4 pt-1">
             {view === 'roll' ? (
               <>
                 <div className="mb-3 flex flex-col gap-3">
@@ -151,8 +141,6 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                    * Four across with room to hit (DS-001): seven across gave each
                    * die a sliver of a label. Equal columns keep every die the same
                    * size, and the eighth tile, custom, takes the field below.
-                   * Each says "tap to roll" for a new player; the button's name
-                   * stays the die's, since its role already says it is pressed.
                    */}
                   <div className="grid grid-cols-4 gap-2">
                     {QUICK.map((d) => (
@@ -163,9 +151,6 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                         className={TILE}
                       >
                         d{d}
-                        <small aria-hidden="true" className={TILE_CAPTION}>
-                          tap to roll
-                        </small>
                       </button>
                     ))}
                     <button
@@ -175,7 +160,7 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                       className={TILE}
                     >
                       <Plus size={18} aria-hidden="true" />
-                      <small className={TILE_CAPTION}>custom</small>
+                      <small className={TILE_CAPTION}>Custom</small>
                     </button>
                   </div>
 
@@ -205,7 +190,12 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                       Roll
                     </Button>
                   </form>
-                  {error !== undefined && <p className="-mt-1 text-caption text-danger">{error}</p>}
+                  {error !== undefined && (
+                    <p className="-mt-1 flex items-start gap-1 text-caption text-danger">
+                      <CircleAlert size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+                      {error}
+                    </p>
+                  )}
                 </div>
                 {/* The latest rolls, the whole log a tap away on History. */}
                 <RollRows rolls={rolls.slice(0, RECENT)} now={now} />
@@ -220,7 +210,7 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                       onClick={() => rollLogStore.getState().clear()}
                       className="-mr-1"
                     >
-                      clear all
+                      Clear all
                     </Button>
                   </div>
                 )}
@@ -284,18 +274,11 @@ function RollRows({
       {rolls.map((r) => (
         <div key={r.id ?? r.at} className={`${listRowClass} ${removable ? 'pr-1' : ''}`}>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-body-strong">
-              {r.label ?? r.expr}
-              {r.meta?.advantage !== undefined && (
-                <span className="ml-1 font-normal text-caption text-ink-muted">
-                  ({r.meta.advantage})
-                </span>
-              )}
-            </div>
+            <div className="truncate text-body-strong">{r.label ?? r.expr}</div>
             {/* The dice give way to the time, which is never cut. */}
             <div className="flex gap-1 text-caption text-ink-muted tabular-nums">
               <span className="min-w-0 truncate">
-                {r.expr} · {rollDetail(r)}
+                <RollDetail roll={r} />
               </span>
               <span className="shrink-0">
                 · <RollTime at={r.at} now={now} />
@@ -308,7 +291,7 @@ function RollRows({
             )}
           </div>
           <span
-            className={`shrink-0 font-bold text-[1.25rem] tabular-nums ${ROLL_INK[rollTone(r)]}`}
+            className={`shrink-0 font-bold text-title-sheet tabular-nums ${ROLL_INK[rollTone(r)]}`}
           >
             {r.total}
           </span>

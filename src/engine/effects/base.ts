@@ -90,7 +90,7 @@ export class Collector {
       selected.push(option.id);
       if (option.disabled !== undefined) {
         this.warn(
-          `${prompt.origin.label}: ${option.label} is an unusual ${prompt.label.toLowerCase()} choice — ${option.disabled.reason}.`,
+          `${prompt.origin.label}: ${option.label} is an unusual ${prompt.label.toLowerCase()} choice: ${option.disabled.reason}.`,
         );
       }
     }

@@ -176,10 +176,10 @@ describe('historyLabel', () => {
     expect(historyLabel(base(), both)).toBe('Used action + bonus');
   });
 
-  it('calls a cleared turn an undo, because End turn labels itself', () => {
-    // Un-ticking a used pip and pressing End turn produce identical diffs, so
-    // guessing "Turn ended" here would mislabel the far commoner undo. The
-    // End turn button passes its own label instead (see PlayTab).
+  it('calls a cleared turn an undo, because New turn labels itself', () => {
+    // Un-ticking a used pip and pressing New turn produce identical diffs, so
+    // guessing "New turn" here would mislabel the far commoner undo. The
+    // New turn button passes its own label instead (see PlayTab).
     const acted = base();
     acted.play.turn = { action: true, bonus: false, reaction: false };
     const both = base();

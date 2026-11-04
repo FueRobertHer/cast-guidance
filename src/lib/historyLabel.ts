@@ -172,8 +172,8 @@ function playLabels(prev: CharacterDoc, next: CharacterDoc): string[] {
   if (JSON.stringify(p.currency) !== JSON.stringify(n.currency)) out.push('Currency');
   if (p.xp !== n.xp) out.push(`XP → ${n.xp}`);
 
-  // Turn economy. Clearing slices is NOT inferred as "Turn ended": un-ticking a
-  // used pip and pressing End turn produce identical diffs, so the End turn
+  // Turn economy. Clearing slices is NOT inferred as "New turn": un-ticking a
+  // used pip and pressing New turn produce identical diffs, so the New turn
   // button labels itself and anything reaching here is an undo.
   const pt = p.turn ?? { action: false, bonus: false, reaction: false };
   const nt = n.turn ?? { action: false, bonus: false, reaction: false };

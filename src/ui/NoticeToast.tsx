@@ -13,8 +13,10 @@ const ICON: Record<Notice['tone'], LucideIcon> = {
 
 /**
  * App-wide snackbar for one-shot notices (rest summaries, imports, …), in the
- * snackbar's inverted style (DS-001). Sits just above the roll toast so both
- * can coexist briefly.
+ * snackbar's inverted style (DS-001). Sits above the roll toast, which is
+ * higher where the dice dock is on screen, so the two can coexist: a
+ * concentration save puts up both at once, and the roll would otherwise cover
+ * whether concentration held.
  */
 export function NoticeToast() {
   const seq = useNotices((s) => s.seq);
@@ -42,7 +44,7 @@ export function NoticeToast() {
     <div
       data-testid="notice-toast"
       {...snackbar}
-      className={`${snackbar.className} fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 lg:left-auto lg:right-6 lg:w-80`}
+      className={`${snackbar.className} fixed inset-x-4 bottom-[calc(10.5rem+env(safe-area-inset-bottom))] z-30 lg:right-6 lg:left-auto lg:w-80 [:root:has([data-dice-dock])_&]:bottom-[calc(14rem+env(safe-area-inset-bottom))] lg:[:root:has([data-dice-dock])_&]:bottom-44`}
     >
       <Icon size={18} aria-hidden="true" className="mt-0.5 shrink-0 self-start" />
       <div className="min-w-0">

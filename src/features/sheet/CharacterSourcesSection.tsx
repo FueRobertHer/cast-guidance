@@ -229,13 +229,13 @@ function SourceChecklist({
           disabled={last}
           aria-describedby={last ? lastHintId : undefined}
           onChange={(e) => toggle(r.source, e.target.checked)}
-          className="size-4 shrink-0 accent-brand"
+          className="size-4 shrink-0 accent-ink"
         />
         <span className={`min-w-0 flex-1 truncate ${isOn(r.source) ? '' : 'text-ink-muted'}`}>
           {r.name}
         </span>
         {!r.onDevice && <span className="shrink-0 text-xs text-ink-muted">Not on this device</span>}
-        <span className="shrink-0 font-mono text-[10px] uppercase text-ink-muted">{r.source}</span>
+        <span className="shrink-0 text-ink-muted text-overline uppercase">{r.source}</span>
       </label>
     );
   };

@@ -78,6 +78,35 @@ describe('proseScanFeature — limited-use detection', () => {
   });
 });
 
+describe('proseScanFeature rolls', () => {
+  const action = (entries: string) =>
+    scan('Trait', entries).find((e) => e.kind === 'action') as
+      | (EffectInput & { kind: 'action' })
+      | undefined;
+
+  it('marks dice in a sentence about regaining hit points as a heal', () => {
+    const heal = action('Once per long rest, as a bonus action, you regain 1d10 + 2 hit points.');
+    expect(heal?.roll).toBe('1d10+2');
+    expect(heal?.heals).toBe(true);
+  });
+
+  it('leaves damage dice as damage where the same sentence heals you by their result', () => {
+    const drain = action(
+      'Once per long rest, as a bonus action, a creature takes 2d6 necrotic damage, and you regain hit points equal to half of it.',
+    );
+    expect(drain?.roll).toBe('2d6');
+    expect(drain?.heals).toBe(false);
+  });
+
+  it('leaves damage dice as they were, even beside a sentence about regaining a use', () => {
+    const breath = action(
+      'Once per long rest, as a bonus action, each creature takes 2d6 fire damage. You regain hit points only by resting.',
+    );
+    expect(breath?.roll).toBe('2d6');
+    expect(breath?.heals).toBe(false);
+  });
+});
+
 describe('proseScanFeature natural weapons', () => {
   const weapon = (effects: EffectInput[]) =>
     effects.find(

@@ -278,7 +278,7 @@ export function OriginChoices({
               onClick={() => setEditing(prompt.id)}
               className={`shrink-0 ${buttonClass({ variant: 'outline', size: 'sm' })}`}
             >
-              <RefreshCcw size={14} aria-hidden /> change
+              <RefreshCcw size={14} aria-hidden /> Change
             </button>
           </div>
         ),

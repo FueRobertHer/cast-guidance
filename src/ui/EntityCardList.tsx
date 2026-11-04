@@ -1,4 +1,4 @@
-import { Check, Info, RefreshCcw, Search } from 'lucide-react';
+import { Check, Info, RefreshCcw, Search, X } from 'lucide-react';
 import { type Ref, useId, useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import {
@@ -443,7 +443,9 @@ export function EntityCardList({
                 <span className="font-display text-title-card wrap-anywhere @min-[12rem]:truncate">
                   {nameOf(e)}
                   {selected && onDeselect !== undefined && (
-                    <span className="ml-1.5 font-sans text-caption text-ink-muted">✕ unselect</span>
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 font-sans text-caption text-ink-muted">
+                      <X size={14} aria-hidden="true" /> Unselect
+                    </span>
                   )}
                 </span>
                 {blurb !== undefined && (

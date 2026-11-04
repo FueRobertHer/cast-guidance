@@ -144,10 +144,24 @@ export const CURATED: Record<string, CuratedFn> = {
   // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
   'superior technique|tce': superiorTechnique,
   'healer|phb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'action', label: 'Healer (kit)', roll: '1d6+4', origin });
+    col.add({
+      kind: 'action',
+      economy: 'action',
+      label: 'Healer (kit)',
+      roll: '1d6+4',
+      heals: true,
+      origin,
+    });
   },
   'healer|xphb': (col, origin) => {
-    col.add({ kind: 'action', economy: 'bonus', label: 'Healer (kit)', roll: '1d6+4', origin });
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Healer (kit)',
+      roll: '1d6+4',
+      heals: true,
+      origin,
+    });
   },
   'crossbow expert|phb': (col, origin) => {
     col.add({ kind: 'action', economy: 'bonus', label: 'Crossbow Expert bonus attack', origin });
@@ -279,6 +293,7 @@ export const CURATED: Record<string, CuratedFn> = {
       economy: 'bonus',
       label: 'Second Wind',
       roll: `1d10+${classLevel(col, 'Fighter')}`,
+      heals: true,
       origin,
     });
   },

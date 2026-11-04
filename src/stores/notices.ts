@@ -12,7 +12,7 @@ export interface Notice {
 }
 
 /** How long the toast shows one notice, so a notice that can wait knows how long. */
-export const NOTICE_MS = 3600;
+export const NOTICE_MS = 6000;
 
 export interface NoticeState {
   notice: Notice | null;

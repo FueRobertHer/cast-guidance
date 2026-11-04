@@ -235,11 +235,11 @@ function grantSpellEntry(
   gatherByLevel(entry.expanded, totalLevel, expanded, { v: false }, true);
   const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
   if (expandedNames.length > 0) {
-    col.warn(`${origin.label}: expands your spell options — ${expandedNames.join(', ')}.`);
+    col.warn(`${origin.label}: expands your spell options: ${expandedNames.join(', ')}.`);
   }
 
   if (sawChoose.v) {
-    col.warn(`${origin.label}: also lets you choose a spell — see the trait text.`);
+    col.warn(`${origin.label}: also lets you choose a spell. See the trait text.`);
   }
 }
 
@@ -299,7 +299,7 @@ function processSpellEntry(
       return;
     }
     // Malformed choose (no valid abilities) — fall back and explain.
-    col.warn(`${origin.label}: spellcasting ability is your choice — see the trait text.`);
+    col.warn(`${origin.label}: spellcasting ability is your choice. See the trait text.`);
   }
   grantSpellEntry(col, entry, origin, totalLevel, defaultAbility);
 }

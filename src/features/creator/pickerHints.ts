@@ -52,19 +52,19 @@ export function makeSubclassEntries(registry: RegistryLike): (sub: Entity) => un
 
 /** Playstyle blurb per class (keyed lowercase). Kept to one phone-width line. */
 const CLASS_BLURBS: Record<string, string> = {
-  artificer: 'Magical inventor — infuses items, versatile gadgets. Medium complexity.',
-  barbarian: 'Raging melee tank — huge HP, hits hard, simple to play.',
-  bard: 'Charming support caster — inspire allies, talk your way in. Flexible.',
-  cleric: 'Divine caster — heal, buff, and still fight. Strong at every level.',
-  druid: 'Nature caster — shapeshift into beasts, control terrain. Medium complexity.',
-  fighter: 'Master of weapons and armor — durable, straightforward, always useful.',
-  monk: 'Fast unarmored striker — flurries of blows, mobility tricks.',
-  paladin: 'Holy knight — melee + healing + smites. Durable and dramatic.',
-  ranger: 'Wilderness skirmisher — ranged or two-weapon fighting, tracking, a bit of magic.',
-  rogue: 'Sneaky skill expert — one big Sneak Attack per turn, best skills in the game.',
-  sorcerer: 'Innate caster — fewer spells than a wizard but bends them with metamagic.',
-  warlock: 'Pact caster — few but always-max spell slots, strongest cantrip. Simple casting.',
-  wizard: 'The spell encyclopedia — most options, most fragile. High complexity.',
+  artificer: 'Magical inventor: infuses items, versatile gadgets. Medium complexity.',
+  barbarian: 'Raging melee tank: huge HP, hits hard, simple to play.',
+  bard: 'Charming support caster: inspire allies, talk your way in. Flexible.',
+  cleric: 'Divine caster: heal, buff, and still fight. Strong at every level.',
+  druid: 'Nature caster: shapeshift into beasts, control terrain. Medium complexity.',
+  fighter: 'Master of weapons and armor: durable, straightforward, always useful.',
+  monk: 'Fast unarmored striker: flurries of blows, mobility tricks.',
+  paladin: 'Holy knight: melee + healing + smites. Durable and dramatic.',
+  ranger: 'Wilderness skirmisher: ranged or two-weapon fighting, tracking, a bit of magic.',
+  rogue: 'Sneaky skill expert: one big Sneak Attack per turn, best skills in the game.',
+  sorcerer: 'Innate caster: fewer spells than a wizard but bends them with metamagic.',
+  warlock: 'Pact caster: few but always-max spell slots, strongest cantrip. Simple casting.',
+  wizard: 'The spell encyclopedia: most options, most fragile. High complexity.',
 };
 
 /**
@@ -90,7 +90,7 @@ const CLASS_ABILITY_PRIORITY: Record<string, Ability[]> = {
 export function classBlurb(e: Entity): string | undefined {
   const curated = CLASS_BLURBS[nameOf(e).toLowerCase()];
   const hd = (e.hd as { faces?: number } | undefined)?.faces;
-  const hdText = typeof hd === 'number' ? `d${hd} HP` : undefined;
+  const hdText = typeof hd === 'number' ? `d${hd} Hit Die` : undefined;
   if (curated !== undefined) return hdText !== undefined ? `${curated} (${hdText})` : curated;
   return hdText;
 }
@@ -133,18 +133,18 @@ export function pointBuyFocusFor(className: string): Record<Ability, number> | u
 
 /** Flavor for the core options a new player is most likely to weigh. */
 const RACE_BLURBS: Record<string, string> = {
-  human: 'Adaptable all-rounder — a bonus to everything. Never a wrong pick.',
-  elf: 'Graceful and perceptive — darkvision, keen senses, trance instead of sleep.',
-  dwarf: 'Tough and steady — darkvision, poison resistance, at home underground.',
-  halfling: 'Small and lucky — reroll natural 1s, brave, nimble.',
-  dragonborn: 'Draconic heritage — breath weapon and an elemental resistance.',
-  gnome: 'Small, clever, hard to charm — advantage on mental saves vs magic.',
-  'half-elf': 'Charismatic and flexible — two skills and two ability picks of your choice.',
-  'half-orc': 'Relentless bruiser — survive at 1 HP once per rest, brutal crits.',
-  tiefling: 'Infernal heritage — fire resistance and innate magic.',
-  aasimar: 'Celestial heritage — healing touch, radiant power.',
-  goliath: 'Mountain-born powerhouse — shrug off part of a hit.',
-  orc: 'Powerful and unstoppable — dash toward enemies, tough.',
+  human: 'Adaptable all-rounder: a bonus to everything. Never a wrong pick.',
+  elf: 'Graceful and perceptive: darkvision, keen senses, trance instead of sleep.',
+  dwarf: 'Tough and steady: darkvision, poison resistance, at home underground.',
+  halfling: 'Small and lucky: reroll natural 1s, brave, nimble.',
+  dragonborn: 'Draconic heritage: breath weapon and an elemental resistance.',
+  gnome: 'Small, clever, hard to charm: advantage on mental saves vs magic.',
+  'half-elf': 'Charismatic and flexible: two skills and two ability picks of your choice.',
+  'half-orc': 'Relentless bruiser: survive at 1 HP once per rest, brutal crits.',
+  tiefling: 'Infernal heritage: fire resistance and innate magic.',
+  aasimar: 'Celestial heritage: healing touch, radiant power.',
+  goliath: 'Mountain-born powerhouse: shrug off part of a hit.',
+  orc: 'Powerful and unstoppable: dash toward enemies, tough.',
 };
 
 /** "+2 STR, +1 CHA" from a race's ability block (2014-style data). */

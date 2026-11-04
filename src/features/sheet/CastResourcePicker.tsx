@@ -60,7 +60,7 @@ export function CastResourcePicker({
   const choose = async () => {
     const picked = await askChoice({
       title: `Cast ${spellName}`,
-      detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
+      detail: 'Choose which slot or pool to spend. A higher level upcasts the spell.',
       options: castResourceOptions(options, {
         block,
         play,

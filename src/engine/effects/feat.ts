@@ -28,7 +28,7 @@ export function collectFeatEntity(
   // by instanceId — so they are never deduped.
   if (e.repeatable !== true) {
     if (col.collectedFeats.has(uid)) {
-      col.warn(`${str(e.name) ?? uid}: not a repeatable feat — the extra selection was ignored.`);
+      col.warn(`${str(e.name) ?? uid}: not a repeatable feat, so the extra selection was ignored.`);
       return;
     }
     col.collectedFeats.add(uid);

@@ -130,6 +130,18 @@ export function proseScanFeature(
   // Limited-use features also get their first dice expression as a roll chip.
   const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
   let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+  // Dice in a sentence about regaining hit points are a heal, not damage.
+  const diceAt = dice?.index ?? 0;
+  const sentenceEnd = text.indexOf('.', diceAt);
+  const diceSentence =
+    dice === null
+      ? ''
+      : text.slice(text.lastIndexOf('.', diceAt) + 1, sentenceEnd === -1 ? undefined : sentenceEnd);
+  const afterDice = dice === null ? '' : text.slice(diceAt + dice[0].length);
+  const heals =
+    /\bregains?\b/.test(diceSentence) &&
+    /\bhit points?\b/.test(diceSentence) &&
+    !/^ *(?:[a-z]+ )?damage\b/.test(afterDice);
 
   // Level-scaled dice — use the biggest step the character's total level has
   // reached. Two phrasings: 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10),
@@ -183,16 +195,16 @@ export function proseScanFeature(
       : undefined;
 
   if (/as a bonus action/.test(text)) {
-    col.add({ kind: 'action', economy: 'bonus', label: name, roll, note, save, origin });
+    col.add({ kind: 'action', economy: 'bonus', label: name, roll, heals, note, save, origin });
   } else if (/as a reaction|use your reaction/.test(text)) {
-    col.add({ kind: 'action', economy: 'reaction', label: name, roll, note, save, origin });
+    col.add({ kind: 'action', economy: 'reaction', label: name, roll, heals, note, save, origin });
   } else if (
     uses !== undefined &&
     // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
     // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
     /as an action|use your action|replace one of your attacks|as a magic action/.test(text)
   ) {
-    col.add({ kind: 'action', economy: 'action', label: name, roll, note, save, origin });
+    col.add({ kind: 'action', economy: 'action', label: name, roll, heals, note, save, origin });
   }
 
   const hp = text.match(

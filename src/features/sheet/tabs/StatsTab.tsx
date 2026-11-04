@@ -1,9 +1,11 @@
 import { useOutletContext } from 'react-router';
 import { type D20Effects, d20Effects } from '@/engine/conditions';
 import { ABILITIES, type Ability } from '@/engine/types';
+import { signed } from '@/lib/signed';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownParts, BreakdownSheet } from '@/ui/BreakdownSheet';
 import { D20Icon } from '@/ui/D20Icon';
+import { Tip, useTip } from '@/ui/Hint';
 import { ProfDot } from '@/ui/ProfDot';
 import { listClass } from '@/ui/surfaces';
 import {
@@ -17,6 +19,7 @@ import {
 import { RollEffectCue } from '../RollEffectCue';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
+/** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
 /** A tile on `bg` (DS-001): `surface`, a `line` hairline, `shadow-card` in light. */
@@ -46,6 +49,7 @@ export function Component() {
   const { sheet, doc } = useOutletContext<CharacterSheetState>();
   const conditions = doc?.play.conditions ?? [];
   const ignore = useIgnoreOnce(JSON.stringify(conditions));
+  const rollTip = useTip('tap-to-roll');
   if (sheet === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   // What the character's conditions do to checks and saves: applied to each
@@ -77,14 +81,12 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* A neutral tip (DS-001): `surface-raised`, with the die where the
-          emoji was. */}
-      <p className="flex gap-3 rounded-control bg-surface-raised p-3 text-[0.875rem] leading-5">
-        <D20Icon size={18} className="mt-px shrink-0 text-ink-muted" />
-        <span>
-          Tap any number to roll it. The Dis, Normal and Adv switch applies to every roll.
-        </span>
-      </p>
+      {/* How to roll is a first-use tip (DS-001 Hint), not a line that stays. */}
+      {rollTip.shown && (
+        <Tip onDismiss={rollTip.dismiss}>
+          Tap any modifier to roll it. The switch at the bottom applies to every roll.
+        </Tip>
+      )}
       {/* Abilities, check bonus first: tap it to roll a check, the score pill
           under it for its breakdown; any cue for checks over them. The bonus is
           the modifier unless something adds to every check of the ability: half
@@ -119,11 +121,11 @@ export function Component() {
                       checkEffects(a),
                     )
                   }
-                  aria-label={`Roll ${a.toUpperCase()} check (${fmt(check.total.value)})`}
-                  className={`min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
+                  aria-label={`Roll ${a.toUpperCase()} check (${signed(check.total.value)})`}
+                  className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
                   title={`Roll ${a.toUpperCase()} check`}
                 >
-                  {fmt(check.total.value)}
+                  {signed(check.total.value)}
                 </button>
                 <BreakdownSheet
                   title={`${a.toUpperCase()} score`}
@@ -152,7 +154,7 @@ export function Component() {
                     <div className="flex flex-col gap-1">
                       <p className="flex justify-between gap-3 font-semibold text-body">
                         <span>{a.toUpperCase()} check</span>
-                        <span className="tabular-nums">{fmt(check.total.value)}</span>
+                        <span className="tabular-nums">{signed(check.total.value)}</span>
                       </p>
                       <BreakdownParts parts={check.total.parts} />
                     </div>
@@ -190,7 +192,7 @@ export function Component() {
                   <ProfDot level={save.prof ? 1 : 0} decorative />
                   <span className="text-ink-muted">{a.toUpperCase()}</span>
                 </span>{' '}
-                <span className="font-bold tabular-nums">{fmt(save.total.value)}</span>
+                <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
               </button>
             );
           })}
@@ -220,7 +222,7 @@ export function Component() {
                 </span>
               </span>
               <span className="min-w-9 text-right font-bold tabular-nums">
-                {fmt(s.total.value)}
+                {signed(s.total.value)}
               </span>
               <D20Icon size={16} className="shrink-0 text-ink-faint" />
             </button>

@@ -11,8 +11,10 @@ import {
   policyAllows,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import type { EquipmentEntry } from '@/engine/types';
+import type { CharacterDoc, EquipmentEntry } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
+import { useStickyHeight } from '@/lib/useStickyHeight';
+import { captureUpdate, sameForUndo, useUndoOffer } from '@/lib/useUndoOffer';
 import { Button, buttonClass } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
@@ -20,6 +22,7 @@ import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { Sheet } from '@/ui/sheet';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
+import { UndoBar } from '@/ui/UndoBar';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -238,8 +241,13 @@ const STEP_FACE =
   'flex size-7 items-center justify-center rounded-control bg-surface-raised text-ink transition-colors duration-120 group-hover:bg-surface-hover';
 
 export function Component() {
-  const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
+  const { sheet, doc, update, restore } = useOutletContext<CharacterSheetState>();
   const registry = useRegistry();
+  const undo = useUndoOffer({ current: doc, same: sameForUndo, restore });
+  // Under the sheet header, so the scroll padding counts it too (A11Y-003).
+  const bar = useStickyHeight('--sheet-bar-h');
+  // The row goes with its Remove button, so focus goes on to the offer.
+  const [undoFocus, setUndoFocus] = useState(0);
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   /**
@@ -290,7 +298,7 @@ export function Component() {
         }
         className={`shrink-0 ${chipClass('outline')}`}
       >
-        {entry.equipped ? 'equipped' : 'equip'}
+        {entry.equipped ? 'Equipped' : 'Equip'}
       </button>
       <div className="min-w-24 flex-1">
         {(() => {
@@ -375,9 +383,14 @@ export function Component() {
           type="button"
           aria-label={`Remove ${displayName(entry)}`}
           title="Remove"
-          onClick={() =>
-            update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== entry.id)))
-          }
+          onClick={() => {
+            const change = captureUpdate<CharacterDoc>(update, (d) => {
+              d.equipment = d.equipment.filter((x) => x.id !== entry.id);
+            });
+            if (change === undefined) return;
+            undo.offer(change.before, change.after, `Removed ${displayName(entry)}`);
+            setUndoFocus((n) => n + 1);
+          }}
           className="inline-flex h-tap w-8 items-center justify-center rounded-control text-ink-muted transition-colors duration-120 hover:bg-surface-raised hover:text-danger"
         >
           <Trash2 size={16} aria-hidden="true" />
@@ -388,6 +401,16 @@ export function Component() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Under the header while it is up. Empty, it stays mounted, as a live
+          region has to be, and gives back the gap it would leave. */}
+      <div ref={bar} className="sticky top-(--sheet-header-h,0px) z-10 has-[>:empty]:-mb-6">
+        <UndoBar
+          pending={undo.pending}
+          undone={undo.undone}
+          onUndo={() => void undo.run()}
+          focusRequest={undoFocus}
+        />
+      </div>
       <section className="flex flex-col gap-2">
         <h2 className={`flex items-baseline justify-between gap-2 ${H2}`}>
           Equipped
