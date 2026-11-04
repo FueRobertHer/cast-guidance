@@ -23,7 +23,7 @@ export function assertHomebrewFile(raw: unknown): {
   const json = raw as Record<string, unknown>;
   const meta = json._meta;
   if (meta === null || typeof meta !== 'object') {
-    throw new ValidationError('missing _meta block — is this a 5etools homebrew file?');
+    throw new ValidationError('missing _meta block. Is this a 5etools homebrew file?');
   }
   const sources = (meta as { sources?: unknown }).sources;
   if (!Array.isArray(sources) || sources.length === 0) {

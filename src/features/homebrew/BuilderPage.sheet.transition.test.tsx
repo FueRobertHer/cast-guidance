@@ -71,7 +71,7 @@ function brewUser() {
 }
 
 /** The Armor Class tile's number. */
-const armorClass = () => Number(screen.getByText(/^AC/).previousSibling?.textContent);
+const armorClass = () => Number(screen.getByText(/^Armor Class/).previousSibling?.textContent);
 
 /** Open an entity's form in the builder, change one field, and save it. */
 async function edit(entity: string, field: string, value: string) {

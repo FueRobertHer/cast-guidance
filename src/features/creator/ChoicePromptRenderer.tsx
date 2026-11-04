@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react';
+import { Check, CircleCheck, TriangleAlert, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { ChoiceOption, ChoicePrompt } from '@/engine/types';
@@ -238,8 +238,12 @@ export function ChoicePromptRenderer({
               <div
                 key={o.id}
                 className={`flex items-start rounded-control bg-surface-raised ring-inset transition-colors duration-120 ${
-                  active ? 'ring-2 ring-ink' : 'hover:bg-surface-hover'
-                } ${o.disabled !== undefined ? 'opacity-40' : ''}`}
+                  active
+                    ? 'ring-2 ring-ink'
+                    : o.disabled === undefined
+                      ? 'hover:bg-surface-hover'
+                      : ''
+                }`}
               >
                 <button
                   type="button"
@@ -249,14 +253,31 @@ export function ChoicePromptRenderer({
                   onClick={() => toggle(o.id)}
                   className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 text-left"
                 >
-                  <span className="text-body-strong">{o.label}</span>
+                  <span
+                    className={`flex items-start justify-between gap-2 text-body-strong ${
+                      o.disabled !== undefined ? 'text-ink-faint' : ''
+                    }`}
+                  >
+                    {o.label}
+                    {/* Picked says so in shape as well as by its edge (DS-001 OptionCard). */}
+                    {active && (
+                      <CircleCheck size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+                    )}
+                  </span>
                   {o.description !== undefined && o.description !== '' && (
                     <span className="text-caption text-ink-muted">{o.description}</span>
                   )}
                   {o.advisory !== undefined && (
-                    // Selectable, not disabled — a color-independent (icon + word)
+                    // Selectable, not disabled: a color-independent (icon + word)
                     // "guidance, not gatekeeping" cue, in the guide's gold.
-                    <span className="text-caption font-semibold text-guide">⚠ {o.advisory}</span>
+                    <span className="flex items-start gap-1 text-caption font-semibold text-guide">
+                      <TriangleAlert size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+                      {o.advisory}
+                    </span>
+                  )}
+                  {/* Why it cannot be picked, in words: a `title` never shows on a phone. */}
+                  {o.disabled !== undefined && (
+                    <span className="text-caption text-ink-muted">{o.disabled.reason}</span>
                   )}
                 </button>
                 {/* p-2.5 matches the info button's -m-2.5, so its 44px target

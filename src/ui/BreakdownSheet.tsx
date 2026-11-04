@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import type { DerivedValue } from '@/engine/types';
+import { signed } from '@/lib/signed';
 import { Button } from './Button';
 import { Sheet, SheetStandIn, useSheetOpenOnMount } from './sheet';
 import { fieldClass } from './TextField';
@@ -28,10 +29,7 @@ export function BreakdownParts({
       {parts.map((p, i) => (
         <div key={`${p.label}-${String(i)}`} className="flex justify-between gap-3">
           <dt className="text-ink-muted">{p.label}</dt>
-          <dd className="font-semibold tabular-nums">
-            {p.amount >= 0 ? '+' : ''}
-            {p.amount}
-          </dd>
+          <dd className="font-semibold tabular-nums">{signed(p.amount)}</dd>
         </div>
       ))}
       {children}

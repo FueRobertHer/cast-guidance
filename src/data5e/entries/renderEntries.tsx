@@ -6,6 +6,7 @@
 /** biome-ignore-all lint/suspicious/noArrayIndexKey: entries are static data, index keys are stable */
 import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { signed } from '@/lib/signed';
 import { safeExternalHref } from '@/lib/url';
 import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
@@ -71,12 +72,11 @@ function TagView({
     }
     case 'hit': {
       const n = Number.parseInt(body, 10);
-      const sign = n >= 0 ? '+' : '';
       return (
         <RollChip
           inline={inline}
           expr={`1d20${n >= 0 ? '+' : ''}${n}`}
-          display={`${sign}${n}`}
+          display={signed(n)}
           variant="d20"
         />
       );
@@ -87,7 +87,7 @@ function TagView({
         <RollChip
           inline={inline}
           expr={`1d20${n >= 0 ? '+' : ''}${n}`}
-          display={`d20${n !== 0 ? (n > 0 ? `+${n}` : n) : ''}`}
+          display={`d20${n !== 0 ? signed(n) : ''}`}
           variant="d20"
         />
       );

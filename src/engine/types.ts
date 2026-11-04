@@ -225,6 +225,8 @@ export type EffectInput = { origin: EffectOrigin } & (
       economy: 'action' | 'bonus' | 'reaction';
       label: string;
       roll?: string;
+      /** The roll is hit points regained, not damage dealt. */
+      heals?: boolean;
       /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
       note?: string;
       /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
@@ -468,6 +470,8 @@ export interface DerivedSheet {
     economy: 'action' | 'bonus' | 'reaction';
     label: string;
     roll?: string;
+    /** The roll is hit points regained, not damage dealt. */
+    heals?: boolean;
     origin: string;
     /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
     note?: string;
@@ -489,6 +493,11 @@ export interface DerivedSheet {
     origin: string;
   }>;
   warnings: string[];
+  /**
+   * A class this character has was not in the game data, because it is still
+   * landing or is gone. It derives no slots or pools, so those limits are unknown.
+   */
+  classDataMissing: boolean;
   pending: ChoicePrompt[];
   /** Choices already made — powers "change this pick" in the build editor. */
   resolvedChoices: Array<{ prompt: ChoicePrompt; selected: string[] }>;

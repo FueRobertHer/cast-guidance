@@ -67,11 +67,12 @@ describe('CharacterListPage getting-started card', () => {
     expect(precedes(create, card)).toBe(true);
   });
 
-  it('comes before an existing roster', async () => {
+  it('comes after an existing roster and New character', async () => {
     list.characters = [newCharacterDoc('a', 'Aria', 'v2.32.0')];
     renderRoster();
     const card = await screen.findByRole('region', { name: CHECKLIST });
-    expect(precedes(card, screen.getByRole('link', { name: /Aria/ }))).toBe(true);
+    expect(precedes(screen.getByRole('link', { name: /Aria/ }), card)).toBe(true);
+    expect(precedes(screen.getByRole('button', { name: 'New character' }), card)).toBe(true);
   });
 
   it('hands focus to the page heading when hidden', async () => {

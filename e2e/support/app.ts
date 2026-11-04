@@ -104,7 +104,7 @@ export function settingsValue(page: Page, label: string): Locator {
 export async function expectDataSettled(page: Page): Promise<void> {
   await page.goto('/settings');
   await expect(settingsValue(page, 'Download queue')).toHaveText('done');
-  await expect(settingsValue(page, 'Offline compendium')).toHaveText('ready ✓');
+  await expect(settingsValue(page, 'Offline compendium')).toHaveText('Ready');
 }
 
 /** The data banner's failure alert (a failed download or a failed install), with its Retry. */

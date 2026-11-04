@@ -1054,7 +1054,7 @@ export function collectClasses(col: Collector): void {
             id: `class:${classUid}:expertise:${ref.level}`,
             origin: featOrigin,
             kind: 'expertise',
-            label: `Expertise — 2 proficient skills (level ${ref.level})`,
+            label: `Expertise: 2 proficient skills (level ${ref.level})`,
             count: 2,
             options: expertiseOptions(col),
           },

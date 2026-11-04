@@ -1,11 +1,11 @@
 import { HeartCrack, HeartPlus } from 'lucide-react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
-import { rollDetail } from '@/dice/format';
 import type { RollResult } from '@/dice/types';
 import { announce } from '@/stores/announcer';
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 import { D20Icon } from './D20Icon';
+import { RollDetail } from './RollDetail';
 import { naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
 
 /**
@@ -160,7 +160,7 @@ export function RollToast() {
           {autoFail && flag('Fails', 'text-danger')}
         </span>
         <span className="block truncate text-dice-small text-ink-muted tabular-nums">
-          {rollDetail(visible)}
+          <RollDetail roll={visible} />
         </span>
         {/* What the character's conditions did to the roll, whole, since a
             cut line could hide why the total is what it is. */}

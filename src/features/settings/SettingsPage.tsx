@@ -318,7 +318,7 @@ export function Component() {
               : offline === undefined
                 ? '…'
                 : offlineReady
-                  ? 'ready ✓'
+                  ? 'Ready'
                   : `${offline.cached}/${offline.total} files`}
           </dd>
           <dt className="text-ink-muted">Game data size</dt>

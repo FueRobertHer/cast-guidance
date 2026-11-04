@@ -499,7 +499,7 @@ test.describe('the dice tray and the roll toast', () => {
       await dice.getByRole('button', { name: 'History' }).click();
       expect(await pastRightEdge(dice), 'History: past the sheet').toEqual([]);
       for (const control of [
-        dice.getByRole('button', { name: 'clear all' }),
+        dice.getByRole('button', { name: 'Clear all' }),
         dice.getByRole('button', { name: /^Remove d8 roll/ }),
       ]) {
         await control.scrollIntoViewIfNeeded();

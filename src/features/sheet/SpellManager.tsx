@@ -25,6 +25,7 @@ import {
   type SpellcastingBlock,
   type SpellcastingMode,
 } from '@/engine/types';
+import { signed } from '@/lib/signed';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import type { DocUpdater } from '@/stores/characterSession';
 import { badgeClass } from '@/ui/Badge';
@@ -315,7 +316,7 @@ function ClassSpells({
     // let the player pick which to spend instead of always the lowest (GAME-001).
     const picked = await askChoice({
       title: `Cast ${nameOf(spell)}`,
-      detail: 'Choose which slot or pool to spend — a higher level upcasts the spell.',
+      detail: 'Choose which slot or pool to spend. A higher level upcasts the spell.',
       options: castResourceOptions(options, {
         block,
         play: doc.play,
@@ -410,7 +411,7 @@ function ClassSpells({
           )}
         </h2>
         <span className="text-caption text-ink-muted tabular-nums">
-          DC {block.saveDc.value} · Atk +{block.attackMod.value}
+          Save DC {block.saveDc.value} · Attack {signed(block.attackMod.value)}
           {cantripMax !== undefined && (
             <>
               {' · cantrips '}
@@ -445,7 +446,7 @@ function ClassSpells({
           {overArcanum > 0
             ? `${overArcanum} over your Mystic Arcanum, one spell per spell level. `
             : ''}
-          That&rsquo;s allowed — the extra picks are kept, just flagging it.
+          That&rsquo;s allowed: the extra picks are kept.
         </p>
       )}
       {/* A sibling of the cue, not inside it, so the live region doesn't read the button. */}
@@ -640,7 +641,7 @@ function ClassSpells({
                           onClick={() => toggle(s, 'known')}
                           className={chipClass('outline')}
                         >
-                          {known ? 'known' : 'learn'}
+                          {known ? 'Known' : 'Learn'}
                         </button>
                         {lvl > 0 && (
                           <button
@@ -650,7 +651,7 @@ function ClassSpells({
                             onClick={() => toggle(s, 'prepared')}
                             className={chipClass('outline')}
                           >
-                            {prepared ? 'prepared' : 'prepare'}
+                            {prepared ? 'Prepared' : 'Prepare'}
                           </button>
                         )}
                         {allowCasting &&
