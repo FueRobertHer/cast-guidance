@@ -52,9 +52,6 @@ const packs = (over: Partial<TypePacksState> = {}): TypePacksState => ({
 
 const GUIDANCE: EntityRef = { name: 'Guidance', source: 'TST' };
 
-/** The slot tracker's own row is labelled L1, so one is the most there should be. */
-const expectNoSpellClaimsLevel1 = () => expect(screen.getAllByText('L1')).toHaveLength(1);
-
 /** A level-5 sorcerer who knows `known`, with slots to spend. */
 function renderCaster(known: EntityRef[], granted: unknown[] = []) {
   const doc = newCharacterDoc('s1', 'Sparks', 't');
@@ -120,7 +117,7 @@ describe('a known spell on the Play tab', () => {
     // The name still opens the rules sheet, which reports on the file.
     expect(screen.getByRole('button', { name: 'Guidance' })).toBeTruthy();
     // The bug itself: a cantrip with a level-1 label and a button that spends a slot.
-    expectNoSpellClaimsLevel1();
+    expect(screen.queryByText('L1')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cast Guidance' })).toBeNull();
   });
 

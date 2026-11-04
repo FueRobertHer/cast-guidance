@@ -757,24 +757,29 @@ export async function packsForType(type: string): Promise<PackId[]> {
   return ['essentials'];
 }
 
-/** Ensure every pack an entity type draws from. */
-export async function ensureTypePacks(type: string): Promise<void> {
+/** Ensure essentials, then the packs `listPacks` names, for a screen waiting on them. */
+async function ensureForScreen(listPacks: () => Promise<Iterable<PackId>>): Promise<void> {
   try {
     // Essentials first and alone: the dynamic pack lists are read out of the
     // indexes it carries, so the rest cannot be resolved until it is here.
     await ensurePack('essentials');
-    const packs = (await packsForType(type)).filter((p) => p !== 'essentials');
+    const packs = await listPacks();
     // Taken after essentials, so it sees what that just fetched, and shared by
     // the fan-out below: a spell screen ensures every spell pack there is, and
     // each of those used to scan the cache's keys for itself.
     const onDisk = await dataCacheRepo.cachedPaths(activeTag);
-    await Promise.all(packs.map((p) => ensurePack(p, onDisk)));
+    await Promise.all([...packs].map((p) => ensurePack(p, onDisk)));
   } finally {
-    // A page is waiting on this type, so what landed for it reaches the
-    // registry before the page hears the download is over, not up to a flush
-    // interval later. Failed or not: whatever did land is worth showing.
+    // What landed reaches the registry before the screen hears the download is
+    // over, not up to a flush interval later. Failed or not: whatever did land
+    // is worth showing.
     flushLanded();
   }
+}
+
+/** Ensure every pack an entity type draws from. */
+export function ensureTypePacks(type: string): Promise<void> {
+  return ensureForScreen(async () => (await packsForType(type)).filter((p) => p !== 'essentials'));
 }
 
 /**
@@ -783,10 +788,8 @@ export async function ensureTypePacks(type: string): Promise<void> {
  * it failed": this resolves once they are on disk and rejects with the reason
  * they are not.
  */
-export async function ensureCharacterPacks(needs: CharacterDataNeeds): Promise<void> {
-  try {
-    // First and alone, as in `ensureTypePacks`: the class packs are listed in it.
-    await ensurePack('essentials');
+export function ensureCharacterPacks(needs: CharacterDataNeeds): Promise<void> {
+  return ensureForScreen(async () => {
     const classPacks = (await allPackIds()).filter((p) => p.startsWith('class:'));
     const packs = new Set<PackId>();
     for (const name of needs.classes) {
@@ -800,12 +803,8 @@ export async function ensureCharacterPacks(needs: CharacterDataNeeds): Promise<v
       }
     }
     if (needs.items) packs.add('items-full');
-    const onDisk = await dataCacheRepo.cachedPaths(activeTag);
-    await Promise.all([...packs].map((pack) => ensurePack(pack, onDisk)));
-  } finally {
-    // A sheet is waiting on these, and what did land is worth showing.
-    flushLanded();
-  }
+    return packs;
+  });
 }
 
 /** Fetch one file again and overwrite what is cached, cache hit or not. */

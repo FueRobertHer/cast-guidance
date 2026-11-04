@@ -6,6 +6,8 @@ import type { EntityRegistry } from '@/data5e/normalize';
 import { getRegistry } from '@/data5e/registry';
 import { hasMissingData, missingCharacterData } from '@/engine/dataNeeds';
 import type { CharacterDoc } from '@/engine/types';
+import { isOnline } from '@/lib/useOnline';
+import { errorText } from '@/stores/notices';
 
 export interface CharacterDataState {
   /** `ready` when deriving now gives the numbers it will go on giving. */
@@ -73,9 +75,9 @@ export function useCharacterData(
         if (!alive) return;
         setAttempt({
           key,
-          error: e instanceof Error ? e.message : String(e),
+          error: errorText(e),
           // Read at the moment of failure, as `useTypePacks` does.
-          offline: typeof navigator !== 'undefined' && navigator.onLine === false,
+          offline: !isOnline(),
           exhausted: false,
         });
       });

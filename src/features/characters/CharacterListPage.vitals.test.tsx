@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// The roster's HP and AC come from the same derivation as the sheet, so a class
-// file that has not arrived gave them the same wrong numbers: a healthy-looking
-// line, on a d8. The row holds its placeholders until the file is here.
+// The roster's HP comes from the same derivation as the sheet, so a class file
+// that has not arrived gave it the same wrong number: a healthy-looking line, on
+// a d8. The row holds its placeholder until the file is here.
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -38,7 +38,7 @@ function renderRoster(doc: CharacterDoc, phase: 'working' | 'done' | 'error') {
   render(<RouterProvider router={router} />);
 }
 
-const acLine = () => screen.queryByText(/^AC \d+$/);
+const hpLine = () => screen.queryByText(/^\d+ \/ \d+ HP$/);
 
 afterEach(() => {
   cleanup();
@@ -49,22 +49,22 @@ afterEach(() => {
 describe('the roster row', () => {
   it('shows numbers once the class file is here, download finished or not', () => {
     renderRoster(hero('Warrior'), 'working');
-    expect(acLine()).not.toBeNull();
+    expect(hpLine()).not.toBeNull();
   });
 
   it('draws no numbers for a class file still on its way', () => {
     renderRoster(hero('Not Here Yet'), 'working');
     expect(screen.getByText('Aria')).toBeTruthy();
-    expect(acLine()).toBeNull();
+    expect(hpLine()).toBeNull();
   });
 
   it('draws no numbers when the download stopped short of the class file', () => {
     renderRoster(hero('Not Here Yet'), 'error');
-    expect(acLine()).toBeNull();
+    expect(hpLine()).toBeNull();
   });
 
   it('says what the sheet says once nothing more can arrive', () => {
     renderRoster(hero('Removed Homebrew'), 'done');
-    expect(acLine()).not.toBeNull();
+    expect(hpLine()).not.toBeNull();
   });
 });
