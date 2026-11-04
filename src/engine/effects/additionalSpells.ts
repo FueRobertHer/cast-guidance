@@ -24,11 +24,17 @@ const slugName = (s: string) =>
     .replaceAll(/[^a-z0-9]+/g, '-')
     .replaceAll(/^-|-$/g, '');
 
-function parseSpellRef(s: string): { name: string; source: string } {
-  // 5etools appends a cast-level hint like "hellish rebuke#2" or "guidance#c".
-  const [namePart, source] = s.split('|');
-  const name = (namePart ?? s).split('#')[0]?.trim() ?? s;
-  return { name, source: source ?? '' };
+/**
+ * Read one spell ref. 5etools appends a cast-level hint ("hellish rebuke#2",
+ * "guidance#c"), and in its own data the hint comes after the source:
+ * "thaumaturgy|xphb#c" is the XPHB Thaumaturgy. The hint is cut from every
+ * part, not just the name. Left on the source, it named a printing that does
+ * not exist ("xphb#c"), and every link to the spell led to a missing page.
+ * Cutting it per part also reads a hint written before the source.
+ */
+export function parseSpellRef(s: string): { name: string; source: string } {
+  const [name = '', source = ''] = s.split('|').map((part) => (part.split('#')[0] ?? '').trim());
+  return { name, source };
 }
 
 /** How many times a granted spell can be cast, and what refills it. */
