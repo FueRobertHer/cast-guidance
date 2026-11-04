@@ -1158,7 +1158,7 @@ export function Component() {
                           and a long name breaks, rather than pushing the total
                           out of the list's clipped edge. */}
                       <span className="flex min-w-0 flex-wrap items-center gap-x-2 wrap-anywhere">
-                        <ProfDot level={s.prof} />
+                        <ProfDot level={s.halfProf ? 'half' : s.prof} />
                         {name}
                         <span className="text-xs uppercase text-ink-muted">{s.ability}</span>
                         {pinned && <span className="text-overline text-guide uppercase">set</span>}
@@ -1173,6 +1173,7 @@ export function Component() {
                   <ProfPicker
                     value={s.prof}
                     base={s.profBase}
+                    half={s.halfProf}
                     sources={s.sources}
                     overridden={pinned}
                     onChange={(level) =>

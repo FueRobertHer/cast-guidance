@@ -148,6 +148,22 @@ export interface EffectOrigin {
   type: 'race' | 'background' | 'class' | 'subclass' | 'feat' | 'item' | 'custom' | 'curated';
 }
 
+/**
+ * A bonus worked out once ability scores and proficiency are known: a flat
+ * number; the proficiency bonus itself (`profBonus`, which a roll takes only
+ * once) or a bonus merely the same size (`equalToProfBonus`, which stacks with
+ * it); or an ability modifier. `abilityModMin1` is at least +1, for features
+ * that say "a minimum of +1"; `abilityModMin0` is at least +0, for features that
+ * say "you can", since nobody adds a negative modifier they can leave off.
+ */
+export type BonusAmount =
+  | number
+  | 'profBonus'
+  | 'equalToProfBonus'
+  | `abilityMod:${Ability}`
+  | `abilityModMin0:${Ability}`
+  | `abilityModMin1:${Ability}`;
+
 export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'abilityBonus'; ability: Ability; amount: number }
   | { kind: 'abilityMin'; ability: Ability; min: number }
@@ -161,10 +177,29 @@ export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'acFormula'; label: string; base: number; addAbilities: Ability[]; dexMax?: number }
   | { kind: 'acBonus'; amount: number }
   | { kind: 'hpPerLevel'; amount: number }
-  | { kind: 'initiativeBonus'; amount: number }
+  | { kind: 'initiativeBonus'; amount: BonusAmount }
   | { kind: 'speedBonus'; amount: number }
   | { kind: 'attackBonus'; scope: 'melee' | 'ranged' | 'all'; amount: number }
   | { kind: 'damageBonus'; scope: 'melee' | 'ranged' | 'all'; amount: number }
+  | {
+      /**
+       * Half the proficiency bonus on checks that do not already add it (Jack
+       * of All Trades, Remarkable Athlete). `abilities` limits it to checks of
+       * those abilities, every check when absent; `skillsOnly` limits it to
+       * skills the character lacks (the 2024 Jack of All Trades), so plain
+       * ability checks and initiative go without.
+       */
+      kind: 'halfProf';
+      round: 'down' | 'up';
+      abilities?: Ability[];
+      skillsOnly?: boolean;
+    }
+  | ({ kind: 'checkBonus'; amount: BonusAmount } & (
+      | { skills: string[] }
+      /** Every check of the ability: its skills, the plain check, and initiative for DEX. */
+      | { ability: Ability }
+    ))
+  | { kind: 'passivePerceptionBonus'; amount: number }
   | { kind: 'sense'; sense: string; range: number }
   | { kind: 'resist'; damageType: string }
   | {
@@ -383,6 +418,11 @@ export interface DerivedSheet {
   abilities: Record<Ability, DerivedAbility>;
   profBonus: DerivedValue;
   saves: Record<Ability, { total: DerivedValue; prof: boolean }>;
+  /**
+   * Plain ability checks, no skill: the modifier plus whatever adds to every
+   * check of it. `halfProf` when half proficiency is part of it.
+   */
+  checks: Record<Ability, { total: DerivedValue; halfProf: boolean }>;
   skills: Record<
     string,
     {
@@ -391,6 +431,8 @@ export interface DerivedSheet {
       prof: ProfLevel;
       /** What the build itself grants, which is what clearing an override restores. */
       profBase: ProfLevel;
+      /** Half proficiency is part of the total (never with `prof` above 0). */
+      halfProf: boolean;
       /**
        * Every origin in the build that grants it, proficiency or expertise,
        * once each, in collection order.

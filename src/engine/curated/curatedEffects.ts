@@ -16,6 +16,15 @@ function classLevel(col: Collector, className: string): number {
   return entry?.levels ?? 0;
 }
 
+/**
+ * Whether a class or subclass feature comes from the printing in `source`. Its
+ * origin uid is the class's or subclass's (`bard|xphb`, `champion|phb`), and a
+ * 2014 subclass kept under a 2024 class still carries its own 2014 source.
+ */
+function printedIn(origin: EffectOrigin, source: string): boolean {
+  return origin.uid.endsWith(`|${source}`);
+}
+
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
   col.add({
@@ -47,6 +56,13 @@ export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
   'alert|phb': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 5, origin });
+  },
+  'alert|xphb': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
+  },
+  // The +5 reaches passive Investigation too, which the sheet does not show.
+  'observant|phb': (col, origin) => {
+    col.add({ kind: 'passivePerceptionBonus', amount: 5, origin });
   },
   'tough|phb': (col, origin) => {
     col.add({ kind: 'hpPerLevel', amount: 2, origin });
@@ -405,6 +421,78 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // Half proficiency where it is not already added. The 2014 wording reaches
+  // every check, plain ability checks and initiative included; the 2024 one
+  // reaches only skills the bard lacks.
+  'jack of all trades|bard': (col, origin) => {
+    col.add(
+      printedIn(origin, 'xphb')
+        ? { kind: 'halfProf', round: 'down', skillsOnly: true, origin }
+        : { kind: 'halfProf', round: 'down', origin },
+    );
+  },
+  // The 2024 Divine Order and Primal Order branches: WIS on two INT skills.
+  'thaumaturge|cleric': (col, origin) => {
+    col.add({
+      kind: 'checkBonus',
+      skills: ['Arcana', 'Religion'],
+      amount: 'abilityModMin1:wis',
+      origin,
+    });
+  },
+  'magician|druid': (col, origin) => {
+    col.add({
+      kind: 'checkBonus',
+      skills: ['Arcana', 'Nature'],
+      amount: 'abilityModMin1:wis',
+      origin,
+    });
+  },
+
+  // --- Subclass features (keyed by the subclass's full name) ---------------
+  // 2014 only: half proficiency rounded up on STR, DEX and CON checks. The
+  // 2024 feature of the same name grants advantage, which is no sheet number.
+  'remarkable athlete|champion': (col, origin) => {
+    if (printedIn(origin, 'xphb')) return;
+    col.add({ kind: 'halfProf', round: 'up', abilities: ['str', 'dex', 'con'], origin });
+  },
+  // These four say "you can", so a negative modifier stays off the roll.
+  'dread ambusher|gloom stalker': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:wis', origin });
+    // A curated entry turns off the prose scan, which is what found the 2024
+    // Dreadful Strike's uses ("equal to your Wisdom modifier"); keep them.
+    if (printedIn(origin, 'xphb')) {
+      col.add({
+        kind: 'resource',
+        key: 'dread-ambusher',
+        label: 'Dread Ambusher',
+        max: 'abilityMod:wis',
+        resetOn: 'long',
+        origin,
+      });
+    }
+  },
+  'rakish audacity|swashbuckler': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:cha', origin });
+  },
+  'tactical wit|war magic': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:int', origin });
+  },
+  'temporal awareness|chronurgy magic': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:int', origin });
+  },
+  // "A bonus equal to your proficiency bonus", not the bonus itself, so it sits
+  // beside Alert or Hare-Trigger, as it does for an ally who has either. Allies
+  // within 10 feet get it too; the sheet holds only the paladin's own.
+  'aura of the sentinel|oath of the watchers': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'equalToProfBonus', origin });
+  },
+  'otherworldly glamour|fey wanderer': (col, origin) => {
+    col.add({ kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis', origin });
+  },
+  'elegant courtier|samurai': (col, origin) => {
+    col.add({ kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis', origin });
+  },
 
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
   // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
@@ -419,6 +507,13 @@ export const CURATED: Record<string, CuratedFn> = {
       roll: '2d6',
       origin,
     });
+  },
+  'trait:hare-trigger': (col, origin) => {
+    col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });
+  },
+  // Ibis-headed Aven (Plane Shift: Amonkhet).
+  "trait:kefnet's blessing": (col, origin) => {
+    col.add({ kind: 'halfProf', round: 'down', abilities: ['int'], origin });
   },
 };
 

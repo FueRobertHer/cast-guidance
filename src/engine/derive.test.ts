@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../tests-fixtures/testWorld';
 import { deriveSheet } from './derive';
-import { type CharacterDoc, newCharacterDoc } from './types';
+import { type CharacterDoc, type EffectInput, type EffectOrigin, newCharacterDoc } from './types';
 
 const ctx = makeTestContext();
 
@@ -185,6 +185,79 @@ describe('deriveSheet — pending choices and prompts', () => {
     // Alert (+5 initiative) applies once: dex mod 3 + 5 = 8, not 13.
     expect(sheet.initiative.value).toBe(8);
     expect(sheet.warnings).toContainEqual(expect.stringMatching(/not a repeatable feat/i));
+  });
+});
+
+describe('deriveSheet: what adds to initiative and plain checks', () => {
+  // The warrior: DEX +3, WIS +1, proficiency +3, Alert's +5 to initiative.
+  const jack: EffectOrigin = { label: 'Jack of All Trades', uid: 'bard|phb', type: 'class' };
+  const derive = (customEffects: CharacterDoc['customEffects']) =>
+    deriveSheet({ ...warriorDoc(), customEffects }, ctx);
+
+  it('gives initiative and plain checks the 2014 half proficiency', () => {
+    const sheet = derive([{ origin: jack, kind: 'halfProf', round: 'down' }]);
+    expect(sheet.initiative.value).toBe(9); // 3 + 5 + half of 3
+    expect(sheet.checks.wis.total.value).toBe(2); // 1 + half of 3
+    expect(sheet.checks.wis.halfProf).toBe(true);
+  });
+
+  it('keeps the 2024 half proficiency to skills', () => {
+    const sheet = derive([{ origin: jack, kind: 'halfProf', round: 'down', skillsOnly: true }]);
+    expect(sheet.initiative.value).toBe(8);
+    expect(sheet.checks.wis.total.value).toBe(1);
+    expect(sheet.skills.Insight?.total.value).toBe(2);
+  });
+
+  it('adds the proficiency bonus once, and no half proficiency beside it', () => {
+    const alert: EffectOrigin = { label: 'Alert (2024)', uid: 'alert|xphb', type: 'feat' };
+    const hare: EffectOrigin = { label: 'Harengon', uid: 'harengon|mpmm', type: 'race' };
+    const sheet = derive([
+      { origin: jack, kind: 'halfProf', round: 'down' },
+      { origin: alert, kind: 'initiativeBonus', amount: 'profBonus' },
+      { origin: hare, kind: 'initiativeBonus', amount: 'profBonus' },
+    ]);
+    expect(sheet.initiative.value).toBe(11); // 3 + 5 + 3
+    expect(sheet.initiative.parts.map((p) => p.label)).toEqual([
+      'DEX modifier',
+      'Alert',
+      'Alert (2024)',
+    ]);
+  });
+
+  it('adds a bonus that only equals proficiency beside the real one, and beside half', () => {
+    const aura: EffectOrigin = { label: 'Aura', uid: 'watchers|tce', type: 'subclass' };
+    const alert: EffectOrigin = { label: 'Alert (2024)', uid: 'alert|xphb', type: 'feat' };
+    const half: EffectInput = { origin: jack, kind: 'halfProf', round: 'down' };
+    const sized: EffectInput = {
+      origin: aura,
+      kind: 'initiativeBonus',
+      amount: 'equalToProfBonus',
+    };
+    expect(derive([half, sized]).initiative.value).toBe(12); // 3 + 5 + 3 + half of 3
+    const real: EffectInput = { origin: alert, kind: 'initiativeBonus', amount: 'profBonus' };
+    expect(derive([half, sized, real]).initiative.value).toBe(14); // 3 + 5 + 3 + 3, no half
+  });
+
+  describe('an ability-modifier bonus to initiative', () => {
+    const ambusher: EffectOrigin = { label: 'Dread Ambusher', uid: 'gs|xge', type: 'subclass' };
+    const withWis = (wis: number) => {
+      const doc = warriorDoc();
+      doc.abilities.base.wis = wis;
+      doc.customEffects = [
+        { origin: ambusher, kind: 'initiativeBonus', amount: 'abilityModMin0:wis' },
+      ];
+      return deriveSheet(doc, ctx);
+    };
+
+    it('comes from the final score', () => {
+      // WIS 11 alone is +0; the race's +1 makes it 12.
+      expect(withWis(11).initiative.value).toBe(9); // 3 + 5 + 1
+    });
+
+    it('stays off the roll when the feature is optional and the modifier negative', () => {
+      expect(withWis(8).abilities.wis.mod).toBe(-1);
+      expect(withWis(8).initiative.value).toBe(8); // 3 + 5 + 0
+    });
   });
 });
 

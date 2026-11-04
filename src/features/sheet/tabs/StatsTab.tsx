@@ -2,7 +2,7 @@ import { useOutletContext } from 'react-router';
 import { type D20Effects, d20Effects } from '@/engine/conditions';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
-import { BreakdownSheet } from '@/ui/BreakdownSheet';
+import { BreakdownParts, BreakdownSheet } from '@/ui/BreakdownSheet';
 import { D20Icon } from '@/ui/D20Icon';
 import { ProfDot } from '@/ui/ProfDot';
 import { listClass } from '@/ui/surfaces';
@@ -82,32 +82,48 @@ export function Component() {
       <p className="flex gap-3 rounded-control bg-surface-raised p-3 text-[0.875rem] leading-5">
         <D20Icon size={18} className="mt-px shrink-0 text-ink-muted" />
         <span>
-          Tap any modifier to roll it. The Dis, Normal and Adv switch applies to every roll.
+          Tap any number to roll it. The Dis, Normal and Adv switch applies to every roll.
         </span>
       </p>
-      {/* Abilities, modifier first: tap the modifier to roll a check, the score
-          pill under it for its breakdown; any cue for checks over them. */}
+      {/* Abilities, check bonus first: tap it to roll a check, the score pill
+          under it for its breakdown; any cue for checks over them. The bonus is
+          the modifier unless something adds to every check of the ability: half
+          proficiency (2014 Jack of All Trades) puts its mark by the name, and
+          the pill's sheet then shows the check's math too. */}
       <div className="flex flex-col gap-2">
         {checkCue}
         <section className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {ABILITIES.map((a) => {
             const ability = sheet.abilities[a];
+            const check = sheet.checks[a];
             return (
               <div
                 key={a}
                 className={`flex flex-col items-center rounded-card px-1 pt-3 pb-2 ${TILE}`}
               >
-                <span className="text-ink-muted text-overline uppercase">{a}</span>
+                {/* The mark stays outside the uppercase label, so its words
+                    are not shouted, and in ink as on the skill rows. With large
+                    text in a narrow tile it wraps above the label rather than
+                    pushing the pair out of the tile. */}
+                <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5">
+                  {check.halfProf && <ProfDot level="half" />}
+                  <span className="text-ink-muted text-overline uppercase">{a}</span>
+                </span>
                 <button
                   type="button"
                   onClick={() =>
-                    rollTest(`${a.toUpperCase()} check`, ability.mod, 'check', checkEffects(a))
+                    rollTest(
+                      `${a.toUpperCase()} check`,
+                      check.total.value,
+                      'check',
+                      checkEffects(a),
+                    )
                   }
-                  aria-label={`Roll ${a.toUpperCase()} check (${fmt(ability.mod)})`}
+                  aria-label={`Roll ${a.toUpperCase()} check (${fmt(check.total.value)})`}
                   className={`min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
                   title={`Roll ${a.toUpperCase()} check`}
                 >
-                  {fmt(ability.mod)}
+                  {fmt(check.total.value)}
                 </button>
                 <BreakdownSheet
                   title={`${a.toUpperCase()} score`}
@@ -131,7 +147,17 @@ export function Component() {
                       </span>
                     </button>
                   }
-                />
+                >
+                  {check.total.parts.length > 1 ? (
+                    <div className="flex flex-col gap-1">
+                      <p className="flex justify-between gap-3 font-semibold text-body">
+                        <span>{a.toUpperCase()} check</span>
+                        <span className="tabular-nums">{fmt(check.total.value)}</span>
+                      </p>
+                      <BreakdownParts parts={check.total.parts} />
+                    </div>
+                  ) : undefined}
+                </BreakdownSheet>
               </div>
             );
           })}
@@ -187,7 +213,7 @@ export function Component() {
               className={`flex min-h-tap items-center gap-3 pr-3 pl-4 text-left text-ink ${ROLLS}`}
             >
               <span className="flex min-w-0 flex-1 items-center gap-3">
-                <ProfDot level={s.prof} />
+                <ProfDot level={s.halfProf ? 'half' : s.prof} />
                 {name}
                 <span className="font-semibold text-[0.75rem] text-ink-muted uppercase leading-4 tracking-[0.04em]">
                   {s.ability}
