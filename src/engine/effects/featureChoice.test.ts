@@ -64,6 +64,15 @@ describe('2024 Cleric: Blessed Strikes and Divine Order', () => {
     expect(card).toMatchObject({ level: 7, origin: { type: 'class', uid: 'cleric|xphb' } });
   });
 
+  it('adds the Thaumaturge’s WIS, at least +1, to Arcana and Religion checks', () => {
+    // WIS 10: the +0 modifier rises to the stated minimum.
+    const sheet = derive(pickOneDoc(CLERIC, 1, { choices: { [DIVINE_ORDER]: ['thaumaturge'] } }));
+    const bonus = { label: 'Thaumaturge', amount: 1 };
+    expect(sheet.skills.Arcana?.total.parts).toContainEqual(bonus);
+    expect(sheet.skills.Religion?.total.parts).toContainEqual(bonus);
+    expect(sheet.skills.Nature?.total.parts).not.toContainEqual(bonus);
+  });
+
   it('keeps a save from before the pick existed open, losing nothing else', () => {
     // A level 7 Cleric saved under v2.32.0 had no Blessed Strikes key at all.
     const before = pickOneDoc(CLERIC, 7, {

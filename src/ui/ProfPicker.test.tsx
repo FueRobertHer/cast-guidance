@@ -41,6 +41,22 @@ describe('ProfPicker', () => {
     expect(screen.getByText('Nothing in your build grants this.')).toBeTruthy();
   });
 
+  it('says so when half proficiency is all the build grants', () => {
+    render(
+      <ProfPicker
+        value={0}
+        base={0}
+        half
+        sources={[]}
+        overridden={false}
+        onChange={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByText('Half proficiency only: nothing in your build grants the full bonus.'),
+    ).toBeTruthy();
+  });
+
   it('names the sources a cleared pin goes back to', () => {
     render(
       <ProfPicker value={2} base={1} sources={[ACOLYTE]} overridden onChange={() => undefined} />,

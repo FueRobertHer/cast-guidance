@@ -100,3 +100,73 @@ describe('emitCuratedEffects', () => {
     expect(typeof pool?.max === 'number' && pool.max > 0).toBe(true);
   });
 });
+
+describe('features that add to checks and initiative', () => {
+  const printing = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
+  const emit = (key: string, uid = 'x') => {
+    const c = col();
+    expect(emitCuratedEffects(c, key, printing(uid))).toBe(true);
+    return c.effects.map(({ origin: _, ...e }) => e);
+  };
+
+  it('reads Jack of All Trades by printing: every check in 2014, skills only in 2024', () => {
+    expect(emit('jack of all trades|bard', 'bard|phb')).toEqual([
+      { kind: 'halfProf', round: 'down' },
+    ]);
+    expect(emit('jack of all trades|bard', 'bard|xphb')).toEqual([
+      { kind: 'halfProf', round: 'down', skillsOnly: true },
+    ]);
+  });
+
+  it('gives Remarkable Athlete half proficiency only in its 2014 printing', () => {
+    expect(emit('remarkable athlete|champion', 'champion|phb')).toEqual([
+      { kind: 'halfProf', round: 'up', abilities: ['str', 'dex', 'con'] },
+    ]);
+    // The 2024 feature grants advantage instead, and its prose holds nothing
+    // the scanner would have found.
+    expect(emit('remarkable athlete|champion', 'champion|xphb')).toEqual([]);
+  });
+
+  it('keeps the 2024 Dread Ambusher uses the prose scan used to find', () => {
+    expect(emit('dread ambusher|gloom stalker', 'gloom stalker|xge')).toEqual([
+      { kind: 'initiativeBonus', amount: 'abilityModMin0:wis' },
+    ]);
+    expect(emit('dread ambusher|gloom stalker', 'gloom stalker|xphb')).toContainEqual({
+      kind: 'resource',
+      key: 'dread-ambusher',
+      label: 'Dread Ambusher',
+      max: 'abilityMod:wis',
+      resetOn: 'long',
+    });
+  });
+
+  it.each([
+    ['alert|xphb', 'profBonus'],
+    ['trait:hare-trigger', 'profBonus'],
+    ['aura of the sentinel|oath of the watchers', 'equalToProfBonus'],
+    ['rakish audacity|swashbuckler', 'abilityModMin0:cha'],
+    ['tactical wit|war magic', 'abilityModMin0:int'],
+    ['temporal awareness|chronurgy magic', 'abilityModMin0:int'],
+  ])('%s adds %s to initiative', (key, amount) => {
+    expect(emit(key)).toEqual([{ kind: 'initiativeBonus', amount }]);
+  });
+
+  it('adds to the checks each feature names', () => {
+    expect(emit('thaumaturge|cleric')).toEqual([
+      { kind: 'checkBonus', skills: ['Arcana', 'Religion'], amount: 'abilityModMin1:wis' },
+    ]);
+    expect(emit('magician|druid')).toEqual([
+      { kind: 'checkBonus', skills: ['Arcana', 'Nature'], amount: 'abilityModMin1:wis' },
+    ]);
+    expect(emit('otherworldly glamour|fey wanderer')).toEqual([
+      { kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis' },
+    ]);
+    expect(emit('elegant courtier|samurai')).toEqual([
+      { kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis' },
+    ]);
+    expect(emit("trait:kefnet's blessing")).toEqual([
+      { kind: 'halfProf', round: 'down', abilities: ['int'] },
+    ]);
+    expect(emit('observant|phb')).toEqual([{ kind: 'passivePerceptionBonus', amount: 5 }]);
+  });
+});

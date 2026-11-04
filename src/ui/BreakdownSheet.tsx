@@ -15,6 +15,30 @@ export interface BreakdownSheetProps {
   children?: ReactNode;
 }
 
+/** The labeled amounts behind a derived number. `children` adds rows to the same list. */
+export function BreakdownParts({
+  parts,
+  children,
+}: {
+  parts: DerivedValue['parts'];
+  children?: ReactNode;
+}) {
+  return (
+    <dl className="flex flex-col gap-1 text-body">
+      {parts.map((p, i) => (
+        <div key={`${p.label}-${String(i)}`} className="flex justify-between gap-3">
+          <dt className="text-ink-muted">{p.label}</dt>
+          <dd className="font-semibold tabular-nums">
+            {p.amount >= 0 ? '+' : ''}
+            {p.amount}
+          </dd>
+        </div>
+      ))}
+      {children}
+    </dl>
+  );
+}
+
 /**
  * The trigger until the player asks how a number was reached, then the sheet.
  * Rendered once per derived value on the Play and Stats tabs, so the unopened
@@ -53,23 +77,14 @@ function BreakdownSheetContent({
             <span className="min-w-0 font-display text-title-sheet">{title}</span>
             <span className="shrink-0 text-stat tabular-nums">{value.value}</span>
           </Sheet.Title>
-          <dl className="flex flex-col gap-1 text-body">
-            {value.parts.map((p, i) => (
-              <div key={`${p.label}-${String(i)}`} className="flex justify-between gap-3">
-                <dt className="text-ink-muted">{p.label}</dt>
-                <dd className="font-semibold tabular-nums">
-                  {p.amount >= 0 ? '+' : ''}
-                  {p.amount}
-                </dd>
-              </div>
-            ))}
+          <BreakdownParts parts={value.parts}>
             {value.overridden && (
               <div className="mt-1 flex justify-between gap-3 border-line border-t pt-2 text-guide">
                 <dt>Manual override (computed: {value.base})</dt>
                 <dd className="font-semibold tabular-nums">= {value.value}</dd>
               </div>
             )}
-          </dl>
+          </BreakdownParts>
           {children !== undefined && (
             <div className="mt-3 border-line border-t pt-3">{children}</div>
           )}
