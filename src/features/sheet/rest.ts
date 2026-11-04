@@ -4,9 +4,9 @@
  * Kept out of the React tab so the rules are unit-testable in isolation.
  *
  * Recovery is edition-agnostic where 2014 and 2024 agree (they do for the state
- * modeled here): a long rest restores all HP, spent spell/pact slots, per-rest
- * resources, death saves, and removes one exhaustion level; a short rest restores
- * short-rest resources and Warlock pact slots. Hit-dice recovery follows the rule
+ * modeled here): a long rest restores all HP, spent spell/pact slots, Mystic
+ * Arcanum, per-rest resources, death saves, and removes one exhaustion level; a
+ * short rest restores short-rest resources and Warlock pact slots, not arcana. Hit-dice recovery follows the rule
  * common to both editions — regain up to half your TOTAL Hit Dice (minimum one).
  *
  * Not modeled here (left to the player, by design): spending Hit Dice to heal on
@@ -60,6 +60,7 @@ export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition)
   if (hpHealed > 0) restored.push(`+${hpHealed} HP`);
   if (play.slotsSpent.some((n) => n > 0)) restored.push('spell slots');
   if (play.pactSlotsSpent > 0) restored.push('pact slots');
+  if ((play.arcanumUsed?.length ?? 0) > 0) restored.push('Mystic Arcanum');
   if (play.resources.some((r) => r.used > 0)) restored.push('resources');
   if (play.deathSaves.success > 0 || play.deathSaves.fail > 0) restored.push('death saves');
   if (exhaustionLifted) restored.push('1 exhaustion level');
@@ -68,6 +69,8 @@ export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition)
   play.tempHp = 0;
   play.slotsSpent = play.slotsSpent.map(() => 0);
   play.pactSlotsSpent = 0;
+  // Absent rather than empty, as `setArcanumUsed` leaves it.
+  delete play.arcanumUsed;
   play.resources = [];
   play.deathSaves = { success: 0, fail: 0 };
 

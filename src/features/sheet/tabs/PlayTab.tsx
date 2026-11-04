@@ -30,6 +30,7 @@ import {
   castResourceLabel,
   castSpell,
   defaultCastResource,
+  setArcanumUsed,
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -162,13 +163,15 @@ export function Component() {
   // only for as long as the tab is open: a pick is about this cast, not a
   // setting.
   const [castChoice, setCastChoice] = useState<Record<string, string>>({});
-  // Anything that moves a slot, a pact slot or a pool drops every standing pick.
-  // Suppressing an unavailable pick is not enough on its own: the id would sit
-  // there and take effect again the moment the option came back, so a choice
-  // made before a long rest would silently upcast the first cast after it.
+  // Anything that moves a slot, a pact slot, an arcanum or a pool drops every
+  // standing pick. Suppressing an unavailable pick is not enough on its own: the
+  // id would sit there and take effect again the moment the option came back,
+  // so a choice made before a long rest would silently upcast the first cast
+  // after it.
   const spendState = JSON.stringify([
     doc?.play.slotsSpent,
     doc?.play.pactSlotsSpent,
+    doc?.play.arcanumUsed,
     doc?.play.resources,
   ]);
   const lastSpendState = useRef(spendState);
@@ -1373,6 +1376,29 @@ export function Component() {
                 label={(slot) => `Pact slot ${slot}`}
                 tone="arcane"
               />
+            </div>
+          )}
+          {/* One use per arcanum level, back on a long rest; a tap marks one
+              used or regained by hand, as a slot's pip does. */}
+          {sc.mysticArcanum !== undefined && sc.mysticArcanum.length > 0 && (
+            <div className="flex flex-wrap items-center">
+              <span className="mr-1.5 text-label text-ink-muted">Mystic Arcanum</span>
+              {sc.mysticArcanum.map((level) => (
+                <span key={`arcanum-${String(level)}`} className="flex items-center">
+                  <span className="text-label text-ink-muted">L{level}</span>
+                  <Pips
+                    total={1}
+                    spent={play.arcanumUsed?.includes(level) === true ? 1 : 0}
+                    onChange={(next) =>
+                      update((d) => {
+                        setArcanumUsed(d.play, level, next > 0);
+                      })
+                    }
+                    label={() => `Level ${level} arcanum`}
+                    tone="arcane"
+                  />
+                </span>
+              ))}
             </div>
           )}
           {scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0)) && (

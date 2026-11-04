@@ -372,6 +372,12 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
   }
   if (p.pactSlotsSpent !== n.pactSlotsSpent)
     push('slots', `Pact slots spent ${p.pactSlotsSpent} → ${n.pactSlotsSpent}`);
+  const wasArcanum = p.arcanumUsed ?? [];
+  const nowArcanum = n.arcanumUsed ?? [];
+  for (const level of [...new Set([...wasArcanum, ...nowArcanum])].sort((a, b) => a - b)) {
+    if (wasArcanum.includes(level) !== nowArcanum.includes(level))
+      push('slots', `Level ${level} arcanum ${nowArcanum.includes(level) ? 'used' : 'regained'}`);
+  }
 
   for (const die of new Set([...Object.keys(p.hitDiceSpent), ...Object.keys(n.hitDiceSpent)])) {
     const was = p.hitDiceSpent[die] ?? 0;

@@ -8,7 +8,7 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { calcSpellcasting, learnableSpellLevels, ownSlotTable } from './slots';
+import { calcSpellcasting, learnableSpellLevels, mysticArcanumLevels, ownSlotTable } from './slots';
 
 // Field shapes mirror the pinned 5etools data: a class's slot table sits in
 // `classTableGroups`, a subclass caster's in `subclassTableGroups`, and the
@@ -224,6 +224,17 @@ describe('learnable spell levels', () => {
       unlocksAt: [1, 3, 5, 7, 9, 11, 13, 15, 17],
     });
     expect(learnableSpellLevels(warlock, 'pact', 10)?.upTo).toBe(5);
+  });
+
+  it('gives a warlock one Mystic Arcanum level at each of 11, 13, 15 and 17', () => {
+    expect(mysticArcanumLevels(10)).toEqual([]);
+    expect(mysticArcanumLevels(11)).toEqual([6]);
+    expect(mysticArcanumLevels(16)).toEqual([6, 7, 8]);
+    expect(mysticArcanumLevels(20)).toEqual([6, 7, 8, 9]);
+    // Set, even empty, on every pact caster, and on no other.
+    expect(blocks(entry('Warlock', 13))[0]?.mysticArcanum).toEqual([6, 7]);
+    expect(blocks(entry('Warlock', 2))[0]?.mysticArcanum).toEqual([]);
+    expect(blocks(entry('Wizard', 13))[0]?.mysticArcanum).toBeUndefined();
   });
 
   it('holds nothing back when the data cannot say', () => {

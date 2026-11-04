@@ -80,6 +80,17 @@ function slotsLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined 
   return undefined;
 }
 
+/** The lowest Mystic Arcanum level marked used or regained, as a label. */
+function arcanumLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
+  const p = prev.play.arcanumUsed ?? [];
+  const n = next.play.arcanumUsed ?? [];
+  const moved = [...new Set([...p, ...n])]
+    .sort((a, b) => a - b)
+    .find((level) => p.includes(level) !== n.includes(level));
+  if (moved === undefined) return undefined;
+  return `${n.includes(moved) ? 'Used' : 'Regained'} the level ${moved} arcanum`;
+}
+
 function hitDiceLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
   const p = prev.play.hitDiceSpent;
   const n = next.play.hitDiceSpent;
@@ -135,6 +146,8 @@ function playLabels(prev: CharacterDoc, next: CharacterDoc): string[] {
   if (slots !== undefined) out.push(slots);
   if (p.pactSlotsSpent !== n.pactSlotsSpent)
     out.push(n.pactSlotsSpent > p.pactSlotsSpent ? 'Spent a pact slot' : 'Regained a pact slot');
+  const arcanum = arcanumLabel(prev, next);
+  if (arcanum !== undefined) out.push(arcanum);
 
   const dice = hitDiceLabel(prev, next);
   if (dice !== undefined) out.push(dice);

@@ -71,6 +71,11 @@ export interface PlayState {
   slotsSpent: number[];
   pactSlotsSpent: number;
   /**
+   * Mystic Arcanum spell levels (6 to 9) cast since the last long rest, in
+   * order. Absent rather than empty when none is, so older docs read the same.
+   */
+  arcanumUsed?: number[];
+  /**
    * Active conditions. `ignored` is the player switching a condition's effects
    * off (a ruling at the table): it stays listed, and nothing applies.
    */
@@ -348,6 +353,13 @@ export interface SpellcastingBlock {
   /** index 0 = level-1 slots */
   slots: number[];
   pactSlots?: { count: number; level: number };
+  /**
+   * Mystic Arcanum, on a pact caster only: the spell levels (6 to 9) it has an
+   * arcanum at by its own level, each cast once per long rest without a slot.
+   * Present, empty before the first, on every pact caster: its spells of 6th
+   * level and up are arcana in both editions, never spells known or prepared.
+   */
+  mysticArcanum?: number[];
   cantripsKnown?: number;
   preparedMax?: number;
   /**

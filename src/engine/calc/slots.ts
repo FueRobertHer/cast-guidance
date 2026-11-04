@@ -83,6 +83,16 @@ export const PACT_SLOTS: Array<[number, number]> = [
 /** Mystic Arcanum: the warlock level that opens each of spell levels 6-9, in both editions. */
 export const ARCANUM_LEVELS = [11, 13, 15, 17];
 
+/** The lowest spell level a pact caster learns as an arcanum rather than a spell. */
+export const ARCANUM_FIRST_SPELL_LEVEL = 6;
+
+/** See `SpellcastingBlock.mysticArcanum`. */
+export function mysticArcanumLevels(classLevel: number): number[] {
+  return ARCANUM_LEVELS.flatMap((at, i) =>
+    at <= classLevel ? [ARCANUM_FIRST_SPELL_LEVEL + i] : [],
+  );
+}
+
 const NO_SLOTS = [0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 /**
@@ -289,9 +299,11 @@ export function calcSpellcasting(
     // slots; pact magic is tracked on top for warlocks.
     const slots: number[] = [...sharedSlots];
     let pactSlots: { count: number; level: number } | undefined;
+    let mysticArcanum: number[] | undefined;
     if (progression === 'pact') {
       const row = PACT_SLOTS[Math.min(entry.levels, 20) - 1];
       if (row !== undefined) pactSlots = { count: row[0], level: row[1] };
+      mysticArcanum = mysticArcanumLevels(entry.levels);
     }
 
     const cantrips = Array.isArray(cs.cantripProgression)
@@ -349,6 +361,7 @@ export function calcSpellcasting(
       },
       slots,
       pactSlots,
+      ...(mysticArcanum !== undefined ? { mysticArcanum } : {}),
       cantripsKnown: cantrips,
       preparedMax,
       spellsKnownMax,

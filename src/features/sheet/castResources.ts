@@ -20,14 +20,40 @@ export interface CastSpellInfo {
 /**
  * What a cast spends. `pool` is a non-slot point pool converted into a slot
  * (sorcery points are the shipped case), and carries the price so the spend and
- * the label both read it from one place.
+ * the label both read it from one place. `arcanum` is a warlock's Mystic
+ * Arcanum at the spell's own level: no slot, once per long rest.
  */
 export type CastResource =
   | { kind: 'cantrip'; level: 0 }
+  | { kind: 'arcanum'; level: number }
   | { kind: 'pact'; level: number }
   | { kind: 'slot'; level: number }
   | { kind: 'pool'; level: number; key: string; label: string; cost: number }
   | { kind: 'none'; level: number };
+
+/**
+ * Is the Mystic Arcanum at this spell level the class's, and still unused
+ * since the last long rest? One use per level, the rule as written: a second
+ * pick at the same level (flagged, allowed) shares it.
+ */
+function arcanumReady(block: SpellcastingBlock, play: PlayState, spellLevel: number): boolean {
+  return (
+    block.mysticArcanum?.includes(spellLevel) === true &&
+    play.arcanumUsed?.includes(spellLevel) !== true
+  );
+}
+
+/**
+ * Mark the Mystic Arcanum at `level` used or regained. The list stays sorted
+ * and goes away when empty, so a character that never casts one, or has just
+ * rested, saves exactly as it did before arcana were tracked.
+ */
+export function setArcanumUsed(play: PlayState, level: number, used: boolean): void {
+  const others = (play.arcanumUsed ?? []).filter((l) => l !== level);
+  const next = used ? [...others, level].sort((a, b) => a - b) : others;
+  if (next.length > 0) play.arcanumUsed = next;
+  else delete play.arcanumUsed;
+}
 
 interface SlotConversion {
   /** Index 0 = what a level-1 slot costs. */
@@ -121,9 +147,11 @@ export function castingEconomy(
 
 /**
  * The lowest slot (pact first) a cast would reach for on its own, or `none`
- * when every slot is gone. This is the automatic pick alone: it never reaches
- * into a convertible pool, so it is not the whole of what an unchosen cast
- * spends: see `defaultCastResource`, which is what the UI resolves against.
+ * when every slot is gone. An unused Mystic Arcanum comes before any slot,
+ * since it costs nothing a slot could pay for. This is the automatic pick
+ * alone: it never reaches into a convertible pool, so it is not the whole of
+ * what an unchosen cast spends: see `defaultCastResource`, which is what the
+ * UI resolves against.
  */
 export function nextCastResource(
   block: SpellcastingBlock,
@@ -131,6 +159,7 @@ export function nextCastResource(
   spellLevel: number,
 ): CastResource {
   if (spellLevel === 0) return { kind: 'cantrip', level: 0 };
+  if (arcanumReady(block, play, spellLevel)) return { kind: 'arcanum', level: spellLevel };
   if (
     block.pactSlots !== undefined &&
     block.pactSlots.level >= spellLevel &&
@@ -181,8 +210,9 @@ export function poolCastResources(
 /**
  * Every resource the character could spend on a spell of `spellLevel` — the
  * whole upcast ladder, not just the lowest — so the UI can offer an explicit
- * choice (GAME-001). Slot levels ascending, then the pact pool, then any
- * point-pool conversions. Empty for a cantrip or when nothing castable remains.
+ * choice (GAME-001). An unused Mystic Arcanum first, then slot levels
+ * ascending, then the pact pool, then any point-pool conversions. Empty for a
+ * cantrip or when nothing castable remains.
  */
 export function availableCastResources(
   block: SpellcastingBlock,
@@ -192,6 +222,7 @@ export function availableCastResources(
 ): CastResource[] {
   if (spellLevel === 0) return [];
   const out: CastResource[] = [];
+  if (arcanumReady(block, play, spellLevel)) out.push({ kind: 'arcanum', level: spellLevel });
   for (let level = spellLevel; level <= 9; level++) {
     const total = block.slots[level - 1] ?? 0;
     const spent = play.slotsSpent[level - 1] ?? 0;
@@ -249,6 +280,8 @@ export function castResourceLabel(resource: CastResource): string {
   switch (resource.kind) {
     case 'cantrip':
       return 'Cantrip (no slot)';
+    case 'arcanum':
+      return `Mystic Arcanum · level ${String(resource.level)}`;
     case 'pact':
       return `Pact slot · level ${String(resource.level)}`;
     case 'slot':
@@ -278,6 +311,8 @@ export function castResourceChipLabel(resource: CastResource): string {
   switch (resource.kind) {
     case 'cantrip':
       return 'cantrip';
+    case 'arcanum':
+      return `L${String(resource.level)} arcanum`;
     case 'pact':
       return `L${String(resource.level)} pact`;
     case 'slot':
@@ -329,6 +364,8 @@ export function castResourceOptions(
       // Its own part, not a turn note: it is about the character, not the turn.
       const levelNote = conversionLevelNote(option.key, option.level, ctx);
       if (levelNote !== undefined) parts.push(levelNote);
+    } else if (option.kind === 'arcanum') {
+      parts.push('no slot · once per long rest');
     } else if (option.kind === 'pact') {
       const left = (ctx.block.pactSlots?.count ?? 0) - ctx.play.pactSlotsSpent;
       parts.push(`${String(left)} left`);
@@ -408,6 +445,8 @@ export function castSpell(
         const entry = d.play.resources.find((r) => r.key === spend.key);
         if (entry !== undefined) entry.used += spend.cost;
         else d.play.resources.push({ key: spend.key, used: spend.cost });
+      } else if (spend.kind === 'arcanum') {
+        setArcanumUsed(d.play, spend.level, true);
       } else if (spend.kind === 'pact') {
         d.play.pactSlotsSpent += 1;
       } else if (spend.kind === 'slot') {
@@ -420,9 +459,10 @@ export function castSpell(
   );
 }
 
-/** " (L3)" / " (pact slot)" / " (no slot)" / "", when it isn't the obvious cost. */
+/** " (L3)" / " (pact slot)" / " (Mystic Arcanum)" / " (no slot)" / "", when it isn't the obvious cost. */
 export function castCost(spent: CastResource | undefined, level: number): string {
   if (spent === undefined) return '';
+  if (spent.kind === 'arcanum') return ' (Mystic Arcanum)';
   if (spent.kind === 'pact') return ' (pact slot)';
   // Which pool paid is always news, even at the spell's own level.
   if (spent.kind === 'pool') {
