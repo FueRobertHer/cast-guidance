@@ -1,6 +1,6 @@
 import { ChevronUp, Dices, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useOutletContext } from 'react-router';
+import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
 import { useRegistry, useTypePacks } from '@/data5e/hooks';
@@ -57,6 +57,7 @@ import {
   editionSwitchPreview,
   registryLookup,
 } from './editionCues';
+import { SpellInfoSheet } from './SpellInfoSheet';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -1195,19 +1196,27 @@ export function Component() {
             <span className={OVERLINE}>Innate & granted spells</span>
             <div className={ROWS}>
               {sheet.grantedSpells.map((g) => (
-                <Link
+                <SpellInfoSheet
                   key={`${g.name}|${g.source}`}
-                  to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                  className="flex flex-wrap items-center justify-between gap-x-2 px-3 py-1.5 text-sm transition-colors hover:bg-surface-raised"
-                >
-                  {/* The origin wraps under the name, at the right, where both
-                      do not fit (large text). */}
-                  <span className="min-w-0 capitalize wrap-anywhere">{g.name}</span>
-                  <span className="ml-auto min-w-0 text-xs text-ink-muted wrap-anywhere">
-                    {g.origin}
-                    {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
-                  </span>
-                </Link>
+                  name={g.name}
+                  source={g.source}
+                  version={doc.rulesVersion}
+                  subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex w-full flex-wrap items-center justify-between gap-x-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-raised"
+                    >
+                      {/* The origin wraps under the name, at the right, where
+                          both do not fit (large text). */}
+                      <span className="min-w-0 capitalize wrap-anywhere">{g.name}</span>
+                      <span className="ml-auto min-w-0 text-xs text-ink-muted wrap-anywhere">
+                        {g.origin}
+                        {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                      </span>
+                    </button>
+                  }
+                />
               ))}
             </div>
           </div>

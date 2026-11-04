@@ -373,7 +373,7 @@ test.describe('axe: pages and overlays', () => {
     const id = await importCaster(page);
 
     await gotoSheetTab(page, id, 'Spells');
-    await expect(page.getByRole('link', { name: 'Fireball', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fireball', exact: true })).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'sheet-spells-caster');
 

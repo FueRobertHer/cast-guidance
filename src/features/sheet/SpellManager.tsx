@@ -1,6 +1,5 @@
 import { ChevronRight, Search, Star } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { type TypePacksState, useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion } from '@/data5e/rulesVersion';
@@ -41,6 +40,7 @@ import {
   castSpell,
   needsCastChoice,
 } from './castResources';
+import { SpellInfoSheet } from './SpellInfoSheet';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 import { applySpellTrim, describeTrim, isEmptyTrim, planSpellTrim, spellLimits } from './spellTrim';
 
@@ -475,21 +475,33 @@ function ClassSpells({
                       key={uid}
                       className="flex flex-wrap items-center gap-x-2 py-1 pr-2 pl-4 text-body"
                     >
-                      <Link
-                        to={`/library/spell/${encodeURIComponent(uid)}`}
-                        className="min-h-6 min-w-24 flex-1 truncate font-semibold underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
-                      >
-                        {isRecommendedStarter(block.className, nameOf(s), lvl) && (
-                          <span
-                            className="mr-1 text-guide"
-                            title={`Recommended first pick for ${block.className}`}
+                      <SpellInfoSheet
+                        name={nameOf(s)}
+                        source={sourceOf(s)}
+                        version={doc.rulesVersion}
+                        subtitle={`${block.className} spell`}
+                        trigger={
+                          <button
+                            type="button"
+                            className="min-h-6 min-w-24 flex-1 truncate text-left font-semibold underline decoration-line-strong decoration-dotted underline-offset-4 hover:decoration-ink"
                           >
-                            <Star size={14} aria-hidden="true" className="inline align-[-2px]" />
-                            <span className="sr-only">Recommended:</span>
-                          </span>
-                        )}
-                        {nameOf(s)}
-                      </Link>
+                            {isRecommendedStarter(block.className, nameOf(s), lvl) && (
+                              <span
+                                className="mr-1 text-guide"
+                                title={`Recommended first pick for ${block.className}`}
+                              >
+                                <Star
+                                  size={14}
+                                  aria-hidden="true"
+                                  className="inline align-[-2px]"
+                                />
+                                <span className="sr-only">Recommended:</span>
+                              </span>
+                            )}
+                            {nameOf(s)}
+                          </button>
+                        }
+                      />
                       {/* The row's marks and actions, kept together: at a
                           narrow width they wrap under the name as one group,
                           and with large text they wrap within it rather than
