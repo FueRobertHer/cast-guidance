@@ -235,4 +235,10 @@ describe('weapon proficiency choices', () => {
       weaponCollector([{ choose: { from: ['whip', 'net'] } }]).pending[0]?.options.map((o) => o.id),
     ).toEqual(['whip', 'net']);
   });
+
+  it('grants a fixed weapon by its name, without the source its key carries', () => {
+    expect(weaponCollector([{ 'hand crossbow|phb': true }]).effects).toEqual([
+      { kind: 'weaponProf', name: 'Hand Crossbow', origin },
+    ]);
+  });
 });

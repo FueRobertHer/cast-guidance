@@ -47,6 +47,9 @@ function titleCase(s: string): string {
   return s.replace(/(^|\s)\w/g, (c) => c.toUpperCase());
 }
 
+/** The name a fixed grant's key gives, which can carry a source ("longsword|phb"). */
+const grantName = (key: string) => titleCase(key.split('|')[0] ?? key);
+
 export function skillOptions(from?: readonly unknown[]): ChoiceOption[] {
   const names =
     from !== undefined && from.length > 0
@@ -356,11 +359,11 @@ export function readProficiencyList(
             for (const s of selected) grant(s);
           });
         } else {
-          grant(titleCase(key));
+          grant(grantName(key));
         }
       } else if (typeof value === 'number' && key !== 'count') {
         // e.g. tool proficiencies with counts — treat as a grant
-        grant(titleCase(key));
+        grant(grantName(key));
       }
     }
   }
