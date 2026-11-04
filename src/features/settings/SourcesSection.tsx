@@ -45,12 +45,12 @@ function SourceToggle({ row, onToggle }: { row: Row; onToggle: (enabled: boolean
         type="checkbox"
         checked={row.enabled}
         onChange={(e) => onToggle(e.target.checked)}
-        className="size-4 shrink-0 accent-brand"
+        className="size-4 shrink-0 accent-ink"
       />
       <span className={`min-w-0 flex-1 truncate ${row.enabled ? '' : 'text-ink-muted'}`}>
         {row.name}
       </span>
-      <span className="shrink-0 font-mono text-[10px] uppercase text-ink-muted">{row.source}</span>
+      <span className="shrink-0 text-ink-muted text-overline uppercase">{row.source}</span>
       <span className="w-12 shrink-0 text-right text-caption text-ink-muted">{row.count}</span>
     </label>
   );

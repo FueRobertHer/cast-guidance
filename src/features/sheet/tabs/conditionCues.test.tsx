@@ -212,7 +212,7 @@ describe('the cues on the Play tab', () => {
     const sheet = renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 4 }]);
     const half = Math.floor(sheet.maxHp.value / 2);
     expect(screen.getByText(`/ ${half}`)).toBeTruthy();
-    expect(screen.getByText('· max halved')).toBeTruthy();
+    expect(screen.getByText('max halved')).toBeTruthy();
     // Current HP above the halved maximum is never cut silently.
     expect(screen.getByRole('alert').textContent).toMatch(
       new RegExp(`Current HP: ${sheet.maxHp.value} → max ${half}`),

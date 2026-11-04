@@ -3,6 +3,7 @@ import { type ReactNode, useId, useRef, useState } from 'react';
 import { POINT_BUY_BUDGET, POINT_BUY_COSTS, STANDARD_ARRAY } from '@/engine/calc/abilities';
 import { ABILITIES, type Ability, type CharacterDoc, type DerivedAbility } from '@/engine/types';
 import { listJoin } from '@/lib/describeRemoval';
+import { signed } from '@/lib/signed';
 import { badgeClass } from '@/ui/Badge';
 import { Button, buttonClass } from '@/ui/Button';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -262,7 +263,7 @@ function PointBuySummary({ status }: { status: PointBuyStatus }) {
 /** The score with racial and other bonuses applied, under each card. */
 function FinalLine({ score, final }: { score: number; final?: DerivedAbility }) {
   if (final === undefined) return null;
-  const mod = `${final.mod >= 0 ? '+' : ''}${final.mod}`;
+  const mod = signed(final.mod);
   return final.value !== score ? (
     <span className="text-caption text-heal tabular-nums">
       → {final.value} ({mod})

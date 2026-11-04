@@ -268,7 +268,7 @@ export function Component() {
           onClick={async () => {
             const name = await askText({
               title: 'Homebrew collection name',
-              placeholder: 'e.g. "My Table\'s Brews"',
+              placeholder: "For example, My Table's Brews",
             });
             if (name === null || name.trim() === '') return;
             const suggested = name
@@ -403,7 +403,7 @@ export function Component() {
                 }}
                 className="-my-1 mr-auto shrink-0"
               >
-                {r.enabled ? 'enabled' : 'disabled'}
+                {r.enabled ? 'Enabled' : 'Disabled'}
               </Chip>
               <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
                 <div className="truncate text-body-strong">{r.fileName}</div>

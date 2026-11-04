@@ -5,7 +5,7 @@ import type { DamageRider } from '@/engine/types';
 /** Plain-English weapon property meanings, keyed by the lowercase display name. */
 const PROPERTY_GLOSSARY: Record<string, string> = {
   ammunition: 'Needs ammo to fire; you draw one piece as part of the attack.',
-  finesse: 'Use STR or DEX for attack and damage — whichever is higher.',
+  finesse: 'Use STR or DEX for attack and damage, whichever is higher.',
   heavy: 'Small creatures have disadvantage on attacks with it.',
   light: 'Ideal for two-weapon fighting (bonus-action off-hand attack).',
   loading: 'Only one shot per action, bonus action, or reaction.',
@@ -13,7 +13,7 @@ const PROPERTY_GLOSSARY: Record<string, string> = {
   thrown: 'Can be thrown to make a ranged attack using the same ability.',
   'two-handed': 'Requires both hands to attack with.',
   versatile: 'One- or two-handed; two-handed uses the larger damage die.',
-  special: 'Has unusual rules — see the weapon description.',
+  special: 'Has unusual rules. See the weapon description.',
   reload: 'Must be reloaded after a number of shots.',
   'burst fire': 'Can spray a 10-ft cube; targets make a DEX save.',
 };

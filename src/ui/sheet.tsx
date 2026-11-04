@@ -90,7 +90,10 @@ const PANEL =
 function SheetPanel({ className, children, ...props }: ComponentProps<typeof Drawer.Content>) {
   return (
     <Drawer.Content className={className ? `${PANEL} ${className}` : PANEL} {...props}>
-      <div aria-hidden="true" className="mx-auto mb-3 h-1 w-9 rounded-full bg-line-strong" />
+      <div
+        aria-hidden="true"
+        className="mx-auto mb-3 h-1 w-9 shrink-0 rounded-full bg-line-strong"
+      />
       {children}
     </Drawer.Content>
   );

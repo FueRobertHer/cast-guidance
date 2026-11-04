@@ -88,7 +88,7 @@ earlier ones leave.
 ### 3. Offline reload
 
 - [ ] Open the app online once more and let Settings show "Offline
-      compendium: ready ✓".
+      compendium: Ready".
 - [ ] Kill the app, turn on airplane mode, launch from the icon. The roster
       opens.
 - [ ] Still offline, open a character sheet, the Library (a list and an entry)
@@ -114,7 +114,7 @@ earlier ones leave.
 - [ ] Deploy build C. Online, kill and relaunch the app. The prompt appears.
 - [ ] Tap **Update**. The app reloads once into build C (`Settings (C)`).
 - [ ] Characters and game data are intact, and nothing downloads again
-      (Settings shows "ready ✓" at once).
+      (Settings shows "Ready" at once).
 - [ ] Kill, airplane mode, relaunch: build C opens offline.
 
 ### 6. Failed update

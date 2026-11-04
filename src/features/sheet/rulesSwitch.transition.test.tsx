@@ -178,7 +178,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
     expect(screen.getByText('Disadvantage on ability checks')).toBeTruthy();
     expect(screen.queryByText(/to all d20 tests/)).toBeNull();
     await dismiss();
-    expect(screen.getByText('Speed (ft)')).toBeTruthy();
+    expect(screen.getByText('Speed')).toBeTruthy();
 
     await switchTo(sheet, '2024');
     await sheet.tab('Play');

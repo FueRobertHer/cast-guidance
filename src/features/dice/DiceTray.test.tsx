@@ -4,11 +4,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RollResult } from '@/dice/types';
+import { relativeTime } from '@/lib/relativeTime';
 import { advModeStore } from '@/stores/advMode';
 import { diceTrayStore } from '@/stores/diceTray';
 import { rollLogStore } from '@/stores/rollLog';
 import { namelessControls } from '../../../tests-fixtures/a11y';
-import { DiceTray, relativeTime, TICK_MS } from './DiceTray';
+import { DiceTray, TICK_MS } from './DiceTray';
 
 // jsdom has no matchMedia and the drawer asks for one on mount.
 beforeAll(() => {
@@ -104,13 +105,13 @@ describe('DiceTray', () => {
     expect(within(tray()).getByText('Fourth')).toBeTruthy();
     // Removing and clearing are History's, where every roll is.
     expect(within(tray()).queryByRole('button', { name: /^Remove/ })).toBeNull();
-    expect(within(tray()).queryByRole('button', { name: 'clear all' })).toBeNull();
+    expect(within(tray()).queryByRole('button', { name: 'Clear all' })).toBeNull();
 
     view('History');
     expect(within(tray()).getByText('First')).toBeTruthy();
     fireEvent.click(within(tray()).getByRole('button', { name: 'Remove Fourth roll (5)' }));
     expect(within(tray()).queryByText('Fourth')).toBeNull();
-    fireEvent.click(within(tray()).getByRole('button', { name: 'clear all' }));
+    fireEvent.click(within(tray()).getByRole('button', { name: 'Clear all' }));
     expect(within(tray()).getByText('No rolls yet.')).toBeTruthy();
   });
 

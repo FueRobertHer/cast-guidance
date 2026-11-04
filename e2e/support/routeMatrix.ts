@@ -185,7 +185,7 @@ function sheetTab(
 /** Settings' count of the offline compendium, as the level leaves it. */
 function compendiumCount(level: CacheLevel): RegExp {
   if (level === 'none') return /^not downloaded yet$/;
-  if (level === 'full') return /^ready ✓$/;
+  if (level === 'full') return /^Ready$/;
   return new RegExp(`^${filesAt(level)}/${MIRROR_PATHS.length} files$`);
 }
 

@@ -63,7 +63,7 @@ export function skillOptions(from?: readonly unknown[]): ChoiceOption[] {
       label: n,
       description:
         ability !== undefined
-          ? `${ability.toUpperCase()}${uses !== undefined ? ` — ${uses}` : ''}`
+          ? `${ability.toUpperCase()}${uses !== undefined ? `: ${uses}` : ''}`
           : undefined,
     };
   });

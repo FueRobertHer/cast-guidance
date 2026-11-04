@@ -502,7 +502,7 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     // strip now; ConditionStrip.test.tsx names them.
 
     // Portaled sheet content renders outside the tab, so sweep it once open.
-    fireEvent.click(screen.getByRole('button', { name: 'breakdown' }));
+    fireEvent.click(screen.getByRole('button', { name: 'How is this worked out?' }));
     expect(await screen.findByRole('textbox', { name: 'Override Max HP' })).toBeTruthy();
     expect(namelessControls()).toEqual([]);
   });
@@ -554,7 +554,7 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
       screen.getByRole('button', { name: 'Concentrating on Bless', pressed: true }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Action', pressed: true })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Bonus', pressed: false })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bonus action', pressed: false })).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Death save success 1', pressed: true }),
     ).toBeTruthy();
@@ -650,15 +650,105 @@ describe('PlayTab hit point announcements (A11Y-002)', () => {
   });
 });
 
+describe('PlayTab while game data is still landing', () => {
+  it('does not call spent slots over a limit its class has not delivered yet', () => {
+    renderPlay(
+      (d) => {
+        d.play.slotsSpent[0] = 1;
+      },
+      (d) => {
+        d.classes = [{ ref: { name: 'Not Here Yet', source: 'TST' }, levels: 3, hp: [] }];
+      },
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bring within limits' })).toBeNull();
+  });
+
+  it('does once the class is there and a limit really was lowered', () => {
+    renderPlay((d) => {
+      d.play.slotsSpent[0] = 1;
+    });
+    expect(screen.getByRole('alert').textContent).toMatch(/Level 1 spell slots spent: 1 → max 0/);
+  });
+});
+
+describe('PlayTab HP card (DS-001 HitPoints)', () => {
+  it('keeps temp HP on a chip of its own, named for what it holds', () => {
+    renderPlay();
+    expect(screen.getByRole('button', { name: 'Temp HP' })).toBeTruthy();
+    cleanup();
+    renderPlay((d) => {
+      d.play.tempHp = 5;
+    });
+    const chip = screen.getByRole('button', { name: '+5 temporary hit points' });
+    expect(chip.textContent).toBe('+5 temp');
+  });
+
+  it('says hit dice in words, and cannot spend one that is not there', () => {
+    const { getDoc } = renderPlay((d) => {
+      d.play.hitDiceSpent = { d10: 3 };
+    });
+    const die = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Spend a d10 hit die, 0 left',
+    });
+    expect(die.textContent).toBe('0 of 3 d10');
+    expect(die.disabled).toBe(true);
+    fireEvent.click(die);
+    expect(getDoc().play.hitDiceSpent.d10).toBe(3);
+  });
+});
+
+describe('PlayTab numbers', () => {
+  it('shows a negative with a true minus, and rolls it with the hyphen dice read', () => {
+    renderPlay(undefined, (d) => {
+      d.abilities.base.dex = 8;
+    });
+    const initiative = screen.getByRole('button', { name: /Initiative/ });
+    expect(initiative.textContent).toContain('\u22121');
+    fireEvent.click(initiative);
+    expect(rollLogStore.getState().rolls[0]?.expr).toMatch(/-1$/);
+  });
+
+  it('says each spell slot level in words beside its pips', () => {
+    renderPlay(undefined, (d) => {
+      d.classes = [{ ref: { name: 'Sorcerer', source: 'TST' }, levels: 3, hp: [] }];
+    });
+    expect(screen.getByText('Level 1')).toBeTruthy();
+    expect(screen.getByText('4 of 4')).toBeTruthy();
+  });
+});
+
+describe('PlayTab toggles', () => {
+  it('says On or Off to the eye, and leaves the state to aria-pressed in the name', () => {
+    renderPlay();
+    const off = screen.getByRole('button', { name: 'Inspiration', pressed: false });
+    expect(off.textContent).toBe('InspirationOff');
+    expect(screen.getByRole('button', { name: 'Concentration' }).textContent).toBe(
+      'ConcentrationOff',
+    );
+    cleanup();
+    renderPlay((d) => {
+      d.play.inspiration = true;
+      d.play.concentratingOn = { label: 'Bless' };
+    });
+    expect(screen.getByRole('button', { name: 'Inspiration', pressed: true }).textContent).toBe(
+      'InspirationOn',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Concentrating on Bless', pressed: true }).textContent,
+    ).toContain('Concentrating: ');
+  });
+});
+
 describe('PlayTab turn tracker (DS-001 TurnTracker)', () => {
   it('says Ready or Used in words, and keeps each name whatever its state', () => {
     renderPlay((d) => {
       d.play.turn = { action: true, bonus: false, reaction: false };
     });
     const action = screen.getByRole('button', { name: 'Action', pressed: true });
-    const bonus = screen.getByRole('button', { name: 'Bonus', pressed: false });
+    const bonus = screen.getByRole('button', { name: 'Bonus action', pressed: false });
     expect(action.textContent).toBe('ActionUsed');
-    expect(bonus.textContent).toBe('BonusReady');
+    expect(bonus.textContent).toBe('Bonus actionReady');
     // Used strikes the name, not the word that says so.
     expect(within(action).getByText('Action').className).toContain('line-through');
     expect(within(action).getByText('Used').className).not.toContain('line-through');

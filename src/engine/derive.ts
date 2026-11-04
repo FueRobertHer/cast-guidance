@@ -116,6 +116,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     economy: e.economy,
     label: e.label,
     roll: e.roll,
+    heals: e.heals,
     origin: e.origin.label,
     note: e.note,
     save:
@@ -172,6 +173,9 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     features: col.features,
     grantedSpells: dedupeGrantedSpells(effects),
     warnings: dedupeWarnings(col.warnings),
+    classDataMissing: doc.classes.some(
+      (c) => ctx.get('class', c.ref.name, c.ref.source) === undefined,
+    ),
     pending: col.pending,
     resolvedChoices: col.resolved,
   };

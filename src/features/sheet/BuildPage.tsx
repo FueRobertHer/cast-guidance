@@ -1,4 +1,4 @@
-import { ChevronUp, Dices, X } from 'lucide-react';
+import { Check, ChevronRight, ChevronUp, Dices, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -33,6 +33,7 @@ import {
 import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
+import { signed } from '@/lib/signed';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { captureUpdate, sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { rollLogStore } from '@/stores/rollLog';
@@ -161,7 +162,7 @@ function ChangeBar({ sheet }: { sheet: DerivedSheet }) {
   if (diff.length === 0) {
     return (
       <div className="rounded-control bg-surface/95 px-3 py-2 text-caption text-ink-muted shadow-card ring-1 ring-line ring-inset backdrop-blur">
-        Change anything below — the effects on your stats show up here instantly.
+        Change anything below: the effects on your stats show up here instantly.
       </div>
     );
   }
@@ -481,9 +482,11 @@ export function Component() {
               goes under it, still at the right (large text). */}
           <span className="min-w-0 grow basis-24">
             <strong>{sheet.pending.length}</strong> decision
-            {sheet.pending.length > 1 ? 's' : ''} to make — skills, feats, languages…
+            {sheet.pending.length > 1 ? 's' : ''} to make: skills, feats, languages…
           </span>
-          <span className="ml-auto shrink-0 font-bold text-guide">Resolve →</span>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 font-bold text-guide">
+            Resolve <ChevronRight size={16} aria-hidden="true" />
+          </span>
         </button>
       )}
 
@@ -611,7 +614,11 @@ export function Component() {
               {doc.classes.length > 1 && reqText !== undefined && (
                 <p className={`text-caption ${reqMet ? 'text-ink-muted' : 'text-guide'}`}>
                   Multiclass requirement: {reqText}
-                  {reqMet ? ' ✓' : ' — not met (allowed anyway, ask your DM)'}
+                  {reqMet ? (
+                    <Check size={14} aria-label="met" className="ml-1 inline align-[-2px]" />
+                  ) : (
+                    ', not met (allowed anyway, ask your DM)'
+                  )}
                 </p>
               )}
 
@@ -727,7 +734,7 @@ export function Component() {
               doc.classes.length === 0 ? 'font-semibold text-guide' : 'text-ink-muted'
             }`}
           >
-            {doc.classes.length === 0 ? 'Pick a class — start here' : 'Add a class (multiclass)'}
+            {doc.classes.length === 0 ? 'Pick a class to start' : 'Add a class (multiclass)'}
           </summary>
           <div className="flex flex-col gap-2 pt-2">
             <PackProblem packs={classPacks} what="the class list" />
@@ -972,8 +979,7 @@ export function Component() {
                   </div>
                   <span className="text-caption text-ink-muted tabular-nums">
                     {final.value !== doc.abilities.base[a] ? `→ ${final.value} ` : ''}(
-                    {final.mod >= 0 ? '+' : ''}
-                    {final.mod})
+                    {signed(final.mod)})
                   </span>
                 </div>
               );
@@ -982,7 +988,7 @@ export function Component() {
         </div>
         <p className="text-caption text-ink-muted">
           {swapFrom !== null
-            ? `Swapping ${swapFrom.toUpperCase()} — tap another score to trade values.`
+            ? `Swapping ${swapFrom.toUpperCase()}: tap another score to trade values.`
             : 'Tip: tap a score, then another, to swap the two values.'}
         </p>
       </Section>
@@ -1100,8 +1106,8 @@ export function Component() {
                   type="button"
                   className="rounded-control bg-surface-raised p-2 text-center transition-colors hover:bg-surface-hover"
                 >
-                  <div className="text-lg font-bold tabular-nums">{value.value}</div>
-                  <div className="text-xs text-ink-muted">{label}</div>
+                  <div className="text-stat tabular-nums">{value.value}</div>
+                  <div className="text-caption text-ink-muted">{label}</div>
                 </button>
               }
             />
@@ -1125,8 +1131,7 @@ export function Component() {
                         : 'text-ink-muted'
                     }`}
                   >
-                    {a.toUpperCase()} {sheet.saves[a].total.value >= 0 ? '+' : ''}
-                    {sheet.saves[a].total.value}
+                    {a.toUpperCase()} {signed(sheet.saves[a].total.value)}
                   </button>
                 }
               />
@@ -1164,8 +1169,7 @@ export function Component() {
                         {pinned && <span className="text-overline text-guide uppercase">set</span>}
                       </span>
                       <span className="shrink-0 font-semibold tabular-nums">
-                        {s.total.value >= 0 ? '+' : ''}
-                        {s.total.value}
+                        {signed(s.total.value)}
                       </span>
                     </button>
                   }

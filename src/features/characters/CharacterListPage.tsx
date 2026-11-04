@@ -22,6 +22,7 @@ import {
 } from '@/features/creator/draft';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { IMPORT_LIMITS } from '@/lib/guards';
+import { relativeTime } from '@/lib/relativeTime';
 import { useLongPress } from '@/lib/useLongPress';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
@@ -57,6 +58,13 @@ interface PendingImport {
  */
 function classesOf(doc: CharacterDoc): CharacterDoc['classes'] {
   return Array.isArray(doc.classes) ? doc.classes : [];
+}
+
+/** "Dwarf Cleric 3", or "Elf, no class yet" before a class is picked. */
+function whoSummary(doc: CharacterDoc): string {
+  const race = doc.race?.name;
+  if (race === undefined) return classSummary(doc);
+  return classesOf(doc).length === 0 ? `${race}, no class yet` : `${race} ${classSummary(doc)}`;
 }
 
 function classSummary(doc: CharacterDoc): string {
@@ -100,18 +108,25 @@ function initials(name: string): string {
 interface Vitals {
   hp: number;
   maxHp: number;
-  ac: number;
+}
+
+/** When the character last changed; nothing for a record with no readable date. */
+function lastChanged(doc: CharacterDoc): string | undefined {
+  const at = Date.parse(doc.updatedAt);
+  if (Number.isNaN(at)) return undefined;
+  const date = new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return relativeTime(at, Date.now(), date);
 }
 
 /**
- * The HP/AC line, at one fixed height whether or not the numbers have arrived.
+ * The HP line, at one fixed height whether or not the numbers have arrived.
  *
  * They need the whole compendium, which lands a beat after the names do.
  * Rendering nothing until then made every row grow. Reserving bare space
  * stopped the growth but left the values popping into an empty strip, which
  * still reads as a flash. So the line is always the same shape: the same track
  * element sits there the whole time and the numbers keep their footprint as
- * muted placeholders, leaving only the bar's fill and two short strings to
+ * a muted placeholder, leaving only the bar's fill and one short string to
  * arrive, gently.
  */
 function VitalsLine({ v }: { v?: Vitals }) {
@@ -119,8 +134,8 @@ function VitalsLine({ v }: { v?: Vitals }) {
   // The sheet's HP bar colours (DS-001): healthy, then the mid range, then low.
   const color = ratio > 0.5 ? 'bg-heal' : ratio > 0.25 ? 'bg-meter-mid' : 'bg-danger';
   return (
-    // Nowrap because the line is a fixed 16px: letting "AC 19" fall to a second
-    // line at the narrowest widths spills it out of the space held for it.
+    // Nowrap because the line is a fixed 16px: letting "19 / 27 HP" fall to a
+    // second line at the narrowest widths spills it out of the space held for it.
     <div className="mt-1.5 flex h-4 items-center gap-2 text-xs whitespace-nowrap text-ink-muted tabular-nums">
       <span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-track">
         {v !== undefined && (
@@ -131,17 +146,11 @@ function VitalsLine({ v }: { v?: Vitals }) {
         )}
       </span>
       {v === undefined ? (
-        <>
-          <span className="h-2 w-9 rounded-full bg-track" />
-          <span className="h-2 w-7 rounded-full bg-track" />
-        </>
+        <span className="h-2 w-16 rounded-full bg-track" />
       ) : (
-        <>
-          <span className="motion-safe:animate-fade-in">
-            {v.hp}/{v.maxHp}
-          </span>
-          <span className="motion-safe:animate-fade-in">AC {v.ac}</span>
-        </>
+        <span className="motion-safe:animate-fade-in">
+          {v.hp} / {v.maxHp} HP
+        </span>
       )}
     </div>
   );
@@ -168,6 +177,7 @@ function CharacterCard({
   onActions: () => void;
 }) {
   const actions = useRef<HTMLButtonElement>(null);
+  const changed = lastChanged(c);
   const hold = useLongPress(() => {
     // The sheet hands focus back to whatever had it when it opened, so give
     // it to the button this hold stands in for, as a tap on it would.
@@ -197,9 +207,8 @@ function CharacterCard({
         <div className="min-w-0 flex-1">
           <div className="truncate font-display text-title-card">{c.name}</div>
           <div className="truncate text-caption text-ink-muted">
-            {classSummary(c)}
-            {c.race !== undefined ? ` · ${c.race.name}` : ''}
-            {` · ${c.rulesVersion}`}
+            {whoSummary(c)}
+            {changed !== undefined ? ` · ${changed}` : ''}
           </div>
           {(vitals !== undefined || vitalsDue) && <VitalsLine v={vitals} />}
         </div>
@@ -344,7 +353,7 @@ export function Component() {
         const sheet = deriveSheet(c, ctx);
         // The maximum in play, as the sheet shows it (2014 exhaustion halves it).
         const maxHp = conditionMaxHp(sheet.maxHp.value, c.play.conditions, c.rulesVersion).value;
-        map.set(c.id, { hp: c.play.currentHp, maxHp, ac: sheet.ac.value });
+        map.set(c.id, { hp: c.play.currentHp, maxHp });
       } catch {
         // skip a character that can't derive (e.g. missing homebrew)
       }
@@ -501,10 +510,6 @@ export function Component() {
         {importStatus}
       </p>
 
-      {/* Above an existing roster; for a new one it waits below the ways to make
-          a character, so New character stays above the fold on a phone. */}
-      {characters.length > 0 && <GettingStarted onDismiss={() => heading.current?.focus()} />}
-
       {characters.length === 0 && result !== undefined && readErrors.length === 0 && (
         <p className="text-body text-ink-muted">No characters yet. Create your first hero.</p>
       )}
@@ -587,9 +592,9 @@ export function Component() {
           />
         </Suspense>
       )}
-      {characters.length === 0 && result !== undefined && (
-        <GettingStarted onDismiss={() => heading.current?.focus()} />
-      )}
+      {/* Last, under the ways to make a character, so the characters and New
+          character stay above the fold on a phone. */}
+      {result !== undefined && <GettingStarted onDismiss={() => heading.current?.focus()} />}
     </main>
   );
 }

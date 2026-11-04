@@ -119,13 +119,21 @@ describe('New character', () => {
 });
 
 describe('a character card', () => {
+  it('says a species and a missing class as a phrase', () => {
+    live.characters = [{ ...ARIA, classes: [] }];
+    renderRoster();
+    expect(screen.getByRole('link', { name: /^Aria\b/ }).textContent).toContain(
+      'Elf, no class yet',
+    );
+  });
+
   it('is one link to the character, with its actions as a button beside it', () => {
     live.characters = [ARIA];
     renderRoster();
     expect(namelessControls()).toEqual([]);
     const link = screen.getByRole('link', { name: /^Aria\b/ });
     expect(link.getAttribute('href')).toBe('/c/hero-1');
-    expect(link.textContent).toContain('Fighter 3 · Elf');
+    expect(link.textContent).toContain('Elf Fighter 3');
     const actions = screen.getByRole('button', { name: 'Actions for Aria' });
     // Never inside the link: a button in a link is two controls in one.
     expect(link.contains(actions)).toBe(false);

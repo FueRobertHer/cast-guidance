@@ -255,7 +255,7 @@ raw error.
 | `/homebrew` | content | content | content | content |
 | `/homebrew/edit/<id>` (homebrew file) | content | content | content | content |
 | `/homebrew/edit/missing` | not found | not found | not found | not found |
-| `/settings` | content ("not downloaded yet", Make available offline) | content ("13/19 files", Make available offline) | content ("16/19 files", Make available offline) | content ("ready ✓") |
+| `/settings` | content ("not downloaded yet", Make available offline) | content ("13/19 files", Make available offline) | content ("16/19 files", Make available offline) | content ("Ready") |
 | `/create` | offline | content | content | content |
 | `/c/<id>` and its `stats`, `inventory`, `spells`, `features` tabs | offline | content | content | content |
 | `/c/<id>/build` | offline | content, with the class list's offline panel | content | content |

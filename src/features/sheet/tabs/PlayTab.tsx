@@ -1,4 +1,14 @@
-import { AlertTriangle, Brain, Hourglass, Minus, Moon, Plus, Star } from 'lucide-react';
+import {
+  AlertTriangle,
+  Brain,
+  Hourglass,
+  Minus,
+  Moon,
+  Plus,
+  RefreshCw,
+  Shield,
+  Star,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { useRegistry, useRegistryRefreshing, useTypePacks } from '@/data5e/hooks';
@@ -7,7 +17,8 @@ import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
-import type { CharacterDoc, PlayState, SpellcastingBlock } from '@/engine/types';
+import type { PlayState, SpellcastingBlock } from '@/engine/types';
+import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -46,6 +57,7 @@ import { spellRollActions } from '../spellRolls';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
+/** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
 
 /** A section's heading and the helper line under it (DS-001 `heading`, `caption`). */
@@ -53,7 +65,7 @@ const H2 = 'px-1 text-heading';
 const HELP = 'px-1 text-caption text-ink-muted';
 /** A quiet text link in a card's footer (temp HP, breakdown). */
 const LINK =
-  'min-h-6 whitespace-nowrap text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
+  'min-h-6 min-w-0 text-left text-caption font-semibold text-ink-muted underline decoration-line-strong underline-offset-3 hover:text-ink';
 /** A name that opens its rules: dashed, so it reads as tappable without shouting. */
 const RULES = 'underline decoration-line-strong decoration-dashed';
 /**
@@ -75,12 +87,12 @@ const ROW_ACTIONS = 'ml-auto flex max-w-full shrink-0 flex-wrap items-center jus
 const NAME = 'wrap-anywhere @min-[15rem]:truncate';
 /**
  * A lasting state, on or off (Inspiration, Concentration): ToggleChip's look,
- * without its On and Off words, which would change the buttons' names. Each
- * grows from 8rem, so the pair stacks where both do not fit (large text)
- * rather than push the page sideways (A11Y-003).
+ * and its On and Off words, hidden from the buttons' names, which aria-pressed
+ * already says. Each grows, so the pair stacks where both do not fit (a long
+ * spell's name, large text) rather than push the page sideways (A11Y-003).
  */
 const TOGGLE =
-  'flex min-h-tap min-w-0 grow basis-32 items-center justify-center gap-2 rounded-control px-4 text-label transition-colors duration-120';
+  'flex min-h-tap min-w-0 grow items-center justify-center gap-2 rounded-control px-3 text-label transition-colors duration-120';
 const TOGGLE_OFF = 'text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink';
 /** The HP card's ±1: round `surface-raised` steppers, the icon in `danger` or `heal`. */
 const STEP =
@@ -90,8 +102,13 @@ const FIVE =
   'tap rounded-full text-label tabular-nums transition-[filter] duration-120 hover:brightness-112';
 /** A card without its padding (surfaces' `cardClass`), for one whose rows pad themselves. */
 const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
-/** A cell of the AC / Initiative / Speed strip. */
-const TILE = 'flex min-h-19 flex-col items-center justify-center gap-0.5 px-1 py-2';
+/**
+ * A cell of the Armor Class / Initiative / Speed / Proficiency strip (DS-001
+ * StatStrip), and the small label under its number. Four across, two by two
+ * where four would not fit: the strip is the query container.
+ */
+const TILE = 'flex min-h-19 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2';
+const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
@@ -163,7 +180,7 @@ function findSpell(
   registry: EntityRegistry | null,
   name: string,
   source: string,
-  version: CharacterDoc['rulesVersion'],
+  version: RulesVersion,
 ) {
   if (registry === null) return undefined;
   const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
@@ -262,6 +279,7 @@ export function Component() {
   // The cues' "Ignore once", for as long as the tab is open.
   const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
   const hpTip = useTip('hp-exact');
+  const rulesTip = useTip('tap-for-rules');
   const hpNumber = useRef<HTMLButtonElement>(null);
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
@@ -315,8 +333,11 @@ export function Component() {
 
   // After a build change lowers a limit, stored play state can hold values above
   // the new maxima — surface them and offer a non-destructive clamp (GAME-007).
-  // Exhaustion's halved maximum (2014) is one more such limit.
-  const overages = detectPlayStateOverages(play, sheet, maxHp.value);
+  // Exhaustion's halved maximum (2014) is one more such limit. A class whose
+  // data has not landed yet derives no slots or pools at all, so there is
+  // nothing to compare with: the warning would call every spent slot over a
+  // limit of 0, and its button would wipe them.
+  const overages = sheet.classDataMissing ? [] : detectPlayStateOverages(play, sheet, maxHp.value);
 
   /**
    * Mark a slice of the action economy used (attacks, casting). `label` names
@@ -522,6 +543,33 @@ export function Component() {
       )}
       {/* HP: the hero card (DS-001 HitPoints). */}
       <section className={cardClass}>
+        {/* Its name, and temp HP on a chip of its own: on the number's caption
+            "+5 temp" had no room and wrapped at 375px. */}
+        <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
+          <span className="text-ink-muted text-overline uppercase">Hit points</span>
+          <button
+            type="button"
+            aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
+            title="Temporary hit points"
+            className={`-my-2 -mr-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
+              play.tempHp > 0
+                ? 'bg-ward-soft font-bold text-ward'
+                : 'font-semibold text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
+            }`}
+            onClick={async () => {
+              const n = await askNumber({
+                title: 'Temporary HP',
+                initial: play.tempHp,
+                min: 0,
+                hint: "Temp HP doesn't stack: a new source replaces the old value.",
+              });
+              if (n !== null) update((d) => void (d.play.tempHp = n));
+            }}
+          >
+            <Shield size={14} aria-hidden="true" />
+            {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
+          </button>
+        </div>
         {/* Wraps where the row cannot fit (large text), the heal pair kept
             at the right, rather than push the page sideways (A11Y-003). */}
         <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -565,6 +613,7 @@ export function Component() {
             ref={hpNumber}
             type="button"
             className="min-w-[max(3.25rem,min-content)] grow basis-0 text-center"
+            title="Type an exact amount"
             onClick={async () => {
               // Used once, the tip has said what it had to.
               hpTip.dismiss();
@@ -604,13 +653,14 @@ export function Component() {
               {play.currentHp}{' '}
               <span className="whitespace-nowrap text-title-sheet text-ink-muted">
                 / {maxHp.value}
+                {sheet.maxHp.overridden ? ' •' : ''}
               </span>
+              {/* Spaced in the text, as a name drops one at a span's edge. */}{' '}
+              <span className="sr-only">hit points</span>
             </div>
-            <div className="text-caption text-ink-muted">
-              hit points{play.tempHp > 0 ? ` · +${play.tempHp} temp` : ''}
-              {sheet.maxHp.overridden ? ' •' : ''}
-              {maxHp.source !== undefined && <span className="text-guide"> · max halved</span>}
-            </div>
+            {maxHp.source !== undefined && (
+              <div className="text-caption text-guide">max halved</div>
+            )}
           </button>
           <div className="ml-auto flex items-center gap-0.5">
             <button
@@ -694,46 +744,36 @@ export function Component() {
         {/* Wraps whole items onto a second line at 320px rather than
             breaking a hit die chip in two. */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-          <button
-            type="button"
-            className={LINK}
-            onClick={async () => {
-              const n = await askNumber({
-                title: 'Temporary HP',
-                initial: play.tempHp,
-                min: 0,
-                hint: "Temp HP doesn't stack — a new source replaces the old value.",
-              });
-              if (n !== null) update((d) => void (d.play.tempHp = n));
-            }}
-          >
-            temp HP
-          </button>
-          <div className="flex flex-wrap gap-1">
-            {Object.entries(sheet.hitDice).map(([die, total]) => (
-              <button
-                key={die}
-                type="button"
-                aria-label={`Spend a ${die} hit die, ${total - (play.hitDiceSpent[die] ?? 0)} left`}
-                title={`Spend a hit die (${die})`}
-                onClick={() =>
-                  update((d) => {
-                    const spent = d.play.hitDiceSpent[die] ?? 0;
-                    if (spent >= total) return;
-                    d.play.hitDiceSpent[die] = spent + 1;
-                    const r = roll(`1${die}${fmt(sheet.abilities.con.mod)}`, {
-                      label: `Hit die (${die})`,
-                      kind: 'heal',
-                    });
-                    rollLogStore.getState().append(r);
-                    applyHp(d.play, Math.max(0, r.total), maxHp.value);
-                  })
-                }
-                className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-dice tabular-nums hover:bg-surface-hover"
-              >
-                {die} × {total - (play.hitDiceSpent[die] ?? 0)}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-ink-muted">
+            Hit Dice:
+            {Object.entries(sheet.hitDice).map(([die, total]) => {
+              const left = total - (play.hitDiceSpent[die] ?? 0);
+              return (
+                <button
+                  key={die}
+                  type="button"
+                  aria-label={`Spend a ${die} hit die, ${left} left`}
+                  title={`Spend a hit die (${die})`}
+                  disabled={left <= 0}
+                  onClick={() =>
+                    update((d) => {
+                      const spent = d.play.hitDiceSpent[die] ?? 0;
+                      if (spent >= total) return;
+                      d.play.hitDiceSpent[die] = spent + 1;
+                      const r = roll(`1${die}${fmt(sheet.abilities.con.mod)}`, {
+                        label: `Hit die (${die})`,
+                        kind: 'heal',
+                      });
+                      rollLogStore.getState().append(r);
+                      applyHp(d.play, Math.max(0, r.total), maxHp.value);
+                    })
+                  }
+                  className="min-h-6 whitespace-nowrap rounded-chip bg-surface-raised px-2 text-ink tabular-nums hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint"
+                >
+                  <b>{Math.max(0, left)}</b> of {total} {die}
+                </button>
+              );
+            })}
           </div>
           <BreakdownSheet
             title="Max HP"
@@ -746,7 +786,7 @@ export function Component() {
             }
             trigger={
               <button type="button" className={LINK}>
-                breakdown
+                How is this worked out?
               </button>
             }
           >
@@ -838,7 +878,7 @@ export function Component() {
                   }
                 })
               }
-              title="Roll a death save — successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
+              title="Roll a death save: successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
             >
               {/* The one next step while dying, so the one `brand` button. */}
               <D20Icon size={16} /> Roll save
@@ -848,56 +888,67 @@ export function Component() {
       )}
 
       {/* Core tiles: one strip, its cells divided by `line` hairlines. */}
-      <section className={`grid grid-cols-3 overflow-hidden text-center ${FLUSH}`}>
-        <BreakdownSheet
-          title={`Armor Class (${sheet.acFormulaLabel})`}
-          value={sheet.ac}
-          onOverride={(v) =>
-            update((d) => {
-              if (v === null) delete d.overrides.ac;
-              else d.overrides.ac = { value: v };
-            })
-          }
-          trigger={
-            <button type="button" className={TILE}>
-              <div className="text-stat tabular-nums">{sheet.ac.value}</div>
-              <div className="text-caption text-ink-muted">AC{sheet.ac.overridden ? ' •' : ''}</div>
-            </button>
-          }
-        />
-        <button
-          type="button"
-          onClick={() =>
-            rollLogStore.getState().append(
-              rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
-                label: 'Initiative',
-                effects: initiativeEffects,
-                ignored: ignore.take('initiative', initiativeEffects),
-              }),
-            )
-          }
-          className={`${TILE} border-line border-l`}
-        >
-          <div className="text-stat tabular-nums">{fmt(sheet.initiative.value)}</div>
-          <div className="flex items-center justify-center gap-1 text-caption text-ink-muted">
-            Initiative <D20Icon size={14} />
+      <section className={`@container overflow-hidden text-center ${FLUSH}`}>
+        <div className="grid grid-cols-2 @min-[18rem]:grid-cols-4">
+          <BreakdownSheet
+            title={`Armor Class (${sheet.acFormulaLabel})`}
+            value={sheet.ac}
+            onOverride={(v) =>
+              update((d) => {
+                if (v === null) delete d.overrides.ac;
+                else d.overrides.ac = { value: v };
+              })
+            }
+            trigger={
+              <button type="button" className={TILE}>
+                <div className="text-stat tabular-nums">{sheet.ac.value}</div>
+                <div className={TILE_LABEL}>Armor Class{sheet.ac.overridden ? ' •' : ''}</div>
+              </button>
+            }
+          />
+          <button
+            type="button"
+            onClick={() =>
+              rollLogStore.getState().append(
+                rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
+                  label: 'Initiative',
+                  effects: initiativeEffects,
+                  ignored: ignore.take('initiative', initiativeEffects),
+                }),
+              )
+            }
+            className={`${TILE} border-line border-l`}
+          >
+            <div className="text-roll text-stat tabular-nums">{signed(sheet.initiative.value)}</div>
+            <div className={`flex items-center justify-center gap-0.75 ${TILE_LABEL}`}>
+              Initiative <D20Icon size={14} className="shrink-0" />
+            </div>
+          </button>
+          <div
+            className={`${TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
+          >
+            <div className="text-stat tabular-nums">
+              {speed.value}
+              <small className="ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
+                ft
+              </small>
+              {speed.value !== sheet.speedWalk.value && (
+                <span className="ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
+                  <span className="sr-only">, down from </span>
+                  {sheet.speedWalk.value}
+                </span>
+              )}
+            </div>
+            <div className={TILE_LABEL}>
+              Speed
+              {speed.sources.length > 0 && (
+                <span className="text-guide"> · {speed.sources.join(', ')}</span>
+              )}
+            </div>
           </div>
-        </button>
-        <div className={`${TILE} border-line border-l`}>
-          <div className="text-stat tabular-nums">
-            {speed.value}
-            {speed.value !== sheet.speedWalk.value && (
-              <span className="ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
-                <span className="sr-only">, down from </span>
-                {sheet.speedWalk.value}
-              </span>
-            )}
-          </div>
-          <div className="text-caption text-ink-muted">
-            Speed (ft)
-            {speed.sources.length > 0 && (
-              <span className="text-guide"> · {speed.sources.join(', ')}</span>
-            )}
+          <div className={`${TILE} border-line border-t border-l @min-[18rem]:border-t-0`}>
+            <div className="text-stat tabular-nums">{signed(sheet.profBonus.value)}</div>
+            <div className={TILE_LABEL}>Proficiency</div>
           </div>
         </div>
       </section>
@@ -936,11 +987,14 @@ export function Component() {
           aria-pressed={play.inspiration}
           onClick={() => update((d) => void (d.play.inspiration = !d.play.inspiration))}
           className={`${TOGGLE} ${play.inspiration ? 'bg-guide-soft text-guide' : TOGGLE_OFF}`}
-          title="Heroic Inspiration — reroll a d20"
+          title="Heroic Inspiration: reroll a d20"
         >
           {/* Filled while held: a change of shape as well as colour. */}
           <Star size={16} fill={play.inspiration ? 'currentColor' : 'none'} className="shrink-0" />
           <span className="truncate">Inspiration</span>
+          <span aria-hidden="true" className={play.inspiration ? 'font-bold' : 'font-normal'}>
+            {play.inspiration ? 'On' : 'Off'}
+          </span>
         </button>
         <button
           type="button"
@@ -952,28 +1006,36 @@ export function Component() {
             }
             const label = await askText({
               title: 'Concentrating on…',
-              placeholder: 'e.g. Bless — casting a concentration spell sets this automatically',
+              placeholder: 'For example, Bless',
             });
             if (label !== null && label.trim() !== '') {
               update((d) => void (d.play.concentratingOn = { label: label.trim() }));
             }
           }}
+          // Sized by its content, so a spell's whole name shows, on a line of
+          // its own where it does not fit beside Inspiration.
           className={`${TOGGLE} ${
-            play.concentratingOn !== undefined ? 'bg-arcane-soft text-arcane' : TOGGLE_OFF
+            play.concentratingOn !== undefined ? 'bg-arcane-soft py-1 text-arcane' : TOGGLE_OFF
           }`}
-          title="Concentration — tap to set or clear"
+          title="Concentration: tap to set or clear"
         >
           <Brain size={16} className="shrink-0" />
-          {/* The visible label is the spell alone; the prefix says what it means. */}
-          <span className="truncate">
-            {play.concentratingOn !== undefined ? (
-              <>
-                <span className="sr-only">Concentrating on</span> {play.concentratingOn.label}
-              </>
-            ) : (
-              'Concentration'
-            )}
-          </span>
+          {play.concentratingOn !== undefined ? (
+            // On, the spell's name takes the place of the word On (DS-001
+            // ToggleChip). The name to hear says the same in a sentence.
+            <span className="min-w-0 wrap-anywhere">
+              <span aria-hidden="true">Concentrating:</span>{' '}
+              <span className="sr-only">Concentrating on</span>{' '}
+              <span className="font-bold">{play.concentratingOn.label}</span>
+            </span>
+          ) : (
+            <>
+              <span className="truncate">Concentration</span>
+              <span aria-hidden="true" className="font-normal">
+                Off
+              </span>
+            </>
+          )}
         </button>
         {play.concentratingOn !== undefined && (
           <div className="basis-full">
@@ -989,109 +1051,75 @@ export function Component() {
         )}
       </section>
 
-      {/* Turn tracker: action economy. Wraps End turn onto a line of its own,
-          at the right, where the row is too narrow for all four (320px, or
-          large text) instead of pushing the page sideways (A11Y-003). */}
-      <section className={`flex flex-wrap items-center gap-2 ${cardClass}`}>
-        {(
-          [
-            ['action', 'Action'],
-            ['bonus', 'Bonus'],
-            ['reaction', 'Reaction'],
-          ] as const
-        ).map(([key, label]) => {
-          const used = play.turn?.[key] ?? false;
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={used}
-              onClick={() =>
-                update((d) => {
-                  const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-                  turn[key] = !turn[key];
-                  d.play.turn = turn;
-                })
-              }
-              // Three equal slots, so all ink (DS-001 TurnTracker): ready is
-              // an outline, used fills and strikes the name. Each says its
-              // state in words; the word is left out of the name, which a
-              // toggle keeps whatever its state (aria-pressed says it).
-              className={`flex min-h-15 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 text-label transition-colors duration-120 ${
-                used
-                  ? 'bg-surface-raised text-ink-muted'
-                  : 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised'
-              }`}
-              title={
-                used
-                  ? `${label} used — tap to undo`
-                  : `Tap when you use your ${label.toLowerCase()}`
-              }
-            >
-              <span className={used ? 'line-through decoration-[1.5px]' : undefined}>{label}</span>
-              <span
-                aria-hidden="true"
-                className="font-normal text-[0.6875rem] text-ink-muted leading-3.5"
+      {/* Turn tracker: action economy. */}
+      <section className={cardClass}>
+        <div className="flex flex-wrap items-center justify-between gap-x-2">
+          <h2 className="text-heading">This turn</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              update((d) => {
+                d.play.turn = { action: false, bonus: false, reaction: false };
+              }, 'New turn')
+            }
+            className="-my-1 -mr-1 ml-auto"
+            title="Reset action, bonus action, and reaction"
+          >
+            <RefreshCw size={16} aria-hidden="true" /> New turn
+          </Button>
+        </div>
+        {/* Wraps where the row is too narrow for all three (large text)
+            instead of pushing the page sideways (A11Y-003). */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(
+            [
+              ['action', 'Action'],
+              ['bonus', 'Bonus action'],
+              ['reaction', 'Reaction'],
+            ] as const
+          ).map(([key, label]) => {
+            const used = play.turn?.[key] ?? false;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={used}
+                onClick={() =>
+                  update((d) => {
+                    const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+                    turn[key] = !turn[key];
+                    d.play.turn = turn;
+                  })
+                }
+                // Three equal slots, so all ink (DS-001 TurnTracker): ready is
+                // an outline, used fills and strikes the name. Each says its
+                // state in words; the word is left out of the name, which a
+                // toggle keeps whatever its state (aria-pressed says it).
+                className={`flex min-h-15 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 text-label transition-colors duration-120 ${
+                  used
+                    ? 'bg-surface-raised text-ink-muted'
+                    : 'text-ink ring-1 ring-line-strong ring-inset hover:bg-surface-raised'
+                }`}
+                title={
+                  used
+                    ? `${label} used: tap to undo`
+                    : `Tap when you use your ${label.toLowerCase()}`
+                }
               >
-                {used ? 'Used' : 'Ready'}
-              </span>
-            </button>
-          );
-        })}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            update((d) => {
-              d.play.turn = { action: false, bonus: false, reaction: false };
-            }, 'Turn ended')
-          }
-          className="-mr-1 ml-auto shrink-0"
-          title="Reset action, bonus action, and reaction"
-        >
-          End turn
-        </Button>
-      </section>
-
-      {/* Rests */}
-      <section className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            let restored: string[] = [];
-            update((d) => void (restored = shortRest(d.play, sheet)), 'Short rest');
-            notify({
-              title: 'Short rest',
-              detail:
-                restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Nothing to restore',
-              tone: restored.length > 0 ? 'good' : 'info',
-            });
-          }}
-          className={buttonClass({ variant: 'outline' })}
-        >
-          <Hourglass size={18} /> Short rest
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            const ok = await askConfirm({
-              title: 'Long rest',
-              detail: 'Full HP, all spell slots and resources restored; regain half your hit dice.',
-              confirmLabel: 'Rest',
-            });
-            if (!ok) return;
-            let restored: string[] = [];
-            update((d) => void (restored = longRest(d.play, sheet, doc.rulesVersion)), 'Long rest');
-            notify({
-              title: 'Long rest complete',
-              detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
-              tone: 'good',
-            });
-          }}
-          className={buttonClass({ variant: 'outline' })}
-        >
-          <Moon size={18} /> Long rest
-        </button>
+                <span className={used ? 'line-through decoration-[1.5px]' : undefined}>
+                  {label}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="font-normal text-[0.6875rem] text-ink-muted leading-3.5"
+                >
+                  {used ? 'Used' : 'Ready'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {/* Resources with pips */}
@@ -1129,7 +1157,7 @@ export function Component() {
                     ) : (
                       <span className="text-body-strong">{r.label}</span>
                     )}
-                    <span className="text-caption text-ink-muted">{r.resetOn} rest</span>
+                    <span className="text-caption text-ink-muted">Back on a {r.resetOn} rest</span>
                   </div>
                   {r.max > 12 ? (
                     // Point pools (Lay on Hands, ki, sorcery points) outgrow
@@ -1168,7 +1196,7 @@ export function Component() {
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-wrap justify-end">
+                    <div className="flex flex-wrap items-center justify-end">
                       <Pips
                         total={r.max}
                         spent={used}
@@ -1177,6 +1205,11 @@ export function Component() {
                         tone="ink"
                         title={`${r.max - used} of ${r.max} left`}
                       />
+                      {/* The count in words: a row of dots is no quick read past
+                          three or four. */}
+                      <span className="pr-2 pl-1 text-caption text-ink-muted tabular-nums">
+                        {r.max - used} of {r.max}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -1228,7 +1261,7 @@ export function Component() {
                 <div className={`${ROW_ACTIONS} gap-1.5`}>
                   <RollChip
                     expr={`1d20${fmt(a.toHit.value)}`}
-                    display={fmt(a.toHit.value)}
+                    display={signed(a.toHit.value)}
                     label={`${a.label} attack`}
                     variant="d20"
                     roller={rollAttack(a.toHit.value, `${a.label} attack`)}
@@ -1269,7 +1302,10 @@ export function Component() {
       {sheet.actions.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className={H2}>Actions</h2>
-          <p className={HELP}>Tap a name for rules; tap Use / roll to spend it.</p>
+          {/* One tip at a time: this one waits for the HP card's to go. */}
+          {rulesTip.shown && !hpTip.shown && (
+            <Tip onDismiss={rulesTip.dismiss}>Tap a name for its rules.</Tip>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
@@ -1299,7 +1335,7 @@ export function Component() {
                 a.save !== undefined
                   ? `DC ${a.save.dc} ${a.save.targetAbility.toUpperCase()} save`
                   : undefined,
-                remaining !== undefined ? `${remaining}/${linkedResource?.max} left` : undefined,
+                remaining !== undefined ? `${remaining} of ${linkedResource?.max} left` : undefined,
               ]
                 .filter((s) => s !== undefined)
                 .join(' · ');
@@ -1350,7 +1386,12 @@ export function Component() {
                       </span>
                     )}
                     {a.roll !== undefined ? (
-                      <RollChip expr={a.roll} label={a.label} variant="damage" onRolled={trigger} />
+                      <RollChip
+                        expr={a.roll}
+                        label={a.label}
+                        variant={a.heals === true ? 'heal' : 'damage'}
+                        onRolled={trigger}
+                      />
                     ) : (
                       <Button
                         variant="outline"
@@ -1362,7 +1403,7 @@ export function Component() {
                         title={
                           depleted
                             ? 'No uses left'
-                            : `Use — marks your ${economyLabel}${
+                            : `Use: marks your ${economyLabel}${
                                 linkedResource !== undefined
                                   ? ` and spends a ${linkedResource.label} use`
                                   : ''
@@ -1394,7 +1435,7 @@ export function Component() {
         return (
           <section className="flex flex-col gap-1.5">
             <h2 className={H2}>Combat options</h2>
-            <p className={HELP}>Things you can always do. Tap for full rules.</p>
+            <p className={HELP}>Things you can always do.</p>
             <div className={listClass}>
               {caps.map((cap) => (
                 <FeatureInfoSheet
@@ -1429,9 +1470,14 @@ export function Component() {
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <span className="text-heading">{sc.className} spellcasting</span>
             {/* Spell DC in `arcane`, the colour of what spellcasting spends. */}
-            <Badge tone="arcane">
-              DC <strong>{sc.saveDc.value}</strong> · Atk <strong>{fmt(sc.attackMod.value)}</strong>
-            </Badge>
+            <span className="flex flex-wrap gap-1">
+              <Badge tone="arcane">
+                Save DC <strong>{sc.saveDc.value}</strong>
+              </Badge>
+              <Badge tone="arcane">
+                Attack <strong>{signed(sc.attackMod.value)}</strong>
+              </Badge>
+            </span>
           </div>
           {sc.pactSlots !== undefined && (
             <div className="flex flex-wrap items-center">
@@ -1449,6 +1495,9 @@ export function Component() {
                 label={(slot) => `Pact slot ${slot}`}
                 tone="arcane"
               />
+              <span className="ml-auto pl-2 text-caption text-ink-muted tabular-nums">
+                {sc.pactSlots.count - play.pactSlotsSpent} of {sc.pactSlots.count}
+              </span>
             </div>
           )}
           {/* One use per arcanum level, back on a long rest; a tap marks one
@@ -1458,7 +1507,7 @@ export function Component() {
               <span className="mr-1.5 text-label text-ink-muted">Mystic Arcanum</span>
               {sc.mysticArcanum.map((level) => (
                 <span key={`arcanum-${String(level)}`} className="flex items-center">
-                  <span className="text-label text-ink-muted">L{level}</span>
+                  <span className="text-label text-ink-muted">Level {level}</span>
                   <Pips
                     total={1}
                     spent={play.arcanumUsed?.includes(level) === true ? 1 : 0}
@@ -1482,7 +1531,9 @@ export function Component() {
               {sc.slots.map((count, lvlIdx) =>
                 count > 0 ? (
                   <div key={`slots-${String(lvlIdx)}`} className="flex flex-wrap items-center">
-                    <span className="w-8 shrink-0 text-label text-ink-muted">L{lvlIdx + 1}</span>
+                    <span className="w-14 shrink-0 text-label text-ink-muted">
+                      Level {lvlIdx + 1}
+                    </span>
                     <Pips
                       total={count}
                       spent={play.slotsSpent[lvlIdx] ?? 0}
@@ -1494,6 +1545,9 @@ export function Component() {
                       label={(slot) => `Level ${lvlIdx + 1} slot ${slot}`}
                       tone="arcane"
                     />
+                    <span className="ml-auto pl-2 text-caption text-ink-muted tabular-nums">
+                      {count - (play.slotsSpent[lvlIdx] ?? 0)} of {count}
+                    </span>
                   </div>
                 ) : null,
               )}
@@ -1520,6 +1574,7 @@ export function Component() {
                 {registrySpells.map((ref) => {
                   const uid = `${ref.name}|${ref.source}`.toLowerCase();
                   const prepared = preparedUids.has(uid);
+                  const subtitle = `${sc.className} spell${prepared ? ' · prepared' : ''}`;
                   const level = spellLevelOf(ref.name, ref.source);
                   const entity = spellEntity(ref.name, ref.source);
                   if (entity === undefined && spellsSettling) {
@@ -1529,7 +1584,7 @@ export function Component() {
                         name={ref.name}
                         source={ref.source}
                         version={doc.rulesVersion}
-                        subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                        subtitle={subtitle}
                         className="min-h-10"
                       />
                     );
@@ -1576,7 +1631,7 @@ export function Component() {
                           name={ref.name}
                           source={ref.source}
                           version={doc.rulesVersion}
-                          subtitle={`${sc.className} spell${prepared ? ' · prepared' : ''}`}
+                          subtitle={subtitle}
                           trigger={
                             <button
                               type="button"
@@ -1593,7 +1648,7 @@ export function Component() {
                               {prepared && (
                                 <>
                                   <wbr className="@min-[15rem]:hidden" />
-                                  <span className="ml-1.5 text-caption text-heal">prepared</span>
+                                  <span className="ml-1.5 text-arcane text-caption">prepared</span>
                                 </>
                               )}
                             </button>
@@ -1602,7 +1657,7 @@ export function Component() {
                         {limits.noVerbal.length > 0 && spellHasVerbal(ref.name, ref.source) && (
                           <span
                             className="shrink-0 text-guide"
-                            title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                            title={`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
                           >
                             <AlertTriangle size={14} />
                             <span className="sr-only">
@@ -1629,7 +1684,7 @@ export function Component() {
                         {hasAttack && (
                           <RollChip
                             expr={`1d20${fmt(sc.attackMod.value)}`}
-                            display={`Atk ${fmt(sc.attackMod.value)}`}
+                            display={`Atk ${signed(sc.attackMod.value)}`}
                             label={`${ref.name} spell attack`}
                             variant="d20"
                             roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`)}
@@ -1683,6 +1738,7 @@ export function Component() {
             ) && attackCue('Spell attacks')}
             {sheet.grantedSpells.map((g) => {
               const entity = spellEntity(g.name, g.source);
+              const subtitle = `${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`;
               if (entity === undefined && spellsSettling) {
                 return (
                   <PendingSpellRow
@@ -1690,7 +1746,7 @@ export function Component() {
                     name={g.name}
                     source={g.source}
                     version={doc.rulesVersion}
-                    subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                    subtitle={subtitle}
                     className="min-h-11 border-line border-b py-1.5 last:border-b-0"
                   />
                 );
@@ -1763,7 +1819,7 @@ export function Component() {
                       name={g.name}
                       source={g.source}
                       version={doc.rulesVersion}
-                      subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                      subtitle={subtitle}
                       trigger={
                         // Name and badges on one line while there is room;
                         // with large text the badges wrap under the name.
@@ -1802,7 +1858,7 @@ export function Component() {
                     {limits.noVerbal.length > 0 && spellHasVerbal(g.name, g.source) && (
                       <span
                         className="shrink-0 text-guide"
-                        title={`${limits.noVerbal.join(', ')}: you can't speak — this spell has a verbal component`}
+                        title={`${limits.noVerbal.join(', ')}: you can't speak, and this spell has a verbal component`}
                       >
                         <AlertTriangle size={14} />
                         <span className="sr-only">
@@ -1831,7 +1887,7 @@ export function Component() {
                     {hasAttack && (
                       <RollChip
                         expr={`1d20${fmt(attackModifier)}`}
-                        display={`Atk ${fmt(attackModifier)}`}
+                        display={`Atk ${signed(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
                         roller={rollAttack(attackModifier, `${g.name} spell attack`)}
@@ -1875,6 +1931,48 @@ export function Component() {
           </div>
         </section>
       )}
+
+      {/* Rests, last: they end a stretch of play rather than take part in a
+          turn, and a long rest should not be a thumb's slip from the slots. */}
+      <section className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            let restored: string[] = [];
+            update((d) => void (restored = shortRest(d.play, sheet)), 'Short rest');
+            notify({
+              title: 'Short rest',
+              detail:
+                restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Nothing to restore',
+              tone: restored.length > 0 ? 'good' : 'info',
+            });
+          }}
+          className={buttonClass({ variant: 'outline' })}
+        >
+          <Hourglass size={18} /> Short rest
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            const ok = await askConfirm({
+              title: 'Long rest',
+              detail: 'Full HP, all spell slots and resources restored; regain half your hit dice.',
+              confirmLabel: 'Rest',
+            });
+            if (!ok) return;
+            let restored: string[] = [];
+            update((d) => void (restored = longRest(d.play, sheet, doc.rulesVersion)), 'Long rest');
+            notify({
+              title: 'Long rest complete',
+              detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
+              tone: 'good',
+            });
+          }}
+          className={buttonClass({ variant: 'outline' })}
+        >
+          <Moon size={18} /> Long rest
+        </button>
+      </section>
     </div>
   );
 }

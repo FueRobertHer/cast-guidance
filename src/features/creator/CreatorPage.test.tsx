@@ -364,7 +364,7 @@ describe('accessible names and states', () => {
     expect(namelessControls()).toEqual([]);
     expect(screen.getByRole('button', { name: 'Increase STR' })).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: /^\d+ pending decisions?: go to the Class step$/ }),
+      screen.getByRole('button', { name: /^\d+ to choose: go to the Class step$/ }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Point buy', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Manual', pressed: false })).toBeTruthy();
@@ -392,13 +392,11 @@ describe('picks still to make', () => {
 
   it('leads from a step without any to the first step that has them', async () => {
     renderPending('choices');
-    fireEvent.click(
-      screen.getByRole('button', { name: /pending decisions: go to the Class step$/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /to choose: go to the Class step$/ }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Class' })).toBeTruthy());
     expect(document.querySelector('[data-pending-choice]')).not.toBeNull();
     expect(
-      screen.getByRole('button', { name: /pending decisions: show the first on this step$/ }),
+      screen.getByRole('button', { name: /to choose: show the first on this step$/ }),
     ).toBeTruthy();
   });
 

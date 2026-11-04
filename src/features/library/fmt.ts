@@ -1,5 +1,6 @@
 /** Tolerant display formatting for 5etools entity fields. */
 import type { Entity } from '@/data5e/copyMod';
+import { signed } from '@/lib/signed';
 
 export const DMG_TYPES: Record<string, string> = {
   A: 'acid',
@@ -169,7 +170,7 @@ export function abilitySummary(ability: unknown): string {
           }`,
         );
       } else if (typeof v === 'number') {
-        parts.push(`${ABILITIES[k] ?? k} ${v >= 0 ? '+' : ''}${v}`);
+        parts.push(`${ABILITIES[k] ?? k} ${signed(v)}`);
       }
     }
   }

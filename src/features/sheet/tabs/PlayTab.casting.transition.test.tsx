@@ -110,7 +110,7 @@ describe('casting from the Play tab (TEST-003)', () => {
     ]);
     // Converting takes the Bonus Action on top of the spell's own Action.
     expect(pressed('Action')).toBe(true);
-    expect(pressed('Bonus')).toBe(true);
+    expect(pressed('Bonus action')).toBe(true);
     expect((await sheet.history())[0]).toBe('Cast Searing Bolt (L1 from 2 Sorcery Points)');
   });
 
@@ -162,7 +162,7 @@ describe('casting from the Play tab (TEST-003)', () => {
 
     press('Cast Steady Gaze');
     expect(concentratingOn()).toBe('Steady Gaze');
-    press('End turn');
+    press('New turn');
     press('Cast Warding Hum');
 
     expect(concentratingOn()).toBe('Warding Hum');
