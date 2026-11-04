@@ -7,6 +7,7 @@ import type { FeatureCard } from '@/engine/types';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { BuildFrom } from '../SheetLayout';
+import { SpellInfoSheet } from '../SpellInfoSheet';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const GROUPS: Array<{ types: Array<FeatureCard['origin']['type']>; title: string }> = [
@@ -113,17 +114,25 @@ export function Component() {
           <h2 className={H2}>Innate & granted spells</h2>
           <div className={listClass}>
             {sheet.grantedSpells.map((g) => (
-              <Link
+              <SpellInfoSheet
                 key={`${g.name}|${g.source}`}
-                to={`/library/spell/${encodeURIComponent(`${g.name}|${g.source}`.toLowerCase())}`}
-                className="flex min-h-tap items-center justify-between gap-3 px-4 py-2 text-body transition-colors duration-120 hover:bg-surface-raised"
-              >
-                <span className="capitalize">{g.name}</span>
-                <span className="text-caption text-ink-muted">
-                  {g.origin}
-                  {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
-                </span>
-              </Link>
+                name={g.name}
+                source={g.source}
+                version={doc.rulesVersion}
+                subtitle={`${g.origin}${g.usage === 'prepared' ? ' · always prepared' : ''}`}
+                trigger={
+                  <button
+                    type="button"
+                    className="flex min-h-tap w-full items-center justify-between gap-3 px-4 py-2 text-left text-body transition-colors duration-120 hover:bg-surface-raised"
+                  >
+                    <span className="capitalize">{g.name}</span>
+                    <span className="text-caption text-ink-muted">
+                      {g.origin}
+                      {g.ability !== undefined ? ` · ${g.ability.toUpperCase()}` : ''}
+                    </span>
+                  </button>
+                }
+              />
             ))}
           </div>
         </section>

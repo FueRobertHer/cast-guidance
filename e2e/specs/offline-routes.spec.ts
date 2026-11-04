@@ -184,7 +184,7 @@ test.describe('back online, each offline state recovers', () => {
     await page.goto(`/c/${manifest.casterId}/spells`);
     await expect(offlineSpellList(page)).toBeVisible();
     await backOnline(launch);
-    await expect(page.getByRole('link', { name: 'Fireball', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Fireball', exact: true })).toBeVisible();
     await expect(page.getByText(OFFLINE_SPELL_LIST)).toHaveCount(0);
     await expect(page.getByText(SPINNERS)).toHaveCount(0);
   });

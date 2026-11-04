@@ -341,7 +341,7 @@ export const ROUTES: readonly RouteCase[] = [
       return level === 'full'
         ? {
             ...content(pageTitle, (page) =>
-              sorcerer(page).getByRole('link', { name: 'Fireball', exact: true }),
+              sorcerer(page).getByRole('button', { name: 'Fireball', exact: true }),
             ),
             also: (page) => cleric(page),
             absent: (page) => page.getByText(/can't be downloaded|couldn't be downloaded/),
