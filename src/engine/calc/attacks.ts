@@ -1,6 +1,7 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
 import { lookupItem, parseBonus } from '../effects/item';
+import { filterValues, weaponFitsTypes } from '../effects/readers';
 import type {
   Ability,
   AttackRow,
@@ -93,15 +94,26 @@ function isWeapon(e: DataEntity): boolean {
   return type === 'M' || type === 'R' || type === 'AF';
 }
 
-function isProficient(e: DataEntity, weaponProfs: string[]): boolean {
+/** Whether a proficiency filter ("type=martial weapon|property=light;finesse") covers a weapon. */
+function inProficiencyFilter(e: DataEntity, filter: string): boolean {
+  const category = str(e.weaponCategory)?.toLowerCase();
+  if (category === undefined) return false;
+  if (!weaponFitsTypes(filterValues(filter, 'type'), category, isRangedWeapon(e))) return false;
+  const wanted = filterValues(filter, 'property');
+  const has = propertyCodes(e).map((c) => PROPERTY_LABELS[c]);
+  return wanted.length === 0 || wanted.some((p) => has.includes(p));
+}
+
+function isProficient(e: DataEntity, weaponProfs: string[], filters: string[]): boolean {
   const category = str(e.weaponCategory)?.toLowerCase(); // 'simple' | 'martial'
   const name = str(e.name)?.toLowerCase() ?? '';
   for (const prof of weaponProfs) {
     const p = prof.toLowerCase();
-    if (category !== undefined && p.startsWith(category)) return true; // "simple", "martial weapons"
+    // The whole string: "Martial weapons that have the Light property" isn't all of them.
+    if (p.replace(/ weapons?$/, '') === category) return true; // "simple", "martial weapons"
     if (p.replace(/s$/, '') === name || p === name) return true; // named weapon profs
   }
-  return false;
+  return filters.some((f) => inProficiencyFilter(e, f));
 }
 
 export function calcAttacks(
@@ -115,6 +127,7 @@ export function calcAttacks(
   const rows: AttackRow[] = [];
   const attackBonuses = effectsOf(effects, 'attackBonus');
   const damageBonuses = effectsOf(effects, 'damageBonus');
+  const profFilters = effectsOf(effects, 'weaponProfFilter').map((f) => f.filter);
 
   const buildRow = (
     label: string,
@@ -200,7 +213,7 @@ export function calcAttacks(
       buildRow(
         str(e.name) ?? entry.ref.name,
         ability,
-        isProficient(e, weaponProfs),
+        isProficient(e, weaponProfs, profFilters),
         parseBonus(e.bonusWeapon),
         ranged,
         str(e.dmg1),

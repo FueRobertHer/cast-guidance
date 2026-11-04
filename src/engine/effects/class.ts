@@ -1,3 +1,4 @@
+import { plainEntryText } from '../../data5e/entries/plainText';
 import { calcAbilities } from '../calc/abilities';
 import { classSpellcastingMode } from '../calc/slots';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
@@ -960,23 +961,34 @@ export function collectClasses(col: Collector): void {
       ? ((cls.startingProficiencies ?? {}) as DataEntity)
       : (((cls.multiclassing as DataEntity | undefined)?.proficienciesGained ?? {}) as DataEntity);
     {
+      // These lists tag their names ("{@item longsword|phb|longswords}"). The
+      // sheet shows what is stored here and attacks match weapons against it,
+      // so it is kept as the words, not the markup.
       const sp = profSource;
       for (const armor of Array.isArray(sp.armor) ? sp.armor : []) {
         const label =
           typeof armor === 'string'
             ? armor
             : (str((armor as DataEntity).proficiency) ?? JSON.stringify(armor));
-        col.add({ kind: 'armorProf', name: label, origin });
+        col.add({ kind: 'armorProf', name: plainEntryText(label), origin });
       }
       for (const weapon of Array.isArray(sp.weapons) ? sp.weapons : []) {
         const label =
           typeof weapon === 'string'
             ? weapon
             : (str((weapon as DataEntity).proficiency) ?? JSON.stringify(weapon));
-        col.add({ kind: 'weaponProf', name: label, origin });
+        col.add({ kind: 'weaponProf', name: plainEntryText(label), origin });
+      }
+      // A 2024 Monk's or Rogue's list limits martial weapons in a sentence, which
+      // the sheet shows as written; this field is what it means to an attack.
+      for (const grant of asEntityArray(sp.weaponProficiencies)) {
+        const filter = str((grant.all as DataEntity | undefined)?.fromFilter);
+        if (filter !== undefined) col.add({ kind: 'weaponProfFilter', filter, origin });
       }
       for (const tool of Array.isArray(sp.tools) ? sp.tools : []) {
-        if (typeof tool === 'string') col.add({ kind: 'toolProf', name: tool, origin });
+        if (typeof tool === 'string') {
+          col.add({ kind: 'toolProf', name: plainEntryText(tool), origin });
+        }
       }
       readProficiencyList(
         col,

@@ -137,6 +137,50 @@ describe('calcAttacks', () => {
     ).toBe(3);
   });
 
+  it('reads a category however the list spells it', () => {
+    for (const spelled of ['martial', 'Martial', 'martial weapon', 'Martial Weapons']) {
+      const rows = attacks(docWith('Longsword'), abilities(3, 1), 2, [spelled]);
+      expect(row(rows, 'Longsword')?.toHit.value).toBe(5);
+    }
+  });
+
+  it('does not take a sentence for the category it starts with', () => {
+    const rows = attacks(docWith('Longsword'), abilities(3, 1), 2, [
+      'Martial weapons that have the Light property',
+    ]);
+    expect(row(rows, 'Longsword')?.toHit.value).toBe(3);
+  });
+
+  describe('a proficiency filter', () => {
+    const toHit = (weapon: string, filter: string) =>
+      row(
+        attacks(
+          docWith(weapon),
+          abilities(0, 0),
+          2,
+          [],
+          [{ kind: 'weaponProfFilter', filter, origin }],
+        ),
+        weapon,
+      )?.toHit.value;
+
+    it('covers a weapon with any property it lists', () => {
+      expect(toHit('Rapier', 'type=martial weapon|property=light;finesse')).toBe(2);
+    });
+
+    it('leaves out a weapon with none of them', () => {
+      expect(toHit('Longsword', 'type=martial weapon|property=light;finesse')).toBe(0);
+    });
+
+    it('leaves out a weapon of another type, whatever its properties', () => {
+      expect(toHit('Shortbow', 'type=martial weapon')).toBe(0);
+    });
+
+    it('with no property in it covers the whole type', () => {
+      expect(toHit('Longsword', 'type=martial weapon')).toBe(2);
+    });
+  });
+
   it('applies scoped attack bonuses', () => {
     const effects: EffectInput[] = [{ origin, kind: 'attackBonus', scope: 'all', amount: 1 }];
     expect(
