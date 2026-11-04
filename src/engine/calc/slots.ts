@@ -3,6 +3,7 @@ import { num, str } from '../effects/base';
 import {
   type Ability,
   type CharacterDoc,
+  type ClassLevelEntry,
   type DataEntity,
   type DerivedAbility,
   refUid,
@@ -79,6 +80,127 @@ export const PACT_SLOTS: Array<[number, number]> = [
   [4, 5],
 ];
 
+/** Mystic Arcanum: the warlock level that opens each of spell levels 6-9, in both editions. */
+export const ARCANUM_LEVELS = [11, 13, 15, 17];
+
+const NO_SLOTS = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+/**
+ * A class's or subclass's own spell slot table ("Spell Slots per Spell
+ * Level"), one row per class level, nine columns. 5etools keeps it in
+ * `classTableGroups` on a class and `subclassTableGroups` on a subclass
+ * caster such as the Eldritch Knight; undefined when there is none.
+ */
+export function ownSlotTable(e: DataEntity): number[][] | undefined {
+  for (const key of ['classTableGroups', 'subclassTableGroups']) {
+    const groups = e[key];
+    if (!Array.isArray(groups)) continue;
+    for (const g of groups) {
+      const rows = (g as { rowsSpellProgression?: unknown } | null)?.rowsSpellProgression;
+      if (!Array.isArray(rows) || rows.length === 0 || !rows.every(Array.isArray)) continue;
+      return rows.map((r: unknown[]) =>
+        NO_SLOTS.map((_, i) => {
+          const n = r[i];
+          return typeof n === 'number' && n > 0 ? n : 0;
+        }),
+      );
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The full-caster row a class's own table follows, for data with no table.
+ * On its own, a half or third caster rounds up from its first spellcasting
+ * level (a Paladin 5 has a level 3 caster's slots), where the shared
+ * multiclass count (`casterLevelFor`) rounds down.
+ */
+export function ownCasterLevel(progression: string, classLevel: number): number {
+  switch (progression) {
+    case 'full':
+      return classLevel;
+    case 'artificer':
+      return Math.ceil(classLevel / 2);
+    case '1/2':
+      return classLevel >= 2 ? Math.ceil(classLevel / 2) : 0;
+    case '1/3':
+      return classLevel >= 3 ? Math.ceil(classLevel / 3) : 0;
+    default:
+      return 0;
+  }
+}
+
+const KNOWN_PROGRESSIONS = new Set(['full', 'artificer', '1/2', '1/3']);
+
+/**
+ * A slot caster's own slots at each class level 1-20: its table's row where
+ * the data has one, else the full-caster row its progression follows (past
+ * the end of a short homebrew table, say). Undefined for a progression this
+ * cannot read and no table.
+ */
+function ownSlotRows(caster: DataEntity, progression: string): number[][] | undefined {
+  const table = ownSlotTable(caster);
+  const known = KNOWN_PROGRESSIONS.has(progression);
+  if (table === undefined && !known) return undefined;
+  return Array.from({ length: Math.max(20, table?.length ?? 0) }, (_, i) => {
+    const row = table?.[i];
+    if (row !== undefined) return row;
+    const level = known ? ownCasterLevel(progression, i + 1) : 0;
+    return level > 0 ? [...(STANDARD_SLOTS[Math.min(level, 20) - 1] ?? NO_SLOTS)] : [...NO_SLOTS];
+  });
+}
+
+/** A slot caster's own slots at its current level, all zeros where it has none. */
+function ownSlotsAt(caster: DataEntity, progression: string, classLevel: number): number[] {
+  return ownSlotRows(caster, progression)?.[Math.min(classLevel, 20) - 1] ?? [...NO_SLOTS];
+}
+
+/** See `SpellcastingBlock.learnable`. */
+export function learnableSpellLevels(
+  caster: DataEntity,
+  progression: string,
+  classLevel: number,
+): SpellcastingBlock['learnable'] {
+  const unlocksAt: (number | null)[] = [];
+  if (progression === 'pact') {
+    for (let n = 1; n <= 9; n++) {
+      const i = PACT_SLOTS.findIndex(([, level]) => level >= n);
+      unlocksAt.push(n <= 5 ? (i >= 0 ? i + 1 : null) : (ARCANUM_LEVELS[n - 6] ?? null));
+    }
+  } else {
+    const rows = ownSlotRows(caster, progression);
+    if (rows === undefined) return undefined;
+    for (let n = 1; n <= 9; n++) {
+      const i = rows.findIndex((r) => (r[n - 1] ?? 0) > 0);
+      unlocksAt.push(i >= 0 ? i + 1 : null);
+    }
+  }
+  const upTo = unlocksAt.reduce<number>(
+    (top, at, i) => (at !== null && at <= classLevel ? i + 1 : top),
+    0,
+  );
+  return { upTo, unlocksAt };
+}
+
+/**
+ * Where a class's spellcasting comes from: the class itself, or, for a class
+ * with none of its own, its subclass (the Eldritch Knight's Fighter).
+ */
+function casterOf(
+  col: Collector,
+  entry: ClassLevelEntry,
+): { cls: DataEntity; caster: DataEntity; progression: string; sub?: DataEntity } | undefined {
+  const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
+  if (cls === undefined) return undefined;
+  const own = str(cls.casterProgression);
+  if (own !== undefined) return { cls, caster: cls, progression: own };
+  const ref = entry.subclass;
+  const sub = ref !== undefined ? col.ctx.get('subclass', ref.name, ref.source) : undefined;
+  const progression = str(sub?.casterProgression);
+  if (sub === undefined || progression === undefined) return undefined;
+  return { cls, caster: sub, progression, sub };
+}
+
 export function casterLevelFor(progression: string, classLevel: number): number {
   switch (progression) {
     case 'full':
@@ -119,27 +241,38 @@ export function calcSpellcasting(
 ): SpellcastingBlock[] {
   const blocks: SpellcastingBlock[] = [];
 
-  // Multiclass spell slots: sum caster levels across slot-progression classes
-  // and read one shared table row. Pact magic stays separate.
-  let combinedCasterLevel = 0;
-  for (const entry of doc.classes) {
-    const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
-    const progression = str(cls?.casterProgression);
-    if (progression !== undefined && progression !== 'pact') {
-      combinedCasterLevel += casterLevelFor(progression, entry.levels);
+  const casters = doc.classes.map((entry) => ({ entry, from: casterOf(col, entry) }));
+
+  // Spell slots: one class with them reads its own table. Several sum their
+  // caster levels and read one shared row, which rounds a half or third
+  // caster down. Pact magic is separate and counts toward neither, and so
+  // does a class with no slots yet (a 2014 ranger at level 1 has no
+  // Spellcasting feature to multiclass with).
+  const slotCasters = casters.filter(
+    (c) =>
+      c.from !== undefined &&
+      c.from.progression !== 'pact' &&
+      ownSlotsAt(c.from.caster, c.from.progression, c.entry.levels).some((n) => n > 0),
+  );
+  let sharedSlots = [...NO_SLOTS];
+  const only = slotCasters.length === 1 ? slotCasters[0] : undefined;
+  if (only?.from !== undefined) {
+    sharedSlots = [...ownSlotsAt(only.from.caster, only.from.progression, only.entry.levels)];
+  } else if (slotCasters.length > 1) {
+    const combinedCasterLevel = slotCasters.reduce(
+      (sum, c) => sum + (c.from ? casterLevelFor(c.from.progression, c.entry.levels) : 0),
+      0,
+    );
+    if (combinedCasterLevel > 0) {
+      sharedSlots = [...(STANDARD_SLOTS[Math.min(combinedCasterLevel, 20) - 1] ?? NO_SLOTS)];
     }
   }
-  const sharedSlots: number[] =
-    combinedCasterLevel > 0
-      ? [...(STANDARD_SLOTS[Math.min(combinedCasterLevel, 20) - 1] ?? [])]
-      : [0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-  for (const entry of doc.classes) {
-    const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
-    if (cls === undefined) continue;
-    const progression = str(cls.casterProgression);
-    const abilityKey = str(cls.spellcastingAbility) as Ability | undefined;
-    if (progression === undefined || abilityKey === undefined) continue;
+  for (const { entry, from } of casters) {
+    if (from === undefined) continue;
+    const { cls, caster: cs, progression, sub } = from;
+    const abilityKey = str(cs.spellcastingAbility) as Ability | undefined;
+    if (abilityKey === undefined) continue;
 
     const mod = abilities[abilityKey]?.mod ?? 0;
     const dcParts = [
@@ -152,8 +285,8 @@ export function calcSpellcasting(
       { label: `${abilityKey.toUpperCase()} modifier`, amount: mod },
     ];
 
-    // Spell slots are a character-wide pool: every caster block sees the
-    // shared multiclass table; pact magic is tracked on top for warlocks.
+    // Spell slots are a character-wide pool: every caster block sees the same
+    // slots; pact magic is tracked on top for warlocks.
     const slots: number[] = [...sharedSlots];
     let pactSlots: { count: number; level: number } | undefined;
     if (progression === 'pact') {
@@ -161,33 +294,47 @@ export function calcSpellcasting(
       if (row !== undefined) pactSlots = { count: row[0], level: row[1] };
     }
 
-    const cantrips = Array.isArray(cls.cantripProgression)
-      ? num(cls.cantripProgression[Math.min(entry.levels, 20) - 1])
+    const cantrips = Array.isArray(cs.cantripProgression)
+      ? num(cs.cantripProgression[Math.min(entry.levels, 20) - 1])
       : undefined;
 
+    const learnable = learnableSpellLevels(cs, progression, entry.levels);
+    // Before its first spell slot (a 2014 paladin at level 1) a class has no
+    // leveled spells to prepare or know, whatever its formula's floor of one.
+    const noLeveledYet = learnable?.upTo === 0;
+
     let preparedMax: number | undefined;
-    if (Array.isArray(cls.preparedSpellsProgression)) {
-      preparedMax = num(cls.preparedSpellsProgression[Math.min(entry.levels, 20) - 1]);
+    if (noLeveledYet) {
+      preparedMax = undefined;
+    } else if (Array.isArray(cs.preparedSpellsProgression)) {
+      preparedMax = num(cs.preparedSpellsProgression[Math.min(entry.levels, 20) - 1]);
     } else {
-      preparedMax = preparedFromFormula(str(cls.preparedSpells), entry.levels, mod);
+      preparedMax = preparedFromFormula(str(cs.preparedSpells), entry.levels, mod);
     }
 
     // Known casters (sorcerer/bard/ranger/warlock) cap the leveled spells they
     // know via a level-indexed progression. Read it for the over-limit cue; the
     // UI only enforces it advisorily for known/pact modes.
-    const knownRow = Array.isArray(cls.spellsKnownProgression)
-      ? cls.spellsKnownProgression
-      : Array.isArray(cls.spellsKnownProgressionFixed)
-        ? cls.spellsKnownProgressionFixed
+    const knownRow = Array.isArray(cs.spellsKnownProgression)
+      ? cs.spellsKnownProgression
+      : Array.isArray(cs.spellsKnownProgressionFixed)
+        ? cs.spellsKnownProgressionFixed
         : undefined;
     const spellsKnownMax =
-      knownRow !== undefined ? num(knownRow[Math.min(entry.levels, 20) - 1]) : undefined;
+      knownRow !== undefined && !noLeveledYet
+        ? num(knownRow[Math.min(entry.levels, 20) - 1])
+        : undefined;
 
+    const className = str(cls.name) ?? entry.ref.name;
     blocks.push({
       classUid: refUid(entry.ref),
-      className: str(cls.name) ?? entry.ref.name,
+      className: sub !== undefined ? (str(sub.name) ?? className) : className,
+      ...(sub !== undefined
+        ? { fromSubclass: { className, shortName: str(sub.shortName) ?? str(sub.name) ?? '' } }
+        : {}),
+      ...(learnable !== undefined ? { learnable } : {}),
       ability: abilityKey,
-      mode: classSpellcastingMode(cls),
+      mode: classSpellcastingMode(cs),
       saveDc: {
         value: dcParts.reduce((s, p) => s + p.amount, 0),
         base: dcParts.reduce((s, p) => s + p.amount, 0),

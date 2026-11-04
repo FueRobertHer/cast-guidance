@@ -14,14 +14,16 @@ import {
   classSpellUidsFromEntities,
   getSpellClassLookup,
   type SpellClassLookup,
+  subclassSpellUids,
 } from '@/data5e/spellLookup';
-import type {
-  CharacterDoc,
-  DerivedResource,
-  DerivedSheet,
-  EntityRef,
-  SpellcastingBlock,
-  SpellcastingMode,
+import {
+  type CharacterDoc,
+  type DerivedResource,
+  type DerivedSheet,
+  type EntityRef,
+  refUid,
+  type SpellcastingBlock,
+  type SpellcastingMode,
 } from '@/engine/types';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import type { DocUpdater } from '@/stores/characterSession';
@@ -66,6 +68,13 @@ const MODE_HINT: Record<SpellcastingMode, string> = {
 
 function levelLabel(lvl: number): string {
   return lvl === 0 ? 'Cantrips' : `Level ${lvl}`;
+}
+
+/** Spell levels as a span: "level 3", "levels 3 to 9". */
+function levelSpan(levels: readonly number[]): string {
+  const lo = Math.min(...levels);
+  const hi = Math.max(...levels);
+  return lo === hi ? `level ${lo}` : `levels ${lo} to ${hi}`;
 }
 
 /** A count past its limit: allowed, and flagged in the guide's gold (DS-001). */
@@ -139,12 +148,32 @@ function ClassSpells({
   const registry = useRegistry();
   const [filter, setFilter] = useState('');
   const [showHiddenSources, setShowHiddenSources] = useState(false);
+  const [showLocked, setShowLocked] = useState(false);
   const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
 
-  const classUids = useMemo(
-    () => (lookup !== null ? classSpellUids(lookup, block.className) : null),
-    [lookup, block.className],
-  );
+  const subclassOf = block.fromSubclass?.className;
+  const subclassShort = block.fromSubclass?.shortName;
+  const classUids = useMemo(() => {
+    if (lookup === null) return null;
+    return subclassOf !== undefined && subclassShort !== undefined
+      ? subclassSpellUids(lookup, subclassOf, subclassShort)
+      : classSpellUids(lookup, block.className);
+  }, [lookup, block.className, subclassOf, subclassShort]);
+
+  // The spell levels this class can learn at its own level. Higher ones wait
+  // behind an offer, as hidden books do: allowed, but a choice the player makes.
+  const upTo = block.learnable?.upTo;
+  const levelClass = subclassOf ?? block.className;
+  const classLevel = doc.classes.find((c) => refUid(c.ref) === block.classUid)?.levels;
+  const who = classLevel !== undefined ? `${levelClass} ${classLevel}` : levelClass;
+  const isLockedLevel = (lvl: number) => upTo !== undefined && lvl > upTo;
+  const firstUnlock = block.learnable?.unlocksAt.find((at) => at !== null) ?? undefined;
+  const unlockNote = (lvl: number) => {
+    const at = block.learnable?.unlocksAt[lvl - 1];
+    return at === null || at === undefined
+      ? `No ${levelClass} level opens these`
+      : `Unlocks at ${levelClass} ${at}`;
+  };
 
   // Homebrew spells carry classes.fromClassList inline — union them in.
   const homebrewUids = useMemo(
@@ -167,8 +196,12 @@ function ClassSpells({
    */
   const onSheetKey = [...knownUids, ...preparedUids].sort().join(',');
 
-  const { byLevel, sourceHiddenCount } = useMemo(() => {
-    const empty = { byLevel: new Map<number, Entity[]>(), sourceHiddenCount: 0 };
+  const { byLevel, sourceHiddenCount, lockedHidden } = useMemo(() => {
+    const empty = {
+      byLevel: new Map<number, Entity[]>(),
+      sourceHiddenCount: 0,
+      lockedHidden: { count: 0, levels: [] as number[] },
+    };
     if (registry === null || classUids === null) return empty;
     // Hidden sources and the other edition's printings drop out of the list to
     // learn from, but a spell this character already knows or prepares stays
@@ -184,21 +217,34 @@ function ClassSpells({
       : applySourcePolicy(spells, policy, sourceOf, isOnSheet);
     const f = filter.trim().toLowerCase();
     const matchesText = (s: Entity) => f === '' || nameOf(s).toLowerCase().includes(f);
-    // Counted after the text filter so the offer never promises matches that
-    // revealing hidden books would not produce.
+    const levelOfSpell = (s: Entity) => (typeof s.level === 'number' ? s.level : 0);
+    // A spell above the class's level waits behind its own offer, unless it is
+    // on the sheet already or searched for: a typed name is a choice made.
+    const capped = !showLocked && f === '' && upTo !== undefined;
+    const heldBack = (s: Entity) => capped && levelOfSpell(s) > (upTo ?? 0) && !isOnSheet(s);
+    // Counted after the text filter, and without what the level cap holds
+    // back, so the offer never promises spells that revealing hidden books
+    // would not produce.
     const sourceHiddenCount = showHiddenSources
       ? 0
-      : spells.filter((s) => matchesText(s) && !policyAllows(policy, sourceOf(s)) && !isOnSheet(s))
-          .length;
+      : spells.filter(
+          (s) =>
+            matchesText(s) && !policyAllows(policy, sourceOf(s)) && !isOnSheet(s) && !heldBack(s),
+        ).length;
+    const held = allowed.filter(heldBack);
+    const lockedHidden = {
+      count: held.length,
+      levels: [...new Set(held.map(levelOfSpell))].sort((a, b) => a - b),
+    };
     const map = new Map<number, Entity[]>();
-    for (const s of allowed.filter(matchesText)) {
-      const lvl = typeof s.level === 'number' ? s.level : 0;
+    for (const s of allowed.filter((s) => matchesText(s) && !heldBack(s))) {
+      const lvl = levelOfSpell(s);
       const list = map.get(lvl) ?? [];
       list.push(s);
       map.set(lvl, list);
     }
     for (const list of map.values()) list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-    return { byLevel: map, sourceHiddenCount };
+    return { byLevel: map, sourceHiddenCount, lockedHidden };
   }, [
     registry,
     classUids,
@@ -207,8 +253,11 @@ function ClassSpells({
     onSheetKey,
     policy,
     showHiddenSources,
+    showLocked,
+    upTo,
     filter,
   ]);
+  const anyLockedShown = [...byLevel.keys()].some(isLockedLevel);
 
   const toggle = (spell: Entity, list: 'known' | 'prepared') => {
     update((d) => {
@@ -291,6 +340,15 @@ function ClassSpells({
   const over = overPrepared || overCantrips || overKnown;
 
   const heading = useRef<HTMLHeadingElement>(null);
+  const levelsOffer = useRef<HTMLButtonElement>(null);
+  const toggleLocked = () => {
+    setShowLocked((v) => !v);
+    // Hidden again with every spell there on the sheet, nothing is held back
+    // and the control goes. Land on this class's heading, not the page.
+    requestAnimationFrame(() => {
+      if (levelsOffer.current === null) heading.current?.focus({ preventScroll: true });
+    });
+  };
   // Offered, never done for the player: the confirm lists exactly what goes,
   // and only this class's entry changes.
   const trim = async () => {
@@ -423,9 +481,13 @@ function ClassSpells({
           many are hidden). */}
       {complete && classUids !== null && byLevel.size === 0 && (
         <p className="px-1 text-body text-ink-muted">
-          {filter.trim() === ''
-            ? `No spells on the ${block.className} list to show.`
-            : `No ${block.className} spells match “${filter.trim()}”.`}
+          {upTo === 0 && firstUnlock !== undefined && lockedHidden.count > 0
+            ? `${block.className} spells start at ${levelClass} ${firstUnlock}.`
+            : lockedHidden.count > 0 && sourceHiddenCount === 0
+              ? `No ${block.className} spells ${who} can learn yet.`
+              : filter.trim() === ''
+                ? `No spells on the ${block.className} list to show.`
+                : `No ${block.className} spells match “${filter.trim()}”.`}
         </p>
       )}
       {sourceHiddenCount > 0 && (
@@ -447,6 +509,15 @@ function ClassSpells({
         .map(([lvl, spells]) => {
           const knownAtLevel = spells.filter((s) => knownUids.has(uidOf(s)));
           const open = filter !== '' || knownAtLevel.length > 0;
+          const locked = isLockedLevel(lvl);
+          // Held back, a locked level shows only what is on the sheet, so a
+          // count of what it offers would undercount it.
+          const partial = locked && !showLocked && filter.trim() === '';
+          const caption = [
+            locked ? unlockNote(lvl) : undefined,
+            knownAtLevel.length > 0 ? `${knownAtLevel.length} known` : undefined,
+            partial ? undefined : `${spells.length} available`,
+          ].filter((p) => p !== undefined);
           return (
             <details
               key={lvl}
@@ -459,10 +530,10 @@ function ClassSpells({
                   aria-hidden="true"
                   className="shrink-0 text-ink-muted transition-transform duration-200 group-open:rotate-90"
                 />
-                {levelLabel(lvl)}
+                {/* Kept whole: a long caption wraps beside it instead. */}
+                <span className="shrink-0">{levelLabel(lvl)}</span>
                 <span className="font-normal text-caption text-ink-muted">
-                  {knownAtLevel.length > 0 ? `${knownAtLevel.length} known · ` : ''}
-                  {spells.length} available
+                  {caption.join(' · ')}
                 </span>
               </summary>
               <div className="flex flex-col divide-y divide-line border-line border-t">
@@ -510,6 +581,16 @@ function ClassSpells({
                           already. */}
                       <span className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end">
                         <span className="mr-1 flex items-center gap-1">
+                          {/* Allowed, and flagged in the guide's colour with
+                              words, as an over-limit count is. */}
+                          {locked && (known || prepared) && (
+                            <span
+                              className={badgeClass('guide')}
+                              title={`${unlockNote(lvl)}. Allowed, just flagging it.`}
+                            >
+                              Above your level
+                            </span>
+                          )}
                           {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (
                             <OutsideSourcesChip />
                           )}
@@ -567,6 +648,17 @@ function ClassSpells({
             </details>
           );
         })}
+      {/* Where the held-back levels would be, and one control both ways, so
+          focus stays on it as the list grows and shrinks above. */}
+      {filter.trim() === '' && (lockedHidden.count > 0 || (showLocked && anyLockedShown)) && (
+        <button type="button" ref={levelsOffer} onClick={toggleLocked} className={OFFER}>
+          {showLocked
+            ? `Hide spells above what ${who} can learn`
+            : `${lockedHidden.count} ${lockedHidden.count === 1 ? 'spell' : 'spells'} at ${levelSpan(
+                lockedHidden.levels,
+              )}, above what ${who} can learn yet. Show them anyway`}
+        </button>
+      )}
     </section>
   );
 }

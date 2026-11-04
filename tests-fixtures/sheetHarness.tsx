@@ -51,7 +51,10 @@ import { makeTestContext } from './testWorld';
 /** Entities to layer over the test world, by entity type. */
 export type WorldLayer = Partial<Record<string, DataEntity[]>>;
 
-/** Which class spell lists a spell is on: `"name|source"` to class names. */
+/**
+ * Which class spell lists a spell is on: `"name|source"` to class names, or
+ * `"Class: SubclassShortName"` for a subclass caster's list.
+ */
 export type SpellLists = Record<string, readonly string[]>;
 
 /** Where each type lives in a release, as `normalizeDataset` reads it. */
@@ -84,14 +87,26 @@ function layered(type: string, extra: WorldLayer): DataEntity[] {
 
 /**
  * The generated class spell lookup, in the release's shape:
- * `lookup[source][name].class[classSource][className] = true`.
+ * `lookup[source][name].class[classSource][className] = true`, and
+ * `.subclass[classSource][className][subclassSource][shortName]` for a
+ * subclass caster's list.
  */
 function spellLookup(lists: SpellLists): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
   for (const [spell, classes] of Object.entries(lists)) {
     const [name = '', source = ''] = spell.toLowerCase().split('|');
     const bySource = (out[source] ??= {});
-    bySource[name] = { class: { TST: Object.fromEntries(classes.map((c) => [c, true])) } };
+    const subclass: Record<string, { TST: Record<string, { name: string }> }> = {};
+    for (const c of classes) {
+      const [cls = '', short] = c.split(': ');
+      if (short !== undefined) (subclass[cls] ??= { TST: {} }).TST[short] = { name: short };
+    }
+    bySource[name] = {
+      class: {
+        TST: Object.fromEntries(classes.filter((c) => !c.includes(': ')).map((c) => [c, true])),
+      },
+      ...(Object.keys(subclass).length > 0 ? { subclass: { TST: subclass } } : {}),
+    };
   }
   return out;
 }

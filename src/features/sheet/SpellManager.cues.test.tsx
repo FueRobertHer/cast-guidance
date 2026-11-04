@@ -44,6 +44,14 @@ const cantrip = (name: string): DataEntity => ({
 });
 /** Four more cantrips, so a level 1 Sorcerer (four cantrips) can go one over. */
 const CANTRIPS = ['Frost Pin', 'Mote Light', 'Quiet Hum', 'Spark Flick'].map(cantrip);
+/** A third 1st-level spell, so a Sorcerer 1 can know one past its limit of two. */
+const WARD: DataEntity = {
+  name: 'Small Ward',
+  source: 'TST',
+  level: 1,
+  school: 'A',
+  entries: ['A small ward.'],
+};
 
 /** A wizard-shaped class: prepares from a fixed known list, so a spellbook. */
 const scribe: DataEntity = {
@@ -133,11 +141,15 @@ describe('prepared and known limits (TEST-003)', () => {
     const doc = sorcerer(1);
     doc.spellcasting = { 'sorcerer|tst': { known: [], prepared: [] } };
     const lists = Object.fromEntries(
-      ['Guidance', ...CANTRIPS.map((c) => String(c.name)), 'Searing Bolt', 'Quick Bolt', 'Aid'].map(
-        (n) => [`${n}|TST`, ['Sorcerer']],
-      ),
+      [
+        'Guidance',
+        ...CANTRIPS.map((c) => String(c.name)),
+        'Searing Bolt',
+        'Quick Bolt',
+        'Small Ward',
+      ].map((n) => [`${n}|TST`, ['Sorcerer']]),
     );
-    await renderSheet(doc, { path: 'spells', extra: { spell: CANTRIPS }, lists });
+    await renderSheet(doc, { path: 'spells', extra: { spell: [...CANTRIPS, WARD] }, lists });
     expect(spellBlock('Sorcerer').counters).toContain('cantrips 0/4');
     expect(spellBlock('Sorcerer').counters).toContain('known 0/2');
 
@@ -148,12 +160,12 @@ describe('prepared and known limits (TEST-003)', () => {
     expect(spellBlock('Sorcerer').overLimit).toMatch(/^1 over your cantrip limit\./);
 
     press('Learn Spark Flick');
-    for (const name of ['Searing Bolt', 'Quick Bolt', 'Aid']) press(`Learn ${name}`);
+    for (const name of ['Searing Bolt', 'Quick Bolt', 'Small Ward']) press(`Learn ${name}`);
     expect(spellBlock('Sorcerer').counters).toContain('known 3/2');
     expect(spellBlock('Sorcerer').overLimit).toMatch(/^1 over your spells-known limit\./);
     expect(spellBlock('Sorcerer').overLimit).not.toMatch(/cantrip/);
 
-    press('Learn Aid');
+    press('Learn Small Ward');
     expect(spellBlock('Sorcerer').overLimit).toBeUndefined();
   });
 });

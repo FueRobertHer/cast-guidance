@@ -324,7 +324,23 @@ export type SpellcastingMode = 'known' | 'prepared' | 'spellbook' | 'pact' | 'no
 
 export interface SpellcastingBlock {
   classUid: string;
+  /** What casts: the class, or the subclass when it is `fromSubclass`. */
   className: string;
+  /**
+   * Set when the spellcasting comes from a subclass (Eldritch Knight, Arcane
+   * Trickster): its spell list is that subclass's, and `className` here names
+   * the class whose levels count.
+   */
+  fromSubclass?: { className: string; shortName: string };
+  /**
+   * The spell levels this class can learn, from its own table as if it were
+   * the only class, since a multiclass caster learns per class. `upTo` is the
+   * highest open at its current level (0 before its first, as for a 2014
+   * paladin at level 1); `unlocksAt[n - 1]` is the class level that opens
+   * spell level n, null where none does. Absent when the data cannot say, so
+   * nothing is held back.
+   */
+  learnable?: { upTo: number; unlocksAt: (number | null)[] };
   ability: Ability;
   mode: SpellcastingMode;
   saveDc: DerivedValue;
