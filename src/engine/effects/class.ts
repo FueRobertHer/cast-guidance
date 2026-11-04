@@ -979,6 +979,12 @@ export function collectClasses(col: Collector): void {
             : (str((weapon as DataEntity).proficiency) ?? JSON.stringify(weapon));
         col.add({ kind: 'weaponProf', name: plainEntryText(label), origin });
       }
+      // A 2024 Monk's or Rogue's list limits martial weapons in a sentence, which
+      // the sheet shows as written; this field is what it means to an attack.
+      for (const grant of asEntityArray(sp.weaponProficiencies)) {
+        const filter = str((grant.all as DataEntity | undefined)?.fromFilter);
+        if (filter !== undefined) col.add({ kind: 'weaponProfFilter', filter, origin });
+      }
       for (const tool of Array.isArray(sp.tools) ? sp.tools : []) {
         if (typeof tool === 'string') {
           col.add({ kind: 'toolProf', name: plainEntryText(tool), origin });

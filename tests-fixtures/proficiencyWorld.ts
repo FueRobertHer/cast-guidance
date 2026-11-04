@@ -60,8 +60,51 @@ const CLASSES: DataEntity[] = [
         'Martial weapons that have the {@filter Light|items|type=martial weapon|property=light} property',
       ],
       tools: ["Choose one type of {@item Artisan's Tools|XPHB} or {@item Musical Instrument|XPHB}"],
+      weaponProficiencies: [
+        { simple: true, all: { fromFilter: 'type=martial weapon|property=light' } },
+      ],
     },
     classFeatures: [],
+  },
+  {
+    name: 'Rogue',
+    source: 'XPHB',
+    hd: { number: 1, faces: 8 },
+    proficiency: ['dex', 'int'],
+    startingProficiencies: {
+      weapons: [
+        'simple',
+        'Martial weapons that have the {@filter Finesse or Light|items|type=martial weapon|property=finesse;light} property',
+      ],
+      weaponProficiencies: [
+        { simple: true, all: { fromFilter: 'type=martial weapon|property=light;finesse' } },
+      ],
+    },
+    classFeatures: [],
+  },
+];
+
+/** Martial weapons with the properties those filters ask about, in the 2024 shape. */
+const BASE_ITEMS: DataEntity[] = [
+  {
+    name: 'Shortsword',
+    source: 'TST',
+    type: 'M|XPHB',
+    weaponCategory: 'martial',
+    weapon: true,
+    dmg1: '1d6',
+    dmgType: 'P',
+    property: ['F|XPHB', 'L|XPHB'],
+  },
+  {
+    name: 'Rapier',
+    source: 'TST',
+    type: 'M|XPHB',
+    weaponCategory: 'martial',
+    weapon: true,
+    dmg1: '1d8',
+    dmgType: 'P',
+    property: ['F|XPHB'],
   },
 ];
 
@@ -78,7 +121,11 @@ const RACES: DataEntity[] = [
 /** The test world, with these classes and species in it. */
 export function makeProficiencyContext(): EngineContext {
   const world = makeTestContext();
-  const added: Record<string, DataEntity[]> = { class: CLASSES, race: RACES };
+  const added: Record<string, DataEntity[]> = {
+    class: CLASSES,
+    race: RACES,
+    baseitem: BASE_ITEMS,
+  };
   return {
     get(type, name, source) {
       const found = added[type]?.find(

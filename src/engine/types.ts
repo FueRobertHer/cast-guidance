@@ -156,6 +156,7 @@ export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'toolProf'; name: string }
   | { kind: 'armorProf'; name: string }
   | { kind: 'weaponProf'; name: string }
+  | { kind: 'weaponProfFilter'; filter: string } // "type=martial weapon|property=light"
   | { kind: 'language'; name: string }
   | { kind: 'acFormula'; label: string; base: number; addAbilities: Ability[]; dexMax?: number }
   | { kind: 'acBonus'; amount: number }

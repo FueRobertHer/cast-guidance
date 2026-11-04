@@ -224,21 +224,37 @@ const WEAPON_FILTER_TYPES: Record<string, (category: string, ranged: boolean) =>
 
 const DAMAGE_TYPES: Record<string, string> = { B: 'bludgeoning', P: 'piercing', S: 'slashing' };
 
-/**
- * The base weapons a 5etools item filter names ("type=martial weapon|
- * miscellaneous=mundane"). `type` values are alternatives; one the table does
- * not know but that still names a weapon ("mundane weapon") takes any. The
- * DMG's optional firearms (those with an `age`) are left out, and a weapon
- * printed in both editions is offered once.
- */
-function weaponFilterOptions(ctx: EngineContext, filter: string): ChoiceOption[] {
-  const types =
+/** One clause of a 5etools item filter, as its lowercased `;`-separated values. */
+export function filterValues(filter: string, clause: string): string[] {
+  return (
     filter
       .split('|')
-      .map((clause) => clause.split('='))
-      .find(([key]) => key?.trim().toLowerCase() === 'type')?.[1]
+      .map((c) => c.split('='))
+      .find(([key]) => key?.trim().toLowerCase() === clause)?.[1]
       ?.split(';')
-      .map((t) => t.trim().toLowerCase()) ?? [];
+      .map((t) => t.trim().toLowerCase()) ?? []
+  );
+}
+
+/**
+ * Whether a weapon is one of a filter's `type` values, which are alternatives.
+ * One the table does not know but that still names a weapon ("mundane weapon")
+ * takes any, and so does a filter with no `type` at all.
+ */
+export function weaponFitsTypes(types: string[], category: string, ranged: boolean): boolean {
+  return (
+    types.length === 0 ||
+    types.some((t) => WEAPON_FILTER_TYPES[t]?.(category, ranged) ?? t.endsWith(' weapon'))
+  );
+}
+
+/**
+ * The base weapons a 5etools item filter names ("type=martial weapon|
+ * miscellaneous=mundane"). The DMG's optional firearms (those with an `age`) are
+ * left out, and a weapon printed in both editions is offered once.
+ */
+function weaponFilterOptions(ctx: EngineContext, filter: string): ChoiceOption[] {
+  const types = filterValues(filter, 'type');
   const seen = new Set<string>();
   const options: ChoiceOption[] = [];
   for (const e of ctx.byType('baseitem')) {
@@ -247,8 +263,7 @@ function weaponFilterOptions(ctx: EngineContext, filter: string): ChoiceOption[]
     if (name === undefined || category === undefined || e.age !== undefined) continue;
     const code = String(e.type ?? '').split('|')[0];
     const ranged = code === 'R' || code === 'AF';
-    const fits = (t: string) => WEAPON_FILTER_TYPES[t]?.(category, ranged) ?? t.endsWith(' weapon');
-    if (types.length > 0 && !types.some(fits)) continue;
+    if (!weaponFitsTypes(types, category, ranged)) continue;
     if (seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     options.push({ id: name, label: name, description: weaponSummary(e, category, ranged) });

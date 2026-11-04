@@ -85,3 +85,31 @@ describe('attacks with a weapon proficiency that names the weapon', () => {
     expect(toHit(holding(docOf(['Mage', 'TST']), 'Longsword'), 'Longsword')).toBe(0);
   });
 });
+
+describe('attacks with a martial weapon proficiency limited to a property', () => {
+  const monk = () => docOf(['Monk', 'XPHB']); // Light
+  const rogue = () => docOf(['Rogue', 'XPHB']); // Finesse or Light
+
+  it('adds proficiency for a weapon that has the property', () => {
+    expect(toHit(holding(monk(), 'Shortsword'), 'Shortsword')).toBe(2);
+    expect(toHit(holding(rogue(), 'Shortsword'), 'Shortsword')).toBe(2);
+    expect(toHit(holding(rogue(), 'Rapier'), 'Rapier')).toBe(2);
+  });
+
+  it('adds nothing for a weapon without it', () => {
+    expect(toHit(holding(monk(), 'Longsword'), 'Longsword')).toBe(0);
+    expect(toHit(holding(monk(), 'Rapier'), 'Rapier')).toBe(0);
+    expect(toHit(holding(rogue(), 'Longsword'), 'Longsword')).toBe(0);
+  });
+
+  it('leaves every simple weapon covered', () => {
+    expect(toHit(holding(monk(), 'Dagger'), 'Dagger')).toBe(2);
+    expect(toHit(holding(rogue(), 'Dagger'), 'Dagger')).toBe(2);
+  });
+
+  it('gives way to another class that grants the whole category', () => {
+    expect(
+      toHit(holding(docOf(['Warrior', 'TST'], ['Monk', 'XPHB']), 'Longsword'), 'Longsword'),
+    ).toBe(2);
+  });
+});
