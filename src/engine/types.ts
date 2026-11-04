@@ -362,6 +362,16 @@ export interface DerivedSheet {
       prof: ProfLevel;
       /** What the build itself grants, which is what clearing an override restores. */
       profBase: ProfLevel;
+      /**
+       * Every origin in the build that grants it, proficiency or expertise,
+       * once each, in collection order.
+       */
+      sources: EffectOrigin[];
+      /**
+       * What would still make it proficient under a different background:
+       * proficiency grants only, less the background's own and its feat's.
+       */
+      sourcesBesideBackground: EffectOrigin[];
       ability: Ability;
     }
   >;

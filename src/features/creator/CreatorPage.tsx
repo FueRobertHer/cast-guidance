@@ -55,8 +55,8 @@ import { replaceWizardWith } from './leaveWizard';
 import { hasOriginChoices, listsPick, OriginChoices } from './OriginChoices';
 import { pendingSteps, stepForOrigin } from './pendingSteps';
 import {
-  backgroundBlurb,
   classBlurb,
+  makeBackgroundBlurb,
   makeSubclassBlurb,
   makeSubclassEntries,
   raceBlurb,
@@ -1050,7 +1050,7 @@ export function Component() {
               noun="background"
               fill
               dedupe
-              describe={backgroundBlurb}
+              describe={makeBackgroundBlurb(sheet?.skills)}
               infoType="background"
               entities={backgrounds}
               selectedUid={

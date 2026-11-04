@@ -18,6 +18,11 @@ export class Collector {
   readonly warnings: string[] = [];
   /** uids of non-repeatable feats already collected, to prevent double-apply. */
   readonly collectedFeats = new Set<string>();
+  /**
+   * The prompt id whose stored pick added each effect, so a pick can tell its
+   * own grants apart from the rest of the build (see `noteSkillSources`).
+   */
+  readonly pickOf = new Map<EffectInput, string>();
 
   constructor(doc: CharacterDoc, ctx: EngineContext) {
     this.doc = doc;
@@ -91,7 +96,13 @@ export class Collector {
     }
     // Apply what's chosen so far, but a multi-pick that isn't full yet stays
     // pending so the UI keeps showing it (fixes "closes after one" on Rogue).
+    const before = this.effects.length;
     apply(selected);
+    // A pick nested in this one (an ASI's feat, that feat's skills) has tagged
+    // its own effects already; those stay its own.
+    for (const e of this.effects.slice(before)) {
+      if (!this.pickOf.has(e)) this.pickOf.set(e, prompt.id);
+    }
     if (invalid || selected.length < prompt.count) {
       this.pending.push(prompt);
     } else {
