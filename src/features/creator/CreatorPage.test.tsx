@@ -67,6 +67,10 @@ import { wizardState } from './steps';
 
 registry.current = makeTestContext();
 
+// jsdom lays nothing out and has no scrollIntoView, which a pick calls to
+// bring itself into view once its list folds away.
+Element.prototype.scrollIntoView = () => undefined;
+
 /** Store `doc` as the draft the creator opens on. */
 function seedDoc(doc: CharacterDoc) {
   writeDraft({ doc, bundleChoices: {}, slotPicks: {} });
@@ -411,6 +415,71 @@ describe('picks still to make', () => {
   });
 });
 
+// A pick's own choices (a subclass, skills, a subrace, an origin feat) were
+// drawn below the whole list it came from, thousands of pixels down a species
+// or background list, and a new player never scrolled that far to find them.
+describe('a pick folds its list away', () => {
+  function renderStep(step: string, build: (doc: CharacterDoc) => void = () => undefined) {
+    const doc = newCharacterDoc('hero-1', 'Aria', 't');
+    build(doc);
+    seedDoc(doc);
+    renderCreator(['/', { pathname: '/create', search: `?step=${step}`, state: wizardState(1) }]);
+  }
+  const tap = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+  const warrior = (d: CharacterDoc) => {
+    d.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] }];
+  };
+
+  it('shows the pick and its choices, with how many wait, in place of the list', () => {
+    renderStep('class', warrior);
+    expect(screen.queryByRole('button', { name: 'Mage' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Warrior' })).toBeTruthy();
+    const choices = screen.getByRole('heading', { level: 3, name: 'Warrior choices' });
+    expect(choices.parentElement?.textContent).toContain('2 to choose');
+    expect(document.querySelector('[data-pending-choice]')).not.toBeNull();
+  });
+
+  it('folds on a first pick and moves focus to the pick', () => {
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    renderStep('species');
+    tap('Testfolk');
+    expect(screen.queryByRole('button', { name: 'Prosefolk' })).toBeNull();
+    const picked = screen.getByRole('heading', { name: 'Testfolk' });
+    expect(document.activeElement).toBe(picked);
+    expect(scroll.mock.contexts).toContain(picked);
+    const choices = screen.getByRole('heading', { name: 'Testfolk choices' });
+    expect(choices.parentElement?.textContent).toContain('1 to choose');
+  });
+
+  it('says done once nothing on the step waits', () => {
+    renderStep('species', (d) => {
+      d.race = { name: 'Testfolk', source: 'TST' };
+      d.choices = { 'race:testfolk|tst:lang:0': ['elvish'] };
+    });
+    const choices = screen.getByRole('heading', { name: 'Testfolk choices' });
+    expect(choices.parentElement?.textContent).toContain('Done');
+  });
+
+  it('opens on the current pick to change it, and keeps it without a change', () => {
+    renderStep('class', warrior);
+    tap('Change class');
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Warrior', pressed: true }),
+    );
+    expect(screen.getByRole('button', { name: 'Mage' })).toBeTruthy();
+
+    tap('Keep Warrior');
+    expect(screen.queryByRole('button', { name: 'Mage' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Warrior' }));
+
+    // Tapping the picked card in the open list keeps it too.
+    tap('Change class');
+    tap('Warrior');
+    expect(screen.queryByRole('button', { name: 'Mage' })).toBeNull();
+    expect(saved().classes[0]?.ref.name).toBe('Warrior');
+  });
+});
+
 // UX-004: the wizard's destructive changes. Picking another class used to clear
 // every choice in the build (species and background picks too) and leave the
 // old class's kit equipped; switching rules version wiped the build on one
@@ -522,6 +591,7 @@ describe('changes that take something away', () => {
           'warrior|tst': { known: [{ name: 'Guidance', source: 'TST' }], prepared: [] },
         };
       });
+      tap('Change class');
       tap('Mage');
 
       const after = saved();
@@ -554,6 +624,7 @@ describe('changes that take something away', () => {
         };
       });
       const before = saved();
+      tap('Change class');
       tap('Mage');
       expect(screen.getByRole('status').textContent).toContain(
         '2 Warrior picks, subclass Path of Tests and its spell list (1 known) cleared',
@@ -578,6 +649,7 @@ describe('changes that take something away', () => {
       expect(saved().play.currency.gp).toBe(5);
 
       await goto('class');
+      tap('Change class');
       tap('Bowman');
       expect(saved().equipment).toEqual([]);
       expect(saved().play.currency.gp).toBe(0);
@@ -606,6 +678,7 @@ describe('changes that take something away', () => {
     expect(saved().equipment).toHaveLength(2);
 
     await goto('background');
+    tap('Change background');
     tap('Scholar');
     expect(saved().choices).toEqual({});
     expect(saved().equipment).toEqual([]);
@@ -635,12 +708,13 @@ describe('changes that take something away', () => {
       d.background = { name: 'Kit Sage', source: 'TST' };
       d.choices = { 'feat:skilled|tst:kit sage|tst:skill:0': ['stealth', 'arcana', 'history'] };
     });
+    tap('Change background');
     tap('Scholar');
     await goto('equipment');
     // Back to fix the background: no kit is granted on the way, which would
     // count as an edit and withdraw the offer.
     tap('Back');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Scholar' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Scholar' })).toBeTruthy());
     expect(saved().equipment).toEqual([]);
     tap('Undo: Background: Kit Sage → Scholar');
     expect(saved().background?.name).toBe('Kit Sage');
@@ -651,6 +725,7 @@ describe('changes that take something away', () => {
       d.race = { name: 'Testfolk', source: 'TST' };
       d.choices = { 'race:testfolk|tst:language': ['elvish'] };
     });
+    tap('Change species');
     tap('Prosefolk');
     expect(saved().race?.name).toBe('Prosefolk');
     expect(saved().choices).toEqual({});
@@ -672,6 +747,7 @@ describe('changes that take something away', () => {
       ];
       d.choices = { 'subclass:path of tests|tst:pick': ['a'] };
     });
+    tap('Change subclass');
     tap('Path of Tests');
     expect(saved().classes[0]?.subclass).toBeUndefined();
     expect(saved().choices).toEqual({});

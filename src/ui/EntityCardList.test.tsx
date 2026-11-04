@@ -65,6 +65,36 @@ describe('EntityCardList selection', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it('keeps the current pick when re-tapped with onReselect, and deselect wins over it', () => {
+    const onSelect = vi.fn();
+    const onReselect = vi.fn();
+    const onDeselect = vi.fn();
+    const { rerender } = render(
+      <EntityCardList
+        entities={entities}
+        selectedUid="human|phb"
+        onSelect={onSelect}
+        onReselect={onReselect}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Human' }));
+    expect(onReselect).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    rerender(
+      <EntityCardList
+        entities={entities}
+        selectedUid="human|phb"
+        onSelect={onSelect}
+        onReselect={onReselect}
+        onDeselect={onDeselect}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Human' }));
+    expect(onDeselect).toHaveBeenCalledTimes(1);
+    expect(onReselect).toHaveBeenCalledTimes(1);
+  });
+
   it('still selects a different card while one is selected', () => {
     const onSelect = vi.fn();
     render(<EntityCardList entities={entities} selectedUid="human|phb" onSelect={onSelect} />);

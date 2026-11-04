@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check, ChevronRight, History } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronRight, CircleCheck, History } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -29,9 +29,9 @@ import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
 import { notifyFailure } from '@/stores/notices';
+import { Badge } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
-import { EntityCardList } from '@/ui/EntityCardList';
 import { GameDataProblem } from '@/ui/GameDataProblem';
 import { PackProblem } from '@/ui/PackProblem';
 import { cardClass } from '@/ui/surfaces';
@@ -39,6 +39,7 @@ import { fieldClass, TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { AbilitiesStep, type ShownMethod } from './AbilitiesStep';
 import { abilityIssue, allAt, keepsOnPointBuySwitch } from './abilityMethods';
+import { CollapsingCardList } from './CollapsingCardList';
 import {
   clearDraft,
   type Draft,
@@ -51,7 +52,7 @@ import {
   writeDraft,
 } from './draft';
 import { replaceWizardWith } from './leaveWizard';
-import { listsPick, OriginChoices } from './OriginChoices';
+import { hasOriginChoices, listsPick, OriginChoices } from './OriginChoices';
 import { pendingSteps, stepForOrigin } from './pendingSteps';
 import {
   backgroundBlurb,
@@ -124,6 +125,37 @@ function OptionCheck({ on }: { on: boolean }) {
       <Check size={14} strokeWidth={3} />
     </span>
   ) : null;
+}
+
+/**
+ * The heading over what a pick brings with it, under the picked card, and
+ * whether any of it still waits: the guide's count (DS-001), or done.
+ * `unpicked` is a pick the count leaves out (a subrace, which the rules
+ * engine treats as optional): it says nothing rather than done.
+ */
+function ChoicesHeading({
+  name,
+  waiting,
+  unpicked = false,
+}: {
+  name: string;
+  waiting: number;
+  unpicked?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pt-2">
+      <h3 className="text-heading">{name} choices</h3>
+      {waiting > 0 ? (
+        <Badge tone="guide">{waiting} to choose</Badge>
+      ) : (
+        !unpicked && (
+          <Badge tone="heal">
+            <CircleCheck size={14} aria-hidden /> Done
+          </Badge>
+        )
+      )}
+    </div>
+  );
 }
 
 /** A guide's tip or a step's notice (DS-001's hint): tinted, an icon, 14px words. */
@@ -549,7 +581,8 @@ export function Component() {
   const waiting = sheet !== null ? pendingSteps(doc, sheet.pending) : [];
   // The pending count leads to this step's own picks first, else to the
   // first step that has any.
-  const pendingHere = waiting.some((w) => w.step === step);
+  const waitingHere = waiting.find((w) => w.step === step)?.count ?? 0;
+  const pendingHere = waitingHere > 0;
   const pendingTarget = pendingHere ? step : waiting[0]?.step;
   const showPending = () => {
     if (pendingTarget === undefined) return;
@@ -829,7 +862,8 @@ export function Component() {
         return (
           <div className="flex flex-col gap-4">
             <PackProblem packs={classPacks} what="the class list" />
-            <EntityCardList
+            <CollapsingCardList
+              noun="class"
               fill
               dedupe
               describe={classBlurb}
@@ -844,6 +878,7 @@ export function Component() {
             />
             {entry !== undefined && (
               <>
+                <ChoicesHeading name={entry.ref.name} waiting={waitingHere} />
                 {/* Not a <label>: that handed the steppers' "Level" name to the
                     minus alone (and a tap on the word to it), leaving plus nameless.
                     The value says "Level N" itself, and announces each change. */}
@@ -901,7 +936,9 @@ export function Component() {
                     data-pending-choice={entry.subclass === undefined ? '' : undefined}
                   >
                     <span className="px-1 text-heading">Subclass</span>
-                    <EntityCardList
+                    <CollapsingCardList
+                      noun="subclass"
+                      heading="h4"
                       entities={subclasses}
                       describe={makeSubclassBlurb(registry)}
                       infoType="subclass"
@@ -931,10 +968,12 @@ export function Component() {
         );
       }
 
-      case 'species':
+      case 'species': {
+        const speciesChoices = sheet !== null && hasOriginChoices(sheet, onStep('species'));
         return (
           <div className="flex flex-col gap-4">
-            <EntityCardList
+            <CollapsingCardList
+              noun="species"
               fill
               dedupe
               describe={raceBlurb}
@@ -947,10 +986,19 @@ export function Component() {
               }
               onSelect={(e) => selectRace({ name: nameOf(e), source: sourceOf(e) })}
             />
+            {doc.race !== undefined && (subraces.length > 0 || speciesChoices) && (
+              <ChoicesHeading
+                name={doc.race.name}
+                waiting={waitingHere}
+                unpicked={subraces.length > 0 && doc.subrace === undefined}
+              />
+            )}
             {subraces.length > 0 && (
               <div className="flex flex-col gap-2">
                 <span className="px-1 text-heading">Subrace</span>
-                <EntityCardList
+                <CollapsingCardList
+                  noun="subrace"
+                  heading="h4"
                   entities={subraces}
                   describe={raceBlurb}
                   infoType="subrace"
@@ -975,6 +1023,7 @@ export function Component() {
             )}
           </div>
         );
+      }
 
       case 'abilities':
         return (
@@ -997,7 +1046,8 @@ export function Component() {
       case 'background':
         return (
           <div className="flex flex-col gap-4">
-            <EntityCardList
+            <CollapsingCardList
+              noun="background"
               fill
               dedupe
               describe={backgroundBlurb}
@@ -1010,6 +1060,11 @@ export function Component() {
               }
               onSelect={(e) => selectBackground({ name: nameOf(e), source: sourceOf(e) })}
             />
+            {doc.background !== undefined &&
+              sheet !== null &&
+              hasOriginChoices(sheet, onStep('background')) && (
+                <ChoicesHeading name={doc.background.name} waiting={waitingHere} />
+              )}
             {sheet !== null && (
               <OriginChoices
                 sheet={sheet}
