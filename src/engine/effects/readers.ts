@@ -9,10 +9,12 @@ import {
   type Ability,
   type ChoiceOption,
   type ChoicePrompt,
+  type DataEntity,
   type EffectOrigin,
+  type EngineContext,
   SKILLS,
 } from '../types';
-import { asEntityArray, type Collector, num } from './base';
+import { asEntityArray, type Collector, num, str } from './base';
 
 const SKILL_BY_LOWER = new Map(SKILLS.map((s) => [s.name.toLowerCase(), s.name]));
 const SKILL_ABILITY = new Map(SKILLS.map((s) => [s.name, s.ability]));
@@ -209,6 +211,71 @@ export function languageOptions(from?: readonly unknown[]): ChoiceOption[] {
   return from !== undefined && from.length > 0 ? genericOptions(from) : LANGUAGE_OPTIONS;
 }
 
+/** What each `type` value of a 5etools item filter asks of a weapon. */
+const WEAPON_FILTER_TYPES: Record<string, (category: string, ranged: boolean) => boolean> = {
+  'simple weapon': (category) => category === 'simple',
+  'martial weapon': (category) => category === 'martial',
+  'melee weapon': (_, ranged) => !ranged,
+  'ranged weapon': (_, ranged) => ranged,
+};
+
+const DAMAGE_TYPES: Record<string, string> = { B: 'bludgeoning', P: 'piercing', S: 'slashing' };
+
+/**
+ * The base weapons a 5etools item filter names ("type=martial weapon|
+ * miscellaneous=mundane"). `type` values are alternatives; one the table does
+ * not know but that still names a weapon ("mundane weapon") takes any. The
+ * DMG's optional firearms (those with an `age`) are left out, and a weapon
+ * printed in both editions is offered once.
+ */
+function weaponFilterOptions(ctx: EngineContext, filter: string): ChoiceOption[] {
+  const types =
+    filter
+      .split('|')
+      .map((clause) => clause.split('='))
+      .find(([key]) => key?.trim().toLowerCase() === 'type')?.[1]
+      ?.split(';')
+      .map((t) => t.trim().toLowerCase()) ?? [];
+  const seen = new Set<string>();
+  const options: ChoiceOption[] = [];
+  for (const e of ctx.byType('baseitem')) {
+    const name = str(e.name);
+    const category = str(e.weaponCategory)?.toLowerCase();
+    if (name === undefined || category === undefined || e.age !== undefined) continue;
+    const code = String(e.type ?? '').split('|')[0];
+    const ranged = code === 'R' || code === 'AF';
+    const fits = (t: string) => WEAPON_FILTER_TYPES[t]?.(category, ranged) ?? t.endsWith(' weapon');
+    if (types.length > 0 && !types.some(fits)) continue;
+    if (seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    options.push({ id: name, label: name, description: weaponSummary(e, category, ranged) });
+  }
+  return options.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** "Martial melee · 1d8 slashing": what kind of weapon, and what it deals. */
+function weaponSummary(e: DataEntity, category: string, ranged: boolean): string {
+  const kind = `${titleCase(category)} ${ranged ? 'ranged' : 'melee'}`;
+  const dice = str(e.dmg1);
+  if (dice === undefined) return kind;
+  const type = DAMAGE_TYPES[String(e.dmgType ?? '')];
+  return `${kind} · ${dice}${type !== undefined ? ` ${type}` : ''}`;
+}
+
+/**
+ * Weapon proficiency options: a `from` list as the data gives it, or, for a
+ * `fromFilter` (Hobgoblin's two martial weapons, Weapon Master's four), the
+ * base weapons it names. That filter used to leave the pick with nothing in it.
+ */
+export function weaponOptions(
+  ctx: EngineContext,
+): (from?: readonly unknown[], fromFilter?: string) => ChoiceOption[] {
+  return (from, fromFilter) =>
+    from === undefined && fromFilter !== undefined
+      ? weaponFilterOptions(ctx, fromFilter)
+      : genericOptions(from);
+}
+
 /** Expertise offers skills you're already proficient in (RAW), else all. */
 export function expertiseOptions(col: Collector): ChoiceOption[] {
   const prof = col.proficientSkills();
@@ -227,7 +294,7 @@ export function readProficiencyList(
   kind: ChoicePrompt['kind'],
   label: string,
   grant: (name: string) => void,
-  optionsFor: (from?: readonly unknown[]) => ChoiceOption[],
+  optionsFor: (from?: readonly unknown[], fromFilter?: string) => ChoiceOption[],
 ): void {
   const entries = asEntityArray(raw);
   let chooseIdx = 0;
@@ -247,7 +314,7 @@ export function readProficiencyList(
   for (const entry of entries) {
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {
-        const c = (value ?? {}) as { from?: unknown[]; count?: number };
+        const c = (value ?? {}) as { from?: unknown[]; fromFilter?: unknown; count?: number };
         const id = `${promptIdBase}:${chooseIdx++}`;
         col.choice(
           {
@@ -256,7 +323,7 @@ export function readProficiencyList(
             kind,
             label,
             count: c.count ?? 1,
-            options: withDupesDisabled(optionsFor(c.from)),
+            options: withDupesDisabled(optionsFor(c.from, str(c.fromFilter))),
           },
           (selected) => {
             for (const s of selected) grant(s);

@@ -11,6 +11,7 @@ import {
   type SourcePolicy,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { subclassPromptId } from '@/engine/effects/class';
 import type {
   CharacterDoc,
   ChoiceOption,
@@ -130,6 +131,15 @@ function featureOptionInfo(prompt: ChoicePrompt) {
     );
 }
 
+/**
+ * Whether a list of picks shows this one. Only a class's subclass pointer is
+ * left out, since the subclass picker beside the class answers it. Any other
+ * pick shows even with nothing left in it, so a pending count never leads to
+ * a step with nothing on it.
+ */
+export const listsPick = (p: ChoicePrompt): boolean =>
+  !(p.origin.type === 'class' && p.id === subclassPromptId(p.origin.uid));
+
 /** Do two stored choice values name the same picks, in the same order? */
 function sameChoice(a: unknown, b: unknown): boolean {
   const norm = (v: unknown) =>
@@ -162,9 +172,7 @@ export function OriginChoices({
   registry?: EntityRegistry | null;
 }) {
   const { policy, scope } = usePickSourcePolicy(doc.allowedSources);
-  const pending = sheet.pending.filter(
-    (p) => match(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
-  );
+  const pending = sheet.pending.filter((p) => match(p.origin) && listsPick(p));
   const resolved = sheet.resolvedChoices.filter((r) => match(r.prompt.origin));
   // Which already-made pick is open for editing, if any (by prompt id).
   const [editing, setEditing] = useState<string>();

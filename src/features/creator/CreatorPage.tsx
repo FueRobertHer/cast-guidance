@@ -24,6 +24,7 @@ import {
   picksCleared,
   plural,
 } from '@/lib/describeRemoval';
+import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { sameForUndo, type UndoNotice, useUndoOffer } from '@/lib/useUndoOffer';
@@ -50,7 +51,8 @@ import {
   writeDraft,
 } from './draft';
 import { replaceWizardWith } from './leaveWizard';
-import { OriginChoices } from './OriginChoices';
+import { listsPick, OriginChoices } from './OriginChoices';
+import { pendingSteps, stepForOrigin } from './pendingSteps';
 import {
   backgroundBlurb,
   classBlurb,
@@ -542,6 +544,24 @@ export function Component() {
   // Prompts the player can see now, so "N picks cleared" counts only those.
   const activeChoices = new Set(sheet?.resolvedChoices.map((r) => r.prompt.id) ?? []);
 
+  /** Which step shows picks from an origin, for each step's list of them. */
+  const onStep = (s: Step) => (o: EffectOrigin) => stepForOrigin(doc, o) === s;
+  const waiting = sheet !== null ? pendingSteps(doc, sheet.pending) : [];
+  // The pending count leads to this step's own picks first, else to the
+  // first step that has any.
+  const pendingHere = waiting.some((w) => w.step === step);
+  const pendingTarget = pendingHere ? step : waiting[0]?.step;
+  const showPending = () => {
+    if (pendingTarget === undefined) return;
+    if (pendingTarget !== step) {
+      navStep(pendingTarget);
+      return;
+    }
+    document
+      .querySelector('[data-pending-choice]')
+      ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+  };
+
   /**
    * Switching rules version starts the build over: every class, species,
    * background, pick, spell and kit came from the other edition's list. So it
@@ -875,7 +895,11 @@ export function Component() {
                   </p>
                 )}
                 {subclasses.length > 0 && entry.levels >= unlockLevel && (
-                  <div className="flex flex-col gap-2">
+                  // Unpicked, the subclass is one of the class's pending picks.
+                  <div
+                    className="flex flex-col gap-2"
+                    data-pending-choice={entry.subclass === undefined ? '' : undefined}
+                  >
                     <span className="px-1 text-heading">Subclass</span>
                     <EntityCardList
                       entities={subclasses}
@@ -898,13 +922,7 @@ export function Component() {
                     doc={doc}
                     update={update}
                     registry={registry}
-                    match={(o) =>
-                      (o.type === 'class' &&
-                        o.uid === `${entry.ref.name}|${entry.ref.source}`.toLowerCase()) ||
-                      (o.type === 'subclass' &&
-                        entry.subclass !== undefined &&
-                        o.uid === `${entry.subclass.name}|${entry.subclass.source}`.toLowerCase())
-                    }
+                    match={onStep('class')}
                   />
                 )}
               </>
@@ -952,7 +970,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
-                match={(o) => o.type === 'race'}
+                match={onStep('species')}
               />
             )}
           </div>
@@ -998,7 +1016,7 @@ export function Component() {
                 doc={doc}
                 update={update}
                 registry={registry}
-                match={(o) => o.type === 'background'}
+                match={onStep('background')}
               />
             )}
           </div>
@@ -1112,24 +1130,10 @@ export function Component() {
         // Race, class, and background picks now live on their own steps. This
         // step is the catch-all for anything else a build generates — feat picks
         // (from an ASI) and other origins without their own screen.
-        const classUids = new Set(
-          doc.classes.map((c) => `${c.ref.name}|${c.ref.source}`.toLowerCase()),
-        );
-        const subclassUids = new Set(
-          doc.classes
-            .filter((c) => c.subclass !== undefined)
-            .map((c) => `${c.subclass?.name}|${c.subclass?.source}`.toLowerCase()),
-        );
-        const isOther = (o: EffectOrigin) =>
-          o.type !== 'race' &&
-          o.type !== 'background' &&
-          !(o.type === 'class' && classUids.has(o.uid)) &&
-          !(o.type === 'subclass' && subclassUids.has(o.uid));
+        const isOther = onStep('choices');
         const hasOther =
           sheet !== null &&
-          (sheet.pending.some(
-            (p) => isOther(p.origin) && !(p.kind === 'generic' && p.options.length === 0),
-          ) ||
+          (sheet.pending.some((p) => isOther(p.origin) && listsPick(p)) ||
             sheet.resolvedChoices.some((r) => isOther(r.prompt.origin)));
         return (
           <div className="flex flex-col gap-3">
@@ -1209,11 +1213,12 @@ export function Component() {
             step: 'equipment',
           });
         }
-        if (sheet !== null && sheet.pending.length > 0) {
+        // One fix per step with picks waiting, each leading to where they are.
+        for (const { step: s, count } of waiting) {
           issues.push({
-            key: 'choices',
-            text: `${sheet.pending.length} choice${sheet.pending.length > 1 ? 's' : ''} still pending`,
-            step: 'choices',
+            key: `choices:${s}`,
+            text: `${count} choice${count > 1 ? 's' : ''} still pending on ${STEP_LABELS[s]}`,
+            step: s,
           });
         }
         const profSkills = Object.entries(sheet?.skills ?? {})
@@ -1372,13 +1377,17 @@ export function Component() {
               {sheet.initiative.value}
             </strong>
           </span>
-          {sheet.pending.length > 0 && (
+          {pendingTarget !== undefined && (
             <button
               type="button"
-              onClick={() => navStep('choices')}
+              onClick={showPending}
               className="-my-2 ml-auto inline-flex min-h-tap items-center gap-1 font-bold text-guide"
-              aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: go to the Choices step`}
-              title="Decisions like skills and languages are waiting on the Choices step"
+              aria-label={`${sheet.pending.length} pending ${sheet.pending.length === 1 ? 'decision' : 'decisions'}: ${pendingHere ? 'show the first on this step' : `go to the ${STEP_LABELS[pendingTarget]} step`}`}
+              title={
+                pendingHere
+                  ? 'Decisions like skills and languages are waiting on this step'
+                  : `Decisions like skills and languages are waiting on the ${STEP_LABELS[pendingTarget]} step`
+              }
             >
               {sheet.pending.length} pending <ChevronRight size={16} aria-hidden />
             </button>

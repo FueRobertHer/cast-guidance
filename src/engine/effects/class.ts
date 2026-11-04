@@ -921,6 +921,14 @@ function handleOptionalFeatureProgression(
   }
 }
 
+/**
+ * The id of the pick a class waits on until its subclass is chosen. It has no
+ * options of its own: the subclass picker beside the class answers it.
+ */
+export function subclassPromptId(classUid: string): string {
+  return `class:${classUid}:subclass`;
+}
+
 export function collectClasses(col: Collector): void {
   const doc = col.doc;
   doc.classes.forEach((entry, classIndex) => {
@@ -1008,7 +1016,7 @@ export function collectClasses(col: Collector): void {
 
       if (isGainSubclass && entry.subclass === undefined) {
         col.pending.push({
-          id: `class:${classUid}:subclass`,
+          id: subclassPromptId(classUid),
           origin,
           kind: 'generic',
           label: `Choose a ${origin.label} subclass (level ${ref.level})`,
