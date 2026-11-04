@@ -382,7 +382,17 @@ export function Component() {
           {OPEN_ELSEWHERE_TEXT}
         </Banner>
       )}
-      <main className="flex-1 px-4 pt-1 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4 lg:pl-40">
+      {/* Where the dice dock floats, the page ends far enough down that the
+          last row scrolls clear of it (DS-001 DiceDock): the spec's page
+          padding of tab bar, dock and space-12, and from `lg`, where the dock
+          sits 1.5rem up with no tab bar, space-12 above the dock. */}
+      <main
+        className={`flex-1 px-4 pt-1 lg:pl-40 ${
+          rollsHere
+            ? 'pb-[calc(var(--spacing-tabbar)+var(--spacing-dock)+3rem+env(safe-area-inset-bottom))] lg:pb-[calc(1.5rem+var(--spacing-dock)+3rem)]'
+            : 'pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-4'
+        }`}
+      >
         {state.sheet === null && state.data.status === 'error' ? (
           // Every tab is derived from the game data, so none of them can draw
           // without it; the header above still names the character, which is
