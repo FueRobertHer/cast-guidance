@@ -34,7 +34,7 @@ downloaded at runtime, on the user's device:
   version as the build's `DATA_TAG`, see `isCompatibleTag` in
   `src/data5e/config.ts`). If the list does not arrive within
   `BOOT_TAG_RESOLVE_TIMEOUT_MS` (3 seconds), it installs `DATA_TAG` itself
-  (`v2.39.0` today), which is the fallback, not a fixed pin. Later
+  (`v2.39.1` today), which is the fallback, not a fixed pin. Later
   releases are offered as updates the user can accept or decline.
 - **How.** Files come through jsDelivr
   (`cdn.jsdelivr.net/gh/5etools-mirror-3/5etools-src@<tag>/data/`), with
