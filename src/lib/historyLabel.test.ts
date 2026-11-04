@@ -127,6 +127,11 @@ describe('historyLabel', () => {
     pact.play.pactSlotsSpent = 1;
     expect(historyLabel(base(), pact)).toBe('Spent a pact slot');
 
+    const arcanum = base();
+    arcanum.play.arcanumUsed = [7];
+    expect(historyLabel(base(), arcanum)).toBe('Used the level 7 arcanum');
+    expect(historyLabel(arcanum, base())).toBe('Regained the level 7 arcanum');
+
     const die = base();
     die.play.hitDiceSpent = { d6: 1 };
     expect(historyLabel(base(), die)).toBe('Spent a hit die (d6)');

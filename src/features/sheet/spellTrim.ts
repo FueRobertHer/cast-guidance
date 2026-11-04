@@ -9,13 +9,18 @@
  *  2. Leveled spells over by n (known/pact casters only): forget the n most
  *     recently added leveled spells. Forgetting also unprepares, as untoggling
  *     "known" does.
- *  3. Prepared over by n, recounted after 1 and 2: unprepare entries that an
+ *  3. More than one Mystic Arcanum at an arcanum level the class has: forget
+ *     the most recently added there until one is left.
+ *  4. Prepared over by n, recounted after 1 to 3: unprepare entries that an
  *     always-prepared grant already covers (losing nothing), then the most
  *     recently added. These stay known (or in the spellbook), exactly as
  *     tapping "prepared" off does.
  * A spell whose level can't be resolved is never forgotten (the cue does not
  * count it), but it still counts toward prepared, so it can be unprepared.
+ * A pact caster's arcana (6th level and up) count toward neither known nor
+ * prepared, in either edition, so rules 2 and 4 leave them alone.
  */
+import { ARCANUM_FIRST_SPELL_LEVEL } from '@/engine/calc/slots';
 import type { EntityRef, SpellcastingBlock, SpellcastingMode } from '@/engine/types';
 
 export interface SpellLimits {
@@ -23,11 +28,19 @@ export interface SpellLimits {
   prepared?: number;
   /** Leveled spells known; only set for known/pact casters. */
   known?: number;
+  /**
+   * A pact caster's Mystic Arcanum levels, one spell at each. Set on every pact
+   * caster, empty before the first, since its spells of 6th level and up are
+   * arcana at any level (see `isArcanumLevel`).
+   */
+  arcanum?: readonly number[];
 }
 
 export interface SpellTrimPlan {
   forgetCantrips: EntityRef[];
   forgetKnown: EntityRef[];
+  /** Picks past the one Mystic Arcanum an arcanum level holds. */
+  forgetArcanum: EntityRef[];
   /** Prepared by hand AND always prepared by a grant: unpreparing loses nothing. */
   unprepareRedundant: EntityRef[];
   unprepare: EntityRef[];
@@ -47,14 +60,54 @@ const refUid = (r: EntityRef) => `${r.name}|${r.source}`.toLowerCase();
  * the two can never disagree about what "over" means.
  */
 export function spellLimits(
-  block: Pick<SpellcastingBlock, 'mode' | 'cantripsKnown' | 'preparedMax' | 'spellsKnownMax'>,
+  block: Pick<
+    SpellcastingBlock,
+    'mode' | 'cantripsKnown' | 'preparedMax' | 'spellsKnownMax' | 'mysticArcanum'
+  >,
 ): SpellLimits {
   const knownGated = block.mode === 'known' || block.mode === 'pact';
   return {
     cantrips: block.cantripsKnown,
     prepared: block.preparedMax,
     known: knownGated ? block.spellsKnownMax : undefined,
+    ...(block.mysticArcanum !== undefined ? { arcanum: block.mysticArcanum } : {}),
   };
+}
+
+/**
+ * Is a spell of this level a Mystic Arcanum for the class these limits hold?
+ * For a pact caster, every spell of 6th level and up is, open yet or not: one
+ * not yet open is flagged as above the class's level instead.
+ */
+export function isArcanumLevel(limits: SpellLimits, level: number | undefined): boolean {
+  return limits.arcanum !== undefined && level !== undefined && level >= ARCANUM_FIRST_SPELL_LEVEL;
+}
+
+/**
+ * Prepared entries that count toward the prepared limit: every one but a pact
+ * caster's arcana. Cantrips and unresolved entries count, as they always have.
+ */
+export function countPrepared(
+  prepared: readonly EntityRef[],
+  limits: SpellLimits,
+  levelOf: (ref: EntityRef) => number | undefined,
+): number {
+  return prepared.filter((r) => !isArcanumLevel(limits, levelOf(r))).length;
+}
+
+/**
+ * Picks past one at each Mystic Arcanum level the class has, summed. A level
+ * not open yet holds none, but its picks are flagged as above the class's
+ * level instead, so they are not counted twice here.
+ */
+export function arcanumOverage(
+  arcanumKnown: Readonly<Record<number, number>>,
+  limits: SpellLimits,
+): number {
+  return (limits.arcanum ?? []).reduce(
+    (sum, level) => sum + Math.max(0, (arcanumKnown[level] ?? 0) - 1),
+    0,
+  );
 }
 
 /** Does an always-prepared grant cover this ref? Name only when the grant names no source. */
@@ -128,7 +181,7 @@ export function planSpellTrim({
     }).length;
 
   const isCantrip = (lvl: number) => lvl === 0;
-  const isLeveled = (lvl: number) => lvl > 0;
+  const isLeveled = (lvl: number) => lvl > 0 && !isArcanumLevel(limits, lvl);
 
   const forgetCantrips =
     limits.cantrips !== undefined
@@ -142,11 +195,23 @@ export function planSpellTrim({
       : [];
   for (const ref of forgetKnown) forget(lists, ref);
 
+  const forgetArcanum: EntityRef[] = [];
+  for (const level of limits.arcanum ?? []) {
+    const atLevel = (lvl: number) => lvl === level;
+    forgetArcanum.push(...latestKnown(lists.known, countAt(atLevel) - 1, atLevel, levelOf));
+  }
+  for (const ref of forgetArcanum) forget(lists, ref);
+
   const unprepareRedundant: EntityRef[] = [];
   const unprepare: EntityRef[] = [];
-  // Raw length, as the cue counts it: cantrips and unresolved entries included.
-  let over = limits.prepared !== undefined ? lists.prepared.length - limits.prepared : 0;
-  const newestFirst = [...lists.prepared].reverse();
+  // As the cue counts it: cantrips and unresolved entries included, arcana not.
+  let over =
+    limits.prepared !== undefined
+      ? countPrepared(lists.prepared, limits, levelOf) - limits.prepared
+      : 0;
+  const newestFirst = [...lists.prepared]
+    .reverse()
+    .filter((r) => !isArcanumLevel(limits, levelOf(r)));
   for (const ref of newestFirst) {
     if (over <= 0) break;
     if (coveredByGrant(ref, alwaysPrepared)) {
@@ -162,13 +227,14 @@ export function planSpellTrim({
     }
   }
 
-  return { forgetCantrips, forgetKnown, unprepareRedundant, unprepare };
+  return { forgetCantrips, forgetKnown, forgetArcanum, unprepareRedundant, unprepare };
 }
 
 export function isEmptyTrim(plan: SpellTrimPlan): boolean {
   return (
     plan.forgetCantrips.length +
       plan.forgetKnown.length +
+      plan.forgetArcanum.length +
       plan.unprepareRedundant.length +
       plan.unprepare.length ===
     0
@@ -184,7 +250,9 @@ export function applySpellTrim(
   plan: SpellTrimPlan,
 ): void {
   const lists = { known: sc.known, prepared: sc.prepared };
-  for (const ref of [...plan.forgetCantrips, ...plan.forgetKnown]) forget(lists, ref);
+  for (const ref of [...plan.forgetCantrips, ...plan.forgetKnown, ...plan.forgetArcanum]) {
+    forget(lists, ref);
+  }
   for (const ref of [...plan.unprepareRedundant, ...plan.unprepare]) {
     removeLast(lists.prepared, refUid(ref));
   }
@@ -218,6 +286,9 @@ export function describeTrim(plan: SpellTrimPlan, mode: SpellcastingMode): strin
   const n = plan.forgetCantrips.length;
   if (n > 0) lines.push(`Forget ${n === 1 ? 'cantrip' : 'cantrips'} ${names(plan.forgetCantrips)}`);
   if (plan.forgetKnown.length > 0) lines.push(`Forget ${names(plan.forgetKnown)}`);
+  if (plan.forgetArcanum.length > 0) {
+    lines.push(`Forget ${names(plan.forgetArcanum)} (one Mystic Arcanum per spell level)`);
+  }
   if (plan.unprepareRedundant.length > 0) {
     lines.push(`Unprepare ${names(plan.unprepareRedundant)} (always prepared anyway)`);
   }

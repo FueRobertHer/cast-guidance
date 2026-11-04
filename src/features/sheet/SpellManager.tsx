@@ -44,7 +44,17 @@ import {
 } from './castResources';
 import { SpellInfoSheet } from './SpellInfoSheet';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
-import { applySpellTrim, describeTrim, isEmptyTrim, planSpellTrim, spellLimits } from './spellTrim';
+import {
+  applySpellTrim,
+  arcanumOverage,
+  countPrepared,
+  describeTrim,
+  isArcanumLevel,
+  isEmptyTrim,
+  planSpellTrim,
+  type SpellLimits,
+  spellLimits,
+} from './spellTrim';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 const sourceOf = (e: Entity) => String(e.source ?? '?');
@@ -93,19 +103,25 @@ const OFFER =
  * caller-supplied level lookup. Kept pure and independent of the on-screen
  * search filter so the header counts and over-limit cues don't shift while the
  * user is searching. A spell whose level can't be resolved counts as neither.
+ * A pact caster's Mystic Arcanum picks (6th level and up) are not spells known
+ * in either edition, so they are counted apart, by spell level.
  */
 export function classifyKnown(
   known: ReadonlyArray<{ name: string; source: string }>,
   levelOf: (ref: { name: string; source: string }) => number | undefined,
-): { cantrips: number; leveled: number } {
+  limits: SpellLimits = {},
+): { cantrips: number; leveled: number; arcanum: Record<number, number> } {
   let cantrips = 0;
   let leveled = 0;
+  const arcanum: Record<number, number> = {};
   for (const ref of known) {
     const lvl = levelOf(ref);
     if (lvl === 0) cantrips += 1;
+    else if (lvl !== undefined && isArcanumLevel(limits, lvl))
+      arcanum[lvl] = (arcanum[lvl] ?? 0) + 1;
     else if (lvl !== undefined && lvl > 0) leveled += 1;
   }
-  return { cantrips, leveled };
+  return { cantrips, leveled, arcanum };
 }
 
 /** Does the spell require concentration (from its `duration` block)? */
@@ -326,18 +342,23 @@ function ClassSpells({
     const e = registry?.get('spell', ref.name, ref.source);
     return typeof e?.level === 'number' ? e.level : undefined;
   };
-  const { cantrips: cantripsKnown, leveled: knownLeveled } = classifyKnown(state.known, levelOf);
-
   // Over-limit is allowed (house rules, features that add preparations) — flag
   // it, never block it (GAME-002/007 / guidance-not-gatekeeping).
   const limits = spellLimits(block);
+  const {
+    cantrips: cantripsKnown,
+    leveled: knownLeveled,
+    arcanum: arcanumKnown,
+  } = classifyKnown(state.known, levelOf, limits);
+  const preparedCount = countPrepared(state.prepared, limits, levelOf);
   const prepMax = limits.prepared;
   const cantripMax = limits.cantrips;
   const knownMax = limits.known;
-  const overPrepared = prepMax !== undefined && state.prepared.length > prepMax;
+  const overPrepared = prepMax !== undefined && preparedCount > prepMax;
   const overCantrips = cantripMax !== undefined && cantripsKnown > cantripMax;
   const overKnown = knownMax !== undefined && knownLeveled > knownMax;
-  const over = overPrepared || overCantrips || overKnown;
+  const overArcanum = arcanumOverage(arcanumKnown, limits);
+  const over = overPrepared || overCantrips || overKnown || overArcanum > 0;
 
   const heading = useRef<HTMLHeadingElement>(null);
   const levelsOffer = useRef<HTMLButtonElement>(null);
@@ -402,7 +423,7 @@ function ClassSpells({
             <>
               {' · prepared '}
               <span className={overPrepared ? OVER : undefined}>
-                {state.prepared.length}/{prepMax}
+                {preparedCount}/{prepMax}
               </span>
             </>
           )}
@@ -418,11 +439,12 @@ function ClassSpells({
       </header>
       {over && (
         <p role="status" className="rounded-control bg-guide-soft px-3 py-2 text-caption text-ink">
-          {overPrepared
-            ? `${state.prepared.length - (prepMax ?? 0)} over your prepared limit. `
-            : ''}
+          {overPrepared ? `${preparedCount - (prepMax ?? 0)} over your prepared limit. ` : ''}
           {overCantrips ? `${cantripsKnown - (cantripMax ?? 0)} over your cantrip limit. ` : ''}
           {overKnown ? `${knownLeveled - (knownMax ?? 0)} over your spells-known limit. ` : ''}
+          {overArcanum > 0
+            ? `${overArcanum} over your Mystic Arcanum, one spell per spell level. `
+            : ''}
           That&rsquo;s allowed — the extra picks are kept, just flagging it.
         </p>
       )}
@@ -513,9 +535,15 @@ function ClassSpells({
           // Held back, a locked level shows only what is on the sheet, so a
           // count of what it offers would undercount it.
           const partial = locked && !showLocked && filter.trim() === '';
+          // An arcanum level the class has holds one pick, so it shows that
+          // count against its one in place of a count of what is known.
+          const arcanum =
+            limits.arcanum?.includes(lvl) === true ? (arcanumKnown[lvl] ?? 0) : undefined;
           const caption = [
             locked ? unlockNote(lvl) : undefined,
-            knownAtLevel.length > 0 ? `${knownAtLevel.length} known` : undefined,
+            arcanum === undefined && knownAtLevel.length > 0
+              ? `${knownAtLevel.length} known`
+              : undefined,
             partial ? undefined : `${spells.length} available`,
           ].filter((p) => p !== undefined);
           return (
@@ -533,6 +561,14 @@ function ClassSpells({
                 {/* Kept whole: a long caption wraps beside it instead. */}
                 <span className="shrink-0">{levelLabel(lvl)}</span>
                 <span className="font-normal text-caption text-ink-muted">
+                  {arcanum !== undefined && (
+                    <>
+                      <span className={arcanum > 1 ? OVER : undefined}>
+                        Mystic Arcanum {arcanum}/1
+                      </span>
+                      {caption.length > 0 ? ' · ' : ''}
+                    </>
+                  )}
                   {caption.join(' · ')}
                 </span>
               </summary>
@@ -632,9 +668,11 @@ function ClassSpells({
                               title={
                                 lvl === 0
                                   ? 'Cast cantrip (starts concentration)'
-                                  : `Cast at level ${lvl} (spends a slot${
-                                      spellNeedsConcentration(s) ? ', starts concentration' : ''
-                                    })`
+                                  : `Cast at level ${lvl} (${
+                                      isArcanumLevel(limits, lvl)
+                                        ? 'Mystic Arcanum, once per long rest'
+                                        : 'spends a slot'
+                                    }${spellNeedsConcentration(s) ? ', starts concentration' : ''})`
                               }
                             >
                               Cast

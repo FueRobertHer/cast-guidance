@@ -64,6 +64,13 @@ describe('shortRest', () => {
     expect(p.slotsSpent[0]).toBe(2);
     expect(p.hitDiceSpent.d8).toBe(3);
   });
+
+  it('leaves a used Mystic Arcanum used: only a long rest brings it back', () => {
+    const p = play({ pactSlotsSpent: 2, arcanumUsed: [6] });
+    const restored = shortRest(p, sheet());
+    expect(p.arcanumUsed).toEqual([6]);
+    expect(restored).not.toContain('Mystic Arcanum');
+  });
 });
 
 describe('longRest', () => {
@@ -88,6 +95,15 @@ describe('longRest', () => {
     expect(restored).toEqual(
       expect.arrayContaining(['+17 HP', 'spell slots', '1 exhaustion level']),
     );
+  });
+
+  it('regains every Mystic Arcanum, and saves as if none had been tracked', () => {
+    const p = play({ arcanumUsed: [6, 8] });
+    const restored = longRest(p, sheet(), '2024');
+    expect('arcanumUsed' in p).toBe(false);
+    expect(restored).toContain('Mystic Arcanum');
+    // Nothing to regain says nothing.
+    expect(longRest(play(), sheet(), '2014')).not.toContain('Mystic Arcanum');
   });
 
   it('lowers exhaustion before healing, so the rest that lifts 2014 level 4 heals to full', () => {

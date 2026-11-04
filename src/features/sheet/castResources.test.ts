@@ -18,6 +18,7 @@ import {
   needsCastChoice,
   nextCastResource,
   poolCastResources,
+  setArcanumUsed,
   upcastEffectSummary,
 } from './castResources';
 
@@ -153,6 +154,101 @@ describe('castSpell resource override (GAME-001)', () => {
   it('falls back to the lowest slot when no override is given', () => {
     const play = runCast(block({ slots: [4, 3, 2] }), 1);
     expect(play.slotsSpent[0]).toBe(1); // lowest (level 1)
+  });
+});
+
+describe('Mystic Arcanum casting', () => {
+  /** A warlock 13: two 5th-level pact slots and arcana at 6th and 7th level. */
+  const warlock = block({
+    mode: 'pact',
+    slots: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    pactSlots: { count: 3, level: 5 },
+    mysticArcanum: [6, 7],
+  });
+  const runCast = (caster: SpellcastingBlock, level: number, play = emptyPlayState()) => {
+    const doc = { play } as CharacterDoc;
+    let label: string | undefined;
+    castSpell(
+      (recipe, named) => {
+        recipe(doc);
+        label = typeof named === 'function' ? named(doc) : named;
+      },
+      caster,
+      level,
+      { name: 'Eyebite', source: 'phb' },
+    );
+    return { play: doc.play, label };
+  };
+
+  it('casts an open arcanum without a slot, once', () => {
+    expect(availableCastResources(warlock, emptyPlayState(), 6)).toEqual([
+      { kind: 'arcanum', level: 6 },
+    ]);
+    const { play, label } = runCast(warlock, 6);
+    expect(play.arcanumUsed).toEqual([6]);
+    expect(play.pactSlotsSpent).toBe(0);
+    expect(play.slotsSpent.every((n) => n === 0)).toBe(true);
+    expect(label).toBe('Cast Eyebite (Mystic Arcanum)');
+    // Used, nothing is left to pay for it, but the cast is still allowed.
+    expect(availableCastResources(warlock, play, 6)).toEqual([]);
+    expect(nextCastResource(warlock, play, 6)).toEqual({ kind: 'none', level: 6 });
+    expect(runCast(warlock, 6, play).label).toBe('Cast Eyebite (no slot)');
+  });
+
+  it('tracks each arcanum level apart', () => {
+    const play = emptyPlayState();
+    setArcanumUsed(play, 7, true);
+    expect(nextCastResource(warlock, play, 6)).toEqual({ kind: 'arcanum', level: 6 });
+    expect(nextCastResource(warlock, play, 7)).toEqual({ kind: 'none', level: 7 });
+  });
+
+  it('offers no arcanum at a level the warlock has not reached', () => {
+    expect(availableCastResources(warlock, emptyPlayState(), 8)).toEqual([]);
+    expect(availableCastResources(block(), emptyPlayState(), 6)).toEqual([]);
+  });
+
+  it('puts the arcanum ahead of a slot another class shares', () => {
+    const multiclass = { ...warlock, slots: [4, 3, 3, 3, 2, 1, 0, 0, 0] };
+    const options = availableCastResources(multiclass, emptyPlayState(), 6);
+    expect(options).toEqual([
+      { kind: 'arcanum', level: 6 },
+      { kind: 'slot', level: 6 },
+    ]);
+    expect(needsCastChoice(options)).toBe(true);
+    expect(nextCastResource(multiclass, emptyPlayState(), 6)).toEqual({
+      kind: 'arcanum',
+      level: 6,
+    });
+  });
+
+  it('keeps the used list sorted, and drops it when nothing is used', () => {
+    const play = emptyPlayState();
+    setArcanumUsed(play, 8, true);
+    setArcanumUsed(play, 6, true);
+    setArcanumUsed(play, 6, true);
+    expect(play.arcanumUsed).toEqual([6, 8]);
+    setArcanumUsed(play, 8, false);
+    setArcanumUsed(play, 6, false);
+    expect('arcanumUsed' in play).toBe(false);
+  });
+
+  it('names the arcanum in the chooser and on the chip', () => {
+    const arcanum = { kind: 'arcanum', level: 6 } as const;
+    expect(castResourceId(arcanum)).toBe('arcanum-6');
+    expect(castResourceChipLabel(arcanum)).toBe('L6 arcanum');
+    const [row] = castResourceOptions([arcanum], {
+      block: warlock,
+      play: emptyPlayState(),
+      spellLevel: 6,
+      characterLevel: 13,
+      rulesVersion: '2024',
+      classes: [],
+    });
+    expect(row).toEqual({
+      id: 'arcanum-6',
+      label: 'Mystic Arcanum · level 6',
+      hint: 'no slot · once per long rest',
+    });
   });
 });
 
