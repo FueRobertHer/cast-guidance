@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { classSpellUids, classSpellUidsFromEntities, type SpellClassLookup } from './spellLookup';
+import {
+  classSpellUids,
+  classSpellUidsFromEntities,
+  type SpellClassLookup,
+  subclassSpellUids,
+} from './spellLookup';
 
 describe('classSpellUidsFromEntities (homebrew inline lists)', () => {
   const spells = [
@@ -34,5 +39,42 @@ describe('classSpellUids (generated lookup)', () => {
 
   it('is empty for a class that appears nowhere', () => {
     expect(classSpellUids(lookup, 'Druid').size).toBe(0);
+  });
+});
+
+describe('subclassSpellUids (generated lookup)', () => {
+  // The release's shape: subclass[classSource][className][subclassSource][shortName].
+  const lookup: SpellClassLookup = {
+    phb: {
+      shield: {
+        class: { PHB: { Wizard: true } },
+        subclass: {
+          PHB: {
+            Fighter: { PHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } },
+            Rogue: { PHB: { 'Arcane Trickster': { name: 'Arcane Trickster' } } },
+          },
+        },
+      },
+      'cure wounds': { subclass: { PHB: { Cleric: { PHB: { Life: { name: 'Life Domain' } } } } } },
+    },
+    xphb: {
+      shield: {
+        subclass: {
+          XPHB: { Fighter: { XPHB: { 'Eldritch Knight': { name: 'Eldritch Knight' } } } },
+        },
+      },
+    },
+  };
+
+  it("collects a subclass caster's list across sources, by class and short name", () => {
+    expect(subclassSpellUids(lookup, 'Fighter', 'Eldritch Knight')).toEqual(
+      new Set(['shield|phb', 'shield|xphb']),
+    );
+    expect([...subclassSpellUids(lookup, 'rogue', 'arcane trickster')]).toEqual(['shield|phb']);
+  });
+
+  it('needs both names to match', () => {
+    expect(subclassSpellUids(lookup, 'Rogue', 'Eldritch Knight').size).toBe(0);
+    expect(subclassSpellUids(lookup, 'Wizard', 'Eldritch Knight').size).toBe(0);
   });
 });
