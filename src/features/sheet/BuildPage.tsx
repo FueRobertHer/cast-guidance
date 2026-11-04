@@ -23,8 +23,8 @@ import {
 } from '@/engine/types';
 import { listsPick, OriginChoices } from '@/features/creator/OriginChoices';
 import {
-  backgroundBlurb,
   classBlurb,
+  makeBackgroundBlurb,
   makeSubclassBlurb,
   makeSubclassEntries,
   raceBlurb,
@@ -1007,7 +1007,7 @@ export function Component() {
             <EntityCardList
               sources={doc.allowedSources}
               dedupe
-              describe={backgroundBlurb}
+              describe={makeBackgroundBlurb(sheet.skills)}
               infoType="background"
               entities={backgrounds}
               selectedUid={
@@ -1179,6 +1179,7 @@ export function Component() {
                   <ProfPicker
                     value={s.prof}
                     base={s.profBase}
+                    sources={s.sources}
                     overridden={pinned}
                     onChange={(level) =>
                       update(

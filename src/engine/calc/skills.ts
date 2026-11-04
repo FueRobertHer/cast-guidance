@@ -1,3 +1,4 @@
+import { skillSources } from '../effects/skillSources';
 import {
   ABILITIES,
   type Ability,
@@ -30,11 +31,13 @@ export function calcSaves(
   return out;
 }
 
+/** `fromBackground`: the effects the background step collected, feats included. */
 export function calcSkills(
   doc: CharacterDoc,
   effects: readonly EffectInput[],
   abilities: Record<Ability, DerivedAbility>,
   profBonus: number,
+  fromBackground: ReadonlySet<EffectInput> = new Set(),
 ): DerivedSheet['skills'] {
   const skillProfs = new Map<string, { level: ProfLevel; label: string }>();
   for (const e of effectsOf(effects, 'skillProf')) {
@@ -44,6 +47,8 @@ export function calcSkills(
       skillProfs.set(key, { level: e.level, label: e.origin.label });
     }
   }
+  const sources = skillSources(effects, { expertise: true });
+  const besideBackground = skillSources(effects, { skip: (e) => fromBackground.has(e) });
 
   const out: DerivedSheet['skills'] = {};
   for (const { name, ability } of SKILLS) {
@@ -69,7 +74,14 @@ export function calcSkills(
       { value: base, base, overridden: false, parts },
       doc.overrides[`skill.${name}.bonus`],
     );
-    out[name] = { total, prof, profBase, ability };
+    out[name] = {
+      total,
+      prof,
+      profBase,
+      sources: sources.get(key) ?? [],
+      sourcesBesideBackground: besideBackground.get(key) ?? [],
+      ability,
+    };
   }
   return out;
 }

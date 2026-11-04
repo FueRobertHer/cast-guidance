@@ -1,4 +1,5 @@
-import type { ProfLevel } from '@/engine/types';
+import { originList } from '@/engine/effects/skillSources';
+import type { EffectOrigin, ProfLevel } from '@/engine/types';
 import { ProfDot } from './ProfDot';
 
 const LEVELS: ReadonlyArray<{ level: ProfLevel; label: string }> = [
@@ -20,19 +21,23 @@ const NAMES: Record<ProfLevel, string> = {
  * Picking a level pins it. The pin survives rebuilds, so `base` (what the
  * character's own class/race/background grants) is named on the clear button:
  * it is the thing the player gets back, and without it they cannot tell what
- * they are giving up.
+ * they are giving up. `sources` names what grants it, so a player about to
+ * add a proficiency by hand can see the build already has it.
  */
 export function ProfPicker({
   value,
   base,
+  sources,
   overridden,
   onChange,
 }: {
   value: ProfLevel;
   base: ProfLevel;
+  sources: readonly EffectOrigin[];
   overridden: boolean;
   onChange: (level: ProfLevel | null) => void;
 }) {
+  const from = sources.length > 0 ? originList(sources) : undefined;
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-label text-ink-muted">Proficiency</span>
@@ -58,10 +63,13 @@ export function ProfPicker({
           onClick={() => onChange(null)}
           className="self-start rounded-chip px-1 py-1 text-caption text-ink-muted underline underline-offset-3 hover:text-ink"
         >
-          Set manually. Clear to go back to {NAMES[base]}.
+          Set manually. Clear to go back to {NAMES[base]}
+          {from !== undefined && base > 0 ? ` from ${from}` : ''}.
         </button>
       ) : (
-        <p className="text-caption text-ink-muted">From your class, species, and background.</p>
+        <p className="text-caption text-ink-muted">
+          {from !== undefined ? `From ${from}.` : 'Nothing in your build grants this.'}
+        </p>
       )}
     </div>
   );

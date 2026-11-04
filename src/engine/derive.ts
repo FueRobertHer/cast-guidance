@@ -19,6 +19,7 @@ import { collectClasses } from './effects/class';
 import { collectFeats } from './effects/feat';
 import { collectItems } from './effects/item';
 import { collectRace } from './effects/race';
+import { noteSkillSources } from './effects/skillSources';
 import type { CharacterDoc, ChoicePrompt, DerivedSheet, EffectInput, EngineContext } from './types';
 
 export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet {
@@ -26,11 +27,17 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
 
   // 1. Collect effects in origin order
   collectRace(col);
+  const backgroundStart = col.effects.length;
   collectBackground(col);
+  // Its granted feat is collected inline, so this span holds the feat's too.
+  const fromBackground = new Set(col.effects.slice(backgroundStart));
   collectClasses(col);
   collectFeats(col);
   collectItems(col);
   for (const custom of doc.customEffects) col.add(custom);
+  // Only now is every skill grant known, including ones collected after the
+  // pick they overlap.
+  noteSkillSources(col);
 
   const effects = col.effects;
 
@@ -50,7 +57,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   );
 
   const saves = calcSaves(doc, effects, abilities, profBonus.value);
-  const skills = calcSkills(doc, effects, abilities, profBonus.value);
+  const skills = calcSkills(doc, effects, abilities, profBonus.value, fromBackground);
   const passivePerception = calcPassivePerception(doc, skills);
   const speedWalk = calcWalkSpeed(doc, col, effects);
   const { maxHp, hitDice } = calcMaxHp(doc, col, effects, abilities.con.mod);

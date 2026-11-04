@@ -4,8 +4,9 @@
  * (ability bonuses, granted skills) cover everything the curated maps miss.
  */
 import type { Entity } from '@/data5e/copyMod';
+import { originList } from '@/engine/effects/skillSources';
 import { summarizeEntries } from '@/engine/summarize';
-import { ABILITIES, type Ability } from '@/engine/types';
+import { ABILITIES, type Ability, type EffectOrigin, SKILLS } from '@/engine/types';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
 
@@ -173,15 +174,42 @@ export function raceBlurb(e: Entity): string | undefined {
 
 // --- Backgrounds -------------------------------------------------------------
 
-/** Fixed skill grants straight from the data — what the pick actually gives. */
-export function backgroundBlurb(e: Entity): string | undefined {
+const SKILL_NAMES = new Map(SKILLS.map((s) => [s.name.toLowerCase(), s.name]));
+
+/** A background's fixed skill grants straight from the data, named as the sheet names them. */
+function backgroundSkills(e: Entity): string[] {
   const arr = Array.isArray(e.skillProficiencies) ? e.skillProficiencies : [];
   const skills: string[] = [];
   for (const entry of arr) {
     if (typeof entry !== 'object' || entry === null) continue;
     for (const [k, v] of Object.entries(entry as Record<string, unknown>)) {
-      if (v === true) skills.push(k.replace(/(^|\s)\w/g, (c) => c.toUpperCase()));
+      if (v === true) {
+        skills.push(
+          SKILL_NAMES.get(k.toLowerCase()) ?? k.replace(/(^|\s)\w/g, (c) => c.toUpperCase()),
+        );
+      }
     }
   }
-  return skills.length > 0 ? `Skills: ${skills.join(', ')}` : undefined;
+  return skills;
+}
+
+/**
+ * What a background card actually gives, and which of it the character has
+ * already. Class and species come first in the wizard, so this card is where a
+ * duplicate shows before it is picked: "Skills: Deception, Stealth · Stealth
+ * already from Rogue (class)". `skills` is the derived sheet's, whose
+ * `sourcesBesideBackground` leaves out the current background's own grants.
+ */
+export function makeBackgroundBlurb(
+  skills?: Readonly<Record<string, { sourcesBesideBackground: readonly EffectOrigin[] }>>,
+): (e: Entity) => string | undefined {
+  return (e) => {
+    const granted = backgroundSkills(e);
+    if (granted.length === 0) return undefined;
+    const had = granted.flatMap((s) => {
+      const from = skills?.[s]?.sourcesBesideBackground ?? [];
+      return from.length > 0 ? [`${s} already from ${originList(from)}`] : [];
+    });
+    return [`Skills: ${granted.join(', ')}`, ...had].join(' · ');
+  };
 }
