@@ -35,6 +35,7 @@ import { AdvToggle } from '@/ui/AdvToggle';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonCount, buttonClass } from '@/ui/Button';
 import { GameDataProblem } from '@/ui/GameDataProblem';
+import { PackProblem } from '@/ui/PackProblem';
 import {
   confirmDeleteCharacter,
   deleteCharacter,
@@ -403,7 +404,18 @@ export function Component() {
             note="Your character is saved on this device."
           />
         ) : (
-          <Outlet context={state} />
+          <>
+            {state.data.equipment !== undefined && (
+              <div className="mb-3">
+                <PackProblem
+                  packs={state.data.equipment}
+                  what="equipped items"
+                  message="Some equipped items aren't downloaded, so AC and attacks leave them out."
+                />
+              </div>
+            )}
+            <Outlet context={state} />
+          </>
         )}
       </main>
       {/* Boxed as the app nav is (see AppNav). */}

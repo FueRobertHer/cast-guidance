@@ -57,8 +57,10 @@ the binary outright, as an escape hatch when the two drift.
   whose install fails. The transform throws if the build output stops
   matching its patterns, so a variant can never silently be the old build.
 - **Mirror** (`fixtures/mirror.ts`): answers jsDelivr, raw GitHub and the
-  GitHub tags API through `context.route`, with the release from
-  `tests-fixtures/dataMirror.ts`. It counts hits per `tag:path`, and takes fail
+  GitHub tags and compare APIs through `context.route`, with the release from
+  `tests-fixtures/dataMirror.ts`. Comparisons say nothing an install can use, so
+  updates download everything, unless `setListsChanges` has them list what differs
+  between the two releases. It counts hits per `tag:path`, and takes fail
   (`abort` or a status), hold and offline rules. A request it cannot answer
   and no test asked to fail (a URL shape the app should never build, a file
   the release does not have) gets a 404, as from a real mirror, and fails the
@@ -199,7 +201,7 @@ manual checklist is [`docs/a11y-audit.md`](../docs/a11y-audit.md).
 | `cache-levels.setup` | Builds the four cache-level profiles (the `cache-levels` project). |
 | `offline-routes` | PWA-001: every route, cold and offline, at every cache level (below); an airplane-mode canary (the worker's update check cannot reach the origin); the offline states recovering once back online (the sheet, the creator, a library section, the banner's download); essentials that only partly landed (no class index) reading "not downloaded yet" in Settings; online, a failed download told apart from offline, and a corrupted section repaired by "Download this section again". |
 | `harness` | A socket the routes cannot see (a WebSocket to jsDelivr) fails to resolve, from the default context and from a persistent profile, so it never reaches a real host. |
-| `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); a first install interrupted by a reload (finished on the next launch under the tag pinned once); an update from Settings (the old release swept once a registry builds, the new one active after a reload); a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
+| `data-install` | A first install failing mid-drain (essentials usable, the error banner, Retry fetches only what is missing); a first install interrupted by a reload (finished on the next launch under the tag pinned once); an update from Settings (the old release swept once a registry builds, the new one active after a reload); an update fetching only the files GitHub lists as changed, still ending with the whole release; a failed update (the old release active and usable until the swap, staged rows pruned, Retry downloads everything again); an update interrupted by closing the browser (the old release boots whole, the staged rows are swept, installing again succeeds); the boot toast after the remembered release list goes stale; the rollback of a release whose registry builds keep failing to finish, with its notice. |
 
 The rollback spec seeds the start counter (`dataTagRollback.starts`) instead of
 crashing two launches for real. The normalizer is built to contain malformed

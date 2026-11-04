@@ -69,6 +69,22 @@ export function isCompatibleTag(tag: string, baseTag: string = DATA_TAG): boolea
 /** Where the compatible-release list comes from. */
 export const TAGS_API_URL = 'https://api.github.com/repos/5etools-mirror-3/5etools-src/tags';
 
+/** Where the list of files one release changed since another comes from. */
+export const COMPARE_API_URL = 'https://api.github.com/repos/5etools-mirror-3/5etools-src/compare';
+
+/**
+ * The most a comparison may decode to before it is ignored. It carries a patch
+ * per file: measured at 1.4 MB for one that hit GitHub's 300-file limit.
+ */
+export const MAX_RELEASE_DIFF_BYTES = 8 * 1024 * 1024;
+
+/**
+ * How long an install waits to learn what changed. GitHub works a comparison out
+ * on request, so this is longer than the release list gets, and giving up only
+ * costs downloading the files anyway.
+ */
+export const RELEASE_DIFF_TIMEOUT_MS = 8_000;
+
 /**
  * How long a fetched release list stays good. The check exists to notice a new
  * data release, which happens every few weeks, so asking once per boot bought

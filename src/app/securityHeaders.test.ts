@@ -12,7 +12,7 @@
  * `src/engine/architecture.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
-import { DATA_TAG, ENDPOINTS, TAGS_API_URL } from '@/data5e/config';
+import { COMPARE_API_URL, DATA_TAG, ENDPOINTS, TAGS_API_URL } from '@/data5e/config';
 import { HOMEBREW_FETCH_ORIGINS } from '@/features/homebrew/homebrewUrl';
 
 const rawFiles = import.meta.glob(['/vercel.json', '/public/_headers', '/index.html'], {
@@ -35,6 +35,7 @@ const productionSources = Object.entries(rawSources).filter(
 const CONNECT_ORIGINS = new Set<string>([
   ...ENDPOINTS.map((ep) => new URL(ep(DATA_TAG, 'x')).origin),
   new URL(TAGS_API_URL).origin,
+  new URL(COMPARE_API_URL).origin,
   ...HOMEBREW_FETCH_ORIGINS,
 ]);
 

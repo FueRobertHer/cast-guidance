@@ -127,6 +127,25 @@ describe('SheetLayout without game data', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('keeps the sheet when only equipped gear is missing, and says what it leaves out', () => {
+    loaded(
+      {
+        status: 'ready',
+        error: null,
+        retry,
+        equipment: { status: 'error', error: 'HTTP 503', offline: false, retry },
+      },
+      { classLabel: 'Fighter 1', pending: [], spellcasting: [] },
+    );
+    renderSheet();
+    expect(screen.getByText('tab content')).toBeTruthy();
+    expect(
+      screen.getByText("Some equipped items aren't downloaded, so AC and attacks leave them out."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it('keeps a derived sheet on screen if a later refresh fails', () => {
     loaded(
       { status: 'error', error: 'HTTP 503', retry },

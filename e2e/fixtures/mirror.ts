@@ -37,6 +37,8 @@ const JSDELIVR =
 const RAW_GITHUB =
   /^https:\/\/raw\.githubusercontent\.com\/5etools-mirror-3\/5etools-src\/([^/]+)\/data\/(.+)$/;
 const TAGS_API = 'https://api.github.com/repos/5etools-mirror-3/5etools-src/tags';
+const COMPARE_API =
+  /^https:\/\/api\.github\.com\/repos\/5etools-mirror-3\/5etools-src\/compare\/([^/?]+)\.\.\.([^/?]+)$/;
 
 /** Every host the app fetches game data or the release list from. */
 export const MIRROR_HOSTS =
@@ -69,7 +71,7 @@ export function ignoreClosed(err: unknown): void {
 const CORS = { 'access-control-allow-origin': '*' };
 
 /**
- * A stand-in for jsDelivr, raw GitHub and the GitHub tags API, served through
+ * A stand-in for jsDelivr, raw GitHub and the GitHub API, served through
  * `context.route` so no test touches the real network. One mirror can serve
  * several contexts (a persistent profile relaunched) and keeps one record.
  */
@@ -93,6 +95,7 @@ export class Mirror {
 
   private tags: readonly string[];
   private bodies: (tag: string) => Readonly<Record<string, unknown>>;
+  private listsChanges = false;
   private fail: FailRule | undefined;
   private hold: HoldRule | undefined;
   private held: Array<() => void> = [];
@@ -115,6 +118,15 @@ export class Mirror {
   /** Replaces the bodies served per tag (a new release published, say). */
   setBodies(bodies: (tag: string) => Readonly<Record<string, unknown>>): void {
     this.bodies = bodies;
+  }
+
+  /**
+   * Whether a comparison of two releases lists what differs between them. Off,
+   * it answers with histories that split, which an install cannot read a file
+   * list from, so an update downloads the whole release as most specs expect.
+   */
+  setListsChanges(lists: boolean): void {
+    this.listsChanges = lists;
   }
 
   setFail(rule: FailRule | undefined): void {
@@ -176,6 +188,18 @@ export class Mirror {
       });
     }
 
+    const comparison = COMPARE_API.exec(url);
+    if (comparison !== null) {
+      if (this.offline) return this.abort(route, url);
+      this.fulfils.push(url);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: CORS,
+        body: JSON.stringify(this.compare(comparison[1] as string, comparison[2] as string)),
+      });
+    }
+
     const parsed = parseMirrorUrl(url);
     if (parsed === null) {
       // A host we serve, but a URL shape the app should never ask for.
@@ -210,6 +234,19 @@ export class Mirror {
       headers: CORS,
       body: JSON.stringify(body),
     });
+  }
+
+  /** GitHub's answer to comparing two releases, down to the fields the app reads. */
+  private compare(from: string, to: string): { status: string; files: { filename: string }[] } {
+    if (!this.listsChanges) return { status: 'diverged', files: [] };
+    const [before, after] = [this.bodies(from), this.bodies(to)];
+    const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+      (path) => JSON.stringify(before[path]) !== JSON.stringify(after[path]),
+    );
+    return {
+      status: changed.length === 0 ? 'identical' : 'ahead',
+      files: changed.map((path) => ({ filename: `data/${path}` })),
+    };
   }
 
   private abort(route: Route, url: string): Promise<void> {

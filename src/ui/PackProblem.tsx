@@ -18,7 +18,7 @@ export const NOTE_CLASS =
   'flex gap-3 rounded-control bg-surface-raised py-3 pr-2 pl-3 text-ink text-sm';
 
 interface PackProblemProps {
-  packs: TypePacksState;
+  packs: Pick<TypePacksState, 'status' | 'error' | 'offline' | 'retry'>;
   what: string;
   /**
    * `always` for a panel inside a modal sheet. The modal hides the rest of the

@@ -7,6 +7,7 @@ import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistryState } from '@/data5e/hooks';
 import { characterRepo, type PreparedCharacterImport } from '@/db/characterRepo';
 import { conditionMaxHp } from '@/engine/conditions';
+import { hasMissingData, missingCharacterData } from '@/engine/dataNeeds';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import {
@@ -26,6 +27,7 @@ import { useLongPress } from '@/lib/useLongPress';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { useUndoOffer } from '@/lib/useUndoOffer';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
+import { useDataStatus } from '@/stores/dataStatus';
 import { errorText, notifyFailure } from '@/stores/notices';
 import { Button, buttonClass } from '@/ui/Button';
 import { askChoice, askText } from '@/ui/dialogs';
@@ -235,6 +237,7 @@ export function Component() {
   usePageTitle('Characters');
   const navigate = useNavigate();
   const { registry, status: registryStatus } = useRegistryState(['essentials']);
+  const phase = useDataStatus((s) => s.phase);
   const result = useLiveQuery(() => characterRepo.listSafe(), []);
   const characters = result?.characters ?? [];
   const readErrors = result?.errors ?? [];
@@ -343,6 +346,10 @@ export function Component() {
     for (const c of characters) {
       if (classesOf(c).length === 0) continue;
       try {
+        // No numbers from files that have not arrived (see `missingCharacterData`).
+        // Once the whole compendium is here, what is still missing is not coming,
+        // and the row says what the sheet says.
+        if (phase !== 'done' && hasMissingData(missingCharacterData(c, ctx))) continue;
         const sheet = deriveSheet(c, ctx);
         // The maximum in play, as the sheet shows it (2014 exhaustion halves it).
         const maxHp = conditionMaxHp(sheet.maxHp.value, c.play.conditions, c.rulesVersion).value;
@@ -352,7 +359,7 @@ export function Component() {
       }
     }
     return map;
-  }, [characters, registry]);
+  }, [characters, registry, phase]);
 
   // New characters open straight in the Build page (the primary editor).
   const createBlank = async () => {
@@ -522,7 +529,9 @@ export function Component() {
             vitals={vitals.get(c.id)}
             // Nothing to wait for on a classless character, and nothing
             // coming if the compendium failed to load.
-            vitalsDue={registryStatus === 'loading' && classesOf(c).length > 0}
+            vitalsDue={
+              classesOf(c).length > 0 && (registryStatus === 'loading' || phase === 'working')
+            }
             onActions={() => void rowActions(c)}
           />
         ))}

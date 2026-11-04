@@ -17,7 +17,17 @@ import { HP_SETTLE_MS, Component as PlayTab } from './PlayTab';
 // The sheet reads spell text through the registry: without one, every granted
 // spell renders as a bare Cast button, which is the one path a limited grant
 // usually does NOT take. The synthetic world stands in for the compendium.
-vi.mock('@/data5e/hooks', () => ({ useRegistry: () => makeTestContext() }));
+vi.mock('@/data5e/hooks', () => ({
+  useRegistry: () => makeTestContext(),
+  useRegistryRefreshing: () => false,
+  useTypePacks: () => ({
+    status: 'ready',
+    error: null,
+    offline: false,
+    retry: () => undefined,
+    repair: () => undefined,
+  }),
+}));
 
 // The cast chooser is a bottom sheet mounted by AppShell, which this router does
 // not render; mocking it puts the offered options themselves under assertion and
