@@ -2,12 +2,19 @@
  * Generic prose scanner — broad automation for the long tail of traits and
  * features whose mechanics exist only in text. Detects limited-use wording
  * ("once per long rest", "a number of times equal to your proficiency bonus"),
- * action economy ("as a bonus action"), and per-level HP riders, then emits
- * the matching effects. The curated table stays the precision override: call
- * this only when no curated entry handled the feature.
+ * action economy ("as a bonus action"), per-level HP riders, and standing bonuses
+ * to checks and initiative, then emits the matching effects. The curated table
+ * stays the precision override: call this only when no curated entry handled the
+ * feature.
  */
 import { plainEntryText } from '../../data5e/entries/plainText';
-import type { Ability, EffectOrigin } from '../types';
+import {
+  type Ability,
+  type BonusAmount,
+  type EffectInput,
+  type EffectOrigin,
+  SKILLS,
+} from '../types';
 import type { Collector } from './base';
 
 const DAMAGE_TYPES =
@@ -37,8 +44,8 @@ const DAMAGE_AFTER_DICE = new RegExp(
 const DAMAGE_BEFORE_DICE = /damage (?:equal to|increases (?:to|by)) $/;
 
 /**
- * Recursively flatten an entries tree to plain lowercase text, reading each tag
- * as the words it displays: 2024 prose writes "proficiency bonus" as
+ * An entries tree as its strings, in plain lowercase, reading each tag as the
+ * words it displays: 2024 prose writes "proficiency bonus" as
  * `{@variantrule Proficiency|XPHB|Proficiency Bonus}`, and the patterns below
  * match what the player reads. Each string is read on its own, so one unclosed
  * tag cannot leave the tags in the strings after it unread.
@@ -48,14 +55,11 @@ const DAMAGE_BEFORE_DICE = /damage (?:equal to|increases (?:to|by)) $/;
  * Totem Warrior's animal), so a scan that wants only what the trait itself
  * always grants must not read them.
  */
-export function flattenEntries(
-  entries: unknown,
-  opts: { skipNamedOptions?: boolean } = {},
-): string {
+function entryStrings(entries: unknown, opts: { skipNamedOptions?: boolean } = {}): string[] {
   const parts: string[] = [];
   const walk = (v: unknown, inChoiceList: boolean): void => {
     if (typeof v === 'string') {
-      parts.push(plainEntryText(v));
+      parts.push(plainEntryText(v).replaceAll('’', "'").toLowerCase());
       return;
     }
     if (Array.isArray(v)) {
@@ -72,7 +76,15 @@ export function flattenEntries(
     }
   };
   walk(entries, false);
-  return parts.join(' ').replaceAll('’', "'").toLowerCase();
+  return parts;
+}
+
+/** An entries tree flattened to one string of plain lowercase text. */
+export function flattenEntries(
+  entries: unknown,
+  opts: { skipNamedOptions?: boolean } = {},
+): string {
+  return entryStrings(entries, opts).join(' ');
 }
 
 const slug = (s: string) =>
@@ -183,8 +195,172 @@ function actionDice(text: string, phraseAt: number): RegExpExecArray | null {
   return null;
 }
 
+const ABILITY_NAME = Object.keys(ABILITY_WORDS).join('|');
+const SKILL_NAME = SKILLS.map((s) => s.name.toLowerCase()).join('|');
+const LIST_SEPARATOR = /, or |, | or /;
+const listOf = (item: string) => `(?:${item})(?:(?:, or |, | or )(?:${item}))*`;
+
 /**
- * Scan one named trait/feature and emit resource / action / HP effects.
+ * Openers a sentence may have and still state a standing benefit. The patterns
+ * below take the whole sentence, so any other opener or tail ("while raging",
+ * "related to dragons") reads as a condition and adds nothing. A sheet number
+ * that only sometimes applies is wrong, and rolls cannot take a toggled bonus yet,
+ * so a phrasing missing here costs a bonus where a loose match would misstate one.
+ */
+const LEAD = `(?:(?:(?:starting|beginning) )?(?:at|by) \\d+(?:st|nd|rd|th) level, |in addition, |additionally, |as a result, )*`;
+/** The level a matched sentence's opener waits for, if it names one. */
+const LEVEL_LEAD = /\b(?:at|by) (\d+)(?:st|nd|rd|th) level, /;
+/** Words that open a condition, so what they govern only sometimes applies. */
+const CONDITION = `while|when(?:ever)?|if|as long as|until|during|after|for \\d+`;
+/** What a bonus equals, and the "(minimum of +1)" that can follow a modifier. */
+const SOURCE = `(?<source>proficiency bonus|(?:${ABILITY_NAME}) modifier)(?<min1> \\((?:a )?minimum(?: bonus)? of \\+1\\))?`;
+const ROLLS_INITIATIVE = `(?<rolls>when(?:ever)? you(?: and any (?:allies|creatures) (?:of your choice|you choose)(?: within \\d+ feet of you)?)? roll initiative, )?`;
+const INITIATIVE = `(?:your )?initiative(?: rolls?)?`;
+/** "wisdom", "wisdom (perception)", "intelligence (arcana or nature)" or "perception". */
+const CHECK_SUBJECT = `(?:${ABILITY_NAME})(?: \\(${listOf(SKILL_NAME)}\\))?|${listOf(SKILL_NAME)}`;
+
+const HALF_PROF = new RegExp(
+  `^${LEAD}you (?:can )?add half your proficiency bonus(?:,? \\(?round(?:ed)? (?<round>up|down)\\)?,?)? to any (?<abilities>ability|${listOf(ABILITY_NAME)}) checks?(?: you make)?(?: that (?<lacking>uses a skill proficiency you lack and that )?doesn't (?:already |otherwise )?(?:include|use|add) your proficiency bonus)?$`,
+);
+const ADD_TO_INITIATIVE = new RegExp(
+  `^${LEAD}${ROLLS_INITIATIVE}you (?<can>can )?add your ${SOURCE} to (?<target>your initiative rolls?|the roll)$`,
+);
+const FLAT_INITIATIVE = new RegExp(
+  `^${LEAD}${ROLLS_INITIATIVE}you (?:gain|have) a \\+(?<amount>\\d+) bonus to ${INITIATIVE}$`,
+);
+const INITIATIVE_EQUAL_TO = new RegExp(
+  `^${LEAD}${ROLLS_INITIATIVE}you (?<can>can give yourself|(?:all )?(?:gain|have)) a bonus to ${INITIATIVE} equal to your ${SOURCE}$`,
+);
+const CHECK_BONUS = new RegExp(
+  `^${LEAD}(?:when(?:ever)? you make an? (?<made>${CHECK_SUBJECT}) check, you (?<can>can give yourself|gain|have) a bonus to the check|(?:you (?<canTo>can give yourself|gain|have)|your (?:(?!\\b(?:${CONDITION})\\b)[^,])+ gives you) a bonus to your (?<named>${CHECK_SUBJECT}) checks)(?: equal to your ${SOURCE})?$`,
+);
+/** Where a check bonus leaves its size to the next sentence. */
+const BONUS_EQUALS = new RegExp(`^the bonus equals your ${SOURCE}$`);
+const PASSIVE_BONUS = new RegExp(
+  `^${LEAD}you (?:gain|have) a \\+(?<amount>\\d+) bonus to your passive (?:wisdom \\()?perception\\)?(?: and passive (?:intelligence \\()?investigation\\)?)?(?: scores?)?$`,
+);
+
+/**
+ * A bonus's size. An added proficiency bonus is the bonus itself, which a roll
+ * takes once; one "equal to" it only matches its size. "You can" stays off the
+ * roll when the modifier is negative, since nobody adds what they can leave off.
+ */
+function amountFrom(groups: Record<string, string | undefined>, added: boolean): BonusAmount {
+  if (groups.source === 'proficiency bonus') return added ? 'profBonus' : 'equalToProfBonus';
+  // SOURCE admits nothing else but an ability's modifier.
+  const ability = ABILITY_WORDS[groups.source?.replace(' modifier', '') ?? ''] as Ability;
+  if (groups.min1 !== undefined) return `abilityModMin1:${ability}`;
+  return groups.can?.startsWith('can') === true
+    ? `abilityModMin0:${ability}`
+    : `abilityMod:${ability}`;
+}
+
+/** The skills a check's subject names, or else the ability it names. */
+function checkTarget(subject: string): { skills: string[] } | { ability: Ability } | undefined {
+  const named = subject.match(/\((.+)\)/)?.[1] ?? subject;
+  const skills = named
+    .split(LIST_SEPARATOR)
+    .flatMap((word) => SKILLS.find((s) => s.name.toLowerCase() === word)?.name ?? []);
+  if (skills.length > 0) return { skills };
+  const ability = ABILITY_WORDS[subject];
+  return ability === undefined ? undefined : { ability };
+}
+
+/** The bonus one sentence grants outright, if it does. `next` is the sentence after it. */
+function standingBonus(
+  sentence: string,
+  next: string | undefined,
+  origin: EffectOrigin,
+): EffectInput | undefined {
+  const half = sentence.match(HALF_PROF)?.groups;
+  if (half !== undefined) {
+    const named = half.abilities === 'ability' ? undefined : half.abilities;
+    const abilities = named?.split(LIST_SEPARATOR).flatMap((word) => ABILITY_WORDS[word] ?? []);
+    return {
+      kind: 'halfProf',
+      round: half.round === 'up' ? 'up' : 'down',
+      ...(abilities === undefined ? {} : { abilities }),
+      ...(half.lacking === undefined ? {} : { skillsOnly: true }),
+      origin,
+    };
+  }
+
+  const added = sentence.match(ADD_TO_INITIATIVE)?.groups;
+  // "The roll" means initiative only when the sentence opens by rolling it.
+  if (added !== undefined && (added.target !== 'the roll' || added.rolls !== undefined)) {
+    return { kind: 'initiativeBonus', amount: amountFrom(added, true), origin };
+  }
+  const flat = sentence.match(FLAT_INITIATIVE)?.groups;
+  if (flat !== undefined) {
+    return { kind: 'initiativeBonus', amount: Number(flat.amount), origin };
+  }
+  const equal = sentence.match(INITIATIVE_EQUAL_TO)?.groups;
+  if (equal !== undefined) {
+    return { kind: 'initiativeBonus', amount: amountFrom(equal, false), origin };
+  }
+
+  const check = sentence.match(CHECK_BONUS)?.groups;
+  if (check !== undefined) {
+    const target = checkTarget(check.made ?? check.named ?? '');
+    const size = check.source !== undefined ? check : next?.match(BONUS_EQUALS)?.groups;
+    if (target !== undefined && size !== undefined) {
+      const can = check.can ?? check.canTo;
+      return {
+        kind: 'checkBonus',
+        amount: amountFrom({ ...size, can }, false),
+        ...target,
+        origin,
+      };
+    }
+  }
+
+  const passive = sentence.match(PASSIVE_BONUS)?.groups;
+  if (passive !== undefined) {
+    return { kind: 'passivePerceptionBonus', amount: Number(passive.amount), origin };
+  }
+  return undefined;
+}
+
+const HAS_CONDITION = new RegExp(`\\b(?:${CONDITION})\\b`);
+/** A heading that puts everything after it under a condition or a choice. */
+function governsTheRest(sentence: string): boolean {
+  if (/^(?:choose|pick|select)\b|\bone of the following\b/.test(sentence)) return true;
+  return /:$|\bthe following\b/.test(sentence) && HAS_CONDITION.test(sentence);
+}
+/** A sentence that puts the ones after it in its string under a condition or an action. */
+const GOVERNS_THE_STRING = new RegExp(
+  `^${LEAD}(?:${CONDITION})\\b|\\bas an? (?:bonus |magic )?(?:action|reaction)\\b|\\buse your (?:bonus action|action|reaction)\\b`,
+);
+/** Wordings that make what came before them something to spend or lose. */
+const LIMITS = /^once you\b|\bonce per\b|\bthis bonus\b|\bcan't (?:use|do)\b.*\bagain\b/;
+
+/**
+ * Standing bonuses to checks, initiative and passive Perception, read a sentence
+ * at a time from what the trait always grants. Scope is taken on the safe side, as
+ * the patterns above are: a limit anywhere later in the string keeps the bonus off
+ * the sheet even if it was about another benefit, a condition keeps the rest of its
+ * string out, and a heading with one or a choice keeps the rest of the feature out.
+ * Another string is taken as another benefit, so its limit is not this bonus's.
+ */
+function emitStandingBonuses(col: Collector, entries: unknown, origin: EffectOrigin): void {
+  const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+  const limits = (sentence: string) => LIMITS.test(sentence) || detectUses(sentence) !== undefined;
+  for (const string of entryStrings(entries, { skipNamedOptions: true })) {
+    const sentences = string.split(/(?<=[.!?])\s+/).map((s) => s.replace(/[.!?]$/, ''));
+    for (const [i, sentence] of sentences.entries()) {
+      if (governsTheRest(sentence)) return;
+      const bonus = standingBonus(sentence, sentences[i + 1], origin);
+      const fromLevel = Number(sentence.match(LEVEL_LEAD)?.[1] ?? 0);
+      if (bonus !== undefined && totalLevel >= fromLevel && !sentences.slice(i + 1).some(limits)) {
+        col.add(bonus);
+      }
+      if (GOVERNS_THE_STRING.test(sentence)) break;
+    }
+  }
+}
+
+/**
+ * Scan one named trait/feature and emit resource / action / HP / bonus effects.
  * Safe to call on anything — no-ops when no usage wording is found.
  */
 export function proseScanFeature(
@@ -308,6 +484,8 @@ export function proseScanFeature(
   if (hp?.[1] !== undefined) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
   }
+
+  emitStandingBonuses(col, entries, origin);
 
   // Natural weapons (Ram, Cat's Claws, Bite, …): an unarmed strike with its own
   // damage die and type, stated in one of two phrasings: "you deal bludgeoning
