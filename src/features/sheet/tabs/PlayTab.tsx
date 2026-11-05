@@ -11,7 +11,7 @@ import {
   Shield,
   Star,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
