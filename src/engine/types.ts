@@ -260,6 +260,11 @@ export type EffectInput = { origin: EffectOrigin } & (
       usage?: string;
       /** Set when the grant is limited ("1/day"): the resource holding its uses. */
       resourceKey?: string;
+      /**
+       * This row is the way to cast the spell with slots, beside a limited row
+       * for its free uses, so a character with no slots to spend has no such row.
+       */
+      slotsOnly?: boolean;
     }
   | { kind: 'note'; text: string }
 );

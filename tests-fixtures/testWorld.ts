@@ -213,6 +213,16 @@ const spell: DataEntity[] = [
       { entries: ['The damage increases by {@scaledamage 2d6|1-9|1d6} per slot above 1st.'] },
     ],
   },
+  {
+    // Has no dice and a save, so its row shows a DC and casts from the button.
+    name: 'Daze Mote',
+    source: 'TST',
+    level: 1,
+    school: 'E',
+    time: [{ number: 1, unit: 'action' }],
+    savingThrow: ['wisdom'],
+    entries: ['A mote drifts at a creature.'],
+  },
 ];
 
 const background: DataEntity[] = [
@@ -252,6 +262,23 @@ const background: DataEntity[] = [
 // Sources 'PHB' here exist only so uids line up with curated-table keys;
 // the entity content is synthetic.
 const feat: DataEntity[] = [
+  {
+    // A free daily cast beside slot casting, for each way the sheet casts it.
+    name: 'Mote Sigil',
+    source: 'TST',
+    additionalSpells: [{ ability: 'int', prepared: { _: { daily: { '1': ['daze mote|tst'] } } } }],
+    entries: ['A mote circles your hand.'],
+  },
+  {
+    // Casts with the ability it raises, which its spell list does not name.
+    name: 'Mote Gift',
+    source: 'TST',
+    ability: [{ cha: 1 }],
+    additionalSpells: [
+      { ability: 'inherit', innate: { _: { daily: { '1': ['daze mote|tst'] } } } },
+    ],
+    entries: ['A mote settles on your shoulder.'],
+  },
   {
     // Grants the same spell a wand does, on its own daily pool: the two must
     // not collapse into one row that can only spend one of them.

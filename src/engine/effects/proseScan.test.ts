@@ -134,6 +134,171 @@ describe('proseScanFeature — limited-use detection', () => {
   });
 });
 
+describe('proseScanFeature beside a counted spell', () => {
+  /** A scan on a sheet whose additionalSpells already count these spells for this origin. */
+  function scanBeside(spells: string[], text: string, from: EffectOrigin = origin) {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    for (const name of spells) {
+      col.add({
+        kind: 'grantSpell',
+        spell: { name, source: 'HB' },
+        usage: '1/day',
+        resourceKey: `spell:${from.uid}:${name}`,
+        origin: from,
+      });
+    }
+    proseScanFeature(col, 'Gift', [text], origin);
+    return col.effects.filter((e) => e.kind === 'resource' || e.kind === 'action');
+  }
+  const trackers = (spells: string[], text: string) =>
+    scanBeside(spells, text).filter((e) => e.kind === 'resource');
+  /** The plain limit each form takes, in wording of our own. */
+  const CAST_LIMIT =
+    'Once you cast it with this gift, you can’t do so again until you finish a long rest.';
+  const USE_LIMIT =
+    'Once you use this trait, you can’t do so again until you complete a long rest.';
+
+  describe('reads no second tracker from', () => {
+    it.each([
+      ['a limit on casting it', `You may cast fake ward here. ${CAST_LIMIT}`],
+      ['a limit on using the trait to cast it', `You may cast fake ward here. ${USE_LIMIT}`],
+      ['"the" before the name', `You may cast the fake ward spell here. ${CAST_LIMIT}`],
+      ['the spell named some sentences back', `You learn fake ward. It hums softly. ${CAST_LIMIT}`],
+      [
+        'the spell named in the limit',
+        'You learn fake ward. Once you cast fake ward with this gift, you can’t do so again until you finish a long rest.',
+      ],
+      [
+        'a way to cast it again',
+        'You may cast fake ward here. Once you cast it with this gift, you can’t do so again until you finish a long rest, unless you pay a mote to cast it again.',
+      ],
+      [
+        'plain words about the spell between',
+        `You may cast fake ward here. Its glow is pale. ${USE_LIMIT}`,
+      ],
+    ])('%s', (_case, text) => {
+      expect(trackers(['fake ward'], text)).toEqual([]);
+    });
+
+    it('that limit, keeping an action of its own, which no longer spends a use', () => {
+      const text = `You may cast fake ward here. While it lasts, you can make a strike as a bonus action. ${CAST_LIMIT}`;
+      expect(scanBeside(['fake ward'], text)).toMatchObject([{ kind: 'action', economy: 'bonus' }]);
+    });
+  });
+
+  describe('keeps the tracker for', () => {
+    it.each([
+      ['a spell it does not count', ['fake other'], `You may cast fake ward here. ${CAST_LIMIT}`],
+      ['a name only inside a longer word', ['fake'], `You may cast fakeness here. ${CAST_LIMIT}`],
+      [
+        'a change made to the spell',
+        ['fake ward'],
+        'When you cast fake ward, you may reshape it. Once you use this trait to reshape it, you can’t do so again until you complete a long rest.',
+      ],
+      [
+        'a verb of its own',
+        ['fake ward'],
+        'You may cast fake ward here. Once you reshape it, you can’t do so again until you finish a long rest.',
+      ],
+      ['a benefit before the spell', ['fake ward'], `${USE_LIMIT} You also learn fake ward.`],
+      [
+        'a benefit between the spell and the limit',
+        ['fake ward'],
+        `You may cast fake ward here. As a bonus action you can hurl a mote. ${USE_LIMIT}`,
+      ],
+      [
+        'dice between the spell and the limit',
+        ['fake ward'],
+        `You may cast fake ward here. You can add 2d6 to a roll. ${USE_LIMIT}`,
+      ],
+      [
+        'a trait that only names the spell',
+        ['fake ward'],
+        `You know fake ward. You can raise a glow. ${USE_LIMIT}`,
+      ],
+      ['a spell name that is an ordinary word', ['glow'], `You raise a glow. ${USE_LIMIT}`],
+      [
+        'another spell in the limit',
+        ['fake ward'],
+        'You learn fake ward. You also learn fake bolt. Once you cast fake bolt with this gift, you can’t do so again until you finish a long rest.',
+      ],
+      [
+        'any spell in the limit',
+        ['fake ward'],
+        'You learn fake ward. When you cast a spell, you can add 1 to it. Once you cast a spell like this, you can’t do so again until you finish a long rest.',
+      ],
+      [
+        'a rider in the limit',
+        ['fake ward'],
+        'You learn fake ward. Once you cast fake ward, you can reroll one die, and you can’t do so again until you finish a long rest.',
+      ],
+      [
+        'a second limit in the sentence',
+        ['fake ward'],
+        'You learn fake ward. Once you cast it with this gift, you can’t do so again until you finish a long rest; when struck you can parry, and you must finish a short rest before you can use that again.',
+      ],
+      [
+        'a second limit in the prose',
+        ['fake ward'],
+        `You may cast fake ward here. ${CAST_LIMIT} You may also dash. After you dash, you can’t use it again until you finish a short rest.`,
+      ],
+      [
+        'a count of another kind',
+        ['fake ward'],
+        `You may cast fake ward here. ${CAST_LIMIT} You can use your parry twice.`,
+      ],
+    ])('%s', (_case, spells, text) => {
+      expect(trackers(spells, text)).toHaveLength(1);
+    });
+
+    it('a spell counted for another origin', () => {
+      const wand: EffectOrigin = { label: 'Wand', uid: 'item|wand', type: 'item' };
+      const text = `You may cast fake ward here. ${CAST_LIMIT}`;
+      expect(
+        scanBeside(['fake ward'], text, wand).filter((e) => e.kind === 'resource'),
+      ).toHaveLength(1);
+    });
+
+    it('no counted spell, when it is the only count there is', () => {
+      expect(trackers([], `You may cast fake ward here. ${CAST_LIMIT}`)).toHaveLength(1);
+    });
+
+    it('its roll', () => {
+      const text = `You may cast fake ward here. As a bonus action you can hurl a mote, dealing 2d6 fire damage. ${USE_LIMIT}`;
+      expect(scanBeside(['fake ward'], text)).toMatchObject([
+        { kind: 'resource' },
+        { kind: 'action', roll: '2d6' },
+      ]);
+    });
+  });
+});
+
+describe('proseScanFeature: whose rest a tracker reads', () => {
+  const resets = (text: string) =>
+    scan('Gift', [text]).flatMap((e) => (e.kind === 'resource' ? [e.resetOn] : []));
+  const LIMIT =
+    'When you slip, you can take a reaction to roll 1d6. Once you’ve done it, you can’t do so again until you finish a long rest.';
+
+  it.each([
+    [
+      'last',
+      'You may cast fake ward once with no slot, and you regain the ability to cast it in that way when you finish a short or long rest.',
+    ],
+    ['first', 'When you finish a short or long rest, you regain the ability to cast fake ward.'],
+    ['alone', 'You regain the ability to cast fake ward, when you finish a short or long rest.'],
+  ])('takes no rest from a spell’s free cast, with its rest %s', (_order, spellSentence) => {
+    expect(resets(`${LIMIT} ${spellSentence}`)).toEqual(['long']);
+  });
+
+  it('takes it when the limit is in that same sentence', () => {
+    expect(
+      resets(
+        'You may cast fake ward once per short rest with no slot, and you regain the ability to cast it this way when you finish a short or long rest.',
+      ),
+    ).toEqual(['short']);
+  });
+});
+
 describe('proseScanFeature on 2024 tagged prose', () => {
   const resource = (effects: EffectInput[]) =>
     effects.find((e): e is Extract<EffectInput, { kind: 'resource' }> => e.kind === 'resource');

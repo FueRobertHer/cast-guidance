@@ -172,7 +172,11 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     actions,
     resources,
     features: col.features,
-    grantedSpells: dedupeGrantedSpells(effects),
+    // A half caster's first level has a spellcasting block with no slots in it.
+    grantedSpells: dedupeGrantedSpells(
+      effects,
+      spellcasting.some((sc) => sc.pactSlots !== undefined || sc.slots.some((n) => n > 0)),
+    ),
     warnings: dedupeWarnings(col.warnings),
     classDataMissing: doc.classes.some(
       (c) => ctx.get('class', c.ref.name, c.ref.source) === undefined,
@@ -203,10 +207,14 @@ function richness(e: { roll?: string; note?: string; save?: unknown }): number {
   );
 }
 
-function dedupeGrantedSpells(effects: readonly EffectInput[]): DerivedSheet['grantedSpells'] {
+function dedupeGrantedSpells(
+  effects: readonly EffectInput[],
+  hasSlots: boolean,
+): DerivedSheet['grantedSpells'] {
   const seen = new Set<string>();
   const out: DerivedSheet['grantedSpells'] = [];
   for (const e of effectsOf(effects, 'grantSpell')) {
+    if (e.slotsOnly === true && !hasSlots) continue;
     // Two sources granting the same spell collapse to one row, unless each
     // brought its own pool of uses: a wand's 3/day fireball beside a race's
     // 1/day is two rows, or one of the two pools would have nothing to spend it.

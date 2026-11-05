@@ -36,7 +36,16 @@ export function collectFeatEntity(
   const origin: EffectOrigin = { label: str(e.name) ?? uid, uid, type: 'feat' };
   const idBase = `feat:${uid}:${instanceId}`;
 
+  const beforeAbility = col.effects.length;
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
+  // What an `inherit` spell casts with. A feat that raised two abilities names
+  // no one of them, one still waiting on its pick has none to hand on yet, and
+  // one built on another feat inherits that feat's choice, not its own raise.
+  const raised = new Set(
+    col.effects.slice(beforeAbility).flatMap((x) => (x.kind === 'abilityBonus' ? [x.ability] : [])),
+  );
+  const buildsOnFeat = asEntityArray(e.prerequisite).some((p) => p.feat !== undefined);
+  const [inheritedAbility] = raised.size === 1 && !buildsOnFeat ? raised : [];
   readProficiencyList(
     col,
     e.skillProficiencies,
@@ -123,7 +132,7 @@ export function collectFeatEntity(
     }
   }
 
-  collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
+  collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase, inheritedAbility);
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
   if (!emitCuratedEffects(col, uid, origin)) {

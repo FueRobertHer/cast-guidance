@@ -24,6 +24,22 @@ export function findSpell(
 }
 
 /**
+ * Granted spells for a list that only names them. One origin can give a spell a
+ * row for its slots and a row for its free uses, which matter to a list of what
+ * can be cast but read here as the same spell twice. The slots row comes first,
+ * so it is the one kept, and the line still says "always prepared".
+ */
+export function distinctGrants(grants: DerivedSheet['grantedSpells']) {
+  const seen = new Set<string>();
+  return grants.filter((g) => {
+    const key = `${g.name}|${g.source}|${g.origin}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
  * The spell files, for a page that lists this character's own spells. Asks for
  * them only when one is missing: every other page that needs spell files asks
  * for them itself, and this one must not rely on the boot drain having finished.

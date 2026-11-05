@@ -146,7 +146,7 @@ function walkBuckets(val: unknown, emit: (group: SpellGroup) => void): void {
     if (bucket !== 'daily' && bucket !== 'rest') {
       // "will" is at-will, and an unknown bucket is better granted without a
       // limit than dropped: the spell is the part the sheet can't invent.
-      unlimited(spells, true);
+      unlimited(spells, bucket === 'will');
       continue;
     }
     if (spells === null || typeof spells !== 'object') continue;
@@ -300,6 +300,16 @@ function grantSpellEntry(
         origin,
       });
       for (const spell of pool) {
+        if (plainUsage === 'prepared') {
+          col.add({
+            kind: 'grantSpell',
+            spell,
+            ability,
+            usage: plainUsage,
+            slotsOnly: true,
+            origin,
+          });
+        }
         col.add({
           kind: 'grantSpell',
           spell,
@@ -331,20 +341,14 @@ function grantSpellEntry(
   }
 
   // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
-  // class's own slots and never counted against the prepared limit, whatever
-  // bucket a named spell sits in. A pick spends its bucket's count instead, since
-  // that is the only way a non-caster can cast the spell it chose.
+  // class's own slots and never counted against the prepared limit. A count on
+  // top is free casts besides, so a limited spell gets a row for each way of
+  // casting it, and a non-caster keeps only the free casts. Those are always per
+  // spell: the release writes "1" on lists whose prose gives each spell its own.
   const seenPrepared = new Set<string>();
   for (const [levelKey, val] of reachedLevels(entry.prepared, totalLevel)) {
     walkBuckets(val, (group) => {
-      const slot = `prepared:${levelKey}`;
-      grant(
-        { names: group.names, chooses: [], limit: undefined, shared: false, atWill: false },
-        slot,
-        seenPrepared,
-        'prepared',
-      );
-      grant({ ...group, names: [] }, slot, seenPrepared, 'prepared');
+      grant({ ...group, shared: false }, `prepared:${levelKey}`, seenPrepared, 'prepared');
     });
   }
 
@@ -430,6 +434,8 @@ function processSpellEntry(
  * @param idBase namespace for the branch choice's stable id (defaults to the
  *   origin uid). Callers with a per-instance base (repeatable feats) pass it so
  *   two instances keep separate branch picks.
+ * @param inheritedAbility what an entry written `ability: "inherit"` casts with:
+ *   the ability the same feat raised, when it has raised one yet.
  */
 export function collectAdditionalSpells(
   col: Collector,
@@ -437,6 +443,7 @@ export function collectAdditionalSpells(
   origin: EffectOrigin,
   defaultAbility?: Ability,
   idBase?: string,
+  inheritedAbility?: Ability,
 ): void {
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
@@ -477,7 +484,7 @@ export function collectAdditionalSpells(
           entry,
           origin,
           totalLevel,
-          defaultAbility,
+          entry.ability === 'inherit' ? (inheritedAbility ?? defaultAbility) : defaultAbility,
           `${base}:ability:${groupKey}:${i}`,
           `${base}:spell:${groupKey}:${i}`,
         );

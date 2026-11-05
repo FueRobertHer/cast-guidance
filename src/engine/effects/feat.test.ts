@@ -97,6 +97,100 @@ describe('a chosen spell, from the feat to the sheet', () => {
   });
 });
 
+describe('an inherited casting ability', () => {
+  const grants = (feat: DataEntity, choices: Record<string, string> = {}) => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    Object.assign(col.doc.choices, choices);
+    collectFeatEntity(col, feat, 'gift|hb', 'i1');
+    return col.effects.filter((e) => e.kind === 'grantSpell');
+  };
+  const inherits: DataEntity = {
+    name: 'Gift',
+    ability: [{ choose: { from: ['int', 'wis', 'cha'] } }],
+    additionalSpells: [{ ability: 'inherit', known: { _: ['fake spark'] } }],
+  };
+  const picked = { 'feat:gift|hb:i1:ability:c0': 'wis' };
+
+  it('is the ability the same feat raised', () => {
+    expect(grants(inherits, picked)).toMatchObject([{ ability: 'wis' }]);
+  });
+
+  it('is a fixed raise too', () => {
+    expect(grants({ ...inherits, ability: [{ cha: 1 }] })).toMatchObject([{ ability: 'cha' }]);
+  });
+
+  it('waits for the pick, granting the spell meanwhile', () => {
+    const [grant] = grants(inherits);
+    expect(grant).toMatchObject({ spell: { name: 'fake spark' } });
+    expect(grant).not.toHaveProperty('ability', expect.anything());
+  });
+
+  it('names no ability when the feat raised two', () => {
+    const [grant] = grants({ ...inherits, ability: [{ int: 1, wis: 1 }] });
+    expect(grant).not.toHaveProperty('ability', expect.anything());
+  });
+
+  it('is not the raise of a feat built on another feat, whose choice it inherits', () => {
+    const builtOn = { ...inherits, prerequisite: [{ feat: ['first gift|hb'] }] };
+    const [grant] = grants(builtOn, picked);
+    expect(grant).not.toHaveProperty('ability', expect.anything());
+  });
+
+  it('does not reach an entry that names no ability, or one that names its own', () => {
+    const feat = {
+      ...inherits,
+      additionalSpells: [
+        { known: { _: ['fake spark'] } },
+        { ability: 'int', known: { _: ['fake ward'] } },
+      ],
+    };
+    const [none, own] = grants(feat, picked);
+    expect(none).not.toHaveProperty('ability', expect.anything());
+    expect(own).toMatchObject({ ability: 'int' });
+  });
+});
+
+describe('a limited always-prepared spell on the sheet', () => {
+  const feat: DataEntity = {
+    name: 'Sigil',
+    source: 'HB',
+    additionalSpells: [{ ability: 'int', prepared: { _: { daily: { 1: ['fake ward|hb'] } } } }],
+  };
+  const base = makeTestContext();
+  const ctx = {
+    get: (type: string, name: string, source?: string) => {
+      if (type === 'feat' && name.toLowerCase() === 'sigil') return feat;
+      if (type === 'class' && name === 'Half Test') {
+        const sorcerer = base.get('class', 'Sorcerer', 'TST');
+        return { ...sorcerer, name, casterProgression: '1/2' };
+      }
+      return base.get(type, name, source);
+    },
+    byType: (type: string) => base.byType(type),
+  };
+  const rowsOf = (className: string, levels = 3) => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [
+      { ref: { name: className, source: 'TST' }, levels, hp: Array(levels).fill('avg') },
+    ];
+    doc.feats = [{ ref: { name: 'Sigil', source: 'HB' }, instanceId: 'i1' }];
+    return deriveSheet(doc, ctx).grantedSpells.map((g) => g.usage);
+  };
+
+  it('has only its free uses for a character with no spellcasting', () => {
+    expect(rowsOf('Warrior')).toEqual(['1/day']);
+  });
+
+  it('has its slots row too for a caster', () => {
+    expect(rowsOf('Sorcerer')).toEqual(['prepared', '1/day']);
+  });
+
+  it('waits for a half caster to have slots before giving it a slots row', () => {
+    expect(rowsOf('Half Test', 1)).toEqual(['1/day']);
+    expect(rowsOf('Half Test', 2)).toEqual(['prepared', '1/day']);
+  });
+});
+
 describe('collectFeats', () => {
   it('warns for a feat the registry does not have', () => {
     const doc = newCharacterDoc('c', 'H', 't');
