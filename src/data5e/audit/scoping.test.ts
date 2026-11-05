@@ -64,7 +64,13 @@ const registry = normalizeDataset(
               trait('Brave', 'You stand firm when your nerve is tested.'),
               // The scanner draws a reaction chip from this.
               trait('Sidestep', 'As a reaction, you slip aside.'),
+              trait('Deft Step', 'You step lightly past a blade.'),
             ],
+          },
+          {
+            name: 'Otherfolk',
+            source: 'HB',
+            entries: [trait('Deft Step', 'You slip past a blade with care.')],
           },
         ],
       },
@@ -187,6 +193,7 @@ const registry = normalizeDataset(
           classFeature('Steady Aim', 3, 'You rest your weapon on a nearby surface.'),
           classFeature('Odd Hobby', 4, 'You collect small stones in your downtime.'),
           classFeature('Extra Attack', 5, 'You strike more than once.'),
+          classFeature('Deft Step', 6, 'You pass a blade without a scratch.'),
         ],
       },
     }),
@@ -547,6 +554,24 @@ describe('capability scope', () => {
     expect(report).toContain('The score is the two answers multiplied.');
     // This list cuts at 0.4, so the yes threshold other reports state does not apply.
     expect(report).not.toContain('Yes means');
+  });
+
+  it("shows the best printing's label and answers, and the lowest score of any", async () => {
+    const [middle, best, lowest] = subjects.filter((s) => s.name === 'Deft Step');
+    if (middle === undefined || best === undefined || lowest === undefined) {
+      throw new Error('fixture lost a printing');
+    }
+    expect(new Set([middle.label, best.label, lowest.label]).size).toBe(3);
+    const file = await savedFile(CAPABILITY_SET, subjects, {});
+    // The best is neither first nor last, and the lowest comes after it.
+    file.judgments[`capability@1:${middle.key}`] = { label: middle.label, p: [0.6, 0.6] };
+    file.judgments[`capability@1:${best.key}`] = { label: best.label, p: [0.9, 0.8] };
+    file.judgments[`capability@1:${lowest.key}`] = { label: lowest.label, p: [0.5, 0.2] };
+
+    const report = CAPABILITY_SCOPE.report(registry, file);
+    expect(rowsUnder(report, 'Names at 0.4 or above, likeliest first')).toEqual([
+      `0.72  ${best.label}  in combat 0.90, every round 0.80  3 printings, lowest 0.10`,
+    ]);
   });
 
   it('lists a name that scores exactly at the cutoff, and not one just under it', async () => {

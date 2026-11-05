@@ -29,7 +29,7 @@ const ALWAYS_ON = 'alwaysOn';
 /**
  * Two facts, combined by the report. One question asking for both plus "could a
  * player forget it" put 5 of 8 known non-combat features above its cutoff, while
- * these left a clean gap on the same features.
+ * these put 17 of the 18 features already in the table above all 8.
  */
 export const CAPABILITY_SET: JudgeSet = {
   id: 'capability',
@@ -84,8 +84,9 @@ export function capabilitySubjects(registry: ByType): ProseSubject[] {
 const score = (answers: Answers) => pOf(answers, IN_COMBAT) * pOf(answers, ALWAYS_ON);
 
 /**
- * Names below this are counted, not listed: there are over a thousand of them. Of
- * the features checked, 17 of 18 in the table reached it and 8 of 8 controls did not.
+ * Names below this are counted, not listed: there are hundreds of them. On one
+ * printing of each, 17 of 18 names in the table reached it and none of 8 controls
+ * did. A name ranks by its best printing, so some controls still reach it on another.
  */
 const LISTED_FROM = 0.4;
 
