@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { VALID_BODIES } from '../../../tests-fixtures/dataMirror';
+import { normalizeDataset } from '../normalize';
 import { analyzeDataset, groupWarningKey, sortedCounts } from './analyze';
+import { BRANCH_SET, branchSubjects } from './branches';
+import { type JudgmentFile, judgmentKey, setTag } from './judgments';
+import { PROSE_SET } from './proseChecks';
+import { proseSubjects } from './proseSubjects';
 
 /** A version whose `_mod` replaces an entry the base does not have. */
 const brokenVersion = (target: string) => ({
@@ -129,5 +134,85 @@ describe('sortedCounts', () => {
       ['a', 1],
       ['b', 1],
     ]);
+  });
+});
+
+describe('analyzeDataset with saved judgments', () => {
+  const judgedBodies: Record<string, unknown> = {
+    ...VALID_BODIES,
+    'feats.json': {
+      feat: [
+        {
+          name: 'Steady Hands',
+          source: 'HB',
+          entries: [
+            'You can steady yourself a number of times equal to your {@variantrule Proficiency|XPHB|Proficiency Bonus}, regaining all uses on a long rest.',
+          ],
+        },
+      ],
+    },
+    'class/class-fighter.json': {
+      class: [{ name: 'Fighter', source: 'PHB' }],
+      subclass: [
+        {
+          name: 'Test Knight',
+          shortName: 'Knight',
+          source: 'HB',
+          className: 'Fighter',
+          classSource: 'PHB',
+          additionalSpells: [
+            { name: 'Sun', known: { _: ['light'] } },
+            { name: 'Moon', known: { _: ['darkness'] } },
+          ],
+        },
+      ],
+    },
+  };
+  const judgedFiles = new Map(Object.entries(judgedBodies));
+  const reg = normalizeDataset(judgedFiles);
+  const [steady] = proseSubjects(reg).filter((s) => s.name === 'Steady Hands');
+  const [knight] = branchSubjects(reg);
+  const ids = PROSE_SET.questions.map((q) => q.id);
+  const sureOf = new Set(['limitedUses', 'usesProficiency', 'reaction']);
+  const judgments: JudgmentFile = {
+    sets: { [setTag(PROSE_SET)]: ids, [setTag(BRANCH_SET)]: ['choice'] },
+    judgments: {
+      [judgmentKey(PROSE_SET, steady?.key ?? '')]: {
+        label: 'Steady Hands (feat|HB)',
+        p: ids.map((id) => (sureOf.has(id) ? 0.95 : 0.05)),
+      },
+      [judgmentKey(BRANCH_SET, knight?.key ?? '')]: { label: 'knight', p: [0.91] },
+    },
+  };
+  const judged = analyzeDataset({
+    tag: 'v9.9.9',
+    files: judgedFiles,
+    fileBytes: new Map(),
+    maxFileBytes: 500,
+    judgments,
+  });
+
+  it('compares the scanner with the saved answers', () => {
+    // Both read the uses and their Proficiency Bonus, so those stay out. The
+    // prose names no Reaction, so the scanner draws none, and the answer is sure.
+    expect(judged.prose.judged).toBe(1);
+    expect(judged.prose.disagreements).toEqual([
+      expect.objectContaining({
+        label: 'Steady Hands (feat|HB)',
+        check: 'reaction',
+        kind: 'missed',
+      }),
+    ]);
+  });
+
+  it('attaches the saved answer to an unworded branch block', () => {
+    expect(judged.branchBlocks).toEqual([
+      expect.objectContaining({ uid: 'test knight|hb', choiceP: 0.91 }),
+    ]);
+  });
+
+  it('reports nothing judged without the file', () => {
+    expect(report.prose.judged).toBe(0);
+    expect(report.branchBlocks.every((b) => b.choiceP === undefined)).toBe(true);
   });
 });

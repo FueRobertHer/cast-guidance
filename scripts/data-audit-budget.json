@@ -1,5 +1,5 @@
 {
-  "$comment": "Data audit budgets (TEST-005), one entry per data tag, checked by scripts/data-audit.ts. Counts are exact for a pinned tag: a parser change that moves one updates this file in the same PR. Problem counts are ceilings and spellsWithDice is a floor. A DATA_TAG bump needs a new entry: run `bun run data:audit -- --tag <tag> --write-budget`, then review the diff. branchAllow entries are human verdicts that a multi-name additionalSpells block is a real choice even though the entity's own prose does not say so.",
+  "$comment": "Data audit budgets (TEST-005), one entry per data tag, checked by scripts/data-audit.ts. Counts are exact for a pinned tag: a parser change that moves one updates this file in the same PR. Problem counts are ceilings and spellsWithDice is a floor. A DATA_TAG bump needs a new entry: run `bun run data:audit -- --tag <tag> --write-budget`, then review the diff. branchAllow entries are human verdicts that a multi-name additionalSpells block is a real choice even though the entity's own prose does not say so. prose, once a tag has saved Jev judgments (scripts/data-judgments.json, written by `bun run data:judge`), caps the prose-scan disagreements no prose.allow entry settles; each allow entry is a human verdict that the scanner's reading stands.",
   "tags": {
     "v2.32.0": {
       "files": 48,
@@ -277,7 +277,11 @@
           "verdict": "choice",
           "note": "Vestige Spells: select one of these Cleric domains, whose Domain Spells you always have prepared. The wording lives in the subclassFeature."
         }
-      ]
+      ],
+      "prose": {
+        "disagreements": 355,
+        "allow": []
+      }
     }
   }
 }

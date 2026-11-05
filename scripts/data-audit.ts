@@ -23,18 +23,15 @@ import {
   type AuditBudget,
   type AuditEvaluation,
   budgetFromReport,
+  describeDisagreement,
   evaluateAudit,
   parseAuditBudget,
   toMarkdown,
+  unsettledDisagreements,
 } from '../src/data5e/audit/budget';
-import {
-  DATA_TAG,
-  isCompatibleTag,
-  MAX_DATA_FILE_BYTES,
-  parseTagVersion,
-  TAGS_API_URL,
-} from '../src/data5e/config';
-import { GithubTagSource } from '../src/data5e/source';
+import { DATA_TAG, isCompatibleTag, MAX_DATA_FILE_BYTES } from '../src/data5e/config';
+import { readJudgments } from './data-judgments-file';
+import { fetchRelease, resolveLatestTag } from './data-release';
 
 const budgetPath = path.join(import.meta.dirname, 'data-audit-budget.json');
 
@@ -65,96 +62,12 @@ function die(message: string): never {
   process.exit(1);
 }
 
-/**
- * The newest release this build could install, straight from the GitHub tags
- * API. Deliberately not `listAvailableTags` from the loader, which needs
- * IndexedDB. A token, when the workflow provides one, lifts the rate limit.
- */
-async function resolveLatestTag(): Promise<string> {
-  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
-  const token = process.env.GITHUB_TOKEN;
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${TAGS_API_URL}?per_page=100`, {
-    headers,
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`GitHub tags API answered HTTP ${res.status}`);
-  const body: unknown = await res.json();
-  if (!Array.isArray(body)) throw new Error('GitHub tags API did not answer with a list');
-  const versions = body
-    .map((t: unknown) =>
-      t !== null && typeof t === 'object' ? (t as { name?: unknown }).name : '',
-    )
-    .filter((name): name is string => typeof name === 'string' && isCompatibleTag(name))
-    .map((name) => ({ name, v: parseTagVersion(name) }))
-    .filter((t): t is { name: string; v: NonNullable<typeof t.v> } => t.v !== null)
-    .sort((a, b) => b.v.major - a.v.major || b.v.minor - a.v.minor || b.v.patch - a.v.patch);
-  const newest = versions[0];
-  if (newest === undefined) throw new Error(`no tag compatible with ${DATA_TAG} on the mirror`);
-  return newest.name;
-}
-
-const STATIC_FILES = [
-  'races.json',
-  'backgrounds.json',
-  'feats.json',
-  'items-base.json',
-  'items.json',
-  'magicvariants.json',
-  'optionalfeatures.json',
-  'skills.json',
-  'languages.json',
-  'senses.json',
-  'actions.json',
-  'conditionsdiseases.json',
-  'variantrules.json',
-  'books.json',
-  'class/index.json',
-  'spells/index.json',
-];
-
-async function fetchRelease(tag: string) {
-  /** Decoded size of every file fetched, by data path, for the size check. */
-  const fileBytes = new Map<string, number>();
-  const source = new GithubTagSource(tag, {
-    fetchImpl: async (input, init) => {
-      const res = await fetch(input, init);
-      if (res.ok) {
-        const url = String(input);
-        const dataPath = url.slice(url.indexOf('/data/') + '/data/'.length);
-        fileBytes.set(dataPath, (await res.clone().arrayBuffer()).byteLength);
-      }
-      return res;
-    },
-  });
-  const files = new Map<string, unknown>();
-  const fetchInto = async (paths: string[]) => {
-    const queue = [...paths];
-    await Promise.all(
-      Array.from({ length: 6 }, async () => {
-        for (;;) {
-          const p = queue.shift();
-          if (p === undefined) return;
-          files.set(p, await source.fetchFile(p));
-        }
-      }),
-    );
-  };
-  await fetchInto(STATIC_FILES);
-  const index = (p: string) => Object.values((files.get(p) ?? {}) as Record<string, string>);
-  await fetchInto([
-    ...index('class/index.json').map((f) => `class/${f}`),
-    ...index('spells/index.json').map((f) => `spells/${f}`),
-  ]);
-  return { files, fileBytes };
-}
-
 function readBudget(): AuditBudget {
   if (!existsSync(budgetPath)) return { tags: {} };
   return parseAuditBudget(JSON.parse(readFileSync(budgetPath, 'utf8')));
 }
 
-function printReport(report: AuditReport): void {
+function printReport(report: AuditReport, budget: AuditBudget): void {
   console.log(`fetched ${report.fileCount} files\n`);
 
   console.log('## file sizes');
@@ -212,9 +125,25 @@ function printReport(report: AuditReport): void {
 
   console.log('\n## additionalSpells blocks with distinct names');
   for (const b of report.branchBlocks) {
+    const proposal = b.choiceP === undefined ? '' : ` (Jev: choice p=${b.choiceP})`;
     console.log(
-      `- ${b.choiceWording ? 'worded' : 'UNWORDED'} ${b.key} ${b.uid} [${b.names.join(', ')}]`,
+      `- ${b.choiceWording ? 'worded' : 'UNWORDED'} ${b.key} ${b.uid} [${b.names.join(', ')}]${proposal}`,
     );
+  }
+
+  const { prose } = report;
+  console.log(`\n## prose scan vs saved judgments`);
+  console.log(`${prose.judged}/${prose.subjects} scanned traits and features judged`);
+  if (prose.judged > 0) {
+    console.log(
+      sortedCounts(prose.byCheck)
+        .map(([group, n]) => `${group}=${n}`)
+        .join(' ') || 'no disagreements',
+    );
+    const allow = budget.tags[report.tag]?.prose?.allow;
+    for (const d of unsettledDisagreements(report, allow).slice(0, 60)) {
+      console.log(`- ${describeDisagreement(d)}`);
+    }
   }
 }
 
@@ -222,7 +151,10 @@ function writeBudget(report: AuditReport, budget: AuditBudget): void {
   const previous = budget.tags[report.tag] ?? budget.tags[DATA_TAG];
   const next: AuditBudget = {
     ...budget,
-    tags: { ...budget.tags, [report.tag]: budgetFromReport(report, previous?.branchAllow) },
+    tags: {
+      ...budget.tags,
+      [report.tag]: budgetFromReport(report, previous?.branchAllow, previous?.prose),
+    },
   };
   writeFileSync(budgetPath, `${JSON.stringify(next, null, 2)}\n`);
   try {
@@ -261,6 +193,13 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 
+let judgments: ReturnType<typeof readJudgments>;
+try {
+  judgments = readJudgments();
+} catch (error) {
+  die(error instanceof Error ? error.message : String(error));
+}
+
 const report = analyzeDataset({
   tag,
   files: release.files,
@@ -268,8 +207,9 @@ const report = analyzeDataset({
   // Half the app's refusal limit is the line for planning a bump: a release
   // that crosses it is still served, but the next few might not be.
   maxFileBytes: MAX_DATA_FILE_BYTES / 2,
+  judgments,
 });
-printReport(report);
+printReport(report, budget);
 
 if (values['write-budget']) {
   writeBudget(report, budget);

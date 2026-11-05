@@ -11,6 +11,7 @@
  */
 import type { AuditReport } from './analyze';
 import type { BranchBlock } from './branches';
+import type { DisagreementKind, ProseDisagreement } from './proseChecks';
 
 /** A multi-name `additionalSpells` block a person read and confirmed. */
 export interface BranchAllow {
@@ -20,6 +21,27 @@ export interface BranchAllow {
   /** Only a real choice can be allowed; a grant-all block is a bug to fix. */
   verdict: 'choice';
   note: string;
+}
+
+/**
+ * A prose-scan disagreement a person read and settled without changing the
+ * scanner: Jev misread the prose, or the scanner's reading is the one the
+ * sheet should show. It stops counting against the ceiling.
+ */
+export interface ProseAllow {
+  /** The subject's prose hash, as the report lists it. */
+  key: string;
+  check: string;
+  kind: DisagreementKind;
+  label: string;
+  note: string;
+}
+
+/** Recorded once the tag's prose has saved judgments. */
+export interface ProseBudget {
+  /** Ceiling on disagreements no `allow` entry covers. */
+  disagreements: number;
+  allow: ProseAllow[];
 }
 
 export interface TagBudget {
@@ -36,6 +58,8 @@ export interface TagBudget {
   /** Underscore keys already looked at. A new one is reported, not failed. */
   underscoreKeys: string[];
   branchAllow: BranchAllow[];
+  /** Absent until the tag's prose has been judged (`bun run data:judge`). */
+  prose?: ProseBudget;
 }
 
 export interface AuditBudget {
@@ -115,9 +139,33 @@ function parseAllow(value: unknown, path: string): BranchAllow {
   };
 }
 
+function parseProseAllow(value: unknown, path: string): ProseAllow {
+  if (!isRecord(value)) fail(path, 'an object');
+  if (value.kind !== 'missed' && value.kind !== 'extra')
+    fail(`${path}.kind`, '"missed" or "extra"');
+  return {
+    key: text(value.key, `${path}.key`),
+    check: text(value.check, `${path}.check`),
+    kind: value.kind,
+    label: text(value.label, `${path}.label`),
+    note: text(value.note, `${path}.note`),
+  };
+}
+
+function parseProseBudget(value: unknown, path: string): ProseBudget {
+  if (!isRecord(value)) fail(path, 'an object');
+  if (!Array.isArray(value.allow)) fail(`${path}.allow`, 'an array');
+  return {
+    disagreements: count(value.disagreements, `${path}.disagreements`),
+    allow: value.allow.map((a, i) => parseProseAllow(a, `${path}.allow[${i}]`)),
+  };
+}
+
 function parseTagBudget(value: unknown, path: string): TagBudget {
   if (!isRecord(value)) fail(path, 'an object');
   if (!Array.isArray(value.branchAllow)) fail(`${path}.branchAllow`, 'an array');
+  const prose =
+    value.prose === undefined ? undefined : parseProseBudget(value.prose, `${path}.prose`);
   return {
     files: count(value.files, `${path}.files`),
     entities: countMap(value.entities, `${path}.entities`),
@@ -128,6 +176,7 @@ function parseTagBudget(value: unknown, path: string): TagBudget {
     unhandledTags: countMap(value.unhandledTags, `${path}.unhandledTags`),
     underscoreKeys: textList(value.underscoreKeys, `${path}.underscoreKeys`),
     branchAllow: value.branchAllow.map((a, i) => parseAllow(a, `${path}.branchAllow[${i}]`)),
+    ...(prose === undefined ? {} : { prose }),
   };
 }
 
@@ -159,6 +208,26 @@ export function unexplainedBranchBlocks(report: AuditReport): BranchBlock[] {
 }
 
 const describeBlock = (b: BranchBlock) => `${b.key} ${b.uid} [${b.names.join(', ')}]`;
+
+const proseAllows = (allow: ProseAllow, d: ProseDisagreement) =>
+  allow.key === d.key && allow.check === d.check && allow.kind === d.kind;
+
+/** Disagreements no person has settled. */
+export function unsettledDisagreements(
+  report: AuditReport,
+  allow: readonly ProseAllow[] = [],
+): ProseDisagreement[] {
+  return report.prose.disagreements.filter((d) => !allow.some((a) => proseAllows(a, d)));
+}
+
+export const describeDisagreement = (d: ProseDisagreement) =>
+  `${d.check} ${d.kind} (p=${d.p}) ${d.label} [${d.key}]`;
+
+/** What a saved Jev answer proposes for an unworded block, for its failure line. */
+function proposal(block: BranchBlock): string {
+  if (block.choiceP === undefined) return '';
+  return `; the saved Jev answer puts a choice at p=${block.choiceP}`;
+}
 
 class Judge {
   readonly rows: AuditRow[] = [];
@@ -333,7 +402,7 @@ export function evaluateAudit(
   for (const block of flagged) {
     if (!entry.branchAllow.some((allow) => allows(allow, block))) {
       branches.failures.push(
-        `branch heuristic: ${describeBlock(block)} has distinct names and no choice wording; read it and add a branchAllow verdict, or fix the grant`,
+        `branch heuristic: ${describeBlock(block)} has distinct names and no choice wording; read it and add a branchAllow verdict, or fix the grant${proposal(block)}`,
       );
     }
   }
@@ -346,6 +415,8 @@ export function evaluateAudit(
   }
   judge.row('unexplained branch blocks', entry.branchAllow.length, flagged.length, branches);
 
+  judgeProse(judge, report, entry.prose);
+
   const sizes = none();
   for (const path of report.oversizedFiles) {
     sizes.failures.push(`${path} is over ${report.maxFileBytes} bytes; plan the size limit now`);
@@ -353,6 +424,52 @@ export function evaluateAudit(
   judge.row('oversized files', 0, report.oversizedFiles.length, sizes);
 
   return { mode, budgetTag, ...judge.result() };
+}
+
+/**
+ * The prose scanner against saved judgments. Nothing fails until a ceiling is
+ * recorded: a tag with no judgments, or judgments and no ceiling yet, is a
+ * note that says which command turns the check on.
+ */
+function judgeProse(judge: Judge, report: AuditReport, budget: ProseBudget | undefined): void {
+  const { subjects, judged } = report.prose;
+  if (subjects === 0) return;
+  const p = none();
+  if (judged === 0) {
+    p.notes.push(
+      'prose scan: no saved judgments match this tag; run `bun run data:judge` to compare the scanner with Jev',
+    );
+    judge.row('prose scan disagreements', budget?.disagreements ?? 'none', 'not judged', p);
+    return;
+  }
+  const unsettled = unsettledDisagreements(report, budget?.allow);
+  if (budget === undefined) {
+    p.notes.push(
+      `prose scan: ${unsettled.length} disagreement(s) with saved judgments and no ceiling yet; run \`bun run data:audit -- --write-budget\` to record one`,
+    );
+  } else {
+    const c = ceiling('prose scan disagreements', budget.disagreements, unsettled.length);
+    if (c.failures.length > 0) {
+      c.failures.push(...unsettled.slice(0, 10).map((d) => `  ${describeDisagreement(d)}`));
+    }
+    p.failures.push(...c.failures);
+    p.notes.push(...c.notes);
+    if (judged === subjects) {
+      for (const allow of budget.allow) {
+        if (!report.prose.disagreements.some((d) => proseAllows(allow, d))) {
+          p.notes.push(
+            `prose allow ${allow.check} ${allow.kind} ${allow.label} [${allow.key}] matches nothing; remove it`,
+          );
+        }
+      }
+    }
+  }
+  if (judged < subjects) {
+    p.notes.push(
+      `prose scan: ${subjects - judged} of ${subjects} scanned traits and features have no saved judgment (new or changed prose); run \`bun run data:judge\``,
+    );
+  }
+  judge.row('prose scan disagreements', budget?.disagreements ?? 'none', unsettled.length, p);
 }
 
 // ---------------------------------------------------------------------------
@@ -393,13 +510,25 @@ export function toMarkdown(report: AuditReport, evaluation: AuditEvaluation): st
  * The budget entry that exactly matches a report, for `--write-budget`.
  * Branch verdicts are human judgments, so only the given ones that still
  * match a flagged block carry over; a new block still fails until someone
- * reads it and writes its verdict.
+ * reads it and writes its verdict. Prose allow entries carry over the same
+ * way, and a run with no judgments keeps the previous prose budget as it was.
  */
 export function budgetFromReport(
   report: AuditReport,
   previousAllow: readonly BranchAllow[] = [],
+  previousProse?: ProseBudget,
 ): TagBudget {
   const flagged = unexplainedBranchBlocks(report);
+  const proseAllow = (previousProse?.allow ?? []).filter((allow) =>
+    report.prose.disagreements.some((d) => proseAllows(allow, d)),
+  );
+  const prose: ProseBudget | undefined =
+    report.prose.judged > 0
+      ? {
+          disagreements: unsettledDisagreements(report, proseAllow).length,
+          allow: proseAllow,
+        }
+      : previousProse;
   return {
     files: report.fileCount,
     entities: { ...report.entities },
@@ -412,5 +541,6 @@ export function budgetFromReport(
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([key]) => key),
     branchAllow: previousAllow.filter((allow) => flagged.some((block) => allows(allow, block))),
+    ...(prose === undefined ? {} : { prose }),
   };
 }

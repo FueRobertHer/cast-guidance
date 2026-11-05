@@ -29,6 +29,7 @@ bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a
 bun run notices        # regenerate THIRD_PARTY_NOTICES.md from dist/ (after a build)
 bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
+bun run data:judge     # ask Jev about scanned prose and save the answers (needs AI_GATEWAY_API_KEY)
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
 bun run icons:generate # render public/icons/*.png from scripts/icon-source.svg (commit the output)
@@ -43,6 +44,29 @@ nobody has confirmed is a choice. `--tag <tag|latest>` audits another release,
 report, and `--report-only` never exits 1. `.github/workflows/data-audit.yml`
 runs it weekly (pinned tag and newest release) and on PRs that touch the data
 pipeline. A `DATA_TAG` bump needs a budget entry, or `bun run test` fails.
+
+The audit also checks the prose scanner, which turns trait and feature text
+into sheet mechanics with regexes, against a second reader. `bun run
+data:judge` asks Jev (TypeSafe AI's judgment-only model, through Vercel AI
+Gateway; it needs `AI_GATEWAY_API_KEY`) yes/no questions about every trait and
+feature the scanner reads: bonus action, reaction, limited uses, uses equal to
+proficiency bonus, short-rest recovery, healing, and a forced save. It also
+asks whether each unworded multi-name `additionalSpells` block is a choice.
+The answers, a label and a probability per question with no rules text, go to
+`scripts/data-judgments.json`, filed under a hash of the prose, so a rerun
+asks only about new or changed text. The audit itself never calls a model: it
+compares the scanner with the saved answers, counts each confident answer the
+scanner contradicts as a disagreement against the tag's `prose` ceiling in the
+budget, and quotes the saved branch answer when a block has no verdict. A
+disagreement is settled by fixing the scanner or by a verdict in
+`prose.allow`. `--dry-run` shows what would be asked and a sample request,
+`--limit <n>` runs a trial, and the on-demand `Data judge` workflow
+(`.github/workflows/data-judge.yml`) runs it with the repository secret and
+returns the updated file as an artifact. To use a direct TypeSafe key instead
+of a gateway key, put it in `AI_GATEWAY_API_KEY` and also set
+`JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone` and `JEV_MODEL=jev-latest`,
+in `.env.local` or the shell. The workflow only passes the key, so it needs a
+gateway key.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the

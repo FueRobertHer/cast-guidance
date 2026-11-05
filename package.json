@@ -24,6 +24,7 @@
     "e2e:a11y": "playwright test e2e/a11y",
     "e2e:a11y:update": "A11Y_BASELINE_UPDATE=1 playwright test e2e/a11y/axe.spec.ts",
     "data:audit": "bun scripts/data-audit.ts",
+    "data:judge": "bun scripts/data-judge.ts",
     "icons:generate": "bun scripts/generate-icons.ts"
   },
   "dependencies": {
