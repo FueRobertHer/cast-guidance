@@ -1315,7 +1315,9 @@ export function Component() {
                       <RollChip
                         expr={a.roll}
                         label={a.label}
-                        variant={a.heals === true ? 'heal' : 'damage'}
+                        variant={
+                          a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
+                        }
                         onRolled={trigger}
                       />
                     ) : (

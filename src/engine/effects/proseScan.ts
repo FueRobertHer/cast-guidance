@@ -6,6 +6,7 @@
  * the matching effects. The curated table stays the precision override: call
  * this only when no curated entry handled the feature.
  */
+import { plainEntryText } from '../../data5e/entries/plainText';
 import type { Ability, EffectOrigin } from '../types';
 import type { Collector } from './base';
 
@@ -21,7 +22,26 @@ const ABILITY_WORDS: Record<string, Ability> = {
 };
 
 /**
- * Recursively flatten an entries tree to plain lowercase text.
+ * Where prose says a dice roll deals damage, by the wordings the data uses. A
+ * roll that says neither is plain dice rather than damage, so a word missing
+ * here costs a chip's colour, where a loose match would call a die damage that
+ * reduces it ("you take 1d6 less damage").
+ *
+ * After the dice: "2d6 damage", "2d8 lightning or thunder damage", "1d6 acid,
+ * cold, or fire damage", "1d6 + your Strength modifier piercing damage".
+ */
+const DAMAGE_AFTER_DICE = new RegExp(
+  `^ *(?:(?:\\+|plus) your [a-z]+ modifier )?(?:extra |additional )?(?:(?:${DAMAGE_TYPES})(?:, or |, | or | ))*damage\\b`,
+);
+/** Before the dice: "cold damage equal to 1d8", "this damage increases by 1d10". */
+const DAMAGE_BEFORE_DICE = /damage (?:equal to|increases (?:to|by)) $/;
+
+/**
+ * Recursively flatten an entries tree to plain lowercase text, reading each tag
+ * as the words it displays: 2024 prose writes "proficiency bonus" as
+ * `{@variantrule Proficiency|XPHB|Proficiency Bonus}`, and the patterns below
+ * match what the player reads. Each string is read on its own, so one unclosed
+ * tag cannot leave the tags in the strings after it unread.
  *
  * `skipNamedOptions` drops named items nested in a list or options node. Those
  * are the alternatives a player picks between (a Shifter's Longtooth bite, a
@@ -35,7 +55,7 @@ export function flattenEntries(
   const parts: string[] = [];
   const walk = (v: unknown, inChoiceList: boolean): void => {
     if (typeof v === 'string') {
-      parts.push(v);
+      parts.push(plainEntryText(v));
       return;
     }
     if (Array.isArray(v)) {
@@ -52,12 +72,7 @@ export function flattenEntries(
     }
   };
   walk(entries, false);
-  // {@dice 1d12}, {@spell bless|phb} … → keep the display text
-  return parts
-    .join(' ')
-    .replaceAll(/\{@\w+ ([^}|]*)(?:\|[^}]*)?\}/g, '$1')
-    .replaceAll('’', "'")
-    .toLowerCase();
+  return parts.join(' ').replaceAll('’', "'").toLowerCase();
 }
 
 const slug = (s: string) =>
@@ -120,17 +135,28 @@ export function proseScanFeature(
 
   const uses = detectUses(text);
   if (uses !== undefined) {
-    const resetOn =
-      /short or long rest/.test(text) || /finish a short rest/.test(text) ? 'short' : 'long';
+    // The clauses that return uses decide, when there are any, and a short rest
+    // that returns even one counts. Any other rest a trait mentions is about
+    // something else: Star Map's replacement ritual "during a short or long
+    // rest", Mist Walker's drain on "a short rest".
+    const returnsUses = text
+      .split(/[.,;]/)
+      .filter((c) => c.includes('regain') && /\buses?\b/.test(c) && c.includes('when you finish'));
+    const resetText = returnsUses.length > 0 ? returnsUses.join(' ') : text;
+    const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
 
   // Compact, high-signal chips only: bonus/reaction always; plain actions
   // only when limited-use (otherwise every prose "as an action" is noise).
-  // Limited-use features also get their first dice expression as a roll chip.
-  const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
+  // Limited-use features also get their first dice expression as a roll chip,
+  // leaving out a bare d20: that names a test the player already makes
+  // ("advantage on d20 tests"), not a roll this feature adds.
+  const dice =
+    uses !== undefined
+      ? text.match(/\b((?:\d{1,2}d\d{1,3}|d(?!20\b)\d{1,3})(?: ?[+-] ?\d+)?)\b/)
+      : null;
   let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
-  // Dice in a sentence about regaining hit points are a heal, not damage.
   const diceAt = dice?.index ?? 0;
   const sentenceEnd = text.indexOf('.', diceAt);
   const diceSentence =
@@ -138,10 +164,17 @@ export function proseScanFeature(
       ? ''
       : text.slice(text.lastIndexOf('.', diceAt) + 1, sentenceEnd === -1 ? undefined : sentenceEnd);
   const afterDice = dice === null ? '' : text.slice(diceAt + dice[0].length);
+  const dealsDamage =
+    dice !== null &&
+    (DAMAGE_AFTER_DICE.test(afterDice) ||
+      DAMAGE_BEFORE_DICE.test(text.slice(Math.max(0, diceAt - 30), diceAt)));
+  // Other dice in a sentence about regaining hit points are a heal.
   const heals =
-    /\bregains?\b/.test(diceSentence) &&
+    /\b(?:regain(?:s|ing)?|returns? to life)\b/.test(diceSentence) &&
     /\bhit points?\b/.test(diceSentence) &&
-    !/^ *(?:[a-z]+ )?damage\b/.test(afterDice);
+    !dealsDamage;
+  // Anything left is neither: a bonus die, temporary hit points, damage reduced.
+  const plainDice = dice !== null && !dealsDamage && !heals;
 
   // Level-scaled dice — use the biggest step the character's total level has
   // reached. Two phrasings: 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10),
@@ -194,17 +227,18 @@ export function proseScanFeature(
       ? { targetAbility, dcAbility }
       : undefined;
 
+  const chip = { kind: 'action', label: name, roll, heals, plainDice, note, save, origin } as const;
   if (/as a bonus action/.test(text)) {
-    col.add({ kind: 'action', economy: 'bonus', label: name, roll, heals, note, save, origin });
+    col.add({ ...chip, economy: 'bonus' });
   } else if (/as a reaction|use your reaction/.test(text)) {
-    col.add({ kind: 'action', economy: 'reaction', label: name, roll, heals, note, save, origin });
+    col.add({ ...chip, economy: 'reaction' });
   } else if (
     uses !== undefined &&
     // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
     // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
     /as an action|use your action|replace one of your attacks|as a magic action/.test(text)
   ) {
-    col.add({ kind: 'action', economy: 'action', label: name, roll, heals, note, save, origin });
+    col.add({ ...chip, economy: 'action' });
   }
 
   const hp = text.match(

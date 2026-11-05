@@ -117,6 +117,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     label: e.label,
     roll: e.roll,
     heals: e.heals,
+    plainDice: e.plainDice,
     origin: e.origin.label,
     note: e.note,
     save:

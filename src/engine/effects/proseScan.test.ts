@@ -3,6 +3,7 @@ import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
 import { Collector } from './base';
 import { flattenEntries, proseScanFeature } from './proseScan';
+import { collectRace } from './race';
 
 const origin: EffectOrigin = { label: 'Trait', uid: 'race|x', type: 'race' };
 
@@ -22,6 +23,32 @@ describe('flattenEntries', () => {
   it('keeps the display text of {@tag ...} markup and folds apostrophes', () => {
     expect(flattenEntries('Cast {@spell bless|phb} once')).toBe('cast bless once');
     expect(flattenEntries('It’s fine')).toBe("it's fine");
+  });
+
+  it('reads a three-part tag by its display text, not its name', () => {
+    expect(flattenEntries('your {@variantrule Proficiency|XPHB|Proficiency Bonus}')).toBe(
+      'your proficiency bonus',
+    );
+    expect(flattenEntries('a 15-foot {@variantrule Cone [Area of Effect]|XPHB|Cone}')).toBe(
+      'a 15-foot cone',
+    );
+    expect(
+      flattenEntries('a {@variantrule Short Rest|XPHB|Short} or {@variantrule Long Rest|XPHB}'),
+    ).toBe('a short or long rest');
+  });
+
+  it('keeps the body of tags whose third part is not display text', () => {
+    expect(flattenEntries('{@scaledamage 8d6|3-9|1d6}')).toBe('8d6');
+    expect(flattenEntries('{@filter Light|items|type=martial weapon}')).toBe('light');
+  });
+
+  it('reads each string on its own, so an unclosed tag leaves the next one readable', () => {
+    expect(
+      flattenEntries([
+        'broken {@spell bless',
+        'your {@variantrule Proficiency|XPHB|Proficiency Bonus}',
+      ]),
+    ).toBe('broken {@spell bless your proficiency bonus');
   });
 
   it('is empty for non-text content', () => {
@@ -76,6 +103,112 @@ describe('proseScanFeature — limited-use detection', () => {
     );
     expect(r).toMatchObject({ max: 'abilityModPlus1:cha', resetOn: 'long' });
   });
+
+  it('takes the reset from the clause that returns the uses, not any rest it mentions', () => {
+    // Star Map: the short rest here is when a replacement ritual can happen.
+    const ritual = resource(
+      scan('Star Map', [
+        'You can do so a number of times equal to your {@variantrule Proficiency|XPHB|Proficiency Bonus}, and you regain all expended uses when you finish a {@variantrule Long Rest|XPHB}. A ceremony to replace the map can be performed during a {@variantrule Short Rest|XPHB|Short} or {@variantrule Long Rest|XPHB}.',
+      ]),
+    );
+    expect(ritual?.resetOn).toBe('long');
+
+    // Mist Walker: the short rest here is when the mists drain you.
+    const drain = resource(
+      scan('Mist Walker', [
+        'You can use this feature a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest. Whenever you finish a short rest in that area, make a Constitution saving throw.',
+      ]),
+    );
+    expect(drain?.resetOn).toBe('long');
+  });
+
+  it.each([
+    'You regain one expended use when you finish a short rest, and you regain all expended uses when you finish a long rest.',
+    'You regain one of its expended uses when you finish a short rest, and you regain all expended uses when you finish a long rest.',
+    'You regain all expended uses when you finish a long rest, and you regain one expended use when you finish a short rest.',
+  ])('resets on a short rest when that rest returns even one use: %s', (returning) => {
+    const r = resource(scan('Second Wind', [`You can use it twice. ${returning}`]));
+    expect(r).toMatchObject({ max: 2, resetOn: 'short' });
+  });
+});
+
+describe('proseScanFeature on 2024 tagged prose', () => {
+  const resource = (effects: EffectInput[]) =>
+    effects.find((e): e is Extract<EffectInput, { kind: 'resource' }> => e.kind === 'resource');
+  const action = (effects: EffectInput[]) =>
+    effects.find((e): e is Extract<EffectInput, { kind: 'action' }> => e.kind === 'action');
+
+  /** The shape of the XPHB trait: a typed save, a choice of area, proficiency-bonus uses. */
+  const BREATH_WEAPON = [
+    'You can replace one of your attacks with a breath in either a 15-foot {@variantrule Cone [Area of Effect]|XPHB|Cone} or a 30-foot {@variantrule Line [Area of Effect]|XPHB|Line}. Each creature there must make a Dexterity saving throw ({@dc 8} plus your Constitution modifier and {@variantrule Proficiency|XPHB|Proficiency Bonus}) or take {@damage 1d10} Fire damage.',
+    'You can use this a number of times equal to your {@variantrule Proficiency|XPHB|Proficiency Bonus}, and you regain all expended uses when you finish a {@variantrule Long Rest|XPHB}.',
+  ];
+
+  it('gives Adrenaline Rush its proficiency-bonus uses and bonus action', () => {
+    const effects = scan('Adrenaline Rush', [
+      'You can take the {@action Dash|XPHB} action as a {@variantrule Bonus Action|XPHB}.',
+      'You can use this trait a number of times equal to your {@variantrule Proficiency|XPHB|Proficiency Bonus}, and you regain all expended uses when you finish a {@variantrule Short Rest|XPHB|Short} or {@variantrule Long Rest|XPHB}.',
+    ]);
+    expect(resource(effects)).toMatchObject({
+      label: 'Adrenaline Rush',
+      max: 'profBonus',
+      resetOn: 'short',
+    });
+    expect(action(effects)).toMatchObject({ label: 'Adrenaline Rush', economy: 'bonus' });
+  });
+
+  it('gives Breath Weapon its action, uses, save and damage type', () => {
+    const effects = scan('Breath Weapon', BREATH_WEAPON);
+    expect(resource(effects)).toMatchObject({ max: 'profBonus', resetOn: 'long' });
+    expect(action(effects)).toMatchObject({
+      economy: 'action',
+      roll: '1d10',
+      note: 'fire',
+      save: { targetAbility: 'dex', dcAbility: 'con' },
+    });
+  });
+
+  function collectBreathWeapon(raceName: string, rulesVersion: '2014' | '2024'): EffectInput[] {
+    const race = {
+      name: raceName,
+      source: 'XPHB',
+      entries: [{ name: 'Breath Weapon', type: 'entries', entries: BREATH_WEAPON }],
+    };
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.rulesVersion = rulesVersion;
+    doc.race = { name: race.name, source: race.source };
+    const col = new Collector(doc, { get: () => race, byType: () => [race] });
+    collectRace(col);
+    return col.effects;
+  }
+
+  // "in either a ... or a ..." is a choice, not one area the scanner can state.
+  // A character switched to 2014 rules keeps the race, and its prose still offers it.
+  it.each([
+    '2024',
+    '2014',
+  ] as const)('gets the Breath Weapon area from the ancestry table on a %s character', (rulesVersion) => {
+    const effects = collectBreathWeapon('Dragonborn (Red)', rulesVersion);
+    expect(resource(effects)).toMatchObject({ max: 'profBonus', resetOn: 'long' });
+    expect(action(effects)).toMatchObject({
+      label: 'Breath Weapon',
+      economy: 'action',
+      note: 'fire · 15 ft cone or 30 ft line',
+      save: { targetAbility: 'dex', dcAbility: 'con' },
+    });
+  });
+
+  it('leaves a scanned damage type alone when the ancestry table disagrees', () => {
+    // The table's type for black is acid; this prose says fire.
+    expect(action(collectBreathWeapon('Dragonborn (Black)', '2024'))?.note).toBe('fire');
+  });
+
+  it('reads a per-level HP rider worded through a tag (Dwarven Toughness)', () => {
+    const effects = scan('Dwarven Toughness', [
+      'Your {@variantrule Hit Points|XPHB|Hit Point} maximum increases by 1 whenever you gain a level.',
+    ]);
+    expect(effects).toMatchObject([{ kind: 'hpPerLevel', amount: 1 }]);
+  });
 });
 
 describe('proseScanFeature rolls', () => {
@@ -102,8 +235,64 @@ describe('proseScanFeature rolls', () => {
     const breath = action(
       'Once per long rest, as a bonus action, each creature takes 2d6 fire damage. You regain hit points only by resting.',
     );
-    expect(breath?.roll).toBe('2d6');
-    expect(breath?.heals).toBe(false);
+    expect(breath).toMatchObject({ roll: '2d6', heals: false, plainDice: false });
+  });
+
+  it.each([
+    ['dice then damage', 'a creature takes 2d6 damage.', '2d6'],
+    ['dice then a type', 'a creature takes 2d6 fire damage.', '2d6'],
+    ['dice then two types', 'a creature takes 2d8 lightning or thunder damage.', '2d8'],
+    ['dice then a list of types', 'a creature takes 1d6 acid, cold, or fire damage.', '1d6'],
+    ['dice then a modifier', 'it deals 1d8 + your Strength modifier slashing damage.', '1d8'],
+    ['dice then extra damage', 'your weapon deals 1d6 extra damage.', '1d6'],
+    ['an explicit 1d20', 'a creature takes 1d20 fire damage.', '1d20'],
+    ['a type then dice', 'a creature takes cold damage equal to 1d8.', '1d8'],
+    ['damage that grows', 'your attack hits, and this damage increases by 1d6.', '1d6'],
+  ])('reads dice as damage only where the prose says they deal it: %s', (_, sentence, roll) => {
+    const hit = action(`Once per long rest, as a bonus action, ${sentence}`);
+    expect(hit).toMatchObject({ roll, heals: false, plainDice: false });
+  });
+
+  it.each([
+    ['temporary hit points', 'an ally gains temporary hit points equal to 2d6.', '2d6'],
+    ['damage reduced', 'when you take damage, you reduce the damage taken by 1d4.', '1d4'],
+    ['a bonus die', 'an ally can roll a d8 and add it to an attack roll.', '1d8'],
+    ['a die swapped for another', 'you can roll 1d6 instead of 1d4.', '1d6'],
+    ['less damage taken', 'you take 1d6 less damage.', '1d6'],
+    ['a die rolled ahead of damage', 'you can roll 1d6 before damage is dealt.', '1d6'],
+    ['a bonus to a damage roll', 'an ally adds 1d8 as a bonus to the damage roll.', '1d8'],
+  ])('reads other dice as plain dice: %s', (_, sentence, roll) => {
+    const die = action(`Once per long rest, as a bonus action, ${sentence}`);
+    expect(die).toMatchObject({ roll, heals: false, plainDice: true });
+  });
+
+  it.each([
+    'a creature returns to life, regaining a number of hit points equal to 4d10.',
+    'a creature returns to life with a number of hit points equal to 4d10.',
+  ])('reads hit points brought back as a heal (Hand of Ultimate Mercy wording): %s', (sentence) => {
+    const heal = action(`Once per long rest, as a bonus action, ${sentence}`);
+    expect(heal).toMatchObject({ roll: '4d10', heals: true, plainDice: false });
+  });
+
+  it('keeps damage as damage when it comes first in a sentence that also heals', () => {
+    const drain = action(
+      'Once per long rest, as a bonus action, a creature takes necrotic damage equal to 1d6, and you regain hit points equal to half of it.',
+    );
+    expect(drain).toMatchObject({ roll: '1d6', heals: false, plainDice: false });
+  });
+
+  it('offers no roll for a d20 it only mentions, nor reads one in place of real dice', () => {
+    const test = action(
+      'Once per long rest, as a bonus action, you have advantage on d20 tests for 1 hour.',
+    );
+    expect(test?.economy).toBe('bonus');
+    expect(test?.roll).toBeUndefined();
+    expect(test?.plainDice).toBe(false);
+
+    const later = action(
+      'Once per long rest, as a bonus action, a creature that rolls a d20 takes 2d6 fire damage.',
+    );
+    expect(later).toMatchObject({ roll: '2d6', plainDice: false });
   });
 });
 
