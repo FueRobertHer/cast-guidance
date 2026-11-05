@@ -1,8 +1,9 @@
 import { type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
-import { buildPrereqContext, featChoiceOption } from './class';
 import { collectFeatEntity } from './feat';
+import { isRepeatableFeat } from './featPicks';
+import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import {
   languageOptions,
   readAbilityBlock,
@@ -146,7 +147,7 @@ function collectFreeFeatChoice(
       count,
       options: feats.map((f) => {
         const uid = `${str(f.name)}|${str(f.source)}`.toLowerCase();
-        const alreadyTaken = f.repeatable !== true && takenElsewhere.has(uid);
+        const alreadyTaken = !isRepeatableFeat(f) && takenElsewhere.has(uid);
         return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
       }),
     },

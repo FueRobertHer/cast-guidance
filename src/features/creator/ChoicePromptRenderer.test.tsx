@@ -57,6 +57,51 @@ describe('ChoicePromptRenderer advisory cue', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('says why a chip is closed when the pick must differ, since a title never shows on a phone', () => {
+    const reason = 'You already have this elsewhere.';
+    const chips = (distinct: boolean): ChoicePrompt => ({
+      ...prompt,
+      kind: 'damageType',
+      ...(distinct ? { distinct } : {}),
+      options: [
+        { id: 'one', label: 'One' },
+        { id: 'two', label: 'Two', disabled: { reason } },
+      ],
+    });
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <ChoicePromptRenderer prompt={chips(true)} value={undefined} onChange={onChange} />,
+    );
+    expect(screen.getByText(reason)).toBeTruthy();
+    rerender(<ChoicePromptRenderer prompt={chips(false)} value={undefined} onChange={onChange} />);
+    expect(screen.queryByText(reason)).toBeNull();
+  });
+
+  it('lets an unconfirmed tap lapse when another pick closes that option, but keeps a saved one', () => {
+    const closing = (closed: boolean): ChoicePrompt => ({
+      ...prompt,
+      kind: 'damageType',
+      options: [
+        { id: 'one', label: 'One', ...(closed ? { disabled: { reason: 'Taken.' } } : {}) },
+        { id: 'two', label: 'Two' },
+      ],
+    });
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <ChoicePromptRenderer prompt={closing(false)} value={undefined} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    rerender(<ChoicePromptRenderer prompt={closing(true)} value={undefined} onChange={onChange} />);
+    const confirm = screen.getByRole('button', { name: /^Confirm/ });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(confirm);
+    expect(onChange).not.toHaveBeenCalled();
+
+    cleanup();
+    render(<ChoicePromptRenderer prompt={closing(true)} value={['one']} onChange={onChange} />);
+    expect(screen.getByRole('button', { name: 'One' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('shows no advisory on options without one', () => {
     render(<ChoicePromptRenderer prompt={prompt} value={undefined} onChange={vi.fn()} />);
     const tough = screen.getByRole('button', { name: /Tough/ });

@@ -112,6 +112,10 @@ function kindsCovered(prompt: ChoicePrompt): Kind['id'][] {
       return ['pickAbility'];
     case 'spell':
       return ['pickSpell'];
+    case 'skillOrTool':
+      return ['pickSkill', 'pickTool'];
+    case 'damageType':
+      return ['pickDamageType'];
     default:
       // Languages, weapons and armor, and the resistance prompt, which is generic too.
       return prompt.label === 'Damage resistance' ? ['pickDamageType'] : ['pickOther'];
@@ -184,7 +188,23 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
   return [...byKey.values()];
 }
 
-type Verdict = 'backlog' | 'offered' | 'duringPlay' | 'noPick' | 'unclear';
+/**
+ * Rows a person has read and found need no picker, whatever Jev says. Asking again
+ * would only spend credit: the kinds it named are the ones already offered. By
+ * label, not by answer key, so this outlives a change to `state`.
+ */
+const READ_NO_PICKER: Record<string, string> = {
+  'Harper Agent (feat|FRHoF)': 'its only pick is the instrument, offered already',
+  'Touch of Death (feat|RHW)': 'its spell is fixed, and its only pick is the ability',
+};
+
+/** Backlog rows left unsupported on purpose, and why. Same keys as above. */
+const LEFT_UNSUPPORTED: Record<string, string> = {
+  'Rune Shaper (feat|BGG)':
+    'runes number half the proficiency bonus and are swappable; the app grants every rune spell at 1/day and offers no pick',
+};
+
+type Verdict = 'backlog' | 'offered' | 'duringPlay' | 'noPick' | 'unclear' | 'read';
 type Row = Answered<FeatChoiceSubject>;
 
 /**
@@ -225,6 +245,7 @@ function maybes(row: Row): string[] {
  */
 function verdict(row: Row): Verdict {
   const { answers, subject } = row;
+  if (READ_NO_PICKER[subject.label] !== undefined) return 'read';
   if (needed(row).length > 0) return 'backlog';
   if (subject.choosesSpell || KINDS.some((k) => saysYes(answers, k.id))) return 'offered';
   if (saysYes(answers, 'beyondOffered')) return 'backlog';
@@ -253,7 +274,8 @@ const needP = (row: Row) =>
 
 function needRow(row: Row): string {
   const needs = [...needed(row).map((k) => k.name), ...maybes(row)].join(', ') || '?';
-  return `${showP(needP(row))}  ${row.subject.label}  needs: ${needs}  offers: ${offersText(row.subject)}`;
+  const left = LEFT_UNSUPPORTED[row.subject.label];
+  return `${showP(needP(row))}  ${row.subject.label}  needs: ${needs}  offers: ${offersText(row.subject)}${left !== undefined ? `  left unsupported: ${left}` : ''}`;
 }
 
 /** The picker to build first is the one the most feats wait on. */
@@ -285,6 +307,12 @@ export function featChoiceReport(registry: ByType, file: JudgmentFile): string {
     reportSection(
       'A pick the app does not offer (the feat-picker backlog)',
       [...backlog].sort((a, b) => needP(b) - needP(a) || byLabel(a, b)).map(needRow),
+    ),
+    reportSection(
+      'Read by hand, no picker needed',
+      having('read')
+        .sort(byLabel)
+        .map(({ subject }) => `${subject.label}  ${READ_NO_PICKER[subject.label]}`),
     ),
     reportSection('Every kind of pick offered already', ranked(having('offered'), 'pickOnTaking')),
     reportSection(

@@ -2,6 +2,7 @@ import { emitCuratedEffects } from '../curated/curatedEffects';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
+import { isRepeatableFeat, readFeatOptionalFeatures, readProsePick } from './featPicks';
 import { proseScanFeature } from './proseScan';
 import {
   expertiseOptions,
@@ -10,6 +11,7 @@ import {
   readAbilityBlock,
   readProficiencyList,
   readResistList,
+  readSkillOrToolChoice,
   skillOptions,
   toolOptions,
   weaponOptions,
@@ -26,7 +28,7 @@ export function collectFeatEntity(
   // background) and chosen (via an ASI), or chosen at two different ASI levels.
   // Repeatable feats keep independent instances — their choices are namespaced
   // by instanceId — so they are never deduped.
-  if (e.repeatable !== true) {
+  if (!isRepeatableFeat(e)) {
     if (col.collectedFeats.has(uid)) {
       col.warn(`${str(e.name) ?? uid}: not a repeatable feat, so the extra selection was ignored.`);
       return;
@@ -87,7 +89,10 @@ export function collectFeatEntity(
     (name) => col.add({ kind: 'armorProf', name, origin }),
     genericOptions,
   );
+  readSkillOrToolChoice(col, e.skillToolLanguageProficiencies, origin, `${idBase}:skillTool`);
   readResistList(col, e.resist, origin, `${idBase}:resist`);
+  readFeatOptionalFeatures(col, e, uid, origin, idBase);
+  const picked = readProsePick(col, uid, origin, idBase);
 
   // expertise: [{ anyProficientSkill: 1 }] — options limited at prompt-render
   // time is complex; offer all skills and validate visually via prof dots.
@@ -125,7 +130,11 @@ export function collectFeatEntity(
 
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
-  col.features.push({ name: origin.label, origin, entries: e.entries });
+  col.features.push({
+    name: picked !== undefined ? `${origin.label} (${picked})` : origin.label,
+    origin,
+    entries: e.entries,
+  });
   if (!emitCuratedEffects(col, uid, origin)) {
     proseScanFeature(col, origin.label, e.entries, origin);
   }

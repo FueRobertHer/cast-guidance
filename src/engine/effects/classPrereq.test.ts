@@ -9,7 +9,7 @@ import {
   type PrereqContext,
   requiredLevel,
   summarizePrerequisite,
-} from './class';
+} from './prerequisites';
 
 const ABILITY_10: Record<Ability, number> = {
   str: 10,

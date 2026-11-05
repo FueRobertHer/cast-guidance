@@ -58,7 +58,7 @@ export function skillSources(
 
 /** One skill pick, its options marked where another source already grants them. */
 function noted(col: Collector, prompt: ChoicePrompt): ChoicePrompt {
-  if (prompt.kind !== 'skill') return prompt;
+  if (prompt.kind !== 'skill' && prompt.kind !== 'skillOrTool') return prompt;
   const others = skillSources(col.effects, { skip: (e) => col.pickOf.get(e) === prompt.id });
   let changed = false;
   const options = prompt.options.map((o): ChoiceOption => {

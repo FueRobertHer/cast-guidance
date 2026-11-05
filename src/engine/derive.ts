@@ -24,6 +24,7 @@ import { collectBackground } from './effects/background';
 import { Collector } from './effects/base';
 import { collectClasses } from './effects/class';
 import { collectFeats } from './effects/feat';
+import { markHeldPicks } from './effects/heldPicks';
 import { collectItems } from './effects/item';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
@@ -45,6 +46,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   // Only now is every skill grant known, including ones collected after the
   // pick they overlap.
   noteSkillSources(col);
+  markHeldPicks(col);
 
   const effects = col.effects;
 
