@@ -46,7 +46,9 @@ const registry = normalizeDataset(
               trait('Sharp Eyes', 'Your passive scores gain a +3 bonus.'),
               trait('Thin Luck', 'Half your proficiency bonus is how many coins you find.'),
               trait('Slot Sense', 'Half your proficiency bonus sets the level of the slot.'),
+              trait('Dull Note', 'Your bonus to this check is a matter of taste.'),
               trait('Odd Omen', 'Once a day, your next check gains a bonus die.'),
+              trait('Foggy Hint', 'In fog, your checks may gain a bonus.'),
               trait('Rally', 'While you spend a charge, add your proficiency bonus to a check.'),
               // Curated by name (`trait:hare-trigger`), so its sheet effect is hand-written.
               trait('Hare-Trigger', 'You gain a bonus on initiative.'),
@@ -91,6 +93,27 @@ const registry = normalizeDataset(
             source: 'HB',
             additionalSpells: [{ innate: { _: { daily: { 1: [{ choose: 'level=1' }] } } } }],
             entries: ['Learn a spell you pick.'],
+          },
+          {
+            // The same, behind a prompt the app does offer, so the warning waits on it.
+            name: 'Hidden Spell Test',
+            source: 'HB',
+            additionalSpells: [
+              { ability: { choose: ['int', 'wis'] }, known: { _: [{ choose: 'level=0' }] } },
+            ],
+            entries: ['Pick a small spell and how you cast it.'],
+          },
+          {
+            // Answers just as high as the feat above, with no spell to pick.
+            name: 'Fixed Spell Test',
+            source: 'HB',
+            additionalSpells: [spellList('Only List', 'fake three')],
+            entries: ['Pick how you cast the spell this feat teaches.'],
+          },
+          {
+            name: 'Vague Test',
+            source: 'HB',
+            entries: ['Pick something, though the text will not say what.'],
           },
           {
             // A branch, with a further prompt that only appears once it is answered.
@@ -227,7 +250,9 @@ describe('bonus scope', () => {
       'Sharp Eyes': { flat: 0.85 },
       'Thin Luck': { notBonus: 0.81 },
       'Slot Sense': { notBonus: 0.93 },
+      'Dull Note': { notBonus: 0.75 },
       'Odd Omen': { flat: 0.4, notBonus: 0.5 },
+      'Foggy Hint': { advantage: 0.6, notBonus: 0.3 },
       Rally: { proficiency: 0.95, triggered: 0.91 },
       'Hare-Trigger': { proficiency: 0.96 },
     });
@@ -261,9 +286,14 @@ describe('bonus scope', () => {
       '0.81  Thin Luck (Testfolk|HB)',
       '      Half your proficiency bonus is how many coins you find.',
     ]);
+    // The likeliest bonus first, so being nearly sure of none does not rank a row up.
     expect(rowsUnder(report, 'Unclear, uncurated (read these)')).toEqual([
-      '0.50  Odd Omen (Testfolk|HB)  closest: notBonus',
+      '0.60  Foggy Hint (Testfolk|HB)  closest: advantage  notBonus 0.30',
+      '      In fog, your checks may gain a bonus.',
+      '0.40  Odd Omen (Testfolk|HB)  closest: flat  notBonus 0.50',
       '      Once a day, your next check gains a bonus die.',
+      '0.05  Dull Note (Testfolk|HB)  closest: flat  notBonus 0.75',
+      '      Your bonus to this check is a matter of taste.',
     ]);
     expect(report).toContain(`${subjects.length} subjects, ${subjects.length} answered`);
     expect(report).toContain('Yes means p >= 0.8.');
@@ -322,6 +352,32 @@ describe('feat choice scope', () => {
     );
   });
 
+  it.each<[string, object, string[]]>([
+    ['skill', { skillProficiencies: [{ any: 1 }] }, ['pickSkill']],
+    ['expertise', { expertise: [{ anyProficientSkill: 1 }] }, ['pickSkill']],
+    ['tool', { toolProficiencies: [{ anyArtisansTool: 1 }] }, ['pickTool']],
+    ['ability', { ability: [{ choose: { from: ['str', 'dex'] } }] }, ['pickAbility']],
+    [
+      'weighted ability',
+      { ability: [{ choose: { weighted: { from: ['str', 'dex'], weights: [2, 1] } } }] },
+      ['pickAbility'],
+    ],
+    ['language', { languageProficiencies: [{ anyStandard: 1 }] }, ['pickOther']],
+    ['weapon', { weaponProficiencies: [{ choose: { from: ['club', 'dagger'] } }] }, ['pickOther']],
+    ['damage resistance', { resist: [{ choose: { from: ['fire', 'cold'] } }] }, ['pickDamageType']],
+    [
+      'branch',
+      {
+        additionalSpells: [spellList('Alpha List', 'fake one'), spellList('Beta List', 'fake two')],
+      },
+      ['pickClass', 'pickOther', 'pickAbility'],
+    ],
+  ])('knows what a %s prompt takes care of', (_prompt, fields, covers) => {
+    const feat = { name: 'Prompt Test', source: 'HB', entries: ['Choose one.'], ...fields };
+    const dataset = new Map<string, unknown>([['feats.json', { feat: [feat] }]]);
+    expect(featChoiceSubjects(normalizeDataset(dataset))[0]?.covers).toEqual(covers);
+  });
+
   it('reports the picks the app does not offer as the backlog, kept apart from play decisions', async () => {
     const file = await savedFile(FEATCHOICE_SET, subjects, {
       'Elemental Test': { pickOnTaking: 0.98, pickDamageType: 0.97, beyondOffered: 0.3 },
@@ -331,11 +387,29 @@ describe('feat choice scope', () => {
         pickOnTaking: 0.97,
         pickSkill: 0.9,
         pickTool: 0.85,
+        // Unsure kinds still show beside the sure ones, likeliest first.
+        pickClass: 0.55,
+        pickOther: 0.6,
         beyondOffered: 0.91,
       },
       'Spell Test': { pickOnTaking: 0.9, pickSpell: 0.95, beyondOffered: 0.99 },
+      // The collector warns of the spell, so Jev being sure of the ability cannot hide it.
+      'Hidden Spell Test': {
+        pickOnTaking: 0.94,
+        pickAbility: 0.97,
+        pickSpell: 0.69,
+        beyondOffered: 0.81,
+      },
+      // No warning, so the unsure spell only shows on the row.
+      'Fixed Spell Test': {
+        pickOnTaking: 0.95,
+        pickAbility: 0.97,
+        pickSpell: 0.79,
+        beyondOffered: 0.85,
+      },
       // A branch and its ability are offered, so only the spell inside is needed.
-      'Branch Test': { pickSpell: 0.92, pickClass: 0.9, pickAbility: 0.9 },
+      'Branch Test': { pickSpell: 0.92, pickClass: 0.9, pickAbility: 0.9, pickOther: 0.6 },
+      'Vague Test': { beyondOffered: 0.85 },
       // No confident kind, so what Jev said about going beyond the line decides.
       'Reprint Test': { pickSpell: 0.7, beyondOffered: 0.9 },
       'Heavy Swing Test': { pickDuringPlay: 0.94 },
@@ -351,11 +425,14 @@ describe('feat choice scope', () => {
       '0.95  Spell Test (feat|HB)  needs: spell  offers: none',
       '0.92  Branch Test (feat|HB)  needs: spell  offers: one of Alpha List, Beta List; spellcasting ability',
       '0.90  Reprint Test (feat|HB)  needs: maybe spell (0.70)  offers: none',
-      '0.90  Unread Field Test (feat|HB)  needs: skill, tool  offers: none',
+      '0.90  Unread Field Test (feat|HB)  needs: skill, tool, maybe other (0.60), maybe class (0.55)  offers: none',
+      '0.85  Vague Test (feat|HB)  needs: ?  offers: none',
+      '0.69  Hidden Spell Test (feat|HB)  needs: spell  offers: spellcasting ability',
     ]);
-    expect(report).toContain('Needed, most first: spell 2, skill 1, tool 1, damage type 1');
+    expect(report).toContain('Needed, most first: spell 3, skill 1, tool 1, damage type 1');
     expect(rowsUnder(report, 'Every kind of pick offered already')).toEqual([
       '0.99  Offered Test (feat|HB)  picks: skill  offers: Skill proficiency',
+      '0.95  Fixed Spell Test (feat|HB)  picks: ability, maybe spell (0.79)  offers: spellcasting ability',
     ]);
     expect(rowsUnder(report, 'A decision during play only (no picker needed)')).toEqual([
       '0.94  Heavy Swing Test (feat|HB)  picks: ?  offers: none',

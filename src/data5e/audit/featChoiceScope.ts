@@ -8,6 +8,7 @@
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
+import { CHOSEN_SPELL_WARNING } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
 import { collectFeatEntity } from '../../engine/effects/feat';
 import { type ChoicePrompt, newCharacterDoc } from '../../engine/types';
@@ -79,6 +80,8 @@ export interface FeatChoiceSubject extends JudgeSubject {
   offered: string[];
   /** The kinds of pick those prompts take care of. Not in `state`, so free to change. */
   covers: Kind['id'][];
+  /** The collector warns of a chosen spell it has no picker for. Not in `state` either. */
+  warnsOfSpell: boolean;
 }
 
 /** How a prompt reads to someone who cannot see its options. */
@@ -126,7 +129,11 @@ function appPrompts(feat: Parameters<typeof collectFeatEntity>[1], name: string)
     const col = new Collector(doc, NO_DATA);
     collectFeatEntity(col, feat, `${name}|${String(feat.source)}`.toLowerCase(), 'audit');
     const fresh = col.pending.filter((prompt) => doc.choices[prompt.id] === undefined);
-    if (fresh.length === 0) return { offered: [...offered], covers: [...covers] };
+    if (fresh.length === 0) {
+      // Read last: a spell's grant, and so its warning, waits on the prompts before it.
+      const warnsOfSpell = col.warnings.some((w) => w.endsWith(CHOSEN_SPELL_WARNING));
+      return { offered: [...offered], covers: [...covers], warnsOfSpell };
+    }
     for (const prompt of fresh) {
       offered.add(describePrompt(prompt, name));
       for (const kind of kindsCovered(prompt)) covers.add(kind);
@@ -146,7 +153,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
     const prose = readableEntries(feat.entries);
     if (!CHOICE_WORDING.test(prose) && !/\bchosen\b/i.test(prose)) continue;
     const name = String(feat.name);
-    const { offered, covers } = appPrompts(feat, name);
+    const { offered, covers, warnsOfSpell } = appPrompts(feat, name);
     const state = [
       name,
       `${OFFERED_LEAD}: ${offered.length > 0 ? offered.join('; ') : 'none'}`,
@@ -160,6 +167,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
       state,
       offered,
       covers,
+      warnsOfSpell,
     });
   }
   return [...byKey.values()];
@@ -168,16 +176,40 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
 type Verdict = 'backlog' | 'offered' | 'duringPlay' | 'noPick' | 'unclear';
 type Row = Answered<FeatChoiceSubject>;
 
-/** The kinds Jev is sure a feat asks for that no prompt of the app takes care of. */
+/**
+ * The kinds a feat asks for that no prompt of the app takes care of: those Jev is
+ * sure of, and a spell whenever the collector warns of one, however unsure Jev is.
+ * A confident answer about a kind the app covers would otherwise hide it.
+ */
 const needed = ({ subject, answers }: Row) =>
-  KINDS.filter((k) => saysYes(answers, k.id) && !subject.covers.includes(k.id));
+  KINDS.filter(
+    (k) =>
+      !subject.covers.includes(k.id) &&
+      (saysYes(answers, k.id) || (k.id === 'pickSpell' && subject.warnsOfSpell)),
+  );
+
+/** Below this Jev is not leaning toward a kind at all. */
+const LEANS = 0.5;
+
+/** Kinds no prompt covers that Jev leans toward without being sure, likeliest first. */
+function maybes(row: Row): string[] {
+  const sure = needed(row);
+  return KINDS.filter(
+    (k) =>
+      !sure.includes(k) && !row.subject.covers.includes(k.id) && pOf(row.answers, k.id) >= LEANS,
+  )
+    .sort((a, b) => pOf(row.answers, b.id) - pOf(row.answers, a.id))
+    .map((k) => `maybe ${k.name} (${showP(pOf(row.answers, k.id))})`);
+}
 
 /**
  * `beyondOffered` cannot decide this alone: on the first real run Jev said yes to
  * it for feats whose only pick the offered line already names, as if it read the
  * choice wording in the prose and not that line. Its answers about kinds put the
  * feats FUTURE_WORK.md names on the right side, so they decide when it is sure of
- * any, and `beyondOffered` only speaks for a feat with no confident kind.
+ * any, and `beyondOffered` only speaks for a feat with no confident kind. An unsure
+ * kind cannot decide either (it was as high on feats with no such pick), so it is
+ * shown on the row for a reader to judge.
  */
 function verdict(row: Row): Verdict {
   const { answers } = row;
@@ -198,7 +230,7 @@ const offersText = ({ offered }: FeatChoiceSubject) =>
 
 function pickRow(row: Row, id: string): string {
   const kinds = KINDS.filter((k) => saysYes(row.answers, k.id)).map((k) => k.name);
-  const picks = kinds.length > 0 ? kinds.join(', ') : '?';
+  const picks = [...kinds, ...maybes(row)].join(', ') || '?';
   return `${showP(pOf(row.answers, id))}  ${row.subject.label}  picks: ${picks}  offers: ${offersText(row.subject)}`;
 }
 
@@ -208,17 +240,7 @@ const needP = (row: Row) =>
   pOf(row.answers, 'beyondOffered');
 
 function needRow(row: Row): string {
-  const sure = needed(row).map((k) => k.name);
-  // With no confident kind, Jev's best guess beats showing nothing.
-  const [guess] = KINDS.filter((k) => !row.subject.covers.includes(k.id)).sort(
-    (a, b) => pOf(row.answers, b.id) - pOf(row.answers, a.id),
-  );
-  const needs =
-    sure.length > 0
-      ? sure.join(', ')
-      : guess === undefined
-        ? '?'
-        : `maybe ${guess.name} (${showP(pOf(row.answers, guess.id))})`;
+  const needs = [...needed(row).map((k) => k.name), ...maybes(row)].join(', ') || '?';
   return `${showP(needP(row))}  ${row.subject.label}  needs: ${needs}  offers: ${offersText(row.subject)}`;
 }
 

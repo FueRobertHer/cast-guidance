@@ -14,6 +14,9 @@
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 
+/** Ends the warning for a spell the player picks and no picker offers. The feat audit reads it. */
+export const CHOSEN_SPELL_WARNING = 'also lets you choose a spell. See the trait text.';
+
 function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
 }
@@ -239,7 +242,7 @@ function grantSpellEntry(
   }
 
   if (sawChoose.v) {
-    col.warn(`${origin.label}: also lets you choose a spell. See the trait text.`);
+    col.warn(`${origin.label}: ${CHOSEN_SPELL_WARNING}`);
   }
 }
 

@@ -76,14 +76,14 @@ const TYPES = [
 
 const hasType = (answers: Answers) => TYPES.some((t) => saysYes(answers, t.id));
 
-/** What an unsure subject leans toward, which ranks the ones worth reading first. */
-function closest(answers: Answers): { id: string; p: number } {
-  let best = { id: 'notBonus', p: pOf(answers, 'notBonus') };
-  for (const { id } of TYPES) {
-    if (pOf(answers, id) > best.p) best = { id, p: pOf(answers, id) };
-  }
-  return best;
-}
+/**
+ * The bonus an unsure subject leans toward, which ranks the ones worth reading
+ * first. `notBonus` has no say: a row nearly sure of no bonus is the least worth it.
+ */
+const closest = (answers: Answers) =>
+  TYPES.map(({ id }) => ({ id, p: pOf(answers, id) })).reduce((best, type) =>
+    type.p > best.p ? type : best,
+  );
 
 /** Words one sentence must all have to put a feature in the net. */
 const NET: ReadonlyArray<readonly RegExp[]> = [
@@ -150,7 +150,8 @@ export function bonusReport(registry: ByType, file: JudgmentFile): string {
     .sort((a, b) => closest(b.answers).p - closest(a.answers).p || byLabel(a, b))
     .map(({ subject, answers }) => {
       const { id, p } = closest(answers);
-      return row(subject, `${showP(p)}  ${subject.label}  closest: ${id}`);
+      const none = showP(pOf(answers, 'notBonus'));
+      return row(subject, `${showP(p)}  ${subject.label}  closest: ${id}  notBonus ${none}`);
     });
   const known = curated
     .filter(({ answers }) => hasType(answers))
