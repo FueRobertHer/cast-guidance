@@ -1,7 +1,7 @@
 import { EXPORT_FORMAT, type FilePayload, jsonFile } from './characterFile.ts';
 
 /**
- * A Cleric 7 whose Blessed Strikes is shaped as the pinned release (v2.39.0)
+ * A Cleric 7 whose Blessed Strikes is shaped as the pinned release (v2.39.1)
  * has the 2024 one: a counted `options` node over two class-feature refs, so
  * Build asks which one the character takes. The suite's release has no
  * Cleric, so the class comes as homebrew the character file carries, with
