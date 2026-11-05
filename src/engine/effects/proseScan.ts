@@ -196,7 +196,12 @@ export function proseScanFeature(
 
   if (/as a bonus action/.test(text)) {
     col.add({ kind: 'action', economy: 'bonus', label: name, roll, heals, note, save, origin });
-  } else if (/as a reaction|use your reaction/.test(text)) {
+  } else if (
+    // 2024 phrasing, with its subject: "your familiar can take a Reaction" and
+    // "each target can then take a Reaction" spend that creature's Reaction, so
+    // they are no chip for the character, and "you can't" forbids one.
+    /as a reaction|use your reaction|you (?:can|must) take a reaction/.test(text)
+  ) {
     col.add({ kind: 'action', economy: 'reaction', label: name, roll, heals, note, save, origin });
   } else if (
     uses !== undefined &&

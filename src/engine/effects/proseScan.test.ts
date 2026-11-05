@@ -78,6 +78,51 @@ describe('proseScanFeature — limited-use detection', () => {
   });
 });
 
+describe('proseScanFeature reaction wording', () => {
+  const economies = (entries: unknown) =>
+    scan('Trait', entries).flatMap((e) => (e.kind === 'action' ? [e.economy] : []));
+
+  it('keeps the 2014 phrasings', () => {
+    expect(economies(['As a reaction, you can halve the damage.'])).toEqual(['reaction']);
+    expect(economies(['You can use your reaction to halve the damage.'])).toEqual(['reaction']);
+  });
+
+  it.each([
+    ['you can', 'When an attacker hits you, you can take a Reaction to halve the damage.'],
+    ['you must', 'To help another creature, you must take a Reaction to do so.'],
+    // How the 2024 data really writes it, tag and all.
+    ['the tagged rule', 'When you fall, you can take a {@variantrule Reaction|XPHB} to slow it.'],
+  ])('reads the 2024 phrasing: %s', (_, prose) => {
+    expect(economies([prose])).toEqual(['reaction']);
+  });
+
+  it.each([
+    ['a familiar', 'Your familiar can take a Reaction to add a bonus to the armor class.'],
+    ['a mount', 'Your mount can take a {@variantrule Reaction|XPHB} to move up to its speed.'],
+    ['each target', 'Each target can then take a Reaction to also teleport up to 30 feet.'],
+    ['each ally', 'Each of those allies can immediately take a Reaction to move.'],
+    ['one creature', 'The creature can also immediately take a Reaction to teleport.'],
+  ])('leaves out a Reaction that %s takes', (_, prose) => {
+    expect(economies([prose])).toEqual([]);
+  });
+
+  it('does not read a Reaction the prose forbids', () => {
+    expect(economies(["While the rage lasts, you can't take a Reaction."])).toEqual([]);
+  });
+
+  it('gives the 2024 chip what a limited-use chip carries', () => {
+    const effects = scan('Trait', [
+      "When you fail a save, you can take a Reaction to roll 1d4 and add it. You can't use this feature again until you finish a long rest.",
+    ]);
+    expect(effects).toContainEqual(
+      expect.objectContaining({ kind: 'action', economy: 'reaction', roll: '1d4' }),
+    );
+    expect(effects).toContainEqual(
+      expect.objectContaining({ kind: 'resource', max: 1, resetOn: 'long' }),
+    );
+  });
+});
+
 describe('proseScanFeature rolls', () => {
   const action = (entries: string) =>
     scan('Trait', entries).find((e) => e.kind === 'action') as
