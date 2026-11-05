@@ -13,9 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { useRegistry, useRegistryRefreshing, useTypePacks } from '@/data5e/hooks';
-import type { EntityRegistry } from '@/data5e/normalize';
-import { pickForVersion, type RulesVersion } from '@/data5e/rulesVersion';
+import type { RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
@@ -38,14 +36,12 @@ import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass } from '@/ui/surfaces';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
-  availableCastResources,
   type CastResource,
+  castGranted,
   castingEconomy,
-  castResourceId,
   castResourceLabel,
   castSpell,
-  defaultCastResource,
-  setArcanumUsed,
+  isConcentratingOn,
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
@@ -56,7 +52,10 @@ import { RollEffectCue } from '../RollEffectCue';
 import { longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
+import { SpellSlots } from '../SpellSlots';
+import { findSpell, useSpellData } from '../spellData';
 import { spellRollActions } from '../spellRolls';
+import { useCastChoice } from '../useCastChoice';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
@@ -175,26 +174,6 @@ function rollConcentration(
 }
 
 /**
- * Look a spell up by its stored printing; when that misses (blank/wrong source
- * on a granted spell) fall back to the printing matching the character's rules
- * version, so a 2024 sheet shows 2024 text.
- */
-function findSpell(
-  registry: EntityRegistry | null,
-  name: string,
-  source: string,
-  version: RulesVersion,
-) {
-  if (registry === null) return undefined;
-  const bySource = source !== '' ? registry.get('spell', name, source) : undefined;
-  if (bySource !== undefined) return bySource;
-  const cands = registry
-    .byType('spell')
-    .filter((e) => String(e.name).toLowerCase() === name.toLowerCase());
-  return pickForVersion(cands, version);
-}
-
-/**
  * A spell whose file has not arrived. Its level decides what casting it spends,
  * and guessing that spent a slot on a cantrip, so until the file is here the row
  * offers no way to cast it. The name still opens the rules sheet, which says what
@@ -240,45 +219,12 @@ function PendingSpellRow({
 
 export function Component() {
   const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
-  const registry = useRegistry();
-  // Only this character's own spells, and only when one is missing: every other
-  // page that needs spell files asks for them itself, and this one used to rely
-  // on the boot drain having finished.
-  const spellsMissing =
-    sheet !== null &&
-    doc !== null &&
-    registry !== null &&
-    [
-      ...sheet.spellcasting.flatMap((sc) => doc.spellcasting[sc.classUid]?.known ?? []),
-      ...sheet.grantedSpells,
-    ].some((s) => findSpell(registry, s.name, s.source, doc.rulesVersion) === undefined);
-  const spellPacks = useTypePacks(spellsMissing ? 'spell' : undefined);
-  const registryRefreshing = useRegistryRefreshing();
+  const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
   // Keyed by character, so a settling HP line is only ever about the one it
   // was for; leaving the tab or the character drops one still settling.
   const hpKey = `hp:${doc?.id ?? ''}`;
   useEffect(() => () => cancelAnnouncement(hpKey), [hpKey]);
-  // Which resource each castable spell will spend, keyed by class + spell, held
-  // only for as long as the tab is open: a pick is about this cast, not a
-  // setting.
-  const [castChoice, setCastChoice] = useState<Record<string, string>>({});
-  // Anything that moves a slot, a pact slot, an arcanum or a pool drops every
-  // standing pick. Suppressing an unavailable pick is not enough on its own: the
-  // id would sit there and take effect again the moment the option came back,
-  // so a choice made before a long rest would silently upcast the first cast
-  // after it.
-  const spendState = JSON.stringify([
-    doc?.play.slotsSpent,
-    doc?.play.pactSlotsSpent,
-    doc?.play.arcanumUsed,
-    doc?.play.resources,
-  ]);
-  const lastSpendState = useRef(spendState);
-  useEffect(() => {
-    if (lastSpendState.current === spendState) return;
-    lastSpendState.current = spendState;
-    setCastChoice({});
-  }, [spendState]);
+  const castChoice = useCastChoice(doc?.play);
   // The cues' "Ignore once", for as long as the tab is open.
   const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
   const hpTip = useTip('hp-exact');
@@ -293,8 +239,6 @@ export function Component() {
 
   const spellEntity = (name: string, source: string) =>
     findSpell(registry, name, source, doc.rulesVersion);
-  /** A spell with no entry may yet get one, so its row waits rather than guesses. */
-  const spellsSettling = registry === null || spellPacks.status !== 'ready' || registryRefreshing;
   const spellLevelOf = (name: string, source: string): number => {
     const e = spellEntity(name, source);
     return typeof e?.level === 'number' ? e.level : 1;
@@ -384,28 +328,6 @@ export function Component() {
       },
       label !== undefined ? `Used ${label}` : undefined,
     );
-  /** Cast an innate/granted spell: no slot, just concentration + economy. */
-  const castGranted = (name: string, source: string, limit?: { key: string; max: number }) =>
-    update((d) => {
-      if (spellConcentrationOf(name, source)) d.play.concentratingOn = { label: name };
-      const eco = spellCastEconomy(name, source);
-      if (eco !== undefined) {
-        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-        turn[eco] = true;
-        d.play.turn = turn;
-      }
-      // A grant with its own pool ("1/day" from a wand) spends a use here
-      // rather than leaving the pips for the player to remember.
-      if (limit !== undefined) {
-        const entry = d.play.resources.find((r) => r.key === limit.key);
-        const used = entry?.used ?? 0;
-        if (used < limit.max) {
-          if (entry !== undefined) entry.used = used + 1;
-          else d.play.resources.push({ key: limit.key, used: 1 });
-        }
-      }
-    }, `Cast ${name}`);
-
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
   const spellHasVerbal = (name: string, source: string): boolean => {
@@ -440,23 +362,11 @@ export function Component() {
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
 
-  /**
-   * What a cast will spend, and everything it could spend: the player's standing
-   * pick when it is still on offer, else the automatic one. Checking the pick
-   * against the live options is the synchronous guard that a cast in the same
-   * tick as a build change cannot spend something the character no longer has;
-   * the effect above is what stops a suppressed pick from coming back.
-   */
-  const castResourceFor = (key: string, block: SpellcastingBlock, level: number) => {
-    const options = availableCastResources(block, play, level, sheet.resources);
-    const picked = options.find((o) => castResourceId(o) === castChoice[key]);
-    return {
-      options,
-      resource: picked ?? defaultCastResource(block, play, level, sheet.resources, options),
-    };
-  };
+  /** What a cast will spend, and everything it could spend; see `useCastChoice`. */
+  const castResourceFor = (key: string, block: SpellcastingBlock, level: number) =>
+    castChoice.resourceFor(key, block, level, play, sheet.resources);
   const chooseCastResource = (key: string, resource: CastResource) =>
-    setCastChoice((prev) => ({ ...prev, [key]: castResourceId(resource) }));
+    castChoice.choose(key, resource);
 
   /** Say where HP ended up, once the taps stop; see {@link HP_SETTLE_MS}. */
   const sayHp = (after: Pick<PlayState, 'currentHp' | 'tempHp'>) =>
@@ -1495,80 +1405,13 @@ export function Component() {
               </Badge>
             </span>
           </div>
-          {sc.pactSlots !== undefined && (
-            <div className="flex flex-wrap items-center">
-              <span className="mr-1.5 text-label text-ink-muted">
-                Pact (level {sc.pactSlots.level})
-              </span>
-              <Pips
-                total={sc.pactSlots.count}
-                spent={play.pactSlotsSpent}
-                onChange={(next) =>
-                  update((d) => {
-                    d.play.pactSlotsSpent = next;
-                  })
-                }
-                label={(slot) => `Pact slot ${slot}`}
-                tone="arcane"
-              />
-              <span className="ml-auto pl-2 text-caption text-ink-muted tabular-nums">
-                {sc.pactSlots.count - play.pactSlotsSpent} of {sc.pactSlots.count}
-              </span>
-            </div>
-          )}
-          {/* One use per arcanum level, back on a long rest; a tap marks one
-              used or regained by hand, as a slot's pip does. */}
-          {sc.mysticArcanum !== undefined && sc.mysticArcanum.length > 0 && (
-            <div className="flex flex-wrap items-center">
-              <span className="mr-1.5 text-label text-ink-muted">Mystic Arcanum</span>
-              {sc.mysticArcanum.map((level) => (
-                <span key={`arcanum-${String(level)}`} className="flex items-center">
-                  <span className="text-label text-ink-muted">Level {level}</span>
-                  <Pips
-                    total={1}
-                    spent={play.arcanumUsed?.includes(level) === true ? 1 : 0}
-                    onChange={(next) =>
-                      update((d) => {
-                        setArcanumUsed(d.play, level, next > 0);
-                      })
-                    }
-                    label={() => `Level ${level} arcanum`}
-                    tone="arcane"
-                  />
-                </span>
-              ))}
-            </div>
-          )}
-          {scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0)) && (
-            <div className="flex flex-col gap-1">
-              {sheet.spellcasting.length > 1 && (
-                <span className="text-caption text-ink-muted">Slots (shared across classes)</span>
-              )}
-              {sc.slots.map((count, lvlIdx) =>
-                count > 0 ? (
-                  <div key={`slots-${String(lvlIdx)}`} className="flex flex-wrap items-center">
-                    <span className="w-14 shrink-0 text-label text-ink-muted">
-                      Level {lvlIdx + 1}
-                    </span>
-                    <Pips
-                      total={count}
-                      spent={play.slotsSpent[lvlIdx] ?? 0}
-                      onChange={(next) =>
-                        update((d) => {
-                          d.play.slotsSpent[lvlIdx] = next;
-                        })
-                      }
-                      label={(slot) => `Level ${lvlIdx + 1} slot ${slot}`}
-                      tone="arcane"
-                    />
-                    <span className="ml-auto pl-2 text-caption text-ink-muted tabular-nums">
-                      {count - (play.slotsSpent[lvlIdx] ?? 0)} of {count}
-                    </span>
-                  </div>
-                ) : null,
-              )}
-            </div>
-          )}
+          <SpellSlots
+            block={sc}
+            play={play}
+            update={update}
+            showSlots={scIdx === sheet.spellcasting.findIndex((b) => b.slots.some((n) => n > 0))}
+            shared={sheet.spellcasting.length > 1}
+          />
 
           {/* Known / prepared spells, castable right here */}
           {(() => {
@@ -1607,11 +1450,14 @@ export function Component() {
                   }
                   const choiceKey = `${sc.classUid}::${uid}`;
                   const { resource, options } = castResourceFor(choiceKey, sc, level);
+                  // Already running, a concentration spell's dice are the slot it
+                  // was cast with, and rolling them spends nothing more.
+                  const running = isConcentratingOn(play, ref.name);
                   // The dice follow the chosen slot, which is the whole reason
                   // the choice has to come before the roll rather than after it.
                   const rolls = spellRollActions(entity, {
                     characterLevel: sheet.totalLevel,
-                    slotLevel: resource.level,
+                    slotLevel: running ? (play.concentratingOn?.level ?? level) : resource.level,
                     abilityModifier: sheet.abilities[sc.ability].mod,
                   });
                   const hasAttack = hasSpellAttack(entity);
@@ -1683,20 +1529,22 @@ export function Component() {
                         )}
                       </div>
                       <span className={`${ROW_ACTIONS} gap-1`}>
-                        <CastResourcePicker
-                          spellName={ref.name}
-                          resource={resource}
-                          options={options}
-                          block={sc}
-                          play={play}
-                          pools={sheet.resources}
-                          spell={entity}
-                          spellLevel={level}
-                          characterLevel={sheet.totalLevel}
-                          rulesVersion={doc.rulesVersion}
-                          classes={doc.classes}
-                          onPick={(picked) => chooseCastResource(choiceKey, picked)}
-                        />
+                        {!running && (
+                          <CastResourcePicker
+                            spellName={ref.name}
+                            resource={resource}
+                            options={options}
+                            block={sc}
+                            play={play}
+                            pools={sheet.resources}
+                            spell={entity}
+                            spellLevel={level}
+                            characterLevel={sheet.totalLevel}
+                            rulesVersion={doc.rulesVersion}
+                            classes={doc.classes}
+                            onPick={(picked) => chooseCastResource(choiceKey, picked)}
+                          />
+                        )}
                         {hasAttack && (
                           <RollChip
                             expr={`1d20${fmt(sc.attackMod.value)}`}
@@ -1704,7 +1552,7 @@ export function Component() {
                             label={`${ref.name} spell attack`}
                             variant="d20"
                             roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`)}
-                            onRolled={cast}
+                            onRolled={running ? undefined : cast}
                           />
                         )}
                         {rolls.map((action, index) => (
@@ -1713,7 +1561,7 @@ export function Component() {
                             expr={action.expr}
                             label={action.label}
                             variant={action.variant}
-                            onRolled={!hasAttack && index === 0 ? cast : undefined}
+                            onRolled={!running && !hasAttack && index === 0 ? cast : undefined}
                           />
                         ))}
                         {!hasAttack && rolls.length === 0 && (
@@ -1784,9 +1632,10 @@ export function Component() {
                   ? castResourceFor(choiceKey, block, level)
                   : undefined;
               const resource = slotChoice?.resource;
+              const running = isConcentratingOn(play, g.name);
               const rolls = spellRollActions(entity, {
                 characterLevel: sheet.totalLevel,
-                slotLevel: resource?.level,
+                slotLevel: running ? play.concentratingOn?.level : resource?.level,
                 abilityModifier,
               });
               const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
@@ -1819,8 +1668,13 @@ export function Component() {
                   );
                 } else {
                   castGranted(
-                    g.name,
-                    g.source,
+                    update,
+                    {
+                      name: g.name,
+                      source: g.source,
+                      concentration: spellConcentrationOf(g.name, g.source),
+                      economy: spellCastEconomy(g.name, g.source),
+                    },
                     limited !== undefined ? { key: limited.key, max: limited.max } : undefined,
                   );
                 }
@@ -1884,22 +1738,25 @@ export function Component() {
                     )}
                   </div>
                   <span className={`${ROW_ACTIONS} gap-1`}>
-                    {slotChoice !== undefined && resource !== undefined && block !== undefined && (
-                      <CastResourcePicker
-                        spellName={g.name}
-                        resource={resource}
-                        options={slotChoice.options}
-                        block={block}
-                        play={play}
-                        pools={sheet.resources}
-                        spell={entity}
-                        spellLevel={level}
-                        characterLevel={sheet.totalLevel}
-                        rulesVersion={doc.rulesVersion}
-                        classes={doc.classes}
-                        onPick={(picked) => chooseCastResource(choiceKey, picked)}
-                      />
-                    )}
+                    {!running &&
+                      slotChoice !== undefined &&
+                      resource !== undefined &&
+                      block !== undefined && (
+                        <CastResourcePicker
+                          spellName={g.name}
+                          resource={resource}
+                          options={slotChoice.options}
+                          block={block}
+                          play={play}
+                          pools={sheet.resources}
+                          spell={entity}
+                          spellLevel={level}
+                          characterLevel={sheet.totalLevel}
+                          rulesVersion={doc.rulesVersion}
+                          classes={doc.classes}
+                          onPick={(picked) => chooseCastResource(choiceKey, picked)}
+                        />
+                      )}
                     {hasAttack && (
                       <RollChip
                         expr={`1d20${fmt(attackModifier)}`}
@@ -1907,7 +1764,7 @@ export function Component() {
                         label={`${g.name} spell attack`}
                         variant="d20"
                         roller={rollAttack(attackModifier, `${g.name} spell attack`)}
-                        onRolled={depleted ? undefined : cast}
+                        onRolled={depleted || running ? undefined : cast}
                       />
                     )}
                     {rolls.map((action, index) => (
@@ -1916,7 +1773,9 @@ export function Component() {
                         expr={action.expr}
                         label={action.label}
                         variant={action.variant}
-                        onRolled={!hasAttack && index === 0 && !depleted ? cast : undefined}
+                        onRolled={
+                          !hasAttack && index === 0 && !depleted && !running ? cast : undefined
+                        }
                       />
                     ))}
                     {!hasAttack && rolls.length === 0 && (

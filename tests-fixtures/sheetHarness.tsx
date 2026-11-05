@@ -25,6 +25,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { expect } from 'vitest';
 import { routes } from '@/app/routes';
 import { invalidateRegistry } from '@/data5e/registry';
+import { getSpellClassLookup } from '@/data5e/spellLookup';
 import { characterRepo } from '@/db/characterRepo';
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
@@ -433,6 +434,19 @@ export function spellBlock(className: string): {
     counters: heading.parentElement?.lastElementChild?.textContent ?? '',
     overLimit: cue?.textContent ?? undefined,
   };
+}
+
+/**
+ * The Spells tab's Choose view: the class lists, with their Learn and Prepare
+ * chips. The tab opens on the character's own spells.
+ */
+export async function chooseSpells(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Choose spells' }));
+  // The class lists are read as the view opens, and a read started after that
+  // one lands after it.
+  await act(async () => {
+    await getSpellClassLookup();
+  });
 }
 
 /** A known spell's row on the Play tab: whether it is marked prepared. */

@@ -2,7 +2,7 @@
 // A11Y-001 on the Stats, Features and Spells tabs: ability buttons named only by
 // a bare "+2" or "16", search fields named only by a placeholder, learn/prepare
 // toggles with no state, and a recommended-pick star read as nothing at all.
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,8 +76,14 @@ describe('sheet tab accessible names', () => {
     expect(screen.getByRole('textbox', { name: 'Filter features and traits' })).toBeTruthy();
   });
 
-  it('names the spell search and each row toggle, and says which are on', async () => {
+  it('names the spell search, each row and each row toggle, and says which are on', async () => {
     renderTab(<SpellsTab />);
+    expect(screen.getByRole('button', { name: 'Your spells', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Search your spells' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Searing Bolt' })).toBeTruthy();
+    expect(namelessControls()).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose spells' }));
     expect(
       await screen.findByRole('button', { name: 'Learn Searing Bolt', pressed: true }),
     ).toBeTruthy();
@@ -85,7 +91,8 @@ describe('sheet tab accessible names', () => {
       screen.getByRole('button', { name: 'Prepare Searing Bolt', pressed: true }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Learn Quick Bolt', pressed: false })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cast Searing Bolt' })).toBeTruthy();
+    // Choosing chooses: casting is the other view's.
+    expect(screen.queryByRole('button', { name: 'Cast Searing Bolt' })).toBeNull();
     expect(namelessControls()).toEqual([]);
   });
 });

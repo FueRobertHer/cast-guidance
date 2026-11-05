@@ -18,7 +18,6 @@ import {
 } from '@/data5e/spellLookup';
 import {
   type CharacterDoc,
-  type DerivedResource,
   type DerivedSheet,
   type EntityRef,
   refUid,
@@ -31,18 +30,11 @@ import type { DocUpdater } from '@/stores/characterSession';
 import { badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
-import { askChoice, askConfirm } from '@/ui/dialogs';
+import { askConfirm } from '@/ui/dialogs';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { PackProblem } from '@/ui/PackProblem';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { fieldClass } from '@/ui/TextField';
-import {
-  availableCastResources,
-  castResourceId,
-  castResourceOptions,
-  castSpell,
-  needsCastChoice,
-} from './castResources';
 import { SpellInfoSheet } from './SpellInfoSheet';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 import {
@@ -89,7 +81,7 @@ function levelSpan(levels: readonly number[]): string {
 }
 
 /** A count past its limit: allowed, and flagged in the guide's gold (DS-001). */
-const OVER = 'font-semibold text-guide';
+export const OVER = 'font-semibold text-guide';
 
 /**
  * An offer to show what the source settings hide, or to hide it again: an
@@ -141,9 +133,6 @@ function ClassSpells({
   complete,
   doc,
   update,
-  allowCasting,
-  characterLevel,
-  pools,
   alwaysPrepared,
 }: {
   block: SpellcastingBlock;
@@ -155,10 +144,6 @@ function ClassSpells({
   complete: boolean;
   doc: CharacterDoc;
   update: DocUpdater;
-  allowCasting: boolean;
-  characterLevel: number;
-  /** Derived pools, so a convertible one (sorcery points) is offered as a source. */
-  pools: readonly DerivedResource[];
   /** Always-prepared grants a trim may unprepare first (empty with several casting classes). */
   alwaysPrepared: readonly EntityRef[];
 }) {
@@ -298,42 +283,6 @@ function ClassSpells({
         }
       }
     });
-  };
-
-  const cast = async (level: number, spell: Entity) => {
-    const info = {
-      name: nameOf(spell),
-      source: sourceOf(spell),
-      concentration: spellNeedsConcentration(spell),
-    };
-    const options = availableCastResources(block, doc.play, level, pools);
-    // Nothing to decide: cast directly on the one option, or on none at all.
-    if (!needsCastChoice(options)) {
-      castSpell(update, block, level, info, options[0]);
-      return;
-    }
-    // Multiple slot levels (and/or pact, and/or a convertible pool) available:
-    // let the player pick which to spend instead of always the lowest (GAME-001).
-    const picked = await askChoice({
-      title: `Cast ${nameOf(spell)}`,
-      detail: 'Choose which slot or pool to spend. A higher level upcasts the spell.',
-      options: castResourceOptions(options, {
-        block,
-        play: doc.play,
-        pools,
-        spell,
-        spellLevel: level,
-        characterLevel,
-        rulesVersion: doc.rulesVersion,
-        classes: doc.classes,
-      }),
-    });
-    if (picked === null) return;
-    const chosen = options.find((o) => castResourceId(o) === picked);
-    // Ids round-trip, so a miss is impossible; casting the automatic pick
-    // instead of the choice would be the wrong way to find that out.
-    if (chosen === undefined) return;
-    castSpell(update, block, level, info, chosen);
   };
 
   // Classify known spells by their real level via the registry (NOT the
@@ -654,31 +603,6 @@ function ClassSpells({
                             {prepared ? 'Prepared' : 'Prepare'}
                           </button>
                         )}
-                        {allowCasting &&
-                          (known || prepared) &&
-                          // Leveled spells spend a slot; cantrips only get a Cast
-                          // button when they concentrate (so the tracker fires).
-                          (lvl > 0 || spellNeedsConcentration(s)) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Cast ${nameOf(s)}`}
-                              onClick={() => {
-                                void cast(lvl, s);
-                              }}
-                              title={
-                                lvl === 0
-                                  ? 'Cast cantrip (starts concentration)'
-                                  : `Cast at level ${lvl} (${
-                                      isArcanumLevel(limits, lvl)
-                                        ? 'Mystic Arcanum, once per long rest'
-                                        : 'spends a slot'
-                                    }${spellNeedsConcentration(s) ? ', starts concentration' : ''})`
-                              }
-                            >
-                              Cast
-                            </Button>
-                          )}
                       </span>
                     </div>
                   );
@@ -763,17 +687,15 @@ function useClassLookup(
   };
 }
 
-/** Full spell management for every casting class on the character. */
+/** Choosing spells, for every casting class on the character: the creator's step and the Spells tab's Choose. */
 export function SpellManager({
   doc,
   sheet,
   update,
-  allowCasting = true,
 }: {
   doc: CharacterDoc;
   sheet: DerivedSheet;
   update: DocUpdater;
-  allowCasting?: boolean;
 }) {
   const caster = sheet.spellcasting.length > 0;
   // Once for the whole page, not once per class: a character with two casting
@@ -814,9 +736,6 @@ export function SpellManager({
           complete={packs.status === 'ready' && problem.status === 'ready'}
           doc={doc}
           update={update}
-          allowCasting={allowCasting}
-          characterLevel={sheet.totalLevel}
-          pools={sheet.resources}
           alwaysPrepared={alwaysPrepared}
         />
       ))}

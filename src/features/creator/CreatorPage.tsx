@@ -1174,9 +1174,7 @@ export function Component() {
       }
 
       case 'spells':
-        return sheet !== null ? (
-          <SpellManager doc={doc} sheet={sheet} update={update} allowCasting={false} />
-        ) : null;
+        return sheet !== null ? <SpellManager doc={doc} sheet={sheet} update={update} /> : null;
 
       case 'choices': {
         // Race, class, and background picks now live on their own steps. This

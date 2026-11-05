@@ -389,6 +389,12 @@ test.describe('axe: pages and overlays', () => {
     await animationsSettled(page);
     await scanState(page, 'sheet-spells-caster');
 
+    // Choosing spells, the tab's other view: the class lists and their chips.
+    await page.getByRole('button', { name: 'Choose spells' }).click();
+    await expect(page.getByRole('button', { name: 'Learn Fireball' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'sheet-spells-choose');
+
     const sheet = await openFireball(page, id);
     await expect(sheet.getByText('Level:', { exact: true })).toBeVisible();
     await scanState(page, 'spell-info-sheet');

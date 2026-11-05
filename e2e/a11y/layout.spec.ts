@@ -162,6 +162,17 @@ const ROUTES: Route[] = [
     primary: () => [],
   },
   ...(Object.keys(SHEET_PAGES) as SheetPage[]).map(sheetTab),
+  {
+    ...sheetTab('Spells'),
+    name: 'sheet Spells, Choose',
+    open: async (page, id) => {
+      await gotoSheetTab(page, id, 'Spells');
+      await page.getByRole('button', { name: 'Choose spells' }).click();
+      await expect(
+        page.getByRole('textbox', { name: /^Search .* spell list$/ }).first(),
+      ).toBeVisible();
+    },
+  },
 ];
 
 /** A character to open the sheet with, on a settled install. Returns its id. */

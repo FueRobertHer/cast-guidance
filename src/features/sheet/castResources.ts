@@ -407,11 +407,17 @@ export function upcastEffectSummary(
   return atSlot.join(' / ');
 }
 
+/** Is the character concentrating on this spell, by the name a cast stores? */
+export function isConcentratingOn(play: PlayState, name: string): boolean {
+  return play.concentratingOn?.label.toLowerCase() === name.toLowerCase();
+}
+
 /**
  * Cast a spell, spending `resource` when given (an explicit slot/upcast/pool
  * choice) or else the lowest available slot ≥ `level` (pact-aware). Marks the
  * action economy the casting time uses and, when the spell concentrates, it
- * becomes the active concentration (dropping any prior one — one at a time).
+ * becomes the active concentration (dropping any prior one: one at a time),
+ * along with the level it was cast at: its dice on a later turn are that slot's.
  */
 export function castSpell(
   update: DocUpdater,
@@ -425,9 +431,6 @@ export function castSpell(
   let spent: CastResource | undefined;
   update(
     (d) => {
-      if (spell?.concentration === true) {
-        d.play.concentratingOn = { label: spell.name };
-      }
       const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
       let turnUsed = false;
       if (spell?.economy !== undefined) {
@@ -436,6 +439,12 @@ export function castSpell(
       }
       const spend = resource ?? nextCastResource(block, d.play, level);
       spent = spend;
+      if (spell?.concentration === true) {
+        d.play.concentratingOn =
+          spend.kind === 'cantrip' || spend.kind === 'none'
+            ? { label: spell.name }
+            : { label: spell.name, level: spend.level };
+      }
       if (spend.kind === 'pool') {
         // Converting points into the slot takes its own slice of the turn, so
         // the cast costs that as well as the spell's own economy. Both land on
@@ -457,6 +466,34 @@ export function castSpell(
     },
     spell === undefined ? undefined : () => `Cast ${spell.name}${castCost(spent, level)}`,
   );
+}
+
+/**
+ * Cast an innate grant: no slot, just concentration and the action economy. One
+ * with its own pool ("1/day" from a wand) spends a use here rather than leaving
+ * the pips for the player to remember.
+ */
+export function castGranted(
+  update: DocUpdater,
+  spell: CastSpellInfo,
+  limit?: { key: string; max: number },
+): void {
+  update((d) => {
+    if (spell.concentration === true) d.play.concentratingOn = { label: spell.name };
+    if (spell.economy !== undefined) {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[spell.economy] = true;
+      d.play.turn = turn;
+    }
+    if (limit !== undefined) {
+      const entry = d.play.resources.find((r) => r.key === limit.key);
+      const used = entry?.used ?? 0;
+      if (used < limit.max) {
+        if (entry !== undefined) entry.used = used + 1;
+        else d.play.resources.push({ key: limit.key, used: 1 });
+      }
+    }
+  }, `Cast ${spell.name}`);
 }
 
 /** " (L3)" / " (pact slot)" / " (Mystic Arcanum)" / " (no slot)" / "", when it isn't the obvious cost. */

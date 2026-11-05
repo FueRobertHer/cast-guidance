@@ -9,6 +9,7 @@ import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
 import {
+  chooseSpells,
   classEntry,
   dialog,
   grantedSpell,
@@ -83,6 +84,7 @@ describe('the spellcasting mode badge (TEST-003)', () => {
       { int: 14, cha: 14 },
     );
     await renderSheet(doc, { extra: { class: [scribe, dabbler] }, path: 'spells' });
+    await chooseSpells();
 
     expect(
       ['Sorcerer', 'Mage', 'Pactcaster', 'Scribe', 'Dabbler'].map((c) => spellBlock(c).mode),
@@ -100,6 +102,7 @@ describe('the spellcasting mode badge (TEST-003)', () => {
     if (add === null) throw new Error('no class picker');
     fireEvent.click(within(add).getByRole('button', { name: 'Mage' }));
     await sheet.tab('Spells');
+    await chooseSpells();
 
     expect(spellBlock('Mage').mode).toBe('Prepared');
     expect(screen.queryByText('This character has no spellcasting.')).toBeNull();
@@ -113,6 +116,7 @@ describe('prepared and known limits (TEST-003)', () => {
       path: 'spells',
       lists: { 'Searing Bolt|TST': ['Mage'], 'Quick Bolt|TST': ['Mage'] },
     });
+    await chooseSpells();
     expect(spellBlock('Mage').counters).toContain('prepared 0/1');
 
     press('Prepare Searing Bolt');
@@ -150,6 +154,7 @@ describe('prepared and known limits (TEST-003)', () => {
       ].map((n) => [`${n}|TST`, ['Sorcerer']]),
     );
     await renderSheet(doc, { path: 'spells', extra: { spell: [...CANTRIPS, WARD] }, lists });
+    await chooseSpells();
     expect(spellBlock('Sorcerer').counters).toContain('cantrips 0/4');
     expect(spellBlock('Sorcerer').counters).toContain('known 0/2');
 
@@ -227,6 +232,7 @@ describe('the out-of-sources chip (#102, TEST-003)', () => {
       extra: { spell: [lance] },
       lists: { 'Searing Bolt|TST': ['Sorcerer'], 'Ember Lance|HBX': ['Sorcerer'] },
     });
+    await chooseSpells();
     const chipFor = (name: string) =>
       screen.getByRole('button', { name: `Learn ${name}` }).parentElement?.textContent ?? '';
     expect(chipFor('Ember Lance')).toContain("Not in this character's sources");
@@ -236,6 +242,7 @@ describe('the out-of-sources chip (#102, TEST-003)', () => {
     fireEvent.click(screen.getByText('Sources'));
     press('No restriction');
     await sheet.tab('Spells');
+    await chooseSpells();
 
     expect(chipFor('Ember Lance')).not.toContain("Not in this character's sources");
     expect((await sheet.saved()).allowedSources).toEqual([]);
