@@ -67,6 +67,13 @@ canary) does animate.
 
 ### Touch target sizes
 
+The rule, an owner decision: what a player taps during play is 44 by 44, and
+everything else holds 24 by 24. Four kinds at the table are smaller on purpose,
+so a busy row still fits: pips (32 by 44), chips in a row (a roll chip or a
+spell row's slot button, 34 tall), a segmented control's options (38 tall in a
+44 track), and text-sized links and buttons (a spell or feature name, "How is
+this worked out?", spending a hit die, 24 tall).
+
 [`e2e/a11y/target-size.spec.ts`](../e2e/a11y/target-size.spec.ts)
 ([#113](https://github.com/FueRobertHer/cast-guidance/issues/113), A11Y-002)
 measures the boxes the browser lays out, on the suite's phone. It measures
@@ -94,11 +101,12 @@ the character file carries, since the suite's data release has no caster:
 spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
 exhaustion, so a chip on the condition strip), the condition picker and
 the HP sheet open over it, the same at 0 HP (the death saves), Build with every section
-and picker open, Homebrew with one file of your own, and the creator's
-abilities step on point buy. Not measured yet: spell rows on Play (the
-caster knows no spells), the Stats, Spells, Items and Features tabs, the
-library, Settings, and the creator's other steps. axe's `target-size` still
-runs on every scanned state.
+and picker open, Homebrew with one file of your own, the creator's
+abilities step on point buy, and a known spell's row on Play and in the Spells
+tab's Your spells view (one long name, one short). Not measured yet: a spell
+row while its file loads, a granted spell's row on Play, the Spells tab's Choose
+view, the Stats, Items and Features tabs, the library, Settings, and the
+creator's other steps. axe's `target-size` still runs on every scanned state.
 
 ### Unit guards
 
@@ -289,6 +297,8 @@ screen-reader and zoom passes below look at them on a device.
 | 2026-10-25 | Under 24 on Build: the pickers' summaries ("Add a class (multiclass)", "Pick a species to start" and the like) were 16 tall. | 24 tall (`py-1`), keeping the disclosure marker. |
 | 2026-10-25 | No reduced-motion handling beyond the roll toast and the roster. | App-wide block in `app.css`, plus the script-driven smooth scroll. See above. |
 | 2026-10-25 (from #163) | Resource pips are 44 px tall and 32 px wide around a 16 px dot, not 44 by 44: a 12-use row at 44 px a pip wraps onto a third line at 320 px. | Owner decision: keep 44x32. The height is what a thumb misses by; 32 px is above WCAG 2.5.8's 24 px floor, and axe's `target-size` passes it. Revisit if the manual passes find mis-taps. `e2e/a11y/target-size.spec.ts` holds slot and resource pips to 32 by 44. |
+| 2026-11-04 | Tap target rule: the design system said every target is 44 by 44, while this audit and the E2E check held an inventory to 44 and the rest to 24. | Owner decision: 44 for what a player taps during play, 24 everywhere else. See Touch target sizes for the four kinds smaller on purpose at the table. The design system now says the same. |
+| 2026-11-04 | Under 24, found measuring a populated Cleric 3: spell names on Play were 22 tall, and "Aid" on the Spells tab 23 wide. In review: the resource name "Ki" on Play was about 14 wide. | All three hold 24 by 24 (`min-h-6`, `min-w-6`). `target-size.spec.ts` now measures a known spell's row on both tabs, where its caster used to know no spells. "Ki" has no cover there, since the caster is no Monk. |
 | 2026-10-25 | Focus left behind on opening: every drawer but the ask* dialogs (the dice tray, history, the info and breakdown sheets, Add item) kept focus on its opener, by then `aria-hidden` behind the overlay. vaul turns Radix's open-time focus off unless asked. | `Sheet.Root` turns `autoFocus` on by default (a sheet can still opt out), so focus moves to the sheet's first control, or the sheet itself, as it opens. With focus inside, Radix's own trap and its return to the trigger on close pass unchanged. Pinned in `src/ui/sheet.test.tsx`; `keyboard.spec.ts` fails without it. Add item's first control is its search box, which would pop a phone's on-screen keyboard over the list it filters, so on a coarse pointer it focuses the sheet itself instead (`onOpenAutoFocus`, unit tested in `InventoryTab.test.tsx`); with a keyboard focus lands in the box, which the spec checks. |
 | 2026-10-25 (review) | Text at 200% with the Conditions fold open: the Exhaustion stepper's count sat in a fixed `w-10` between `justify-between` neighbours, so the + ran out of its card and the page was 478 px wide at 412 px. | The count grows with its text (`min-w-10`, no wrap), and the stepper wraps under the name, at the right, when both do not fit. The 200% and 320 px passes now open every fold. The HP total also stays readable: it breaks only before "/ max", and a floor of 3.25rem or its min-content, whichever is wider, gives it a line of its own at large text rather than split "0 / 0". Measured: at 360 and 412 px totals up to 1234 / 1234 sit between the pairs; at 320 px a two-digit total does, breaking before "/ max", and a three- or four-digit one moves the heal pair onto a line of its own rather than overlap it. |
 | 2026-10-25 | Focus not obscured (2.4.11): in landscape, Tab scrolled a control just into view under the bottom tab bar (the Play tab's turn tracker, Stats' skills, Build's sections), and Shift+Tab under the sheet header and the build page's bar, entirely hidden. | The page's scroll padding clears the bars: 4rem at the bottom below `lg` (app.css), and at the top the sheet header's and the build bar's measured heights (`useStickyHeight`, which now also publishes `--sheet-header-h` from the root). |

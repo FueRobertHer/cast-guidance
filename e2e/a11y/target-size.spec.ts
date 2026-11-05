@@ -212,6 +212,33 @@ test.describe('touch target sizes', () => {
     await expectFloor(page);
   });
 
+  test("a caster's spell rows, on Play and the Spells tab", async ({ page }) => {
+    await gotoRosterSettled(page);
+    const blankId = await createBlankCharacter(page);
+    const blank = await getCharacter(page, blankId);
+    if (blank === undefined) throw new Error('The blank character was not stored');
+    const id = 'e2e-spell-rows';
+    // A long name that wraps or truncates, and a name narrower than the floor.
+    const { file, previewTitle } = casterFile(blank, id, 'Vela Quill', {
+      filled: true,
+      known: [{ name: 'Aid', source: 'E2EC' }],
+    });
+    await gotoRoster(page);
+    await importCharacterFile(page, file);
+    await answerImportPreview(page, previewTitle);
+
+    // Cast is only on the settled row: the name also shows while spells load.
+    await gotoSheetTab(page, id, 'Play');
+    await expect(button(page, 'Cast Aid')).toBeVisible();
+    await animationsSettled(page);
+    await expectFloor(page);
+
+    await gotoSheetTab(page, id, 'Spells');
+    await expect(button(page, 'Cast Aid')).toBeVisible();
+    await animationsSettled(page);
+    await expectFloor(page);
+  });
+
   test('Homebrew with one file', async ({ page }) => {
     await gotoRosterSettled(page);
     // A collection of your own, so the row has every action, Edit included.

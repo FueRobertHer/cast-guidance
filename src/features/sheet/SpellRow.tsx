@@ -58,7 +58,7 @@ export function SpellRow({
             trigger={
               <button
                 type="button"
-                className={`min-h-6 min-w-0 wrap-anywhere text-left text-body-strong underline decoration-line-strong decoration-dashed underline-offset-4 ${
+                className={`min-h-6 min-w-6 wrap-anywhere text-left text-body-strong underline decoration-line-strong decoration-dashed underline-offset-4 ${
                   muted ? 'text-ink-muted' : ''
                 }`}
               >

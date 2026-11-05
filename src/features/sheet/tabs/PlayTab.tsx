@@ -206,7 +206,7 @@ function PendingSpellRow({
           trigger={
             <button
               type="button"
-              className={`min-w-0 flex-1 text-left ${NAME} ${RULES} text-ink-muted underline-offset-2`}
+              className={`min-h-6 min-w-0 flex-1 text-left ${NAME} ${RULES} text-ink-muted underline-offset-2`}
             >
               {name}
             </button>
@@ -1073,7 +1073,7 @@ export function Component() {
                         trigger={
                           <button
                             type="button"
-                            className={`min-h-6 text-left text-body-strong ${RULES} underline-offset-4`}
+                            className={`min-h-6 min-w-6 text-left text-body-strong ${RULES} underline-offset-4`}
                             title="What does this do?"
                           >
                             {r.label}
@@ -1497,7 +1497,7 @@ export function Component() {
                           trigger={
                             <button
                               type="button"
-                              className={`min-w-0 flex-1 text-left ${NAME} ${RULES} underline-offset-2 ${
+                              className={`min-h-6 min-w-0 flex-1 text-left ${NAME} ${RULES} underline-offset-2 ${
                                 prepared ? '' : 'text-ink-muted'
                               }`}
                             >
@@ -1695,7 +1695,7 @@ export function Component() {
                         // with large text the badges wrap under the name.
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left @min-[15rem]:flex-nowrap"
+                          className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left @min-[15rem]:flex-nowrap"
                         >
                           <span
                             className={`min-w-0 capitalize ${NAME} ${RULES} underline-offset-2`}
