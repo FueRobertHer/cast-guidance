@@ -58,10 +58,10 @@ counsel.
 These are in the repository and in the built JavaScript, so they need a
 decision even though the compendium does not ship:
 
-- **Book titles.** `src/data5e/sourceNames.ts` maps about 180 5etools source codes
+- **Book titles.** `src/data5e/sourceNames.ts` maps about 190 5etools source codes
   to full book titles and a category (for example "Player's Handbook (2014)"), so
   source badges can render before any data has downloaded. Its header says it was
-  generated from the mirror's `js/parser.js` at v2.33.3. That is not a mismatch
+  generated from the mirror's `js/parser.js` at v2.40.0. That is not a mismatch
   with `DATA_TAG`: the app installs the newest compatible release, and an unknown
   code falls back to the bare abbreviation.
 - **Curated mechanics.** `src/engine/curated/curatedEffects.ts` hand-codes the
