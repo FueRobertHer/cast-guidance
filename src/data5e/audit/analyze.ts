@@ -15,6 +15,7 @@ import { BRANCH_SET, type BranchBlock, branchSubjects, findBranchBlocks } from '
 import { answersFor, type JudgmentFile } from './judgments';
 import { auditProse, type ProseAudit } from './proseChecks';
 import { proseSubjects } from './proseSubjects';
+import { auditReprints, type ReprintAudit, reprintPairs } from './reprints';
 
 export interface FileSize {
   path: string;
@@ -53,6 +54,8 @@ export interface AuditReport {
   branchBlocks: BranchBlock[];
   /** The prose scanner against saved Jev judgments, when there are any. */
   prose: ProseAudit;
+  /** 2014/2024 reprint pairs and their labels. Counts only: nothing here can fail. */
+  reprints: ReprintAudit;
 }
 
 export interface AnalyzeInput {
@@ -197,6 +200,7 @@ export function analyzeDataset(input: AnalyzeInput): AuditReport {
     maxFileBytes,
     branchBlocks: withChoiceProposals(findBranchBlocks(reg), reg, judgments),
     prose: auditProse(proseSubjects(reg), judgments),
+    reprints: auditReprints(reprintPairs(reg), judgments),
   };
 }
 

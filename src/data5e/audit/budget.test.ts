@@ -40,6 +40,16 @@ function makeReport(overrides: Partial<AuditReport> = {}): AuditReport {
       { uid: 'magic initiate|phb', key: 'feat', names: ['Bard', 'Cleric'], choiceWording: true },
     ],
     prose: { subjects: 0, judged: 0, disagreements: [], byCheck: {} },
+    reprints: {
+      pairs: 0,
+      byType: {},
+      labels: { same: 0, wording: 0, changed: 0, different: 0, uncertain: 0 },
+      changedFields: {},
+      toJudge: 0,
+      judged: 0,
+      notJudged: 0,
+      skipped: { notAcrossEditions: 0, targetNotFound: 0 },
+    },
     ...overrides,
   };
 }
@@ -444,5 +454,26 @@ describe('toMarkdown', () => {
     const markdown = toMarkdown(report, evaluateAudit(report, budgetWith(), { baselineTag: TAG }));
     expect(markdown).toContain('Checked against the v2.32.0 budget (no entry for v2.33.0).');
     expect(markdown).toContain('Every check is within budget.');
+  });
+
+  it('lists reprint counts when the release has any, without making them a check', () => {
+    const quiet = makeReport();
+    const rows = evaluateAudit(quiet, budgetWith()).rows;
+    expect(toMarkdown(quiet, evaluateAudit(quiet, budgetWith()))).not.toContain('reprints');
+
+    const report = makeReport({
+      reprints: {
+        ...makeReport().reprints,
+        pairs: 3,
+        byType: { spell: 3 },
+        labels: { same: 1, wording: 0, changed: 2, different: 0, uncertain: 0 },
+      },
+    });
+    const evaluation = evaluateAudit(report, budgetWith());
+    expect(evaluation.rows).toEqual(rows);
+    const markdown = toMarkdown(report, evaluation);
+    expect(markdown).toContain('2014/2024 reprints (counts only, not a check):');
+    expect(markdown).toContain('- 3 2014/2024 pairs: spell 3');
+    expect(markdown).toContain('same=1 wording=0 changed=2 different=0 uncertain=0');
   });
 });

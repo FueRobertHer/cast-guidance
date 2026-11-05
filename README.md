@@ -29,7 +29,7 @@ bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a
 bun run notices        # regenerate THIRD_PARTY_NOTICES.md from dist/ (after a build)
 bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
-bun run data:judge     # ask Jev about scanned prose and save the answers (needs AI_GATEWAY_API_KEY); --report <set> prints a scoping set's list
+bun run data:judge     # ask Jev about scanned prose and save the answers (needs AI_GATEWAY_API_KEY); --set reprint for reprint pairs, --report <set> prints a scoping set's list
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
 bun run icons:generate # render public/icons/*.png from scripts/icon-source.svg (commit the output)
@@ -67,6 +67,24 @@ of a gateway key, put it in `AI_GATEWAY_API_KEY` and also set
 `JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone` and `JEV_MODEL=jev-latest`,
 in `.env.local` or the shell. The workflow only passes the key, so it needs a
 gateway key.
+
+The audit also classifies 2014/2024 reprint pairs, as groundwork for edition
+compatibility (GAME-003). A pair is one `reprintedAs` link between a 2014-rules
+printing and a 2024-rules one, for items, base items, spells, races, optional
+features, feats, conditions, backgrounds and classes. Links within one edition
+(`MPMM` is a 2014-rules book) and subclasses and subraces are left out. Code
+diffs the structured fields, such as a spell's school, casting time, range,
+components, duration and concentration, and settles prose that reads the same.
+What is left is the `reprint@1` set: `bun run data:judge -- --set reprint` asks
+Jev whether the two texts describe the same rules, whether only the wording
+differs, whether a number changed, and whether it is a different feature. It
+runs only when named, because asking it is costly and no check rests on it;
+`--dry-run` prints the pair counts, a token estimate and a sample request. Each
+pair gets one label: same, wording only, changed, different, or uncertain when
+the answers fall short of the thresholds in `proseChecks.ts`, contradict each
+other or are not in yet. A changed field always counts, since Jev never sees
+those fields. The report lists the counts, which are not a check and cannot fail
+the audit, and nothing reaches the app.
 
 Three one-off scoping sets use the same harness to size up work rather than to
 check anything. `bun run data:judge -- --set <name>` asks Jev about a wide net

@@ -29,6 +29,7 @@ import {
   toMarkdown,
   unsettledDisagreements,
 } from '../src/data5e/audit/budget';
+import { describeReprints } from '../src/data5e/audit/reprints';
 import { DATA_TAG, isCompatibleTag, MAX_DATA_FILE_BYTES } from '../src/data5e/config';
 import { readJudgments } from './data-judgments-file';
 import { fetchRelease, resolveLatestTag } from './data-release';
@@ -145,6 +146,9 @@ function printReport(report: AuditReport, budget: AuditBudget): void {
       console.log(`- ${describeDisagreement(d)}`);
     }
   }
+
+  console.log('\n## 2014/2024 reprints');
+  for (const line of describeReprints(report.reprints)) console.log(line);
 }
 
 function writeBudget(report: AuditReport, budget: AuditBudget): void {
