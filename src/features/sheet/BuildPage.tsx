@@ -374,12 +374,14 @@ export function Component() {
     const name = entry.ref.name;
     const parts = classRemovalParts(doc, entry, activeChoices);
     const goes = [
-      parts.length > 0 ? `Clears ${listJoin(parts)}.` : undefined,
+      parts.length > 0 && `Clears ${listJoin(parts)}.`,
       firstClassShift(doc, entry, engineContextFor(registry)),
-    ].filter((s) => s !== undefined);
+    ]
+      .filter(Boolean)
+      .join(' ');
     const ok = await askConfirm({
       title: `Remove ${name}?`,
-      detail: `${goes.join(' ') || 'Nothing else is tied to it.'} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
+      detail: `${goes || 'Nothing else is tied to it.'} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
       confirmLabel: 'Remove class',
       danger: true,
     });

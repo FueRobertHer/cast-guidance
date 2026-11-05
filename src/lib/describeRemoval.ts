@@ -90,17 +90,13 @@ function listMove(
   to: readonly string[],
 ): string | undefined {
   // Two printings can spell one proficiency differently ("Ropes", "ropes").
-  const without = (list: readonly string[], others: readonly string[]) => {
-    const names = new Set(others.map((n) => n.toLowerCase()));
-    return list.filter((n) => !names.has(n.toLowerCase()));
-  };
+  const without = (list: readonly string[], others: readonly string[]) =>
+    listJoin(list.filter((n) => !others.some((o) => o.toLowerCase() === n.toLowerCase())));
   const lost = without(from, to);
   const gained = without(to, from);
-  if (lost.length > 0 && gained.length > 0) {
-    return `${label} move from ${listJoin(lost)} to ${listJoin(gained)}`;
-  }
-  if (lost.length > 0) return `${label} lose ${listJoin(lost)}`;
-  if (gained.length > 0) return `${label} gain ${listJoin(gained)}`;
+  if (lost && gained) return `${label} move from ${lost} to ${gained}`;
+  if (lost) return `${label} lose ${lost}`;
+  if (gained) return `${label} gain ${gained}`;
   return undefined;
 }
 
@@ -123,14 +119,11 @@ export function firstClassShift(
   entry: ClassLevelEntry,
   ctx: EngineContext,
 ): string | undefined {
-  const [first, next] = doc.classes;
-  if (first === undefined || next === undefined || refUid(first.ref) !== refUid(entry.ref)) {
-    return undefined;
-  }
+  const [first, next, ...rest] = doc.classes;
+  if (!first || !next || refUid(first.ref) !== refUid(entry.ref)) return undefined;
   const opening = `${next.ref.name} becomes your first class, and a class you add later goes after it`;
   // A class with no data reads as no saves and no lists, which is not what moves.
-  const hasData = (c: ClassLevelEntry) => ctx.get('class', c.ref.name, c.ref.source) !== undefined;
-  if (!hasData(first) || !hasData(next)) return `${opening}.`;
+  if ([first, next].some((c) => !ctx.get('class', c.ref.name, c.ref.source))) return `${opening}.`;
 
   const before = deriveSheet(doc, ctx);
   const without = structuredClone(doc);
@@ -141,27 +134,26 @@ export function firstClassShift(
   // Any level taken off lowers max HP. It belongs here only when the class's
   // place matters: when the same classes in another order total differently,
   // so that removing this one costs more or less than removing it from the end.
-  const reordered = deriveSheet({ ...doc, classes: [...doc.classes.slice(1), first] }, ctx);
-  const hpMoves =
-    after.maxHp.value !== before.maxHp.value && reordered.maxHp.value !== before.maxHp.value;
+  const hp = before.maxHp.value;
+  const hpAfter = after.maxHp.value;
+  const reordered = deriveSheet({ ...doc, classes: [next, ...rest, first] }, ctx);
+  const hpMoves = hpAfter !== hp && reordered.maxHp.value !== hp;
 
   // A later class's skill list is the short multiclass one or none; first, it
-  // asks for the full count, and the picks it holds count towards that.
+  // asks for the full count, so more of it stands open unless its picks fill it.
   const skillPrefix = `class:${refUid(next.ref)}:skill:`;
-  const skillAsk = (sheet: DerivedSheet) =>
-    [...sheet.pending, ...sheet.resolvedChoices.map((r) => r.prompt)]
-      .filter((p) => p.id.startsWith(skillPrefix))
-      .reduce((n, p) => n + p.count, 0);
-  const moreSkillPicks =
-    skillAsk(after) > skillAsk(before) && after.pending.some((p) => p.id.startsWith(skillPrefix));
+  const skillsOpen = (sheet: DerivedSheet) =>
+    sheet.pending.filter((p) => p.id.startsWith(skillPrefix)).reduce((n, p) => n + p.count, 0);
 
   const moves = [
     listMove('saving throws', proficientSaves(before), proficientSaves(after)),
-    listMove('armor proficiencies', before.armorProfs, after.armorProfs),
-    listMove('weapon proficiencies', before.weaponProfs, after.weaponProfs),
-    listMove('tool proficiencies', before.toolProfs, after.toolProfs),
-    hpMoves ? `max HP goes from ${before.maxHp.value} to ${after.maxHp.value}` : undefined,
-    moreSkillPicks ? `${next.ref.name} asks for more skill picks` : undefined,
+    ...(['armor', 'weapon', 'tool'] as const).map((k) =>
+      listMove(`${k} proficiencies`, before[`${k}Profs`], after[`${k}Profs`]),
+    ),
+    hpMoves ? `max HP goes from ${hp} to ${hpAfter}` : undefined,
+    skillsOpen(after) > skillsOpen(before)
+      ? `${next.ref.name} asks for more skill picks`
+      : undefined,
   ].filter((m) => m !== undefined);
   if (moves.length === 0) return undefined;
   return `${opening}: ${moves.join('; ')}.`;
