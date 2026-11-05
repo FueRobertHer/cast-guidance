@@ -12,10 +12,19 @@ import { DISPLAY_ARG, LINKED_TYPES, PLAIN_REF_TAGS } from './inlineTags';
  */
 const MAX_NESTING = 4;
 
-/** A reference by the display text the renderer shows, any other tag by its body. */
+/**
+ * A reference by the display text the renderer shows, any other tag by its body.
+ * The body of `{@dc 15}` and `{@chance 10}` is a bare number, so they read with
+ * the word the renderer adds: "a 15 Dexterity saving throw" is not what the page says.
+ */
 function tagWords(tag: string, args: string[]): string {
-  const isRef = PLAIN_REF_TAGS.has(tag) || Object.hasOwn(LINKED_TYPES, tag);
-  return isRef ? parseEntityRef(args, DISPLAY_ARG.get(tag)).display : (args[0] ?? '');
+  if (PLAIN_REF_TAGS.has(tag) || Object.hasOwn(LINKED_TYPES, tag)) {
+    return parseEntityRef(args, DISPLAY_ARG.get(tag)).display;
+  }
+  const body = args[0] ?? '';
+  if (tag === 'dc') return `DC ${body}`;
+  if (tag === 'chance') return `${body} percent`;
+  return body;
 }
 
 /** `three {@item musical instrument|PHB|musical instruments}` -> `three musical instruments`. */

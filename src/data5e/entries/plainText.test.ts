@@ -32,6 +32,13 @@ describe('plainEntryText', () => {
     expect(plainEntryText('a{@h}b')).toBe('ab');
   });
 
+  it('reads a tag that holds only a number with the words the renderer shows', () => {
+    expect(plainEntryText('a {@dc 15} Testing saving throw')).toBe('a DC 15 Testing saving throw');
+    expect(plainEntryText('(save {@dc 8} plus your bonus)')).toBe('(save DC 8 plus your bonus)');
+    expect(plainEntryText('a {@chance 10} chance')).toBe('a 10 percent chance');
+    expect(plainEntryText('{@chance 25|||It fails!|It works}')).toBe('25 percent');
+  });
+
   it('reads a tag inside a tag', () => {
     expect(plainEntryText('{@note see {@item longsword|phb|longswords}}')).toBe('see longswords');
   });
