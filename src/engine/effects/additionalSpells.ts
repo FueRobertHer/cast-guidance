@@ -58,6 +58,20 @@ function collectStrings(val: unknown, out: string[], sawChoose: { v: boolean }):
   }
 }
 
+/**
+ * Whether an `additionalSpells` list has the player choose a spell anywhere: in
+ * any entry, at any level. The warning below only speaks for the entry a character
+ * took and the levels they have reached. An expanded list only widens what can be
+ * learned, and a choice of `ability` is not a choice of spell, so neither counts.
+ */
+export function hasChosenSpell(raw: unknown): boolean {
+  const saw = { v: false };
+  for (const { innate, known, prepared } of asEntityArray(raw)) {
+    collectStrings([innate, known, prepared], [], saw);
+  }
+  return saw.v;
+}
+
 function gatherByLevel(
   map: unknown,
   totalLevel: number,
