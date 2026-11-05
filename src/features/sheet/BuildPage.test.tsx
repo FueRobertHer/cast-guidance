@@ -33,6 +33,7 @@ const classPacks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/data5e/hooks', () => ({
+  useRegistryRefreshing: () => false,
   useTypePacks: () => ({ ...classPacks.current, retry: classPacks.retry, repair: () => undefined }),
   useRegistry: () => {
     const base = makeTestContext();

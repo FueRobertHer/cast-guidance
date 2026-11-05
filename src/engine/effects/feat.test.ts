@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { deriveSheet } from '../derive';
 import { type DataEntity, newCharacterDoc } from '../types';
 import { Collector } from './base';
 import { collectClasses } from './class';
@@ -29,6 +30,70 @@ describe('collectFeatEntity', () => {
   it('always pushes a feature card for the feat', () => {
     const col = collect({ name: 'Lucky', entries: ['You have 3 luck points.'] });
     expect(col.features.some((f) => f.name === 'Lucky')).toBe(true);
+  });
+});
+
+describe('a chosen spell, from the feat to the sheet', () => {
+  const feat: DataEntity = {
+    name: 'Pick Test',
+    source: 'HB',
+    additionalSpells: [
+      {
+        ability: 'int',
+        known: { _: [{ choose: 'level=0' }] },
+        innate: { _: { daily: { 1: [{ choose: 'level=1' }] } } },
+      },
+    ],
+  };
+  const base = makeTestContext();
+  const ctx = {
+    get: (type: string, name: string, source?: string) =>
+      type === 'feat' && name.toLowerCase() === 'pick test' ? feat : base.get(type, name, source),
+    byType: (type: string) => base.byType(type),
+  };
+  const docWithFeat = () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Fighter', source: 'TST' }, levels: 1, hp: ['avg'] }];
+    doc.feats = [{ ref: { name: 'Pick Test', source: 'HB' }, instanceId: 'i1' }];
+    return doc;
+  };
+  const cantripId = 'feat:pick test|hb:i1:spell:u:0:known:_:0';
+  const spellId = 'feat:pick test|hb:i1:spell:u:0:innate:_:0';
+
+  it('is pending until picked, then reaches the sheet with its pool, after a save and load', () => {
+    const doc = docWithFeat();
+    const before = deriveSheet(doc, ctx);
+    expect(before.pending.map((p) => p.id)).toEqual(expect.arrayContaining([cantripId, spellId]));
+    expect(before.warnings.join()).not.toContain('choose a spell');
+
+    doc.choices[cantripId] = ['Fake Spark|HB'];
+    doc.choices[spellId] = ['Fake Ward|HB'];
+    const saved = JSON.parse(JSON.stringify(doc)) as typeof doc;
+    const after = deriveSheet(saved, ctx);
+
+    expect(after.pending.filter((p) => p.kind === 'spell')).toEqual([]);
+    expect(after.grantedSpells).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Fake Spark',
+          source: 'HB',
+          ability: 'int',
+          usage: undefined,
+          origin: 'Pick Test',
+        }),
+        expect.objectContaining({
+          name: 'Fake Ward',
+          source: 'HB',
+          ability: 'int',
+          usage: '1/day',
+          origin: 'Pick Test',
+        }),
+      ]),
+    );
+    expect(after.resources.find((r) => r.label === 'Fake Ward')?.max).toBe(1);
+    expect(after.resolvedChoices.map((r) => r.prompt.id)).toEqual(
+      expect.arrayContaining([cantripId, spellId]),
+    );
   });
 });
 
