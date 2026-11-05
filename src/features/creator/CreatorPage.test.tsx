@@ -38,6 +38,7 @@ const { registry, create, dialogs } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/data5e/hooks', () => ({
+  useRegistryRefreshing: () => false,
   useTypePacks: (type: string) => ({
     ...(type === 'class' ? registry.classPacks : { status: 'ready', error: null, offline: false }),
     retry: registry.classRetry,

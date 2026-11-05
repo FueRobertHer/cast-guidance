@@ -373,7 +373,7 @@ describe('feat choice scope', () => {
     expect(subject('Offered Test')?.state).toContain('Picks the app offers: Skill proficiency\n');
     expect(subject('Unread Field Test')?.offered).toEqual([]);
     expect(subject('Unread Field Test')?.state).toContain('Picks the app offers: none\n');
-    expect(subject('Spell Test')?.offered).toEqual([]);
+    expect(subject('Spell Test')?.offered).toEqual(['spells']);
     expect(subject('Elemental Test')?.state).toBe(
       'Elemental Test\nPicks the app offers: none\nChoose an element you favor. Your magic treats it kindly.',
     );
@@ -389,8 +389,20 @@ describe('feat choice scope', () => {
     );
   });
 
+  it('reaches a spell prompt behind a later branch option and a level key', () => {
+    expect(subject('Later Option Test')?.covers).toContain('pickSpell');
+    expect(subject('Gated Spell Test')?.covers).toContain('pickSpell');
+  });
+
+  it('keeps a spell prompt to one word in the state, so rewording a label keeps the answers', () => {
+    expect(subject('Later Option Test')?.state).toContain(
+      'Picks the app offers: one of Alpha List, Beta List; spellcasting ability; spells\n',
+    );
+  });
+
   it.each<[string, object, string[]]>([
     ['skill', { skillProficiencies: [{ any: 1 }] }, ['pickSkill']],
+    ['spell', { additionalSpells: [{ known: { _: [{ choose: 'level=0' }] } }] }, ['pickSpell']],
     ['expertise', { expertise: [{ anyProficientSkill: 1 }] }, ['pickSkill']],
     ['tool', { toolProficiencies: [{ anyArtisansTool: 1 }] }, ['pickTool']],
     ['ability', { ability: [{ choose: { from: ['str', 'dex'] } }] }, ['pickAbility']],
@@ -436,7 +448,7 @@ describe('feat choice scope', () => {
         beyondOffered: 0.91,
       },
       'Spell Test': { pickOnTaking: 0.9, pickSpell: 0.95, beyondOffered: 0.99 },
-      // The data has a spell to choose, so Jev being sure of the ability cannot hide it.
+      // The data has a spell to choose and a prompt offers it, however unsure Jev is.
       'Hidden Spell Test': chosenSpellAnswers,
       'Gated Spell Test': chosenSpellAnswers,
       'Later Option Test': chosenSpellAnswers,
@@ -464,19 +476,19 @@ describe('feat choice scope', () => {
     const backlog = 'A pick the app does not offer (the feat-picker backlog)';
     expect(rowsUnder(report, backlog)).toEqual([
       '0.97  Elemental Test (feat|HB)  needs: damage type  offers: none',
-      '0.95  Spell Test (feat|HB)  needs: spell  offers: none',
       '0.92  Branch Test (feat|HB)  needs: spell  offers: one of Alpha List, Beta List; spellcasting ability',
       '0.90  Reprint Test (feat|HB)  needs: maybe spell (0.70)  offers: none',
       '0.90  Unread Field Test (feat|HB)  needs: skill, tool, maybe other (0.60), maybe class (0.55)  offers: none',
       '0.85  Vague Test (feat|HB)  needs: ?  offers: none',
-      '0.69  Gated Spell Test (feat|HB)  needs: spell  offers: spellcasting ability',
-      '0.69  Hidden Spell Test (feat|HB)  needs: spell  offers: spellcasting ability',
-      '0.69  Later Option Test (feat|HB)  needs: spell  offers: one of Alpha List, Beta List; spellcasting ability',
     ]);
-    expect(report).toContain('Needed, most first: spell 5, skill 1, tool 1, damage type 1');
+    expect(report).toContain('Needed, most first: skill 1, tool 1, spell 1, damage type 1');
     expect(rowsUnder(report, 'Every kind of pick offered already')).toEqual([
       '0.99  Offered Test (feat|HB)  picks: skill  offers: Skill proficiency',
       '0.95  Fixed Spell Test (feat|HB)  picks: ability, maybe spell (0.79), maybe class (0.50)  offers: spellcasting ability',
+      '0.94  Gated Spell Test (feat|HB)  picks: ability  offers: spellcasting ability; spells',
+      '0.94  Hidden Spell Test (feat|HB)  picks: ability  offers: spellcasting ability; spells',
+      '0.94  Later Option Test (feat|HB)  picks: ability  offers: one of Alpha List, Beta List; spellcasting ability; spells',
+      '0.90  Spell Test (feat|HB)  picks: spell  offers: spells',
     ]);
     expect(rowsUnder(report, 'A decision during play only (no picker needed)')).toEqual([
       '0.94  Heavy Swing Test (feat|HB)  picks: ?  offers: none',
