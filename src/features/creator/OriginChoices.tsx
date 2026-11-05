@@ -23,6 +23,7 @@ import type {
   EffectOrigin,
 } from '@/engine/types';
 import { SpellInfoSheet } from '@/features/sheet/SpellInfoSheet';
+import { pruneAsiFeatPicks } from '@/lib/pruneChoices';
 import { useClassLookup } from '@/lib/useClassLookup';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { buttonClass } from '@/ui/Button';
@@ -287,9 +288,11 @@ export function OriginChoices({
       return;
     }
     update((d) => {
-      d.choices[id] = value;
       // Follow-up prompts (an ASI's feat pick, a feat's own sub-choices) were
-      // derived from the answer that just changed, so they no longer apply.
+      // derived from the answer that just changed, so they no longer apply. The
+      // feat's are stored apart from the prompt, and the old answer finds them.
+      pruneAsiFeatPicks(d, id);
+      d.choices[id] = value;
       for (const key of Object.keys(d.choices)) {
         if (key.startsWith(`${id}:`)) delete d.choices[key];
       }

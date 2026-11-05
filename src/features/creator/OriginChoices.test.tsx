@@ -27,15 +27,15 @@ const skillPrompt: ChoicePrompt = {
 
 /**
  * OriginChoices reads only `pending` / `resolvedChoices` off the sheet and
- * `choices` / `rulesVersion` off the doc, so the rest of those large shapes is
- * irrelevant here and left off deliberately.
+ * `choices` / `classes` / `rulesVersion` off the doc, so the rest of those large
+ * shapes is irrelevant here and left off deliberately.
  */
 function harness(
   choices: CharacterDoc['choices'],
   resolvedChoices: DerivedSheet['resolvedChoices'],
   pending: ChoicePrompt[] = [],
 ) {
-  const doc = { rulesVersion: '2014', choices } as unknown as CharacterDoc;
+  const doc = { rulesVersion: '2014', choices, classes: [] } as unknown as CharacterDoc;
   const sheet = { pending, resolvedChoices } as unknown as DerivedSheet;
   const update = vi.fn((recipe: (d: CharacterDoc) => void) => recipe(doc));
   render(<OriginChoices sheet={sheet} doc={doc} update={update} match={() => true} />);
@@ -138,6 +138,55 @@ describe('OriginChoices dependent choices', () => {
     fireEvent.click(confirmBtn());
 
     expect(doc.choices[`${asi.id}:feat`]).toEqual(['tough|phb']);
+  });
+
+  describe("and the old feat's own picks", () => {
+    const featPick: ChoicePrompt = {
+      id: `${asi.id}:feat`,
+      origin,
+      kind: 'feat',
+      label: 'Feat',
+      count: 1,
+      options: [
+        { id: 'drilled|hb', label: 'Drilled' },
+        { id: 'steady|hb', label: 'Steady' },
+      ],
+    };
+    const held = {
+      [asi.id]: 'feat',
+      [featPick.id]: ['drilled|hb'],
+      'feat:drilled|hb:asi4:skill:0': ['stealth'],
+      'feat:steady|hb:asi8:skill:0': ['arcana'],
+    };
+
+    it('clears them when the ASI turns away from a feat', () => {
+      const { doc } = harness({ ...held }, resolvedAsi);
+      fireEvent.click(screen.getByRole('button', { name: /change/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Ability Score Improvement' }));
+      fireEvent.click(confirmBtn());
+
+      expect(doc.choices['feat:drilled|hb:asi4:skill:0']).toBeUndefined();
+      expect(doc.choices['feat:steady|hb:asi8:skill:0']).toEqual(['arcana']);
+    });
+
+    it('clears them when another feat is picked', () => {
+      const { doc } = harness({ ...held }, [{ prompt: featPick, selected: ['drilled|hb'] }]);
+      fireEvent.click(screen.getByRole('button', { name: /change/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Drilled' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Steady' }));
+      fireEvent.click(confirmBtn());
+
+      expect(doc.choices[featPick.id]).toEqual(['steady|hb']);
+      expect(doc.choices['feat:drilled|hb:asi4:skill:0']).toBeUndefined();
+    });
+
+    it('keeps them when the feat is re-confirmed unchanged', () => {
+      const { doc } = harness({ ...held }, [{ prompt: featPick, selected: ['drilled|hb'] }]);
+      fireEvent.click(screen.getByRole('button', { name: /change/i }));
+      fireEvent.click(confirmBtn());
+
+      expect(doc.choices['feat:drilled|hb:asi4:skill:0']).toEqual(['stealth']);
+    });
   });
 });
 

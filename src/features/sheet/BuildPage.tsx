@@ -384,8 +384,8 @@ export function Component() {
         const i = d.classes.findIndex((c) => refUid(c.ref) === uid);
         const c = d.classes[i];
         if (c === undefined) return;
-        d.classes.splice(i, 1);
         pruneClass(d, c);
+        d.classes.splice(i, 1);
       },
       () => ({
         title: `Removed ${name}`,

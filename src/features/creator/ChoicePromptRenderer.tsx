@@ -70,7 +70,7 @@ export function ChoicePromptRenderer({
 }: ChoicePromptRendererProps) {
   const committed = canonicalize(prompt, value);
   const committedKey = committed.join(KEY_SEP);
-  const [selected, setSelected] = useState(committed);
+  const [draft, setSelected] = useState(committed);
   // Re-seed the draft if the stored value changes underneath this instance
   // (React's "adjust state during render" pattern, cheaper than an effect).
   const [seededFrom, setSeededFrom] = useState(committedKey);
@@ -78,6 +78,12 @@ export function ChoicePromptRenderer({
     setSeededFrom(committedKey);
     setSelected(committed);
   }
+  // A tap not yet confirmed lapses if another pick closes that option meanwhile.
+  // A saved pick stays, so it can still be seen and swapped out.
+  const selected = draft.filter(
+    (id) =>
+      committed.includes(id) || prompt.options.find((o) => o.id === id)?.disabled === undefined,
+  );
   const [filter, setFilter] = useState('');
   const searchable = prompt.options.length > 12;
 
@@ -312,6 +318,15 @@ export function ChoicePromptRenderer({
           })}
         </div>
       )}
+      {/* A list option says why it is closed in its row; a chip has no room, and a
+          `title` never shows on a phone. */}
+      {prompt.distinct === true &&
+        !detailed &&
+        [...new Set(options.flatMap((o) => o.disabled?.reason ?? []))].map((reason) => (
+          <p key={reason} className="text-caption text-ink-muted">
+            {reason}
+          </p>
+        ))}
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* aria-live so a screen reader hears staging progress; until Confirm
             this line is the only signal that anything happened. Stays mounted

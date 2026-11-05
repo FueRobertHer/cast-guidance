@@ -307,11 +307,16 @@ export interface ChoicePrompt {
     | 'feature'
     /** A spell the player picks (see `spellQuery`). */
     | 'spell'
+    /** Any mix of skills and tools, as Skilled asks for. */
+    | 'skillOrTool'
+    | 'damageType'
     | 'generic';
   label: string;
   count: number;
   /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
   allowRepeat?: boolean;
+  /** Whether an option another prompt of this kind has picked is closed (see `markHeldPicks`). */
+  distinct?: boolean;
   options: ChoiceOption[];
   /**
    * What a `spell` prompt may offer, when that takes the spell files to work out.
