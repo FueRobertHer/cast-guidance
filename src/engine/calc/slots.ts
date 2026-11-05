@@ -332,10 +332,22 @@ export function calcSpellcasting(
       : Array.isArray(cs.spellsKnownProgressionFixed)
         ? cs.spellsKnownProgressionFixed
         : undefined;
-    const spellsKnownMax =
+    const knownFromRow =
       knownRow !== undefined && !noLeveledYet
         ? num(knownRow[Math.min(entry.levels, 20) - 1])
         : undefined;
+    // The row already includes a class's own picks. One also on its list is counted
+    // there, as a character from before the picks may have it.
+    const onList = new Set((doc.spellcasting[refUid(entry.ref)]?.known ?? []).map(refUid));
+    const knownByPick = col.effects.filter(
+      (e) =>
+        e.kind === 'grantSpell' &&
+        e.countsAsKnown === true &&
+        e.origin.uid === refUid(entry.ref) &&
+        !onList.has(refUid(e.spell)),
+    ).length;
+    const spellsKnownMax =
+      knownFromRow !== undefined ? Math.max(0, knownFromRow - knownByPick) : undefined;
 
     const className = str(cls.name) ?? entry.ref.name;
     blocks.push({

@@ -260,6 +260,8 @@ export type EffectInput = { origin: EffectOrigin } & (
       usage?: string;
       /** Set when the grant is limited ("1/day"): the resource holding its uses. */
       resourceKey?: string;
+      /** It takes one of the places in its origin class's spells known. */
+      countsAsKnown?: boolean;
     }
   | { kind: 'note'; text: string }
 );

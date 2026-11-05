@@ -412,6 +412,195 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
   });
 });
 
+describe('deriveSheet: a chosen spell on a race or subclass', () => {
+  const pick = [{ known: { 1: { _: [{ choose: 'level=0|class=Testclass' }] } } }];
+  // The test world, with the entities at hand asking for a pick.
+  const pickCtx: typeof ctx = {
+    ...ctx,
+    get: (type, name, source) => {
+      const found = ctx.get(type, name, source);
+      if (found === undefined) return found;
+      if (type === 'class' && name === 'Warrior') return { ...found, spellcastingAbility: 'wis' };
+      if (type === 'race' || type === 'subclass') return { ...found, additionalSpells: pick };
+      return found;
+    },
+  };
+  const raceId = 'race:testfolk|tst:spell:u:0:known:1:0';
+  const subclassId = 'subclass:path of tests|tst:spell:u:0:known:1:0';
+  const asked = (doc: CharacterDoc) =>
+    deriveSheet(doc, pickCtx)
+      .pending.filter((p) => p.kind === 'spell')
+      .map((p) => p.id);
+
+  it('namespaces each pick by its owner, so one never answers the other', () => {
+    expect(asked(warriorDoc())).toEqual([raceId, subclassId]);
+  });
+
+  it('is the same pick whatever the character takes elsewhere or reaches', () => {
+    const doc = warriorDoc();
+    doc.background = undefined;
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.levels = 9;
+    entry.hp = Array(9).fill('avg');
+    expect(asked(doc)).toEqual([raceId, subclassId]);
+  });
+
+  it('carries each pick to the sheet, casting with what its owner casts with', () => {
+    const doc = warriorDoc();
+    doc.choices[raceId] = ['Fake Race Cantrip|TST'];
+    doc.choices[subclassId] = ['Fake Subclass Cantrip|TST'];
+    const sheet = deriveSheet(doc, pickCtx);
+    expect(sheet.pending.filter((p) => p.kind === 'spell')).toEqual([]);
+    expect(sheet.warnings.join()).not.toContain('choose a spell');
+    const byName = (name: string) => sheet.grantedSpells.find((g) => g.name === name);
+    expect(byName('Fake Race Cantrip')).toMatchObject({ origin: 'Testfolk', ability: undefined });
+    expect(byName('Fake Subclass Cantrip')).toMatchObject({
+      origin: 'Path of Tests',
+      ability: 'wis',
+    });
+  });
+
+  it('asks nothing of a character without the owner', () => {
+    const doc = warriorDoc();
+    doc.race = undefined;
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.subclass = undefined;
+    expect(asked(doc)).toEqual([]);
+  });
+});
+
+describe('deriveSheet: a spell a class or its subclass learns', () => {
+  const filter = { choose: 'level=0;1;2;3' };
+  const row = Array.from({ length: 20 }, (_, i) => i + 2);
+  const world: typeof ctx = {
+    ...ctx,
+    get: (type, name, source) => {
+      const found = ctx.get(type, name, source);
+      if (found === undefined) return found;
+      if (type === 'class' && name === 'Warrior') {
+        return {
+          ...found,
+          casterProgression: 'full',
+          spellcastingAbility: 'wis',
+          spellsKnownProgression: row,
+          additionalSpells: [{ name: 'Fake Secrets', known: { 3: [filter, filter], 7: [filter] } }],
+        };
+      }
+      if (type === 'class' && name === 'Mage') {
+        return {
+          ...found,
+          casterProgression: 'full',
+          spellcastingAbility: 'int',
+          spellsKnownProgression: row,
+        };
+      }
+      if (type === 'subclass') {
+        return { ...found, additionalSpells: [{ name: 'Fake More', known: { 4: [filter] } }] };
+      }
+      return found;
+    },
+  };
+  const base = 'class:warrior|tst:spell:b:fake secrets:0:known';
+  const classIds = [`${base}:3:0`, `${base}:3:1`];
+  const subclassId = 'subclass:path of tests|tst:spell:b:fake more:0:known:4:0';
+  const asked = (doc: CharacterDoc, using = world) =>
+    deriveSheet(doc, using)
+      .pending.filter((p) => p.kind === 'spell')
+      .map((p) => p.id);
+
+  it('asks for each pick the class has reached, with ids its level does not move', () => {
+    const doc = warriorDoc();
+    expect(asked(doc)).toEqual([...classIds, subclassId]);
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.levels = 9;
+    entry.hp = Array(9).fill('avg');
+    expect(asked(doc)).toEqual([...classIds, `${base}:7:0`, subclassId]);
+  });
+
+  it('gates by levels in the class, so levels elsewhere open nothing', () => {
+    const doc = warriorDoc();
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.levels = 2;
+    entry.hp = Array(2).fill('avg');
+    doc.classes.push({
+      ref: { name: 'Mage', source: 'TST' },
+      levels: 10,
+      hp: Array(10).fill('avg'),
+    });
+    expect(asked(doc).filter((id) => id.includes('warrior') || id.includes('path of'))).toEqual([]);
+  });
+
+  it('carries picks to the sheet, cast with the class, and only its own lower spells known', () => {
+    const doc = warriorDoc();
+    const before = deriveSheet(doc, world).spellcasting[0]?.spellsKnownMax;
+    expect(before).toBe(6);
+    doc.choices[classIds[0] ?? ''] = ['Fake One|TST'];
+    doc.choices[subclassId] = ['Fake Two|TST'];
+    const one = deriveSheet(doc, world);
+    expect(one.grantedSpells.filter((g) => /^Fake (One|Two)$/.test(g.name))).toMatchObject([
+      { name: 'Fake One', origin: 'Warrior', ability: 'wis', usage: 'prepared' },
+      { name: 'Fake Two', origin: 'Path of Tests', ability: 'wis', usage: 'prepared' },
+    ]);
+    expect(one.spellcasting[0]?.spellsKnownMax).toBe(5);
+    doc.choices[classIds[1] ?? ''] = ['Fake Three|TST'];
+    const reload = deriveSheet(JSON.parse(JSON.stringify(doc)) as CharacterDoc, world);
+    expect(reload.spellcasting[0]?.spellsKnownMax).toBe(4);
+    expect(reload.pending.filter((p) => p.kind === 'spell')).toEqual([]);
+  });
+
+  it('does not take a place twice for a pick already on the known list', () => {
+    const doc = warriorDoc();
+    doc.spellcasting['warrior|tst'] = {
+      known: [{ name: 'Fake One', source: 'TST' }],
+      prepared: [],
+    };
+    doc.choices[classIds[0] ?? ''] = ['Fake One|TST'];
+    doc.choices[classIds[1] ?? ''] = ['Fake Three|TST'];
+    expect(deriveSheet(doc, world).spellcasting[0]?.spellsKnownMax).toBe(5);
+  });
+
+  it('asks nothing for the parts of a class list that hold no pick', () => {
+    const lists: unknown[] = [
+      [{ ability: { choose: ['int', 'wis'] }, known: { 1: ['fake named'] } }],
+      [
+        { name: 'Fake Named', known: { 1: ['fake named'] } },
+        { name: 'Fake Picked', known: { 3: [filter] } },
+      ],
+    ];
+    for (const additionalSpells of lists) {
+      const using: typeof ctx = {
+        ...world,
+        get: (type, name, source) => {
+          const found = world.get(type, name, source);
+          if (type !== 'class' || name !== 'Warrior' || found === undefined) return found;
+          return { ...found, additionalSpells };
+        },
+      };
+      const asks = deriveSheet(warriorDoc(), using).pending.filter(
+        (p) => p.id.startsWith('class:warrior|tst:') && /:(branch|ability|spell):?/.test(p.id),
+      );
+      expect(asks.every((p) => p.kind === 'spell')).toBe(true);
+      expect(deriveSheet(warriorDoc(), using).grantedSpells.map((g) => g.name)).not.toContain(
+        'fake named',
+      );
+    }
+  });
+
+  it('leaves another class alone when only one has the picks', () => {
+    const doc = warriorDoc();
+    doc.classes.push({ ref: { name: 'Mage', source: 'TST' }, levels: 5, hp: Array(5).fill('avg') });
+    doc.choices[classIds[0] ?? ''] = ['Fake One|TST'];
+    const known = (uid: string) =>
+      deriveSheet(doc, world).spellcasting.find((b) => b.classUid === uid)?.spellsKnownMax;
+    expect(known('warrior|tst')).toBe(5);
+    expect(known('mage|tst')).toBe(6);
+  });
+});
+
 describe('deriveSheet — optional-feature prerequisites', () => {
   it('level-gates optional feature options and labels their prerequisites', () => {
     const doc = warriorDoc(); // Warrior 5

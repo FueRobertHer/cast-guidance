@@ -11,7 +11,7 @@ import {
   type EffectOrigin,
   refUid,
 } from '../types';
-import { collectAdditionalSpells } from './additionalSpells';
+import { collectAdditionalSpells, hasChosenSpell } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import { proseScanFeature } from './proseScan';
@@ -1075,6 +1075,24 @@ export function collectClasses(col: Collector): void {
       );
     }
 
+    // A spell a class or subclass gives casts with the class's ability by default.
+    const classAbility = str(cls.spellcastingAbility);
+    const spellAbility =
+      classAbility !== undefined && (ABILITIES as readonly string[]).includes(classAbility)
+        ? (classAbility as Ability)
+        : undefined;
+
+    // The class's own chosen spells (a 2014 Bard's Magical Secrets). An entry with
+    // none would only ask for a branch or an ability that then gives nothing.
+    collectAdditionalSpells(
+      col,
+      asEntityArray(cls.additionalSpells).filter((list) => hasChosenSpell([list])),
+      origin,
+      spellAbility,
+      `class:${classUid}`,
+      classLevel,
+    );
+
     // Subclass features
     if (entry.subclass !== undefined) {
       const sub = col.ctx.get('subclass', entry.subclass.name, entry.subclass.source);
@@ -1087,16 +1105,14 @@ export function collectClasses(col: Collector): void {
           type: 'subclass',
         };
         // Domain / oath / circle "always prepared" spells live on the subclass
-        // entity (not its features). Default their casting ability to the class's.
-        const subAbility = str(cls.spellcastingAbility);
+        // entity (not its features).
         collectAdditionalSpells(
           col,
           sub.additionalSpells,
           subOrigin,
-          subAbility !== undefined && (ABILITIES as readonly string[]).includes(subAbility)
-            ? (subAbility as Ability)
-            : undefined,
+          spellAbility,
           `subclass:${subOrigin.uid}`,
+          classLevel,
         );
         const subWalk: FeatureWalk = {
           ...classWalk,

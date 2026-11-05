@@ -33,6 +33,18 @@ describe('pruneChoicesFor', () => {
     expect(Object.keys(doc.choices)).toEqual(['race:elf|phbx:skill:0']);
   });
 
+  it('takes a chosen spell with the race or subclass that asked for it', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.choices = {
+      'race:elf|phb:spell:u:0:known:1:0': ['Fake One|HB'],
+      'subclass:lore|phb:spell:b:alpha:0:known:1:0': ['Fake Two|HB'],
+      'subrace:high|phb:spell:u:0:known:1:0': ['Fake Three|HB'],
+    };
+    pruneChoicesFor(doc, 'race', { name: 'Elf', source: 'PHB' });
+    pruneChoicesFor(doc, 'subclass', { name: 'Lore', source: 'PHB' });
+    expect(Object.keys(doc.choices)).toEqual(['subrace:high|phb:spell:u:0:known:1:0']);
+  });
+
   it('returns the keys it removed', () => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.choices = {
@@ -98,6 +110,20 @@ describe('pruneOrigin', () => {
 describe('pruneClass', () => {
   const mage = { ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg' as const] };
   const warrior = { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: [] };
+
+  it('takes a chosen spell with the class that asked for it', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    const ref = { name: 'Fake Bard', source: 'HB' };
+    doc.classes = [{ ref, levels: 10, hp: [] }];
+    doc.choices = {
+      'class:fake bard|hb:spell:b:fake secrets:0:known:10:0': ['Fake One|HB'],
+      'race:elf|phb:spell:u:0:known:1:0': ['Fake Two|HB'],
+    };
+    const [entry] = doc.classes;
+    if (entry === undefined) throw new Error('no class');
+    pruneClass(doc, entry);
+    expect(Object.keys(doc.choices)).toEqual(['race:elf|phb:spell:u:0:known:1:0']);
+  });
 
   it('takes the class, its subclass, its ASI feats and its spell list', () => {
     const doc = newCharacterDoc('c', 'H', 't');
