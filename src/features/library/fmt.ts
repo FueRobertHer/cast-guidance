@@ -1,5 +1,6 @@
 /** Tolerant display formatting for 5etools entity fields. */
 import type { Entity } from '@/data5e/copyMod';
+import { SPELL_SCHOOLS } from '@/engine/spellQuery';
 import { signed } from '@/lib/signed';
 
 export const DMG_TYPES: Record<string, string> = {
@@ -69,17 +70,7 @@ export function itemTypeName(type: unknown): string | undefined {
   return Object.hasOwn(ITEM_TYPES, code) ? ITEM_TYPES[code] : code;
 }
 
-export const SCHOOLS: Record<string, string> = {
-  A: 'Abjuration',
-  C: 'Conjuration',
-  D: 'Divination',
-  E: 'Enchantment',
-  V: 'Evocation',
-  I: 'Illusion',
-  N: 'Necromancy',
-  T: 'Transmutation',
-  P: 'Psionic',
-};
+export const SCHOOLS = SPELL_SCHOOLS;
 
 const ABILITIES: Record<string, string> = {
   str: 'Str',

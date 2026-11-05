@@ -11,7 +11,7 @@
 import { hasChosenSpell } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
 import { collectFeatEntity } from '../../engine/effects/feat';
-import { type ChoicePrompt, newCharacterDoc } from '../../engine/types';
+import { type CharacterDoc, type ChoicePrompt, newCharacterDoc } from '../../engine/types';
 import { CHOICE_WORDING } from './branches';
 import type { JudgeSet, JudgeSubject, JudgmentFile } from './judgments';
 import { type ByType, NO_DATA, readableEntries, textHash } from './proseSubjects';
@@ -80,22 +80,25 @@ export interface FeatChoiceSubject extends JudgeSubject {
   offered: string[];
   /** The kinds of pick those prompts take care of. Not in `state`, so free to change. */
   covers: Kind['id'][];
-  /** The data has the player choose a spell, which no prompt offers. Not in `state` either. */
+  /** The data has the player choose a spell. Not in `state` either. */
   choosesSpell: boolean;
 }
 
 /** How a prompt reads to someone who cannot see its options. */
 function describePrompt(prompt: ChoicePrompt, name: string): string {
   // A branch prompt's own label says "spell option", but its options are lists
-  // to pick from (a class's spells, an alignment), and no spell picker follows.
+  // to pick from (a class's spells, an alignment), and what follows is its own prompt.
   if (prompt.id.endsWith(':branch')) {
     return `one of ${prompt.options.map((option) => option.label).join(', ')}`;
   }
+  // One word for every spell pick. This is in `state`, so a label reworded for the
+  // player, or a list that differs by branch, must not re-key a feat's answers.
+  if (prompt.kind === 'spell') return 'spells';
   const lead = `${name}: `;
   return prompt.label.startsWith(lead) ? prompt.label.slice(lead.length) : prompt.label;
 }
 
-/** The kinds of pick a prompt takes care of. A branch is a list, so never a spell. */
+/** The kinds of pick a prompt takes care of. A branch is a list, so never a spell itself. */
 function kindsCovered(prompt: ChoicePrompt): Kind['id'][] {
   if (prompt.id.endsWith(':branch')) return ['pickClass', 'pickOther'];
   switch (prompt.kind) {
@@ -107,6 +110,8 @@ function kindsCovered(prompt: ChoicePrompt): Kind['id'][] {
     case 'ability':
     case 'abilityWeighted':
       return ['pickAbility'];
+    case 'spell':
+      return ['pickSpell'];
     default:
       // Languages, weapons and armor, and the resistance prompt, which is generic too.
       return prompt.label === 'Damage resistance' ? ['pickDamageType'] : ['pickOther'];
@@ -114,28 +119,38 @@ function kindsCovered(prompt: ChoicePrompt): Kind['id'][] {
 }
 
 /**
- * What the engine asks a player who takes this feat. A pick can lead to another
- * (a list of spells, then that list's spellcasting ability), and the collector
- * holds the next back until the first is answered, so each prompt is answered
- * with its first option and the feat collected again until nothing new appears.
- * Other options of a branch are not walked: the printings seen ask the same of
- * each.
+ * What the engine asks a player who takes this feat, at any level. A pick can lead
+ * to another (a list of spells, then that list's spellcasting ability), and the
+ * collector holds the next back until the first is answered, so each prompt is
+ * answered with its first option and the feat collected again until nothing new
+ * appears. Every option of a branch is walked: only some may lead to a spell pick.
  */
 function appPrompts(feat: Parameters<typeof collectFeatEntity>[1], name: string) {
-  const doc = newCharacterDoc('audit', 'audit', 'audit');
   const offered = new Set<string>();
   const covers = new Set<Kind['id']>();
-  for (;;) {
+  const walk = (choices: CharacterDoc['choices']) => {
+    const doc = newCharacterDoc('audit', 'audit', 'audit');
+    doc.classes = [{ ref: { name: 'audit', source: 'audit' }, levels: 20, hp: [] }];
+    doc.choices = choices;
     const col = new Collector(doc, NO_DATA);
     collectFeatEntity(col, feat, `${name}|${String(feat.source)}`.toLowerCase(), 'audit');
-    const fresh = col.pending.filter((prompt) => doc.choices[prompt.id] === undefined);
-    if (fresh.length === 0) return { offered: [...offered], covers: [...covers] };
+    const fresh = col.pending.filter((prompt) => choices[prompt.id] === undefined);
+    if (fresh.length === 0) return;
+    const answered = { ...choices };
     for (const prompt of fresh) {
       offered.add(describePrompt(prompt, name));
       for (const kind of kindsCovered(prompt)) covers.add(kind);
-      doc.choices[prompt.id] = prompt.options[0]?.id ?? '';
+      answered[prompt.id] = prompt.options[0]?.id ?? '';
     }
-  }
+    const branch = fresh.find((prompt) => prompt.id.endsWith(':branch'));
+    if (branch === undefined) {
+      walk(answered);
+      return;
+    }
+    for (const option of branch.options) walk({ ...answered, [branch.id]: option.id });
+  };
+  walk({});
+  return { offered: [...offered], covers: [...covers] };
 }
 
 /**
@@ -205,12 +220,13 @@ function maybes(row: Row): string[] {
  * feats FUTURE_WORK.md names on the right side, so they decide when it is sure of
  * any, and `beyondOffered` only speaks for a feat with no confident kind. An unsure
  * kind cannot decide either (it was as high on feats with no such pick), so it is
- * shown on the row for a reader to judge.
+ * shown on the row for a reader to judge. A chosen spell the data names needs no
+ * answer at all: past `needed`, a prompt covers it.
  */
 function verdict(row: Row): Verdict {
-  const { answers } = row;
+  const { answers, subject } = row;
   if (needed(row).length > 0) return 'backlog';
-  if (KINDS.some((k) => saysYes(answers, k.id))) return 'offered';
+  if (subject.choosesSpell || KINDS.some((k) => saysYes(answers, k.id))) return 'offered';
   if (saysYes(answers, 'beyondOffered')) return 'backlog';
   if (saysYes(answers, 'pickOnTaking') && saysNo(answers, 'beyondOffered')) return 'offered';
   // Neither of these may hide an unsure "there is a pick beyond what's offered".
