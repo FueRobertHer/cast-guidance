@@ -154,6 +154,7 @@ test.describe('touch target sizes', () => {
     );
     await expectTargets(button(page, 'Condition'), 1);
     await expectTargets(button(page, /^(Damage|Heal) [15] hit points?$/), 4);
+    await expectTargets(button(page, /^(Damage|Heal)$/), 2);
     await expectTargets(button(page, /^(Spend|Restore) [15] Sorcery Points$/), 4);
     // 15 caster levels: 4, 3, 3, 3, 2, 1, 1 and 1 slots.
     await expectTargets(button(page, /^Level \d slot \d$/), 18, PIP);
@@ -174,15 +175,26 @@ test.describe('touch target sizes', () => {
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();
 
-    // At 0 HP the death saves appear under the HP card.
+    // The HP sheet, opened from the number: its quick amounts and its keypad,
+    // then enough damage to reach 0, where the death saves appear under the
+    // HP card.
     await page
       .getByRole('button', { name: /hit points$/ })
       .filter({ hasText: '/' })
       .click();
-    const setHp = page.getByRole('dialog', { name: 'Set current HP' });
-    await setHp.getByRole('textbox').fill('0');
-    await setHp.getByRole('button', { name: 'OK' }).click();
-    await expect(setHp).toBeHidden();
+    const hpSheet = page.getByRole('dialog', { name: 'Hit points' });
+    await expect(hpSheet).toBeVisible();
+    await animationsSettled(page);
+    await expectTargets(
+      hpSheet.getByRole('group', { name: 'Quick amounts' }).getByRole('button'),
+      4,
+    );
+    const keypad = hpSheet.getByRole('group', { name: 'Keypad' });
+    await expectTargets(keypad.getByRole('button'), 12);
+    await expectFloor(page);
+    for (let i = 0; i < 3; i++) await keypad.getByRole('button', { name: '9' }).click();
+    await hpSheet.getByRole('button', { name: 'Take 999 damage' }).click();
+    await expect(hpSheet).toBeHidden();
     await animationsSettled(page);
     await expectTargets(button(page, /^Death save (success|fail) [123]$/), 6);
     await expectFloor(page);

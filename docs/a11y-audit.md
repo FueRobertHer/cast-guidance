@@ -34,7 +34,7 @@ dice tray's Roll button. With the strip hidden, that revert fails `dice-tray`.
 |---|---|
 | Roster | `roster-empty` (with the getting-started checklist), `roster`, `roster-new-character` (New character's sheet: the guided wizard or a blank sheet), `roster-actions` (the actions sheet), `rename-dialog`, `delete-confirm`, `character-import-preview` (a character file's preview, before anything is written) |
 | Character sheet | `sheet-play`, `sheet-play-hp-tip` (the HP card's one-time tip, before it is dismissed), `sheet-stats`, `sheet-spells`, `sheet-items`, `sheet-features`, `sheet-build`, `sheet-spells-caster` (a caster's spell list, two classes and a known spell), `sheet-header-edit-count` (the header's Edit with a count of choices to make), `sheet-header-menu` (the header's overflow menu open: History, Export, Delete), `sheet-conditions` (the condition strip under the header with Poisoned and a level of exhaustion), `sheet-conditions-effects-off` (the strip with Poisoned switched off), `sheet-play-condition-cues` (the caster's Play under Poisoned, Prone and Restrained: the initiative, attack and spell attack cues with one Ignore once pressed, attacks against the character, and speed 0), `sheet-stats-condition-cues` (the same character's Stats: the check and save cues), `build-feature-choice` (Build with a Cleric 7's Blessed Strikes still to pick: the option cards, each with its info button) |
-| Sheet overlays | `dice-tray`, `dice-tray-roll-cue` (the tray's latest rolls, under its dice, with a roll a condition changed and its cue), `dice-tray-history` (the tray opened from the roll toast on History: every roll, each with its remove button, and clear all), `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `feature-option-info-sheet` (a pick-one feature's branch, its rules text, from its option card on Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `condition-picker` (the strip's add chip's sheet: every condition's toggle and the exhaustion stepper), `condition-info-sheet` (a condition's rules, what it does to rolls and its "Apply its effects" switch, from its chip), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
+| Sheet overlays | `hp-sheet` (the HP sheet on Damage, with an amount keyed and its confirm ready), `dice-tray`, `dice-tray-roll-cue` (the tray's latest rolls, under its dice, with a roll a condition changed and its cue), `dice-tray-history` (the tray opened from the roll toast on History: every roll, each with its remove button, and clear all), `history-drawer`, `breakdown-sheet` (a number's breakdown), `entity-info-sheet` (an option's full description, from Build), `feature-option-info-sheet` (a pick-one feature's branch, its rules text, from its option card on Build), `spell-info-sheet` (a spell's rules text, from a caster's Play tab), `condition-picker` (the strip's add chip's sheet: every condition's toggle and the exhaustion stepper), `condition-info-sheet` (a condition's rules, what it does to rolls and its "Apply its effects" switch, from its chip), `spell-pack-problem` (the same sheet with the spell files failed to download: its panel, the alert inside the modal) |
 | Library | `library`, `library-spells` (a virtualized list), `library-detail`, `library-search` |
 | Homebrew | `homebrew-empty`, `homebrew-import-preview` (a homebrew file's preview), `homebrew` (one imported file), `homebrew-remove-confirm`, `text-prompt` (the collection name prompt), `homebrew-builder`, `homebrew-builder-unknown` |
 | Other routes | `settings`, `settings-storage-details` (Settings opened from the checklist's Storage details link, the disclosure open), `creator` (step 1), `not-found` |
@@ -73,7 +73,8 @@ measures the boxes the browser lays out, on the suite's phone. It measures
 the element's own box, as axe's `target-size` rule does, so a hit area drawn
 by a pseudo-element would not count. Two checks:
 
-- **Inventoried controls, 44 by 44:** the HP steppers, the condition strip's
+- **Inventoried controls, 44 by 44:** the HP steppers, the HP card's Damage and
+  Heal, the HP sheet's quick amounts and keypad, the condition strip's
   chips (name and remove) and add chip, the picker's condition toggles and
   exhaustion stepper, the point-pool steppers, the death saves, Build's level and ability steppers,
   the creator's ability steppers, the sheet's and the creator's back links,
@@ -91,8 +92,8 @@ by a pseudo-element would not count. Two checks:
 States: the Play tab of a caster (Sorcerer 13 and Cleric 2, from homebrew
 the character file carries, since the suite's data release has no caster:
 spell slots, a sorcery-point stepper, Channel Divinity pips, a level of
-exhaustion, so a chip on the condition strip), the condition picker open
-over it, the same at 0 HP (the death saves), Build with every section
+exhaustion, so a chip on the condition strip), the condition picker and
+the HP sheet open over it, the same at 0 HP (the death saves), Build with every section
 and picker open, Homebrew with one file of your own, and the creator's
 abilities step on point buy. Not measured yet: spell rows on Play (the
 caster knows no spells), the Stats, Spells, Items and Features tabs, the
@@ -119,8 +120,9 @@ runs on every scanned state.
 (no touch, the app nav and the sheet's tabs in a side rail):
 
 - **Dialogs and drawers:** the roster's New character sheet, its actions sheet, Rename, the Delete
-  confirm, the character import preview, the homebrew import preview, the dice
-  tray, the history drawer (opened from the sheet header's overflow menu, so
+  confirm, the character import preview, the homebrew import preview, the HP
+  sheet (from Damage, Heal, the Temp HP chip and the number, with focus back on
+  whichever opened it), the dice tray, the history drawer (opened from the sheet header's overflow menu, so
   focus comes back to the menu button), the long rest confirm, a number's breakdown (STR),
   an entity's info sheet (Fighter, a sheet deferred until first used),
   Add item (whose focus must land on its search box), the condition picker

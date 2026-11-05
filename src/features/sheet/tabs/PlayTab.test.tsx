@@ -34,12 +34,10 @@ vi.mock('@/data5e/hooks', () => ({
 // lets a test answer the prompt.
 const dialogs = vi.hoisted(() => ({
   askChoice: vi.fn<(req: ChoiceRequest) => Promise<string | null>>(),
-  askNumber: vi.fn<() => Promise<number | null>>(() => Promise.resolve(null)),
 }));
 vi.mock('@/ui/dialogs', () => ({
   askChoice: dialogs.askChoice,
   askConfirm: () => Promise.resolve(false),
-  askNumber: dialogs.askNumber,
   askText: () => Promise.resolve(null),
 }));
 
@@ -605,7 +603,6 @@ describe('PlayTab hit point announcements (A11Y-002)', () => {
   afterEach(() => {
     resetAnnouncer();
     vi.useRealTimers();
-    dialogs.askNumber.mockReset().mockResolvedValue(null);
   });
 
   it('says a burst of damage taps once, with where it ended', () => {
@@ -637,14 +634,20 @@ describe('PlayTab hit point announcements (A11Y-002)', () => {
     expect(getAnnouncerState().emitted).toBe(0);
   });
 
-  it('says an exact value typed into the HP dialog', async () => {
+  it('says where an exact amount from the HP sheet left it', async () => {
     resetAnnouncer();
-    dialogs.askNumber.mockResolvedValueOnce(7);
-    const { sheet, getDoc } = renderPlay();
-    const max = sheet.maxHp.value;
+    const { sheet: derived, getDoc } = renderPlay();
+    const max = derived.maxHp.value;
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`/ ${max}\\s*hit points`) }));
-    await waitFor(() => expect(getDoc().play.currentHp).toBe(7));
-    await waitFor(() => expect(spoken()).toEqual([`7 of ${max} hit points`]), {
+    const sheet = await screen.findByRole('dialog', { name: 'Hit points' });
+    fireEvent.click(
+      within(within(sheet).getByRole('group', { name: 'Keypad' })).getByRole('button', {
+        name: '7',
+      }),
+    );
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Take 7 damage' }));
+    expect(getDoc().play.currentHp).toBe(max - 7);
+    await waitFor(() => expect(spoken()).toEqual([`${max - 7} of ${max} hit points`]), {
       timeout: HP_SETTLE_MS + 1000,
     });
   });

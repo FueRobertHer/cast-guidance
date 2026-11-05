@@ -61,7 +61,6 @@ const dialogs = vi.hoisted(() => ({
 vi.mock('@/ui/dialogs', () => ({
   askConfirm: dialogs.askConfirm,
   askChoice: () => Promise.resolve(null),
-  askNumber: () => Promise.resolve(null),
   askText: () => Promise.resolve(null),
 }));
 

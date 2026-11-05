@@ -21,15 +21,6 @@ type DialogRequest =
       resolve: (v: string | null) => void;
     }
   | {
-      kind: 'number';
-      title: string;
-      initial?: number;
-      min?: number;
-      max?: number;
-      hint?: string;
-      resolve: (v: number | null) => void;
-    }
-  | {
       kind: 'confirm';
       title: string;
       detail?: string;
@@ -72,16 +63,6 @@ export function askText(opts: {
   return new Promise((resolve) => open({ kind: 'text', ...opts, resolve }));
 }
 
-export function askNumber(opts: {
-  title: string;
-  initial?: number;
-  min?: number;
-  max?: number;
-  hint?: string;
-}): Promise<number | null> {
-  return new Promise((resolve) => open({ kind: 'number', ...opts, resolve }));
-}
-
 export function askConfirm(opts: {
   title: string;
   detail?: string;
@@ -105,10 +86,8 @@ export function askChoice(opts: {
   return new Promise((resolve) => open({ kind: 'choice', ...opts, resolve }));
 }
 
-function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'number' }> }) {
-  const [draft, setDraft] = useState(
-    req.kind === 'number' ? String(req.initial ?? '') : (req.initial ?? ''),
-  );
+function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' }> }) {
+  const [draft, setDraft] = useState(req.initial ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     // Focus after the drawer's open animation so the keyboard doesn't fight it.
@@ -120,14 +99,7 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
   }, []);
 
   const submit = () => {
-    if (req.kind === 'number') {
-      const n = Number.parseInt(draft, 10);
-      if (Number.isNaN(n)) return;
-      const clamped = Math.max(req.min ?? -Infinity, Math.min(req.max ?? Infinity, n));
-      req.resolve(clamped);
-    } else {
-      req.resolve(draft);
-    }
+    req.resolve(draft);
     close();
   };
 
@@ -141,11 +113,10 @@ function InputForm({ req }: { req: Extract<DialogRequest, { kind: 'text' | 'numb
     >
       <input
         ref={inputRef}
-        inputMode={req.kind === 'number' ? 'numeric' : undefined}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         aria-label={req.title}
-        placeholder={req.kind === 'text' ? req.placeholder : undefined}
+        placeholder={req.placeholder}
         className={`${fieldClass} min-w-0 flex-1`}
       />
       <Button type="submit" variant="brand" className="min-h-12">
@@ -226,12 +197,7 @@ export function DialogHost() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {req.kind === 'number' && req.hint !== undefined && (
-            <p className="text-caption text-ink-muted">{req.hint}</p>
-          )}
-          <InputForm key={req.title} req={req} />
-        </div>
+        <InputForm key={req.title} req={req} />
       )}
     </DialogFrame>
   );

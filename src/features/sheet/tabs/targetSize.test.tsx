@@ -33,7 +33,6 @@ vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }))
 vi.mock('@/ui/dialogs', () => ({
   askChoice: () => Promise.resolve(null),
   askConfirm: () => Promise.resolve(false),
-  askNumber: () => Promise.resolve(null),
   askText: () => Promise.resolve(null),
 }));
 
