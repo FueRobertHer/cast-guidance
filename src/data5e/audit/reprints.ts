@@ -28,7 +28,7 @@
  */
 import type { Entity } from '../copyMod';
 import { plainEntryText } from '../entries/plainText';
-import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../normalize';
+import type { EntityRegistry, EntityType } from '../normalize';
 import { editionOf, reprintTargets } from '../rulesVersion';
 import { answersFor, type JudgeSet, type JudgeSubject, type JudgmentFile } from './judgments';
 import { CONFIDENT_NO, CONFIDENT_YES } from './proseChecks';
@@ -96,14 +96,12 @@ export const REPRINT_SET: JudgeSet = {
 /**
  * Tagged text as a rules reader needs it. `plainEntryText` shows a tag by its
  * display text, but keeps a scaling tag's base roll where the page shows its
- * per-step add (`{@scaledamage 8d6|3-9|1d6}` reads as "1d6"), and a bare number
- * for a DC. A comparison of rules turns on exactly those numbers.
+ * per-step add (`{@scaledamage 8d6|3-9|1d6}` reads as "1d6"). A comparison of
+ * rules turns on exactly that number.
  */
 function rulesText(text: string): string {
   return plainEntryText(
-    text
-      .replaceAll(/\{@scale(?:damage|dice) [^|}]*\|[^|}]*\|([^|}]*)[^}]*\}/g, '$1')
-      .replaceAll(/\{@dc (\d+)[^}]*\}/g, 'DC $1'),
+    text.replaceAll(/\{@scale(?:damage|dice) [^|}]*\|[^|}]*\|([^|}]*)[^}]*\}/g, '$1'),
   );
 }
 
@@ -357,29 +355,8 @@ type Registry = Pick<EntityRegistry, 'byType' | 'get'>;
 
 const uid = (e: Entity) => `${String(e.name)}|${String(e.source)}`.toLowerCase();
 
-/**
- * Books with anything marked `edition: "one"`. `editionOf` reads an unmarked
- * entity as 2014 unless its source is a core 2024 book, but 5etools marks only
- * part of a later 2024-rules book: 26 of FRHoF's entities and not its other 80.
- * No book in v2.39.1 carries both `one` and `classic`, so one mark speaks for
- * the book's unmarked entities. An entity's own mark always wins.
- */
-function sources2024(registry: Registry): Set<string> {
-  const out = new Set<string>();
-  for (const type of ENTITY_TYPES) {
-    for (const e of registry.byType(type)) {
-      if (e.edition === 'one' && typeof e.source === 'string') out.add(e.source);
-    }
-  }
-  return out;
-}
-
 /** Every link from a 2014-rules printing to a 2024-rules one, in registry order. */
 export function reprintPairs(registry: Registry): FoundReprints {
-  const books2024 = sources2024(registry);
-  const rules2024 = (e: Entity) =>
-    editionOf(e) === '2024' || (e.edition !== 'classic' && books2024.has(String(e.source)));
-
   const featuresByClass = new Map<string, Entity[]>();
   for (const f of registry.byType('classFeature')) {
     const owner = `${String(f.className)}|${String(f.classSource)}`.toLowerCase();
@@ -398,7 +375,7 @@ export function reprintPairs(registry: Registry): FoundReprints {
           found.skipped.targetNotFound++;
           continue;
         }
-        if (rules2024(from) || !rules2024(to)) {
+        if (editionOf(from) === '2024' || editionOf(to) !== '2024') {
           found.skipped.notAcrossEditions++;
           continue;
         }

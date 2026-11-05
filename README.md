@@ -78,7 +78,7 @@ components, duration and concentration, and settles prose that reads the same.
 What is left is the `reprint@1` set: `bun run data:judge -- --set reprint` asks
 Jev whether the two texts describe the same rules, whether only the wording
 differs, whether a number changed, and whether it is a different feature. It
-runs only when named, because it is the largest set and no check rests on it;
+runs only when named, because asking it is costly and no check rests on it;
 `--dry-run` prints the pair counts, a token estimate and a sample request. Each
 pair gets one label: same, wording only, changed, different, or uncertain when
 the answers fall short of the thresholds in `proseChecks.ts`, contradict each

@@ -7,8 +7,8 @@
  *   - `branch`: for every multi-name `additionalSpells` block whose prose
  *     never says "choose", whether it is a choice or a grant of everything;
  *   - `reprint`: for every 2014/2024 reprint pair whose prose differs, whether
- *     only the wording changed. Only when asked for by name: it is the largest
- *     set, and no check in the audit rests on it.
+ *     only the wording changed. Only when asked for by name: it is costly to
+ *     ask, and no check in the audit rests on it.
  *
  * Three one-off scoping sets answer "what is there to do?" for a piece of
  * FUTURE_WORK.md instead. No check reads them, and they are only asked when
