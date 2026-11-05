@@ -124,6 +124,8 @@ describe('design token contrast, both themes (DS-001)', () => {
         ['on-danger', 'danger-fill'],
         // The danger banner's main action: the fill's red on a white button.
         ['danger-fill', 'on-danger'],
+        // A spell's concentration mark while it is being concentrated on.
+        ['surface', 'arcane'],
         // A snackbar, and a pressed chip or segment: the theme inverted.
         ['bg', 'ink'],
       ]),

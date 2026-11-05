@@ -9,6 +9,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import {
+  chooseSpells,
   HARNESS_TIMEOUT,
   notice,
   renderSheet,
@@ -106,6 +107,7 @@ describe('a homebrew edit on a character that uses it (TEST-003)', () => {
     expect(screen.queryByRole('button', { name: '2d6' })).toBeNull();
 
     await sheet.tab('Spells');
+    await chooseSpells();
     expect(screen.getByRole('button', { name: 'Learn Glow Ward' })).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Learn Ember Lance' }).getAttribute('aria-pressed'),

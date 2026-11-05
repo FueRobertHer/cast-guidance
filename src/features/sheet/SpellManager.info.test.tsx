@@ -5,6 +5,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  chooseSpells,
   HARNESS_TIMEOUT,
   renderSheet,
   resetSheetHarness,
@@ -30,6 +31,7 @@ describe('a spell on the Spells tab', () => {
       path: 'spells',
       lists: { 'Guidance|TST': ['Sorcerer'] },
     });
+    await chooseSpells();
 
     fireEvent.click(screen.getByRole('button', { name: 'Guidance' }));
     const dialog = await screen.findByRole('dialog', { name: 'Guidance' });

@@ -16,9 +16,38 @@ import {
   needsCastChoice,
 } from './castResources';
 
+/** What the chooser needs to word its options for one spell. */
+export interface CastChoiceContext {
+  spellName: string;
+  options: readonly CastResource[];
+  block: SpellcastingBlock;
+  play: PlayState;
+  pools: readonly DerivedResource[];
+  spell: Entity | undefined;
+  spellLevel: number;
+  characterLevel: number;
+  rulesVersion: RulesVersion;
+  classes: readonly ClassLevelEntry[];
+}
+
+/** Asks which of `options` to spend; null when the player backs out. */
+export async function askCastResource({
+  spellName,
+  options,
+  ...rest
+}: CastChoiceContext): Promise<CastResource | null> {
+  const picked = await askChoice({
+    title: `Cast ${spellName}`,
+    detail: 'Choose which slot or pool to spend. A higher level upcasts the spell.',
+    options: castResourceOptions(options, rest),
+  });
+  if (picked === null) return null;
+  return options.find((o) => castResourceId(o) === picked) ?? null;
+}
+
 /**
- * The Play tab's choose-then-roll control (GAME-001). Play-tab casts fire from
- * a roll chip, so the slot has to be settled *before* the dice are rolled: the
+ * The choose-then-roll control (GAME-001). A spell that rolls is cast from its
+ * roll chip, so the slot has to be settled *before* the dice are rolled: the
  * roll's own dice scale with it. This chip names the resource the next cast
  * will spend and opens the chooser to change it, which leaves the roll chip
  * next to it to do nothing but roll.
@@ -29,52 +58,19 @@ import {
  * tap on the roll chip quietly empty a pool the player was saving.
  */
 export function CastResourcePicker({
-  spellName,
   resource,
-  options,
-  block,
-  play,
-  pools,
-  spell,
-  spellLevel,
-  characterLevel,
-  rulesVersion,
-  classes,
   onPick,
-}: {
-  spellName: string;
+  ...context
+}: CastChoiceContext & {
   /** What the next cast spends today: the player's pick, or the automatic one. */
   resource: CastResource;
-  options: readonly CastResource[];
-  block: SpellcastingBlock;
-  play: PlayState;
-  pools: readonly DerivedResource[];
-  spell: Entity | undefined;
-  spellLevel: number;
-  characterLevel: number;
-  rulesVersion: RulesVersion;
-  classes: readonly ClassLevelEntry[];
   onPick: (resource: CastResource) => void;
 }) {
+  const { spellName, options } = context;
   if (!needsCastChoice(options)) return null;
   const choose = async () => {
-    const picked = await askChoice({
-      title: `Cast ${spellName}`,
-      detail: 'Choose which slot or pool to spend. A higher level upcasts the spell.',
-      options: castResourceOptions(options, {
-        block,
-        play,
-        pools,
-        spell,
-        spellLevel,
-        characterLevel,
-        rulesVersion,
-        classes,
-      }),
-    });
-    if (picked === null) return;
-    const chosen = options.find((o) => castResourceId(o) === picked);
-    if (chosen !== undefined) onPick(chosen);
+    const chosen = await askCastResource(context);
+    if (chosen !== null) onPick(chosen);
   };
   return (
     <button

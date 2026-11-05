@@ -9,6 +9,7 @@ import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
 import {
+  chooseSpells,
   classEntry,
   dialog,
   dismiss,
@@ -140,6 +141,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
     const doc = sorcerer();
     doc.spellcasting['sorcerer|tst']?.known.push({ name: 'Guidance', source: 'TST' });
     const sheet = await renderSheet(doc, { extra: WORLD, lists: LISTS, path: 'spells' });
+    await chooseSpells();
     const rows = () =>
       screen.getAllByRole('button', { name: 'Learn Guidance' }).map((b) => ({
         source: badgeBeside(b),
@@ -149,6 +151,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
 
     await switchTo(sheet, '2024');
     await sheet.tab('Spells');
+    await chooseSpells();
     // The 2024 printing is what the list offers now. The 2014 one the
     // character knows stays listed, so it can still be seen and unlearned.
     expect(rows()).toEqual([
@@ -168,6 +171,7 @@ describe('a rules switch on an open sheet (TEST-003)', () => {
 
     await switchTo(sheet, '2014', { expectPrompt: false });
     await sheet.tab('Spells');
+    await chooseSpells();
     expect(rows()).toEqual([{ source: 'TST', known: false }]);
   });
 

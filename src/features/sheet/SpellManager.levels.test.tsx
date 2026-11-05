@@ -7,6 +7,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
 import {
+  chooseSpells,
   classEntry,
   HARNESS_TIMEOUT,
   renderSheet,
@@ -54,6 +55,7 @@ function freshSorcerer(level: number) {
 describe('spell levels on the Spells tab', () => {
   it('holds back the levels a class cannot learn yet, behind one offer both ways', async () => {
     await renderSheet(freshSorcerer(1), { path: 'spells', lists: LISTS });
+    await chooseSpells();
     expect(levels('Sorcerer')).toEqual({ Cantrips: '1 available', 'Level 1': '1 available' });
     expect(screen.queryByRole('button', { name: 'Learn Aid' })).toBeNull();
 
@@ -74,6 +76,7 @@ describe('spell levels on the Spells tab', () => {
 
   it('shows a level once the class reaches it', async () => {
     await renderSheet(freshSorcerer(3), { path: 'spells', lists: LISTS });
+    await chooseSpells();
     expect(levels('Sorcerer')['Level 2']).toBe('1 available');
     expect(
       screen.getByRole('button', {
@@ -88,6 +91,7 @@ describe('spell levels on the Spells tab', () => {
       'sorcerer|tst': { known: [{ name: 'Aid', source: 'TST' }], prepared: [] },
     };
     await renderSheet(doc, { path: 'spells', lists: LISTS });
+    await chooseSpells();
 
     // Only the pick shows at its level, so the caption counts no "available".
     expect(levels('Sorcerer')['Level 2']).toBe('Unlocks at Sorcerer 3 · 1 known');
@@ -111,6 +115,7 @@ describe('spell levels on the Spells tab', () => {
 
   it('searches every level, since a typed name is already a choice', async () => {
     await renderSheet(freshSorcerer(1), { path: 'spells', lists: LISTS });
+    await chooseSpells();
     fireEvent.change(screen.getByRole('textbox', { name: 'Search Sorcerer spell list' }), {
       target: { value: 'flame' },
     });
@@ -134,6 +139,7 @@ describe('spell levels on the Spells tab', () => {
       extra: { class: [vowkeeper] },
       lists: { 'Searing Bolt|TST': ['Vowkeeper'] },
     });
+    await chooseSpells();
     expect(screen.getByText('Vowkeeper spells start at Vowkeeper 2.')).toBeTruthy();
     // No "prepared 0/3" for a class that cannot prepare anything yet.
     expect(spellBlock('Vowkeeper').counters).not.toMatch(/prepared/);
@@ -156,6 +162,7 @@ describe('spell levels on the Spells tab', () => {
         'Guidance|TST': ['Warrior'],
       },
     });
+    await chooseSpells();
     expect(spellBlock('Spell Knight').mode).toBe('Known');
     // Its own list, not the Warrior's or another class's.
     expect(screen.getByRole('button', { name: 'Learn Searing Bolt' })).toBeTruthy();
@@ -165,6 +172,7 @@ describe('spell levels on the Spells tab', () => {
 
   it('sends focus to the class heading when the offer goes with nothing left to hide', async () => {
     await renderSheet(freshSorcerer(1), { path: 'spells', lists: LISTS });
+    await chooseSpells();
     const offer = screen.getByRole('button', { name: /Show them anyway$/ });
     fireEvent.click(offer);
     for (const name of ['Aid', 'Flame Strike']) {

@@ -138,8 +138,24 @@ describe('castSpell resource override (GAME-001)', () => {
       { kind: 'slot', level: 2 },
     );
     expect(doc.play.slotsSpent[1]).toBe(1);
-    expect(doc.play.concentratingOn).toEqual({ label: 'Bless' });
+    expect(doc.play.concentratingOn).toEqual({ label: 'Bless', level: 2 });
     expect(doc.play.turn?.action).toBe(true);
+  });
+
+  it('remembers no slot for a concentration spell that spent none', () => {
+    const cast = (level: number, resource?: Parameters<typeof castSpell>[4]) => {
+      const doc = { play: emptyPlayState() } as CharacterDoc;
+      castSpell(
+        (recipe) => recipe(doc),
+        block({ slots: [1] }),
+        level,
+        { name: 'Hum', source: 'phb', concentration: true },
+        resource,
+      );
+      return doc.play.concentratingOn;
+    };
+    expect(cast(0)).toEqual({ label: 'Hum' });
+    expect(cast(1, { kind: 'none', level: 1 })).toEqual({ label: 'Hum' });
   });
 
   it('spends the pact pool when the pact resource is chosen', () => {

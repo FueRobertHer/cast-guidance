@@ -81,7 +81,8 @@ export interface PlayState {
    */
   conditions: Array<{ id: string; level?: number; ignored?: boolean }>;
   deathSaves: { success: number; fail: number };
-  concentratingOn?: { label: string };
+  /** `level` is the slot a cast spent, which its dice on later turns scale with. */
+  concentratingOn?: { label: string; level?: number };
   /** keyed to derived resources (rage, ki, …) */
   resources: Array<{ key: string; used: number }>;
   inspiration: boolean;

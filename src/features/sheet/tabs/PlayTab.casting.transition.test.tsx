@@ -7,6 +7,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataEntity } from '@/engine/types';
+import { rollLogStore } from '@/stores/rollLog';
 import {
   classEntry,
   concentratingOn,
@@ -154,6 +155,38 @@ describe('casting from the Play tab (TEST-003)', () => {
     expect((await sheet.saved()).play.slotsSpent.every((n) => n === 0)).toBe(true);
   });
 
+  it('rolls a running concentration spell at its cast slot, spending nothing more', async () => {
+    const shaft: DataEntity = {
+      name: 'Moon Shaft',
+      source: 'TST',
+      level: 2,
+      school: 'V',
+      time: [{ number: 1, unit: 'action' }],
+      duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: true }],
+      entries: ['A beam deals {@damage 2d10} radiant damage.'],
+      entriesHigherLevel: [
+        { entries: ['The damage increases by {@scaledamage 2d10|2-9|1d10} per slot above 2nd.'] },
+      ],
+    };
+    const doc = sorcerer();
+    doc.spellcasting = { 'sorcerer|tst': { known: [ref('Moon Shaft')], prepared: [] } };
+    await renderSheet(doc, { extra: { spell: [shaft] } });
+    press('Moon Shaft: casting with Level 2 slot. Change');
+    await (await dialog('Cast Moon Shaft')).press(/^Level 3 slot \(upcast\)/);
+
+    press('3d10');
+    expect(left('Level 3 slot')).toBe(1);
+    expect(concentratingOn()).toBe('Moon Shaft');
+
+    // Its next turn: the same dice, and every slot where it was. The chip is
+    // still showing its total, so it is found by what it rolls.
+    fireEvent.click(screen.getByTitle('Moon Shaft radiant damage'));
+    expect(rollLogStore.getState().rolls.map((r) => r.expr)).toEqual(['3d10', '3d10']);
+    expect(left('Level 3 slot')).toBe(1);
+    expect(left('Level 2 slot')).toBe(3);
+    expect(screen.queryByRole('button', { name: /^Moon Shaft: casting with/ })).toBeNull();
+  });
+
   it('replaces one concentration spell with the next', async () => {
     const doc = sorcerer();
     doc.spellcasting['sorcerer|tst']?.known.push(ref('Steady Gaze'), ref('Warding Hum'));
@@ -167,7 +200,10 @@ describe('casting from the Play tab (TEST-003)', () => {
 
     expect(concentratingOn()).toBe('Warding Hum');
     expect(left('Level 1 slot')).toBe(2);
-    expect((await sheet.saved()).play.concentratingOn).toEqual({ label: 'Warding Hum' });
+    expect((await sheet.saved()).play.concentratingOn).toEqual({
+      label: 'Warding Hum',
+      level: 1,
+    });
   });
 });
 
