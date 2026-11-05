@@ -173,12 +173,13 @@ describe('analyzeDataset with saved judgments', () => {
   const [steady] = proseSubjects(reg).filter((s) => s.name === 'Steady Hands');
   const [knight] = branchSubjects(reg);
   const ids = PROSE_SET.questions.map((q) => q.id);
+  const sureOf = new Set(['limitedUses', 'usesProficiency', 'reaction']);
   const judgments: JudgmentFile = {
     sets: { [setTag(PROSE_SET)]: ids, [setTag(BRANCH_SET)]: ['choice'] },
     judgments: {
       [judgmentKey(PROSE_SET, steady?.key ?? '')]: {
         label: 'Steady Hands (feat|HB)',
-        p: ids.map((id) => (id === 'limitedUses' || id === 'usesProficiency' ? 0.95 : 0.05)),
+        p: ids.map((id) => (sureOf.has(id) ? 0.95 : 0.05)),
       },
       [judgmentKey(BRANCH_SET, knight?.key ?? '')]: { label: 'knight', p: [0.91] },
     },
@@ -192,13 +193,13 @@ describe('analyzeDataset with saved judgments', () => {
   });
 
   it('compares the scanner with the saved answers', () => {
-    // The scanner reads the tag as "proficiency" and finds no uses; Jev reads
-    // "Proficiency Bonus" and is sure there are some.
+    // Both read the uses and their Proficiency Bonus, so those stay out. The
+    // prose names no Reaction, so the scanner draws none, and the answer is sure.
     expect(judged.prose.judged).toBe(1);
     expect(judged.prose.disagreements).toEqual([
       expect.objectContaining({
         label: 'Steady Hands (feat|HB)',
-        check: 'limitedUses',
+        check: 'reaction',
         kind: 'missed',
       }),
     ]);

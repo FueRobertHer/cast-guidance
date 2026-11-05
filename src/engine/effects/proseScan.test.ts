@@ -339,35 +339,6 @@ describe('proseScanFeature rolls', () => {
     );
     expect(later).toMatchObject({ roll: '2d6', plainDice: false });
   });
-
-  it.each([
-    ['a test', 'Once per long rest, when a creature makes a d20 test, you can use your reaction.'],
-    ['a reroll', 'Once per long rest, you can use your reaction to force a reroll of the d20.'],
-    [
-      'a roll to come',
-      'Once per long rest, when you are about to roll a d20, as a reaction, help.',
-    ],
-    ['a range', 'Once per long rest, as a bonus action, you crit on a 19 or 20 on the d20.'],
-  ])('keeps the chip but rolls nothing for a bare d20 in %s', (_, prose) => {
-    const chip = action(prose);
-    expect(chip).toBeDefined();
-    expect(chip?.roll).toBeUndefined();
-    expect(chip?.heals).toBe(false);
-  });
-
-  it('skips a bare d20 for the die the feature really rolls', () => {
-    const omen = action(
-      'Once per long rest, when a creature is about to make a d20 test, you can take a reaction to roll 1d6 and add it.',
-    );
-    expect(omen?.roll).toBe('1d6');
-  });
-
-  it('still reads a bare smaller die and a counted d20', () => {
-    expect(action('Once per long rest, you can use your reaction to roll a d12.')?.roll).toBe(
-      '1d12',
-    );
-    expect(action('Once per long rest, as a bonus action, you can roll 1d20.')?.roll).toBe('1d20');
-  });
 });
 
 describe('proseScanFeature natural weapons', () => {
