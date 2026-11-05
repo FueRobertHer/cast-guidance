@@ -11,7 +11,10 @@ import { parseDice } from '../../dice/parse';
 import { spellRollActions } from '../../features/sheet/spellRolls';
 import { isRenderedTag } from '../entries/inlineTags';
 import { normalizeDataset } from '../normalize';
-import { type BranchBlock, findBranchBlocks } from './branches';
+import { BRANCH_SET, type BranchBlock, branchSubjects, findBranchBlocks } from './branches';
+import { answersFor, type JudgmentFile } from './judgments';
+import { auditProse, type ProseAudit } from './proseChecks';
+import { proseSubjects } from './proseSubjects';
 
 export interface FileSize {
   path: string;
@@ -48,6 +51,8 @@ export interface AuditReport {
   maxFileBytes: number;
   /** `additionalSpells` blocks the branch heuristic acts on. */
   branchBlocks: BranchBlock[];
+  /** The prose scanner against saved Jev judgments, when there are any. */
+  prose: ProseAudit;
 }
 
 export interface AnalyzeInput {
@@ -57,6 +62,8 @@ export interface AnalyzeInput {
   fileBytes: ReadonlyMap<string, number>;
   /** Files above this are reported as oversized. */
   maxFileBytes: number;
+  /** Saved judgments (`scripts/data-judgments.json`), when the file exists. */
+  judgments?: JudgmentFile;
 }
 
 /**
@@ -100,7 +107,7 @@ export function sortedCounts(map: Record<string, number>): Array<[string, number
 }
 
 export function analyzeDataset(input: AnalyzeInput): AuditReport {
-  const { tag, files, fileBytes, maxFileBytes } = input;
+  const { tag, files, fileBytes, maxFileBytes, judgments } = input;
   const largest = [...fileBytes.entries()]
     .map(([path, bytes]) => ({ path, bytes }))
     .sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path));
@@ -188,6 +195,27 @@ export function analyzeDataset(input: AnalyzeInput): AuditReport {
     largestFiles: largest.slice(0, 5),
     oversizedFiles: largest.filter((f) => f.bytes > maxFileBytes).map((f) => f.path),
     maxFileBytes,
-    branchBlocks: findBranchBlocks(reg),
+    branchBlocks: withChoiceProposals(findBranchBlocks(reg), reg, judgments),
+    prose: auditProse(proseSubjects(reg), judgments),
   };
+}
+
+const blockId = (b: BranchBlock) => `${b.key}:${b.uid}:${b.names.join('|')}`;
+
+/** Attach Jev's saved answer to each unworded block that has one. */
+function withChoiceProposals(
+  blocks: BranchBlock[],
+  reg: Parameters<typeof branchSubjects>[0],
+  judgments: JudgmentFile | undefined,
+): BranchBlock[] {
+  if (judgments === undefined) return blocks;
+  const proposals = new Map<string, number>();
+  for (const subject of branchSubjects(reg)) {
+    const p = answersFor(judgments, BRANCH_SET, subject.key)?.choice;
+    if (p !== undefined) proposals.set(blockId(subject.block), p);
+  }
+  return blocks.map((block) => {
+    const p = proposals.get(blockId(block));
+    return p === undefined ? block : { ...block, choiceP: p };
+  });
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Entity } from '../copyMod';
 import { normalizeDataset } from '../normalize';
-import { branchNames, findBranchBlocks } from './branches';
+import { BRANCH_SET, branchNames, branchSubjects, findBranchBlocks } from './branches';
 
 const registry = (files: Record<string, unknown>) =>
   normalizeDataset(new Map(Object.entries(files)));
@@ -108,5 +108,72 @@ describe('branchNames', () => {
     ];
     expect(branchNames([...block, null, 'x'])).toEqual(['B', 'A']);
     expect(branchNames(undefined)).toEqual([]);
+  });
+});
+
+describe('branchSubjects', () => {
+  const reg = registry({
+    'class/class-druid.json': {
+      subclass: [
+        {
+          name: 'Circle of Test',
+          shortName: 'Test',
+          source: 'HB',
+          className: 'Druid',
+          classSource: 'HB',
+          additionalSpells: [
+            { name: 'Arctic', prepared: { '3': ['hold person'] } },
+            { name: 'Coast', prepared: { '3': ['mirror image'] } },
+          ],
+        },
+      ],
+      subclassFeature: [
+        {
+          name: 'Circle Spells',
+          source: 'HB',
+          className: 'Druid',
+          classSource: 'HB',
+          subclassShortName: 'Test',
+          subclassSource: 'HB',
+          level: 3,
+          entries: ['Your home terrain, Arctic or Coast, sets your circle spells.'],
+        },
+        {
+          name: 'Unrelated',
+          source: 'HB',
+          className: 'Druid',
+          classSource: 'HB',
+          subclassShortName: 'Test',
+          subclassSource: 'HB',
+          level: 6,
+          entries: ['You hum quietly.'],
+        },
+      ],
+    },
+    'feats.json': {
+      feat: [
+        {
+          name: 'Worded',
+          source: 'HB',
+          entries: ['Choose one list.'],
+          additionalSpells: [
+            { name: 'A', known: { _: ['light'] } },
+            { name: 'B', known: { _: ['mending'] } },
+          ],
+        },
+      ],
+    },
+  });
+
+  it('asks only about unworded blocks, with the subclass features that name a branch', () => {
+    const subjects = branchSubjects(reg);
+    expect(subjects.map((s) => s.label)).toEqual(['subclass circle of test|hb [Arctic, Coast]']);
+    expect(subjects[0]?.state).toBe(
+      'Circle of Test\nNamed options: Arctic; Coast\nYour home terrain, Arctic or Coast, sets your circle spells.',
+    );
+    expect(subjects[0]?.block).toEqual(
+      findBranchBlocks(reg).find((b) => b.uid === 'circle of test|hb'),
+    );
+    expect(BRANCH_SET.questions.map((q) => q.id)).toEqual(['choice']);
   });
 });

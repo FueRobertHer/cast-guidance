@@ -10,6 +10,8 @@
  */
 import type { Entity } from '../copyMod';
 import { ENTITY_TYPES, type EntityType } from '../normalize';
+import type { JudgeSet, JudgeSubject } from './judgments';
+import { readableEntries, textHash } from './proseSubjects';
 
 export interface BranchBlock {
   /** `name|source`, lowercased, as the registry keys it. */
@@ -20,6 +22,12 @@ export interface BranchBlock {
   names: string[];
   /** Whether the entity's own `entries` say it is a choice. */
   choiceWording: boolean;
+  /**
+   * Jev's saved probability that the branches are a choice, when the block
+   * has no choice wording and a judgment exists. A proposal for the person
+   * writing the verdict, never a verdict itself.
+   */
+  choiceP?: number;
 }
 
 /** Words that, in an entity's own prose, mark its spell options as a choice. */
@@ -56,14 +64,13 @@ export function branchNames(additionalSpells: unknown): string[] {
   return names;
 }
 
-/**
- * Every entity, across every type in the normalized registry, whose
- * `additionalSpells` has two or more branch names. Running over the registry
- * rather than raw files means `_copy` and `_versions` results are checked as
- * the app sees them.
- */
-export function findBranchBlocks(registry: ByType): BranchBlock[] {
-  const out: BranchBlock[] = [];
+interface FoundBlock {
+  block: BranchBlock;
+  entity: Entity;
+}
+
+function findBlocks(registry: ByType): FoundBlock[] {
+  const out: FoundBlock[] = [];
   const seen = new Set<string>();
   for (const key of ENTITY_TYPES) {
     for (const entity of registry.byType(key)) {
@@ -74,12 +81,84 @@ export function findBranchBlocks(registry: ByType): BranchBlock[] {
       if (seen.has(id)) continue;
       seen.add(id);
       out.push({
-        uid,
-        key,
-        names,
-        choiceWording: CHOICE_WORDING.test(textIn(entity.entries).join(' ')),
+        entity,
+        block: {
+          uid,
+          key,
+          names,
+          choiceWording: CHOICE_WORDING.test(textIn(entity.entries).join(' ')),
+        },
       });
     }
   }
   return out;
+}
+
+/**
+ * Every entity, across every type in the normalized registry, whose
+ * `additionalSpells` has two or more branch names. Running over the registry
+ * rather than raw files means `_copy` and `_versions` results are checked as
+ * the app sees them.
+ */
+export function findBranchBlocks(registry: ByType): BranchBlock[] {
+  return findBlocks(registry).map((found) => found.block);
+}
+
+/** The question asked about a block whose prose never says "choose". */
+export const BRANCH_SET: JudgeSet = {
+  id: 'branch',
+  version: 1,
+  questions: [
+    {
+      id: 'choice',
+      instructions:
+        'The text grants spells through the named options listed after "Named options". Does the character get the spells of only one of those options (one they pick, or one fixed by another choice they made), rather than the spells of all of them?',
+    },
+  ],
+};
+
+export interface BranchSubject extends JudgeSubject {
+  block: BranchBlock;
+}
+
+/**
+ * A subclass's own entry is usually empty: the wording that makes its spells
+ * a choice ("the land where you became a druid") lives in its features. So a
+ * subclass block also reads the features that name one of its branches.
+ */
+function subclassContext(registry: ByType, sub: Entity, names: readonly string[]): string[] {
+  const id = (e: Entity, short: unknown, source: unknown) =>
+    `${String(e.className)}|${String(short)}|${String(source)}`.toLowerCase();
+  const own = id(sub, sub.shortName, sub.source);
+  return registry
+    .byType('subclassFeature')
+    .filter((f) => id(f, f.subclassShortName, f.subclassSource) === own)
+    .sort((a, b) => (Number(a.level) || 0) - (Number(b.level) || 0))
+    .map((f) => readableEntries(f.entries))
+    .filter((prose) => names.some((name) => prose.includes(name)));
+}
+
+/**
+ * The blocks the heuristic acts on without choice wording, each as a subject
+ * for {@link BRANCH_SET}: the entity's name, its branch names and its prose.
+ */
+export function branchSubjects(registry: ByType): BranchSubject[] {
+  return findBlocks(registry)
+    .filter(({ block }) => !block.choiceWording)
+    .map(({ block, entity }) => {
+      const state = [
+        String(entity.name),
+        `Named options: ${block.names.join('; ')}`,
+        readableEntries(entity.entries),
+        ...(block.key === 'subclass' ? subclassContext(registry, entity, block.names) : []),
+      ]
+        .filter((line) => line !== '')
+        .join('\n');
+      return {
+        key: textHash(state),
+        label: `${block.key} ${block.uid} [${block.names.join(', ')}]`,
+        state,
+        block,
+      };
+    });
 }

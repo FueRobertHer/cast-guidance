@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 import budgetJson from '../../../scripts/data-audit-budget.json';
 import { DATA_TAG } from '../config';
 import type { AuditReport } from './analyze';
+import type { BranchBlock } from './branches';
 import {
   type AuditBudget,
   type BranchAllow,
   budgetFromReport,
   evaluateAudit,
+  type ProseAllow,
   parseAuditBudget,
   type TagBudget,
   toMarkdown,
 } from './budget';
+import type { ProseAudit, ProseDisagreement } from './proseChecks';
 
 const TAG = 'v2.32.0';
 
@@ -36,6 +39,7 @@ function makeReport(overrides: Partial<AuditReport> = {}): AuditReport {
       { uid: 'the genie|tce', key: 'subclass', names: ['Dao', 'Marid'], choiceWording: false },
       { uid: 'magic initiate|phb', key: 'feat', names: ['Bard', 'Cleric'], choiceWording: true },
     ],
+    prose: { subjects: 0, judged: 0, disagreements: [], byCheck: {} },
     ...overrides,
   };
 }
@@ -232,6 +236,17 @@ describe('evaluateAudit', () => {
     ]);
   });
 
+  it("quotes a saved Jev answer in an unworded block's failure", () => {
+    const [block, worded] = makeReport().branchBlocks;
+    const result = judge(
+      { branchBlocks: [{ ...(block as BranchBlock), choiceP: 0.93 }, worded as BranchBlock] },
+      { branchAllow: [] },
+    );
+    expect(result.failures).toEqual([
+      expect.stringContaining('the saved Jev answer puts a choice at p=0.93'),
+    ]);
+  });
+
   it('fails an oversized file', () => {
     expect(judge({ oversizedFiles: ['items.json'] }).failures).toEqual([
       'items.json is over 4194304 bytes; plan the size limit now',
@@ -281,6 +296,113 @@ describe('evaluateAudit', () => {
       });
       expect(result.mode).toBe('missing');
     });
+  });
+});
+
+describe('the prose scan check', () => {
+  const missed: ProseDisagreement = {
+    key: 'k1',
+    label: 'Quick Step (Testfolk|HB)',
+    check: 'limitedUses',
+    kind: 'missed',
+    p: 0.95,
+  };
+  const extra: ProseDisagreement = {
+    ...missed,
+    key: 'k2',
+    check: 'bonusAction',
+    kind: 'extra',
+    p: 0.1,
+  };
+  const prose = (overrides: Partial<ProseAudit> = {}): ProseAudit => ({
+    subjects: 10,
+    judged: 10,
+    disagreements: [missed, extra],
+    byCheck: {},
+    ...overrides,
+  });
+  const settled: ProseAllow = {
+    key: missed.key,
+    check: missed.check,
+    kind: missed.kind,
+    label: missed.label,
+    note: 'Read it: the count is fixed elsewhere.',
+  };
+  const row = (r: ReturnType<typeof judge>) =>
+    r.rows.find((x) => x.check === 'prose scan disagreements');
+
+  it('only notes a tag with no judgments, and skips one with nothing to scan', () => {
+    const unjudged = judge({ prose: prose({ judged: 0, disagreements: [] }) });
+    expect(unjudged.failures).toEqual([]);
+    expect(row(unjudged)).toMatchObject({ actual: 'not judged', status: 'note' });
+    expect(unjudged.notes).toEqual([expect.stringContaining('run `bun run data:judge`')]);
+    expect(row(judge({}))).toBeUndefined();
+  });
+
+  it('notes disagreements before a ceiling is recorded', () => {
+    const result = judge({ prose: prose() });
+    expect(result.failures).toEqual([]);
+    expect(result.notes).toEqual([expect.stringContaining('2 disagreement(s)')]);
+  });
+
+  it('fails over the ceiling, listing the unsettled disagreements', () => {
+    const result = judge({ prose: prose() }, { prose: { disagreements: 1, allow: [] } });
+    expect(result.failures).toEqual([
+      'prose scan disagreements: 2, over the budget of 1',
+      '  limitedUses missed (p=0.95) Quick Step (Testfolk|HB) [k1]',
+      '  bonusAction extra (p=0.1) Quick Step (Testfolk|HB) [k2]',
+    ]);
+  });
+
+  it('stops counting a disagreement a person settled, and notes a stale verdict', () => {
+    const result = judge({ prose: prose() }, { prose: { disagreements: 1, allow: [settled] } });
+    expect(result.failures).toEqual([]);
+    expect(row(result)).toMatchObject({ budget: '1', actual: '1', status: 'ok' });
+
+    const stale = judge(
+      { prose: prose({ disagreements: [extra] }) },
+      { prose: { disagreements: 1, allow: [settled] } },
+    );
+    expect(stale.notes).toEqual([expect.stringContaining('matches nothing; remove it')]);
+  });
+
+  it('notes prose with no saved judgment yet', () => {
+    const result = judge(
+      { prose: prose({ judged: 7, disagreements: [] }) },
+      { prose: { disagreements: 0, allow: [] } },
+    );
+    expect(result.failures).toEqual([]);
+    expect(result.notes).toEqual([expect.stringContaining('3 of 10 scanned traits')]);
+  });
+
+  it('round-trips through the budget file, and rejects a malformed verdict', () => {
+    const entry = { ...baseEntry(), prose: { disagreements: 1, allow: [settled] } };
+    expect(parseAuditBudget({ tags: { [TAG]: entry } }).tags[TAG]?.prose).toEqual(entry.prose);
+    expect(() =>
+      parseAuditBudget({
+        tags: {
+          [TAG]: { ...entry, prose: { disagreements: 1, allow: [{ ...settled, kind: 'maybe' }] } },
+        },
+      }),
+    ).toThrow('prose.allow[0].kind');
+    expect(() =>
+      parseAuditBudget({ tags: { [TAG]: { ...entry, prose: { disagreements: -1, allow: [] } } } }),
+    ).toThrow('prose.disagreements');
+  });
+
+  it('is written from a judged report, keeping only verdicts that still match', () => {
+    const report = makeReport({ prose: prose() });
+    const stale: ProseAllow = { ...settled, key: 'gone' };
+    expect(
+      budgetFromReport(report, [], { disagreements: 9, allow: [settled, stale] }).prose,
+    ).toEqual({
+      disagreements: 1,
+      allow: [settled],
+    });
+    // Without judgments, the recorded ceiling stays as it was.
+    const previous = { disagreements: 4, allow: [] };
+    expect(budgetFromReport(makeReport(), [], previous).prose).toBe(previous);
+    expect(budgetFromReport(makeReport()).prose).toBeUndefined();
   });
 });
 
