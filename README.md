@@ -74,8 +74,8 @@ of prose, and `bun run data:judge -- --report <name>` prints a ranked list from
 the saved answers, without a key or a model call. No check reads these answers,
 and `--set all` and the workflow never ask them. `bonus` sorts check and
 initiative bonuses by type, `featchoice` lists the picks feats ask for that the
-app does not offer, and `capability` ranks features a player could forget to use
-in combat. The `bonus` report quotes the sentences it matched, to show the
+app does not offer, and `capability` ranks features always available in combat
+that have no reminder yet. The `bonus` report quotes the sentences it matched, to show the
 phrasings to teach the scanner, so keep that output out of the repository.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +

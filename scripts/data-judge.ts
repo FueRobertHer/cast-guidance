@@ -13,7 +13,7 @@
  *
  *   - `bonus`: check and initiative bonuses in prose, by type;
  *   - `featchoice`: picks feats ask for that the app does not offer;
- *   - `capability`: features a player could forget to use in combat.
+ *   - `capability`: features always available in combat, with no reminder yet.
  *
  *   bun run data:judge -- --dry-run            # what would be asked, and a sample request
  *   bun run data:judge -- --limit 25           # a trial: ask about 25 subjects

@@ -53,6 +53,13 @@ const registry = normalizeDataset(
               // Curated by name (`trait:hare-trigger`), so its sheet effect is hand-written.
               trait('Hare-Trigger', 'You gain a bonus on initiative.'),
               trait('Long Stride', 'You walk a little further than most.'),
+              // Only describe a character, so no reminder comes of them.
+              trait('Age', 'You live about as long as an oak.'),
+              trait('Alignment', 'You lean toward order.'),
+              trait('Creature Type', 'You count as a plant of sorts.'),
+              trait('Language', 'You speak one tongue.'),
+              trait('Languages', 'You speak two tongues.'),
+              trait('Size', 'You stand about as tall as a door.'),
               // Has a capability line, so it never needs another.
               trait('Brave', 'You stand firm when your nerve is tested.'),
               // The scanner draws a reaction chip from this.
@@ -496,37 +503,67 @@ describe('capability scope', () => {
     expect(names).not.toContain('Plain Test');
   });
 
-  it('asks the one question', () => {
+  it('leaves out traits that only describe a character', () => {
+    for (const filler of ['Age', 'Alignment', 'Creature Type', 'Language', 'Languages', 'Size']) {
+      expect(names).not.toContain(filler);
+    }
+  });
+
+  it('asks the two questions the owner chose', () => {
     expect(CAPABILITY_SET.questions).toEqual([
       {
-        id: 'forgettable',
+        id: 'inCombat',
         instructions:
-          'Is this an always-available option in combat that a player could forget to use?',
+          'Does this change what the character can do, or how well they do it, in combat?',
+      },
+      {
+        id: 'alwaysOn',
+        instructions: 'Does it work every round, with no limit on uses per rest or per day?',
       },
     ]);
   });
 
-  it('ranks names by probability, one row per name, and counts what it leaves out', async () => {
+  it('ranks names by the two answers multiplied, one row per name, and counts what it leaves out', async () => {
     const steady = subjects.filter((s) => s.name === 'Steady Aim');
     const file = await savedFile(CAPABILITY_SET, subjects, {
-      'Long Stride': { forgettable: 0.6 },
-      'Odd Hobby': { forgettable: 0.1 },
+      'Long Stride': { inCombat: 0.8, alwaysOn: 0.75 },
+      // Sure of one answer only, and that is not enough.
+      'Odd Hobby': { inCombat: 0.1, alwaysOn: 0.9 },
     });
     // Two printings of one name disagree, which only the saved file can say.
     const [first, second] = steady;
     if (first === undefined || second === undefined) throw new Error('fixture lost a printing');
-    file.judgments[`capability@1:${first.key}`] = { label: first.label, p: [0.3] };
-    file.judgments[`capability@1:${second.key}`] = { label: second.label, p: [0.92] };
+    file.judgments[`capability@1:${first.key}`] = { label: first.label, p: [0.6, 0.5] };
+    file.judgments[`capability@1:${second.key}`] = { label: second.label, p: [0.96, 0.96] };
 
     const report = CAPABILITY_SCOPE.report(registry, file);
-    expect(rowsUnder(report, 'Names at 0.5 or above, likeliest first')).toEqual([
-      '0.92  Steady Aim (Testclass|HB)  2 printings, lowest 0.30',
-      '0.60  Long Stride (Testfolk|HB)',
+    expect(rowsUnder(report, 'Names at 0.4 or above, likeliest first')).toEqual([
+      '0.92  Steady Aim (Testclass|HB)  in combat 0.96, every round 0.96  2 printings, lowest 0.30',
+      '0.60  Long Stride (Testfolk|HB)  in combat 0.80, every round 0.75',
     ]);
     const listed = 2;
     const below = new Set(names).size - listed;
-    expect(report).toContain(`${below} more names below 0.5 are not listed.`);
-    // This list cuts at 0.5, so the yes threshold other reports state does not apply.
+    expect(report).toContain(`${below} more names below 0.4 are not listed.`);
+    expect(report).toContain('The score is the two answers multiplied.');
+    // This list cuts at 0.4, so the yes threshold other reports state does not apply.
     expect(report).not.toContain('Yes means');
+  });
+
+  it('lists a name that scores exactly at the cutoff, and not one just under it', async () => {
+    const atCutoff = await savedFile(CAPABILITY_SET, subjects, {
+      'Long Stride': { inCombat: 0.5, alwaysOn: 0.8 },
+    });
+    expect(
+      rowsUnder(
+        CAPABILITY_SCOPE.report(registry, atCutoff),
+        'Names at 0.4 or above, likeliest first',
+      ),
+    ).toEqual(['0.40  Long Stride (Testfolk|HB)  in combat 0.50, every round 0.80']);
+    const under = await savedFile(CAPABILITY_SET, subjects, {
+      'Long Stride': { inCombat: 0.5, alwaysOn: 0.79 },
+    });
+    expect(
+      rowsUnder(CAPABILITY_SCOPE.report(registry, under), 'Names at 0.4 or above, likeliest first'),
+    ).toEqual([]);
   });
 });
