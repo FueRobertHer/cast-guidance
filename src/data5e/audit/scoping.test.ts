@@ -262,7 +262,7 @@ describe('bonus scope', () => {
       '      Half your proficiency bonus is how many coins you find.',
     ]);
     expect(rowsUnder(report, 'Unclear, uncurated (read these)')).toEqual([
-      'Odd Omen (Testfolk|HB)',
+      '0.50  Odd Omen (Testfolk|HB)  closest: notBonus',
       '      Once a day, your next check gains a bonus die.',
     ]);
     expect(report).toContain(`${subjects.length} subjects, ${subjects.length} answered`);
@@ -324,8 +324,9 @@ describe('feat choice scope', () => {
 
   it('reports the picks the app does not offer as the backlog, kept apart from play decisions', async () => {
     const file = await savedFile(FEATCHOICE_SET, subjects, {
-      'Elemental Test': { pickOnTaking: 0.98, pickDamageType: 0.97, beyondOffered: 0.96 },
-      'Offered Test': { pickOnTaking: 0.99, pickSkill: 0.98 },
+      'Elemental Test': { pickOnTaking: 0.98, pickDamageType: 0.97, beyondOffered: 0.3 },
+      // Jev says there is more, but the only kind it names is already offered.
+      'Offered Test': { pickOnTaking: 0.99, pickSkill: 0.98, beyondOffered: 0.9 },
       'Unread Field Test': {
         pickOnTaking: 0.97,
         pickSkill: 0.9,
@@ -333,6 +334,10 @@ describe('feat choice scope', () => {
         beyondOffered: 0.91,
       },
       'Spell Test': { pickOnTaking: 0.9, pickSpell: 0.95, beyondOffered: 0.99 },
+      // A branch and its ability are offered, so only the spell inside is needed.
+      'Branch Test': { pickSpell: 0.92, pickClass: 0.9, pickAbility: 0.9 },
+      // No confident kind, so what Jev said about going beyond the line decides.
+      'Reprint Test': { pickSpell: 0.7, beyondOffered: 0.9 },
       'Heavy Swing Test': { pickDuringPlay: 0.94 },
       'Murky Test': { pickOnTaking: 0.5, beyondOffered: 0.5 },
       // Not confident enough to be the backlog, too unsure to call it no pick.
@@ -342,11 +347,14 @@ describe('feat choice scope', () => {
 
     const backlog = 'A pick the app does not offer (the feat-picker backlog)';
     expect(rowsUnder(report, backlog)).toEqual([
-      '0.99  Spell Test (feat|HB)  picks: spell  offers: none',
-      '0.96  Elemental Test (feat|HB)  picks: damage type  offers: none',
-      '0.91  Unread Field Test (feat|HB)  picks: skill, tool  offers: none',
+      '0.97  Elemental Test (feat|HB)  needs: damage type  offers: none',
+      '0.95  Spell Test (feat|HB)  needs: spell  offers: none',
+      '0.92  Branch Test (feat|HB)  needs: spell  offers: one of Alpha List, Beta List; spellcasting ability',
+      '0.90  Reprint Test (feat|HB)  needs: maybe spell (0.70)  offers: none',
+      '0.90  Unread Field Test (feat|HB)  needs: skill, tool  offers: none',
     ]);
-    expect(rowsUnder(report, 'Every pick offered already')).toEqual([
+    expect(report).toContain('Needed, most first: spell 2, skill 1, tool 1, damage type 1');
+    expect(rowsUnder(report, 'Every kind of pick offered already')).toEqual([
       '0.99  Offered Test (feat|HB)  picks: skill  offers: Skill proficiency',
     ]);
     expect(rowsUnder(report, 'A decision during play only (no picker needed)')).toEqual([

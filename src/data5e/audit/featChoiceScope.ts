@@ -16,7 +16,6 @@ import type { JudgeSet, JudgeSubject, JudgmentFile } from './judgments';
 import { type ByType, NO_DATA, readableEntries, textHash } from './proseSubjects';
 import {
   type Answered,
-  type Answers,
   answeredSubjects,
   pOf,
   reportHead,
@@ -41,6 +40,8 @@ const KINDS = [
     what: 'something that is not a skill, tool, spell, class, damage type or ability score, such as a language, a weapon, a fighting style or a maneuver',
   },
 ] as const;
+
+type Kind = (typeof KINDS)[number];
 
 /** The line of a subject that tells Jev what is already covered. */
 const OFFERED_LEAD = 'Picks the app offers';
@@ -76,6 +77,8 @@ export const FEATCHOICE_SET: JudgeSet = {
 export interface FeatChoiceSubject extends JudgeSubject {
   /** What the app prompts for on this feat, in the order it asks. */
   offered: string[];
+  /** The kinds of pick those prompts take care of. Not in `state`, so free to change. */
+  covers: Kind['id'][];
 }
 
 /** How a prompt reads to someone who cannot see its options. */
@@ -89,6 +92,24 @@ function describePrompt(prompt: ChoicePrompt, name: string): string {
   return prompt.label.startsWith(lead) ? prompt.label.slice(lead.length) : prompt.label;
 }
 
+/** The kinds of pick a prompt takes care of. A branch is a list, so never a spell. */
+function kindsCovered(prompt: ChoicePrompt): Kind['id'][] {
+  if (prompt.id.endsWith(':branch')) return ['pickClass', 'pickOther'];
+  switch (prompt.kind) {
+    case 'skill':
+    case 'expertise':
+      return ['pickSkill'];
+    case 'tool':
+      return ['pickTool'];
+    case 'ability':
+    case 'abilityWeighted':
+      return ['pickAbility'];
+    default:
+      // Languages, weapons and armor, and the resistance prompt, which is generic too.
+      return prompt.label === 'Damage resistance' ? ['pickDamageType'] : ['pickOther'];
+  }
+}
+
 /**
  * What the engine asks a player who takes this feat. A pick can lead to another
  * (a list of spells, then that list's spellcasting ability), and the collector
@@ -97,16 +118,18 @@ function describePrompt(prompt: ChoicePrompt, name: string): string {
  * Other options of a branch are not walked: the printings seen ask the same of
  * each.
  */
-function appPrompts(feat: Parameters<typeof collectFeatEntity>[1], name: string): string[] {
+function appPrompts(feat: Parameters<typeof collectFeatEntity>[1], name: string) {
   const doc = newCharacterDoc('audit', 'audit', 'audit');
   const offered = new Set<string>();
+  const covers = new Set<Kind['id']>();
   for (;;) {
     const col = new Collector(doc, NO_DATA);
     collectFeatEntity(col, feat, `${name}|${String(feat.source)}`.toLowerCase(), 'audit');
     const fresh = col.pending.filter((prompt) => doc.choices[prompt.id] === undefined);
-    if (fresh.length === 0) return [...offered];
+    if (fresh.length === 0) return { offered: [...offered], covers: [...covers] };
     for (const prompt of fresh) {
       offered.add(describePrompt(prompt, name));
+      for (const kind of kindsCovered(prompt)) covers.add(kind);
       doc.choices[prompt.id] = prompt.options[0]?.id ?? '';
     }
   }
@@ -123,7 +146,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
     const prose = readableEntries(feat.entries);
     if (!CHOICE_WORDING.test(prose) && !/\bchosen\b/i.test(prose)) continue;
     const name = String(feat.name);
-    const offered = appPrompts(feat, name);
+    const { offered, covers } = appPrompts(feat, name);
     const state = [
       name,
       `${OFFERED_LEAD}: ${offered.length > 0 ? offered.join('; ') : 'none'}`,
@@ -136,14 +159,30 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
       label: `${name} (feat|${String(feat.source)})`,
       state,
       offered,
+      covers,
     });
   }
   return [...byKey.values()];
 }
 
 type Verdict = 'backlog' | 'offered' | 'duringPlay' | 'noPick' | 'unclear';
+type Row = Answered<FeatChoiceSubject>;
 
-function verdict(answers: Answers): Verdict {
+/** The kinds Jev is sure a feat asks for that no prompt of the app takes care of. */
+const needed = ({ subject, answers }: Row) =>
+  KINDS.filter((k) => saysYes(answers, k.id) && !subject.covers.includes(k.id));
+
+/**
+ * `beyondOffered` cannot decide this alone: on the first real run Jev said yes to
+ * it for feats whose only pick the offered line already names, as if it read the
+ * choice wording in the prose and not that line. Its answers about kinds put the
+ * feats FUTURE_WORK.md names on the right side, so they decide when it is sure of
+ * any, and `beyondOffered` only speaks for a feat with no confident kind.
+ */
+function verdict(row: Row): Verdict {
+  const { answers } = row;
+  if (needed(row).length > 0) return 'backlog';
+  if (KINDS.some((k) => saysYes(answers, k.id))) return 'offered';
   if (saysYes(answers, 'beyondOffered')) return 'backlog';
   if (saysYes(answers, 'pickOnTaking') && saysNo(answers, 'beyondOffered')) return 'offered';
   // Neither of these may hide an unsure "there is a pick beyond what's offered".
@@ -154,33 +193,66 @@ function verdict(answers: Answers): Verdict {
   return 'unclear';
 }
 
-function row({ subject, answers }: Answered<FeatChoiceSubject>, lead: string): string {
-  const kinds = KINDS.filter((k) => saysYes(answers, k.id)).map((k) => k.name);
-  const offered = subject.offered.length > 0 ? subject.offered.join('; ') : 'none';
-  return `${lead}  ${subject.label}  picks: ${kinds.length > 0 ? kinds.join(', ') : '?'}  offers: ${offered}`;
+const offersText = ({ offered }: FeatChoiceSubject) =>
+  offered.length > 0 ? offered.join('; ') : 'none';
+
+function pickRow(row: Row, id: string): string {
+  const kinds = KINDS.filter((k) => saysYes(row.answers, k.id)).map((k) => k.name);
+  const picks = kinds.length > 0 ? kinds.join(', ') : '?';
+  return `${showP(pOf(row.answers, id))}  ${row.subject.label}  picks: ${picks}  offers: ${offersText(row.subject)}`;
+}
+
+/** How sure the backlog row is: its surest needed kind, else what `beyondOffered` said. */
+const needP = (row: Row) =>
+  Math.max(0, ...needed(row).map((k) => pOf(row.answers, k.id))) ||
+  pOf(row.answers, 'beyondOffered');
+
+function needRow(row: Row): string {
+  const sure = needed(row).map((k) => k.name);
+  // With no confident kind, Jev's best guess beats showing nothing.
+  const [guess] = KINDS.filter((k) => !row.subject.covers.includes(k.id)).sort(
+    (a, b) => pOf(row.answers, b.id) - pOf(row.answers, a.id),
+  );
+  const needs =
+    sure.length > 0
+      ? sure.join(', ')
+      : guess === undefined
+        ? '?'
+        : `maybe ${guess.name} (${showP(pOf(row.answers, guess.id))})`;
+  return `${showP(needP(row))}  ${row.subject.label}  needs: ${needs}  offers: ${offersText(row.subject)}`;
+}
+
+/** The picker to build first is the one the most feats wait on. */
+function neededTally(rows: readonly Row[]): string {
+  const counted = KINDS.map((k) => ({
+    name: k.name,
+    count: rows.filter((row) => needed(row).includes(k)).length,
+  }))
+    .filter((k) => k.count > 0)
+    .sort((a, b) => b.count - a.count);
+  return `Needed, most first: ${counted.length > 0 ? counted.map((k) => `${k.name} ${k.count}`).join(', ') : 'none'}`;
 }
 
 export function featChoiceReport(registry: ByType, file: JudgmentFile): string {
   const subjects = featChoiceSubjects(registry);
   const answered = answeredSubjects(FEATCHOICE_SET, subjects, file);
-  const having = (wanted: Verdict) => answered.filter((a) => verdict(a.answers) === wanted);
-  const ranked = (rows: readonly Answered<FeatChoiceSubject>[], id: string) =>
+  const having = (wanted: Verdict) => answered.filter((a) => verdict(a) === wanted);
+  const byLabel = (a: Row, b: Row) => a.subject.label.localeCompare(b.subject.label);
+  const ranked = (rows: readonly Row[], id: string) =>
     [...rows]
-      .sort(
-        (a, b) =>
-          pOf(b.answers, id) - pOf(a.answers, id) || a.subject.label.localeCompare(b.subject.label),
-      )
-      .map((a) => row(a, showP(pOf(a.answers, id))));
+      .sort((a, b) => pOf(b.answers, id) - pOf(a.answers, id) || byLabel(a, b))
+      .map((row) => pickRow(row, id));
 
+  const backlog = having('backlog');
   return [
     reportHead(FEATCHOICE_SET, 'feat sub-choices', subjects.length, answered.length),
-    YES_MEANS,
+    `${YES_MEANS} ${neededTally(backlog)}`,
     '',
     reportSection(
       'A pick the app does not offer (the feat-picker backlog)',
-      ranked(having('backlog'), 'beyondOffered'),
+      [...backlog].sort((a, b) => needP(b) - needP(a) || byLabel(a, b)).map(needRow),
     ),
-    reportSection('Every pick offered already', ranked(having('offered'), 'pickOnTaking')),
+    reportSection('Every kind of pick offered already', ranked(having('offered'), 'pickOnTaking')),
     reportSection(
       'A decision during play only (no picker needed)',
       ranked(having('duringPlay'), 'pickDuringPlay'),
