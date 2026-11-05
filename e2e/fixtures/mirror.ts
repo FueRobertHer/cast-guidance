@@ -2,7 +2,7 @@ import type { BrowserContext, Route } from '@playwright/test';
 import { VALID_BODIES } from '../../tests-fixtures/dataMirror.ts';
 
 /** The release the app pins (`DATA_TAG` in `src/data5e/config.ts`). */
-export const PINNED_TAG = 'v2.39.0';
+export const PINNED_TAG = 'v2.39.1';
 
 /** Every file of the fixture release, which a full install fetches. */
 export const MIRROR_PATHS: readonly string[] = Object.keys(VALID_BODIES);
