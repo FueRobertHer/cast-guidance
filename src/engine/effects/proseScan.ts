@@ -128,7 +128,10 @@ export function proseScanFeature(
   // Compact, high-signal chips only: bonus/reaction always; plain actions
   // only when limited-use (otherwise every prose "as an action" is noise).
   // Limited-use features also get their first dice expression as a roll chip.
-  const dice = uses !== undefined ? text.match(/\b(\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
+  // A bare "d20" is the rules naming a roll ("make a d20 test", "reroll the d20"),
+  // not dice the feature rolls. "1d20" and a bare "d6" are real.
+  const dice =
+    uses !== undefined ? text.match(/\b((?!d20\b)\d{0,2}d\d{1,3}(?: ?[+-] ?\d+)?)\b/) : null;
   let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
   // Dice in a sentence about regaining hit points are a heal, not damage.
   const diceAt = dice?.index ?? 0;
