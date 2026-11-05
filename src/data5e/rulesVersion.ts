@@ -87,15 +87,26 @@ export function reprintTargets(entity: Entity, holderType?: EntityType): Edition
   return out;
 }
 
-/** Core 2024-revision sources ("one" edition in 5etools terms). */
+/**
+ * Core 2024-revision sources ("one" edition in 5etools terms). Named because
+ * not all of them mark anything: XMM reaches this app as bare languages. Later
+ * 2024-rules books are not listed; `normalizeDataset` reads those from the data.
+ */
 export const SOURCES_2024 = new Set(['XPHB', 'XDMG', 'XMM', 'XScreen']);
 
 export function sourceEdition(source: string | undefined): RulesVersion {
   return source !== undefined && SOURCES_2024.has(source) ? '2024' : '2014';
 }
 
+/**
+ * The rules edition of one entity: its own mark, else its book's, else its
+ * source. `normalizeDataset` sets `bookEdition`, so a feat left bare in a
+ * 2024-rules book reads 2024 here without this having to know the book. A mark
+ * the entity inherited from a copy counts as its own: a row that copies a
+ * `classic` one is carrying 2014 content, whatever book it sits in.
+ */
 export function editionOf(e: Entity): RulesVersion {
-  const edition = e.edition;
+  const edition = e.edition ?? e.bookEdition;
   if (edition === 'one') return '2024';
   if (edition === 'classic') return '2014';
   return sourceEdition(typeof e.source === 'string' ? e.source : undefined);
