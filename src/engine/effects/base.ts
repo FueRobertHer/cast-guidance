@@ -1,4 +1,5 @@
 import type {
+  Ability,
   CharacterDoc,
   ChoicePrompt,
   DataEntity,
@@ -23,6 +24,14 @@ export class Collector {
    * own grants apart from the rest of the build (see `noteSkillSources`).
    */
   readonly pickOf = new Map<EffectInput, string>();
+  /** The ability each feat's `additionalSpells` entry settled on, by lowercase feat name. */
+  readonly spellAbilities: Array<{ feat: string; branch?: string; ability: Ability }> = [];
+  /** Grants that cast with another feat's ability (see `settleInheritedAbilities`). */
+  readonly inheritingGrants: Array<{
+    grants: Array<Extract<EffectInput, { kind: 'grantSpell' }>>;
+    fromFeats: readonly string[];
+    branch?: string;
+  }> = [];
 
   constructor(doc: CharacterDoc, ctx: EngineContext) {
     this.doc = doc;

@@ -28,9 +28,12 @@ describe('parseSpellFilter', () => {
     ['a level that is not a number', 'level=low'],
     ['a miscellaneous tag other than ritual', 'components & miscellaneous=concentration'],
     ['a part with no value', 'level='],
-    ['nothing at all', ''],
   ])('gives up on %s, rather than offer spells the data rules out', (_what, filter) => {
     expect(parseSpellFilter(filter)).toBeUndefined();
+  });
+
+  it('reads an empty filter as ruling nothing out', () => {
+    expect(parseSpellFilter('')).toEqual(query({}));
   });
 });
 
@@ -76,6 +79,13 @@ describe('describeSpellQuery', () => {
     ['Wizard cantrip', 'level=0|class=Wizard', 1],
     ['Wizard cantrips', 'level=0|class=wizard', 2],
     ['Level 1 Cleric spell', 'level=1|class=Cleric', 1],
+    ['Level 2 to 4 spell', 'level=2;3;4', 1],
+    ['Cantrip or level 1 spell', 'level=0;1', 1],
+    ['Cantrip or level 2 spell', 'level=0;2', 1],
+    ['Cantrip or level 1 or 3 spell', 'level=0;1;3', 1],
+    ['Level 1 spell', 'level=1;1', 1],
+    ['Cantrip', 'level=0;0', 1],
+    ['Cantrip or level 1 to 3 Cleric or Wizard spell', 'level=0;1;2;3|class=Cleric;Wizard', 1],
     ['Level 1 Enchantment or Divination spell', 'level=1|school=E;D', 1],
     ['Level 1 Bard ritual spells', 'level=1|class=Bard|components & miscellaneous=ritual', 2],
     ['Level 1 ritual spells', 'level=1|components & miscellaneous=ritual', 2],
@@ -83,7 +93,8 @@ describe('describeSpellQuery', () => {
     ['Level 1 to 7 Abjuration spell', 'level=1;2;3;4;5;6;7|school=A', 1],
     ['Level 1 or 3 spell', 'level=1;3', 1],
     ['Cleric or Wizard Necromancy cantrip', 'level=0|class=Cleric;Wizard|school=N', 1],
-    ['Spell', 'class=', 1],
+    ['Any spell', '', 1],
+    ['Any spells', '', 2],
   ])('says %s', (expected, filter, count) => {
     const parsed = parseSpellFilter(filter) ?? query({});
     expect(describeSpellQuery(parsed, count)).toBe(expected);

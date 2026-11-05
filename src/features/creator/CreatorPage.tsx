@@ -637,8 +637,8 @@ export function Component() {
       (d) => {
         const old = d.doc.classes[0];
         if (old !== undefined && refUid(old.ref) === refUid(next)) return;
-        d.doc.classes = [{ ref: next, levels: old?.levels ?? 1, hp: old?.hp ?? ['avg'] }];
         if (old !== undefined) pruneClass(d.doc, old);
+        d.doc.classes = [{ ref: next, levels: old?.levels ?? 1, hp: old?.hp ?? ['avg'] }];
         kit = clearKit(d, 'class');
       },
       (before) => {

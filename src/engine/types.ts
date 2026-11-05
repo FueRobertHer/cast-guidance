@@ -260,6 +260,13 @@ export type EffectInput = { origin: EffectOrigin } & (
       usage?: string;
       /** Set when the grant is limited ("1/day"): the resource holding its uses. */
       resourceKey?: string;
+      /** It takes one of the places in its origin class's spells known. */
+      countsAsKnown?: boolean;
+      /**
+       * This row is the way to cast the spell with slots, beside a limited row
+       * for its free uses, so a character with no slots to spend has no such row.
+       */
+      slotsOnly?: boolean;
     }
   | { kind: 'note'; text: string }
 );
@@ -305,11 +312,16 @@ export interface ChoicePrompt {
     | 'feature'
     /** A spell the player picks (see `spellQuery`). */
     | 'spell'
+    /** Any mix of skills and tools, as Skilled asks for. */
+    | 'skillOrTool'
+    | 'damageType'
     | 'generic';
   label: string;
   count: number;
   /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
   allowRepeat?: boolean;
+  /** Whether an option another prompt of this kind has picked is closed (see `markHeldPicks`). */
+  distinct?: boolean;
   options: ChoiceOption[];
   /**
    * What a `spell` prompt may offer, when that takes the spell files to work out.

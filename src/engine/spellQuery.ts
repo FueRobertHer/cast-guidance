@@ -18,10 +18,12 @@ export const SPELL_SCHOOLS: Record<string, string> = {
 
 /**
  * Read a filter. Undefined when any part of it is one the app cannot apply: with
- * that part ignored, the picker would offer spells the data rules out.
+ * that part ignored, the picker would offer spells the data rules out. An empty
+ * filter rules nothing out: the data writes it where any spell will do.
  */
 export function parseSpellFilter(filter: string): SpellQuery | undefined {
   const query: SpellQuery = { levels: [], classes: [], schools: [], ritual: false, attacks: [] };
+  if (filter.trim() === '') return query;
   for (const part of filter.split('|')) {
     const [key = '', list = ''] = part.split('=');
     const values = list
@@ -77,20 +79,29 @@ export function spellFitsQuery(spell: DataEntity, query: SpellQuery): boolean {
 
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
+/** Levels in words. Nobody calls a cantrip level 0, so cantrips are named apart. */
 function levelsText(levels: readonly number[]): string {
-  const [first, ...rest] = levels;
+  const above = [...new Set(levels)].filter((level) => level > 0);
+  const [first] = above;
   if (first === undefined) return '';
-  const last = rest.at(-1);
-  if (last === undefined) return `level ${first}`;
-  const unbroken = levels.every((level, i) => level === first + i);
-  return unbroken ? `level ${first} to ${last}` : `level ${levels.join(' or ')}`;
+  const words =
+    above.length === 1
+      ? `level ${first}`
+      : above.every((level, i) => level === first + i)
+        ? `level ${first} to ${above.at(-1)}`
+        : `level ${above.join(' or ')}`;
+  return levels.includes(0) ? `cantrip or ${words}` : words;
 }
 
 /** A query in words, for a prompt's label: "Level 1 Enchantment or Divination spell". */
 export function describeSpellQuery(query: SpellQuery, count: number): string {
-  const cantrip = query.levels.length === 1 && query.levels[0] === 0;
+  const cantrip = query.levels.length > 0 && query.levels.every((level) => level === 0);
+  const open =
+    query.levels.length + query.classes.length + query.schools.length + query.attacks.length ===
+      0 && !query.ritual;
   return capitalized(
     [
+      open ? 'any' : '',
       cantrip ? '' : levelsText(query.levels),
       query.classes.map(capitalized).join(' or '),
       query.schools.map((school) => SPELL_SCHOOLS[school] ?? school).join(' or '),

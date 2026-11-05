@@ -749,7 +749,7 @@ export function YourSpells({
               };
               return entity === undefined && spellsSettling ? (
                 <SpellRow
-                  key={refUid(g)}
+                  key={`${refUid(g)}|${g.resourceKey ?? ''}`}
                   name={spell.name}
                   source={g.source}
                   version={doc.rulesVersion}
@@ -759,7 +759,12 @@ export function YourSpells({
                   muted
                 />
               ) : (
-                <InnateSpellRow key={refUid(g)} grant={g} spell={spell} ctx={ctx} />
+                <InnateSpellRow
+                  key={`${refUid(g)}|${g.resourceKey ?? ''}`}
+                  grant={g}
+                  spell={spell}
+                  ctx={ctx}
+                />
               );
             })}
           </div>

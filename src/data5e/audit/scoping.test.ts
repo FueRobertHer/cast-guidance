@@ -97,8 +97,20 @@ const registry = normalizeDataset(
             // A field the feat collector does not read, so no picker comes of it.
             name: 'Unread Field Test',
             source: 'HB',
-            skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill'], count: 3 }] }],
+            savingThrowProficiencies: [{ choose: { from: ['str', 'dex'] } }],
             entries: ['Pick three skills or tools, mixed as you like.'],
+          },
+          // Read by hand, so what Jev says about them does not put them on the backlog.
+          {
+            name: 'Harper Agent',
+            source: 'FRHoF',
+            entries: ['Pick a tune, and hum it when you like.'],
+          },
+          {
+            // Left unsupported, and says why on its row.
+            name: 'Rune Shaper',
+            source: 'BGG',
+            entries: ['Pick some marks to draw on your gear.'],
           },
           {
             // The app only warns about a chosen spell, so it offers nothing here.
@@ -415,6 +427,20 @@ describe('feat choice scope', () => {
     ['weapon', { weaponProficiencies: [{ choose: { from: ['club', 'dagger'] } }] }, ['pickOther']],
     ['damage resistance', { resist: [{ choose: { from: ['fire', 'cold'] } }] }, ['pickDamageType']],
     [
+      'skill or tool',
+      { skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill', 'anyTool'] }] }] },
+      ['pickSkill', 'pickTool'],
+    ],
+    [
+      'optional feature',
+      {
+        optionalfeatureProgression: [
+          { name: 'Fake Tricks', featureType: ['ZZ'], progression: { '*': 1 } },
+        ],
+      },
+      ['pickOther'],
+    ],
+    [
       'branch',
       {
         additionalSpells: [spellList('Alpha List', 'fake one'), spellList('Beta List', 'fake two')],
@@ -425,6 +451,29 @@ describe('feat choice scope', () => {
     const feat = { name: 'Prompt Test', source: 'HB', entries: ['Choose one.'], ...fields };
     const dataset = new Map<string, unknown>([['feats.json', { feat: [feat] }]]);
     expect(featChoiceSubjects(normalizeDataset(dataset))[0]?.covers).toEqual(covers);
+  });
+
+  it('knows a damage type prompt from the table of picks only prose asks for', () => {
+    const feat = { name: 'Elemental Adept', source: 'PHB', entries: ['Choose one.'] };
+    const dataset = new Map<string, unknown>([['feats.json', { feat: [feat] }]]);
+    const [only] = featChoiceSubjects(normalizeDataset(dataset));
+    expect(only?.covers).toEqual(['pickDamageType']);
+    expect(only?.offered).toEqual(['Damage type']);
+  });
+
+  it('keeps rows read by hand off the backlog, and says why one stays on it', async () => {
+    const surely = { pickOnTaking: 0.95, pickOther: 0.95 };
+    const file = await savedFile(FEATCHOICE_SET, subjects, {
+      'Harper Agent': surely,
+      'Rune Shaper': surely,
+    });
+    const report = FEATCHOICE_SCOPE.report(registry, file);
+    expect(rowsUnder(report, 'Read by hand, no picker needed')).toEqual([
+      'Harper Agent (feat|FRHoF)  its only pick is the instrument, offered already',
+    ]);
+    const backlog = rowsUnder(report, 'A pick the app does not offer (the feat-picker backlog)');
+    expect(backlog).toHaveLength(1);
+    expect(backlog[0]).toMatch(/^0\.95 {2}Rune Shaper \(feat\|BGG\) .* left unsupported: runes /);
   });
 
   it('reports the picks the app does not offer as the backlog, kept apart from play decisions', async () => {

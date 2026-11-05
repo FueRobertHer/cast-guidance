@@ -93,6 +93,91 @@ const slug = (s: string) =>
     .replaceAll(/[^a-z0-9]+/g, '-')
     .replaceAll(/^-|-$/g, '');
 
+/** Prose saying a thing can be done once between rests. */
+function statesOnceLimit(text: string): boolean {
+  return (
+    /once per (?:short|long) rest/.test(text) ||
+    /you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)/.test(
+      text,
+    ) ||
+    /must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
+      text,
+    )
+  );
+}
+
+const sentencesOf = (text: string) => text.split(/(?<=\.) /);
+
+/** Text as space-padded words, so a spell's name matches whole words only. */
+const asWords = (text: string) => ` ${text.replaceAll(/[^a-z0-9']+/g, ' ')} `;
+
+/** A sentence that is one limit and nothing more, naming what it limits in `cast ...`. */
+const ONE_LIMIT =
+  /^once you (?:cast ([^,;]+)|use this (?:benefit|feature|trait)), you can'?t (?:do so|use (?:it|this (?:trait|feature))) again until you (?:finish|complete) a (?:short or long|short|long) rest(?:, unless [^;]*)?\.?$/;
+/** A benefit of its own: something to do, or something to roll, that is not the spell. */
+const OWN_BENEFIT =
+  /as a bonus action|as a reaction|use your reaction|take a reaction|as an action|use your action|\bd?\d+d\d+\b/;
+
+/** Does "cast it" or "cast this spell", in the limit, mean a spell the origin counts? */
+function castsCounted(object: string, before: string, counted: string[]): boolean {
+  if (counted.some((name) => asWords(object).startsWith(` ${name} `))) return true;
+  const words = asWords(before);
+  return (
+    /^(?:it|this spell|the spell)\b/.test(object) &&
+    counted.some((name) => words.includes(` ${name} `))
+  );
+}
+
+/** Does "use this feature", in the limit, mean casting a spell the origin counts? */
+function usesCounted(before: string[], counted: string[]): boolean {
+  const casts = before.findLastIndex((sentence) => {
+    const words = asWords(sentence);
+    return counted.some(
+      (name) => words.includes(` cast ${name} `) || words.includes(` cast the ${name} `),
+    );
+  });
+  return casts !== -1 && !before.slice(casts + 1).some((sentence) => OWN_BENEFIT.test(sentence));
+}
+
+/**
+ * Is each limit this prose states the limit on casting a spell the origin already
+ * counts? Then `additionalSpells` holds those uses, and a tracker read from the
+ * same words would be a second count of them, left full by every cast. Doubt
+ * keeps the tracker: dropping one loses a benefit's only count, and a spare one
+ * only sits there. So a picked spell, which the prose cannot name, keeps it, and
+ * so does a limit with any more to it than the plain sentence ("once you use this
+ * feature to alter it"), a benefit between the spell and its limit, or a count of
+ * any other kind elsewhere in the prose.
+ */
+function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOrigin): boolean {
+  const counted = col.effects.flatMap((e) =>
+    e.kind === 'grantSpell' && e.resourceKey !== undefined && e.origin.uid === origin.uid
+      ? [e.spell.name.toLowerCase()]
+      : [],
+  );
+  if (counted.length === 0) return false;
+  const sentences = sentencesOf(text);
+  const others: string[] = [];
+  let found = false;
+  for (const [at, sentence] of sentences.entries()) {
+    if (!statesOnceLimit(sentence)) {
+      others.push(sentence);
+      continue;
+    }
+    const limit = sentence.match(ONE_LIMIT);
+    if (limit === null) return false;
+    const before = sentences.slice(0, at);
+    const object = limit[1];
+    const spells =
+      object !== undefined
+        ? castsCounted(object, before.join(' '), counted)
+        : usesCounted(before, counted);
+    if (!spells) return false;
+    found = true;
+  }
+  return found && detectUses(others.join(' ')) === undefined;
+}
+
 /**
  * Limited-use wording → how many uses between rests. When several counts are
  * mentioned, the SMALLEST wins: higher counts are level-scaling text
@@ -114,17 +199,7 @@ function detectUses(
     }
   }
   const counts: number[] = [];
-  if (
-    /once per (?:short|long) rest/.test(text) ||
-    /you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)/.test(
-      text,
-    ) ||
-    /must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
-      text,
-    )
-  ) {
-    counts.push(1);
-  }
+  if (statesOnceLimit(text)) counts.push(1);
   if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) twice/.test(text)) counts.push(2);
   if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) three times/.test(text)) {
     counts.push(3);
@@ -372,16 +447,26 @@ export function proseScanFeature(
   const text = flattenEntries(entries);
   if (text.length === 0) return;
 
-  const uses = detectUses(text);
+  const detected = detectUses(text);
+  const uses = detected === 1 && limitsOnlyCountedSpells(text, col, origin) ? undefined : detected;
   if (uses !== undefined) {
     // The clauses that return uses decide, when there are any, and a short rest
     // that returns even one counts. Any other rest a trait mentions is about
     // something else: Star Map's replacement ritual "during a short or long
-    // rest", Mist Walker's drain on "a short rest".
+    // rest", Mist Walker's drain on "a short rest", or a spell's own free cast
+    // ("regain the ability to cast it") when the limit read is another sentence's.
     const returnsUses = text
       .split(/[.,;]/)
       .filter((c) => c.includes('regain') && /\buses?\b/.test(c) && c.includes('when you finish'));
-    const resetText = returnsUses.length > 0 ? returnsUses.join(' ') : text;
+    const notSpells = sentencesOf(text)
+      .filter((s) => !/regain the ability to cast/.test(s))
+      .join(' ');
+    const resetText =
+      returnsUses.length > 0
+        ? returnsUses.join(' ')
+        : statesOnceLimit(notSpells)
+          ? notSpells
+          : text;
     const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
