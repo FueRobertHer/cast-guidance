@@ -275,7 +275,7 @@ describe('BuildPage edition cues (GAME-003)', () => {
     expect(detail).not.toContain('you can switch to');
   });
 
-  it('spells out the cost on the class row, and on the note a phone can read', () => {
+  it('gives the route and cost on the class row, and names the reprint in the note', () => {
     const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
     extra.current = [
       ['class', { ...warrior, reprintedAs: ['Warrior|XTST'] }],
@@ -289,7 +289,7 @@ describe('BuildPage edition cues (GAME-003)', () => {
         .getByTitle(/^2014 content\. The 2024 books reprint it as a separate class/)
         .getAttribute('title'),
     ).toBe(
-      '2014 content. The 2024 books reprint it as a separate class, Warrior (XTST). To switch to it, remove this class and add that one, which starts over at level 1 and clears its subclass, picks and spell list. It stays until you do.',
+      '2014 content. The 2024 books reprint it as a separate class, Warrior (XTST). To switch, take this class down to level 1, remove it, then add that one, which starts at level 1. Removing it clears any subclass, picks and spell list it has. This class stays until you do.',
     );
     expect(
       screen.getByText(
@@ -420,7 +420,7 @@ describe('BuildPage subclass picker (GAME-009)', () => {
       if (c !== undefined) c.subclass = { name: 'Path of Old', source: 'TST' };
     });
     expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toBe(
-      '2014 content. The 2024 books reprint it as Path of New (XTST), under Warrior (XTST). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.',
+      '2014 content. The 2024 books reprint it as Path of New (XTST), under Warrior (XTST). To switch, take this class down to level 1, remove it, then add that one. Removing it clears this pick, which stays until you do.',
     );
     expect(
       screen.getByText(
@@ -442,7 +442,7 @@ describe('BuildPage subclass picker (GAME-009)', () => {
     // The first row's picker lists the reprint, so its chip keeps the plain switch.
     expect(screen.getByTitle(/Path of New \(XTST\), which you can switch to/)).toBeTruthy();
     expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toContain(
-      'remove this class and add that one',
+      'take this class down to level 1, remove it, then add that one',
     );
   });
 

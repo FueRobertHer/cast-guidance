@@ -103,6 +103,12 @@ describe('editionFit', () => {
     ).toEqual({ kind: 'reprintedClass', as: { name: 'Cleric', source: 'XPHB' } });
   });
 
+  it('keeps the plain switch for what is not a class', () => {
+    expect(
+      editionFit(old('Drifter', ['Drifter|XPHB']), 'background', '2024', world(revised('Drifter'))),
+    ).toEqual({ kind: 'reprinted', as: { name: 'Drifter', source: 'XPHB' } });
+  });
+
   it('follows a cross-type reprint into the type the target names', () => {
     // Every 2014 subrace points at a race: High|PHB is reprinted as Elf|XPHB.
     const seen: string[] = [];
@@ -420,10 +426,8 @@ describe('editionFitChip', () => {
     );
     expect(chip?.text).toBe('reprinted for 2024');
     expect(chip?.title).toBe(
-      '2014 content. The 2024 books reprint it as a separate class, Cleric (XPHB). To switch to it, remove this class and add that one, which starts over at level 1 and clears its subclass, picks and spell list. It stays until you do.',
+      '2014 content. The 2024 books reprint it as a separate class, Cleric (XPHB). To switch, take this class down to level 1, remove it, then add that one, which starts at level 1. Removing it clears any subclass, picks and spell list it has. This class stays until you do.',
     );
-    expect(chip?.title).not.toContain('which you can switch to');
-    expect(chip?.title).not.toContain('either way');
   });
 
   it('says what reaching it costs, and that the reprint is not in the picker below', () => {
@@ -437,10 +441,8 @@ describe('editionFitChip', () => {
     );
     expect(chip?.text).toBe('reprinted elsewhere');
     expect(chip?.title).toBe(
-      '2014 content. The 2024 books reprint it as Path of New (XPHB), under Warrior (XPHB). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.',
+      '2014 content. The 2024 books reprint it as Path of New (XPHB), under Warrior (XPHB). To switch, take this class down to level 1, remove it, then add that one. Removing it clears this pick, which stays until you do.',
     );
-    expect(chip?.title).not.toContain('which you can switch to');
-    expect(chip?.title).not.toContain('either way');
   });
 
   it('offers no switch to a reprint out of reach, and says so where a phone shows it', () => {

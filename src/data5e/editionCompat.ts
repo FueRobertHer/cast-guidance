@@ -22,11 +22,6 @@ export type EditionFit =
   /** Older content the newer books reprint, and that reprint is installed. */
   | { kind: 'reprinted'; as: EditionRef }
   /**
-   * The same, for a class. The reprint is a row of its own and no control changes
-   * a row, so reaching it means removing this one, with its levels and picks.
-   */
-  | { kind: 'reprintedClass'; as: EditionRef }
-  /**
    * The same, but on another printing of the class this subclass sits under
    * (`Life Domain|PHB` on `Cleric|PHB`, reprinted under `Cleric|XPHB`). A class
    * row's picker lists only that printing's subclasses, so the row changes first.
@@ -37,6 +32,11 @@ export type EditionFit =
    * feat), so there is nothing to switch it to. `what` says what, in words.
    */
   | { kind: 'reprintedNoSwitch'; as: EditionRef; what: string }
+  /**
+   * An older class the newer books reprint. The reprint is a row of its own and no
+   * control changes a row, so reaching it means removing this one, with its picks.
+   */
+  | { kind: 'reprintedClass'; as: EditionRef }
   /** Older content with no reprint to move to: it carries over unchanged. */
   | { kind: 'carryOver' }
   /** Newer content in an older game: its rules assume books the table isn't using. */
@@ -201,17 +201,18 @@ export function editionFitChip(
       };
     case 'reprintedClass':
       // The text stands: no picker sits beside a class row to go hunting through.
-      // The rest says what removing a class costs, as its own confirm does.
+      // The title gives the route because a class can only be removed from level 1.
+      // "Any" because this does not see the character: the confirm counts their picks.
       return {
         text: `reprinted for ${version}`,
-        title: `${other} content. The ${version} books reprint it as a separate class, ${fit.as.name} (${fit.as.source}). To switch to it, remove this class and add that one, which starts over at level 1 and clears its subclass, picks and spell list. It stays until you do.`,
+        title: `${other} content. The ${version} books reprint it as a separate class, ${fit.as.name} (${fit.as.source}). To switch, take this class down to level 1, remove it, then add that one, which starts at level 1. Removing it clears any subclass, picks and spell list it has. This class stays until you do.`,
       };
     case 'reprintedUnderClass':
-      // Not "kept either way" as the others say: a class row has no control that
-      // changes it, so reaching this reprint means removing the row and the pick.
+      // Not "kept either way": a class row has no control that changes it, so
+      // reaching this reprint means removing the row and the pick.
       return {
         text: REPRINTED_ELSEWHERE,
-        title: `${other} content. The ${version} books reprint it as ${fit.as.name} (${fit.as.source}), under ${fit.underClass.name} (${fit.underClass.source}). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.`,
+        title: `${other} content. The ${version} books reprint it as ${fit.as.name} (${fit.as.source}), under ${fit.underClass.name} (${fit.underClass.source}). To switch, take this class down to level 1, remove it, then add that one. Removing it clears this pick, which stays until you do.`,
       };
     case 'reprintedNoSwitch':
       // Said in the text, not only the title: a phone never shows a title, and
