@@ -34,7 +34,8 @@ import { db } from '@/db/db';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { useRegistryRefreshing, useRegistryState } from './hooks';
 import { flushLanded, noteFileLanded } from './landing';
-import { invalidateRegistry, isRegistryRefreshing } from './registry';
+import { getRegistry, invalidateRegistry, isRegistryRefreshing } from './registry';
+import { isBook2024, setRulesBooks } from './rulesVersion';
 
 const putFile = (path: string, json: unknown) =>
   dataCacheRepo.putFile({
@@ -84,6 +85,59 @@ afterEach(() => {
   flushLanded();
   vi.restoreAllMocks();
   dataStatusStore.setState({ packs: {}, filesDone: 0, filesTotal: 0, phase: 'idle' });
+  setRulesBooks(new Set());
+});
+
+describe('the 2024 books a rebuild publishes', () => {
+  it('has them in place by the time anyone holds the registry', async () => {
+    await putFile('backgrounds.json', {
+      background: [{ name: 'Sage', source: 'LATE', edition: 'one' }],
+    });
+    // Checked in the first callback after the read, which is what a page's
+    // `setRegistry` is: nothing later could have filled the set in for it.
+    const seen = await getRegistry().then(() => isBook2024('LATE'));
+    expect(seen).toBe(true);
+  });
+
+  it('follows the files, so a book no longer marked stops being labelled', async () => {
+    await putFile('backgrounds.json', {
+      background: [{ name: 'Sage', source: 'LATE', edition: 'one' }],
+    });
+    await getRegistry();
+    expect(isBook2024('LATE')).toBe(true);
+    await putFile('backgrounds.json', { background: [{ name: 'Sage', source: 'LATE' }] });
+    invalidateRegistry();
+    await getRegistry();
+    expect(isBook2024('LATE')).toBe(false);
+  });
+
+  it('keeps describing the served registry when a stale build finishes last', async () => {
+    await putFile('backgrounds.json', {
+      background: [{ name: 'Sage', source: 'LATE', edition: 'one' }],
+    });
+    // The first build holds what it read until after a newer build has landed.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = dataCacheRepo.filesByTag.bind(dataCacheRepo);
+    const filesByTag = vi.spyOn(dataCacheRepo, 'filesByTag').mockImplementationOnce(async (tag) => {
+      const rows = await read(tag);
+      await gate;
+      return rows;
+    });
+    const stale = getRegistry();
+    await waitFor(() => expect(filesByTag).toHaveBeenCalled());
+
+    await putFile('backgrounds.json', { background: [{ name: 'Sage', source: 'LATE' }] });
+    invalidateRegistry();
+    const fresh = await getRegistry();
+    release();
+    await stale;
+
+    expect([...fresh.rulesBooks]).toEqual([]);
+    expect(isBook2024('LATE')).toBe(false);
+  });
 });
 
 describe('the refresh flag across a rebuild', () => {

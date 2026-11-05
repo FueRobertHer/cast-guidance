@@ -257,6 +257,97 @@ describe('BuildPage edition cues (GAME-003)', () => {
       screen.getByText('Testfolk: 2014 content, reprinted for 2024 as Testfolk. Kept as chosen.'),
     ).toBeTruthy();
   });
+
+  it('says reaching a class reprint means replacing the class', async () => {
+    const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
+    extra.current = [
+      ['class', { ...warrior, reprintedAs: ['Warrior|XTST'] }],
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+    ];
+    renderBuild();
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '2024' }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalled());
+    const detail = lastPrompt()?.detail ?? '';
+    expect(detail).toContain(
+      '1 has a 2024 reprint you can only reach by replacing a class (Warrior → Warrior (XTST))',
+    );
+    expect(detail).not.toContain('you can switch to');
+  });
+
+  it('gives the route and cost on the class row, and names the reprint in the note', () => {
+    const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
+    extra.current = [
+      ['class', { ...warrior, reprintedAs: ['Warrior|XTST'] }],
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+    ];
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+    });
+    expect(
+      screen
+        .getByTitle(/^2014 content\. The 2024 books reprint it as a separate class/)
+        .getAttribute('title'),
+    ).toBe(
+      '2014 content. The 2024 books reprint it as a separate class, Warrior (XTST). To switch, take this class down to level 1, remove it, then add that one, which starts at level 1. Removing it clears any subclass, picks and spell list it has. This class stays until you do.',
+    );
+    expect(
+      screen.getByText(
+        'Warrior: 2014 content, reprinted for 2024 as a separate class, Warrior (XTST). Kept as chosen.',
+      ),
+    ).toBeTruthy();
+  });
+
+  /** A 2014 subrace whose only 2024 reprint is a feat, under the test world's species. */
+  const withSubraceReprintedAsFeat = () => {
+    extra.current = [
+      [
+        'subrace',
+        {
+          name: 'Marked Kin',
+          source: 'TST',
+          raceName: 'Testfolk',
+          raceSource: 'TST',
+          reprintedAs: [{ uid: 'Kin Gift|XTST', tag: 'feat' }],
+        },
+      ],
+      ['feat', { name: 'Kin Gift', source: 'XTST', edition: 'one' }],
+    ];
+  };
+
+  it('says a subrace was reprinted as a feat, on the chip a phone can read', () => {
+    withSubraceReprintedAsFeat();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      d.subrace = { name: 'Marked Kin', source: 'TST' };
+    });
+    const chip = screen.getByText('reprinted as a feat');
+    expect(chip.getAttribute('title')).toBe(
+      '2014 content. The 2024 books reprint it as a feat, Kin Gift (XTST), so there is nothing to switch this pick to. Your pick is kept either way.',
+    );
+    expect(screen.queryByText('reprinted for 2024')).toBeNull();
+    expect(
+      screen.getByText(
+        'Marked Kin: 2014 content, reprinted for 2024 as a feat, Kin Gift. Kept as chosen.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('promises no switch to that reprint before a version switch either', async () => {
+    withSubraceReprintedAsFeat();
+    renderBuild((d) => {
+      d.subrace = { name: 'Marked Kin', source: 'TST' };
+    });
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '2024' }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalled());
+
+    const detail = lastPrompt()?.detail ?? '';
+    expect(detail).toContain(
+      '1 has a 2024 reprint of another kind, with nothing to switch to (Marked Kin → Kin Gift as a feat)',
+    );
+    expect(detail).not.toContain('you can switch to');
+  });
 });
 
 describe('BuildPage subclass picker (GAME-009)', () => {
@@ -291,6 +382,69 @@ describe('BuildPage subclass picker (GAME-009)', () => {
       ],
     ];
   }
+
+  /** A legacy subclass whose only 2024 printing sits on another printing of its class. */
+  function withReprintOnAnotherClass() {
+    extra.current = [
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+      [
+        'subclass',
+        {
+          name: 'Path of Old',
+          shortName: 'Old',
+          source: 'TST',
+          className: 'Warrior',
+          classSource: 'TST',
+          reprintedAs: ['New|Warrior|XTST|XTST'],
+        },
+      ],
+      [
+        'subclass',
+        {
+          name: 'Path of New',
+          shortName: 'New',
+          source: 'XTST',
+          edition: 'one',
+          className: 'Warrior',
+          classSource: 'XTST',
+        },
+      ],
+    ];
+  }
+
+  it('says a reprint is not in the picker below, on the chip a phone can read', () => {
+    withReprintOnAnotherClass();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      const c = d.classes[0];
+      if (c !== undefined) c.subclass = { name: 'Path of Old', source: 'TST' };
+    });
+    expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toBe(
+      '2014 content. The 2024 books reprint it as Path of New (XTST), under Warrior (XTST). To switch, take this class down to level 1, remove it, then add that one. Removing it clears this pick, which stays until you do.',
+    );
+    expect(
+      screen.getByText(
+        "Warrior's Path of Old: 2014 content, reprinted for 2024 as Path of New, under Warrior (XTST) rather than your class. Kept as chosen.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('gives each class row its own chip when both hold the subclass', () => {
+    withReprintOnAnotherClass();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      const held = { name: 'Path of Old', source: 'TST' };
+      d.classes = [
+        { ref: { name: 'Warrior', source: 'XTST' }, subclass: held, levels: 3, hp: ['avg'] },
+        { ref: { name: 'Warrior', source: 'TST' }, subclass: held, levels: 3, hp: ['avg'] },
+      ];
+    });
+    // The first row's picker lists the reprint, so its chip keeps the plain switch.
+    expect(screen.getByTitle(/Path of New \(XTST\), which you can switch to/)).toBeTruthy();
+    expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toContain(
+      'take this class down to level 1, remove it, then add that one',
+    );
+  });
 
   it('offers one printing per subclass to a 2024 character', () => {
     withReprintedSubclass();
