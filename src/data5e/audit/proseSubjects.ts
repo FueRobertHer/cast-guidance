@@ -83,16 +83,39 @@ export function displayTagText(text: string): string {
   });
 }
 
+export interface ReadableOptions {
+  /** Read `table` entries too. */
+  tables?: boolean;
+  /** How to read a string's tags; `displayTagText` when not given. */
+  tagText?: (text: string) => string;
+}
+
 /**
  * Entries as plain paragraphs, case kept and tags shown as their display
  * text. Named sub-entries keep their name as a lead-in ("Longtooth. ..."), so
  * a judge can tell an option the player picks from what the trait always does.
+ *
+ * The defaults are part of a subject's identity, which is a hash of this text:
+ * changing how they read would orphan every saved judgment of the prose it
+ * touches. A reader that wants more asks for it through the options.
  */
-export function readableEntries(entries: unknown): string {
+export function readableEntries(entries: unknown, options: ReadableOptions = {}): string {
+  const { tables = false, tagText = displayTagText } = options;
   const lines: string[] = [];
+  /** Plain text, a number, or a `cell` object with a roll and an entry. */
+  const cellText = (cell: unknown): string => {
+    if (typeof cell === 'number') return String(cell);
+    if (cell === null || typeof cell !== 'object') return readableEntries(cell, options);
+    const roll = (cell as Record<string, unknown>).roll as
+      | { exact?: number; min?: number; max?: number }
+      | null
+      | undefined;
+    const rolled = roll ? String(roll.exact ?? `${String(roll.min)}-${String(roll.max)}`) : '';
+    return [rolled, readableEntries(cell, options)].filter((s) => s !== '').join(' ');
+  };
   const walk = (v: unknown): void => {
     if (typeof v === 'string') {
-      lines.push(displayTagText(v));
+      lines.push(tagText(v));
       return;
     }
     if (Array.isArray(v)) {
@@ -105,8 +128,17 @@ export function readableEntries(entries: unknown): string {
       walk(o.entries);
       walk(o.entry);
       walk(o.items);
+      if (tables && o.type === 'table') {
+        walk(o.caption);
+        for (const row of [o.colLabels, ...(Array.isArray(o.rows) ? o.rows : [])]) {
+          if (Array.isArray(row)) lines.push(row.map(cellText).join(' | '));
+        }
+        walk(o.footnotes);
+      }
       if (typeof o.name === 'string' && lines.length > start) {
-        lines[start] = `${o.name}. ${lines[start]}`;
+        // Names are read as written unless a reader asks: see the note above.
+        const name = options.tagText?.(o.name) ?? o.name;
+        lines[start] = `${name}. ${lines[start]}`;
       }
     }
   };

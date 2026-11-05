@@ -111,7 +111,7 @@ that says `Closes #N` retires the item without anyone editing this file.
 | ID | Issue | Remaining work |
 |---|---|---|
 | GAME-001 | [#100](https://github.com/FueRobertHer/cast-guidance/issues/100) | Play-tab slot/upcast choice (a choose-then-roll redesign), and non-slot pools as cast sources. |
-| GAME-003 | [#101](https://github.com/FueRobertHer/cast-guidance/issues/101) | Edition compatibility beyond picker filtering: carry-overs, reprints, conflicts, change preview. |
+| GAME-003 | [#101](https://github.com/FueRobertHer/cast-guidance/issues/101) | Edition compatibility beyond picker filtering: carry-overs, reprints, conflicts, change preview. Groundwork: the data audit labels 2014/2024 reprint pairs (`reprint@1`); no real answers saved yet, and nothing reaches the app. |
 | GAME-005 | [#102](https://github.com/FueRobertHer/cast-guidance/issues/102) | Creator wiring: edit a new character's own sources in the wizard and pass the draft's list to its card pickers. The Build page editor, every Build and sheet picker, and the OR-set level gate have shipped. |
 | GAME-007 | [#103](https://github.com/FueRobertHer/cast-guidance/issues/103) | Optional, opt-in "trim to limit" action for over-limit spell lists. |
 
