@@ -210,6 +210,8 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
   const reg = new EntityRegistry();
   const warn = (w: CopyModWarning[]) => reg.warnings.push(...w);
 
+  const rulesBooks = booksMarkedOne(files);
+
   // Races + subraces (copies, then version expansion on both)
   const races = entityArray(files, 'races.json', 'race');
   const subraces = entityArray(files, 'races.json', 'subrace');
@@ -284,7 +286,45 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
   }
   reg.addAll('spell', spells);
 
+  // Beside `edition` rather than in it, and only now that copies have resolved,
+  // so this reaches no row through a copy. Some older adventures copy bare XDMG
+  // items and are still 2014 books, and homebrew, merged later, reads as it did
+  // (`copyMod` drops the field on copy).
+  for (const type of ENTITY_TYPES) {
+    for (const e of reg.byType(type)) {
+      if (e.edition === undefined && rulesBooks.has(e.source)) e.bookEdition = 'one';
+    }
+  }
   return reg;
+}
+
+/**
+ * The books that count as 2024 rules, because a row in them says so.
+ *
+ * 5etools marks entities, but the rules edition belongs to the book: a later
+ * book marks its backgrounds and subclasses `one` and leaves its feats, spells
+ * and items bare, which read as 2014 one entity at a time. `normalizeDataset`
+ * gives those bare rows a `bookEdition`, so `editionOf` stays a question about
+ * one entity for all of its callers.
+ *
+ * Read from the raw files, because `edition` carries through a `_copy`: read
+ * afterwards, one older row copying a marked XPHB race would hide its whole book
+ * from a 2014 character. Official files only, so a homebrew row claiming
+ * `source: 'PHB'` with a `one` cannot flip the real PHB. A book is only as known
+ * as the files that have landed, and each landing rebuilds this.
+ */
+function booksMarkedOne(files: ReadonlyMap<string, unknown>): Set<unknown> {
+  const books = new Set<unknown>();
+  for (const json of files.values()) {
+    if (json === null || typeof json !== 'object') continue;
+    for (const list of Object.values(json)) {
+      if (!Array.isArray(list)) continue;
+      for (const row of list as Array<Entity | null>) {
+        if (row?.edition === 'one' && typeof row.source === 'string') books.add(row.source);
+      }
+    }
+  }
+  return books;
 }
 
 /** Homebrew JSON keys are the same as official entity-array keys. */

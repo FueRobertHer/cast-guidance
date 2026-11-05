@@ -16,7 +16,10 @@ import type { AskJev, JevQuestion } from './jev';
 
 export interface JudgeSet {
   id: string;
-  /** Bump when any question's wording or meaning changes. */
+  /**
+   * Bump when any question's wording or meaning changes. Not when a subject's
+   * text changes: its hash already re-keys what moved and nothing else.
+   */
   version: number;
   questions: readonly JevQuestion[];
 }

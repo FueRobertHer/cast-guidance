@@ -9,6 +9,7 @@ import {
   editionFitNote,
   emptySwitchPreview,
 } from './editionCompat';
+import { normalizeDataset } from './normalize';
 
 /** A 2014 printing, optionally declaring what reprints it. */
 const old = (name: string, reprintedAs?: unknown): Entity =>
@@ -138,6 +139,35 @@ describe('editionFit', () => {
       kind: 'reprinted',
       as: { name: 'Hexblood', source: 'FRHoF' },
     });
+  });
+
+  it('accepts a reprint left unmarked in a book something else marks 2024', () => {
+    // The later books mark their backgrounds and leave most of the rest bare, so
+    // the target only reads as 2024 by way of its book.
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        ['backgrounds.json', { background: [{ name: 'Bg', source: 'LATE', edition: 'one' }] }],
+        [
+          'races.json',
+          {
+            race: [
+              { name: 'Kin', source: 'PHB', reprintedAs: ['Kin|LATE'] },
+              { name: 'Kin', source: 'LATE' },
+            ],
+          },
+        ],
+      ]),
+    );
+    const pick = reg.get('race', 'Kin', 'PHB') as Entity;
+    const resolve = (ref: { name: string; source: string }) =>
+      reg.get('race', ref.name, ref.source);
+    expect(editionFit(pick, 'race', '2024', resolve)).toEqual({
+      kind: 'reprinted',
+      as: { name: 'Kin', source: 'LATE' },
+    });
+    // That reprint is newer content to a 2014 character holding it.
+    const reprint = reg.get('race', 'Kin', 'LATE') as Entity;
+    expect(editionFit(reprint, 'race', '2014', resolve)).toEqual({ kind: 'newer' });
   });
 });
 

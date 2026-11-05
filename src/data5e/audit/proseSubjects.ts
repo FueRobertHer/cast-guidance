@@ -16,6 +16,7 @@ import { Collector } from '../../engine/effects/base';
 import { proseScanFeature } from '../../engine/effects/proseScan';
 import { type EffectInput, newCharacterDoc } from '../../engine/types';
 import type { Entity } from '../copyMod';
+import { plainEntryText } from '../entries/plainText';
 import type { EntityType } from '../normalize';
 
 export type ProseSubjectType =
@@ -71,28 +72,19 @@ export function textHash(text: string): string {
 }
 
 /**
- * A `{@tag ...}` reduced to the words a reader sees: the third `|` part when
- * there is one (`{@variantrule Proficiency|XPHB|Proficiency Bonus}`), else
- * the first (`{@spell bless|phb}`).
- */
-export function displayTagText(text: string): string {
-  return text.replaceAll(/\{@\w+ ([^}]*)\}/g, (_, body: string) => {
-    const parts = body.split('|');
-    const shown = parts[2]?.trim();
-    return shown !== undefined && shown !== '' ? shown : (parts[0] ?? '');
-  });
-}
-
-/**
  * Entries as plain paragraphs, case kept and tags shown as their display
  * text. Named sub-entries keep their name as a lead-in ("Longtooth. ..."), so
  * a judge can tell an option the player picks from what the trait always does.
+ *
+ * This text is what a subject's key hashes. Reading a tag differently re-keys
+ * exactly the subjects whose words move, and their answers wait to be asked
+ * again; `bun run data:judge -- --dry-run` counts them before anyone pays.
  */
 export function readableEntries(entries: unknown): string {
   const lines: string[] = [];
   const walk = (v: unknown): void => {
     if (typeof v === 'string') {
-      lines.push(displayTagText(v));
+      lines.push(plainEntryText(v));
       return;
     }
     if (Array.isArray(v)) {

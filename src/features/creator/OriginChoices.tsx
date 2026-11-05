@@ -32,8 +32,10 @@ import { ChoicePromptRenderer } from './ChoicePromptRenderer';
  * a pick never vanishes.
  *
  * These prompts have no "show hidden anyway" affordance, and some of them are
- * mandatory, so the source narrowing is skipped outright when it would leave
- * nothing to pick. A shorter list is the goal; a dead end is not.
+ * mandatory, so each narrowing is skipped outright when it would leave nothing
+ * to pick. A shorter list is the goal; a dead end is not. The version one comes
+ * up when a 2014 character holds a 2024 grant: a species offering a feat from a
+ * category only 2024 books print has nothing in that character's own edition.
  *
  * Under a character's own list (`scope` 'character'), an option that stays
  * listed from a book outside it (already chosen, or kept by that fallback)
@@ -69,8 +71,9 @@ export function filterEntityPrompt(
   // (invocations are "EI" in both), so a 2014 Warlock was offered the XPHB
   // Agonizing Blast beside the PHB one.
   const byVersion = filterByRulesVersion(entities, version);
-  const bySource = applySourcePolicy(byVersion, policy, (e) => String(e.source));
-  const kept = uidsOf(bySource.length > 0 ? bySource : byVersion);
+  const candidates = byVersion.length > 0 ? byVersion : entities;
+  const bySource = applySourcePolicy(candidates, policy, (e) => String(e.source));
+  const kept = uidsOf(bySource.length > 0 ? bySource : candidates);
 
   const options = prompt.options.filter(
     (o) => selected.has(o.id) || !sourceById.has(o.id) || kept.has(o.id),
