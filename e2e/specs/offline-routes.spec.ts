@@ -1,6 +1,6 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import { PINNED_TAG } from '../fixtures/mirror.ts';
-import { dataFailureBanner, libraryEntry, settingsValue } from '../support/app.ts';
+import { dataFailureBanner, libraryEntry, SPINNERS, settingsValue } from '../support/app.ts';
 import {
   CACHE_LEVELS,
   type CacheLevel,
@@ -28,7 +28,6 @@ import {
   ROUTES,
   type RouteCase,
   type SheetCell,
-  SPINNERS,
 } from '../support/routeMatrix.ts';
 
 /**

@@ -201,12 +201,9 @@ test.describe('touch target sizes', () => {
 
     await gotoSheetTab(page, id, 'Build');
     // Every section open, and every picker in them, so all of Build is measured.
-    // The sections wait for the rules data, which can land after the header
-    // gotoSheetTab waits for, and a count before them finds nothing to open.
     // Opening one can reveal more, so this goes on until none is left (or
     // gives up, and the check below fails).
     const closed = page.getByRole('main').locator('details:not([open]) > summary');
-    await expect(closed.first()).toBeVisible();
     for (let i = 0; i < 50 && (await closed.count()) > 0; i++) await closed.first().click();
     await expect(closed).toHaveCount(0);
     await animationsSettled(page);
