@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
   Brain,
+  HeartCrack,
+  HeartPlus,
   Hourglass,
   Minus,
   Moon,
@@ -25,7 +27,7 @@ import { BannerAction } from '@/ui/Banner';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { Button, buttonClass } from '@/ui/Button';
 import { D20Icon } from '@/ui/D20Icon';
-import { askConfirm, askNumber, askText } from '@/ui/dialogs';
+import { askConfirm, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Tip, useTip } from '@/ui/Hint';
 import { PackProblem } from '@/ui/PackProblem';
@@ -44,6 +46,7 @@ import {
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { effectLines, noteLines, rollD20Test, useIgnoreOnce } from '../d20Tests';
+import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RollEffectCue } from '../RollEffectCue';
 import { longRest, shortRest } from '../rest';
@@ -227,6 +230,11 @@ export function Component() {
   const hpTip = useTip('hp-exact');
   const rulesTip = useTip('tap-for-rules');
   const hpNumber = useRef<HTMLButtonElement>(null);
+  const [hpSheet, setHpSheet] = useState<{ open: boolean; mode: HpMode }>({
+    open: false,
+    mode: 'damage',
+  });
+  const hpSheetFrom = useRef<HTMLElement>(null);
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   const spellEntity = (name: string, source: string) =>
@@ -413,6 +421,18 @@ export function Component() {
       });
     }
   };
+  /** The card's ways into the HP sheet: each opens it on its own mode. */
+  const openHpSheet = (mode: HpMode, from: HTMLElement) => {
+    hpSheetFrom.current = from;
+    setHpSheet({ open: true, mode });
+  };
+  const applyFromHpSheet = (mode: HpMode, amount: number) => {
+    if (mode === 'damage') return hpDelta(-amount);
+    if (mode === 'heal') return hpDelta(amount);
+    // Temp HP doesn't stack: the new value replaces the old.
+    update((d) => void (d.play.tempHp = amount));
+    sayHp({ currentHp: play.currentHp, tempHp: amount });
+  };
   const setUsed = (key: string, used: number) =>
     update((d) => {
       const entry = d.play.resources.find((r) => r.key === key);
@@ -460,21 +480,14 @@ export function Component() {
           <button
             type="button"
             aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
+            aria-haspopup="dialog"
             title="Temporary hit points"
             className={`-my-2 -mr-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
               play.tempHp > 0
                 ? 'bg-ward-soft font-bold text-ward'
                 : 'font-semibold text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
             }`}
-            onClick={async () => {
-              const n = await askNumber({
-                title: 'Temporary HP',
-                initial: play.tempHp,
-                min: 0,
-                hint: "Temp HP doesn't stack: a new source replaces the old value.",
-              });
-              if (n !== null) update((d) => void (d.play.tempHp = n));
-            }}
+            onClick={(event) => openHpSheet('temp', event.currentTarget)}
           >
             <Shield size={14} aria-hidden="true" />
             {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
@@ -485,8 +498,8 @@ export function Component() {
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           {/* Explicit amounts — a reliable single click each. (The old single/
               double-tap combo double-fired: a "double-tap −5" applied −6 and
-              rolled up to three concentration saves.) Tap the total for an
-              exact value. */}
+              rolled up to three concentration saves.) Tap the total for the
+              HP sheet's keypad and an exact amount. */}
           <div className="flex items-center gap-0.5">
             {/* ±5 keep their smaller circle so ±1 still reads as the main
                 control, inside a 44px target (A11Y-002). They are the HP
@@ -523,35 +536,12 @@ export function Component() {
             ref={hpNumber}
             type="button"
             className="min-w-[max(3.25rem,min-content)] grow basis-0 text-center"
+            aria-haspopup="dialog"
             title="Type an exact amount"
-            onClick={async () => {
+            onClick={(event) => {
               // Used once, the tip has said what it had to.
               hpTip.dismiss();
-              const n = await askNumber({
-                title: 'Set current HP',
-                initial: play.currentHp,
-                min: 0,
-                max: maxHp.value,
-                hint: `0–${maxHp.value}`,
-              });
-              if (n === null) return;
-              let notice: Notice | null = null;
-              const after = { currentHp: play.currentHp, tempHp: play.tempHp };
-              update((d) => {
-                const target = Math.max(0, Math.min(maxHp.value, n));
-                const damageTaken = d.play.currentHp - target;
-                d.play.currentHp = target;
-                d.play.hpInitialized = true;
-                if (target === 0) d.play.concentratingOn = undefined;
-                else {
-                  d.play.deathSaves = { success: 0, fail: 0 };
-                  notice = rollConcentration(d.play, damageTaken, rollConcentrationSave);
-                }
-                after.currentHp = d.play.currentHp;
-                after.tempHp = d.play.tempHp;
-              });
-              sayHp(after);
-              if (notice !== null) notify(notice);
+              openHpSheet('damage', event.currentTarget);
             }}
           >
             {/* `stat` under 360px and `stat-hero` from there: three-digit HP
@@ -635,6 +625,32 @@ export function Component() {
               </div>
             );
           })()}
+        {/* Two across, stacked where large text would not fit both: a floor in
+            rem, so it grows with the words it has to hold. */}
+        <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,7.5rem),1fr))] gap-2">
+          <Button
+            variant="damage"
+            aria-haspopup="dialog"
+            onClick={(event) => openHpSheet('damage', event.currentTarget)}
+          >
+            <HeartCrack size={18} aria-hidden="true" className="shrink-0" /> Damage
+          </Button>
+          <Button
+            variant="heal"
+            aria-haspopup="dialog"
+            onClick={(event) => openHpSheet('heal', event.currentTarget)}
+          >
+            <HeartPlus size={18} aria-hidden="true" className="shrink-0" /> Heal
+          </Button>
+        </div>
+        <HpSheet
+          open={hpSheet.open}
+          mode={hpSheet.mode}
+          hp={{ currentHp: play.currentHp, tempHp: play.tempHp, maxHp: maxHp.value }}
+          onApply={applyFromHpSheet}
+          onOpenChange={(open) => setHpSheet((s) => ({ ...s, open }))}
+          openedFrom={hpSheetFrom}
+        />
         {/* How to type an amount is a first-use tip (DS-001 HitPoints), not
             a line that stays on the card. */}
         {hpTip.shown && (

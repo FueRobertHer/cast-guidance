@@ -54,7 +54,6 @@ vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }))
 vi.mock('@/db/characterRepo', () => ({ characterRepo: { create } }));
 vi.mock('@/ui/dialogs', () => ({
   askConfirm: dialogs.askConfirm,
-  askNumber: () => Promise.resolve(null),
   askText: () => Promise.resolve(null),
   askChoice: () => Promise.resolve(null),
 }));

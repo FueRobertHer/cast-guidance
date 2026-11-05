@@ -305,6 +305,18 @@ test.describe('axe: pages and overlays', () => {
     await animationsSettled(page);
     await scanState(page, 'sheet-play-hp-tip');
 
+    // The HP sheet, with an amount keyed and its confirm ready to run.
+    await page.getByRole('button', { name: 'Damage', exact: true }).click();
+    const hpSheet = page.getByRole('dialog', { name: 'Hit points' });
+    await opened(page, hpSheet);
+    await hpSheet
+      .getByRole('group', { name: 'Quick amounts' })
+      .getByRole('button', { name: '5', exact: true })
+      .click();
+    await expect(hpSheet.getByRole('button', { name: 'Take 5 damage' })).toBeVisible();
+    await scanState(page, 'hp-sheet');
+    await closeWithEscape(page, hpSheet);
+
     await page.getByRole('button', { name: 'Dice tray' }).click();
     const dice = page.getByRole('dialog', { name: 'Dice' });
     await opened(page, dice);

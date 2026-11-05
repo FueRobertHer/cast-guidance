@@ -529,6 +529,79 @@ test.describe('the dice tray and the roll toast', () => {
   }
 });
 
+test.describe('the HP sheet', () => {
+  for (const [when, viewport, extra] of [
+    ['at 320 CSS px', { width: 320, height: 640 }, ''],
+    ['with text at 200%', undefined, 'html { font-size: 200% !important; }'],
+    [
+      'at 320 CSS px with text at 200%',
+      { width: 320, height: 640 },
+      'html { font-size: 200% !important; }',
+    ],
+    ['on a phone on its side', { width: 851, height: 393 }, ''],
+  ] as const) {
+    test(`keeps every mode and key whole ${when}`, async ({ page }) => {
+      if (viewport !== undefined) await page.setViewportSize(viewport);
+      // A played character holding temp HP: the longest line under the keypad
+      // and the longest context beside the title.
+      const id = await setUpFilled(page);
+      await gotoSheetTab(page, id, 'Play');
+      await applyMeasuredFont(page, extra);
+      await page.getByRole('button', { name: 'Temp HP' }).click();
+      const sheet = page.getByRole('dialog', { name: 'Hit points' });
+      await expect(sheet).toBeVisible();
+      const quick = sheet.getByRole('group', { name: 'Quick amounts' });
+      const keypad = sheet.getByRole('group', { name: 'Keypad' });
+      await animationsSettled(page);
+      await keypad.getByRole('button', { name: '5' }).click();
+      await sheet.getByRole('button', { name: 'Set temp HP to 5' }).click();
+      await expect(sheet).toBeHidden();
+
+      // The card's two buttons, whole, however their row wrapped.
+      const route = { name: 'the HP card', open: async () => {}, primary: () => [] };
+      await animationsSettled(page);
+      await expectNoSidewaysScroll(page, route);
+      for (const name of ['Damage', 'Heal']) {
+        const action = page.getByRole('button', { name, exact: true });
+        await action.scrollIntoViewIfNeeded();
+        await expect(action, name).toBeInViewport({ ratio: 1 });
+        expect(await pastRightEdge(action), `${name}: past its edge`).toEqual([]);
+      }
+
+      await page.getByRole('button', { name: 'Damage', exact: true }).click();
+      await expect(sheet).toBeVisible();
+      await animationsSettled(page);
+      for (const [mode, confirm] of [
+        ['Damage', 'Take 150 damage'],
+        ['Heal', /^Heal \d+ HP$|^Already at full HP$/],
+        ['Temp HP', 'Set temp HP to 150'],
+      ] as const) {
+        await sheet.getByRole('button', { name: mode, exact: true }).click();
+        if (mode === 'Damage') {
+          await quick.getByRole('button', { name: '15', exact: true }).click();
+          await keypad.getByRole('button', { name: '0', exact: true }).click();
+        }
+        expect(await pastRightEdge(sheet), `${mode}: past the sheet`).toEqual([]);
+        for (const control of [
+          sheet.getByRole('button', { name: mode, exact: true }),
+          quick.getByRole('button', { name: '15', exact: true }),
+          keypad.getByRole('button', { name: '1', exact: true }),
+          keypad.getByRole('button', { name: 'Clear' }),
+          keypad.getByRole('button', { name: 'Delete' }),
+          sheet.getByRole('button', { name: confirm }),
+        ]) {
+          await control.scrollIntoViewIfNeeded();
+          await expect(control, `${mode}: ${control}`).toBeInViewport({ ratio: 1 });
+          expect(await pastRightEdge(control), `${mode}: ${control} past its edge`).toEqual([]);
+        }
+        // The confirm never scrolls away with the keys.
+        await keypad.getByRole('button', { name: '1', exact: true }).scrollIntoViewIfNeeded();
+        await expect(sheet.getByRole('button', { name: confirm })).toBeInViewport({ ratio: 1 });
+      }
+    });
+  }
+});
+
 /** Spells in the landscape walk of a long list, enough that most are not rendered at once. */
 const LONG_LIST = 150;
 

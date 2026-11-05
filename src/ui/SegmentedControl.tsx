@@ -7,7 +7,9 @@
  * Each segment is a button with `aria-pressed` in a labelled group. The
  * pressed one is an `ink` pill on the `surface-raised` track: selection is
  * ink, never a hue, and the pill's shape says it without colour. The track
- * is 44px tall; each segment 38px inside it.
+ * is 44px tall; each segment 38px inside it. A `block` one wraps a segment to
+ * a second row where large text will not fit them all on one, rather than run
+ * out of its container.
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -33,7 +35,7 @@ export function SegmentedControl<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className={`${block ? 'flex' : 'inline-flex'} gap-0.5 rounded-control bg-surface-raised p-0.75`}
+      className={`${block ? 'flex flex-wrap' : 'inline-flex'} gap-0.5 rounded-control bg-surface-raised p-0.75`}
     >
       {options.map((option) => (
         <button
