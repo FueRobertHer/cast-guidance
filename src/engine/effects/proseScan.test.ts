@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
+import { emitCuratedEffects } from '../curated/curatedEffects';
+import { deriveSheet } from '../derive';
 import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
 import { Collector } from './base';
 import { flattenEntries, proseScanFeature } from './proseScan';
@@ -614,5 +616,665 @@ describe('proseScanFeature unarmed strike upgrades', () => {
     ]);
     expect(weapon(effects)).toMatchObject({ ability: 'con', damageType: 'piercing' });
     expect(punch(effects)).toBeUndefined();
+  });
+});
+
+describe('proseScanFeature: standing bonuses to checks and initiative', () => {
+  const BONUS_KINDS: readonly string[] = [
+    'halfProf',
+    'initiativeBonus',
+    'checkBonus',
+    'passivePerceptionBonus',
+  ];
+  const bonusesIn = (effects: readonly EffectInput[]) =>
+    effects.filter((e) => BONUS_KINDS.includes(e.kind)).map(({ origin: _, ...effect }) => effect);
+  const bonuses = (entries: unknown) => bonusesIn(scan('Odd Knack', entries));
+
+  describe('half proficiency', () => {
+    it.each([
+      [
+        'every check, rounded down',
+        "You can add half your proficiency bonus, rounded down, to any ability check that doesn't add your proficiency bonus.",
+        { round: 'down' },
+      ],
+      [
+        'the rounding left unsaid, which rounds down',
+        'You add half your proficiency bonus to any ability check you make.',
+        { round: 'down' },
+      ],
+      [
+        'one ability',
+        "You can add half your proficiency bonus (round down) to any Charisma check you make that doesn't already use your proficiency bonus.",
+        { round: 'down', abilities: ['cha'] },
+      ],
+      [
+        'a list of abilities, rounded up',
+        'You can add half your proficiency bonus (rounded up) to any Intelligence, Wisdom, or Charisma check.',
+        { round: 'up', abilities: ['int', 'wis', 'cha'] },
+      ],
+      [
+        'only skills the character lacks',
+        "You can add half your proficiency bonus, round down, to any ability check that uses a skill proficiency you lack and that doesn't otherwise use your proficiency bonus.",
+        { round: 'down', skillsOnly: true },
+      ],
+    ])('reads %s', (_name, sentence, expected) => {
+      expect(bonuses([sentence])).toEqual([{ kind: 'halfProf', ...expected }]);
+    });
+  });
+
+  describe('initiative', () => {
+    it.each([
+      [
+        'the proficiency bonus',
+        'You can add your proficiency bonus to your initiative roll.',
+        'profBonus',
+      ],
+      [
+        'the proficiency bonus once the roll is named',
+        'Whenever you roll initiative, you can add your proficiency bonus to the roll.',
+        'profBonus',
+      ],
+      [
+        'a bonus that only equals the proficiency bonus',
+        'You gain a bonus to initiative equal to your proficiency bonus.',
+        'equalToProfBonus',
+      ],
+      [
+        'a bonus shared with others',
+        'When you and any allies you choose within 5 feet of you roll initiative, you all gain a bonus to initiative equal to your proficiency bonus.',
+        'equalToProfBonus',
+      ],
+      [
+        'an optional modifier given as a bonus',
+        'You can give yourself a bonus to initiative equal to your Intelligence modifier.',
+        'abilityModMin0:int',
+      ],
+      [
+        'an optional modifier added to the rolls',
+        'You can add your Strength modifier to your initiative rolls.',
+        'abilityModMin0:str',
+      ],
+      [
+        'an optional modifier added to the roll',
+        'When you roll initiative, you can add your Charisma modifier to the roll.',
+        'abilityModMin0:cha',
+      ],
+      [
+        'a modifier that is not optional',
+        'You gain a bonus to your initiative rolls equal to your Wisdom modifier.',
+        'abilityMod:wis',
+      ],
+      [
+        'a modifier with a floor',
+        'You gain a bonus to your initiative rolls equal to your Wisdom modifier (minimum of +1).',
+        'abilityModMin1:wis',
+      ],
+      ['a flat number', 'You gain a +3 bonus to initiative.', 3],
+      ['a flat number on the rolls', 'You have a +2 bonus to your initiative rolls.', 2],
+    ])('reads %s', (_name, sentence, amount) => {
+      expect(bonuses([sentence])).toEqual([{ kind: 'initiativeBonus', amount }]);
+    });
+  });
+
+  describe('named checks', () => {
+    it.each([
+      [
+        'every check of an ability',
+        'Whenever you make a Charisma check, you gain a bonus to the check equal to your Intelligence modifier (minimum of +1).',
+        { ability: 'cha', amount: 'abilityModMin1:int' },
+      ],
+      [
+        'one skill',
+        'Whenever you make a Wisdom (Survival) check, you gain a bonus to the check equal to your Strength modifier.',
+        { skills: ['Survival'], amount: 'abilityMod:str' },
+      ],
+      [
+        'a skill of more than one word',
+        'You gain a bonus to your Dexterity (Sleight of Hand) checks equal to your Charisma modifier.',
+        { skills: ['Sleight of Hand'], amount: 'abilityMod:cha' },
+      ],
+      [
+        'several skills',
+        'You have a bonus to your Intelligence (Arcana, History, or Nature) checks equal to your Wisdom modifier.',
+        { skills: ['Arcana', 'History', 'Nature'], amount: 'abilityMod:wis' },
+      ],
+      [
+        'a skill with no ability beside it, and an optional modifier',
+        'You can give yourself a bonus to your Perception checks equal to your Intelligence modifier.',
+        { skills: ['Perception'], amount: 'abilityModMin0:int' },
+      ],
+      [
+        'a size left to the next sentence',
+        'Your bond with the deep woods gives you a bonus to your Intelligence (Nature or History) checks. The bonus equals your Charisma modifier (a minimum of +1).',
+        { skills: ['Nature', 'History'], amount: 'abilityModMin1:cha' },
+      ],
+      [
+        'the other spelling of the floor',
+        'Your bond with the tides gives you a bonus to your Strength checks. The bonus equals your Charisma modifier (minimum bonus of +1).',
+        { ability: 'str', amount: 'abilityModMin1:cha' },
+      ],
+    ])('reads %s', (_name, entries, expected) => {
+      expect(bonuses([entries])).toEqual([{ kind: 'checkBonus', ...expected }]);
+    });
+  });
+
+  it.each([
+    'You have a +3 bonus to your passive Wisdom (Perception) score.',
+    'You gain a +3 bonus to your passive Perception.',
+    'You have a +3 bonus to your passive Perception and passive Investigation scores.',
+  ])('reads a flat bonus to passive Perception: %s', (sentence) => {
+    expect(bonuses([sentence])).toEqual([{ kind: 'passivePerceptionBonus', amount: 3 }]);
+  });
+
+  describe('where the sentence sits', () => {
+    const hare = [{ kind: 'initiativeBonus', amount: 'profBonus' }];
+    const SENTENCE = 'You add your proficiency bonus to your initiative rolls.';
+    const CLAUSE = 'you add your proficiency bonus to your initiative rolls.';
+
+    it.each([
+      ['after other sentences', `Your ears twitch at any snap. ${SENTENCE}`],
+      ['after "in addition"', `In addition, ${CLAUSE}`],
+      ['after "additionally"', `Additionally, ${CLAUSE}`],
+      ['after "as a result"', `As a result, ${CLAUSE}`],
+      ['before other sentences', `${SENTENCE} Your ears twitch at any snap.`],
+      ['after a sentence with a condition of its own', `You glow while awake. ${SENTENCE}`],
+    ])('finds it %s', (_name, entries) => {
+      expect(bonuses([entries])).toEqual(hare);
+    });
+
+    describe('after a level', () => {
+      const atLevel = (levels: number, entries: unknown) => {
+        const doc = newCharacterDoc('c', 'H', 't');
+        doc.classes = [{ ref: { name: 'Fighter', source: 'PHB' }, levels, hp: [] }];
+        const col = new Collector(doc, makeTestContext());
+        proseScanFeature(col, 'Odd Knack', entries, origin);
+        return bonusesIn(col.effects);
+      };
+
+      it.each([
+        'Starting at 6th level',
+        'Beginning at 6th level',
+        'At 6th level',
+        'By 6th level',
+      ])('waits for the level: %s', (lead) => {
+        expect(atLevel(5, [`${lead}, ${CLAUSE}`])).toEqual([]);
+        expect(atLevel(6, [`${lead}, ${CLAUSE}`])).toEqual(hare);
+      });
+
+      it('holds back only the bonus that names the level', () => {
+        const entries = [
+          'You gain a +1 bonus to initiative. At 10th level, you can add half your proficiency bonus to any Strength check.',
+        ];
+        expect(atLevel(9, entries)).toEqual([{ kind: 'initiativeBonus', amount: 1 }]);
+        expect(atLevel(10, entries)).toEqual([
+          { kind: 'initiativeBonus', amount: 1 },
+          { kind: 'halfProf', round: 'down', abilities: ['str'] },
+        ]);
+      });
+    });
+
+    describe('under a heading that governs what follows', () => {
+      const list = {
+        type: 'list',
+        items: ['You gain a +3 bonus to initiative.', 'You never trip.'],
+      };
+      const quick = {
+        type: 'entries',
+        name: 'Quick',
+        entries: ['You gain a +3 bonus to initiative.'],
+      };
+      const keen = {
+        type: 'entries',
+        name: 'Keen',
+        entries: ['You gain a +1 bonus to initiative.'],
+      };
+
+      it.each([
+        ['a state over a list', ['While you are raging, you gain the following benefits:', list]],
+        [
+          'a state over a benefit',
+          ['While you are raging, you gain the following benefits.', quick],
+        ],
+        [
+          'a state ending the heading',
+          ['You gain the following benefits while you are raging:', list],
+        ],
+        ['a trigger with no "following"', ['When you rage, you gain these benefits:', list]],
+        ['a choice over benefits', ['Choose one of the following benefits.', quick, keen]],
+        ['a choice over a list', ['Choose one of the following:', list]],
+        ['a choice mid-sentence', ['You gain one of the following benefits of your choice:', list]],
+      ])('adds nothing for %s', (_name, entries) => {
+        expect(bonuses(entries)).toEqual([]);
+      });
+    });
+
+    describe('after a sentence that governs what follows', () => {
+      it.each([
+        [
+          'a state',
+          'While you are raging, you have resistance to cold damage. In addition, you gain a +2 bonus to initiative.',
+        ],
+        [
+          'an action in its opener',
+          'As a bonus action, you can enter a battle trance for 1 minute. You have a +5 bonus to your initiative rolls.',
+        ],
+        [
+          'an action in its tail',
+          'You can enter a battle trance as a bonus action. You have a +5 bonus to your initiative rolls.',
+        ],
+        [
+          'a trigger',
+          'When you are hit, you can snarl. Additionally, you can add half your proficiency bonus to any Strength check.',
+        ],
+        [
+          'a duration',
+          'For 1 minute, you glow. As a result, whenever you make a Strength check, you gain a bonus to the check equal to your Constitution modifier.',
+        ],
+      ])('adds nothing for %s', (_name, entries) => {
+        expect(bonuses([entries])).toEqual([]);
+      });
+
+      it('stands in a later string, which is another benefit', () => {
+        expect(bonuses(['When you are hit, you can snarl.', SENTENCE])).toEqual(hare);
+      });
+    });
+
+    it('reads a string of its own after a heading with no full stop', () => {
+      expect(bonuses(['{@i 3rd-level Odd feature}', SENTENCE])).toEqual(hare);
+    });
+
+    it('reads tags as the words they display', () => {
+      expect(
+        bonuses([
+          'Whenever you roll {@variantrule Initiative|XPHB}, you can add your {@variantrule Proficiency|XPHB|Proficiency Bonus} to the roll.',
+        ]),
+      ).toEqual(hare);
+      expect(
+        bonuses([
+          'Your bond with the tides gives you a bonus to your Intelligence ({@skill Arcana|XPHB} or {@skill Nature|XPHB}) checks. The bonus equals your Constitution modifier.',
+        ]),
+      ).toEqual([{ kind: 'checkBonus', skills: ['Arcana', 'Nature'], amount: 'abilityMod:con' }]);
+      expect(
+        bonuses([
+          'You can add half your {@variantrule Proficiency|XPHB|Proficiency Bonus} to any ability check that doesn’t already include your {@variantrule Proficiency|XPHB|Proficiency Bonus}.',
+        ]),
+      ).toEqual([{ kind: 'halfProf', round: 'down' }]);
+    });
+
+    it('reads a named benefit under a plain heading', () => {
+      expect(
+        bonuses([
+          'You gain the following boons.',
+          { type: 'entries', name: 'Quick Ears', entries: [SENTENCE] },
+        ]),
+      ).toEqual(hare);
+    });
+
+    it('reads an unnamed list item under a plain heading', () => {
+      expect(
+        bonuses([
+          'You gain the following boons:',
+          { type: 'list', items: ['You gain a +3 bonus to initiative.', 'You never trip.'] },
+        ]),
+      ).toEqual([{ kind: 'initiativeBonus', amount: 3 }]);
+    });
+
+    it('skips a named option, which the player has to pick', () => {
+      expect(
+        bonuses([
+          'Choose one of these knacks.',
+          {
+            type: 'list',
+            items: [{ type: 'item', name: 'Quick Ears', entries: [SENTENCE] }],
+          },
+        ]),
+      ).toEqual([]);
+    });
+
+    it('takes each bonus a feature grants', () => {
+      expect(
+        bonuses([
+          'You can add your Wisdom modifier to your initiative rolls.',
+          'You can add half your proficiency bonus to any Strength check.',
+        ]),
+      ).toEqual([
+        { kind: 'initiativeBonus', amount: 'abilityModMin0:wis' },
+        { kind: 'halfProf', round: 'down', abilities: ['str'] },
+      ]);
+    });
+  });
+
+  describe('a bonus with limited uses', () => {
+    it.each([
+      [
+        'a limit by name',
+        'Whenever you roll initiative, you can add your proficiency bonus to the roll. Once you do so, you must wait until dawn.',
+      ],
+      [
+        'a limit by rest',
+        "You can add your Wisdom modifier to your initiative rolls. You can't use this trait again until you finish a long rest.",
+      ],
+      [
+        'a limit by count',
+        'You gain a +2 bonus to initiative. You can do so a number of times equal to your proficiency bonus.',
+      ],
+      [
+        'a limit past the size',
+        'You gain a bonus to your Strength checks. The bonus equals your Wisdom modifier. You can do so a number of times equal to your proficiency bonus.',
+      ],
+      [
+        'a limit past another sentence',
+        "You can add your Wisdom modifier to your initiative rolls. You feel the rush. You can't use this trait again until you finish a long rest.",
+      ],
+      [
+        'a limit on a benefit',
+        "You gain a +2 bonus to initiative. You can't use this benefit again until you finish a long rest.",
+      ],
+      ['a limit per day', 'You gain a +2 bonus to initiative. You can do so once per day.'],
+      ['a duration', 'You gain a +2 bonus to initiative. This bonus lasts for 3 rounds.'],
+      [
+        'a way to lose it',
+        'You gain a +2 bonus to initiative. You lose this bonus if you wear heavy armor.',
+      ],
+      [
+        'a place',
+        'You gain a +2 bonus to initiative. This bonus applies only in your favored terrain.',
+      ],
+    ])('is no sheet number when a later sentence sets %s', (_name, entries) => {
+      expect(bonuses([entries])).toEqual([]);
+    });
+
+    it('stands beside a limit that belongs to another benefit', () => {
+      const effects = scan('Odd Knack', [
+        'You can bite for 1d6 extra damage. You can use it a number of times equal to your Wisdom modifier, and you regain all expended uses when you finish a long rest.',
+        'Whenever you roll initiative, you can add your Wisdom modifier to the roll.',
+      ]);
+      expect(bonusesIn(effects)).toEqual([
+        { kind: 'initiativeBonus', amount: 'abilityModMin0:wis' },
+      ]);
+      expect(effects.find((e) => e.kind === 'resource')).toMatchObject({ max: 'abilityMod:wis' });
+    });
+  });
+
+  describe('adds nothing for', () => {
+    it.each([
+      // A condition the openers and tails leave room for.
+      [
+        'a condition inside the subject',
+        'Your aura while you are raging gives you a bonus to your Strength checks equal to your Wisdom modifier.',
+      ],
+      [
+        'a condition among those rolling',
+        'When you and your allies are surprised and roll initiative, you can add your Wisdom modifier to the roll.',
+      ],
+      [
+        'a place among those rolling',
+        'When you and any allies in a forest roll initiative, you can add your Wisdom modifier to the roll.',
+      ],
+      // Doubling is a proficiency level the data grants, not a bonus.
+      [
+        'doubled proficiency',
+        'Your proficiency bonus is doubled for any ability check you make with the chosen skill.',
+      ],
+      [
+        'a doubled bonus on a condition',
+        'Whenever you make an Intelligence (History) check about old maps, you can add twice your proficiency bonus.',
+      ],
+      ['an added doubled bonus', 'You add double your proficiency bonus to your initiative roll.'],
+      // Advantage has no number on the sheet.
+      ['advantage on initiative', 'You have advantage on your initiative rolls.'],
+      ['advantage on a check', 'You have advantage on your Strength checks.'],
+      // A trigger: rolls cannot take a toggled bonus yet.
+      [
+        'a state in the opener',
+        'While raging, you add your proficiency bonus to your initiative rolls.',
+      ],
+      ['a duration in the opener', 'For 10 minutes, you gain a +2 bonus to initiative.'],
+      ['an action in the opener', 'As a bonus action, you gain a +5 bonus to initiative.'],
+      ['a state in the tail', 'You gain a +10 bonus to initiative as long as you stay hidden.'],
+      [
+        'half proficiency in a state',
+        'You can add half your proficiency bonus to any Strength check while you hold a rope.',
+      ],
+      [
+        'a narrowed check',
+        'Whenever you make a Wisdom (Survival) check related to swamps, you gain a bonus to the check equal to your Wisdom modifier.',
+      ],
+      [
+        'a flat bonus in a state',
+        'For 1 hour, you gain a +2 bonus to all ability checks that use Strength.',
+      ],
+      [
+        'a reaction',
+        'When a creature you can see makes an ability check, you can use your reaction to add your Intelligence modifier to the roll.',
+      ],
+      [
+        'a spent resource',
+        'When you roll initiative, you can expend one knack die and add the die to the roll.',
+      ],
+      [
+        'a spell',
+        'You can cast the spell, and you can add your proficiency bonus to its ability check.',
+      ],
+      // Someone else's roll.
+      ['an ally', 'Each ally within 30 feet of you gains a +2 bonus to initiative.'],
+      ['a target', 'The target adds 1d6 to its initiative roll.'],
+      [
+        'a wearer',
+        'When the wearer makes a Strength check, it can spend a charge to add a bonus to the roll equal to its Intelligence modifier.',
+      ],
+      ['a companion', 'Your companion can add your proficiency bonus to its initiative rolls.'],
+      // No number the sheet can use.
+      [
+        'a skill the player chose',
+        'When you make a check with the chosen skill, you have a bonus to the check equal to your Constitution modifier.',
+      ],
+      ['no size', 'Whenever you make a Strength check, you gain a bonus to the check.'],
+      [
+        'a size that is not a modifier',
+        'You gain a bonus to initiative equal to the number rolled.',
+      ],
+      [
+        'a name that is no skill',
+        'You gain a bonus to your Cooking checks equal to your Wisdom modifier.',
+      ],
+      [
+        'every check by modifier',
+        'You gain a bonus to your ability checks equal to your Wisdom modifier.',
+      ],
+      ['a roll it does not name', 'You can add your proficiency bonus to the roll.'],
+      // The same words, about something else.
+      [
+        'half proficiency setting a level',
+        'You regain one spell slot of a level no higher than half your proficiency bonus (rounded up).',
+      ],
+      [
+        'half proficiency setting a count',
+        'You know a number of tricks equal to half your proficiency bonus (rounded down).',
+      ],
+      [
+        'half proficiency as hit points',
+        'You regain hit points equal to half your proficiency bonus.',
+      ],
+      [
+        'a use back on initiative',
+        'When you roll initiative, you regain one expended use of this trait.',
+      ],
+      ['a turn order', 'In combat, the companion shares your initiative count.'],
+      ['a companion rolling', 'Roll initiative for the companion, which takes its own turns.'],
+      [
+        'a save DC',
+        'A creature can see through it with a Wisdom (Insight) check against a DC of 8 + your proficiency bonus + your Charisma modifier.',
+      ],
+      ['a passive score left alone', 'You always know your passive Wisdom (Perception) score.'],
+      [
+        'passive Perception for others',
+        'Each ally within 10 feet of you has a +2 bonus to passive Wisdom (Perception) scores.',
+      ],
+    ])('%s', (_name, entries) => {
+      expect(bonuses([entries])).toEqual([]);
+    });
+  });
+
+  describe('a homebrew feature worded like a curated one', () => {
+    const noData = { get: () => undefined, byType: () => [] };
+    const curatedEffects = (key: string, uid: string) => {
+      const col = new Collector(newCharacterDoc('c', 'H', 't'), noData);
+      expect(emitCuratedEffects(col, key, { ...origin, uid })).toBe(true);
+      return col.effects;
+    };
+
+    const WORDED_LIKE: ReadonlyArray<[string, string, string[]]> = [
+      [
+        'jack of all trades|bard',
+        'bard|phb',
+        [
+          "Your years on the road pay off. You can add half your proficiency bonus, rounded down, to any ability check that doesn't already add your proficiency bonus.",
+        ],
+      ],
+      [
+        'jack of all trades|bard',
+        'bard|xphb',
+        [
+          "You can add half your proficiency bonus (round down) to any ability check that uses a skill proficiency you lack and that doesn't otherwise add your proficiency bonus.",
+        ],
+      ],
+      [
+        'remarkable athlete|champion',
+        'champion|phb',
+        [
+          "You can add half your proficiency bonus (round up) to any Strength, Dexterity, or Constitution check that doesn't already add your proficiency bonus.",
+        ],
+      ],
+      [
+        "trait:kefnet's blessing",
+        'race|x',
+        [
+          "You can add half your proficiency bonus, rounded down, to any Intelligence check that doesn't already add your proficiency bonus.",
+        ],
+      ],
+      [
+        'trait:hare-trigger',
+        'race|x',
+        ['Nothing startles you for long. You add your proficiency bonus to your initiative rolls.'],
+      ],
+      [
+        'alert|xphb',
+        'x',
+        ['Whenever you roll initiative, you can add your proficiency bonus to the roll.'],
+      ],
+      ['alert|phb', 'x', ['You have a +5 bonus to your initiative rolls.']],
+      [
+        'dread ambusher|gloom stalker',
+        'gloom stalker|xge',
+        [
+          'You sense trouble early. You can give yourself a bonus to your initiative roll equal to your Wisdom modifier.',
+        ],
+      ],
+      [
+        'temporal awareness|chronurgy magic',
+        'x',
+        ['Whenever you roll initiative, you can add your Intelligence modifier to the roll.'],
+      ],
+      [
+        'thaumaturge|cleric',
+        'x',
+        [
+          'Your study of old temples gives you a bonus to your Intelligence (Arcana or Religion) checks. The bonus equals your Wisdom modifier (a minimum of +1).',
+        ],
+      ],
+      [
+        'otherworldly glamour|fey wanderer',
+        'x',
+        [
+          'When you make a Charisma check, you have a bonus to the check equal to your Wisdom modifier (a minimum of +1).',
+        ],
+      ],
+      [
+        'elegant courtier|samurai',
+        'x',
+        [
+          'When you make a Charisma (Persuasion) check, you have a bonus to the check equal to your Wisdom modifier.',
+        ],
+      ],
+      ['observant|phb', 'x', ['You have a +5 bonus to your passive Wisdom (Perception) score.']],
+    ];
+
+    it.each(WORDED_LIKE)('emits what %s (%s) emits', (key, uid, entries) => {
+      const curated = bonusesIn(curatedEffects(key, uid));
+      expect(curated.length).toBeGreaterThan(0);
+      expect(bonuses(entries)).toEqual(curated);
+    });
+
+    // The sheet, end to end: a homebrew race's trait against the same race with
+    // the curated entry's effects on it. DEX +1, INT +1, WIS +2, CHA -1, proficiency +2.
+    const sheetOf = (entries: string[] | undefined, customEffects: EffectInput[] = []) => {
+      const race = {
+        name: 'Hearthkin',
+        source: 'HB',
+        entries: entries === undefined ? [] : [{ name: 'Odd Knack', type: 'entries', entries }],
+      };
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.abilities.method = 'manual';
+      doc.abilities.base = { str: 10, dex: 12, con: 10, int: 13, wis: 14, cha: 8 };
+      doc.race = { name: race.name, source: race.source };
+      doc.customEffects = customEffects;
+      return deriveSheet(doc, {
+        get: (type) => (type === 'race' ? race : undefined),
+        byType: (type) => (type === 'race' ? [race] : []),
+      });
+    };
+    const numbers = (sheet: ReturnType<typeof sheetOf>) => ({
+      initiative: sheet.initiative.value,
+      passive: sheet.passivePerception.value,
+      checks: Object.fromEntries(
+        Object.entries(sheet.checks).map(([ability, check]) => [ability, check.total.value]),
+      ),
+      skills: Object.fromEntries(
+        Object.entries(sheet.skills).map(([name, skill]) => [name, skill?.total.value]),
+      ),
+    });
+
+    it.each(WORDED_LIKE)('changes the sheet as %s (%s) does', (key, uid, entries) => {
+      const homebrew = numbers(sheetOf(entries));
+      expect(homebrew).toEqual(numbers(sheetOf(undefined, curatedEffects(key, uid))));
+      expect(homebrew).not.toEqual(numbers(sheetOf(undefined)));
+    });
+
+    it('puts the numbers where the prose says', () => {
+      const plain = numbers(sheetOf(undefined));
+      expect(plain.initiative).toBe(1);
+      const initiativeOf = (sentence: string) => numbers(sheetOf([sentence])).initiative;
+      expect(initiativeOf('You add your proficiency bonus to your initiative rolls.')).toBe(3);
+      expect(initiativeOf('You can add your Wisdom modifier to your initiative rolls.')).toBe(3);
+      const student = numbers(
+        sheetOf([
+          'Your study gives you a bonus to your Intelligence (Arcana or Religion) checks. The bonus equals your Wisdom modifier (a minimum of +1).',
+        ]),
+      );
+      expect(student.skills.Arcana).toBe((plain.skills.Arcana ?? 0) + 2);
+      expect(student.skills.Religion).toBe((plain.skills.Religion ?? 0) + 2);
+      expect(student.skills.History).toBe(plain.skills.History);
+      expect(student.initiative).toBe(plain.initiative);
+    });
+
+    it('keeps a negative modifier off the roll only where the prose makes it optional', () => {
+      const initiativeOf = (sentence: string) => numbers(sheetOf([sentence])).initiative;
+      expect(initiativeOf('You can add your Charisma modifier to your initiative rolls.')).toBe(1);
+      expect(
+        initiativeOf('You gain a bonus to your initiative rolls equal to your Charisma modifier.'),
+      ).toBe(0);
+      expect(
+        initiativeOf(
+          'You gain a bonus to your initiative rolls equal to your Charisma modifier (minimum of +1).',
+        ),
+      ).toBe(2);
+    });
+
+    it('changes nothing for a trait without that wording', () => {
+      expect(numbers(sheetOf(['You have advantage on your initiative rolls.']))).toEqual(
+        numbers(sheetOf(undefined)),
+      );
+    });
   });
 });
