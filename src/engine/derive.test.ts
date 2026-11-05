@@ -412,6 +412,65 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
   });
 });
 
+describe('deriveSheet: a chosen spell on a race or subclass', () => {
+  const pick = [{ known: { 1: { _: [{ choose: 'level=0|class=Testclass' }] } } }];
+  // The test world, with the entities at hand asking for a pick.
+  const pickCtx: typeof ctx = {
+    ...ctx,
+    get: (type, name, source) => {
+      const found = ctx.get(type, name, source);
+      if (found === undefined) return found;
+      if (type === 'class' && name === 'Warrior') return { ...found, spellcastingAbility: 'wis' };
+      if (type === 'race' || type === 'subclass') return { ...found, additionalSpells: pick };
+      return found;
+    },
+  };
+  const raceId = 'race:testfolk|tst:spell:u:0:known:1:0';
+  const subclassId = 'subclass:path of tests|tst:spell:u:0:known:1:0';
+  const asked = (doc: CharacterDoc) =>
+    deriveSheet(doc, pickCtx)
+      .pending.filter((p) => p.kind === 'spell')
+      .map((p) => p.id);
+
+  it('namespaces each pick by its owner, so one never answers the other', () => {
+    expect(asked(warriorDoc())).toEqual([raceId, subclassId]);
+  });
+
+  it('is the same pick whatever the character takes elsewhere or reaches', () => {
+    const doc = warriorDoc();
+    doc.background = undefined;
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.levels = 9;
+    entry.hp = Array(9).fill('avg');
+    expect(asked(doc)).toEqual([raceId, subclassId]);
+  });
+
+  it('carries each pick to the sheet, casting with what its owner casts with', () => {
+    const doc = warriorDoc();
+    doc.choices[raceId] = ['Fake Race Cantrip|TST'];
+    doc.choices[subclassId] = ['Fake Subclass Cantrip|TST'];
+    const sheet = deriveSheet(doc, pickCtx);
+    expect(sheet.pending.filter((p) => p.kind === 'spell')).toEqual([]);
+    expect(sheet.warnings.join()).not.toContain('choose a spell');
+    const byName = (name: string) => sheet.grantedSpells.find((g) => g.name === name);
+    expect(byName('Fake Race Cantrip')).toMatchObject({ origin: 'Testfolk', ability: undefined });
+    expect(byName('Fake Subclass Cantrip')).toMatchObject({
+      origin: 'Path of Tests',
+      ability: 'wis',
+    });
+  });
+
+  it('asks nothing of a character without the owner', () => {
+    const doc = warriorDoc();
+    doc.race = undefined;
+    const entry = doc.classes[0];
+    if (entry === undefined) throw new Error('no class');
+    entry.subclass = undefined;
+    expect(asked(doc)).toEqual([]);
+  });
+});
+
 describe('deriveSheet — optional-feature prerequisites', () => {
   it('level-gates optional feature options and labels their prerequisites', () => {
     const doc = warriorDoc(); // Warrior 5

@@ -9,7 +9,7 @@
  * Level keys gate by character level. `prepared` spells are always prepared and
  * cast with the class's own slots; `expanded` merely widens what you can learn,
  * so (lacking a picker) it surfaces as a note. A `{ choose: "..." }` is the
- * player's pick: a prompt on a feat, and still a note on anything else.
+ * player's pick: a prompt where `offersPick` says so, and otherwise still a note.
  */
 import { describeSpellQuery, parseSpellFilter, spellFitsQuery } from '../spellQuery';
 import {
@@ -213,9 +213,32 @@ function savedPicks(col: Collector, id: string, query: SpellQuery): ChoiceOption
 }
 
 /**
+ * Whether a character can be given this pick as a spell of its own. A feat's and,
+ * on a race or subclass, one the sheet can cast as it stands: a cantrip, a spell in
+ * a bucket that says how it is cast, or a subclass's always-prepared spell, which
+ * has its class's slots. Any other leveled spell would be free and unlimited, when
+ * it is really one a class has learned (a Wizard's goes in the spellbook), so it
+ * stays a note, as anything on another origin does.
+ */
+function offersPick(
+  origin: EffectOrigin,
+  group: SpellGroup,
+  plainUsage: string | undefined,
+  { spellQuery, options }: NonNullable<ReturnType<typeof readChoose>>,
+): boolean {
+  if (origin.type === 'feat') return true;
+  if (origin.type !== 'race' && origin.type !== 'subclass') return false;
+  if (group.limit !== undefined || group.atWill) return true;
+  if (plainUsage === 'prepared' && origin.type === 'subclass') return true;
+  // A filter says its levels; a spelled-out list marks a cantrip with "#c".
+  return spellQuery !== undefined
+    ? spellQuery.levels.length > 0 && spellQuery.levels.every((level) => level === 0)
+    : options.every((option) => /#c\b/i.test(option.id));
+}
+
+/**
  * Grant an entry's known/innate/prepared spells + surface expanded notes and
- * prompt for its chosen spells. Only a feat prompts for now: the other origins
- * with a `{choose}` are still a note.
+ * prompt for its chosen spells, or note them where `offersPick` says it can't.
  */
 function grantSpellEntry(
   col: Collector,
@@ -229,14 +252,21 @@ function grantSpellEntry(
   const slots = new Map<string, number>();
 
   /** Prompt for one `{choose}`, and return what has been picked so far. */
-  const pick = (raw: DataEntity, slot: string): string[] => {
-    const read = origin.type === 'feat' ? readChoose(raw) : undefined;
-    if (read === undefined) {
+  const pick = (
+    raw: DataEntity,
+    slot: string,
+    group: SpellGroup,
+    plainUsage: string | undefined,
+  ): string[] => {
+    // Counted even when not offered: an id is the pick's place in the data, so
+    // offering an earlier one later cannot move a pick already saved.
+    const n = slots.get(slot) ?? 0;
+    slots.set(slot, n + 1);
+    const read = readChoose(raw);
+    if (read === undefined || !offersPick(origin, group, plainUsage, read)) {
       unoffered = true;
       return [];
     }
-    const n = slots.get(slot) ?? 0;
-    slots.set(slot, n + 1);
     const id = `${pickBase}:${slot}:${n}`;
     const { count, spellQuery } = read;
     let picked: string[] = [];
@@ -267,7 +297,7 @@ function grantSpellEntry(
     seen: Set<string>,
     plainUsage: string | undefined,
   ) => {
-    const picked = group.chooses.flatMap((raw) => pick(raw, slot));
+    const picked = group.chooses.flatMap((raw) => pick(raw, slot, group, plainUsage));
     const spells = [...group.names, ...picked].map(parseSpellRef).filter((spell) => {
       const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
       if (seen.has(dedupe)) return false;

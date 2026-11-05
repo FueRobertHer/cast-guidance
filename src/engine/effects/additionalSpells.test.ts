@@ -532,10 +532,173 @@ describe('collectAdditionalSpells: a chosen spell on a feat', () => {
     expect(col.pending).toEqual([]);
     expect(col.warnings).toEqual(['Test Feat: also lets you choose a spell. See the trait text.']);
   });
+});
 
-  it('keeps the note on anything but a feat', () => {
-    const col = collect([{ known: { _: [cantrip] } }]);
+describe('collectAdditionalSpells: a chosen spell beyond feats', () => {
+  const cantrip = { choose: 'level=0|class=Testclass' };
+  const upToThird = { choose: 'level=0;1;2;3' };
+  const note = (label: string) => `${label}: also lets you choose a spell. See the trait text.`;
+
+  function collectAs(
+    type: EffectOrigin['type'],
+    raw: unknown,
+    choices: Record<string, string[]> = {},
+    level = 1,
+  ) {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Testclass', source: 'HB' }, levels: level, hp: [] }];
+    doc.choices = choices;
+    const col = new Collector(doc, makeTestContext());
+    const owner: EffectOrigin = { label: 'Owner', uid: 'owner|hb', type };
+    collectAdditionalSpells(col, raw, owner, 'wis', 'base');
+    return col;
+  }
+
+  it.each<EffectOrigin['type']>(['race', 'subclass'])('asks for a cantrip on a %s', (type) => {
+    const col = collectAs(type, [{ known: { 1: { _: [cantrip] } } }]);
+    expect(col.warnings).toEqual([]);
+    expect(col.pending).toMatchObject([
+      {
+        id: 'base:spell:u:0:known:1:0',
+        kind: 'spell',
+        label: 'Owner: Testclass cantrip',
+        count: 1,
+        options: [],
+        spellQuery: { levels: [0], classes: ['Testclass'] },
+      },
+    ]);
+    expect(granted(col.effects)).toEqual([]);
+  });
+
+  it('grants the picked cantrip with the default ability, as nothing else to spend', () => {
+    const col = collectAs('subclass', [{ known: { 1: { _: [cantrip] } } }], {
+      'base:spell:u:0:known:1:0': ['Fake One|HB'],
+    });
     expect(col.pending).toEqual([]);
-    expect(col.warnings).toEqual(['Tiefling: also lets you choose a spell. See the trait text.']);
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'Fake One', source: 'HB' }, ability: 'wis', usage: undefined },
+    ]);
+  });
+
+  it('keeps each branch its own pick, so going back finds it', () => {
+    const raw = [
+      { name: 'Alpha', known: { 1: { _: [cantrip] } } },
+      { name: 'Beta', known: { 1: { _: [cantrip] } } },
+    ];
+    const alpha = 'base:spell:b:alpha:0:known:1:0';
+    const beta = 'base:spell:b:beta:0:known:1:0';
+    expect(collectAs('subclass', raw).pending.map((p) => p.id)).toEqual(['base:branch']);
+    const saved = { [alpha]: ['Fake One|HB'], [beta]: ['Fake Two|HB'] };
+    const names = (branch: string) =>
+      granted(collectAs('subclass', raw, { 'base:branch': [branch], ...saved }).effects).map(
+        (e) => e.spell.name,
+      );
+    expect(names('alpha')).toEqual(['Fake One']);
+    expect(names('beta')).toEqual(['Fake Two']);
+  });
+
+  it('holds a race pick back behind the ability the entry asks for', () => {
+    const raw = [{ ability: { choose: ['int', 'wis'] }, known: { 1: { _: [cantrip] } } }];
+    expect(collectAs('race', raw).pending.map((p) => p.id)).toEqual(['base:ability:u:0']);
+    const open = collectAs('race', raw, { 'base:ability:u:0': ['int'] });
+    expect(open.pending.map((p) => p.id)).toEqual(['base:spell:u:0:known:1:0']);
+    const made = collectAs('race', raw, {
+      'base:ability:u:0': ['int'],
+      'base:spell:u:0:known:1:0': ['Fake One|HB'],
+    });
+    expect(granted(made.effects)[0]?.ability).toBe('int');
+  });
+
+  it('asks for an always-prepared spell at its level, cast with the class slots', () => {
+    const raw = [{ known: { 1: { _: [cantrip] } }, prepared: { 7: [{ choose: 'level=4' }] } }];
+    const ids = (level: number) => collectAs('subclass', raw, {}, level).pending.map((p) => p.id);
+    expect(ids(6)).toEqual(['base:spell:u:0:known:1:0']);
+    // The later pick opens beside the earlier one, which keeps its id.
+    expect(ids(7)).toEqual(['base:spell:u:0:known:1:0', 'base:spell:u:0:prepared:7:0']);
+    const made = collectAs('subclass', raw, { 'base:spell:u:0:prepared:7:0': ['Fake One|HB'] }, 7);
+    expect(granted(made.effects)).toMatchObject([
+      { spell: { name: 'Fake One' }, usage: 'prepared' },
+    ]);
+  });
+
+  it('asks for a spelled-out list its data marks as cantrips', () => {
+    const list = { choose: { from: ['fake one|hb#c', 'fake two#c|hb'], count: 1 } };
+    const col = collectAs('subclass', [{ innate: { 1: [list] } }]);
+    expect(col.warnings).toEqual([]);
+    expect(col.pending[0]?.options.map((o) => o.label)).toEqual(['Fake One', 'Fake Two']);
+  });
+
+  it.each<[string, unknown]>([
+    ['can reach past cantrips', upToThird],
+    ['has no level at all', { choose: 'class=Testclass' }],
+    [
+      'is a list not all marked as cantrips',
+      { choose: { from: ['fake one|hb#c', 'fake two|hb'] } },
+    ],
+  ])('keeps the note for a plain spell whose filter %s', (_what, filter) => {
+    for (const raw of [
+      { known: { 1: [filter] } },
+      { known: { _: [filter] } },
+      { innate: { 1: [filter] } },
+    ]) {
+      const col = collectAs('subclass', [raw]);
+      expect(col.pending).toEqual([]);
+      expect(col.warnings).toEqual([note('Owner')]);
+    }
+  });
+
+  // Nothing would limit a leveled spell here, so a race could hand out anything at will.
+  it('keeps the note for a leveled spell in a count that is no count', () => {
+    const col = collectAs('race', [{ innate: { _: { daily: { 0: [{ choose: 'level=3' }] } } } }]);
+    expect(col.pending).toEqual([]);
+    expect(col.warnings).toEqual([note('Owner')]);
+  });
+
+  it.each<[string, unknown, unknown]>([
+    ['a count', { innate: { _: { daily: { 1: [{ choose: 'level=3' }] } } } }, '1/day'],
+    [
+      'at will, as the bucket says',
+      { innate: { _: { will: [{ choose: 'level=3' }] } } },
+      undefined,
+    ],
+  ])('asks for a leveled spell in a bucket with %s', (_what, raw, usage) => {
+    const id = 'base:spell:u:0:innate:_:0';
+    expect(collectAs('race', [raw]).pending.map((p) => p.id)).toEqual([id]);
+    const made = collectAs('race', [raw], { [id]: ['Fake One|HB'] });
+    expect(made.warnings).toEqual([]);
+    expect(granted(made.effects)[0]).toMatchObject({ spell: { name: 'Fake One' }, usage });
+  });
+
+  it('asks a race for an always-prepared spell only with a count to cast it by', () => {
+    const plain = collectAs('race', [{ prepared: { 1: [{ choose: 'level=1' }] } }]);
+    expect(plain.pending).toEqual([]);
+    expect(plain.warnings).toEqual([note('Owner')]);
+    const counted = [{ prepared: { 1: { daily: { 1: [{ choose: 'level=1' }] } } } }];
+    expect(collectAs('race', counted).pending).toHaveLength(1);
+  });
+
+  it('numbers a pick by its place in the data, whatever is offered before it', () => {
+    const col = collectAs('subclass', [{ known: { 1: [upToThird, cantrip] } }]);
+    expect(col.pending.map((p) => p.id)).toEqual(['base:spell:u:0:known:1:1']);
+    expect(col.warnings).toEqual([note('Owner')]);
+  });
+
+  it.each<EffectOrigin['type']>([
+    'item',
+    'background',
+    'class',
+    'custom',
+  ])('keeps the note on a %s', (type) => {
+    const col = collectAs(type, [{ known: { _: [cantrip] } }]);
+    expect(col.pending).toEqual([]);
+    expect(col.warnings).toEqual([note('Owner')]);
+  });
+
+  it('leaves the named spells beside a pick as they were', () => {
+    const col = collectAs('race', [{ known: { 1: ['fake fixed', upToThird] } }]);
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'fake fixed' }, ability: 'wis', usage: undefined },
+    ]);
+    expect(col.warnings).toEqual([note('Owner')]);
   });
 });

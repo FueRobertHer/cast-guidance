@@ -77,18 +77,23 @@ export function spellFitsQuery(spell: DataEntity, query: SpellQuery): boolean {
 
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
+/** Levels in words. Nobody calls a cantrip level 0, so cantrips are named apart. */
 function levelsText(levels: readonly number[]): string {
-  const [first, ...rest] = levels;
+  const above = [...new Set(levels)].filter((level) => level > 0);
+  const [first] = above;
   if (first === undefined) return '';
-  const last = rest.at(-1);
-  if (last === undefined) return `level ${first}`;
-  const unbroken = levels.every((level, i) => level === first + i);
-  return unbroken ? `level ${first} to ${last}` : `level ${levels.join(' or ')}`;
+  const words =
+    above.length === 1
+      ? `level ${first}`
+      : above.every((level, i) => level === first + i)
+        ? `level ${first} to ${above.at(-1)}`
+        : `level ${above.join(' or ')}`;
+  return levels.includes(0) ? `cantrip or ${words}` : words;
 }
 
 /** A query in words, for a prompt's label: "Level 1 Enchantment or Divination spell". */
 export function describeSpellQuery(query: SpellQuery, count: number): string {
-  const cantrip = query.levels.length === 1 && query.levels[0] === 0;
+  const cantrip = query.levels.length > 0 && query.levels.every((level) => level === 0);
   return capitalized(
     [
       cantrip ? '' : levelsText(query.levels),

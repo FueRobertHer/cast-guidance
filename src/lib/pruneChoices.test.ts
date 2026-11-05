@@ -33,6 +33,18 @@ describe('pruneChoicesFor', () => {
     expect(Object.keys(doc.choices)).toEqual(['race:elf|phbx:skill:0']);
   });
 
+  it('takes a chosen spell with the race or subclass that asked for it', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.choices = {
+      'race:elf|phb:spell:u:0:known:1:0': ['Fake One|HB'],
+      'subclass:lore|phb:spell:b:alpha:0:known:1:0': ['Fake Two|HB'],
+      'subrace:high|phb:spell:u:0:known:1:0': ['Fake Three|HB'],
+    };
+    pruneChoicesFor(doc, 'race', { name: 'Elf', source: 'PHB' });
+    pruneChoicesFor(doc, 'subclass', { name: 'Lore', source: 'PHB' });
+    expect(Object.keys(doc.choices)).toEqual(['subrace:high|phb:spell:u:0:known:1:0']);
+  });
+
   it('returns the keys it removed', () => {
     const doc = newCharacterDoc('c', 'H', 't');
     doc.choices = {
