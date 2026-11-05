@@ -473,11 +473,62 @@ describe('BuildPage destructive changes (UX-004)', () => {
     expect(lastPrompt()?.detail).toBe(
       // Two skills under one prompt are two picks; the dormant level-4 feat
       // pick is not one the player can see, so it is not counted.
-      'Clears 2 Warrior picks, subclass Path of Tests and its spell list (1 known). You can undo this right after.',
+      'Clears 2 Warrior picks, subclass Path of Tests and its spell list (1 known). ' +
+        'Mage becomes your first class, and a class you add later goes after it: ' +
+        'saving throws move from STR and CON to INT and WIS; ' +
+        'armor proficiencies lose light, medium, heavy and shield; ' +
+        'weapon proficiencies lose simple and martial; max HP goes from 18 to 8. ' +
+        'You can undo this right after.',
     );
     // Declined: nothing moved.
     expect(getDoc().classes).toHaveLength(2);
     expect(undoButton()).toBeNull();
+  });
+
+  /** Asks to remove `name` and declines, returning what the confirm said. */
+  const removalPrompt = async (name: string) => {
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: `Remove ${name}` }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalledTimes(1));
+    return lastPrompt()?.detail;
+  };
+
+  const warriorOne = { ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg' as const] };
+  const sneakThree = {
+    ref: { name: 'Sneak', source: 'TST' },
+    levels: 3,
+    hp: ['avg' as const, 'avg' as const, 'avg' as const],
+  };
+
+  it('says what moves when the first row goes, with no picks of its own to clear', async () => {
+    renderBuild((d) => {
+      d.classes = [warriorOne, sneakThree];
+    });
+    expect(await removalPrompt('Warrior')).toBe(
+      'Sneak becomes your first class, and a class you add later goes after it: ' +
+        'saving throws move from STR and CON to DEX and INT; ' +
+        'armor proficiencies lose light, medium, heavy and shield; ' +
+        'weapon proficiencies lose simple and martial; max HP goes from 33 to 24; ' +
+        'Sneak asks for more skill picks. You can undo this right after.',
+    );
+  });
+
+  it('adds nothing when a later row goes: the first class stays where it is', async () => {
+    renderBuild((d) => {
+      d.classes = [sneakThree, warriorOne];
+    });
+    expect(await removalPrompt('Warrior')).toBe(
+      'Nothing else is tied to it. You can undo this right after.',
+    );
+  });
+
+  it('reads as it always has for the only class', async () => {
+    renderBuild((d) => {
+      d.classes = [warriorOne];
+    });
+    expect(await removalPrompt('Warrior')).toBe(
+      'Nothing else is tied to it. You can undo this right after. Then pick a new class.',
+    );
   });
 
   it('removes the class with its subclass picks, ASI feat picks and spells, and undoes it', async () => {

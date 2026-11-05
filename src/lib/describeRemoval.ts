@@ -1,5 +1,6 @@
-import type { CharacterDoc, ClassLevelEntry } from '@/engine/types';
-import { refUid } from '@/engine/types';
+import { deriveSheet } from '@/engine/derive';
+import type { CharacterDoc, ClassLevelEntry, DerivedSheet, EngineContext } from '@/engine/types';
+import { ABILITIES, refUid } from '@/engine/types';
 import { pruneClass } from './pruneChoices';
 
 // Taking things away: what goes, said before or after (UX-004). Shared by the
@@ -80,4 +81,88 @@ export function classRemovalParts(
     parts.push(`its spell list (${counts.join(', ')})`);
   }
   return parts;
+}
+
+/** "saves move from a to b", "saves lose a", "saves gain b", or nothing if no entry differs. */
+function listMove(
+  label: string,
+  from: readonly string[],
+  to: readonly string[],
+): string | undefined {
+  // Two printings can spell one proficiency differently ("Ropes", "ropes").
+  const without = (list: readonly string[], others: readonly string[]) => {
+    const names = new Set(others.map((n) => n.toLowerCase()));
+    return list.filter((n) => !names.has(n.toLowerCase()));
+  };
+  const lost = without(from, to);
+  const gained = without(to, from);
+  if (lost.length > 0 && gained.length > 0) {
+    return `${label} move from ${listJoin(lost)} to ${listJoin(gained)}`;
+  }
+  if (lost.length > 0) return `${label} lose ${listJoin(lost)}`;
+  if (gained.length > 0) return `${label} gain ${listJoin(gained)}`;
+  return undefined;
+}
+
+const proficientSaves = (sheet: DerivedSheet) =>
+  ABILITIES.filter((a) => sheet.saves[a].prof).map((a) => a.toUpperCase());
+
+/**
+ * What removing a multiclass character's first class moves beyond its own picks,
+ * as a sentence for the confirm, or nothing when `entry` is not that class or
+ * nothing moves.
+ *
+ * Only the first row gets a class's saving throws, its full proficiency lists
+ * and the full hit die at level 1 (`collectClasses`, `calcMaxHp`), and a class
+ * added later goes on the end, so the next class keeps that place. Everything
+ * here is read off the sheet derived without the class, so it holds for this
+ * character: a save a feat also grants stays, an override stays.
+ */
+export function firstClassShift(
+  doc: CharacterDoc,
+  entry: ClassLevelEntry,
+  ctx: EngineContext,
+): string | undefined {
+  const [first, next] = doc.classes;
+  if (first === undefined || next === undefined || refUid(first.ref) !== refUid(entry.ref)) {
+    return undefined;
+  }
+  const opening = `${next.ref.name} becomes your first class, and a class you add later goes after it`;
+  // A class with no data reads as no saves and no lists, which is not what moves.
+  const hasData = (c: ClassLevelEntry) => ctx.get('class', c.ref.name, c.ref.source) !== undefined;
+  if (!hasData(first) || !hasData(next)) return `${opening}.`;
+
+  const before = deriveSheet(doc, ctx);
+  const without = structuredClone(doc);
+  pruneClass(without, entry);
+  without.classes.shift();
+  const after = deriveSheet(without, ctx);
+
+  // Any level taken off lowers max HP. It belongs here only when the class's
+  // place matters: when the same classes in another order total differently,
+  // so that removing this one costs more or less than removing it from the end.
+  const reordered = deriveSheet({ ...doc, classes: [...doc.classes.slice(1), first] }, ctx);
+  const hpMoves =
+    after.maxHp.value !== before.maxHp.value && reordered.maxHp.value !== before.maxHp.value;
+
+  // A later class's skill list is the short multiclass one or none; first, it
+  // asks for the full count, and the picks it holds count towards that.
+  const skillPrefix = `class:${refUid(next.ref)}:skill:`;
+  const skillAsk = (sheet: DerivedSheet) =>
+    [...sheet.pending, ...sheet.resolvedChoices.map((r) => r.prompt)]
+      .filter((p) => p.id.startsWith(skillPrefix))
+      .reduce((n, p) => n + p.count, 0);
+  const moreSkillPicks =
+    skillAsk(after) > skillAsk(before) && after.pending.some((p) => p.id.startsWith(skillPrefix));
+
+  const moves = [
+    listMove('saving throws', proficientSaves(before), proficientSaves(after)),
+    listMove('armor proficiencies', before.armorProfs, after.armorProfs),
+    listMove('weapon proficiencies', before.weaponProfs, after.weaponProfs),
+    listMove('tool proficiencies', before.toolProfs, after.toolProfs),
+    hpMoves ? `max HP goes from ${before.maxHp.value} to ${after.maxHp.value}` : undefined,
+    moreSkillPicks ? `${next.ref.name} asks for more skill picks` : undefined,
+  ].filter((m) => m !== undefined);
+  if (moves.length === 0) return undefined;
+  return `${opening}: ${moves.join('; ')}.`;
 }
