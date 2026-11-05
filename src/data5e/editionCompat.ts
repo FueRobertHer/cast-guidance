@@ -22,6 +22,11 @@ export type EditionFit =
   /** Older content the newer books reprint, and that reprint is installed. */
   | { kind: 'reprinted'; as: EditionRef }
   /**
+   * The same, for a class. The reprint is a row of its own and no control changes
+   * a row, so reaching it means removing this one, with its levels and picks.
+   */
+  | { kind: 'reprintedClass'; as: EditionRef }
+  /**
    * The same, but on another printing of the class this subclass sits under
    * (`Life Domain|PHB` on `Cleric|PHB`, reprinted under `Cleric|XPHB`). A class
    * row's picker lists only that printing's subclasses, so the row changes first.
@@ -138,8 +143,11 @@ export function editionFit(
       continue;
     }
     const underClass = otherClassPrinting(found, classRow);
-    if (underClass === undefined) return { kind: 'reprinted', as };
-    afterClass ??= { kind: 'reprintedUnderClass', as, underClass };
+    if (underClass !== undefined) {
+      afterClass ??= { kind: 'reprintedUnderClass', as, underClass };
+      continue;
+    }
+    return type === 'class' ? { kind: 'reprintedClass', as } : { kind: 'reprinted', as };
   }
   return afterClass ?? noSwitch ?? { kind: 'carryOver' };
 }
@@ -160,6 +168,8 @@ export function editionFitNote(
       return undefined;
     case 'reprinted':
       return `${label}: ${other} content, reprinted for ${version} as ${fit.as.name}. Kept as chosen.`;
+    case 'reprintedClass':
+      return `${label}: ${other} content, reprinted for ${version} as a separate class, ${fit.as.name} (${fit.as.source}). Kept as chosen.`;
     case 'reprintedUnderClass':
       return `${label}: ${other} content, reprinted for ${version} as ${fit.as.name}, under ${fit.underClass.name} (${fit.underClass.source}) rather than your class. Kept as chosen.`;
     case 'reprintedNoSwitch':
@@ -188,6 +198,13 @@ export function editionFitChip(
       return {
         text: `reprinted for ${version}`,
         title: `${other} content. The ${version} books reprint it as ${fit.as.name} (${fit.as.source}), which you can switch to. Your pick is kept either way.`,
+      };
+    case 'reprintedClass':
+      // The text stands: no picker sits beside a class row to go hunting through.
+      // The rest says what removing a class costs, as its own confirm does.
+      return {
+        text: `reprinted for ${version}`,
+        title: `${other} content. The ${version} books reprint it as a separate class, ${fit.as.name} (${fit.as.source}). To switch to it, remove this class and add that one, which starts over at level 1 and clears its subclass, picks and spell list. It stays until you do.`,
       };
     case 'reprintedUnderClass':
       // Not "kept either way" as the others say: a class row has no control that
@@ -224,6 +241,8 @@ export interface EditionSwitchPreview {
   match: number;
   /** Off-edition selections that have an installed reprint, named. */
   reprinted: Array<{ label: string; as: EditionRef }>;
+  /** Off-edition classes, whose reprint means replacing the class row. */
+  reprintedClass: Array<{ label: string; as: EditionRef }>;
   /** Off-edition subclasses whose reprint needs their class row changed first. */
   reprintedUnderClass: Array<{ label: string; as: EditionRef; underClass: EditionRef }>;
   /** Off-edition selections reprinted as something they cannot become. */
@@ -238,6 +257,7 @@ export function emptySwitchPreview(): EditionSwitchPreview {
   return {
     match: 0,
     reprinted: [],
+    reprintedClass: [],
     reprintedUnderClass: [],
     reprintedNoSwitch: [],
     carryOver: [],
@@ -257,6 +277,9 @@ export function addToPreview(
       break;
     case 'reprinted':
       preview.reprinted.push({ label, as: fit.as });
+      break;
+    case 'reprintedClass':
+      preview.reprintedClass.push({ label, as: fit.as });
       break;
     case 'reprintedUnderClass':
       preview.reprintedUnderClass.push({ label, as: fit.as, underClass: fit.underClass });
@@ -285,6 +308,7 @@ export function describeSwitch(
 ): { summary: string; unchanged: boolean } {
   const off =
     preview.reprinted.length +
+    preview.reprintedClass.length +
     preview.reprintedUnderClass.length +
     preview.reprintedNoSwitch.length +
     preview.carryOver.length +
@@ -309,13 +333,17 @@ export function describeSwitch(
       `${count(preview.reprinted.length, 'has', 'have')} a ${version} reprint you can switch to afterwards (${named})`,
     );
   }
-  if (preview.reprintedUnderClass.length > 0) {
-    const named = preview.reprintedUnderClass
-      .map((r) => `${r.label} → ${r.as.name} under ${r.underClass.name} (${r.underClass.source})`)
-      .join(', ');
-    const n = preview.reprintedUnderClass.length;
+  // One sentence for both: they come to the same thing, and a character with a
+  // subclass usually has one of each.
+  const behindClass = [
+    ...preview.reprintedClass.map((r) => `${r.label} → ${r.as.name} (${r.as.source})`),
+    ...preview.reprintedUnderClass.map(
+      (r) => `${r.label} → ${r.as.name} under ${r.underClass.name} (${r.underClass.source})`,
+    ),
+  ];
+  if (behindClass.length > 0) {
     parts.push(
-      `${count(n, 'has', 'have')} a ${version} reprint you can only reach by replacing ${n === 1 ? 'its' : 'their'} class (${named})`,
+      `${count(behindClass.length, 'has', 'have')} a ${version} reprint you can only reach by replacing a class (${behindClass.join(', ')})`,
     );
   }
   if (preview.reprintedNoSwitch.length > 0) {

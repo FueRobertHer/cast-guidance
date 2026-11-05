@@ -258,6 +258,46 @@ describe('BuildPage edition cues (GAME-003)', () => {
     ).toBeTruthy();
   });
 
+  it('says reaching a class reprint means replacing the class', async () => {
+    const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
+    extra.current = [
+      ['class', { ...warrior, reprintedAs: ['Warrior|XTST'] }],
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+    ];
+    renderBuild();
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '2024' }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalled());
+    const detail = lastPrompt()?.detail ?? '';
+    expect(detail).toContain(
+      '1 has a 2024 reprint you can only reach by replacing a class (Warrior → Warrior (XTST))',
+    );
+    expect(detail).not.toContain('you can switch to');
+  });
+
+  it('spells out the cost on the class row, and on the note a phone can read', () => {
+    const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
+    extra.current = [
+      ['class', { ...warrior, reprintedAs: ['Warrior|XTST'] }],
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+    ];
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+    });
+    expect(
+      screen
+        .getByTitle(/^2014 content\. The 2024 books reprint it as a separate class/)
+        .getAttribute('title'),
+    ).toBe(
+      '2014 content. The 2024 books reprint it as a separate class, Warrior (XTST). To switch to it, remove this class and add that one, which starts over at level 1 and clears its subclass, picks and spell list. It stays until you do.',
+    );
+    expect(
+      screen.getByText(
+        'Warrior: 2014 content, reprinted for 2024 as a separate class, Warrior (XTST). Kept as chosen.',
+      ),
+    ).toBeTruthy();
+  });
+
   /** A 2014 subrace whose only 2024 reprint is a feat, under the test world's species. */
   const withSubraceReprintedAsFeat = () => {
     extra.current = [

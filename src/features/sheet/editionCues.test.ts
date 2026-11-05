@@ -329,6 +329,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2014', baseWorld)).toEqual({
       match: 3,
       reprinted: [],
+      reprintedClass: [],
       reprintedUnderClass: [],
       reprintedNoSwitch: [],
       carryOver: [],
@@ -338,6 +339,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2024', baseWorld)).toEqual({
       match: 0,
       reprinted: [{ label: 'Elf', as: { name: 'Elf', source: 'XPHB' } }],
+      reprintedClass: [],
       reprintedUnderClass: [],
       reprintedNoSwitch: [],
       carryOver: ['Acolyte', 'Fighter'],
