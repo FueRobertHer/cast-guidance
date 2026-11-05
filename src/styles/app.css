@@ -230,7 +230,7 @@
    * sections are 6 apart. These are the fixed sizes layout depends on, as
    * `h-tabbar`, `min-h-header`, `size-tap` and so on.
    */
-  --spacing-tap: 2.75rem; /* 44px: the least any tappable thing measures */
+  --spacing-tap: 2.75rem; /* 44px: a control used during play, apart from the kinds docs/a11y-audit.md names */
   --spacing-header: 3.5rem; /* 56px: the sheet header, section headers */
   --spacing-tabbar: 64px; /* the tab bar, before the safe-area inset; px with its labels */
   --spacing-dock: 3rem; /* 48px: the dice dock */
