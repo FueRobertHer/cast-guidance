@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { newCharacterDoc } from '@/engine/types';
-import { pruneChoicesFor, pruneClass, pruneFeatInstances, pruneOrigin } from './pruneChoices';
+import {
+  pruneAsiFeatPicks,
+  pruneChoicesFor,
+  pruneClass,
+  pruneFeatInstances,
+  pruneOrigin,
+} from './pruneChoices';
 
 describe('pruneChoicesFor', () => {
   it('drops only choices belonging to the given origin', () => {
@@ -204,6 +210,52 @@ describe('pruneClass', () => {
       expect(doc.choices['feat:skilled|tst:asi4@mage|tstx:skill']).toEqual(['history']);
       expect(doc.choices['feat:skilled|tst:asi8@mage|tst:skill']).toEqual(['nature']);
     });
+  });
+});
+
+describe('pruneAsiFeatPicks', () => {
+  const warrior = { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: [] };
+  const mage = { ref: { name: 'Mage', source: 'TST' }, levels: 4, hp: [] };
+  const FIRST = 'feat:skilled|tst:asi4:skill';
+  const SECOND = 'feat:skilled|tst:asi4@mage|tst:skill';
+  const bothTake = () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [warrior, mage];
+    doc.choices = {
+      'class:warrior|tst:asi:4': 'feat',
+      'class:warrior|tst:asi:4:feat': ['skilled|tst'],
+      'class:mage|tst:asi:4': 'feat',
+      'class:mage|tst:asi:4:feat': ['skilled|tst'],
+      [FIRST]: ['stealth'],
+      [SECOND]: ['arcana'],
+      'feat:skilled|tst:asi8:skill': ['history'],
+      'feat:alert|tst:asi4:skill': ['nature'],
+    };
+    return doc;
+  };
+
+  it.each([
+    ['the feat pick', 'class:warrior|tst:asi:4:feat', FIRST],
+    ['the ASI itself', 'class:warrior|tst:asi:4', FIRST],
+    ['a later class', 'class:mage|tst:asi:4:feat', SECOND],
+    ['a later class on the ASI itself', 'class:mage|tst:asi:4', SECOND],
+  ])('takes only that copy of the feat from %s', (_name, id, gone) => {
+    expect(pruneAsiFeatPicks(bothTake(), id)).toEqual([gone]);
+  });
+
+  it.each([
+    'class:warrior|tst:asi:4:abilities',
+    'class:warrior|tst:skill',
+    'feat:skilled|tst:asi4:skill',
+    'class:warrior|tst:asi:8:feat',
+  ])('leaves %s alone', (id) => {
+    expect(pruneAsiFeatPicks(bothTake(), id)).toEqual([]);
+  });
+
+  it('finds a pick stored as a bare string', () => {
+    const doc = bothTake();
+    doc.choices['class:warrior|tst:asi:4:feat'] = 'skilled|tst';
+    expect(pruneAsiFeatPicks(doc, 'class:warrior|tst:asi:4:feat')).toEqual([FIRST]);
   });
 });
 

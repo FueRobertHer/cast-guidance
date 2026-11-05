@@ -69,6 +69,9 @@ export function pruneOrigin(
   return removed;
 }
 
+const stringsOf = (value: CharacterDoc['choices'][string] | undefined) =>
+  (Array.isArray(value) ? value : [value]).filter((v) => typeof v === 'string');
+
 /** `class:<uid>:asi:<N>:feat` and the feats picked there, as [N, featUid]. */
 function asiFeats(doc: CharacterDoc, classUid: string): Array<[number, string]> {
   const out: Array<[number, string]> = [];
@@ -77,11 +80,29 @@ function asiFeats(doc: CharacterDoc, classUid: string): Array<[number, string]> 
     if (!key.startsWith(prefix) || !key.endsWith(':feat')) continue;
     const level = Number(key.slice(prefix.length, -':feat'.length));
     if (!Number.isInteger(level)) continue;
-    for (const v of Array.isArray(value) ? value : [value]) {
-      if (typeof v === 'string') out.push([level, v]);
-    }
+    for (const v of stringsOf(value)) out.push([level, v]);
   }
   return out;
+}
+
+/**
+ * Drop the sub-choices of the feat an ASI prompt holds, for when that prompt's
+ * answer is about to change: `class:<uid>:asi:<N>` turning away from a feat, or
+ * `class:<uid>:asi:<N>:feat` picking another. They live under the feat rather than
+ * under the prompt, so a sweep of the prompt's own keys does not reach them. Left
+ * behind, they would come back with the feat, or pass to another class's copy of
+ * it. Call it before writing the new answer, which says which feat these are for.
+ * Any other choice id is left alone.
+ */
+export function pruneAsiFeatPicks(doc: CharacterDoc, promptId: string): string[] {
+  const match = /^class:(.+):asi:(\d+)(?::feat)?$/.exec(promptId);
+  if (match === null) return [];
+  const [, classUid = '', digits = ''] = match;
+  const level = Number(digits);
+  const picked = doc.choices[`class:${classUid}:asi:${level}:feat`];
+  return stringsOf(picked).flatMap((feat) =>
+    pruneFeatInstances(doc, asiFeatInstance(doc, classUid, level, feat), feat),
+  );
 }
 
 /**

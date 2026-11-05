@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pruneAsiFeatPicks } from '@/lib/pruneChoices';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { deriveSheet } from '../derive';
 import { type CharacterDoc, type DataEntity, newCharacterDoc } from '../types';
@@ -124,9 +125,18 @@ describe('one repeatable feat taken at one level by two classes', () => {
     expect(held(secondType, firstType)).toEqual(['fire']);
   });
 
+  it('asks a copy with no picks afresh once the first class changes feat', () => {
+    const doc = bothTake(DRILLED, { [first]: ['stealth'] });
+    const id = `class:${WARRIOR}:asi:4:feat`;
+    pruneAsiFeatPicks(doc, id);
+    doc.choices[id] = 'steady|hb';
+    expect(featPending(doc)).toEqual([`feat:steady|hb:asi4:skill:0`, first]);
+    expect(proficient(doc, 'Stealth')).toBe(false);
+  });
+
   it('keeps a later copy on its own key once it comes first', () => {
-    // The first class changes feat. Its old picks stay behind under the shared
-    // key, and must not replace the pick the other copy made.
+    // A character saved before a feat change pruned its picks has them left under
+    // the shared key, and they must not replace the pick the other copy made.
     const doc = bothTake(DRILLED, { [first]: ['stealth'], [second]: ['arcana'] });
     doc.choices[`class:${WARRIOR}:asi:4:feat`] = 'steady|hb';
     const sheet = deriveSheet(doc, ctx);

@@ -22,9 +22,11 @@ function pickedFeat(doc: CharacterDoc, entry: ClassLevelEntry, level: number, fe
  *
  * Nothing records who answered under `asi<level>`, so whichever class comes first
  * reads what is there. A class ahead in the list that takes the feat after one
- * behind it takes over that class's picks, which then go if it is removed, and the
- * class behind is asked again. A class that changes feat leaves its old picks
- * there (nothing prunes them), for a copy with no picks of its own to pick up.
+ * behind it takes over that class's picks, which then go if it is removed or
+ * changes feat, and the class behind is asked again. Changing feat prunes the old
+ * feat's picks (`pruneAsiFeatPicks`), but
+ * a character saved before that can still have some there, for a copy with no
+ * picks of its own to pick up.
  */
 export function asiFeatInstance(
   doc: CharacterDoc,
