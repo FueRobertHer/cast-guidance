@@ -57,6 +57,58 @@ describe('collectAdditionalSpells', () => {
     expect(names).not.toContain('fireball'); // level-5 gate not met at level 1
   });
 
+  describe('with a level passed in, as a subclass passes its class level', () => {
+    const subclass: EffectOrigin = { label: 'Order of Lint', uid: 'order|tst', type: 'subclass' };
+
+    /** A character of `total` levels, gated at `gate` when one is passed. */
+    function gated(raw: unknown, total: number, gate?: number) {
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.classes = [{ ref: { name: 'Warlock', source: 'PHB' }, levels: total, hp: [] }];
+      const col = new Collector(doc, makeTestContext());
+      collectAdditionalSpells(col, raw, subclass, 'cha', undefined, gate);
+      return col;
+    }
+
+    const raw = [
+      {
+        prepared: { 1: ['fake early'], 17: ['fake prepared'] },
+        known: { 17: ['fake known'] },
+        innate: { 17: { daily: { 1: ['fake innate'] } } },
+        expanded: { 17: ['fake expanded'] },
+      },
+    ];
+
+    it('reads every kind of key against that level, not the character level', () => {
+      const col = gated(raw, 17, 1);
+      expect(granted(col.effects).map((e) => e.spell.name)).toEqual(['fake early']);
+      expect(col.effects.some((e) => e.kind === 'resource')).toBe(false);
+      expect(col.warnings).toEqual([]);
+    });
+
+    it('opens those keys once that level reaches them', () => {
+      const col = gated(raw, 17, 17);
+      expect(granted(col.effects).map((e) => e.spell.name)).toEqual([
+        'fake innate',
+        'fake known',
+        'fake early',
+        'fake prepared',
+      ]);
+      expect(col.warnings.join()).toContain('fake expanded');
+    });
+
+    it('does not ask about a chosen spell its key has not reached', () => {
+      const chosen = [{ known: { 17: [{ choose: 'level=1' }] } }];
+      expect(gated(chosen, 17, 1).warnings).toEqual([]);
+      expect(gated(chosen, 17, 17).warnings).toEqual([
+        'Order of Lint: also lets you choose a spell. See the trait text.',
+      ]);
+    });
+
+    it('goes by character level when none is passed', () => {
+      expect(granted(gated(raw, 17).effects).map((e) => e.spell.name)).toContain('fake prepared');
+    });
+  });
+
   it('marks prepared spells as always-prepared', () => {
     const col = collect([{ prepared: { '1': ['bless'] } }]);
     const g = granted(col.effects);

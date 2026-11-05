@@ -6,10 +6,11 @@
  *      innate:   { "3": { daily: { "1": ["hellish rebuke"] } } },  // 1/day
  *      prepared: { "1": ["bless", "cure wounds"] },   // domain/oath/circle
  *      expanded: { "1": ["armor of agathys"] } }]     // warlock patron
- * Level keys gate by character level. `prepared` spells are always prepared and
- * cast with the class's own slots; `expanded` merely widens what you can learn,
- * so (lacking a picker) it surfaces as a note. A `{ choose: "..." }` is the
- * player's pick: a prompt on a feat, and still a note on anything else.
+ * Level keys gate by character level, except on a subclass, where they mean
+ * levels in its class. `prepared` spells are always prepared and cast with the
+ * class's own slots; `expanded` merely widens what you can learn, so (lacking a
+ * picker) it surfaces as a note. A `{ choose: "..." }` is the player's pick: a
+ * prompt on a feat, and still a note on anything else.
  */
 import { describeSpellQuery, parseSpellFilter, spellFitsQuery } from '../spellQuery';
 import {
@@ -84,10 +85,10 @@ export function hasChosenSpell(raw: unknown): boolean {
   return chooses.length > 0;
 }
 
-/** The parts of a level-keyed map this character has reached. */
+/** The parts of a level-keyed map open at this level. */
 function reachedLevels(
   map: unknown,
-  totalLevel: number,
+  gateLevel: number,
   includeSpellLevels = false,
 ): Array<[levelKey: string, value: unknown]> {
   if (map === null || typeof map !== 'object') return [];
@@ -96,10 +97,10 @@ function reachedLevels(
     // appear only on `expanded` lists that organize additions by spell level
     // rather than character level, so include them there; without this an
     // entire expanded list (e.g. Witherbloom/Lorehold Student) parses to NaN
-    // and silently vanishes. Numeric keys gate by character level.
+    // and silently vanishes. Numeric keys gate by the level passed in.
     const ungated = key === '_' || (includeSpellLevels && /^s\d+$/i.test(key));
     const gate = ungated ? 0 : Number.parseInt(key, 10);
-    return !Number.isNaN(gate) && gate <= totalLevel;
+    return !Number.isNaN(gate) && gate <= gateLevel;
   });
 }
 
@@ -221,7 +222,7 @@ function grantSpellEntry(
   col: Collector,
   entry: DataEntity,
   origin: EffectOrigin,
-  totalLevel: number,
+  gateLevel: number,
   ability: Ability | undefined,
   pickBase: string,
 ): void {
@@ -315,10 +316,10 @@ function grantSpellEntry(
   // Innate first, then always-known: a spell listed in both is the same spell,
   // and the innate listing is the one carrying its limit.
   const seen = new Set<string>();
-  for (const [levelKey, val] of reachedLevels(entry.innate, totalLevel)) {
+  for (const [levelKey, val] of reachedLevels(entry.innate, gateLevel)) {
     walkBuckets(val, (group) => grant(group, `innate:${levelKey}`, seen, undefined));
   }
-  for (const [levelKey, val] of reachedLevels(entry.known, totalLevel)) {
+  for (const [levelKey, val] of reachedLevels(entry.known, gateLevel)) {
     const names: string[] = [];
     const chooses: DataEntity[] = [];
     collectStrings(val, names, chooses);
@@ -335,7 +336,7 @@ function grantSpellEntry(
   // bucket a named spell sits in. A pick spends its bucket's count instead, since
   // that is the only way a non-caster can cast the spell it chose.
   const seenPrepared = new Set<string>();
-  for (const [levelKey, val] of reachedLevels(entry.prepared, totalLevel)) {
+  for (const [levelKey, val] of reachedLevels(entry.prepared, gateLevel)) {
     walkBuckets(val, (group) => {
       const slot = `prepared:${levelKey}`;
       grant(
@@ -351,7 +352,7 @@ function grantSpellEntry(
   // Expanded spell list (Warlock patron): widens what you can learn rather than
   // granting anything. Without a picker we surface it so the option is visible.
   const expanded: string[] = [];
-  for (const [, val] of reachedLevels(entry.expanded, totalLevel, true)) {
+  for (const [, val] of reachedLevels(entry.expanded, gateLevel, true)) {
     collectStrings(val, expanded, []);
   }
   const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
@@ -375,14 +376,14 @@ function processSpellEntry(
   col: Collector,
   entry: DataEntity,
   origin: EffectOrigin,
-  totalLevel: number,
+  gateLevel: number,
   defaultAbility: Ability | undefined,
   abilityChoiceId: string,
   pickBase: string,
 ): void {
   const ab = entry.ability;
   if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
-    grantSpellEntry(col, entry, origin, totalLevel, ab as Ability, pickBase);
+    grantSpellEntry(col, entry, origin, gateLevel, ab as Ability, pickBase);
     return;
   }
   if (
@@ -396,7 +397,7 @@ function processSpellEntry(
     if (opts.length === 1) {
       // A single valid option is not a real choice — treat it like a fixed
       // ability and grant immediately, matching the plain-string path.
-      grantSpellEntry(col, entry, origin, totalLevel, opts[0], pickBase);
+      grantSpellEntry(col, entry, origin, gateLevel, opts[0], pickBase);
       return;
     }
     if (opts.length > 1) {
@@ -415,7 +416,7 @@ function processSpellEntry(
           // invalid/stale pick grants nothing (as the branch choice does),
           // rather than granting with no ability while re-prompting.
           if (picked === undefined || !(ABILITIES as readonly string[]).includes(picked)) return;
-          grantSpellEntry(col, entry, origin, totalLevel, picked as Ability, pickBase);
+          grantSpellEntry(col, entry, origin, gateLevel, picked as Ability, pickBase);
         },
       );
       return;
@@ -423,13 +424,16 @@ function processSpellEntry(
     // Malformed choose (no valid abilities) — fall back and explain.
     col.warn(`${origin.label}: spellcasting ability is your choice. See the trait text.`);
   }
-  grantSpellEntry(col, entry, origin, totalLevel, defaultAbility, pickBase);
+  grantSpellEntry(col, entry, origin, gateLevel, defaultAbility, pickBase);
 }
 
 /**
  * @param idBase namespace for the branch choice's stable id (defaults to the
  *   origin uid). Callers with a per-instance base (repeatable feats) pass it so
  *   two instances keep separate branch picks.
+ * @param gateLevel the level its keys are read against (defaults to character
+ *   level). A subclass passes levels in its class: a one-level dip into a class
+ *   must not open that subclass's high keys however high the character is.
  */
 export function collectAdditionalSpells(
   col: Collector,
@@ -437,10 +441,10 @@ export function collectAdditionalSpells(
   origin: EffectOrigin,
   defaultAbility?: Ability,
   idBase?: string,
+  gateLevel: number = totalLevelOf(col),
 ): void {
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
-  const totalLevel = totalLevelOf(col);
   const base = idBase ?? `spells:${origin.uid}`;
 
   // Entries carrying a distinct `name` are mutually-exclusive branches (the
@@ -476,7 +480,7 @@ export function collectAdditionalSpells(
           col,
           entry,
           origin,
-          totalLevel,
+          gateLevel,
           defaultAbility,
           `${base}:ability:${groupKey}:${i}`,
           `${base}:spell:${groupKey}:${i}`,

@@ -1097,6 +1097,7 @@ export function collectClasses(col: Collector): void {
             ? (subAbility as Ability)
             : undefined,
           `subclass:${subOrigin.uid}`,
+          classLevel,
         );
         const subWalk: FeatureWalk = {
           ...classWalk,
