@@ -228,6 +228,8 @@ export type EffectInput = { origin: EffectOrigin } & (
       roll?: string;
       /** The roll is hit points regained, not damage dealt. */
       heals?: boolean;
+      /** The roll is neither damage nor healing: a bonus die, temporary hit points. */
+      plainDice?: boolean;
       /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
       note?: string;
       /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
@@ -473,6 +475,8 @@ export interface DerivedSheet {
     roll?: string;
     /** The roll is hit points regained, not damage dealt. */
     heals?: boolean;
+    /** The roll is neither damage nor healing: a bonus die, temporary hit points. */
+    plainDice?: boolean;
     origin: string;
     /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
     note?: string;
