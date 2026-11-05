@@ -339,6 +339,14 @@ describe('proseScanFeature rolls', () => {
     );
     expect(later).toMatchObject({ roll: '2d6', plainDice: false });
   });
+
+  it("offers no roll for a d20 that ends a sentence (Hexblade's Curse wording)", () => {
+    const crit = action(
+      'Once per long rest, as a bonus action, you score a critical hit on a roll of 19 or 20 on the d20.',
+    );
+    expect(crit?.economy).toBe('bonus');
+    expect(crit?.roll).toBeUndefined();
+  });
 });
 
 describe('proseScanFeature natural weapons', () => {
