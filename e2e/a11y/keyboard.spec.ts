@@ -241,11 +241,36 @@ test.describe('keyboard: dialogs and drawers', () => {
     await escapeReturnsTo(page, preview, importer);
   });
 
-  test('the Play tab: dice tray, history and long rest', async ({ page }) => {
+  test('the Play tab: the HP sheet, dice tray, history and long rest', async ({ page }) => {
     await gotoRosterSettled(page);
     const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Play');
+    // The HP sheet, from each of its ways in. It has no trigger of its own,
+    // so focus goes back to whichever one opened it.
+    const hpSheet = page.getByRole('dialog', { name: 'Hit points' });
+    for (const opener of [
+      page.getByRole('button', { name: 'Damage', exact: true }),
+      page.getByRole('button', { name: 'Heal', exact: true }),
+      page.getByRole('button', { name: 'Temp HP', exact: true }),
+      page.getByRole('button', { name: /hit points$/ }).filter({ hasText: '/' }),
+    ]) {
+      await checkDialog(page, opener, hpSheet);
+    }
+    // Digits and Backspace from the keyboard reach its amount, and Enter on
+    // the confirm applies it.
+    await page.getByRole('button', { name: 'Temp HP', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(hpSheet).toBeVisible();
+    await animationsSettled(page);
+    await page.keyboard.type('129');
+    await page.keyboard.press('Backspace');
+    const confirm = hpSheet.getByRole('button', { name: 'Set temp HP to 12' });
+    await confirm.focus();
+    await page.keyboard.press('Enter');
+    await expect(hpSheet).toBeHidden();
+    await expect(page.getByRole('button', { name: '+12 temporary hit points' })).toBeFocused();
+
     await checkDialog(
       page,
       page.getByRole('button', { name: 'Dice tray' }),
