@@ -101,6 +101,30 @@ describe('readableEntries', () => {
     expect(text).toBe('Choose one:\nLongtooth. You bite.');
   });
 
+  it("leaves tables out by default, since a subject's identity hashes this text", () => {
+    const table = { type: 'table', colLabels: ['Roll'], rows: [['1']] };
+    expect(readableEntries(['Words.', table])).toBe('Words.');
+    expect(readableEntries(['Words.', table], { tables: true })).toBe('Words.\nRoll\n1');
+  });
+
+  it('reads tags the given way, in table cells as well', () => {
+    const entries = ['{@b A}', { type: 'table', rows: [['{@b B}', 2]] }];
+    expect(readableEntries(entries, { tables: true, tagText: (t) => t.toLowerCase() })).toBe(
+      '{@b a}\n{@b b} | 2',
+    );
+  });
+
+  it("reads a name's tags only when a reader asks, since names are part of the hash", () => {
+    const entries = [{ type: 'entries', name: '{@b Name}', entries: ['Words.'] }];
+    expect(readableEntries(entries)).toBe('{@b Name}. Words.');
+    expect(readableEntries(entries, { tagText: (t) => t.toLowerCase() })).toBe('{@b name}. words.');
+  });
+
+  it('reads a table cell with no usable roll by its words', () => {
+    const table = { type: 'table', rows: [[{ type: 'cell', roll: null, entry: 'Sparks' }]] };
+    expect(readableEntries([table], { tables: true })).toBe('Sparks');
+  });
+
   it('shows the third part of a tag laid out as name, source, display, else the first', () => {
     expect(readableEntries(['a {@variantrule Proficiency|XPHB|Proficiency Bonus} b'])).toBe(
       'a Proficiency Bonus b',

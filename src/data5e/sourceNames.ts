@@ -9,11 +9,12 @@
  * app never fetches the files these titles would otherwise come from.
  *
  * Generated from the 5etools mirror's own source table (js/parser.js at
- * v2.33.3), with categories from books.json plus its adventure set. Anything
- * added to the dataset after that falls back to the bare code, which is
- * exactly what the badge showed before this table existed, so a stale table
- * degrades quietly instead of breaking. Regenerate when unknown codes start
- * showing up in the settings source list.
+ * v2.40.0). A book's group in books.json decides its category, then the
+ * parser's adventure set; Unearthed Arcana is "playtest" and anything else is
+ * "other". Anything added to the dataset after that falls back to the bare
+ * code, which is exactly what the badge showed before this table existed, so a
+ * stale table degrades quietly instead of breaking. Regenerate when unknown
+ * codes start showing up in the settings source list.
  */
 
 export type SourceGroup = 'core' | 'supplement' | 'setting' | 'adventure' | 'playtest' | 'other';
@@ -50,6 +51,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   AATM: ['Adventure Atlas: The Mortuary', 'supplement'],
   ABH: ["Astarion's Book of Hungers", 'supplement'],
   AI: ['Acquisitions Incorporated', 'supplement'],
+  AU: ['Arcana Unleashed', 'supplement'],
   AWM: ['Adventure with Muk', 'supplement'],
   BGG: ['Bigby Presents: Glory of the Giants', 'supplement'],
   BMT: ['The Book of Many Things', 'supplement'],
@@ -64,6 +66,8 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   MPMM: ['Mordenkainen Presents: Monsters of the Multiverse', 'supplement'],
   MTF: ["Mordenkainen's Tome of Foes", 'supplement'],
   OGA: ['One Grung Above', 'supplement'],
+  // The underscore is how the book is published, not a placeholder.
+  PL: ['Project_Lamordia', 'supplement'],
   RMR: ['Dungeons & Dragons vs. Rick and Morty: Basic Rules', 'supplement'],
   TCE: ["Tasha's Cauldron of Everything", 'supplement'],
   TD: ['Tarot Deck', 'supplement'],
@@ -94,6 +98,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   SCAG: ["Sword Coast Adventurer's Guide", 'setting'],
   SCC: ['Strixhaven: A Curriculum of Chaos', 'setting'],
   VRGR: ["Van Richten's Guide to Ravenloft", 'setting'],
+  WoW: ['D&D: World of Warcraft', 'setting'],
 
   // adventure
   AitFR: ['Adventures in the Forgotten Realms', 'adventure'],
@@ -102,6 +107,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   'AitFR-FCD': ['Adventures in the Forgotten Realms: From Cyan Depths', 'adventure'],
   'AitFR-ISF': ['Adventures in the Forgotten Realms: In Scarlet Flames', 'adventure'],
   'AitFR-THP': ['Adventures in the Forgotten Realms: The Hidden Page', 'adventure'],
+  AUD: ['Arcana Unleashed: Deadfall', 'adventure'],
   AZfyT: ['A Zib for your Thoughts', 'adventure'],
   BGDIA: ["Baldur's Gate: Descent Into Avernus", 'adventure'],
   BQGT: ['Borderlands Quest: Goblin Trouble', 'adventure'],
@@ -137,6 +143,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   HoL: ['The House of Lament', 'adventure'],
   HotB: ['Heroes of the Borderlands', 'adventure'],
   HotDQ: ['Hoard of the Dragon Queen', 'adventure'],
+  ICC: ['World of Warcraft: Icecrown Citadel', 'adventure'],
   IDRotF: ['Icewind Dale: Rime of the Frostmaiden', 'adventure'],
   IMR: ['Infernal Machine Rebuild', 'adventure'],
   JttRC: ['Journeys through the Radiant Citadel', 'adventure'],
@@ -165,6 +172,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   RoT: ['The Rise of Tiamat', 'adventure'],
   RoTOS: ['The Rise of Tiamat Online Supplement', 'adventure'],
   RtG: ['Return to Glory', 'adventure'],
+  RWG: ["Red Wizards' Gambit", 'adventure'],
   'SCC-ARiR': ['A Reckoning in Ruins', 'adventure'],
   'SCC-CK': ['Campus Kerfuffle', 'adventure'],
   'SCC-HfMT': ['Hunt for Mage Tower', 'adventure'],
@@ -174,6 +182,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   SjA: ['Spelljammer Academy', 'adventure'],
   SKT: ["Storm King's Thunder", 'adventure'],
   SLW: ["Storm Lord's Wrath", 'adventure'],
+  SoS: ['Shadows of Sithicus', 'adventure'],
   TftYP: ['Tales from the Yawning Portal', 'adventure'],
   'TftYP-AtG': ['Tales from the Yawning Portal: Against the Giants', 'adventure'],
   'TftYP-DiT': ['Tales from the Yawning Portal: Dead in Thay', 'adventure'],
@@ -209,6 +218,7 @@ const SOURCES: Record<string, readonly [name: string, group: SourceGroup]> = {
   HF: ["Heroes' Feast", 'other'],
   HFDoMM: ["Heroes' Feast: The Deck of Many Morsels", 'other'],
   HFFotM: ["Heroes' Feast: Flavors of the Multiverse", 'other'],
+  HFLotT: ["Heroes' Feast: Legends of the Table", 'other'],
   MCV2DC: ['Monstrous Compendium Volume 2: Dragonlance Creatures', 'other'],
   MCV3MC: ['Monstrous Compendium Volume 3: Minecraft Creatures', 'other'],
   MFF: ["Mordenkainen's Fiendish Folio", 'other'],

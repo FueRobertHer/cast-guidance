@@ -5,7 +5,10 @@
  *   - `prose`: for every trait and feature the engine prose-scans, the yes/no
  *     questions the scanner's output answers (bonus action, limited uses, …);
  *   - `branch`: for every multi-name `additionalSpells` block whose prose
- *     never says "choose", whether it is a choice or a grant of everything.
+ *     never says "choose", whether it is a choice or a grant of everything;
+ *   - `reprint`: for every 2014/2024 reprint pair whose prose differs, whether
+ *     only the wording changed. Only when asked for by name: it is costly to
+ *     ask, and no check in the audit rests on it.
  *
  * Three one-off scoping sets answer "what is there to do?" for a piece of
  * FUTURE_WORK.md instead. No check reads them, and they are only asked when
@@ -17,7 +20,8 @@
  *
  *   bun run data:judge -- --dry-run            # what would be asked, and a sample request
  *   bun run data:judge -- --limit 25           # a trial: ask about 25 subjects
- *   bun run data:judge                         # ask about everything not yet judged
+ *   bun run data:judge                         # ask `prose` and `branch`, whatever is not yet judged
+ *   bun run data:judge -- --set reprint        # ask about reprint pairs instead
  *   bun run data:judge -- --tag latest         # judge the newest compatible release
  *   bun run data:judge -- --set bonus          # ask only one set
  *   bun run data:judge -- --report bonus       # a scoping set's ranked list, from saved answers
@@ -45,6 +49,13 @@ import {
 } from '../src/data5e/audit/judgments';
 import { PROSE_SET } from '../src/data5e/audit/proseChecks';
 import { proseSubjects } from '../src/data5e/audit/proseSubjects';
+import {
+  auditReprints,
+  describeReprints,
+  REPRINT_SET,
+  reprintPairs,
+  reprintSubjects,
+} from '../src/data5e/audit/reprints';
 import type { Scope } from '../src/data5e/audit/scoping';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
@@ -98,8 +109,8 @@ const limit = positive('limit', values.limit);
 const concurrency = positive('concurrency', values.concurrency) ?? 4;
 const scopeNames = Object.keys(SCOPES).join(', ');
 const askedScope = scopeNamed(values.set);
-if (!['all', 'prose', 'branch'].includes(values.set) && askedScope === undefined) {
-  die(`--set must be all, prose, branch, ${scopeNames}`);
+if (!['all', 'prose', 'branch', 'reprint'].includes(values.set) && askedScope === undefined) {
+  die(`--set must be all, prose, branch, reprint, ${scopeNames}`);
 }
 const reportScope = scopeNamed(values.report);
 if (values.report !== undefined && reportScope === undefined) {
@@ -146,6 +157,11 @@ if (reportScope !== undefined) {
   console.log(reportScope.report(registry, file));
 } else if (askedScope !== undefined) {
   runs.push({ set: askedScope.set, subjects: askedScope.subjects(registry) });
+} else if (values.set === 'reprint') {
+  const found = reprintPairs(registry);
+  for (const line of describeReprints(auditReprints(found, file))) console.log(line);
+  console.log('');
+  runs.push({ set: REPRINT_SET, subjects: reprintSubjects(found.pairs) });
 } else {
   if (values.set !== 'branch') {
     // Curated features never reach the scanner, so their answers would go unused.
@@ -211,7 +227,7 @@ if (!values['dry-run'] && reportScope === undefined) {
   summary.push(
     '',
     askedScope === undefined
-      ? 'Commit `scripts/data-judgments.json`, then run `bun run data:audit` to compare the scanner with the answers.'
+      ? 'Commit `scripts/data-judgments.json`, then run `bun run data:audit` to read the answers against the data.'
       : `Commit \`scripts/data-judgments.json\`, then run \`bun run data:judge -- --report ${askedScope.set.id}\` for the ranked list.`,
   );
   const out = process.env.GITHUB_STEP_SUMMARY;

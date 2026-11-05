@@ -8,6 +8,7 @@ import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { BuildFrom } from '../SheetLayout';
 import { SpellInfoSheet } from '../SpellInfoSheet';
+import { distinctGrants } from '../spellData';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
 const GROUPS: Array<{ types: Array<FeatureCard['origin']['type']>; title: string }> = [
@@ -113,9 +114,9 @@ export function Component() {
         <section className="flex flex-col gap-2">
           <h2 className={H2}>Innate & granted spells</h2>
           <div className={listClass}>
-            {sheet.grantedSpells.map((g) => (
+            {distinctGrants(sheet.grantedSpells).map((g) => (
               <SpellInfoSheet
-                key={`${g.name}|${g.source}`}
+                key={`${g.name}|${g.source}|${g.origin}`}
                 name={g.name}
                 source={g.source}
                 version={doc.rulesVersion}

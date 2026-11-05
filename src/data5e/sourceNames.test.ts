@@ -79,6 +79,23 @@ describe('sourceGroup', () => {
 });
 
 describe('the table itself', () => {
+  it('names the books the mirror added between v2.33.3 and v2.40.0', () => {
+    const books: ReadonlyArray<[code: string, title: string, group: string]> = [
+      ['AU', 'Arcana Unleashed', 'supplement'],
+      ['AUD', 'Arcana Unleashed: Deadfall', 'adventure'],
+      ['HFLotT', "Heroes' Feast: Legends of the Table", 'other'],
+      ['ICC', 'World of Warcraft: Icecrown Citadel', 'adventure'],
+      ['PL', 'Project_Lamordia', 'supplement'],
+      ['RWG', "Red Wizards' Gambit", 'adventure'],
+      ['SoS', 'Shadows of Sithicus', 'adventure'],
+      ['WoW', 'D&D: World of Warcraft', 'setting'],
+    ];
+    for (const [code, title, group] of books) {
+      expect(sourceName(code), code).toBe(title);
+      expect(sourceGroup(code), code).toBe(group);
+    }
+  });
+
   it('covers the sources the app hardcodes elsewhere', () => {
     // SOURCES_2024 and EntityCardList's SOURCE_RANK both name codes directly;
     // a badge for one of them showing bare shorthand would be the bug this

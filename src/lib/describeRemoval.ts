@@ -54,9 +54,7 @@ export function classRemovalParts(
   active: ReadonlySet<string>,
 ): string[] {
   const uid = refUid(entry.ref);
-  const probe = structuredClone(doc);
-  probe.classes = probe.classes.filter((c) => refUid(c.ref) !== uid);
-  const removed = pruneClass(probe, entry);
+  const removed = pruneClass(structuredClone(doc), entry);
   const subKeys = removed.filter((k) => k.startsWith('subclass:'));
   const subPicks = pickCount(doc, subKeys, active);
   const ownPicks = pickCount(

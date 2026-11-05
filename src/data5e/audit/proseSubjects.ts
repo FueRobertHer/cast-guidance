@@ -71,6 +71,13 @@ export function textHash(text: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
 }
 
+export interface ReadableOptions {
+  /** Read `table` entries too. */
+  tables?: boolean;
+  /** How to read a string's tags, and a name's; `plainEntryText` and as written when not given. */
+  tagText?: (text: string) => string;
+}
+
 /**
  * Entries as plain paragraphs, case kept and tags shown as their display
  * text. Named sub-entries keep their name as a lead-in ("Longtooth. ..."), so
@@ -78,13 +85,26 @@ export function textHash(text: string): string {
  *
  * This text is what a subject's key hashes. Reading a tag differently re-keys
  * exactly the subjects whose words move, and their answers wait to be asked
- * again; `bun run data:judge -- --dry-run` counts them before anyone pays.
+ * again; `bun run data:judge -- --dry-run` counts them before anyone pays. So
+ * the defaults stay put, and a reader that wants more asks through the options.
  */
-export function readableEntries(entries: unknown): string {
+export function readableEntries(entries: unknown, options: ReadableOptions = {}): string {
+  const { tables = false, tagText = plainEntryText } = options;
   const lines: string[] = [];
+  /** Plain text, a number, or a `cell` object with a roll and an entry. */
+  const cellText = (cell: unknown): string => {
+    if (typeof cell === 'number') return String(cell);
+    if (cell === null || typeof cell !== 'object') return readableEntries(cell, options);
+    const roll = (cell as Record<string, unknown>).roll as
+      | { exact?: number; min?: number; max?: number }
+      | null
+      | undefined;
+    const rolled = roll ? String(roll.exact ?? `${String(roll.min)}-${String(roll.max)}`) : '';
+    return [rolled, readableEntries(cell, options)].filter((s) => s !== '').join(' ');
+  };
   const walk = (v: unknown): void => {
     if (typeof v === 'string') {
-      lines.push(plainEntryText(v));
+      lines.push(tagText(v));
       return;
     }
     if (Array.isArray(v)) {
@@ -97,8 +117,17 @@ export function readableEntries(entries: unknown): string {
       walk(o.entries);
       walk(o.entry);
       walk(o.items);
+      if (tables && o.type === 'table') {
+        walk(o.caption);
+        for (const row of [o.colLabels, ...(Array.isArray(o.rows) ? o.rows : [])]) {
+          if (Array.isArray(row)) lines.push(row.map(cellText).join(' | '));
+        }
+        walk(o.footnotes);
+      }
       if (typeof o.name === 'string' && lines.length > start) {
-        lines[start] = `${o.name}. ${lines[start]}`;
+        // Names are read as written unless a reader asks: see the note above.
+        const name = options.tagText?.(o.name) ?? o.name;
+        lines[start] = `${name}. ${lines[start]}`;
       }
     }
   };
