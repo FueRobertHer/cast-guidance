@@ -303,12 +303,33 @@ export interface ChoicePrompt {
     | 'optionalfeature'
     /** One branch of a pick-one class or subclass feature (see `collectPick`). */
     | 'feature'
+    /** A spell the player picks (see `spellQuery`). */
+    | 'spell'
     | 'generic';
   label: string;
   count: number;
   /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
   allowRepeat?: boolean;
   options: ChoiceOption[];
+  /**
+   * What a `spell` prompt may offer, when that takes the spell files to work out.
+   * Those download on demand and class lists live outside the registry, so the
+   * engine cannot list the spells: `options` then holds only the saved picks, and
+   * the page showing the prompt fills in the rest.
+   */
+  spellQuery?: SpellQuery;
+}
+
+/** A filter on spells, every part of which must hold. An empty list does not filter. */
+export interface SpellQuery {
+  levels: number[];
+  /** The spell is on any of these classes' lists. */
+  classes: string[];
+  /** School codes, in capitals as the data writes them. */
+  schools: string[];
+  ritual: boolean;
+  /** Spell attack codes, in lower case. */
+  attacks: string[];
 }
 
 // ---------------------------------------------------------------------------

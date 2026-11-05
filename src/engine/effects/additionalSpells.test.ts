@@ -329,3 +329,213 @@ describe('innate usage buckets', () => {
     expect(granted(col.effects)).toHaveLength(0);
   });
 });
+
+describe('collectAdditionalSpells: a chosen spell on a feat', () => {
+  const feat: EffectOrigin = { label: 'Test Feat', uid: 'feat|test feat|hb', type: 'feat' };
+  const cantrip = { choose: 'level=0|class=Testclass', count: 2 };
+  const firstLevel = { choose: 'level=1|school=E;D' };
+
+  function collectFeat(
+    raw: unknown,
+    choices: Record<string, string[] | string> = {},
+    level = 1,
+    spells: Array<Record<string, unknown>> = [],
+  ) {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Testclass', source: 'HB' }, levels: level, hp: [] }];
+    doc.choices = choices;
+    const ctx = {
+      get: (type: string, name: string, source?: string) =>
+        type === 'spell'
+          ? spells.find(
+              (s) =>
+                String(s.name).toLowerCase() === name.toLowerCase() &&
+                String(s.source).toLowerCase() === source?.toLowerCase(),
+            )
+          : undefined,
+      byType: () => [],
+    };
+    const col = new Collector(doc, ctx);
+    collectAdditionalSpells(col, raw, feat, undefined, 'feat:base');
+    return col;
+  }
+
+  const fresh = (col: Collector) => col.pending.filter((p) => col.doc.choices[p.id] === undefined);
+
+  it('asks for the pick and grants nothing until it is made', () => {
+    const col = collectFeat([{ ability: 'int', known: { _: [cantrip] } }]);
+    expect(col.pending).toHaveLength(1);
+    expect(col.pending[0]).toMatchObject({
+      id: 'feat:base:spell:u:0:known:_:0',
+      kind: 'spell',
+      label: 'Test Feat: Testclass cantrips',
+      count: 2,
+      options: [],
+      spellQuery: { levels: [0], classes: ['Testclass'] },
+    });
+    expect(granted(col.effects)).toEqual([]);
+    expect(col.warnings).toEqual([]);
+  });
+
+  it('holds the pick back behind the branch and then the ability', () => {
+    const raw = [
+      { name: 'Alpha', ability: { choose: ['int', 'wis'] }, known: { _: [cantrip] } },
+      { name: 'Beta', ability: { choose: ['int', 'wis'] }, known: { _: ['fake fixed'] } },
+    ];
+    const branch = 'feat:base:branch';
+    const ability = 'feat:base:ability:b:alpha:0';
+    expect(fresh(collectFeat(raw)).map((p) => p.id)).toEqual([branch]);
+    expect(fresh(collectFeat(raw, { [branch]: ['alpha'] })).map((p) => p.id)).toEqual([ability]);
+    const opened = collectFeat(raw, { [branch]: ['alpha'], [ability]: ['wis'] });
+    expect(fresh(opened).map((p) => p.id)).toEqual(['feat:base:spell:b:alpha:0:known:_:0']);
+    // The other option has no pick to make.
+    const other = collectFeat(raw, { [branch]: ['beta'], 'feat:base:ability:b:beta:0': ['wis'] });
+    expect(fresh(other)).toEqual([]);
+  });
+
+  it('waits for the level key, and keeps its id as more levels open', () => {
+    const raw = [{ prepared: { _: [firstLevel], 5: [firstLevel] } }];
+    const ids = (level: number) => collectFeat(raw, {}, level).pending.map((p) => p.id);
+    expect(ids(4)).toEqual(['feat:base:spell:u:0:prepared:_:0']);
+    expect(ids(5)).toEqual(
+      expect.arrayContaining([
+        'feat:base:spell:u:0:prepared:_:0',
+        'feat:base:spell:u:0:prepared:5:0',
+      ]),
+    );
+  });
+
+  it('grants a saved pick with the spell files not in yet, as a reload finds it', () => {
+    const col = collectFeat([{ ability: 'int', known: { _: [cantrip] } }], {
+      'feat:base:spell:u:0:known:_:0': ['Fake One|HB', 'Fake Two|HB'],
+    });
+    expect(col.pending).toEqual([]);
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'Fake One', source: 'HB' }, ability: 'int' },
+      { spell: { name: 'Fake Two', source: 'HB' }, ability: 'int' },
+    ]);
+    expect(col.resolved[0]?.prompt.options.map((o) => o.label)).toEqual(['Fake One', 'Fake Two']);
+  });
+
+  it('keeps asking until a multi-pick is full, granting what is picked so far', () => {
+    const col = collectFeat([{ known: { _: [cantrip] } }], {
+      'feat:base:spell:u:0:known:_:0': ['Fake One|HB'],
+    });
+    expect(col.pending).toHaveLength(1);
+    expect(granted(col.effects)).toHaveLength(1);
+  });
+
+  it('gives a pick its bucket: one pool each for "1e", beside the named spell', () => {
+    const col = collectFeat([{ innate: { _: { daily: { '1e': ['fake fixed', firstLevel] } } } }], {
+      'feat:base:spell:u:0:innate:_:0': ['Fake One|HB'],
+    });
+    expect(granted(col.effects)).toMatchObject([
+      {
+        spell: { name: 'fake fixed' },
+        usage: '1/day',
+        resourceKey: 'spell:feat|test feat|hb:fake-fixed',
+      },
+      {
+        spell: { name: 'Fake One' },
+        usage: '1/day',
+        resourceKey: 'spell:feat|test feat|hb:fake-one',
+      },
+    ]);
+  });
+
+  it('gives a pick its bucket: one pool between them for a shared count', () => {
+    const col = collectFeat([{ innate: { _: { rest: { 1: [{ ...firstLevel, count: 2 }] } } } }], {
+      'feat:base:spell:u:0:innate:_:0': ['Fake One|HB', 'Fake Two|HB'],
+    });
+    const key = 'spell:feat|test feat|hb:fake-one+fake-two';
+    expect(granted(col.effects)).toMatchObject([
+      { usage: '1/rest', resourceKey: key },
+      { usage: '1/rest', resourceKey: key },
+    ]);
+    expect(col.effects.filter((e) => e.kind === 'resource')).toHaveLength(1);
+  });
+
+  it('marks a plain prepared pick as always prepared', () => {
+    const col = collectFeat([{ prepared: { _: ['fake fixed', firstLevel] } }], {
+      'feat:base:spell:u:0:prepared:_:0': ['Fake One|HB'],
+    });
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'fake fixed' }, usage: 'prepared' },
+      { spell: { name: 'Fake One' }, usage: 'prepared' },
+    ]);
+  });
+
+  it('lets a prepared pick spend its own count, and leaves a named spell as it was', () => {
+    const col = collectFeat([{ prepared: { _: { daily: { 1: ['fake fixed', firstLevel] } } } }], {
+      'feat:base:spell:u:0:prepared:_:0': ['Fake One|HB'],
+    });
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'fake fixed' }, usage: 'prepared' },
+      {
+        spell: { name: 'Fake One' },
+        usage: '1/day',
+        resourceKey: 'spell:feat|test feat|hb:fake-one',
+      },
+    ]);
+    expect(granted(col.effects)[0]?.resourceKey).toBeUndefined();
+  });
+
+  it('casts a prepared pick at will when its bucket says so', () => {
+    const col = collectFeat([{ prepared: { _: { will: [firstLevel] } } }], {
+      'feat:base:spell:u:0:prepared:_:0': ['Fake One|HB'],
+    });
+    expect(granted(col.effects)[0]?.usage).toBeUndefined();
+  });
+
+  it('asks again for a saved pick that the spell on file does not fit', () => {
+    const col = collectFeat(
+      [{ known: { _: [{ choose: 'level=0' }] } }],
+      { 'feat:base:spell:u:0:known:_:0': ['Fake Big|HB'] },
+      1,
+      [{ name: 'Fake Big', source: 'HB', level: 9 }],
+    );
+    expect(granted(col.effects)).toEqual([]);
+    expect(col.pending).toHaveLength(1);
+    expect(col.warnings.join()).toContain('no longer available');
+  });
+
+  it.each<[string, unknown]>([
+    ['an empty answer', ['']],
+    ['a name with no source', ['Fake One']],
+    ['the empty answer the report walks with', ''],
+  ])('never grants %s', (_what, saved) => {
+    const col = collectFeat([{ known: { _: [{ choose: 'level=0' }] } }], {
+      'feat:base:spell:u:0:known:_:0': saved as string[],
+    });
+    expect(granted(col.effects)).toEqual([]);
+    expect(col.pending).toHaveLength(1);
+  });
+
+  it('offers a spelled-out list as it is, and grants by name', () => {
+    const list = { choose: { from: ['fake one', 'fake two|hb', 'fake three'], count: 2 } };
+    const raw = [{ innate: { _: { daily: { '1e': [list] } } } }];
+    const asked = collectFeat(raw).pending[0];
+    expect(asked).toMatchObject({ count: 2, label: 'Test Feat: Spells from this list' });
+    expect(asked?.spellQuery).toBeUndefined();
+    expect(asked?.options.map((o) => o.label)).toEqual(['Fake One', 'Fake Two', 'Fake Three']);
+    const col = collectFeat(raw, {
+      'feat:base:spell:u:0:innate:_:0': ['fake one', 'fake two|hb'],
+    });
+    expect(granted(col.effects)).toMatchObject([
+      { spell: { name: 'fake one', source: '' }, usage: '1/day' },
+      { spell: { name: 'fake two', source: 'hb' }, usage: '1/day' },
+    ]);
+  });
+
+  it('keeps the note for a filter it cannot read, rather than offering too much', () => {
+    const col = collectFeat([{ known: { _: [{ choose: 'level=0|sparkle=yes' }] } }]);
+    expect(col.pending).toEqual([]);
+    expect(col.warnings).toEqual(['Test Feat: also lets you choose a spell. See the trait text.']);
+  });
+
+  it('keeps the note on anything but a feat', () => {
+    const col = collect([{ known: { _: [cantrip] } }]);
+    expect(col.pending).toEqual([]);
+    expect(col.warnings).toEqual(['Tiefling: also lets you choose a spell. See the trait text.']);
+  });
+});
