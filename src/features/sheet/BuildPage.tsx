@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
+import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
@@ -30,7 +31,7 @@ import {
   makeSubclassEntries,
   raceBlurb,
 } from '@/features/creator/pickerHints';
-import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
+import { classRemovalParts, firstClassShift, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { signed } from '@/lib/signed';
@@ -369,15 +370,21 @@ export function Component() {
    * Removing a class asks first, whichever class it is: it takes the class's
    * picks, its subclass and its spell list with it. A level-1 class that was not
    * the only one used to go on one tap, with its subclass picks and spells
-   * left behind.
+   * left behind. Removing the first of several also moves what only the first
+   * row gets, and the confirm says that too.
    */
   const removeClass = async (entry: ClassLevelEntry) => {
     const name = entry.ref.name;
     const parts = classRemovalParts(doc, entry, activeChoices);
-    const clears = parts.length > 0 ? `Clears ${listJoin(parts)}.` : 'Nothing else is tied to it.';
+    const goes = [
+      parts.length > 0 && `Clears ${listJoin(parts)}.`,
+      firstClassShift(doc, entry, engineContextFor(registry)),
+    ]
+      .filter(Boolean)
+      .join(' ');
     const ok = await askConfirm({
       title: `Remove ${name}?`,
-      detail: `${clears} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
+      detail: `${goes || 'Nothing else is tied to it.'} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
       confirmLabel: 'Remove class',
       danger: true,
     });
