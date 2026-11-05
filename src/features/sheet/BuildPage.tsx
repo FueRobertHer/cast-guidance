@@ -279,8 +279,11 @@ export function Component() {
   // is on now. Keyed by slot + ref so a chip beside a pick finds its own cue.
   const lookup: EntityLookup = registryLookup(registry);
   const cues = editionCues(doc, doc.rulesVersion, lookup);
-  const cueFor = (slot: EditionSlot, ref: { name: string; source: string } | undefined) =>
-    ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref));
+  const cueFor = (
+    slot: EditionSlot,
+    ref: { name: string; source: string } | undefined,
+    classRow?: { name: string; source: string },
+  ) => (ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref, classRow)));
   const cueNotes = editionCueNotes(cues, doc.rulesVersion);
 
   /**
@@ -690,7 +693,7 @@ export function Component() {
                   <summary className="cursor-pointer py-1 text-caption text-ink-muted">
                     Subclass: {entry.subclass?.name ?? 'none picked'}{' '}
                     <EditionChip
-                      cue={cueFor('subclass', entry.subclass)}
+                      cue={cueFor('subclass', entry.subclass, entry.ref)}
                       version={doc.rulesVersion}
                     />
                   </summary>

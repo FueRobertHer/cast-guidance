@@ -91,6 +91,11 @@ export class EntityRegistry {
   private readonly types = new Map<EntityType, Entity[]>();
   private readonly index = new Map<EntityType, Map<string, Entity>>();
   readonly warnings: CopyModWarning[] = [];
+  /**
+   * The official books a row marks as 2024 rules (see `booksMarkedOne`). Merging
+   * homebrew never adds to it, so a brew's own marks label no book.
+   */
+  rulesBooks: ReadonlySet<string> = new Set();
   /** Per-type list lengths when homebrew started arriving; see `officialCount`. */
   private officialCounts: Map<EntityType, number> | undefined;
 
@@ -211,6 +216,7 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
   const warn = (w: CopyModWarning[]) => reg.warnings.push(...w);
 
   const rulesBooks = booksMarkedOne(files);
+  reg.rulesBooks = rulesBooks;
 
   // Races + subraces (copies, then version expansion on both)
   const races = entityArray(files, 'races.json', 'race');
@@ -292,7 +298,9 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
   // (`copyMod` drops the field on copy).
   for (const type of ENTITY_TYPES) {
     for (const e of reg.byType(type)) {
-      if (e.edition === undefined && rulesBooks.has(e.source)) e.bookEdition = 'one';
+      if (e.edition === undefined && typeof e.source === 'string' && rulesBooks.has(e.source)) {
+        e.bookEdition = 'one';
+      }
     }
   }
   return reg;
@@ -305,7 +313,8 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
  * book marks its backgrounds and subclasses `one` and leaves its feats, spells
  * and items bare, which read as 2014 one entity at a time. `normalizeDataset`
  * gives those bare rows a `bookEdition`, so `editionOf` stays a question about
- * one entity for all of its callers.
+ * one entity for all of its callers, and keeps the set on the registry for a
+ * label that holds only a source code (`isBook2024`).
  *
  * Read from the raw files, because `edition` carries through a `_copy`: read
  * afterwards, one older row copying a marked XPHB race would hide its whole book
@@ -313,8 +322,8 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
  * `source: 'PHB'` with a `one` cannot flip the real PHB. A book is only as known
  * as the files that have landed, and each landing rebuilds this.
  */
-function booksMarkedOne(files: ReadonlyMap<string, unknown>): Set<unknown> {
-  const books = new Set<unknown>();
+function booksMarkedOne(files: ReadonlyMap<string, unknown>): Set<string> {
+  const books = new Set<string>();
   for (const json of files.values()) {
     if (json === null || typeof json !== 'object') continue;
     for (const list of Object.values(json)) {

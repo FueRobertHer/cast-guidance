@@ -51,8 +51,14 @@ export function registryLookup(registry: EntityRegistry): EntityLookup {
   };
 }
 
-export const cueKey = (slot: EditionSlot, ref: EntityRef): string =>
-  `${slot}:${ref.name}|${ref.source}`.toLowerCase();
+/**
+ * `classRow` is for a subclass, whose cue depends on the row it sits under: two
+ * printings of a class can hold the same subclass and read differently.
+ */
+export const cueKey = (slot: EditionSlot, ref: EntityRef, classRow?: EntityRef): string =>
+  `${slot}:${ref.name}|${ref.source}${
+    classRow === undefined ? '' : `@${classRow.name}|${classRow.source}`
+  }`.toLowerCase();
 
 /**
  * Classify every identity pick a character holds against its rules version
@@ -71,7 +77,13 @@ export function editionCues(
   lookup: EntityLookup,
 ): EditionCue[] {
   const cues: EditionCue[] = [];
-  const add = (slot: EditionSlot, type: EntityType, ref: EntityRef, label: string) => {
+  const add = (
+    slot: EditionSlot,
+    type: EntityType,
+    ref: EntityRef,
+    label: string,
+    classRow?: EntityRef,
+  ) => {
     const entity = lookup(type, ref);
     // A pick whose entity is missing is already reported by the engine as "not
     // found"; guessing at its edition from the source alone would add a second,
@@ -79,8 +91,14 @@ export function editionCues(
     if (entity === undefined) return;
     // A target is looked up in its own bucket, not the holder's: every 2014
     // subrace is reprinted as a race, and some races as a feat or an item.
-    const fit = editionFit(entity, type, version, (target) => lookup(target.type ?? type, target));
-    cues.push({ slot, key: cueKey(slot, ref), label, fit });
+    const fit = editionFit(
+      entity,
+      type,
+      version,
+      (target) => lookup(target.type ?? type, target),
+      classRow,
+    );
+    cues.push({ slot, key: cueKey(slot, ref, classRow), label, fit });
   };
 
   if (doc.race !== undefined) add('race', 'race', doc.race, doc.race.name);
@@ -91,7 +109,13 @@ export function editionCues(
   for (const entry of doc.classes) {
     add('class', 'class', entry.ref, entry.ref.name);
     if (entry.subclass !== undefined) {
-      add('subclass', 'subclass', entry.subclass, `${entry.ref.name}'s ${entry.subclass.name}`);
+      add(
+        'subclass',
+        'subclass',
+        entry.subclass,
+        `${entry.ref.name}'s ${entry.subclass.name}`,
+        entry.ref,
+      );
     }
   }
   return cues;

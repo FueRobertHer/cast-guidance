@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  hasHomebrewTitle,
   isKnownSource,
   knownSources,
   SOURCE_GROUP_LABELS,
@@ -49,6 +50,18 @@ describe('homebrew titles', () => {
     setHomebrewSourceNames(new Map([['F', 'Flame Sword Homebrew']]));
     expect(isKnownSource('F')).toBe(false);
     expect(knownSources()).not.toContain('F');
+  });
+
+  it('says when a title is the brew talking, which a published code never is', () => {
+    expect(hasHomebrewTitle('F')).toBe(false);
+    setHomebrewSourceNames(
+      new Map([
+        ['F', 'Flame Sword Homebrew'],
+        ['PHB', 'My Better Handbook'],
+      ]),
+    );
+    expect(hasHomebrewTitle('F')).toBe(true);
+    expect(hasHomebrewTitle('PHB')).toBe(false);
   });
 });
 
