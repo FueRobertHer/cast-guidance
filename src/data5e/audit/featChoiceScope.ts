@@ -195,6 +195,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
  */
 const READ_NO_PICKER: Record<string, string> = {
   'Harper Agent (feat|FRHoF)': 'its only pick is the instrument, offered already',
+  'Metamagic Adept (feat|TCE)': 'its only pick is the metamagic, offered already',
   'Touch of Death (feat|RHW)': 'its spell is fixed, and its only pick is the ability',
 };
 
