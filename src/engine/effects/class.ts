@@ -3,6 +3,7 @@ import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
+import { asiFeatInstance } from './asiFeatInstance';
 import { asEntityArray, type Collector, str } from './base';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
@@ -515,7 +516,7 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
               col.warn(`Chosen feat not found: ${uid}`);
               return;
             }
-            collectFeatEntity(col, feat, uid, `asi${level}`);
+            collectFeatEntity(col, feat, uid, asiFeatInstance(col.doc, classUid, level, uid));
           },
         );
       }

@@ -1,3 +1,4 @@
+import { asiFeatInstance } from '@/engine/effects/asiFeatInstance';
 import type { CharacterDoc, ClassLevelEntry, EntityRef } from '@/engine/types';
 import { refUid } from '@/engine/types';
 
@@ -29,8 +30,9 @@ export function pruneChoicesFor(doc: CharacterDoc, originType: string, ref: Enti
 /**
  * Drop the sub-choices of one feat instance. A feat's own picks are stored as
  * `feat:<featUid>:<instance>:…`, where the instance names whatever granted it
- * (`asi4` for a class ASI, the background's uid for an origin feat), so they
- * carry no origin prefix that {@link pruneChoicesFor} could find.
+ * (`asi4` or `asi4@<classUid>` for a class ASI, the background's uid for an
+ * origin feat), so they carry no origin prefix that {@link pruneChoicesFor} could
+ * find. `asi4` does not claim `asi4@<classUid>`.
  *
  * Pass `featUid` to limit it to one feat; without it every feat under that
  * instance goes.
@@ -84,26 +86,22 @@ function asiFeats(doc: CharacterDoc, classUid: string): Array<[number, string]> 
 
 /**
  * Drop everything a removed class leaves behind: its own picks, its subclass's
- * picks, the sub-choices of feats it took at an ASI, and its spell list. Call
- * it with the class already gone from `doc.classes`, so a class that stays is
- * never stripped of a feat instance it shares (two classes taking the same feat
- * at the same level store its sub-choices under one key).
+ * picks, the sub-choices of feats it took at an ASI, and its spell list.
+ *
+ * Call it with the class still in `doc.classes`, then take it out. Two classes
+ * taking one feat at one level keep separate sub-choices, with the first of them
+ * under the plain `asi<level>` key (see {@link asiFeatInstance}), and only the
+ * class's place in the list says which copy is its own. A class already gone
+ * counts as behind the others, so it never takes a copy that stays.
  *
  * Returns the choice keys it removed. The spell list is not a choice; read it
  * before calling if you need to describe it.
  */
 export function pruneClass(doc: CharacterDoc, entry: ClassLevelEntry): string[] {
   const uid = refUid(entry.ref);
-  const kept = new Set<string>();
-  for (const c of doc.classes) {
-    const other = refUid(c.ref);
-    if (other === uid) continue;
-    for (const [level, feat] of asiFeats(doc, other)) kept.add(`${level}|${feat}`);
-  }
   const removed: string[] = [];
   for (const [level, feat] of asiFeats(doc, uid)) {
-    if (kept.has(`${level}|${feat}`)) continue;
-    removed.push(...pruneFeatInstances(doc, `asi${level}`, feat));
+    removed.push(...pruneFeatInstances(doc, asiFeatInstance(doc, uid, level, feat), feat));
   }
   removed.push(...pruneChoicesFor(doc, 'class', entry.ref));
   if (entry.subclass !== undefined) {

@@ -497,6 +497,34 @@ describe('BuildPage destructive changes (UX-004)', () => {
     expect(getDoc()).toEqual(original);
   });
 
+  /** Two level-1 classes, as removal asks, each with one dormant level-4 feat of its own. */
+  const sharedFeat = (d: CharacterDoc) => {
+    d.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 1, hp: ['avg'] },
+      { ref: { name: 'Mage', source: 'TST' }, levels: 1, hp: ['avg'] },
+    ];
+    d.choices = {
+      'class:warrior|tst:asi:4': 'feat',
+      'class:warrior|tst:asi:4:feat': ['skilled|tst'],
+      'class:mage|tst:asi:4': 'feat',
+      'class:mage|tst:asi:4:feat': ['skilled|tst'],
+      'feat:skilled|tst:asi4:skill': ['stealth'],
+      'feat:skilled|tst:asi4@mage|tst:skill': ['arcana'],
+    };
+  };
+
+  it.each([
+    ['Warrior', 'feat:skilled|tst:asi4@mage|tst:skill', 'feat:skilled|tst:asi4:skill'],
+    ['Mage', 'feat:skilled|tst:asi4:skill', 'feat:skilled|tst:asi4@mage|tst:skill'],
+  ])('removing %s takes only its copy of a feat both classes hold', async (name, kept, gone) => {
+    const { getDoc } = renderBuild(sharedFeat);
+    dialogs.askConfirm.mockResolvedValueOnce(true);
+    fireEvent.click(screen.getByRole('button', { name: `Remove ${name}` }));
+    await waitFor(() => expect(getDoc().classes).toHaveLength(1));
+    expect(getDoc().choices[kept]).toBeDefined();
+    expect(getDoc().choices[gone]).toBeUndefined();
+  });
+
   it('keeps the offer through the HP sync that follows a level down, and undo restores HP', () => {
     const { getDoc } = renderBuild((d) => {
       d.play.hpInitialized = false;

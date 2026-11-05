@@ -130,8 +130,8 @@ describe('pruneClass', () => {
   });
 
   it('keeps a feat instance a remaining class took at the same level', () => {
-    // Both classes picked Skilled at their level-4 ASI, so its sub-choices sit
-    // under one `asi4` key that the remaining class still reads.
+    // A class already gone counts as behind the others, so it leaves the first
+    // copy's `asi4` key alone.
     const doc = newCharacterDoc('c', 'H', 't');
     doc.classes = [warrior];
     doc.choices = {
@@ -143,6 +143,80 @@ describe('pruneClass', () => {
     expect(Object.keys(doc.choices).sort()).toEqual([
       'class:warrior|tst:asi:4:feat',
       'feat:skilled|tst:asi4:skill',
+    ]);
+  });
+
+  describe('with both classes holding one feat at one level', () => {
+    const mageFour = { ...mage, levels: 4 };
+    const bothTake = (choices: Record<string, string[]>) => {
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.classes = [warrior, mageFour];
+      doc.choices = {
+        'class:warrior|tst:asi:4:feat': ['skilled|tst'],
+        'class:mage|tst:asi:4:feat': ['skilled|tst'],
+        ...choices,
+      };
+      return doc;
+    };
+    const FIRST = 'feat:skilled|tst:asi4:skill';
+    const SECOND = 'feat:skilled|tst:asi4@mage|tst:skill';
+    const answered = { [FIRST]: ['stealth'], [SECOND]: ['arcana'] };
+
+    it('takes only the first copy with the first class', () => {
+      const doc = bothTake(answered);
+      expect(pruneClass(doc, warrior).sort()).toEqual(['class:warrior|tst:asi:4:feat', FIRST]);
+      expect(doc.choices[SECOND]).toEqual(['arcana']);
+    });
+
+    it('takes only the second copy with the second class', () => {
+      const doc = bothTake(answered);
+      expect(pruneClass(doc, mageFour).sort()).toEqual(['class:mage|tst:asi:4:feat', SECOND]);
+      expect(doc.choices[FIRST]).toEqual(['stealth']);
+    });
+
+    it('does not pass a saved shared pick to the class that stays', () => {
+      const doc = bothTake({ [FIRST]: ['stealth'] });
+      expect(pruneClass(doc, warrior)).toContain(FIRST);
+      expect(doc.choices[FIRST]).toBeUndefined();
+    });
+
+    it('leaves the shared pick with the first class when the second has none', () => {
+      const doc = bothTake({ [FIRST]: ['stealth'] });
+      expect(pruneClass(doc, mageFour)).toEqual(['class:mage|tst:asi:4:feat']);
+      expect(doc.choices[FIRST]).toEqual(['stealth']);
+    });
+
+    it('takes a later copy that has come first, and not the old picks left behind', () => {
+      // The first class changed feat, so the second now comes first with its own key.
+      const doc = bothTake(answered);
+      doc.choices['class:warrior|tst:asi:4:feat'] = ['alert|tst'];
+      expect(pruneClass(doc, mageFour).sort()).toEqual(['class:mage|tst:asi:4:feat', SECOND]);
+      expect(doc.choices[FIRST]).toEqual(['stealth']);
+    });
+
+    it('does not reach a class of a longer name, or another level', () => {
+      const doc = bothTake({
+        ...answered,
+        'feat:skilled|tst:asi4@mage|tstx:skill': ['history'],
+        'feat:skilled|tst:asi8@mage|tst:skill': ['nature'],
+      });
+      pruneClass(doc, mageFour);
+      expect(doc.choices['feat:skilled|tst:asi4@mage|tstx:skill']).toEqual(['history']);
+      expect(doc.choices['feat:skilled|tst:asi8@mage|tst:skill']).toEqual(['nature']);
+    });
+  });
+});
+
+describe('pruneFeatInstances with a class-named copy', () => {
+  it('does not take a later copy when asked for the plain instance', () => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.choices = {
+      'feat:skilled|tst:asi4:skill': ['stealth'],
+      'feat:skilled|tst:asi4@mage|tst:skill': ['arcana'],
+    };
+    expect(pruneFeatInstances(doc, 'asi4')).toEqual(['feat:skilled|tst:asi4:skill']);
+    expect(pruneFeatInstances(doc, 'asi4@mage|tst', 'skilled|tst')).toEqual([
+      'feat:skilled|tst:asi4@mage|tst:skill',
     ]);
   });
 });
