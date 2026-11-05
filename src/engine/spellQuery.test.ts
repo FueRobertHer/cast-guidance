@@ -28,9 +28,12 @@ describe('parseSpellFilter', () => {
     ['a level that is not a number', 'level=low'],
     ['a miscellaneous tag other than ritual', 'components & miscellaneous=concentration'],
     ['a part with no value', 'level='],
-    ['nothing at all', ''],
   ])('gives up on %s, rather than offer spells the data rules out', (_what, filter) => {
     expect(parseSpellFilter(filter)).toBeUndefined();
+  });
+
+  it('reads an empty filter as ruling nothing out', () => {
+    expect(parseSpellFilter('')).toEqual(query({}));
   });
 });
 
@@ -90,7 +93,8 @@ describe('describeSpellQuery', () => {
     ['Level 1 to 7 Abjuration spell', 'level=1;2;3;4;5;6;7|school=A', 1],
     ['Level 1 or 3 spell', 'level=1;3', 1],
     ['Cleric or Wizard Necromancy cantrip', 'level=0|class=Cleric;Wizard|school=N', 1],
-    ['Spell', 'class=', 1],
+    ['Any spell', '', 1],
+    ['Any spells', '', 2],
   ])('says %s', (expected, filter, count) => {
     const parsed = parseSpellFilter(filter) ?? query({});
     expect(describeSpellQuery(parsed, count)).toBe(expected);

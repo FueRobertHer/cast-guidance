@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
-import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
+import {
+  type DataEntity,
+  type EffectInput,
+  type EffectOrigin,
+  newCharacterDoc,
+  refUid,
+} from '../types';
 import { collectAdditionalSpells, hasChosenSpell, parseSpellRef } from './additionalSpells';
 import { Collector } from './base';
 
@@ -686,12 +692,149 @@ describe('collectAdditionalSpells: a chosen spell beyond feats', () => {
   it.each<EffectOrigin['type']>([
     'item',
     'background',
-    'class',
     'custom',
   ])('keeps the note on a %s', (type) => {
     const col = collectAs(type, [{ known: { _: [cantrip] } }]);
     expect(col.pending).toEqual([]);
     expect(col.warnings).toEqual([note('Owner')]);
+  });
+
+  describe('on a class that learns spells', () => {
+    const anyUpToThird = { choose: 'level=0;1;2;3' };
+    const row = Array.from({ length: 20 }, (_, i) => i + 2);
+    const casters: Record<string, DataEntity> = {
+      Knower: { name: 'Knower', casterProgression: 'full', spellsKnownProgression: row },
+      Preparer: { name: 'Preparer', casterProgression: 'full', preparedSpells: '<$level$>' },
+      Pactbound: { name: 'Pactbound', casterProgression: 'pact', spellsKnownProgression: row },
+      Scribe: {
+        name: 'Scribe',
+        casterProgression: 'full',
+        preparedSpells: '<$level$>',
+        spellsKnownProgressionFixed: row,
+      },
+      Plain: { name: 'Plain' },
+    };
+
+    function collectFor(
+      className: string,
+      type: 'class' | 'subclass',
+      raw: unknown,
+      choices: Record<string, string[]> = {},
+      { level = 6, gateLevel }: { level?: number; gateLevel?: number } = {},
+    ) {
+      const world = makeTestContext();
+      const doc = newCharacterDoc('c', 'H', 't');
+      const ref = { name: className, source: 'HB' };
+      const owned = { name: 'Fake Path', source: 'HB' };
+      doc.classes = [
+        { ref, levels: level, hp: [], ...(type === 'subclass' ? { subclass: owned } : {}) },
+      ];
+      doc.choices = choices;
+      const col = new Collector(doc, {
+        ...world,
+        get: (kind, name, source) =>
+          kind === 'class' ? casters[name] : world.get(kind, name, source),
+      });
+      const owner: EffectOrigin =
+        type === 'class'
+          ? { label: className, uid: refUid(ref), type }
+          : { label: 'Fake Path', uid: refUid(owned), type };
+      collectAdditionalSpells(col, raw, owner, 'cha', 'base', gateLevel);
+      return col;
+    }
+    const known = { known: { 1: [anyUpToThird] } };
+    const id = 'base:spell:u:0:known:1:0';
+
+    it.each([
+      'Knower',
+      'Preparer',
+      'Pactbound',
+    ])('asks on a %s, and the pick casts with class slots', (className) => {
+      expect(collectFor(className, 'subclass', [known]).pending.map((p) => p.id)).toEqual([id]);
+      const made = collectFor(className, 'subclass', [known], { [id]: ['Fake One|HB'] });
+      expect(made.warnings).toEqual([]);
+      expect(granted(made.effects)).toMatchObject([
+        { spell: { name: 'Fake One' }, ability: 'cha', usage: 'prepared' },
+      ]);
+    });
+
+    it.each(['Scribe', 'Plain'])('keeps the note on a %s, which has no slots to give', (name) => {
+      const col = collectFor(name, 'subclass', [known]);
+      expect(col.pending).toEqual([]);
+      expect(col.warnings).toEqual([note('Fake Path')]);
+    });
+
+    it('leaves a pick that can only be a cantrip outside the class slots', () => {
+      const raw = [{ known: { 1: [cantrip] } }];
+      const made = collectFor('Knower', 'subclass', raw, { [id]: ['Fake One|HB'] });
+      expect(granted(made.effects)).toMatchObject([{ usage: undefined }]);
+    });
+
+    it('leaves a named spell beside a pick as it was', () => {
+      const raw = [{ known: { 1: ['fake fixed', anyUpToThird] } }];
+      const made = collectFor('Knower', 'subclass', raw, { [id]: ['Fake One|HB'] });
+      expect(granted(made.effects)).toMatchObject([
+        { spell: { name: 'fake fixed' }, usage: undefined },
+        { spell: { name: 'Fake One' }, usage: 'prepared' },
+      ]);
+    });
+
+    it('holds a second pick to its own place, whichever is picked first', () => {
+      const raw = [{ known: { 1: [anyUpToThird, cantrip] } }];
+      const second = 'base:spell:u:0:known:1:1';
+      const made = collectFor('Knower', 'subclass', raw, { [second]: ['Fake Two|HB'] });
+      expect(made.pending.map((p) => p.id)).toEqual([id]);
+      expect(granted(made.effects)).toMatchObject([
+        { spell: { name: 'Fake Two' }, usage: undefined },
+      ]);
+    });
+
+    it('reads a class for its picks alone, not what it names or expands', () => {
+      const raw = [{ known: { 1: ['fake fixed', anyUpToThird] }, expanded: { 1: ['fake wide'] } }];
+      const made = collectFor('Knower', 'class', raw, { [id]: ['Fake One|HB'] });
+      expect(granted(made.effects).map((e) => e.spell.name)).toEqual(['Fake One']);
+      expect(made.warnings).toEqual([]);
+    });
+
+    it('marks a class pick as taking a place in spells known, and no subclass pick', () => {
+      const choices = { [id]: ['Fake One|HB'] };
+      expect(granted(collectFor('Knower', 'class', [known], choices).effects)).toMatchObject([
+        { countsAsKnown: true },
+      ]);
+      expect(
+        granted(collectFor('Knower', 'subclass', [known], choices).effects)[0],
+      ).not.toHaveProperty('countsAsKnown');
+    });
+
+    it.each<[string, unknown, string]>([
+      ['can only be a cantrip', { known: { 1: [cantrip] } }, id],
+      [
+        'sits in a bucket of its own',
+        { innate: { 1: { will: [anyUpToThird] } } },
+        'base:spell:u:0:innate:1:0',
+      ],
+      ['is always prepared', { prepared: { 1: [anyUpToThird] } }, 'base:spell:u:0:prepared:1:0'],
+    ])('takes no place in spells known for a class pick that %s', (_what, raw, pickId) => {
+      const made = collectFor('Knower', 'class', [raw], { [pickId]: ['Fake One|HB'] });
+      expect(granted(made.effects).map((e) => e.spell.name)).toEqual(['Fake One']);
+      expect(granted(made.effects)[0]).not.toHaveProperty('countsAsKnown');
+    });
+
+    it('offers any spell for an empty filter, and keeps what was picked', () => {
+      const raw = [{ known: { 1: [{ choose: '' }] } }];
+      const asked = collectFor('Knower', 'class', raw).pending[0];
+      expect(asked?.label).toBe('Knower: Any spell');
+      const made = collectFor('Knower', 'class', raw, { [id]: ['Fake One|HB'] });
+      expect(granted(made.effects).map((e) => e.spell.name)).toEqual(['Fake One']);
+    });
+
+    it('opens a key by the level it is given, not the character level', () => {
+      const raw = [{ known: { 6: [anyUpToThird] } }];
+      expect(collectFor('Knower', 'class', raw, {}, { level: 6 }).pending).toHaveLength(1);
+      expect(collectFor('Knower', 'class', raw, {}, { level: 6, gateLevel: 5 }).pending).toEqual(
+        [],
+      );
+    });
   });
 
   it('leaves the named spells beside a pick as they were', () => {

@@ -18,10 +18,12 @@ export const SPELL_SCHOOLS: Record<string, string> = {
 
 /**
  * Read a filter. Undefined when any part of it is one the app cannot apply: with
- * that part ignored, the picker would offer spells the data rules out.
+ * that part ignored, the picker would offer spells the data rules out. An empty
+ * filter rules nothing out: the data writes it where any spell will do.
  */
 export function parseSpellFilter(filter: string): SpellQuery | undefined {
   const query: SpellQuery = { levels: [], classes: [], schools: [], ritual: false, attacks: [] };
+  if (filter.trim() === '') return query;
   for (const part of filter.split('|')) {
     const [key = '', list = ''] = part.split('=');
     const values = list
@@ -94,8 +96,12 @@ function levelsText(levels: readonly number[]): string {
 /** A query in words, for a prompt's label: "Level 1 Enchantment or Divination spell". */
 export function describeSpellQuery(query: SpellQuery, count: number): string {
   const cantrip = query.levels.length > 0 && query.levels.every((level) => level === 0);
+  const open =
+    query.levels.length + query.classes.length + query.schools.length + query.attacks.length ===
+      0 && !query.ritual;
   return capitalized(
     [
+      open ? 'any' : '',
       cantrip ? '' : levelsText(query.levels),
       query.classes.map(capitalized).join(' or '),
       query.schools.map((school) => SPELL_SCHOOLS[school] ?? school).join(' or '),
