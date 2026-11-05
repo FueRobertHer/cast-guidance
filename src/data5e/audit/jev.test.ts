@@ -11,7 +11,15 @@ const request = {
   ],
 };
 
-const answers = { answers: { bonusAction: { noul: 0.97 }, reaction: { noul: 0.02 } } };
+/** The shape the direct API really answered with, usage included. */
+const answers = {
+  model: 'jev-1.14.0',
+  answers: {
+    bonusAction: { type: 'noul', noul: 0.97 },
+    reaction: { type: 'noul', noul: 0.02 },
+  },
+  usage: { input_tokens: 472, output_tokens: 147 },
+};
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers });
@@ -84,6 +92,24 @@ describe('createJevClient', () => {
     const ask = createJevClient({ apiKey: 'k', endpoint, fetchImpl, sleep: noWait, retries: 2 });
     await expect(ask(request)).rejects.toThrow('HTTP 503');
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries when TypeSafe answers 529 Overloaded', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json({}, 529))
+      .mockResolvedValueOnce(json(answers));
+    const ask = createJevClient({ apiKey: 'k', endpoint, fetchImpl, sleep: noWait });
+    await expect(ask(request)).resolves.toEqual({ bonusAction: 0.97, reaction: 0.02 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends the model it was given', async () => {
+    const fetchImpl = vi.fn(async () => json(answers));
+    const ask = createJevClient({ apiKey: 'k', endpoint, model: 'jev-latest', fetchImpl });
+    await ask(request);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).model).toBe('jev-latest');
   });
 
   it('does not retry a refused request or a malformed answer', async () => {

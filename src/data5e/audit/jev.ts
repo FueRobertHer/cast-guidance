@@ -3,23 +3,24 @@
  * questions about a piece of text instead of writing any; the audit asks it
  * yes/no questions about rules prose and keeps the probabilities.
  *
- * The request and response shapes come from Vercel's AI Gateway docs for the
- * TypeSafe "systemone" endpoint, read through search summaries rather than
- * the pages themselves:
+ * The request and response shapes come from TypeSafe's API reference
+ * (docs.typesafe.ai/api/system-one), and Vercel's AI Gateway docs show the same
+ * ones. All this file needs to differ between the gateway and the direct API is
+ * the URL and the model name. The direct API has been run for real (jev-latest,
+ * served by jev-1.14.0); the gateway path has not.
  *
- *   POST <AI Gateway>/typesafe/v1/systemone
- *   Authorization: Bearer $AI_GATEWAY_API_KEY
- *   { "model": "typesafe-ai/jev", "state": "<text>",
+ *   POST <AI Gateway>/typesafe/v1/systemone, or api.typesafe.ai/v1/systemone
+ *   Authorization: Bearer <key>
+ *   { "model": "typesafe-ai/jev" or "jev-latest", "state": "<text>",
  *     "questions": { "<id>": { "type": "noul", "instructions": "<question>" } } }
  *
- *   -> { "answers": { "<id>": { "noul": 0.93 } } }
+ *   -> { "answers": { "<id>": { "type": "noul", "noul": 0.93 } } }
  *
- * Only `noul` (yes/no, answered with a probability) is used, the one type the
- * docs show end to end. If the live API differs, this file is the only one to
- * change: `jevRequestBody` and `parseJevAnswers` are the whole contract. The
- * endpoint itself comes from `scripts/data-judge.ts`: nothing the app ships
- * names an origin its content security policy does not allow, and this code
- * never runs in the browser.
+ * Only `noul` (yes/no, answered with the probability of yes) is used. If the API
+ * changes, this file is the only one to change: `jevRequestBody` and
+ * `parseJevAnswers` are the whole contract. The endpoint itself comes from
+ * `scripts/data-judge.ts`: nothing the app ships names an origin its content
+ * security policy does not allow, and this code never runs in the browser.
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
@@ -86,8 +87,8 @@ export interface JevClientOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** Statuses worth another attempt: rate limits and server-side failures. */
-const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+/** Statuses worth another attempt: rate limits and server-side failures (529 is "overloaded"). */
+const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 
 class JevHttpError extends Error {
   readonly status: number;

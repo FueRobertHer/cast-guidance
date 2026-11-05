@@ -13,14 +13,15 @@
  *   bun run data:judge -- --tag latest         # judge the newest compatible release
  *
  * Only prose with no saved answer is asked about, so a rerun after a data bump
- * costs only what changed. Needs AI_GATEWAY_API_KEY (Vercel AI Gateway) unless
- * `--dry-run`. The logic lives in `src/data5e/audit/`; this file fetches,
- * prints and writes.
+ * costs only what changed. Needs AI_GATEWAY_API_KEY unless `--dry-run`. That
+ * key is a Vercel AI Gateway key by default; for a direct TypeSafe key, also set
+ * JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone and JEV_MODEL=jev-latest.
+ * The logic lives in `src/data5e/audit/`; this file fetches, prints and writes.
  */
 import { appendFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { BRANCH_SET, branchSubjects } from '../src/data5e/audit/branches';
-import { createJevClient, jevRequestBody } from '../src/data5e/audit/jev';
+import { createJevClient, JEV_MODEL, jevRequestBody } from '../src/data5e/audit/jev';
 import {
   emptyJudgments,
   type JudgeSet,
@@ -35,8 +36,13 @@ import { normalizeDataset } from '../src/data5e/normalize';
 import { readJudgments, writeJudgments } from './data-judgments-file';
 import { fetchRelease, resolveLatestTag } from './data-release';
 
-/** Jev's systemone endpoint on Vercel AI Gateway, which AI_GATEWAY_API_KEY unlocks. */
-const JEV_ENDPOINT = 'https://ai-gateway.vercel.sh/typesafe/v1/systemone';
+/** Jev's systemone endpoint on Vercel AI Gateway, the default for AI_GATEWAY_API_KEY. */
+const GATEWAY_ENDPOINT = 'https://ai-gateway.vercel.sh/typesafe/v1/systemone';
+
+// A direct TypeSafe key needs both: the gateway's model name is not documented
+// for the direct API. `||` so an empty variable counts as unset.
+const endpoint = process.env.JEV_ENDPOINT || GATEWAY_ENDPOINT;
+const model = process.env.JEV_MODEL || JEV_MODEL;
 
 const { values } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== '--'),
@@ -89,7 +95,7 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 
-console.log(`# data-judge against ${tag}\n`);
+console.log(`# data-judge against ${tag}, asking ${model} at ${endpoint}\n`);
 let release: Awaited<ReturnType<typeof fetchRelease>>;
 try {
   release = await fetchRelease(tag);
@@ -122,14 +128,14 @@ for (const { set, subjects } of runs) {
   if (values['dry-run']) {
     const sample = pending[0];
     if (sample !== undefined) {
-      const body = jevRequestBody({ state: sample.state, questions: set.questions });
+      const body = jevRequestBody({ state: sample.state, questions: set.questions }, model);
       console.log(`sample request (${sample.label}):\n${JSON.stringify(body, null, 2)}\n`);
     }
     continue;
   }
   if (asking.length === 0) continue;
 
-  const ask = createJevClient({ apiKey, endpoint: JEV_ENDPOINT });
+  const ask = createJevClient({ apiKey, endpoint, model });
   const result = await runJudgments({
     set,
     subjects,

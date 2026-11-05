@@ -62,7 +62,11 @@ disagreement is settled by fixing the scanner or by a verdict in
 `prose.allow`. `--dry-run` shows what would be asked and a sample request,
 `--limit <n>` runs a trial, and the on-demand `Data judge` workflow
 (`.github/workflows/data-judge.yml`) runs it with the repository secret and
-returns the updated file as an artifact.
+returns the updated file as an artifact. To use a direct TypeSafe key instead
+of a gateway key, put it in `AI_GATEWAY_API_KEY` and also set
+`JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone` and `JEV_MODEL=jev-latest`,
+in `.env.local` or the shell. The workflow only passes the key, so it needs a
+gateway key.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the

@@ -277,7 +277,11 @@
           "verdict": "choice",
           "note": "Vestige Spells: select one of these Cleric domains, whose Domain Spells you always have prepared. The wording lives in the subclassFeature."
         }
-      ]
+      ],
+      "prose": {
+        "disagreements": 461,
+        "allow": []
+      }
     }
   }
 }
