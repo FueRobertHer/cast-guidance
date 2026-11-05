@@ -1,6 +1,7 @@
 import { Info, RefreshCcw } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
+import { useRegistryRefreshing, useTypePacks } from '@/data5e/hooks';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import {
@@ -11,6 +12,8 @@ import {
   type SourcePolicy,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { classSpellUids, classSpellUidsFromEntities } from '@/data5e/spellLookup';
+import { parseSpellRef } from '@/engine/effects/additionalSpells';
 import { subclassPromptId } from '@/engine/effects/class';
 import type {
   CharacterDoc,
@@ -19,11 +22,16 @@ import type {
   DerivedSheet,
   EffectOrigin,
 } from '@/engine/types';
+import { SpellInfoSheet } from '@/features/sheet/SpellInfoSheet';
+import { useClassLookup } from '@/lib/useClassLookup';
 import { usePickSourcePolicy } from '@/lib/usePickSourcePolicy';
 import { buttonClass } from '@/ui/Button';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { FeatureInfoSheet } from '@/ui/FeatureInfoSheet';
+import { PackProblem } from '@/ui/PackProblem';
+import { cardClass } from '@/ui/surfaces';
 import { ChoicePromptRenderer } from './ChoicePromptRenderer';
+import { fillSpellPrompt } from './spellPrompt';
 
 /**
  * Narrow an entity-backed prompt to what the player should be choosing from:
@@ -32,8 +40,10 @@ import { ChoicePromptRenderer } from './ChoicePromptRenderer';
  * a pick never vanishes.
  *
  * These prompts have no "show hidden anyway" affordance, and some of them are
- * mandatory, so the source narrowing is skipped outright when it would leave
- * nothing to pick. A shorter list is the goal; a dead end is not.
+ * mandatory, so each narrowing is skipped outright when it would leave nothing
+ * to pick. A shorter list is the goal; a dead end is not. The version one comes
+ * up when a 2014 character holds a 2024 grant: a species offering a feat from a
+ * category only 2024 books print has nothing in that character's own edition.
  *
  * Under a character's own list (`scope` 'character'), an option that stays
  * listed from a book outside it (already chosen, or kept by that fallback)
@@ -69,8 +79,9 @@ export function filterEntityPrompt(
   // (invocations are "EI" in both), so a 2014 Warlock was offered the XPHB
   // Agonizing Blast beside the PHB one.
   const byVersion = filterByRulesVersion(entities, version);
-  const bySource = applySourcePolicy(byVersion, policy, (e) => String(e.source));
-  const kept = uidsOf(bySource.length > 0 ? bySource : byVersion);
+  const candidates = byVersion.length > 0 ? byVersion : entities;
+  const bySource = applySourcePolicy(candidates, policy, (e) => String(e.source));
+  const kept = uidsOf(bySource.length > 0 ? bySource : candidates);
 
   const options = prompt.options.filter(
     (o) => selected.has(o.id) || !sourceById.has(o.id) || kept.has(o.id),
@@ -134,6 +145,16 @@ function featureOptionInfo(prompt: ChoicePrompt) {
     );
 }
 
+/** ⓘ rules text for a spell option (id is `name|source`, or a name alone). */
+function spellOptionInfo(version: CharacterDoc['rulesVersion']) {
+  return (o: ChoiceOption) => {
+    const { name, source } = parseSpellRef(o.id);
+    return (
+      <SpellInfoSheet name={name} source={source} version={version} trigger={infoTrigger(o)} />
+    );
+  };
+}
+
 /**
  * Whether a list of picks shows this one. Only a class's subclass pointer is
  * left out, since the subclass picker beside the class answers it. Any other
@@ -192,24 +213,71 @@ export function OriginChoices({
   if (editing !== undefined && !resolved.some((r) => r.prompt.id === editing)) {
     setEditing(undefined);
   }
+
+  // Spell files and class lists load on demand, so only for a spell pick that is
+  // open: most characters never see one, and a made pick reads from its save.
+  const openSpellPrompts = [
+    ...pending,
+    ...resolved.flatMap((r) => (r.prompt.id === editing ? [r.prompt] : [])),
+  ].filter((p) => p.kind === 'spell');
+  const spellPacks = useTypePacks(openSpellPrompts.length > 0 ? 'spell' : undefined);
+  const needsClassLists = openSpellPrompts.some((p) => (p.spellQuery?.classes.length ?? 0) > 0);
+  const { lookup, problem: lookupProblem } = useClassLookup(needsClassLists, spellPacks.status);
+  const refreshing = useRegistryRefreshing();
+  const onClassList = useMemo(() => {
+    const lists = new Map<string, ReadonlySet<string>>();
+    return (className: string, uid: string) => {
+      const key = className.toLowerCase();
+      let list = lists.get(key);
+      if (list === undefined) {
+        list = new Set([
+          ...classSpellUids(lookup ?? {}, className),
+          // Homebrew spells carry their classes inline.
+          ...classSpellUidsFromEntities(registry?.byType('spell') ?? [], className),
+        ]);
+        lists.set(key, list);
+      }
+      return list.has(uid);
+    };
+  }, [lookup, registry]);
+
   if (pending.length === 0 && resolved.length === 0) return null;
 
   const featInfo = registry != null ? featOptionInfo(registry) : undefined;
+  const spellInfo = spellOptionInfo(doc.rulesVersion);
+
+  // While these are on their way a short list is not the answer yet. Not an
+  // error: that has its panel, and the list is then what there is.
+  const spellsSettling =
+    spellPacks.status !== 'error' &&
+    (registry == null ||
+      registry.byType('spell').length === 0 ||
+      spellPacks.status === 'loading' ||
+      refreshing ||
+      (needsClassLists && lookup === null));
 
   // Feat and optional-feature lists are narrowed to the player's edition and
   // to the character's own sources (or this device's settings when it has
-  // none); every other kind renders as the engine built it.
-  const shownPrompt = (prompt: ChoicePrompt) =>
-    (prompt.kind === 'feat' || prompt.kind === 'optionalfeature') && registry != null
-      ? filterEntityPrompt(
-          prompt,
-          registry,
-          doc.rulesVersion,
-          policy,
-          doc.choices[prompt.id],
-          scope,
-        )
-      : prompt;
+  // none), and a spell pick's list is drawn up here; every other kind renders
+  // as the engine built it.
+  const shownPrompt = (prompt: ChoicePrompt) => {
+    if (registry == null) return prompt;
+    const value = doc.choices[prompt.id];
+    if (prompt.kind === 'feat' || prompt.kind === 'optionalfeature') {
+      return filterEntityPrompt(prompt, registry, doc.rulesVersion, policy, value, scope);
+    }
+    if (prompt.kind !== 'spell') return prompt;
+    const granted = new Set(
+      sheet.grantedSpells
+        .filter((g) => g.origin === prompt.origin.label)
+        .map((g) => g.name.toLowerCase()),
+    );
+    return fillSpellPrompt(
+      prompt,
+      { registry, onClassList, version: doc.rulesVersion, policy, scope, granted },
+      value,
+    );
+  };
 
   const commit = (id: string, value: string[] | string) => {
     // Confirming an untouched pick just closes the editor. Writing it would
@@ -229,24 +297,55 @@ export function OriginChoices({
     setEditing(undefined);
   };
 
-  const editor = (prompt: ChoicePrompt, onCancel?: () => void) => (
-    <ChoicePromptRenderer
-      prompt={shownPrompt(prompt)}
-      value={doc.choices[prompt.id]}
-      onChange={(v) => commit(prompt.id, v)}
-      onCancel={onCancel}
-      renderOptionInfo={
-        prompt.kind === 'feat'
-          ? featInfo
-          : prompt.kind === 'feature'
-            ? featureOptionInfo(prompt)
-            : undefined
-      }
-    />
-  );
+  const editor = (prompt: ChoicePrompt, onCancel?: () => void) => {
+    const shown = shownPrompt(prompt);
+    const settling = prompt.kind === 'spell' && spellsSettling;
+    // The card goes only with nothing to show: once there is a list, the one in it
+    // holds the player's unconfirmed taps, and more spells arriving must not reset
+    // them. The line beside it says that list is not the whole of it yet.
+    if (settling && shown.options.length === 0) {
+      return (
+        <div className={`${cardClass} flex flex-col gap-1`}>
+          <span className="text-body-strong wrap-break-word">{prompt.label}</span>
+          <p className="text-caption text-ink-muted">Loading spell list…</p>
+        </div>
+      );
+    }
+    return (
+      <>
+        {settling && <p className="mb-1 text-caption text-ink-muted">Loading spell list…</p>}
+        <ChoicePromptRenderer
+          prompt={shown}
+          value={doc.choices[prompt.id]}
+          onChange={(v) => commit(prompt.id, v)}
+          onCancel={onCancel}
+          renderOptionInfo={
+            prompt.kind === 'feat'
+              ? featInfo
+              : prompt.kind === 'feature'
+                ? featureOptionInfo(prompt)
+                : prompt.kind === 'spell'
+                  ? spellInfo
+                  : undefined
+          }
+        />
+      </>
+    );
+  };
 
   return (
     <div className="mt-2 flex flex-col gap-2 border-line border-t pt-3">
+      {/* One outage is one alert, however many spell picks are waiting on it. */}
+      {openSpellPrompts.length > 0 && <PackProblem packs={spellPacks} what="the spell list" />}
+      {needsClassLists && spellPacks.status === 'ready' && (
+        <PackProblem
+          packs={lookupProblem}
+          what="the class spell lists"
+          message={`The class spell lists couldn't be read on this device${
+            lookupProblem.error === null ? '.' : `: ${lookupProblem.error}`
+          }`}
+        />
+      )}
       {pending.map((prompt) => (
         <div key={prompt.id} data-pending-choice="">
           {editor(prompt)}

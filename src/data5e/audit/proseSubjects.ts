@@ -16,6 +16,7 @@ import { Collector } from '../../engine/effects/base';
 import { proseScanFeature } from '../../engine/effects/proseScan';
 import { type EffectInput, newCharacterDoc } from '../../engine/types';
 import type { Entity } from '../copyMod';
+import { plainEntryText } from '../entries/plainText';
 import type { EntityType } from '../normalize';
 
 export type ProseSubjectType =
@@ -70,23 +71,10 @@ export function textHash(text: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
 }
 
-/**
- * A `{@tag ...}` reduced to the words a reader sees: the third `|` part when
- * there is one (`{@variantrule Proficiency|XPHB|Proficiency Bonus}`), else
- * the first (`{@spell bless|phb}`).
- */
-export function displayTagText(text: string): string {
-  return text.replaceAll(/\{@\w+ ([^}]*)\}/g, (_, body: string) => {
-    const parts = body.split('|');
-    const shown = parts[2]?.trim();
-    return shown !== undefined && shown !== '' ? shown : (parts[0] ?? '');
-  });
-}
-
 export interface ReadableOptions {
   /** Read `table` entries too. */
   tables?: boolean;
-  /** How to read a string's tags; `displayTagText` when not given. */
+  /** How to read a string's tags, and a name's; `plainEntryText` and as written when not given. */
   tagText?: (text: string) => string;
 }
 
@@ -95,12 +83,13 @@ export interface ReadableOptions {
  * text. Named sub-entries keep their name as a lead-in ("Longtooth. ..."), so
  * a judge can tell an option the player picks from what the trait always does.
  *
- * The defaults are part of a subject's identity, which is a hash of this text:
- * changing how they read would orphan every saved judgment of the prose it
- * touches. A reader that wants more asks for it through the options.
+ * This text is what a subject's key hashes. Reading a tag differently re-keys
+ * exactly the subjects whose words move, and their answers wait to be asked
+ * again; `bun run data:judge -- --dry-run` counts them before anyone pays. So
+ * the defaults stay put, and a reader that wants more asks through the options.
  */
 export function readableEntries(entries: unknown, options: ReadableOptions = {}): string {
-  const { tables = false, tagText = displayTagText } = options;
+  const { tables = false, tagText = plainEntryText } = options;
   const lines: string[] = [];
   /** Plain text, a number, or a `cell` object with a roll and an entry. */
   const cellText = (cell: unknown): string => {
@@ -149,7 +138,8 @@ export function readableEntries(entries: unknown, options: ReadableOptions = {})
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const lower = (...parts: string[]) => parts.join('|').toLowerCase();
 
-const NO_DATA = { get: () => undefined, byType: () => [] };
+/** An engine context with nothing in it, for running a collector on one entity alone. */
+export const NO_DATA = { get: () => undefined, byType: () => [] };
 
 /** What the scanner draws from one trait, for a character with no class levels. */
 function scan(name: string, entries: unknown): EffectInput[] {

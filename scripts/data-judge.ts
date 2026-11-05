@@ -10,21 +10,35 @@
  *     only the wording changed. Only when asked for by name: it is the largest
  *     set, and no check in the audit rests on it.
  *
+ * Three one-off scoping sets answer "what is there to do?" for a piece of
+ * FUTURE_WORK.md instead. No check reads them, and they are only asked when
+ * named, never as part of `all`:
+ *
+ *   - `bonus`: check and initiative bonuses in prose, by type;
+ *   - `featchoice`: picks feats ask for that the app does not offer;
+ *   - `capability`: features always available in combat, with no reminder yet.
+ *
  *   bun run data:judge -- --dry-run            # what would be asked, and a sample request
  *   bun run data:judge -- --limit 25           # a trial: ask about 25 subjects
  *   bun run data:judge                         # ask `prose` and `branch`, whatever is not yet judged
  *   bun run data:judge -- --set reprint        # ask about reprint pairs instead
  *   bun run data:judge -- --tag latest         # judge the newest compatible release
+ *   bun run data:judge -- --set bonus          # ask only one set
+ *   bun run data:judge -- --report bonus       # a scoping set's ranked list, from saved answers
  *
  * Only prose with no saved answer is asked about, so a rerun after a data bump
- * costs only what changed. Needs AI_GATEWAY_API_KEY unless `--dry-run`. That
- * key is a Vercel AI Gateway key by default; for a direct TypeSafe key, also set
- * JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone and JEV_MODEL=jev-latest.
+ * costs only what changed. Needs AI_GATEWAY_API_KEY unless `--dry-run` or
+ * `--report`. That key is a Vercel AI Gateway key by default; for a direct
+ * TypeSafe key, also set JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone and
+ * JEV_MODEL=jev-latest.
  * The logic lives in `src/data5e/audit/`; this file fetches, prints and writes.
  */
 import { appendFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
+import { BONUS_SCOPE } from '../src/data5e/audit/bonusScope';
 import { BRANCH_SET, branchSubjects } from '../src/data5e/audit/branches';
+import { CAPABILITY_SCOPE } from '../src/data5e/audit/capabilityScope';
+import { FEATCHOICE_SCOPE } from '../src/data5e/audit/featChoiceScope';
 import { createJevClient, JEV_MODEL, jevRequestBody } from '../src/data5e/audit/jev';
 import {
   emptyJudgments,
@@ -42,6 +56,7 @@ import {
   reprintPairs,
   reprintSubjects,
 } from '../src/data5e/audit/reprints';
+import type { Scope } from '../src/data5e/audit/scoping';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { readJudgments, writeJudgments } from './data-judgments-file';
@@ -63,8 +78,18 @@ const { values } = parseArgs({
     limit: { type: 'string' },
     concurrency: { type: 'string', default: '4' },
     'dry-run': { type: 'boolean', default: false },
+    report: { type: 'string' },
   },
 });
+
+/** One-off sets, asked only when named: `all` must not spend credit on them. */
+const SCOPES: Record<string, Scope> = {
+  bonus: BONUS_SCOPE,
+  featchoice: FEATCHOICE_SCOPE,
+  capability: CAPABILITY_SCOPE,
+};
+const scopeNamed = (name: string | undefined) =>
+  name !== undefined && Object.hasOwn(SCOPES, name) ? SCOPES[name] : undefined;
 
 function die(message: string): never {
   console.error(`data-judge: ${message}`);
@@ -82,8 +107,14 @@ function positive(name: string, raw: string | undefined): number | undefined {
 
 const limit = positive('limit', values.limit);
 const concurrency = positive('concurrency', values.concurrency) ?? 4;
-if (!['all', 'prose', 'branch', 'reprint'].includes(values.set)) {
-  die('--set must be all, prose, branch or reprint');
+const scopeNames = Object.keys(SCOPES).join(', ');
+const askedScope = scopeNamed(values.set);
+if (!['all', 'prose', 'branch', 'reprint'].includes(values.set) && askedScope === undefined) {
+  die(`--set must be all, prose, branch, reprint, ${scopeNames}`);
+}
+const reportScope = scopeNamed(values.report);
+if (values.report !== undefined && reportScope === undefined) {
+  die(`--report must be ${scopeNames}`);
 }
 
 let tag = values.tag ?? DATA_TAG;
@@ -97,7 +128,7 @@ if (tag === 'latest') {
 if (!isCompatibleTag(tag)) die(`${tag} is not compatible with this build (pinned ${DATA_TAG})`);
 
 const apiKey = process.env.AI_GATEWAY_API_KEY ?? '';
-if (!values['dry-run'] && apiKey === '') {
+if (!values['dry-run'] && reportScope === undefined && apiKey === '') {
   die('set AI_GATEWAY_API_KEY, or pass --dry-run to see what would be asked');
 }
 
@@ -108,7 +139,11 @@ try {
   die(error instanceof Error ? error.message : String(error));
 }
 
-console.log(`# data-judge against ${tag}, asking ${model} at ${endpoint}\n`);
+console.log(
+  reportScope === undefined
+    ? `# data-judge against ${tag}, asking ${model} at ${endpoint}\n`
+    : `# data-judge against ${tag}, from saved answers\n`,
+);
 let release: Awaited<ReturnType<typeof fetchRelease>>;
 try {
   release = await fetchRelease(tag);
@@ -118,27 +153,30 @@ try {
 const registry = normalizeDataset(release.files);
 
 const runs: Array<{ set: JudgeSet; subjects: JudgeSubject[] }> = [];
-if (values.set === 'all' || values.set === 'prose') {
-  // Curated features never reach the scanner, so their answers would go unused.
-  runs.push({ set: PROSE_SET, subjects: proseSubjects(registry).filter((s) => !s.curated) });
-}
-if (values.set === 'all' || values.set === 'branch') {
-  runs.push({ set: BRANCH_SET, subjects: branchSubjects(registry) });
-}
-if (values.set === 'reprint') {
+if (reportScope !== undefined) {
+  console.log(reportScope.report(registry, file));
+} else if (askedScope !== undefined) {
+  runs.push({ set: askedScope.set, subjects: askedScope.subjects(registry) });
+} else if (values.set === 'reprint') {
   const found = reprintPairs(registry);
   for (const line of describeReprints(auditReprints(found, file))) console.log(line);
   console.log('');
   runs.push({ set: REPRINT_SET, subjects: reprintSubjects(found.pairs) });
+} else {
+  if (values.set !== 'branch') {
+    // Curated features never reach the scanner, so their answers would go unused.
+    runs.push({ set: PROSE_SET, subjects: proseSubjects(registry).filter((s) => !s.curated) });
+  }
+  if (values.set !== 'prose') runs.push({ set: BRANCH_SET, subjects: branchSubjects(registry) });
 }
 
 /**
- * About four characters a token, the usual rule of thumb for English prose. Every
- * request repeats the questions, which is a real share of a short subject's cost.
+ * About four characters a token, the usual rule of thumb for English prose.
+ * Every request repeats the set's questions, so they count once per subject.
  */
 function estimateTokens(set: JudgeSet, subjects: readonly JudgeSubject[]): number {
-  const perRequest = set.questions.reduce((n, q) => n + q.id.length + q.instructions.length, 0);
-  return Math.ceil(subjects.reduce((n, s) => n + s.state.length + perRequest, 0) / 4);
+  const questions = set.questions.reduce((n, q) => n + q.id.length + q.instructions.length, 0);
+  return Math.ceil(subjects.reduce((n, s) => n + s.state.length + questions, 0) / 4);
 }
 
 const summary: string[] = [`### Data judge: ${tag}`, ''];
@@ -185,10 +223,12 @@ for (const { set, subjects } of runs) {
   );
 }
 
-if (!values['dry-run']) {
+if (!values['dry-run'] && reportScope === undefined) {
   summary.push(
     '',
-    'Commit `scripts/data-judgments.json`, then run `bun run data:audit` to read the answers against the data.',
+    askedScope === undefined
+      ? 'Commit `scripts/data-judgments.json`, then run `bun run data:audit` to read the answers against the data.'
+      : `Commit \`scripts/data-judgments.json\`, then run \`bun run data:judge -- --report ${askedScope.set.id}\` for the ranked list.`,
   );
   const out = process.env.GITHUB_STEP_SUMMARY;
   if (out) appendFileSync(out, `${summary.join('\n')}\n`);

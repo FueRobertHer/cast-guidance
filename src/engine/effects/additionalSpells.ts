@@ -8,11 +8,20 @@
  *      expanded: { "1": ["armor of agathys"] } }]     // warlock patron
  * Level keys gate by character level. `prepared` spells are always prepared and
  * cast with the class's own slots; `expanded` merely widens what you can learn,
- * so (lacking a picker) it surfaces as a note. `{ choose: "..." }` filter grants
- * likewise surface as a note.
+ * so (lacking a picker) it surfaces as a note. A `{ choose: "..." }` is the
+ * player's pick: a prompt on a feat, and still a note on anything else.
  */
-import { ABILITIES, type Ability, type DataEntity, type EffectOrigin } from '../types';
-import { asEntityArray, type Collector, str } from './base';
+import { describeSpellQuery, parseSpellFilter, spellFitsQuery } from '../spellQuery';
+import {
+  ABILITIES,
+  type Ability,
+  type ChoiceOption,
+  type ChoicePrompt,
+  type DataEntity,
+  type EffectOrigin,
+  type SpellQuery,
+} from '../types';
+import { asEntityArray, type Collector, num, str } from './base';
 
 function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
@@ -43,30 +52,46 @@ interface SpellLimit {
   resetOn: 'short' | 'long';
 }
 
-/** Push plain spell-name strings, skipping `{choose}` filter objects. */
-function collectStrings(val: unknown, out: string[], sawChoose: { v: boolean }): void {
+/**
+ * Sort a spell list's items: plain spell names go in `out`, and the `{choose}`
+ * objects, which name no spell, in `chooses`.
+ */
+function collectStrings(val: unknown, out: string[], chooses: DataEntity[]): void {
   if (typeof val === 'string') {
     out.push(val);
   } else if (Array.isArray(val)) {
-    for (const v of val) collectStrings(v, out, sawChoose);
+    for (const v of val) collectStrings(v, out, chooses);
   } else if (val !== null && typeof val === 'object') {
     if ('choose' in val) {
-      sawChoose.v = true;
+      chooses.push(val as DataEntity);
       return;
     }
-    for (const v of Object.values(val)) collectStrings(v, out, sawChoose);
+    for (const v of Object.values(val)) collectStrings(v, out, chooses);
   }
 }
 
-function gatherByLevel(
+/**
+ * Whether an `additionalSpells` list has the player choose a spell anywhere: in
+ * any entry, at any level, whatever a character took or has reached. An expanded
+ * list only widens what can be learned, and a choice of `ability` is not a choice
+ * of spell, so neither counts.
+ */
+export function hasChosenSpell(raw: unknown): boolean {
+  const chooses: DataEntity[] = [];
+  for (const { innate, known, prepared } of asEntityArray(raw)) {
+    collectStrings([innate, known, prepared], [], chooses);
+  }
+  return chooses.length > 0;
+}
+
+/** The parts of a level-keyed map this character has reached. */
+function reachedLevels(
   map: unknown,
   totalLevel: number,
-  out: string[],
-  sawChoose: { v: boolean },
   includeSpellLevels = false,
-) {
-  if (map === null || typeof map !== 'object') return;
-  for (const [key, val] of Object.entries(map)) {
+): Array<[levelKey: string, value: unknown]> {
+  if (map === null || typeof map !== 'object') return [];
+  return Object.entries(map).filter(([key]) => {
     // "_" is always ungated. Spell-level buckets ("s1", "s2", … — any `sN`)
     // appear only on `expanded` lists that organize additions by spell level
     // rather than character level, so include them there; without this an
@@ -74,52 +99,54 @@ function gatherByLevel(
     // and silently vanishes. Numeric keys gate by character level.
     const ungated = key === '_' || (includeSpellLevels && /^s\d+$/i.test(key));
     const gate = ungated ? 0 : Number.parseInt(key, 10);
-    if (!Number.isNaN(gate) && gate <= totalLevel) collectStrings(val, out, sawChoose);
-  }
+    return !Number.isNaN(gate) && gate <= totalLevel;
+  });
 }
 
-/** The spells in one innate bucket, and how their uses are counted. */
-interface InnateGroup {
+/** The spells in one bucket, and how their uses are counted. */
+interface SpellGroup {
   names: string[];
+  /** The `{choose}` objects in the bucket: picks, cast as its named spells are. */
+  chooses: DataEntity[];
   limit: SpellLimit | undefined;
   /** The count covers the bucket as a whole rather than each spell in it. */
   shared: boolean;
+  /** Named as at will, not just listed with no limit. */
+  atWill: boolean;
 }
 
 /**
- * Walk one `innate` value, which is either a bare list or a bucket object:
+ * Walk one level's value, which is either a bare list or a bucket object:
  * `{ will: [...], daily: { "1": [...], "1e": [...] }, rest: { "2": [...] } }`.
  * The bucket key is the count, and the "e" suffix is what "each" is written
  * with: `daily: { "1": ["a", "b"] }` is one cast a day between the two, and
  * `"1e"` is one cast of each, so the suffix decides how many pools to open.
  */
-function walkInnateValue(
-  val: unknown,
-  sawChoose: { v: boolean },
-  emit: (group: InnateGroup) => void,
-): void {
-  const unlimited = (v: unknown) => {
+function walkBuckets(val: unknown, emit: (group: SpellGroup) => void): void {
+  const unlimited = (v: unknown, atWill: boolean) => {
     const names: string[] = [];
-    collectStrings(v, names, sawChoose);
-    if (names.length > 0) emit({ names, limit: undefined, shared: false });
+    const chooses: DataEntity[] = [];
+    collectStrings(v, names, chooses);
+    if (names.length + chooses.length > 0) {
+      emit({ names, chooses, limit: undefined, shared: false, atWill });
+    }
   };
   if (typeof val === 'string' || Array.isArray(val)) {
-    unlimited(val);
+    unlimited(val, false);
     return;
   }
   if (val === null || typeof val !== 'object') return;
   // A `{choose}` filter can stand where a bucket object would. It names no
-  // spell, so it belongs to `collectStrings`, which turns it into the note the
-  // player reads; walking it as a bucket would grant "level=1" as a spell.
+  // spell, so walking it as a bucket would grant "level=1" as a spell.
   if ('choose' in val) {
-    unlimited(val);
+    unlimited(val, false);
     return;
   }
   for (const [bucket, spells] of Object.entries(val)) {
     if (bucket !== 'daily' && bucket !== 'rest') {
       // "will" is at-will, and an unknown bucket is better granted without a
       // limit than dropped: the spell is the part the sheet can't invent.
-      unlimited(spells);
+      unlimited(spells, true);
       continue;
     }
     if (spells === null || typeof spells !== 'object') continue;
@@ -127,25 +154,19 @@ function walkInnateValue(
     for (const [countKey, list] of Object.entries(spells)) {
       const uses = Number.parseInt(countKey, 10);
       const names: string[] = [];
-      collectStrings(list, names, sawChoose);
-      if (names.length === 0) continue;
+      const chooses: DataEntity[] = [];
+      collectStrings(list, names, chooses);
+      if (names.length + chooses.length === 0) continue;
       const limit: SpellLimit | undefined =
         Number.isNaN(uses) || uses <= 0 ? undefined : { uses, resetOn };
-      emit({ names, limit, shared: limit !== undefined && !/e$/i.test(countKey) });
+      emit({
+        names,
+        chooses,
+        limit,
+        shared: limit !== undefined && !/e$/i.test(countKey),
+        atWill: false,
+      });
     }
-  }
-}
-
-function gatherInnate(
-  map: unknown,
-  totalLevel: number,
-  sawChoose: { v: boolean },
-  emit: (group: InnateGroup) => void,
-): void {
-  if (map === null || typeof map !== 'object') return;
-  for (const [key, val] of Object.entries(map)) {
-    const gate = key === '_' ? 0 : Number.parseInt(key, 10);
-    if (!Number.isNaN(gate) && gate <= totalLevel) walkInnateValue(val, sawChoose, emit);
   }
 }
 
@@ -154,21 +175,100 @@ function spellTitle(name: string): string {
   return name.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Grant an entry's known/innate/prepared spells + surface expanded/choose notes. */
+/** A prompt for one `{choose}`, without what depends on the character. */
+function readChoose(
+  raw: DataEntity,
+): Pick<ChoicePrompt, 'count' | 'spellQuery' | 'options'> | undefined {
+  const { choose } = raw;
+  if (typeof choose === 'string') {
+    const spellQuery = parseSpellFilter(choose);
+    if (spellQuery === undefined) return undefined;
+    return { count: num(raw.count) ?? 1, spellQuery, options: [] };
+  }
+  if (choose === null || typeof choose !== 'object') return undefined;
+  const { from, count } = choose as { from?: unknown; count?: unknown };
+  if (!Array.isArray(from) || from.length === 0) return undefined;
+  return {
+    count: num(count) ?? num(raw.count) ?? 1,
+    options: from
+      .map(String)
+      .map((ref) => ({ id: ref, label: spellTitle(parseSpellRef(ref).name) })),
+  };
+}
+
+/**
+ * A saved pick as an option, so it resolves without the spell files, which load
+ * on demand: a reload must not take a character's spell away until they arrive.
+ * What cannot be checked yet is trusted, and what is on file must fit the query.
+ */
+function savedPicks(col: Collector, id: string, query: SpellQuery): ChoiceOption[] {
+  const stored = col.doc.choices[id];
+  const picks = Array.isArray(stored) ? stored : stored === undefined ? [] : [stored];
+  return picks.map(String).flatMap((pick) => {
+    const { name, source } = parseSpellRef(pick);
+    if (name === '' || source === '') return [];
+    const spell = col.ctx.get('spell', name, source);
+    return spell !== undefined && !spellFitsQuery(spell, query) ? [] : [{ id: pick, label: name }];
+  });
+}
+
+/**
+ * Grant an entry's known/innate/prepared spells + surface expanded notes and
+ * prompt for its chosen spells. Only a feat prompts for now: the other origins
+ * with a `{choose}` are still a note.
+ */
 function grantSpellEntry(
   col: Collector,
   entry: DataEntity,
   origin: EffectOrigin,
   totalLevel: number,
   ability: Ability | undefined,
+  pickBase: string,
 ): void {
-  const sawChoose = { v: false };
+  let unoffered = false;
+  const slots = new Map<string, number>();
 
-  // Innate first, then always-known: a spell listed in both is the same spell,
-  // and the innate listing is the one carrying its limit.
-  const seen = new Set<string>();
-  gatherInnate(entry.innate, totalLevel, sawChoose, (group) => {
-    const spells = group.names.map(parseSpellRef).filter((spell) => {
+  /** Prompt for one `{choose}`, and return what has been picked so far. */
+  const pick = (raw: DataEntity, slot: string): string[] => {
+    const read = origin.type === 'feat' ? readChoose(raw) : undefined;
+    if (read === undefined) {
+      unoffered = true;
+      return [];
+    }
+    const n = slots.get(slot) ?? 0;
+    slots.set(slot, n + 1);
+    const id = `${pickBase}:${slot}:${n}`;
+    const { count, spellQuery } = read;
+    let picked: string[] = [];
+    col.choice(
+      {
+        id,
+        origin,
+        kind: 'spell',
+        label: `${origin.label}: ${
+          spellQuery !== undefined
+            ? describeSpellQuery(spellQuery, count)
+            : `Spell${count > 1 ? 's' : ''} from this list`
+        }`,
+        count,
+        options: spellQuery !== undefined ? savedPicks(col, id, spellQuery) : read.options,
+        ...(spellQuery !== undefined ? { spellQuery } : {}),
+      },
+      (selected) => {
+        picked = selected;
+      },
+    );
+    return picked;
+  };
+
+  const grant = (
+    group: SpellGroup,
+    slot: string,
+    seen: Set<string>,
+    plainUsage: string | undefined,
+  ) => {
+    const picked = group.chooses.flatMap((raw) => pick(raw, slot));
+    const spells = [...group.names, ...picked].map(parseSpellRef).filter((spell) => {
       const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
       if (seen.has(dedupe)) return false;
       seen.add(dedupe);
@@ -176,7 +276,8 @@ function grantSpellEntry(
     });
     if (spells.length === 0) return;
     if (group.limit === undefined) {
-      for (const spell of spells) col.add({ kind: 'grantSpell', spell, ability, origin });
+      const usage = group.atWill ? undefined : plainUsage;
+      for (const spell of spells) col.add({ kind: 'grantSpell', spell, ability, usage, origin });
       return;
     }
     const { uses, resetOn } = group.limit;
@@ -209,36 +310,56 @@ function grantSpellEntry(
         });
       }
     }
-  });
+  };
 
-  const known: string[] = [];
-  gatherByLevel(entry.known, totalLevel, known, sawChoose);
-  for (const name of known) {
-    const spell = parseSpellRef(name);
-    const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
-    if (seen.has(dedupe)) continue;
-    seen.add(dedupe);
-    col.add({ kind: 'grantSpell', spell, ability, origin });
+  // Innate first, then always-known: a spell listed in both is the same spell,
+  // and the innate listing is the one carrying its limit.
+  const seen = new Set<string>();
+  for (const [levelKey, val] of reachedLevels(entry.innate, totalLevel)) {
+    walkBuckets(val, (group) => grant(group, `innate:${levelKey}`, seen, undefined));
+  }
+  for (const [levelKey, val] of reachedLevels(entry.known, totalLevel)) {
+    const names: string[] = [];
+    const chooses: DataEntity[] = [];
+    collectStrings(val, names, chooses);
+    grant(
+      { names, chooses, limit: undefined, shared: false, atWill: false },
+      `known:${levelKey}`,
+      seen,
+      undefined,
+    );
   }
 
   // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
-  // class's own slots and never counted against the prepared limit.
-  const prepared: string[] = [];
-  gatherByLevel(entry.prepared, totalLevel, prepared, sawChoose);
-  for (const name of new Set(prepared)) {
-    col.add({ kind: 'grantSpell', spell: parseSpellRef(name), ability, usage: 'prepared', origin });
+  // class's own slots and never counted against the prepared limit, whatever
+  // bucket a named spell sits in. A pick spends its bucket's count instead, since
+  // that is the only way a non-caster can cast the spell it chose.
+  const seenPrepared = new Set<string>();
+  for (const [levelKey, val] of reachedLevels(entry.prepared, totalLevel)) {
+    walkBuckets(val, (group) => {
+      const slot = `prepared:${levelKey}`;
+      grant(
+        { names: group.names, chooses: [], limit: undefined, shared: false, atWill: false },
+        slot,
+        seenPrepared,
+        'prepared',
+      );
+      grant({ ...group, names: [] }, slot, seenPrepared, 'prepared');
+    });
   }
 
   // Expanded spell list (Warlock patron): widens what you can learn rather than
   // granting anything. Without a picker we surface it so the option is visible.
   const expanded: string[] = [];
-  gatherByLevel(entry.expanded, totalLevel, expanded, { v: false }, true);
+  for (const [, val] of reachedLevels(entry.expanded, totalLevel, true)) {
+    collectStrings(val, expanded, []);
+  }
   const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
   if (expandedNames.length > 0) {
     col.warn(`${origin.label}: expands your spell options: ${expandedNames.join(', ')}.`);
   }
 
-  if (sawChoose.v) {
+  if (unoffered) {
     col.warn(`${origin.label}: also lets you choose a spell. See the trait text.`);
   }
 }
@@ -257,10 +378,11 @@ function processSpellEntry(
   totalLevel: number,
   defaultAbility: Ability | undefined,
   abilityChoiceId: string,
+  pickBase: string,
 ): void {
   const ab = entry.ability;
   if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
-    grantSpellEntry(col, entry, origin, totalLevel, ab as Ability);
+    grantSpellEntry(col, entry, origin, totalLevel, ab as Ability, pickBase);
     return;
   }
   if (
@@ -274,7 +396,7 @@ function processSpellEntry(
     if (opts.length === 1) {
       // A single valid option is not a real choice — treat it like a fixed
       // ability and grant immediately, matching the plain-string path.
-      grantSpellEntry(col, entry, origin, totalLevel, opts[0]);
+      grantSpellEntry(col, entry, origin, totalLevel, opts[0], pickBase);
       return;
     }
     if (opts.length > 1) {
@@ -293,7 +415,7 @@ function processSpellEntry(
           // invalid/stale pick grants nothing (as the branch choice does),
           // rather than granting with no ability while re-prompting.
           if (picked === undefined || !(ABILITIES as readonly string[]).includes(picked)) return;
-          grantSpellEntry(col, entry, origin, totalLevel, picked as Ability);
+          grantSpellEntry(col, entry, origin, totalLevel, picked as Ability, pickBase);
         },
       );
       return;
@@ -301,7 +423,7 @@ function processSpellEntry(
     // Malformed choose (no valid abilities) — fall back and explain.
     col.warn(`${origin.label}: spellcasting ability is your choice. See the trait text.`);
   }
-  grantSpellEntry(col, entry, origin, totalLevel, defaultAbility);
+  grantSpellEntry(col, entry, origin, totalLevel, defaultAbility, pickBase);
 }
 
 /**
@@ -343,25 +465,34 @@ export function collectAdditionalSpells(
     }
   }
 
-  // Each entry's choose-ability picker (if any) needs a stable, collision-free
-  // id; `prefix` namespaces it by group and the index keeps sibling entries apart.
-  const applyEntries = (group: DataEntity[], prefix: string) => {
+  // Each entry's pickers (if any) need stable, collision-free ids; `group` namespaces
+  // them and the index keeps sibling entries apart. A branch's picks are its own, so
+  // going back to it finds them where they were.
+  const applyEntries = (group: DataEntity[], groupKey: string) => {
     for (let i = 0; i < group.length; i++) {
       const entry = group[i];
       if (entry !== undefined) {
-        processSpellEntry(col, entry, origin, totalLevel, defaultAbility, `${prefix}:${i}`);
+        processSpellEntry(
+          col,
+          entry,
+          origin,
+          totalLevel,
+          defaultAbility,
+          `${base}:ability:${groupKey}:${i}`,
+          `${base}:spell:${groupKey}:${i}`,
+        );
       }
     }
   };
 
   // `u`/`b` prefixes keep the unnamed and branch namespaces disjoint, so an
   // (only theoretically possible) branch literally named "u" can't collide.
-  applyEntries(unnamed, `${base}:ability:u`);
+  applyEntries(unnamed, 'u');
 
   if (branches.size <= 1) {
     // No real choice — collect the lone (or zero) named group as before.
     for (const name of order) {
-      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`);
     }
     return;
   }
@@ -379,7 +510,7 @@ export function collectAdditionalSpells(
       const pick = selected[0];
       const name = pick !== undefined ? order.find((n) => n.toLowerCase() === pick) : undefined;
       if (name === undefined) return;
-      applyEntries(branches.get(name) ?? [], `${base}:ability:b:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`);
     },
   );
 }
