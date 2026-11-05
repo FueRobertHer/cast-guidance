@@ -22,6 +22,12 @@ export type EditionFit =
   /** Older content the newer books reprint, and that reprint is installed. */
   | { kind: 'reprinted'; as: EditionRef }
   /**
+   * The same, but on another printing of the class this subclass sits under
+   * (`Life Domain|PHB` on `Cleric|PHB`, reprinted under `Cleric|XPHB`). A class
+   * row's picker lists only that printing's subclasses, so the row changes first.
+   */
+  | { kind: 'reprintedUnderClass'; as: EditionRef; underClass: EditionRef }
+  /**
    * The same, but as something this pick cannot become (a subrace reprinted as a
    * feat), so there is nothing to switch it to. `what` says what, in words.
    */
@@ -40,6 +46,9 @@ export type ReprintResolver = (ref: EditionRef) => Entity | undefined;
 
 const AS_A_FEAT = 'a feat';
 
+/** For a reprint that is not in the picker beside the chip. */
+const REPRINTED_ELSEWHERE = 'reprinted elsewhere';
+
 /**
  * What a reprint is, in words, when this pick cannot become it, or undefined
  * when it can. A subrace's race is within reach through the species picker, and
@@ -48,10 +57,10 @@ const AS_A_FEAT = 'a feat';
  * class. Feats are the other kind the data has today.
  */
 function reprintOutOfReach(
-  holder: Entity,
   holderType: EntityType,
   target: EditionRef,
   found: Entity,
+  classRow: EditionRef | undefined,
 ): string | undefined {
   if (
     target.type !== undefined &&
@@ -62,13 +71,30 @@ function reprintOutOfReach(
   }
   const foundClass = found.className;
   if (
-    holderType === 'subclass' &&
+    classRow !== undefined &&
     typeof foundClass === 'string' &&
-    foundClass.toLowerCase() !== String(holder.className).toLowerCase()
+    foundClass.toLowerCase() !== classRow.name.toLowerCase()
   ) {
     return `a subclass of ${foundClass}`;
   }
   return undefined;
+}
+
+/**
+ * The printing of its class a subclass's reprint sits on, when that is not the
+ * row the character holds the subclass on.
+ */
+function otherClassPrinting(
+  found: Entity,
+  classRow: EditionRef | undefined,
+): EditionRef | undefined {
+  const { className, classSource } = found;
+  if (classRow === undefined || typeof className !== 'string' || typeof classSource !== 'string') {
+    return undefined;
+  }
+  return classSource.toLowerCase() === classRow.source.toLowerCase()
+    ? undefined
+    : { name: className, source: classSource };
 }
 
 /**
@@ -80,16 +106,25 @@ function reprintOutOfReach(
  * point at another 2014 book (`Bugbear|VGM` points at `Bugbear|MPMM`), so
  * announcing those as "reprinted for 2024" would be a false claim about the
  * rules and would offer a switch that gains the player nothing.
+ *
+ * `classRow` is the class a subclass pick sits under on the character. It is the
+ * character's row and not the entity's own: a lookup hands back one row per name
+ * and source, so `Life Domain|PHB` reads as the row under `Cleric|PHB` even for
+ * a character on `Cleric|XPHB`, whose picker already offers the reprint.
  */
 export function editionFit(
   entity: Entity,
   type: EntityType,
   version: RulesVersion,
   resolve: ReprintResolver,
+  classRow?: EditionRef,
 ): EditionFit {
   const edition = editionOf(entity);
   if (edition === version) return { kind: 'match' };
   if (edition === '2024') return { kind: 'newer' };
+  // Both held back, because each is a claim about every target: "replace the class"
+  // and "nothing to switch to" are false if another target is within reach.
+  let afterClass: EditionFit | undefined;
   let noSwitch: EditionFit | undefined;
   for (const target of reprintTargets(entity, type)) {
     const found = resolve(target);
@@ -97,12 +132,16 @@ export function editionFit(
     // Named from the resolved entity, so the note reads "Life Domain" where the
     // uid carried only the shortName "Life".
     const as = { name: String(found.name), source: String(found.source) };
-    const what = reprintOutOfReach(entity, type, target, found);
-    if (what === undefined) return { kind: 'reprinted', as };
-    // Held back, because "nothing to switch to" is a claim about every target.
-    noSwitch ??= { kind: 'reprintedNoSwitch', as, what };
+    const what = reprintOutOfReach(type, target, found, classRow);
+    if (what !== undefined) {
+      noSwitch ??= { kind: 'reprintedNoSwitch', as, what };
+      continue;
+    }
+    const underClass = otherClassPrinting(found, classRow);
+    if (underClass === undefined) return { kind: 'reprinted', as };
+    afterClass ??= { kind: 'reprintedUnderClass', as, underClass };
   }
-  return noSwitch ?? { kind: 'carryOver' };
+  return afterClass ?? noSwitch ?? { kind: 'carryOver' };
 }
 
 /**
@@ -121,6 +160,8 @@ export function editionFitNote(
       return undefined;
     case 'reprinted':
       return `${label}: ${other} content, reprinted for ${version} as ${fit.as.name}. Kept as chosen.`;
+    case 'reprintedUnderClass':
+      return `${label}: ${other} content, reprinted for ${version} as ${fit.as.name}, under ${fit.underClass.name} (${fit.underClass.source}) rather than your class. Kept as chosen.`;
     case 'reprintedNoSwitch':
       return `${label}: ${other} content, reprinted for ${version} as ${fit.what}, ${fit.as.name}. Kept as chosen.`;
     case 'carryOver':
@@ -148,13 +189,20 @@ export function editionFitChip(
         text: `reprinted for ${version}`,
         title: `${other} content. The ${version} books reprint it as ${fit.as.name} (${fit.as.source}), which you can switch to. Your pick is kept either way.`,
       };
+    case 'reprintedUnderClass':
+      // Not "kept either way" as the others say: a class row has no control that
+      // changes it, so reaching this reprint means removing the row and the pick.
+      return {
+        text: REPRINTED_ELSEWHERE,
+        title: `${other} content. The ${version} books reprint it as ${fit.as.name} (${fit.as.source}), under ${fit.underClass.name} (${fit.underClass.source}). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.`,
+      };
     case 'reprintedNoSwitch':
       // Said in the text, not only the title: a phone never shows a title, and
       // this is what stops someone hunting the picker for the reprint. A feat is
       // the only kind named, because the chip does not wrap and a class name
-      // pushes the page wider at 200% text. The note beside it names the rest.
+      // pushes the page wider at 200% text. The Mixed editions note names the rest.
       return {
-        text: fit.what === AS_A_FEAT ? `reprinted as ${AS_A_FEAT}` : 'reprinted elsewhere',
+        text: fit.what === AS_A_FEAT ? `reprinted as ${AS_A_FEAT}` : REPRINTED_ELSEWHERE,
         title: `${other} content. The ${version} books reprint it as ${fit.what}, ${fit.as.name} (${fit.as.source}), so there is nothing to switch this pick to. Your pick is kept either way.`,
       };
     case 'carryOver':
@@ -176,6 +224,8 @@ export interface EditionSwitchPreview {
   match: number;
   /** Off-edition selections that have an installed reprint, named. */
   reprinted: Array<{ label: string; as: EditionRef }>;
+  /** Off-edition subclasses whose reprint needs their class row changed first. */
+  reprintedUnderClass: Array<{ label: string; as: EditionRef; underClass: EditionRef }>;
   /** Off-edition selections reprinted as something they cannot become. */
   reprintedNoSwitch: Array<{ label: string; as: EditionRef; what: string }>;
   /** Off-edition selections with nowhere to move to. */
@@ -185,7 +235,14 @@ export interface EditionSwitchPreview {
 }
 
 export function emptySwitchPreview(): EditionSwitchPreview {
-  return { match: 0, reprinted: [], reprintedNoSwitch: [], carryOver: [], newer: [] };
+  return {
+    match: 0,
+    reprinted: [],
+    reprintedUnderClass: [],
+    reprintedNoSwitch: [],
+    carryOver: [],
+    newer: [],
+  };
 }
 
 /** Fold one classified selection into a preview. */
@@ -200,6 +257,9 @@ export function addToPreview(
       break;
     case 'reprinted':
       preview.reprinted.push({ label, as: fit.as });
+      break;
+    case 'reprintedUnderClass':
+      preview.reprintedUnderClass.push({ label, as: fit.as, underClass: fit.underClass });
       break;
     case 'reprintedNoSwitch':
       preview.reprintedNoSwitch.push({ label, as: fit.as, what: fit.what });
@@ -225,6 +285,7 @@ export function describeSwitch(
 ): { summary: string; unchanged: boolean } {
   const off =
     preview.reprinted.length +
+    preview.reprintedUnderClass.length +
     preview.reprintedNoSwitch.length +
     preview.carryOver.length +
     preview.newer.length;
@@ -246,6 +307,15 @@ export function describeSwitch(
     const named = preview.reprinted.map((r) => `${r.label} → ${r.as.name}`).join(', ');
     parts.push(
       `${count(preview.reprinted.length, 'has', 'have')} a ${version} reprint you can switch to afterwards (${named})`,
+    );
+  }
+  if (preview.reprintedUnderClass.length > 0) {
+    const named = preview.reprintedUnderClass
+      .map((r) => `${r.label} → ${r.as.name} under ${r.underClass.name} (${r.underClass.source})`)
+      .join(', ');
+    const n = preview.reprintedUnderClass.length;
+    parts.push(
+      `${count(n, 'has', 'have')} a ${version} reprint you can only reach by replacing ${n === 1 ? 'its' : 'their'} class (${named})`,
     );
   }
   if (preview.reprintedNoSwitch.length > 0) {

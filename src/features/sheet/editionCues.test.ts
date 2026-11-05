@@ -211,6 +211,94 @@ describe('editionCues', () => {
     });
   });
 
+  describe('a subclass reprinted on another printing of its class', () => {
+    /** One row per name and source, as a registry hands back: the older class's. */
+    const lifeWorld = world([
+      ['class', { name: 'Cleric', source: 'PHB' } as Entity],
+      ['class', { name: 'Cleric', source: 'XPHB' } as Entity],
+      [
+        'subclass',
+        {
+          name: 'Life Domain',
+          shortName: 'Life',
+          source: 'PHB',
+          className: 'Cleric',
+          classSource: 'PHB',
+          reprintedAs: ['Life|Cleric|XPHB|XPHB'],
+        } as Entity,
+      ],
+      [
+        'subclass',
+        {
+          name: 'Life Domain',
+          shortName: 'Life',
+          source: 'XPHB',
+          className: 'Cleric',
+          classSource: 'XPHB',
+        } as Entity,
+      ],
+    ]);
+    const onClassRow = (classSource: string) => {
+      const d = doc2014();
+      d.race = undefined;
+      d.background = undefined;
+      d.classes = [
+        {
+          ref: ref('Cleric', classSource),
+          subclass: ref('Life Domain', 'PHB'),
+          levels: 3,
+          hp: ['avg'],
+        },
+      ];
+      return d;
+    };
+    const subclassCue = (d: CharacterDoc) =>
+      editionCues(d, '2024', lifeWorld).find((c) => c.slot === 'subclass');
+
+    it('needs the class replaced while the character is on the older row', () => {
+      expect(subclassCue(onClassRow('PHB'))?.fit).toEqual({
+        kind: 'reprintedUnderClass',
+        as: { name: 'Life Domain', source: 'XPHB' },
+        underClass: { name: 'Cleric', source: 'XPHB' },
+      });
+    });
+
+    it('is a plain switch once the character is on that printing', () => {
+      // The picker on this row lists the reprint, so "replace your class" is false.
+      expect(subclassCue(onClassRow('XPHB'))?.fit).toEqual({
+        kind: 'reprinted',
+        as: { name: 'Life Domain', source: 'XPHB' },
+      });
+    });
+
+    it('gives each class row its own cue when both hold the subclass', () => {
+      // Add a class offers the other printing, so a character can hold both, and
+      // the two read differently. One key would hand both rows the same sentence.
+      const d = onClassRow('XPHB');
+      d.classes.push({
+        ref: ref('Cleric', 'PHB'),
+        subclass: ref('Life Domain', 'PHB'),
+        levels: 3,
+        hp: ['avg'],
+      });
+      const cues = editionCues(d, '2024', lifeWorld).filter((c) => c.slot === 'subclass');
+      expect(cues.map((c) => c.fit.kind)).toEqual(['reprinted', 'reprintedUnderClass']);
+      expect(new Set(cues.map((c) => c.key)).size).toBe(2);
+    });
+
+    it('previews the same way before a version switch', () => {
+      expect(
+        editionSwitchPreview(onClassRow('PHB'), '2024', lifeWorld).reprintedUnderClass,
+      ).toEqual([
+        {
+          label: "Cleric's Life Domain",
+          as: { name: 'Life Domain', source: 'XPHB' },
+          underClass: { name: 'Cleric', source: 'XPHB' },
+        },
+      ]);
+    });
+  });
+
   it('does not call a same-edition reprint a reprint', () => {
     // Bugbear|VGM points at Bugbear|MPMM, another 2014 book.
     const d = doc2014();
@@ -241,6 +329,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2014', baseWorld)).toEqual({
       match: 3,
       reprinted: [],
+      reprintedUnderClass: [],
       reprintedNoSwitch: [],
       carryOver: [],
       newer: [],
@@ -249,6 +338,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2024', baseWorld)).toEqual({
       match: 0,
       reprinted: [{ label: 'Elf', as: { name: 'Elf', source: 'XPHB' } }],
+      reprintedUnderClass: [],
       reprintedNoSwitch: [],
       carryOver: ['Acolyte', 'Fighter'],
       newer: [],

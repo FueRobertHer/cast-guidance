@@ -184,19 +184,86 @@ describe('editionFit', () => {
       } as Entity;
       const reprintUnder = (className: string) => () =>
         ({ name: 'Path of New', source: 'XPHB', className, classSource: 'XPHB' }) as Entity;
+      const olderRow = { name: 'Warrior', source: 'PHB' };
+      const newerRow = { name: 'Warrior', source: 'XPHB' };
 
-      it('can switch to a reprint on another printing of its class', () => {
-        expect(editionFit(pick, 'subclass', '2024', reprintUnder('warrior'))).toEqual({
-          kind: 'reprinted',
+      it('has to change class first to reach a reprint on another printing of it', () => {
+        expect(editionFit(pick, 'subclass', '2024', reprintUnder('Warrior'), olderRow)).toEqual({
+          kind: 'reprintedUnderClass',
           as: { name: 'Path of New', source: 'XPHB' },
+          underClass: newerRow,
         });
       });
 
+      it("reads the character's class row, not the row the lookup found", () => {
+        // `pick` says PHB, as the lookup's row does, but this character has
+        // already moved to the printing whose picker offers the reprint.
+        expect(editionFit(pick, 'subclass', '2024', reprintUnder('Warrior'), newerRow)).toEqual({
+          kind: 'reprinted',
+          as: { name: 'Path of New', source: 'XPHB' },
+        });
+        expect(
+          editionFit(pick, 'subclass', '2024', reprintUnder('Warrior'), {
+            name: 'WARRIOR',
+            source: 'xphb',
+          }).kind,
+        ).toBe('reprinted');
+      });
+
       it('cannot switch to one under a differently named class', () => {
-        expect(editionFit(pick, 'subclass', '2024', reprintUnder('Mystic'))).toEqual({
+        expect(editionFit(pick, 'subclass', '2024', reprintUnder('Mystic'), olderRow)).toEqual({
           kind: 'reprintedNoSwitch',
           as: { name: 'Path of New', source: 'XPHB' },
           what: 'a subclass of Mystic',
+        });
+      });
+
+      describe('with several reprints', () => {
+        const twoReprints = {
+          ...pick,
+          reprintedAs: ['First|Warrior|XPHB|XPHB', 'Second|Warrior|PHB|XDMG'],
+        } as Entity;
+        const resolveTo = (first: Entity, second: Entity) => (ref: { shortName?: string }) =>
+          ref.shortName === 'First' ? first : second;
+        const onNewerRow = {
+          name: 'First Path',
+          source: 'XPHB',
+          className: 'Warrior',
+          classSource: 'XPHB',
+        } as Entity;
+
+        it('prefers the one on its own class row, even listed second', () => {
+          const onOwnRow = {
+            name: 'Second Path',
+            source: 'XDMG',
+            className: 'Warrior',
+            classSource: 'PHB',
+          } as Entity;
+          expect(
+            editionFit(twoReprints, 'subclass', '2024', resolveTo(onNewerRow, onOwnRow), olderRow),
+          ).toEqual({ kind: 'reprinted', as: { name: 'Second Path', source: 'XDMG' } });
+        });
+
+        it('prefers changing class to having nothing to switch to, even listed second', () => {
+          const underMystic = {
+            name: 'Mystic Path',
+            source: 'XPHB',
+            className: 'Mystic',
+            classSource: 'XPHB',
+          } as Entity;
+          expect(
+            editionFit(
+              twoReprints,
+              'subclass',
+              '2024',
+              resolveTo(underMystic, onNewerRow),
+              olderRow,
+            ),
+          ).toEqual({
+            kind: 'reprintedUnderClass',
+            as: { name: 'First Path', source: 'XPHB' },
+            underClass: newerRow,
+          });
         });
       });
     });
@@ -291,6 +358,17 @@ describe('editionFitNote', () => {
       'Sub: 2014 content, reprinted for 2024 as a feat, Gift. Kept as chosen.',
     );
   });
+
+  it('names the class a reprint sits under, since a phone shows only this', () => {
+    const fit: EditionFit = {
+      kind: 'reprintedUnderClass',
+      as: { name: 'Path of New', source: 'XPHB' },
+      underClass: { name: 'Warrior', source: 'XPHB' },
+    };
+    expect(editionFitNote("Warrior's Path of Old", fit, '2024')).toBe(
+      "Warrior's Path of Old: 2014 content, reprinted for 2024 as Path of New, under Warrior (XPHB) rather than your class. Kept as chosen.",
+    );
+  });
 });
 
 describe('editionFitChip', () => {
@@ -320,6 +398,23 @@ describe('editionFitChip', () => {
     expect(chip?.title).toBe(
       '2014 content. The 2024 books reprint it as Elf (XPHB), which you can switch to. Your pick is kept either way.',
     );
+  });
+
+  it('says what reaching it costs, and that the reprint is not in the picker below', () => {
+    const chip = editionFitChip(
+      {
+        kind: 'reprintedUnderClass',
+        as: { name: 'Path of New', source: 'XPHB' },
+        underClass: { name: 'Warrior', source: 'XPHB' },
+      },
+      '2024',
+    );
+    expect(chip?.text).toBe('reprinted elsewhere');
+    expect(chip?.title).toBe(
+      '2014 content. The 2024 books reprint it as Path of New (XPHB), under Warrior (XPHB). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.',
+    );
+    expect(chip?.title).not.toContain('which you can switch to');
+    expect(chip?.title).not.toContain('either way');
   });
 
   it('offers no switch to a reprint out of reach, and says so where a phone shows it', () => {
@@ -394,6 +489,57 @@ describe('describeSwitch', () => {
   it('reports content from the newer books when switching down', () => {
     const { summary } = describeSwitch(preview(['Elf', { kind: 'newer' }]), '2014');
     expect(summary).toContain('1 comes from the newer books (Elf)');
+  });
+
+  it('keeps a reprint behind a class change apart from one open right away', () => {
+    const { summary, unchanged } = describeSwitch(
+      preview(
+        ['Warrior', { kind: 'reprinted', as: { name: 'Warrior', source: 'XPHB' } }],
+        [
+          "Warrior's Path of Old",
+          {
+            kind: 'reprintedUnderClass',
+            as: { name: 'Path of New', source: 'XPHB' },
+            underClass: { name: 'Warrior', source: 'XPHB' },
+          },
+        ],
+      ),
+      '2024',
+    );
+    expect(unchanged).toBe(false);
+    expect(summary).toContain(
+      '1 has a 2024 reprint you can switch to afterwards (Warrior → Warrior)',
+    );
+    expect(summary).toContain(
+      "1 has a 2024 reprint you can only reach by replacing its class (Warrior's Path of Old → Path of New under Warrior (XPHB))",
+    );
+  });
+
+  it('counts a pick behind a class change as something to warn about', () => {
+    const { summary, unchanged } = describeSwitch(
+      preview(
+        [
+          'A',
+          {
+            kind: 'reprintedUnderClass',
+            as: { name: 'B', source: 'XPHB' },
+            underClass: { name: 'C', source: 'XPHB' },
+          },
+        ],
+        [
+          'D',
+          {
+            kind: 'reprintedUnderClass',
+            as: { name: 'E', source: 'XPHB' },
+            underClass: { name: 'F', source: 'XPHB' },
+          },
+        ],
+      ),
+      '2024',
+    );
+    expect(unchanged).toBe(false);
+    expect(summary).toContain('2 have a 2024 reprint you can only reach by replacing their class');
+    expect(summary).not.toContain('afterwards');
   });
 
   it('promises no switch for a reprint out of reach', () => {

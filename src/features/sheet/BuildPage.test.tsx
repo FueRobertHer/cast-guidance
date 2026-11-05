@@ -343,6 +343,69 @@ describe('BuildPage subclass picker (GAME-009)', () => {
     ];
   }
 
+  /** A legacy subclass whose only 2024 printing sits on another printing of its class. */
+  function withReprintOnAnotherClass() {
+    extra.current = [
+      ['class', { name: 'Warrior', source: 'XTST', edition: 'one' }],
+      [
+        'subclass',
+        {
+          name: 'Path of Old',
+          shortName: 'Old',
+          source: 'TST',
+          className: 'Warrior',
+          classSource: 'TST',
+          reprintedAs: ['New|Warrior|XTST|XTST'],
+        },
+      ],
+      [
+        'subclass',
+        {
+          name: 'Path of New',
+          shortName: 'New',
+          source: 'XTST',
+          edition: 'one',
+          className: 'Warrior',
+          classSource: 'XTST',
+        },
+      ],
+    ];
+  }
+
+  it('says a reprint is not in the picker below, on the chip a phone can read', () => {
+    withReprintOnAnotherClass();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      const c = d.classes[0];
+      if (c !== undefined) c.subclass = { name: 'Path of Old', source: 'TST' };
+    });
+    expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toBe(
+      '2014 content. The 2024 books reprint it as Path of New (XTST), under Warrior (XTST). To switch to it, remove this class and add that one, which clears this pick. It stays until you do.',
+    );
+    expect(
+      screen.getByText(
+        "Warrior's Path of Old: 2014 content, reprinted for 2024 as Path of New, under Warrior (XTST) rather than your class. Kept as chosen.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('gives each class row its own chip when both hold the subclass', () => {
+    withReprintOnAnotherClass();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      const held = { name: 'Path of Old', source: 'TST' };
+      d.classes = [
+        { ref: { name: 'Warrior', source: 'XTST' }, subclass: held, levels: 3, hp: ['avg'] },
+        { ref: { name: 'Warrior', source: 'TST' }, subclass: held, levels: 3, hp: ['avg'] },
+      ];
+    });
+    // The first row's picker lists the reprint, so its chip keeps the plain switch.
+    expect(screen.getByTitle(/Path of New \(XTST\), which you can switch to/)).toBeTruthy();
+    expect(screen.getByText('reprinted elsewhere').getAttribute('title')).toContain(
+      'remove this class and add that one',
+    );
+  });
+
   it('offers one printing per subclass to a 2024 character', () => {
     withReprintedSubclass();
     const { getDoc } = renderBuild((d) => {
