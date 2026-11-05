@@ -1,10 +1,161 @@
 import { describe, expect, it } from 'vitest';
 import type { Entity } from './copyMod';
-import type { EntityType } from './normalize';
-import { filterByRulesVersion, pickForVersion, reprintTargets } from './rulesVersion';
+import { type EntityType, mergeHomebrew, normalizeDataset } from './normalize';
+import { editionOf, filterByRulesVersion, pickForVersion, reprintTargets } from './rulesVersion';
 
 const exhaustion2014: Entity = { name: 'Exhaustion', source: 'PHB', entries: ['2014 table'] };
 const exhaustion2024: Entity = { name: 'Exhaustion', source: 'XPHB', entries: ['2024 linear'] };
+
+describe('editionOf over a normalized dataset', () => {
+  /** A release whose `LATE` book marks only its background, as the later books do. */
+  const release = (extra: Record<string, unknown> = {}) =>
+    normalizeDataset(
+      new Map<string, unknown>([
+        ['backgrounds.json', { background: [{ name: 'Bg', source: 'LATE', edition: 'one' }] }],
+        ['feats.json', { feat: [{ name: 'Bare', source: 'LATE' }] }],
+        ['spells/spells-late.json', { spell: [{ name: 'Bolt', source: 'LATE' }] }],
+        ...Object.entries(extra),
+      ]),
+    );
+  const read = (reg: ReturnType<typeof release>, type: EntityType, name: string, source: string) =>
+    editionOf(reg.get(type, name, source) as Entity);
+
+  it('reads an unmarked entity by its book, whichever file marked the book', () => {
+    const reg = release();
+    expect(read(reg, 'feat', 'Bare', 'LATE')).toBe('2024');
+    expect(read(reg, 'spell', 'Bolt', 'LATE')).toBe('2024');
+  });
+
+  it("lets an entity's own classic mark win over its book", () => {
+    const reg = release({
+      'optionalfeatures.json': {
+        optionalfeature: [{ name: 'Old Way', source: 'LATE', edition: 'classic' }],
+      },
+    });
+    expect(read(reg, 'optionalfeature', 'Old Way', 'LATE')).toBe('2014');
+    expect(read(reg, 'feat', 'Bare', 'LATE')).toBe('2024');
+  });
+
+  it('leaves a book with no one mark alone, classic marked or bare', () => {
+    const reg = release({
+      'races.json': {
+        race: [
+          { name: 'Marked', source: 'OLD', edition: 'classic' },
+          { name: 'Plain', source: 'OLD' },
+        ],
+      },
+    });
+    expect(read(reg, 'race', 'Marked', 'OLD')).toBe('2014');
+    expect(read(reg, 'race', 'Plain', 'OLD')).toBe('2014');
+  });
+
+  it('still reads an unmarked core book as 2024 from its source', () => {
+    const reg = release({ 'languages.json': { language: [{ name: 'Tongue', source: 'XMM' }] } });
+    expect(read(reg, 'language', 'Tongue', 'XMM')).toBe('2024');
+  });
+
+  it('reads no book from a mark one of its rows only inherited', () => {
+    const reg = release({
+      'races.json': {
+        race: [
+          { name: 'Base', source: 'XPHB', edition: 'one' },
+          { name: 'Kin', source: 'OLD', _copy: { name: 'Base', source: 'XPHB' } },
+          { name: 'Original', source: 'OLD' },
+        ],
+      },
+    });
+    // The copy is 2024 content, but that says nothing about the rest of its book.
+    expect(read(reg, 'race', 'Kin', 'OLD')).toBe('2024');
+    expect(read(reg, 'race', 'Original', 'OLD')).toBe('2014');
+  });
+
+  it('keeps a row in an older book that copies a bare row from a 2024 book at 2014', () => {
+    // Older adventures do this with core items. The target reads 2024 by its
+    // book, but the mark it would pass on was never written on it.
+    const reg = release({
+      'items.json': {
+        item: [
+          { name: 'Cloak', source: 'LATE' },
+          { name: 'Cloak', source: 'OLD', _copy: { name: 'Cloak', source: 'LATE' } },
+        ],
+      },
+    });
+    expect(read(reg, 'item', 'Cloak', 'LATE')).toBe('2024');
+    expect(read(reg, 'item', 'Cloak', 'OLD')).toBe('2014');
+  });
+
+  it('keeps a classic a row inherited, since it copied 2014 content', () => {
+    const reg = release({
+      'races.json': {
+        race: [
+          { name: 'Kin', source: 'PHB', edition: 'classic' },
+          { name: 'Kin', source: 'LATE', _copy: { name: 'Kin', source: 'PHB' } },
+        ],
+      },
+    });
+    expect(read(reg, 'race', 'Kin', 'LATE')).toBe('2014');
+  });
+
+  it('carries the mark into a version expanded from an unmarked race', () => {
+    const reg = release({
+      'races.json': {
+        race: [
+          { name: 'Folk', source: 'LATE', _versions: [{ name: 'Folk; Variant', source: 'LATE' }] },
+        ],
+      },
+    });
+    expect(read(reg, 'race', 'Folk; Variant', 'LATE')).toBe('2024');
+  });
+
+  it('does not let a homebrew mark flip an official book or the rest of a brew', () => {
+    const reg = release({ 'feats.json': { feat: [{ name: 'Plain', source: 'PHB' }] } });
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: 'Claims PHB', source: 'PHB', edition: 'one' },
+              { name: 'Marked', source: 'MINE', edition: 'one' },
+              { name: 'Bare', source: 'MINE' },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(read(reg, 'feat', 'Plain', 'PHB')).toBe('2014');
+    expect(read(reg, 'feat', 'Bare', 'MINE')).toBe('2014');
+    expect(read(reg, 'feat', 'Marked', 'MINE')).toBe('2024');
+  });
+
+  it('passes a homebrew copy only the mark its target actually carries', () => {
+    const reg = release();
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: 'Mine', source: 'MINE', _copy: { name: 'Bare', source: 'LATE' } },
+              // Preserving everything still does not bring the book's reading along.
+              {
+                name: 'Kept',
+                source: 'MINE',
+                _copy: { name: 'Bare', source: 'LATE', _preserve: { '*': true } },
+              },
+            ],
+            background: [{ name: 'Mine', source: 'MINE', _copy: { name: 'Bg', source: 'LATE' } }],
+          },
+        ],
+      ]),
+    );
+    expect(read(reg, 'feat', 'Mine', 'MINE')).toBe('2014');
+    expect(read(reg, 'feat', 'Kept', 'MINE')).toBe('2014');
+    expect(read(reg, 'background', 'Mine', 'MINE')).toBe('2024');
+  });
+});
 
 describe('pickForVersion', () => {
   it('picks the printing matching the character rules version', () => {
@@ -102,6 +253,26 @@ describe('filterByRulesVersion', () => {
       'Old|PHB',
       'New|XPHB',
     ]);
+  });
+
+  it('filters a normalized list by book, not only by the marks its rows carry', () => {
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        ['backgrounds.json', { background: [{ name: 'Bg', source: 'LATE', edition: 'one' }] }],
+        [
+          'feats.json',
+          {
+            feat: [
+              { name: 'Old', source: 'PHB', reprintedAs: ['Old|LATE'] },
+              { name: 'Old', source: 'LATE' },
+            ],
+          },
+        ],
+      ]),
+    );
+    const feats = [...reg.byType('feat')];
+    expect(names(filterByRulesVersion(feats, '2014'))).toEqual(['Old|PHB']);
+    expect(names(filterByRulesVersion(feats, '2024'))).toEqual(['Old|LATE']);
   });
 
   it('hides a 2014 printing for a 2024 character only when its reprint is in the list', () => {

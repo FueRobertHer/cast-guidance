@@ -458,6 +458,9 @@ function applyCopy(e: Entity, target: Entity, warnings: CopyModWarning[], label:
   for (const key of DELETE_ON_COPY) {
     if (!preserve[key] && !preserve['*']) delete base[key];
   }
+  // Ours, not a 5etools key, so `_preserve` has no say: it describes the book
+  // the target sits in, which is not the book a copy sits in.
+  delete base.bookEdition;
   const own: Entity = { ...e };
   delete own._copy;
   const merged: Entity = { ...base, ...own };

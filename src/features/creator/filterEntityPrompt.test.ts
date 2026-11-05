@@ -12,6 +12,7 @@ registry.addAll('feat', [
   { name: 'Lucky', source: 'XPHB' },
   { name: 'Telekinetic', source: 'TCE' },
   { name: 'Strike of the Giants', source: 'BGG' },
+  { name: 'Tagged', source: 'HB', edition: 'one' },
 ]);
 registry.addAll('optionalfeature', [
   { name: 'Defense', source: 'XPHB' },
@@ -93,6 +94,22 @@ describe('filterEntityPrompt', () => {
     const policy: SourcePolicy = { mode: 'only', sources: ['NothingHere'] };
     const out = filterEntityPrompt(featPrompt, registry, '2024', policy, undefined);
     expect(idsOf(out)).toHaveLength(4);
+  });
+
+  it('skips the version narrowing too rather than leaving a mandatory pick empty', () => {
+    // A 2014 character can hold a 2024 grant, such as a species offering a feat
+    // from a category that only 2024 books print. Then every option is 2024.
+    const prompt = promptOf('feat', ['alert|xphb', 'lucky|xphb']);
+    expect(idsOf(filterEntityPrompt(prompt, registry, '2014', ALLOW_ALL, undefined))).toEqual([
+      'alert|xphb',
+      'lucky|xphb',
+    ]);
+    // The source settings still narrow what that fallback offers.
+    const policy: SourcePolicy = { mode: 'all', except: ['XPHB'] };
+    const mixed = promptOf('feat', ['alert|xphb', 'tagged|hb']);
+    expect(idsOf(filterEntityPrompt(mixed, registry, '2014', policy, undefined))).toEqual([
+      'tagged|hb',
+    ]);
   });
 
   it("labels a kept pick from outside a character's own list, after its prereq cue", () => {
