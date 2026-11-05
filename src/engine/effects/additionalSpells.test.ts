@@ -523,12 +523,21 @@ describe('collectAdditionalSpells: a chosen spell on a feat', () => {
     ]);
   });
 
-  it('lets a prepared pick spend its own count, and leaves a named spell as it was', () => {
-    const col = collectFeat([{ prepared: { _: { daily: { 1: ['fake fixed', firstLevel] } } } }], {
-      'feat:base:spell:u:0:prepared:_:0': ['Fake One|HB'],
-    });
+  it('gives a limited prepared spell, named or picked, a row for slots and one for its uses', () => {
+    const col = collectFeat(
+      [{ prepared: { _: { daily: { '1e': ['fake fixed', firstLevel] } } } }],
+      {
+        'feat:base:spell:u:0:prepared:_:0': ['Fake One|HB'],
+      },
+    );
     expect(granted(col.effects)).toMatchObject([
-      { spell: { name: 'fake fixed' }, usage: 'prepared' },
+      { spell: { name: 'fake fixed' }, usage: 'prepared', slotsOnly: true },
+      {
+        spell: { name: 'fake fixed' },
+        usage: '1/day',
+        resourceKey: 'spell:feat|test feat|hb:fake-fixed',
+      },
+      { spell: { name: 'Fake One' }, usage: 'prepared', slotsOnly: true },
       {
         spell: { name: 'Fake One' },
         usage: '1/day',
@@ -536,6 +545,25 @@ describe('collectAdditionalSpells: a chosen spell on a feat', () => {
       },
     ]);
     expect(granted(col.effects)[0]?.resourceKey).toBeUndefined();
+  });
+
+  it('counts a prepared bucket per spell, even with no "e" on its count', () => {
+    const col = collectFeat([{ prepared: { _: { daily: { 1: ['fake fixed', 'fake other'] } } } }]);
+    expect(col.effects.filter((e) => e.kind === 'resource')).toMatchObject([
+      { key: 'spell:feat|test feat|hb:fake-fixed', max: 1, resetOn: 'long' },
+      { key: 'spell:feat|test feat|hb:fake-other', max: 1, resetOn: 'long' },
+    ]);
+  });
+
+  it('leaves a plain prepared spell with no count as a single row', () => {
+    const col = collectFeat([{ prepared: { _: ['fake fixed'] } }]);
+    expect(granted(col.effects)).toHaveLength(1);
+    expect(granted(col.effects)[0]?.slotsOnly).toBeUndefined();
+  });
+
+  it('keeps a prepared spell in a bucket it cannot read as always prepared', () => {
+    const col = collectFeat([{ prepared: { _: { ritual: ['fake fixed'] } } }]);
+    expect(granted(col.effects)).toMatchObject([{ usage: 'prepared' }]);
   });
 
   it('casts a prepared pick at will when its bucket says so', () => {

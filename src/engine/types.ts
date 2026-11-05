@@ -262,6 +262,11 @@ export type EffectInput = { origin: EffectOrigin } & (
       resourceKey?: string;
       /** It takes one of the places in its origin class's spells known. */
       countsAsKnown?: boolean;
+      /**
+       * This row is the way to cast the spell with slots, beside a limited row
+       * for its free uses, so a character with no slots to spend has no such row.
+       */
+      slotsOnly?: boolean;
     }
   | { kind: 'note'; text: string }
 );

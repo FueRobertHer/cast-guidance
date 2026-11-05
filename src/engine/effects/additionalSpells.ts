@@ -149,7 +149,7 @@ function walkBuckets(val: unknown, emit: (group: SpellGroup) => void): void {
     if (bucket !== 'daily' && bucket !== 'rest') {
       // "will" is at-will, and an unknown bucket is better granted without a
       // limit than dropped: the spell is the part the sheet can't invent.
-      unlimited(spells, true);
+      unlimited(spells, bucket === 'will');
       continue;
     }
     if (spells === null || typeof spells !== 'object') continue;
@@ -366,6 +366,16 @@ function grantSpellEntry(
         origin,
       });
       for (const spell of pool) {
+        if (plainUsage === 'prepared') {
+          col.add({
+            kind: 'grantSpell',
+            spell,
+            ability,
+            usage: plainUsage,
+            slotsOnly: true,
+            origin,
+          });
+        }
         col.add({
           kind: 'grantSpell',
           spell,
@@ -401,20 +411,14 @@ function grantSpellEntry(
   }
 
   // Always-prepared (Cleric domain, Paladin oath, Druid circle): cast with the
-  // class's own slots and never counted against the prepared limit, whatever
-  // bucket a named spell sits in. A pick spends its bucket's count instead, since
-  // that is the only way a non-caster can cast the spell it chose.
+  // class's own slots and never counted against the prepared limit. A count on
+  // top is free casts besides, so a limited spell gets a row for each way of
+  // casting it, and a non-caster keeps only the free casts. Those are always per
+  // spell: the release writes "1" on lists whose prose gives each spell its own.
   const seenPrepared = new Set<string>();
   for (const [levelKey, val] of reachedLevels(entry.prepared, gateLevel)) {
     walkBuckets(val, (group) => {
-      const slot = `prepared:${levelKey}`;
-      grant(
-        { names: group.names, chooses: [], limit: undefined, shared: false, atWill: false },
-        slot,
-        seenPrepared,
-        'prepared',
-      );
-      grant({ ...group, names: [] }, slot, seenPrepared, 'prepared');
+      grant({ ...group, shared: false }, `prepared:${levelKey}`, seenPrepared, 'prepared');
     });
   }
 
@@ -442,6 +446,9 @@ function grantSpellEntry(
  * grant with the chosen ability rather than silently defaulting to the first
  * option. As with the branch choice, the grant waits on the pick — a pending
  * choice applies no effects — so nothing is granted with a guessed ability.
+ *
+ * @returns the ability the entry settled on, if it has one yet. A pick counts as
+ *   soon as it is made, whether or not the entry's spells have been picked.
  */
 function processSpellEntry(
   col: Collector,
@@ -451,11 +458,11 @@ function processSpellEntry(
   defaultAbility: Ability | undefined,
   abilityChoiceId: string,
   pickBase: string,
-): void {
+): Ability | undefined {
   const ab = entry.ability;
   if (typeof ab === 'string' && (ABILITIES as readonly string[]).includes(ab)) {
     grantSpellEntry(col, entry, origin, gateLevel, ab as Ability, pickBase);
-    return;
+    return ab as Ability;
   }
   if (
     ab !== null &&
@@ -469,9 +476,10 @@ function processSpellEntry(
       // A single valid option is not a real choice — treat it like a fixed
       // ability and grant immediately, matching the plain-string path.
       grantSpellEntry(col, entry, origin, gateLevel, opts[0], pickBase);
-      return;
+      return opts[0];
     }
     if (opts.length > 1) {
+      let settled: Ability | undefined;
       col.choice(
         {
           id: abilityChoiceId,
@@ -487,15 +495,48 @@ function processSpellEntry(
           // invalid/stale pick grants nothing (as the branch choice does),
           // rather than granting with no ability while re-prompting.
           if (picked === undefined || !(ABILITIES as readonly string[]).includes(picked)) return;
-          grantSpellEntry(col, entry, origin, gateLevel, picked as Ability, pickBase);
+          settled = picked as Ability;
+          grantSpellEntry(col, entry, origin, gateLevel, settled, pickBase);
         },
       );
-      return;
+      return settled;
     }
     // Malformed choose (no valid abilities) — fall back and explain.
     col.warn(`${origin.label}: spellcasting ability is your choice. See the trait text.`);
   }
   grantSpellEntry(col, entry, origin, gateLevel, defaultAbility, pickBase);
+  return defaultAbility;
+}
+
+/**
+ * Where an entry written `ability: "inherit"` gets its ability: one the same feat
+ * raised, or the choice of the feats it is built on (lowercase names), settled
+ * once they have all been collected.
+ */
+export type SpellInheritance = { ability?: Ability; fromFeats?: readonly string[] };
+
+/**
+ * Give each inheriting grant the ability its feat chose. Runs once everything is
+ * collected, because a feat can come before the one it is built on (a feat from
+ * a class level before one the character simply has). A feat taken more than once
+ * has an ability per spell list, so a named list reads its own. Anything still
+ * ambiguous, or not chosen yet, names no ability rather than guessing one.
+ */
+export function settleInheritedAbilities(col: Collector): void {
+  for (const { grants, fromFeats, branch } of col.inheritingGrants) {
+    const abilities = new Set(
+      col.spellAbilities
+        .filter(
+          (s) =>
+            fromFeats.includes(s.feat) &&
+            (branch === undefined || s.branch === undefined || s.branch === branch),
+        )
+        .map((s) => s.ability),
+    );
+    const [ability] = abilities;
+    if (abilities.size !== 1 || ability === undefined) continue;
+    for (const grant of grants) grant.ability = ability;
+  }
 }
 
 /**
@@ -505,6 +546,7 @@ function processSpellEntry(
  * @param gateLevel the level its keys are read against (defaults to character
  *   level). A class or subclass passes levels in that class: a one-level dip must
  *   not open its high keys however high the character is.
+ * @param inherit where an entry written `ability: "inherit"` gets its ability.
  */
 export function collectAdditionalSpells(
   col: Collector,
@@ -513,6 +555,7 @@ export function collectAdditionalSpells(
   defaultAbility?: Ability,
   idBase?: string,
   gateLevel: number = totalLevelOf(col),
+  inherit?: SpellInheritance,
 ): void {
   const entries = asEntityArray(raw);
   if (entries.length === 0) return;
@@ -543,19 +586,32 @@ export function collectAdditionalSpells(
   // Each entry's pickers (if any) need stable, collision-free ids; `group` namespaces
   // them and the index keeps sibling entries apart. A branch's picks are its own, so
   // going back to it finds them where they were.
-  const applyEntries = (group: DataEntity[], groupKey: string) => {
+  const applyEntries = (group: DataEntity[], groupKey: string, branch?: string) => {
     for (let i = 0; i < group.length; i++) {
       const entry = group[i];
       if (entry !== undefined) {
-        processSpellEntry(
+        const inherits = entry.ability === 'inherit';
+        const start = col.effects.length;
+        const settled = processSpellEntry(
           col,
           entry,
           origin,
           gateLevel,
-          defaultAbility,
+          inherits ? (inherit?.ability ?? defaultAbility) : defaultAbility,
           `${base}:ability:${groupKey}:${i}`,
           `${base}:spell:${groupKey}:${i}`,
         );
+        if (settled !== undefined && origin.type === 'feat') {
+          const feat = origin.uid.split('|')[0] ?? origin.uid;
+          col.spellAbilities.push({ feat, branch, ability: settled });
+        }
+        if (inherits && inherit?.fromFeats !== undefined) {
+          col.inheritingGrants.push({
+            grants: col.effects.slice(start).filter((e) => e.kind === 'grantSpell'),
+            fromFeats: inherit.fromFeats,
+            branch,
+          });
+        }
       }
     }
   };
@@ -567,7 +623,7 @@ export function collectAdditionalSpells(
   if (branches.size <= 1) {
     // No real choice — collect the lone (or zero) named group as before.
     for (const name of order) {
-      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`, name.toLowerCase());
     }
     return;
   }
@@ -585,7 +641,7 @@ export function collectAdditionalSpells(
       const pick = selected[0];
       const name = pick !== undefined ? order.find((n) => n.toLowerCase() === pick) : undefined;
       if (name === undefined) return;
-      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`);
+      applyEntries(branches.get(name) ?? [], `b:${name.toLowerCase()}`, name.toLowerCase());
     },
   );
 }

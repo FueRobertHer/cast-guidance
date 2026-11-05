@@ -59,6 +59,7 @@ import {
   registryLookup,
 } from './editionCues';
 import { SpellInfoSheet } from './SpellInfoSheet';
+import { distinctGrants } from './spellData';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -1200,9 +1201,9 @@ export function Component() {
           <div className="flex flex-col gap-1">
             <span className={OVERLINE}>Innate & granted spells</span>
             <div className={ROWS}>
-              {sheet.grantedSpells.map((g) => (
+              {distinctGrants(sheet.grantedSpells).map((g) => (
                 <SpellInfoSheet
-                  key={`${g.name}|${g.source}`}
+                  key={`${g.name}|${g.source}|${g.origin}`}
                   name={g.name}
                   source={g.source}
                   version={doc.rulesVersion}
