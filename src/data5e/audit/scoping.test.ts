@@ -1,0 +1,417 @@
+import { describe, expect, it } from 'vitest';
+import { normalizeDataset } from '../normalize';
+import { BONUS_SCOPE, BONUS_SET, bonusCues, bonusSubjects } from './bonusScope';
+import { CAPABILITY_SCOPE, CAPABILITY_SET, capabilitySubjects } from './capabilityScope';
+import { FEATCHOICE_SCOPE, FEATCHOICE_SET, featChoiceSubjects } from './featChoiceScope';
+import type { JevRequest } from './jev';
+import {
+  emptyJudgments,
+  type JudgeSet,
+  type JudgeSubject,
+  parseJudgments,
+  runJudgments,
+  serializeJudgments,
+} from './judgments';
+import { reportHead, reportSection } from './scoping';
+
+// Synthetic entities: invented wording in the shapes in question, not any book's.
+const trait = (name: string, ...entries: string[]) => ({ name, entries });
+const classFeature = (name: string, level: number, ...entries: string[]) => ({
+  name,
+  source: 'HB',
+  className: 'Testclass',
+  classSource: 'HB',
+  level,
+  entries,
+});
+const spellList = (name: string, spell: string) => ({
+  name,
+  ability: { choose: ['int', 'wis'] },
+  known: { _: [spell] },
+});
+
+const registry = normalizeDataset(
+  new Map<string, unknown>(
+    Object.entries({
+      'races.json': {
+        race: [
+          {
+            name: 'Testfolk',
+            source: 'HB',
+            entries: [
+              trait('Fixed Reflex', 'You gain a +2 bonus to your initiative rolls.'),
+              trait('Keen Reflex', 'Your initiative rolls also gain your proficiency bonus.'),
+              trait('Wise Glance', 'You add your Wisdom modifier to any Insight check you make.'),
+              trait('Twitchy', 'Initiative rolls are made with advantage for you.'),
+              trait('Sharp Eyes', 'Your passive scores gain a +3 bonus.'),
+              trait('Thin Luck', 'Half your proficiency bonus is how many coins you find.'),
+              trait('Slot Sense', 'Half your proficiency bonus sets the level of the slot.'),
+              trait('Odd Omen', 'Once a day, your next check gains a bonus die.'),
+              trait('Rally', 'While you spend a charge, add your proficiency bonus to a check.'),
+              // Curated by name (`trait:hare-trigger`), so its sheet effect is hand-written.
+              trait('Hare-Trigger', 'You gain a bonus on initiative.'),
+              trait('Long Stride', 'You walk a little further than most.'),
+              // Has a capability line, so it never needs another.
+              trait('Brave', 'You stand firm when your nerve is tested.'),
+              // The scanner draws a reaction chip from this.
+              trait('Sidestep', 'As a reaction, you slip aside.'),
+            ],
+          },
+        ],
+      },
+      'feats.json': {
+        feat: [
+          // Curated as `alert|phb`.
+          {
+            name: 'Alert',
+            source: 'PHB',
+            entries: ['Always on guard, with a bonus to initiative.'],
+          },
+          {
+            name: 'Elemental Test',
+            source: 'HB',
+            entries: ['Choose an element you favor. Your magic treats it kindly.'],
+          },
+          {
+            name: 'Offered Test',
+            source: 'HB',
+            skillProficiencies: [{ any: 1 }],
+            entries: ['Pick any one skill to learn.'],
+          },
+          {
+            // A field the feat collector does not read, so no picker comes of it.
+            name: 'Unread Field Test',
+            source: 'HB',
+            skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill'], count: 3 }] }],
+            entries: ['Pick three skills or tools, mixed as you like.'],
+          },
+          {
+            // The app only warns about a chosen spell, so it offers nothing here.
+            name: 'Spell Test',
+            source: 'HB',
+            additionalSpells: [{ innate: { _: { daily: { 1: [{ choose: 'level=1' }] } } } }],
+            entries: ['Learn a spell you pick.'],
+          },
+          {
+            // A branch, with a further prompt that only appears once it is answered.
+            name: 'Branch Test',
+            source: 'HB',
+            additionalSpells: [
+              spellList('Alpha List', 'fake one'),
+              spellList('Beta List', 'fake two'),
+            ],
+            entries: ['Select the list you like.'],
+          },
+          {
+            name: 'Heavy Swing Test',
+            source: 'HB',
+            entries: ['Each swing, you may choose to trade accuracy for force.'],
+          },
+          {
+            name: 'Either Way Test',
+            source: 'HB',
+            entries: ['You are hard to surprise, either way.'],
+          },
+          {
+            name: 'Murky Test',
+            source: 'HB',
+            entries: ['Your chosen path is not spelled out here.'],
+          },
+          {
+            name: 'Unsure Beyond Test',
+            source: 'HB',
+            entries: ['Pick what suits you, perhaps.'],
+          },
+          { name: 'Plain Test', source: 'HB', entries: ['You run a little faster.'] },
+          { name: 'Reprint Test', source: 'HB', entries: ['Choose the same thing.'] },
+          { name: 'Reprint Test', source: 'HB2', entries: ['Choose the same thing.'] },
+        ],
+      },
+      'class/class-testclass.json': {
+        class: [{ name: 'Testclass', source: 'HB' }],
+        classFeature: [
+          classFeature('Steady Aim', 2, 'You can steady yourself before a shot.'),
+          classFeature('Steady Aim', 3, 'You rest your weapon on a nearby surface.'),
+          classFeature('Odd Hobby', 4, 'You collect small stones in your downtime.'),
+          classFeature('Extra Attack', 5, 'You strike more than once.'),
+        ],
+      },
+    }),
+  ),
+);
+
+type Answer = Record<string, number>;
+
+/** A fake Jev: answers by the name a subject's text starts with, and "no" to the rest. */
+function answersFrom(set: JudgeSet, table: Record<string, Answer>) {
+  return async ({ state }: JevRequest) => {
+    const name = state.split('\n')[0] ?? '';
+    const answer = table[name] ?? {};
+    return Object.fromEntries(set.questions.map((q) => [q.id, answer[q.id] ?? 0.05]));
+  };
+}
+
+/** Answers run through the real saver and parser, as a report reads them from disk. */
+async function savedFile(set: JudgeSet, subjects: JudgeSubject[], table: Record<string, Answer>) {
+  const file = emptyJudgments();
+  const result = await runJudgments({ set, subjects, file, ask: answersFrom(set, table) });
+  expect(result.failed).toEqual([]);
+  return parseJudgments(JSON.parse(serializeJudgments(file)));
+}
+
+/** The lines under a `## title: n` heading, up to the blank line that ends the section. */
+function rowsUnder(report: string, title: string): string[] {
+  const lines = report.split('\n');
+  const at = lines.findIndex((line) => line.startsWith(`## ${title}: `));
+  expect(at, `no section "${title}" in:\n${report}`).toBeGreaterThanOrEqual(0);
+  const end = lines.findIndex((line, i) => i > at && line === '');
+  return lines.slice(at + 1, end);
+}
+
+describe('reportHead', () => {
+  it('says what to run when part of the net has no answers yet', () => {
+    expect(reportHead(BONUS_SET, 'title', 5, 3)).toContain(
+      '5 subjects, 3 answered, 2 not asked yet (bun run data:judge -- --set bonus).',
+    );
+    expect(reportHead(BONUS_SET, 'title', 5, 5)).not.toContain('data:judge');
+  });
+});
+
+describe('reportSection', () => {
+  it('counts rows, not lines', () => {
+    expect(reportSection('Title', ['one\nmore', 'two'])).toBe('## Title: 2\none\nmore\ntwo\n');
+  });
+});
+
+describe('bonus scope', () => {
+  const subjects = bonusSubjects(registry);
+  const names = subjects.map((s) => s.name);
+
+  it('nets initiative, a bonus to a check or passive score, half proficiency and a modifier added to a check', () => {
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'Fixed Reflex',
+        'Keen Reflex',
+        'Wise Glance',
+        'Twitchy',
+        'Sharp Eyes',
+        'Slot Sense',
+        'Odd Omen',
+        'Rally',
+        'Hare-Trigger',
+        'Alert',
+      ]),
+    );
+    expect(names).not.toContain('Long Stride');
+    expect(names).not.toContain('Plain Test');
+  });
+
+  it('keeps only the sentences that matched as cues', () => {
+    expect(bonusCues('Name\nYou run fast. You add +1 to initiative. You jump high.')).toEqual([
+      'You add +1 to initiative.',
+    ]);
+  });
+
+  it('renders from an empty file, before any run', () => {
+    const report = BONUS_SCOPE.report(registry, emptyJudgments());
+    expect(report).toContain(`${subjects.length} subjects, 0 answered`);
+    expect(rowsUnder(report, 'Flat bonus, uncurated')).toEqual([]);
+  });
+
+  it('reports uncurated hits by type, untriggered first, with what to teach', async () => {
+    const file = await savedFile(BONUS_SET, subjects, {
+      'Fixed Reflex': { flat: 0.97 },
+      'Keen Reflex': { proficiency: 0.9 },
+      'Wise Glance': { abilityMod: 0.88 },
+      Twitchy: { advantage: 0.99 },
+      'Sharp Eyes': { flat: 0.85 },
+      'Thin Luck': { notBonus: 0.81 },
+      'Slot Sense': { notBonus: 0.93 },
+      'Odd Omen': { flat: 0.4, notBonus: 0.5 },
+      Rally: { proficiency: 0.95, triggered: 0.91 },
+      'Hare-Trigger': { proficiency: 0.96 },
+    });
+    const report = BONUS_SCOPE.report(registry, file);
+
+    expect(rowsUnder(report, 'Flat bonus, uncurated')).toEqual([
+      '0.97  Fixed Reflex (Testfolk|HB)',
+      '      You gain a +2 bonus to your initiative rolls.',
+      '0.85  Sharp Eyes (Testfolk|HB)',
+      '      Your passive scores gain a +3 bonus.',
+    ]);
+    // Rally's bonus needs a trigger, so the likelier-looking row still comes second.
+    expect(rowsUnder(report, 'Proficiency-based bonus, uncurated')).toEqual([
+      '0.90  Keen Reflex (Testfolk|HB)',
+      '      Your initiative rolls also gain your proficiency bonus.',
+      '0.95  Rally (Testfolk|HB)  needs a trigger (0.91)',
+      '      While you spend a charge, add your proficiency bonus to a check.',
+    ]);
+    expect(rowsUnder(report, 'Ability-modifier bonus, uncurated')).toEqual([
+      '0.88  Wise Glance (Testfolk|HB)',
+      '      You add your Wisdom modifier to any Insight check you make.',
+    ]);
+    expect(rowsUnder(report, 'Advantage, not a bonus, uncurated')).toEqual([
+      '0.99  Twitchy (Testfolk|HB)',
+      '      Initiative rolls are made with advantage for you.',
+    ]);
+    // Slot Sense comes later in the data, so this is the sort, not the input order.
+    expect(rowsUnder(report, 'Not a bonus, uncurated (negative test cases)')).toEqual([
+      '0.93  Slot Sense (Testfolk|HB)',
+      '      Half your proficiency bonus sets the level of the slot.',
+      '0.81  Thin Luck (Testfolk|HB)',
+      '      Half your proficiency bonus is how many coins you find.',
+    ]);
+    expect(rowsUnder(report, 'Unclear, uncurated (read these)')).toEqual([
+      'Odd Omen (Testfolk|HB)',
+      '      Once a day, your next check gains a bonus die.',
+    ]);
+    expect(report).toContain(`${subjects.length} subjects, ${subjects.length} answered`);
+    expect(report).toContain('Yes means p >= 0.8.');
+    expect(report).toContain('keep this output out of the repository');
+  });
+
+  it('keeps a curated feature on the report whether or not Jev finds a bonus in it', async () => {
+    const file = await savedFile(BONUS_SET, subjects, { 'Hare-Trigger': { proficiency: 0.96 } });
+    const report = BONUS_SCOPE.report(registry, file);
+    expect(rowsUnder(report, 'Curated already (wording the scanner should learn)')).toEqual([
+      'Hare-Trigger (Testfolk|HB): proficiency 0.96',
+      '      You gain a bonus on initiative.',
+    ]);
+    expect(rowsUnder(report, 'Curated, no bonus found (a miss if its entry adds one)')).toEqual([
+      'Alert (feat|PHB)',
+      '      Always on guard, with a bonus to initiative.',
+    ]);
+  });
+
+  it('saves answers and labels, and no prose', async () => {
+    const file = await savedFile(BONUS_SET, subjects, {});
+    const saved = serializeJudgments(file);
+    expect(saved).toContain('Fixed Reflex (Testfolk|HB)');
+    expect(saved).not.toContain('initiative rolls');
+  });
+});
+
+describe('feat choice scope', () => {
+  const subjects = featChoiceSubjects(registry);
+  const subject = (name: string) => subjects.find((s) => s.label.startsWith(`${name} (`));
+
+  it('nets feats with choice words, once per distinct text', () => {
+    expect(subject('Plain Test')).toBeUndefined();
+    expect(subject('Murky Test')).toBeDefined();
+    expect(subjects.filter((s) => s.label.startsWith('Reprint Test'))).toHaveLength(1);
+  });
+
+  it('tells Jev what the app really offers, not what fields exist', () => {
+    expect(subject('Offered Test')?.offered).toEqual(['Skill proficiency']);
+    expect(subject('Offered Test')?.state).toContain('Picks the app offers: Skill proficiency\n');
+    expect(subject('Unread Field Test')?.offered).toEqual([]);
+    expect(subject('Unread Field Test')?.state).toContain('Picks the app offers: none\n');
+    expect(subject('Spell Test')?.offered).toEqual([]);
+    expect(subject('Elemental Test')?.state).toBe(
+      'Elemental Test\nPicks the app offers: none\nChoose an element you favor. Your magic treats it kindly.',
+    );
+  });
+
+  it('names a branch prompt by its options, and finds the prompt behind it', () => {
+    expect(subject('Branch Test')?.offered).toEqual([
+      'one of Alpha List, Beta List',
+      'spellcasting ability',
+    ]);
+    expect(subject('Branch Test')?.state).toContain(
+      'Picks the app offers: one of Alpha List, Beta List; spellcasting ability\n',
+    );
+  });
+
+  it('reports the picks the app does not offer as the backlog, kept apart from play decisions', async () => {
+    const file = await savedFile(FEATCHOICE_SET, subjects, {
+      'Elemental Test': { pickOnTaking: 0.98, pickDamageType: 0.97, beyondOffered: 0.96 },
+      'Offered Test': { pickOnTaking: 0.99, pickSkill: 0.98 },
+      'Unread Field Test': {
+        pickOnTaking: 0.97,
+        pickSkill: 0.9,
+        pickTool: 0.85,
+        beyondOffered: 0.91,
+      },
+      'Spell Test': { pickOnTaking: 0.9, pickSpell: 0.95, beyondOffered: 0.99 },
+      'Heavy Swing Test': { pickDuringPlay: 0.94 },
+      'Murky Test': { pickOnTaking: 0.5, beyondOffered: 0.5 },
+      // Not confident enough to be the backlog, too unsure to call it no pick.
+      'Unsure Beyond Test': { pickDuringPlay: 0.9, beyondOffered: 0.6 },
+    });
+    const report = FEATCHOICE_SCOPE.report(registry, file);
+
+    const backlog = 'A pick the app does not offer (the feat-picker backlog)';
+    expect(rowsUnder(report, backlog)).toEqual([
+      '0.99  Spell Test (feat|HB)  picks: spell  offers: none',
+      '0.96  Elemental Test (feat|HB)  picks: damage type  offers: none',
+      '0.91  Unread Field Test (feat|HB)  picks: skill, tool  offers: none',
+    ]);
+    expect(rowsUnder(report, 'Every pick offered already')).toEqual([
+      '0.99  Offered Test (feat|HB)  picks: skill  offers: Skill proficiency',
+    ]);
+    expect(rowsUnder(report, 'A decision during play only (no picker needed)')).toEqual([
+      '0.94  Heavy Swing Test (feat|HB)  picks: ?  offers: none',
+    ]);
+    expect(rowsUnder(report, 'No pick at all (only the wording matched)')).toEqual(
+      expect.arrayContaining(['0.05  Either Way Test (feat|HB)  picks: ?  offers: none']),
+    );
+    expect(rowsUnder(report, 'Unclear (read these)')).toEqual([
+      '0.60  Unsure Beyond Test (feat|HB)  picks: ?  offers: none',
+      '0.50  Murky Test (feat|HB)  picks: ?  offers: none',
+    ]);
+    expect(report).toContain('Yes means p >= 0.8.');
+  });
+});
+
+describe('capability scope', () => {
+  const subjects = capabilitySubjects(registry);
+  const names = subjects.map((s) => s.name);
+
+  it('nets features the Play tab shows nothing for', () => {
+    expect(names).toContain('Long Stride');
+    expect(names).toContain('Odd Hobby');
+    expect(names.filter((n) => n === 'Steady Aim')).toHaveLength(2);
+  });
+
+  it('leaves out a capability line, a curated entry, a scanner chip and feats', () => {
+    expect(names).not.toContain('Brave');
+    expect(names).not.toContain('Extra Attack');
+    expect(names).not.toContain('Hare-Trigger');
+    expect(names).not.toContain('Sidestep');
+    expect(names).not.toContain('Plain Test');
+  });
+
+  it('asks the one question', () => {
+    expect(CAPABILITY_SET.questions).toEqual([
+      {
+        id: 'forgettable',
+        instructions:
+          'Is this an always-available option in combat that a player could forget to use?',
+      },
+    ]);
+  });
+
+  it('ranks names by probability, one row per name, and counts what it leaves out', async () => {
+    const steady = subjects.filter((s) => s.name === 'Steady Aim');
+    const file = await savedFile(CAPABILITY_SET, subjects, {
+      'Long Stride': { forgettable: 0.6 },
+      'Odd Hobby': { forgettable: 0.1 },
+    });
+    // Two printings of one name disagree, which only the saved file can say.
+    const [first, second] = steady;
+    if (first === undefined || second === undefined) throw new Error('fixture lost a printing');
+    file.judgments[`capability@1:${first.key}`] = { label: first.label, p: [0.3] };
+    file.judgments[`capability@1:${second.key}`] = { label: second.label, p: [0.92] };
+
+    const report = CAPABILITY_SCOPE.report(registry, file);
+    expect(rowsUnder(report, 'Names at 0.5 or above, likeliest first')).toEqual([
+      '0.92  Steady Aim (Testclass|HB)  2 printings, lowest 0.30',
+      '0.60  Long Stride (Testfolk|HB)',
+    ]);
+    const listed = 2;
+    const below = new Set(names).size - listed;
+    expect(report).toContain(`${below} more names below 0.5 are not listed.`);
+    // This list cuts at 0.5, so the yes threshold other reports state does not apply.
+    expect(report).not.toContain('Yes means');
+  });
+});

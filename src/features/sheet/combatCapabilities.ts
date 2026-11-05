@@ -6,7 +6,8 @@
  * "what it lets you do". Tapping the chip still opens the feature's full text.
  */
 import type { FeatureCard } from '@/engine/types';
-import { stripTrailingParenthetical } from '@/lib/trailingParenthetical';
+// Relative: `scripts/data-judge.ts` loads this file under plain Bun.
+import { stripTrailingParenthetical } from '../../lib/trailingParenthetical';
 
 export const COMBAT_CAPABILITIES: Record<string, string> = {
   'extra attack': 'Attack more than once whenever you take the Attack action.',

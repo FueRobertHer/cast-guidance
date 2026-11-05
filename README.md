@@ -29,7 +29,7 @@ bun run bundle:budget  # check dist/ against scripts/bundle-budget.json (after a
 bun run notices        # regenerate THIRD_PARTY_NOTICES.md from dist/ (after a build)
 bun run notices:check  # fail when THIRD_PARTY_NOTICES.md is out of date (after a build)
 bun run data:audit     # audit the pinned dataset against scripts/data-audit-budget.json (network-gated)
-bun run data:judge     # ask Jev about scanned prose and save the answers (needs AI_GATEWAY_API_KEY)
+bun run data:judge     # ask Jev about scanned prose and save the answers (needs AI_GATEWAY_API_KEY); --report <set> prints a scoping set's list
 bun run e2e            # browser E2E against dist/ (build first)
 bun run e2e:ci         # build, then browser E2E
 bun run icons:generate # render public/icons/*.png from scripts/icon-source.svg (commit the output)
@@ -67,6 +67,16 @@ of a gateway key, put it in `AI_GATEWAY_API_KEY` and also set
 `JEV_ENDPOINT=https://api.typesafe.ai/v1/systemone` and `JEV_MODEL=jev-latest`,
 in `.env.local` or the shell. The workflow only passes the key, so it needs a
 gateway key.
+
+Three one-off scoping sets use the same harness to size up work rather than to
+check anything. `bun run data:judge -- --set <name>` asks Jev about a wide net
+of prose, and `bun run data:judge -- --report <name>` prints a ranked list from
+the saved answers, without a key or a model call. No check reads these answers,
+and `--set all` and the workflow never ask them. `bonus` sorts check and
+initiative bonuses by type, `featchoice` lists the picks feats ask for that the
+app does not offer, and `capability` ranks features a player could forget to use
+in combat. The `bonus` report quotes the sentences it matched, to show the
+phrasings to teach the scanner, so keep that output out of the repository.
 
 Tests run on Vitest with `fake-indexeddb` (persistence) and jsdom +
 `@testing-library/react` (components). CI (`.github/workflows/ci.yml`) runs the

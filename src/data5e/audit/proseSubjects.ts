@@ -117,7 +117,8 @@ export function readableEntries(entries: unknown): string {
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const lower = (...parts: string[]) => parts.join('|').toLowerCase();
 
-const NO_DATA = { get: () => undefined, byType: () => [] };
+/** An engine context with nothing in it, for running a collector on one entity alone. */
+export const NO_DATA = { get: () => undefined, byType: () => [] };
 
 /** What the scanner draws from one trait, for a character with no class levels. */
 function scan(name: string, entries: unknown): EffectInput[] {
