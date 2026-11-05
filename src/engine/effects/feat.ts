@@ -15,6 +15,15 @@ import {
   weaponOptions,
 } from './readers';
 
+/**
+ * The name in a prerequisite's feat ref ("name|source", maybe "|display text").
+ * Only the name, as the prerequisite's own check reads it: whichever printing
+ * let the character take this feat is the one whose choice it inherits.
+ */
+function featNameOf(ref: unknown): string {
+  return (String(ref).split(/[|#]/)[0] ?? '').trim().toLowerCase();
+}
+
 /** Collect one feat entity. `instanceId` keeps repeatable feats' choices apart. */
 export function collectFeatEntity(
   col: Collector,
@@ -38,14 +47,17 @@ export function collectFeatEntity(
 
   const beforeAbility = col.effects.length;
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
-  // What an `inherit` spell casts with. A feat that raised two abilities names
-  // no one of them, one still waiting on its pick has none to hand on yet, and
-  // one built on another feat inherits that feat's choice, not its own raise.
+  // What an `inherit` spell casts with. One built on another feat inherits that
+  // feat's choice, not its own raise. Otherwise it is what this feat raised: one
+  // that raised two names no one of them, and one still waiting on its pick has
+  // none to hand on yet.
   const raised = new Set(
     col.effects.slice(beforeAbility).flatMap((x) => (x.kind === 'abilityBonus' ? [x.ability] : [])),
   );
-  const buildsOnFeat = asEntityArray(e.prerequisite).some((p) => p.feat !== undefined);
-  const [inheritedAbility] = raised.size === 1 && !buildsOnFeat ? raised : [];
+  const builtOn = asEntityArray(e.prerequisite).flatMap((p) =>
+    p.feat === undefined ? [] : [p.feat].flat().map(featNameOf),
+  );
+  const [ownRaise] = raised.size === 1 ? raised : [];
   readProficiencyList(
     col,
     e.skillProficiencies,
@@ -132,7 +144,14 @@ export function collectFeatEntity(
     }
   }
 
-  collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase, inheritedAbility);
+  collectAdditionalSpells(
+    col,
+    e.additionalSpells,
+    origin,
+    undefined,
+    idBase,
+    builtOn.length > 0 ? { fromFeats: builtOn } : { ability: ownRaise },
+  );
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
   if (!emitCuratedEffects(col, uid, origin)) {

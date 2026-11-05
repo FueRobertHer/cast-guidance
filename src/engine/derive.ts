@@ -20,6 +20,7 @@ import {
 } from './calc/skills';
 import { calcSpellcasting } from './calc/slots';
 import { calcWalkSpeed } from './calc/speed';
+import { settleInheritedAbilities } from './effects/additionalSpells';
 import { collectBackground } from './effects/background';
 import { Collector } from './effects/base';
 import { collectClasses } from './effects/class';
@@ -45,6 +46,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   // Only now is every skill grant known, including ones collected after the
   // pick they overlap.
   noteSkillSources(col);
+  settleInheritedAbilities(col);
 
   const effects = col.effects;
 
