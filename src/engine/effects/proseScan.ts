@@ -121,6 +121,69 @@ function detectUses(
 }
 
 /**
+ * The phrase that earns a chip, and where it sits. Compact, high-signal chips
+ * only: bonus/reaction always; plain actions only when limited-use (otherwise
+ * every prose "as an action" is noise).
+ */
+function chipPhrase(
+  text: string,
+  limitedUse: boolean,
+): { economy: 'bonus' | 'reaction' | 'action'; at: number } | undefined {
+  const bonus = text.search(/as a bonus action/);
+  if (bonus !== -1) return { economy: 'bonus', at: bonus };
+  // 2024 phrasing, with its subject: "your familiar can take a Reaction" and
+  // "each target can then take a Reaction" spend that creature's Reaction, so
+  // they are no chip for the character, and "you can't" forbids one.
+  const reaction = text.search(/as a reaction|use your reaction|you (?:can|must) take a reaction/);
+  if (reaction !== -1) return { economy: 'reaction', at: reaction };
+  if (!limitedUse) return undefined;
+  // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
+  // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
+  const action = text.search(
+    /as an action|use your action|replace one of your attacks|as a magic action/,
+  );
+  return action === -1 ? undefined : { economy: 'action', at: action };
+}
+
+/**
+ * Dice a chip can roll. A bare d20 is left out: that names a test the player
+ * already makes ("advantage on d20 tests"), not a roll this feature adds.
+ */
+const DICE = /\b((?:\d{1,2}d\d{1,3}|d(?!20\b)\d{1,3})(?: ?[+-] ?\d+)?)\b/g;
+/** A length of time: "charmed for 1d12 hours", "until you finish 1d4 long rests". */
+const TIME_AFTER_DICE =
+  /^ (?:(?:short |long )?rests?|rounds?|minutes?|hours?|days?|weeks?|months?|years?)\b/;
+/**
+ * A level step, in the wordings the step loop reads: "5th level (d8)",
+ * "levels 5 (2d10), 11 (3d10)", "3d6 at 6th level".
+ */
+const STEP_BEFORE_DICE = /\d(?:st|nd|rd|th)?(?: level)? \($/;
+const STEP_AFTER_DICE = /^ at \d+(?:st|nd|rd|th) level/;
+
+/**
+ * The dice a chip's action rolls: the first from the sentence of its phrase on.
+ * Later sentences count, since prose often names the damage after the action
+ * ("you can take a Reaction to halve it. The attacker takes 2d10 ..."). Earlier
+ * ones are taken as another benefit's ("you can roll 1d6 instead of 1d4"), as
+ * all of them were in the release this was read against (v2.39.1). A span of
+ * time, a level step or a cost to the character ("you take 1d10 force damage if
+ * you end your turn inside") is skipped: none is the roll a player taps a chip for.
+ */
+function actionDice(text: string, phraseAt: number): RegExpExecArray | null {
+  const sentenceStart = text.lastIndexOf('.', phraseAt) + 1;
+  for (const m of text.matchAll(DICE)) {
+    if (m.index < sentenceStart) continue;
+    const before = text.slice(Math.max(0, m.index - 16), m.index);
+    const after = text.slice(m.index + m[0].length);
+    if (TIME_AFTER_DICE.test(after) || STEP_AFTER_DICE.test(after)) continue;
+    if (STEP_BEFORE_DICE.test(before)) continue;
+    if (/\byou take $/.test(before) && DAMAGE_AFTER_DICE.test(after)) continue;
+    return m;
+  }
+  return null;
+}
+
+/**
  * Scan one named trait/feature and emit resource / action / HP effects.
  * Safe to call on anything — no-ops when no usage wording is found.
  */
@@ -147,15 +210,9 @@ export function proseScanFeature(
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
 
-  // Compact, high-signal chips only: bonus/reaction always; plain actions
-  // only when limited-use (otherwise every prose "as an action" is noise).
-  // Limited-use features also get their first dice expression as a roll chip,
-  // leaving out a bare d20: that names a test the player already makes
-  // ("advantage on d20 tests"), not a roll this feature adds.
-  const dice =
-    uses !== undefined
-      ? text.match(/\b((?:\d{1,2}d\d{1,3}|d(?!20\b)\d{1,3})(?: ?[+-] ?\d+)?)\b/)
-      : null;
+  const phrase = chipPhrase(text, uses !== undefined);
+  // Limited-use features also get a roll chip, from the dice their action rolls.
+  const dice = uses !== undefined && phrase !== undefined ? actionDice(text, phrase.at) : null;
   let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
   const diceAt = dice?.index ?? 0;
   const sentenceEnd = text.indexOf('.', diceAt);
@@ -182,11 +239,13 @@ export function proseScanFeature(
   if (roll !== undefined) {
     const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
     const steps: Array<[number, string]> = [];
-    for (const m of text.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
+    // From the rolled die on: a step before it scales another benefit's die.
+    const fromDice = text.slice(diceAt);
+    for (const m of fromDice.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
       if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
     }
     // Two paren forms: 2024 "levels 5 (2d10)" and FTD "5th level (2d10)".
-    for (const m of text.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
+    for (const m of fromDice.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
       if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
     }
     steps.sort((a, b) => a[0] - b[0]);
@@ -195,10 +254,12 @@ export function proseScanFeature(
     }
   }
 
-  // Mechanics the prose states outright: damage type, area, and save.
-  const dmgType = text.match(
-    new RegExp(`\\d+d\\d+(?: ?[+-] ?\\d+)? (${DAMAGE_TYPES}) damage`),
-  )?.[1];
+  // Mechanics the prose states outright: damage type, area, and save. A
+  // limited-use chip reads its damage type from the rolled die onward, so one
+  // that rolls nothing shows no type from another benefit's die.
+  const dmgType = text
+    .slice(uses === undefined ? 0 : (dice?.index ?? text.length))
+    .match(new RegExp(`\\d+d\\d+(?: ?[+-] ?\\d+)? (${DAMAGE_TYPES}) damage`))?.[1];
   const area = text.match(
     /in a (\d+-foot-wide, \d+-foot-long line|\d+-foot(?:-radius)? (?:cone|line|sphere|cube|radius))/,
   )?.[1];
@@ -227,23 +288,18 @@ export function proseScanFeature(
       ? { targetAbility, dcAbility }
       : undefined;
 
-  const chip = { kind: 'action', label: name, roll, heals, plainDice, note, save, origin } as const;
-  if (/as a bonus action/.test(text)) {
-    col.add({ ...chip, economy: 'bonus' });
-  } else if (
-    // 2024 phrasing, with its subject: "your familiar can take a Reaction" and
-    // "each target can then take a Reaction" spend that creature's Reaction, so
-    // they are no chip for the character, and "you can't" forbids one.
-    /as a reaction|use your reaction|you (?:can|must) take a reaction/.test(text)
-  ) {
-    col.add({ ...chip, economy: 'reaction' });
-  } else if (
-    uses !== undefined &&
-    // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
-    // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
-    /as an action|use your action|replace one of your attacks|as a magic action/.test(text)
-  ) {
-    col.add({ ...chip, economy: 'action' });
+  if (phrase !== undefined) {
+    col.add({
+      kind: 'action',
+      label: name,
+      roll,
+      heals,
+      plainDice,
+      note,
+      save,
+      origin,
+      economy: phrase.economy,
+    });
   }
 
   const hp = text.match(

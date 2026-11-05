@@ -347,6 +347,150 @@ describe('proseScanFeature rolls', () => {
     expect(crit?.economy).toBe('bonus');
     expect(crit?.roll).toBeUndefined();
   });
+
+  const ONCE = 'You can use this once per long rest.';
+
+  it.each([
+    [
+      'reaction',
+      'Greater Mark of Warding',
+      'You can roll 1d6 instead of 1d4. When a creature attacks you, you can take a Reaction to impose Disadvantage.',
+    ],
+    [
+      'bonus',
+      'Spellfire Spark',
+      'You reduce the damage taken by 1d4. You can also cast this cantrip as a Bonus Action.',
+    ],
+    [
+      'action',
+      'Eldritch Cannon',
+      'If the Mending spell is cast on it, it regains 2d6 hit points. You can dismiss it as an action.',
+    ],
+  ])('offers no %s roll from a die before its sentence (%s wording)', (economy, _, prose) => {
+    const chip = action(`${prose} ${ONCE}`);
+    expect(chip?.economy).toBe(economy);
+    expect(chip?.roll).toBeUndefined();
+    expect(chip?.heals).toBe(false);
+    expect(chip?.plainDice).toBe(false);
+  });
+
+  it('reads past a die before its sentence to the one the action rolls', () => {
+    const chip = action(
+      `You can roll 1d6 instead of 1d4. As a bonus action, a foe takes 2d8 fire damage. ${ONCE}`,
+    );
+    expect(chip).toMatchObject({ roll: '2d8', plainDice: false, note: 'fire' });
+  });
+
+  it('rolls a die named after its sentence (Elemental Rebuke wording)', () => {
+    const chip = action(
+      `When you are hit, you can take a Reaction to halve the damage. On a failed save, the attacker takes damage equal to 2d10 plus your Charisma modifier. ${ONCE}`,
+    );
+    expect(chip).toMatchObject({ economy: 'reaction', roll: '2d10', plainDice: false });
+  });
+
+  it('rolls a heal named after its sentence (Fortifying Soul wording)', () => {
+    const chip = action(
+      `As a Magic action, choose creatures you can see. Each regains hit points equal to 1d10 plus your level. ${ONCE}`,
+    );
+    expect(chip).toMatchObject({ economy: 'action', roll: '1d10', heals: true });
+  });
+
+  it('rolls a die ahead of the phrase in its own sentence (Warding Maneuver wording)', () => {
+    const chip = action(`If you are hit by an attack, you can roll 1d8 as a reaction. ${ONCE}`);
+    expect(chip).toMatchObject({ economy: 'reaction', roll: '1d8', plainDice: true });
+  });
+
+  it.each([
+    ['hours (Symbiotic Being)', 'you are Charmed for 1d12 hours.'],
+    ['a modifier', 'you are Charmed for 1d4 + 1 hours.'],
+    ['rounds', 'you are Stunned for 1d4 rounds.'],
+    ['minutes', 'it lasts 1d10 minutes.'],
+    ['days', 'it vanishes after 1d4 days.'],
+    ['long rests (Limited Wish)', 'you must wait until you finish 1d4 long rests.'],
+    ['short rests', 'you must wait until you finish 1d4 short rests.'],
+  ])('offers no roll for a die that is a span of time: %s', (_, sentence) => {
+    const chip = action(`When you fail a save, you can take a Reaction. ${ONCE} Then ${sentence}`);
+    expect(chip?.economy).toBe('reaction');
+    expect(chip?.roll).toBeUndefined();
+  });
+
+  it('reads past a span of time to the die the action rolls', () => {
+    const chip = action(
+      `As a bonus action, a foe is Charmed for 1d4 hours and takes 2d6 fire damage. ${ONCE}`,
+    );
+    expect(chip).toMatchObject({ roll: '2d6', plainDice: false });
+  });
+
+  it.each([
+    ['the die alone (Psionic Power)', 'at 5th level (d8), 11th level (d10), and 17th level (d12).'],
+    ['2024 levels', 'at character levels 5 (2d10), 11 (3d10), and 17 (4d10).'],
+    ['2014 levels', 'at 5th level (2d10) and 11th level (3d10).'],
+    ['a die before its level', 'to 3d6 at 6th level and 4d6 at 11th level.'],
+  ])('offers no roll for a die that is a later level size: %s', (_, steps) => {
+    const chip = action(
+      `Your dice are each a d6. As a bonus action, you regain one die. ${ONCE} They grow ${steps}`,
+    );
+    expect(chip?.economy).toBe('bonus');
+    expect(chip?.roll).toBeUndefined();
+  });
+
+  it('offers no roll for damage the action risks costing you (Ghost Walk wording)', () => {
+    const chip = action(
+      `As a bonus action, you assume a spectral form. ${ONCE} You can move through objects, but you take 1d10 force damage if you end your turn inside one.`,
+    );
+    expect(chip?.economy).toBe('bonus');
+    expect(chip?.roll).toBeUndefined();
+    expect(chip?.note).toBeUndefined();
+  });
+
+  it('shows no damage type from a die the limited-use chip does not roll (Dreadnaught wording)', () => {
+    const chip = action(
+      `The demolisher deals 1d10 force damage on a hit. As a bonus action, you enlarge your armor. ${ONCE}`,
+    );
+    expect(chip?.economy).toBe('bonus');
+    expect(chip?.roll).toBeUndefined();
+    expect(chip?.note).toBeUndefined();
+  });
+
+  it('reads the damage type from the die it rolls, past a typed die before its sentence', () => {
+    const chip = action(
+      `The demolisher deals 1d10 force damage on a hit. As a bonus action, a foe takes 2d8 fire damage. ${ONCE}`,
+    );
+    expect(chip).toMatchObject({ roll: '2d8', note: 'fire' });
+  });
+
+  const chipAtLevel = (levels: number, entries: string) => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name: 'Fighter', source: 'PHB' }, levels, hp: [] }];
+    const col = new Collector(doc, makeTestContext());
+    proseScanFeature(col, 'Trait', entries, origin);
+    return col.effects.find((e) => e.kind === 'action');
+  };
+
+  it.each([
+    ['a die before its level', 'Your bite deals 1d6 damage, and 2d6 at 5th level.'],
+    ['a level before its die', 'Your bite deals 1d6 damage, or at 5th level (2d6).'],
+  ])('takes no level step from before the die it rolls: %s', (_, earlier) => {
+    const prose = `${earlier} As a bonus action, you regain 1d4 hit points. ${ONCE}`;
+    expect(chipAtLevel(20, prose)).toMatchObject({ roll: '1d4', heals: true });
+  });
+
+  it.each([
+    ['a die before its level', 'It grows to 3d6 at 6th level.'],
+    ['a level before its die', 'It grows at 6th level (3d6).'],
+    ['2024 levels', 'It grows at character levels 6 (3d6) and 11 (4d6).'],
+  ])('still scales the die it rolls with its level steps: %s', (_, steps) => {
+    const prose = `As a bonus action, a foe takes 2d6 fire damage. ${steps} ${ONCE}`;
+    expect(chipAtLevel(5, prose)).toMatchObject({ roll: '2d6' });
+    expect(chipAtLevel(6, prose)).toMatchObject({ roll: '3d6' });
+  });
+
+  it('still names the damage type on a chip with no uses, which rolls nothing', () => {
+    const chip = action('A foe takes 2d6 fire damage. As a bonus action, you do it again.');
+    expect(chip?.economy).toBe('bonus');
+    expect(chip?.roll).toBeUndefined();
+    expect(chip?.note).toBe('fire');
+  });
 });
 
 describe('proseScanFeature natural weapons', () => {
