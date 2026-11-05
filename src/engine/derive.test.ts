@@ -410,6 +410,49 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
       ),
     ).toBe(true);
   });
+
+  describe('on a multiclass character', () => {
+    /** Mage first, so nothing leans on the subclass's class being the first. */
+    function multiclass(warrior: number, mage: number): CharacterDoc {
+      const doc = warriorDoc();
+      doc.classes = [
+        { ref: { name: 'Mage', source: 'TST' }, levels: mage, hp: [] },
+        {
+          ref: { name: 'Warrior', source: 'TST' },
+          subclass: { name: 'Path of Tests', source: 'TST' },
+          levels: warrior,
+          hp: [],
+        },
+      ];
+      return doc;
+    }
+    const fromSubclass = (doc: CharacterDoc) =>
+      deriveSheet(doc, ctx)
+        .grantedSpells.filter((g) => g.origin === 'Path of Tests')
+        .map((g) => g.name);
+
+    it('opens a subclass key by levels in its class, however high the character is', () => {
+      expect(fromSubclass(multiclass(1, 8))).toEqual(['bless']);
+      expect(fromSubclass(multiclass(2, 7))).toEqual(['bless']);
+      expect(fromSubclass(multiclass(3, 6))).toEqual(['bless', 'cure wounds']);
+    });
+
+    it('opens the same keys as a single-class character at that level', () => {
+      const single = warriorDoc();
+      const entry = single.classes[0];
+      if (entry === undefined) throw new Error('warriorDoc has a class');
+      entry.levels = 3;
+      expect(fromSubclass(multiclass(3, 6))).toEqual(fromSubclass(single));
+    });
+
+    it('leaves a racial key on character level', () => {
+      // Testfolk's gate 9 is met only by the two classes together.
+      const racial = deriveSheet(multiclass(2, 7), ctx).grantedSpells.find(
+        (g) => g.name === 'flame strike',
+      );
+      expect(racial?.origin).toBe('Testfolk');
+    });
+  });
 });
 
 describe('deriveSheet: a chosen spell on a race or subclass', () => {

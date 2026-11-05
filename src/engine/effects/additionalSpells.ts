@@ -87,7 +87,7 @@ export function hasChosenSpell(raw: unknown): boolean {
   return chooses.length > 0;
 }
 
-/** The parts of a level-keyed map this character has reached. */
+/** The parts of a level-keyed map open at this level. */
 function reachedLevels(
   map: unknown,
   gateLevel: number,
@@ -99,7 +99,7 @@ function reachedLevels(
     // appear only on `expanded` lists that organize additions by spell level
     // rather than character level, so include them there; without this an
     // entire expanded list (e.g. Witherbloom/Lorehold Student) parses to NaN
-    // and silently vanishes. Numeric keys gate by character level.
+    // and silently vanishes. Numeric keys gate by the level passed in.
     const ungated = key === '_' || (includeSpellLevels && /^s\d+$/i.test(key));
     const gate = ungated ? 0 : Number.parseInt(key, 10);
     return !Number.isNaN(gate) && gate <= gateLevel;
