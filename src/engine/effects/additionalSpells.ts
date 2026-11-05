@@ -14,9 +14,6 @@
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin } from '../types';
 import { asEntityArray, type Collector, str } from './base';
 
-/** Ends the warning for a spell the player picks and no picker offers. The feat audit reads it. */
-export const CHOSEN_SPELL_WARNING = 'also lets you choose a spell. See the trait text.';
-
 function totalLevelOf(col: Collector): number {
   return col.doc.classes.reduce((s, c) => s + c.levels, 0);
 }
@@ -59,6 +56,20 @@ function collectStrings(val: unknown, out: string[], sawChoose: { v: boolean }):
     }
     for (const v of Object.values(val)) collectStrings(v, out, sawChoose);
   }
+}
+
+/**
+ * Whether an `additionalSpells` list has the player choose a spell anywhere: in
+ * any entry, at any level. The warning below only speaks for the entry a character
+ * took and the levels they have reached. An expanded list only widens what can be
+ * learned, and a choice of `ability` is not a choice of spell, so neither counts.
+ */
+export function hasChosenSpell(raw: unknown): boolean {
+  const saw = { v: false };
+  for (const { innate, known, prepared } of asEntityArray(raw)) {
+    collectStrings([innate, known, prepared], [], saw);
+  }
+  return saw.v;
 }
 
 function gatherByLevel(
@@ -242,7 +253,7 @@ function grantSpellEntry(
   }
 
   if (sawChoose.v) {
-    col.warn(`${origin.label}: ${CHOSEN_SPELL_WARNING}`);
+    col.warn(`${origin.label}: also lets you choose a spell. See the trait text.`);
   }
 }
 

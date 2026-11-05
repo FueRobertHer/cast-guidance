@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
-import { collectAdditionalSpells, parseSpellRef } from './additionalSpells';
+import { collectAdditionalSpells, hasChosenSpell, parseSpellRef } from './additionalSpells';
 import { Collector } from './base';
 
 const origin: EffectOrigin = { label: 'Tiefling', uid: 'race|tiefling', type: 'race' };
@@ -16,6 +16,30 @@ function collect(raw: unknown, level = 1) {
 
 const granted = (effects: EffectInput[]) =>
   effects.filter((e): e is Extract<EffectInput, { kind: 'grantSpell' }> => e.kind === 'grantSpell');
+
+describe('hasChosenSpell', () => {
+  const pick = { choose: 'level=0' };
+
+  it.each<[string, unknown]>([
+    ['a known spell', [{ known: { _: [pick] } }]],
+    ['a known spell at a later level', [{ known: { 5: [pick] } }]],
+    ['an innate spell', [{ innate: { _: { daily: { 1: [pick] } } } }]],
+    ['a filter where an innate bucket would be', [{ innate: { _: pick } }]],
+    ['a prepared spell', [{ prepared: { 3: [pick] } }]],
+    ['an entry past the first', [{ known: { _: ['fake one'] } }, { known: { _: [pick] } }]],
+  ])('finds %s', (_where, raw) => {
+    expect(hasChosenSpell(raw)).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['nothing', undefined],
+    ['fixed spells', [{ known: { _: ['fake one'] }, innate: { _: { will: ['fake two'] } } }]],
+    ['a choice of ability', [{ ability: { choose: ['int', 'wis'] }, known: { _: ['fake one'] } }]],
+    ['an expanded list', [{ expanded: { s1: [pick] } }]],
+  ])('does not count %s', (_where, raw) => {
+    expect(hasChosenSpell(raw)).toBe(false);
+  });
+});
 
 describe('collectAdditionalSpells', () => {
   it('grants innate/known spells whose level gate is met', () => {

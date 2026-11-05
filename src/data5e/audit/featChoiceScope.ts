@@ -8,7 +8,7 @@
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
-import { CHOSEN_SPELL_WARNING } from '../../engine/effects/additionalSpells';
+import { hasChosenSpell } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
 import { collectFeatEntity } from '../../engine/effects/feat';
 import { type ChoicePrompt, newCharacterDoc } from '../../engine/types';
@@ -80,8 +80,8 @@ export interface FeatChoiceSubject extends JudgeSubject {
   offered: string[];
   /** The kinds of pick those prompts take care of. Not in `state`, so free to change. */
   covers: Kind['id'][];
-  /** The collector warns of a chosen spell it has no picker for. Not in `state` either. */
-  warnsOfSpell: boolean;
+  /** The data has the player choose a spell, which no prompt offers. Not in `state` either. */
+  choosesSpell: boolean;
 }
 
 /** How a prompt reads to someone who cannot see its options. */
@@ -129,11 +129,7 @@ function appPrompts(feat: Parameters<typeof collectFeatEntity>[1], name: string)
     const col = new Collector(doc, NO_DATA);
     collectFeatEntity(col, feat, `${name}|${String(feat.source)}`.toLowerCase(), 'audit');
     const fresh = col.pending.filter((prompt) => doc.choices[prompt.id] === undefined);
-    if (fresh.length === 0) {
-      // Read last: a spell's grant, and so its warning, waits on the prompts before it.
-      const warnsOfSpell = col.warnings.some((w) => w.endsWith(CHOSEN_SPELL_WARNING));
-      return { offered: [...offered], covers: [...covers], warnsOfSpell };
-    }
+    if (fresh.length === 0) return { offered: [...offered], covers: [...covers] };
     for (const prompt of fresh) {
       offered.add(describePrompt(prompt, name));
       for (const kind of kindsCovered(prompt)) covers.add(kind);
@@ -153,7 +149,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
     const prose = readableEntries(feat.entries);
     if (!CHOICE_WORDING.test(prose) && !/\bchosen\b/i.test(prose)) continue;
     const name = String(feat.name);
-    const { offered, covers, warnsOfSpell } = appPrompts(feat, name);
+    const { offered, covers } = appPrompts(feat, name);
     const state = [
       name,
       `${OFFERED_LEAD}: ${offered.length > 0 ? offered.join('; ') : 'none'}`,
@@ -167,7 +163,7 @@ export function featChoiceSubjects(registry: ByType): FeatChoiceSubject[] {
       state,
       offered,
       covers,
-      warnsOfSpell,
+      choosesSpell: hasChosenSpell(feat.additionalSpells),
     });
   }
   return [...byKey.values()];
@@ -178,14 +174,14 @@ type Row = Answered<FeatChoiceSubject>;
 
 /**
  * The kinds a feat asks for that no prompt of the app takes care of: those Jev is
- * sure of, and a spell whenever the collector warns of one, however unsure Jev is.
- * A confident answer about a kind the app covers would otherwise hide it.
+ * sure of, and a spell whenever the data has the player choose one, however unsure
+ * Jev is. A confident answer about a kind the app covers would otherwise hide it.
  */
 const needed = ({ subject, answers }: Row) =>
   KINDS.filter(
     (k) =>
       !subject.covers.includes(k.id) &&
-      (saysYes(answers, k.id) || (k.id === 'pickSpell' && subject.warnsOfSpell)),
+      (saysYes(answers, k.id) || (k.id === 'pickSpell' && subject.choosesSpell)),
   );
 
 /** Below this Jev is not leaning toward a kind at all. */

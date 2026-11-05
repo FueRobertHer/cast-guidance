@@ -95,13 +95,36 @@ const registry = normalizeDataset(
             entries: ['Learn a spell you pick.'],
           },
           {
-            // The same, behind a prompt the app does offer, so the warning waits on it.
+            // The same, behind a prompt the app does offer.
             name: 'Hidden Spell Test',
             source: 'HB',
             additionalSpells: [
               { ability: { choose: ['int', 'wis'] }, known: { _: [{ choose: 'level=0' }] } },
             ],
             entries: ['Pick a small spell and how you cast it.'],
+          },
+          {
+            // No warning at the level the audit collects at, and still a pick to make.
+            name: 'Gated Spell Test',
+            source: 'HB',
+            additionalSpells: [
+              { ability: { choose: ['int', 'wis'] }, known: { 5: [{ choose: 'level=1' }] } },
+            ],
+            entries: ['Later on, pick a spell and how you cast it.'],
+          },
+          {
+            // No warning on the first option, the only one the audit answers with.
+            name: 'Later Option Test',
+            source: 'HB',
+            additionalSpells: [
+              spellList('Alpha List', 'fake one'),
+              {
+                name: 'Beta List',
+                ability: { choose: ['int', 'wis'] },
+                known: { _: [{ choose: 'level=0' }] },
+              },
+            ],
+            entries: ['Select a list, and with one of them a spell too.'],
           },
           {
             // Answers just as high as the feat above, with no spell to pick.
@@ -379,6 +402,12 @@ describe('feat choice scope', () => {
   });
 
   it('reports the picks the app does not offer as the backlog, kept apart from play decisions', async () => {
+    const chosenSpellAnswers = {
+      pickOnTaking: 0.94,
+      pickAbility: 0.97,
+      pickSpell: 0.69,
+      beyondOffered: 0.81,
+    };
     const file = await savedFile(FEATCHOICE_SET, subjects, {
       'Elemental Test': { pickOnTaking: 0.98, pickDamageType: 0.97, beyondOffered: 0.3 },
       // Jev says there is more, but the only kind it names is already offered.
@@ -393,23 +422,22 @@ describe('feat choice scope', () => {
         beyondOffered: 0.91,
       },
       'Spell Test': { pickOnTaking: 0.9, pickSpell: 0.95, beyondOffered: 0.99 },
-      // The collector warns of the spell, so Jev being sure of the ability cannot hide it.
-      'Hidden Spell Test': {
-        pickOnTaking: 0.94,
-        pickAbility: 0.97,
-        pickSpell: 0.69,
-        beyondOffered: 0.81,
-      },
-      // No warning, so the unsure spell only shows on the row.
+      // The data has a spell to choose, so Jev being sure of the ability cannot hide it.
+      'Hidden Spell Test': chosenSpellAnswers,
+      'Gated Spell Test': chosenSpellAnswers,
+      'Later Option Test': chosenSpellAnswers,
+      // No spell to choose in the data, so the unsure spell only shows on the row.
       'Fixed Spell Test': {
         pickOnTaking: 0.95,
         pickAbility: 0.97,
         pickSpell: 0.79,
+        pickClass: 0.5,
         beyondOffered: 0.85,
       },
       // A branch and its ability are offered, so only the spell inside is needed.
       'Branch Test': { pickSpell: 0.92, pickClass: 0.9, pickAbility: 0.9, pickOther: 0.6 },
-      'Vague Test': { beyondOffered: 0.85 },
+      // Just under the lean, so it is not worth a guess.
+      'Vague Test': { pickTool: 0.49, beyondOffered: 0.85 },
       // No confident kind, so what Jev said about going beyond the line decides.
       'Reprint Test': { pickSpell: 0.7, beyondOffered: 0.9 },
       'Heavy Swing Test': { pickDuringPlay: 0.94 },
@@ -427,12 +455,14 @@ describe('feat choice scope', () => {
       '0.90  Reprint Test (feat|HB)  needs: maybe spell (0.70)  offers: none',
       '0.90  Unread Field Test (feat|HB)  needs: skill, tool, maybe other (0.60), maybe class (0.55)  offers: none',
       '0.85  Vague Test (feat|HB)  needs: ?  offers: none',
+      '0.69  Gated Spell Test (feat|HB)  needs: spell  offers: spellcasting ability',
       '0.69  Hidden Spell Test (feat|HB)  needs: spell  offers: spellcasting ability',
+      '0.69  Later Option Test (feat|HB)  needs: spell  offers: one of Alpha List, Beta List; spellcasting ability',
     ]);
-    expect(report).toContain('Needed, most first: spell 3, skill 1, tool 1, damage type 1');
+    expect(report).toContain('Needed, most first: spell 5, skill 1, tool 1, damage type 1');
     expect(rowsUnder(report, 'Every kind of pick offered already')).toEqual([
       '0.99  Offered Test (feat|HB)  picks: skill  offers: Skill proficiency',
-      '0.95  Fixed Spell Test (feat|HB)  picks: ability, maybe spell (0.79)  offers: spellcasting ability',
+      '0.95  Fixed Spell Test (feat|HB)  picks: ability, maybe spell (0.79), maybe class (0.50)  offers: spellcasting ability',
     ]);
     expect(rowsUnder(report, 'A decision during play only (no picker needed)')).toEqual([
       '0.94  Heavy Swing Test (feat|HB)  picks: ?  offers: none',
