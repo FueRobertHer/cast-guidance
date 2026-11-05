@@ -113,6 +113,95 @@ describe('editionFit', () => {
     expect(seen).toEqual(['race']);
   });
 
+  describe('a reprint this pick cannot become', () => {
+    const gift = revised('Gift');
+    const asFeat = { uid: 'Gift|XPHB', tag: 'feat' };
+
+    it('is told apart from one the pick can switch to', () => {
+      expect(editionFit(old('Sub', [asFeat]), 'subrace', '2024', world(gift))).toEqual({
+        kind: 'reprintedNoSwitch',
+        as: { name: 'Gift', source: 'XPHB' },
+        what: 'a feat',
+      });
+    });
+
+    it('stays truthful about a type it has no word for', () => {
+      const charm = revised('Charm');
+      const asItem = { uid: 'Charm|XPHB', tag: 'item' };
+      expect(editionFit(old('Kin', [asItem]), 'race', '2024', world(charm))).toEqual({
+        kind: 'reprintedNoSwitch',
+        as: { name: 'Charm', source: 'XPHB' },
+        what: 'something else',
+      });
+    });
+
+    it('gives way to a real switch, whichever the data lists first', () => {
+      const real = { kind: 'reprinted', as: { name: 'Elf', source: 'XPHB' } };
+      const installed = world(gift, revised('Elf'));
+      expect(editionFit(old('Sub', [asFeat, 'Elf|XPHB']), 'subrace', '2024', installed)).toEqual(
+        real,
+      );
+      expect(editionFit(old('Sub', ['Elf|XPHB', asFeat]), 'subrace', '2024', installed)).toEqual(
+        real,
+      );
+    });
+
+    it('is a carry-over when it is not installed, or is itself older content', () => {
+      const older = { name: 'Gift', source: 'XPHB', edition: 'classic' } as Entity;
+      expect(editionFit(old('Sub', [asFeat]), 'subrace', '2024', nothingInstalled)).toEqual({
+        kind: 'carryOver',
+      });
+      expect(editionFit(old('Sub', [asFeat]), 'subrace', '2024', world(older))).toEqual({
+        kind: 'carryOver',
+      });
+    });
+
+    it('still lets a pick switch to a reprint tagged as its own type', () => {
+      // No official row does this, but a homebrew one may, and a subrace can hold
+      // a subrace.
+      const tagged = old('Sub', [{ uid: 'Gift|XPHB', tag: 'subrace' }]);
+      expect(editionFit(tagged, 'subrace', '2024', world(gift)).kind).toBe('reprinted');
+    });
+
+    it('applies to any holder, since the rule is the kind and not the slot', () => {
+      expect(editionFit(old('Kin', [asFeat]), 'race', '2024', world(gift)).kind).toBe(
+        'reprintedNoSwitch',
+      );
+      // A feat reprinted as a feat is its own kind, so that one is a real switch.
+      expect(editionFit(old('Old Gift', [asFeat]), 'feat', '2024', world(gift)).kind).toBe(
+        'reprinted',
+      );
+    });
+
+    describe('a subclass', () => {
+      const pick = {
+        name: 'Path of Old',
+        shortName: 'Old',
+        source: 'PHB',
+        className: 'Warrior',
+        classSource: 'PHB',
+        reprintedAs: ['New|Warrior|XPHB|XPHB'],
+      } as Entity;
+      const reprintUnder = (className: string) => () =>
+        ({ name: 'Path of New', source: 'XPHB', className, classSource: 'XPHB' }) as Entity;
+
+      it('can switch to a reprint on another printing of its class', () => {
+        expect(editionFit(pick, 'subclass', '2024', reprintUnder('warrior'))).toEqual({
+          kind: 'reprinted',
+          as: { name: 'Path of New', source: 'XPHB' },
+        });
+      });
+
+      it('cannot switch to one under a differently named class', () => {
+        expect(editionFit(pick, 'subclass', '2024', reprintUnder('Mystic'))).toEqual({
+          kind: 'reprintedNoSwitch',
+          as: { name: 'Path of New', source: 'XPHB' },
+          what: 'a subclass of Mystic',
+        });
+      });
+    });
+  });
+
   it('flags newer content in an older game, reprints being irrelevant there', () => {
     // 2024 content in a 2014 game cannot be "reprinted back", so the direction
     // matters: this is the case the pickers never produce and only a switch or
@@ -191,6 +280,17 @@ describe('editionFitNote', () => {
       'Elf: 2024 content in a 2014 game, so its rules assume the 2024 books. Kept as chosen.',
     );
   });
+
+  it('says what a reprint out of reach is', () => {
+    const fit: EditionFit = {
+      kind: 'reprintedNoSwitch',
+      as: { name: 'Gift', source: 'XPHB' },
+      what: 'a feat',
+    };
+    expect(editionFitNote('Sub', fit, '2024')).toBe(
+      'Sub: 2014 content, reprinted for 2024 as a feat, Gift. Kept as chosen.',
+    );
+  });
 });
 
 describe('editionFitChip', () => {
@@ -210,6 +310,43 @@ describe('editionFitChip', () => {
     expect(reprinted?.title).toContain('Your pick is kept');
     expect(editionFitChip({ kind: 'carryOver' }, '2024')?.text).toBe('2014 content');
     expect(editionFitChip({ kind: 'newer' }, '2014')?.text).toBe('2024 content');
+  });
+
+  it('offers the switch where one exists, a subrace reprinted as a race included', () => {
+    // The player gets there through the species picker rather than this slot.
+    const fit = editionFit(old('High', ['Elf|XPHB']), 'subrace', '2024', world(revised('Elf')));
+    const chip = editionFitChip(fit, '2024');
+    expect(chip?.text).toBe('reprinted for 2024');
+    expect(chip?.title).toBe(
+      '2014 content. The 2024 books reprint it as Elf (XPHB), which you can switch to. Your pick is kept either way.',
+    );
+  });
+
+  it('offers no switch to a reprint out of reach, and says so where a phone shows it', () => {
+    const chip = editionFitChip(
+      { kind: 'reprintedNoSwitch', as: { name: 'Gift', source: 'XPHB' }, what: 'a feat' },
+      '2024',
+    );
+    expect(chip?.text).toBe('reprinted as a feat');
+    expect(chip?.title).toBe(
+      '2014 content. The 2024 books reprint it as a feat, Gift (XPHB), so there is nothing to switch this pick to. Your pick is kept either way.',
+    );
+    expect(chip?.title).not.toContain('which you can switch to');
+  });
+
+  it('keeps a class name out of the chip, which does not wrap, and in the title', () => {
+    const chip = editionFitChip(
+      {
+        kind: 'reprintedNoSwitch',
+        as: { name: 'Path of New', source: 'XPHB' },
+        what: 'a subclass of Mystic',
+      },
+      '2024',
+    );
+    expect(chip?.text).toBe('reprinted elsewhere');
+    expect(chip?.title).toBe(
+      '2014 content. The 2024 books reprint it as a subclass of Mystic, Path of New (XPHB), so there is nothing to switch this pick to. Your pick is kept either way.',
+    );
   });
 });
 
@@ -257,6 +394,21 @@ describe('describeSwitch', () => {
   it('reports content from the newer books when switching down', () => {
     const { summary } = describeSwitch(preview(['Elf', { kind: 'newer' }]), '2014');
     expect(summary).toContain('1 comes from the newer books (Elf)');
+  });
+
+  it('promises no switch for a reprint out of reach', () => {
+    const { summary, unchanged } = describeSwitch(
+      preview([
+        'Sub',
+        { kind: 'reprintedNoSwitch', as: { name: 'Gift', source: 'XPHB' }, what: 'a feat' },
+      ]),
+      '2024',
+    );
+    expect(unchanged).toBe(false);
+    expect(summary).toContain(
+      '1 has a 2024 reprint of another kind, with nothing to switch to (Sub → Gift as a feat)',
+    );
+    expect(summary).not.toContain('you can switch to');
   });
 });
 

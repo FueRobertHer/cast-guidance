@@ -158,6 +158,31 @@ describe('editionCues', () => {
     expect(subrace?.fit).toEqual({ kind: 'reprinted', as: { name: 'Elf', source: 'XPHB' } });
   });
 
+  it('follows a subrace reprint tagged as a feat, and keeps it apart from a race', () => {
+    const d = doc2014();
+    d.subrace = ref('Marked Kin', 'OLD');
+    d.background = undefined;
+    d.classes = [];
+    const w = world([
+      ['race', { name: 'Elf', source: 'PHB' } as Entity],
+      ['feat', { name: 'Kin Gift', source: 'XPHB' } as Entity],
+      [
+        'subrace',
+        {
+          name: 'Marked Kin',
+          source: 'OLD',
+          reprintedAs: [{ uid: 'Kin Gift|XPHB', tag: 'feat' }],
+        } as Entity,
+      ],
+    ]);
+    const subrace = editionCues(d, '2024', w).find((c) => c.slot === 'subrace');
+    expect(subrace?.fit).toEqual({
+      kind: 'reprintedNoSwitch',
+      as: { name: 'Kin Gift', source: 'XPHB' },
+      what: 'a feat',
+    });
+  });
+
   it('reads a subclass reprint uid and names the target by its real name', () => {
     const d = doc2014();
     d.race = undefined;
@@ -216,6 +241,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2014', baseWorld)).toEqual({
       match: 3,
       reprinted: [],
+      reprintedNoSwitch: [],
       carryOver: [],
       newer: [],
     });
@@ -223,6 +249,7 @@ describe('editionSwitchPreview', () => {
     expect(editionSwitchPreview(d, '2024', baseWorld)).toEqual({
       match: 0,
       reprinted: [{ label: 'Elf', as: { name: 'Elf', source: 'XPHB' } }],
+      reprintedNoSwitch: [],
       carryOver: ['Acolyte', 'Fighter'],
       newer: [],
     });

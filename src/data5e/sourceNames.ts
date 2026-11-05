@@ -273,6 +273,11 @@ export function sourceName(source: string): string {
   return entryFor(source)?.[0] ?? homebrewNames.get(source) ?? source;
 }
 
+/** Whether {@link sourceName} answers for this code with a homebrew file's title. */
+export function hasHomebrewTitle(source: string): boolean {
+  return entryFor(source) === undefined && homebrewNames.has(source);
+}
+
 /**
  * Whether the code is a published book this table has a title for. Homebrew is
  * deliberately excluded even once {@link setHomebrewSourceNames} can name it:

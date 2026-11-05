@@ -257,6 +257,57 @@ describe('BuildPage edition cues (GAME-003)', () => {
       screen.getByText('Testfolk: 2014 content, reprinted for 2024 as Testfolk. Kept as chosen.'),
     ).toBeTruthy();
   });
+
+  /** A 2014 subrace whose only 2024 reprint is a feat, under the test world's species. */
+  const withSubraceReprintedAsFeat = () => {
+    extra.current = [
+      [
+        'subrace',
+        {
+          name: 'Marked Kin',
+          source: 'TST',
+          raceName: 'Testfolk',
+          raceSource: 'TST',
+          reprintedAs: [{ uid: 'Kin Gift|XTST', tag: 'feat' }],
+        },
+      ],
+      ['feat', { name: 'Kin Gift', source: 'XTST', edition: 'one' }],
+    ];
+  };
+
+  it('says a subrace was reprinted as a feat, on the chip a phone can read', () => {
+    withSubraceReprintedAsFeat();
+    renderBuild((d) => {
+      d.rulesVersion = '2024';
+      d.subrace = { name: 'Marked Kin', source: 'TST' };
+    });
+    const chip = screen.getByText('reprinted as a feat');
+    expect(chip.getAttribute('title')).toBe(
+      '2014 content. The 2024 books reprint it as a feat, Kin Gift (XTST), so there is nothing to switch this pick to. Your pick is kept either way.',
+    );
+    expect(screen.queryByText('reprinted for 2024')).toBeNull();
+    expect(
+      screen.getByText(
+        'Marked Kin: 2014 content, reprinted for 2024 as a feat, Kin Gift. Kept as chosen.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('promises no switch to that reprint before a version switch either', async () => {
+    withSubraceReprintedAsFeat();
+    renderBuild((d) => {
+      d.subrace = { name: 'Marked Kin', source: 'TST' };
+    });
+    dialogs.askConfirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '2024' }));
+    await waitFor(() => expect(dialogs.askConfirm).toHaveBeenCalled());
+
+    const detail = lastPrompt()?.detail ?? '';
+    expect(detail).toContain(
+      '1 has a 2024 reprint of another kind, with nothing to switch to (Marked Kin → Kin Gift as a feat)',
+    );
+    expect(detail).not.toContain('you can switch to');
+  });
 });
 
 describe('BuildPage subclass picker (GAME-009)', () => {

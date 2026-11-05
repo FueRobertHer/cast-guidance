@@ -1,10 +1,81 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Entity } from './copyMod';
 import { type EntityType, mergeHomebrew, normalizeDataset } from './normalize';
-import { editionOf, filterByRulesVersion, pickForVersion, reprintTargets } from './rulesVersion';
+import {
+  editionOf,
+  filterByRulesVersion,
+  isBook2024,
+  pickForVersion,
+  reprintTargets,
+  setRulesBooks,
+} from './rulesVersion';
 
 const exhaustion2014: Entity = { name: 'Exhaustion', source: 'PHB', entries: ['2014 table'] };
 const exhaustion2024: Entity = { name: 'Exhaustion', source: 'XPHB', entries: ['2024 linear'] };
+
+describe('the books a release marks as 2024 rules', () => {
+  afterEach(() => setRulesBooks(new Set()));
+
+  const release = () =>
+    normalizeDataset(
+      new Map<string, unknown>([
+        ['backgrounds.json', { background: [{ name: 'Bg', source: 'LATE', edition: 'one' }] }],
+        [
+          'races.json',
+          {
+            race: [
+              { name: 'Base', source: 'XPHB', edition: 'one' },
+              { name: 'Kin', source: 'OLD', _copy: { name: 'Base', source: 'XPHB' } },
+            ],
+          },
+        ],
+      ]),
+    );
+
+  it('keeps the set on the registry, reading no book from an inherited mark', () => {
+    expect([...release().rulesBooks].sort()).toEqual(['LATE', 'XPHB']);
+  });
+
+  it('adds nothing for homebrew, whatever its rows claim', () => {
+    const reg = release();
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'brew',
+          {
+            feat: [
+              { name: 'Own', source: 'MINE', edition: 'one' },
+              { name: 'Claim', source: 'OLD', edition: 'one' },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect([...reg.rulesBooks].sort()).toEqual(['LATE', 'XPHB']);
+  });
+
+  it('answers for a book once published, and for the core books before that', () => {
+    expect(isBook2024('XMM')).toBe(true);
+    expect(isBook2024('LATE')).toBe(false);
+    setRulesBooks(release().rulesBooks);
+    expect(isBook2024('LATE')).toBe(true);
+    expect(isBook2024('OLD')).toBe(false);
+  });
+
+  it('forgets a book the next build does not have', () => {
+    setRulesBooks(release().rulesBooks);
+    setRulesBooks(new Set());
+    expect(isBook2024('LATE')).toBe(false);
+    // The core books are named, so no build can drop them.
+    expect(isBook2024('XPHB')).toBe(true);
+  });
+
+  it('leaves editionOf reading rows, not what was last published', () => {
+    setRulesBooks(new Set(['OLD']));
+    expect(editionOf({ name: 'Bare', source: 'OLD' })).toBe('2014');
+  });
+});
 
 describe('editionOf over a normalized dataset', () => {
   /** A release whose `LATE` book marks only its background, as the later books do. */
