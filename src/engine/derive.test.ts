@@ -732,6 +732,74 @@ describe('deriveSheet — curated class save DC (Monk Stunning Strike)', () => {
   });
 });
 
+describe('deriveSheet: what sets an action save DC', () => {
+  const origin: EffectOrigin = { label: 'Test', uid: 'feat|test', type: 'feat' };
+  const caster = (name: string, levels: number): CharacterDoc['classes'][number] => ({
+    ref: { name, source: 'TST' },
+    levels,
+    hp: Array<'avg'>(levels).fill('avg'),
+  });
+  /** INT +3, CHA +2, WIS +1. */
+  const saveFor = (
+    classes: CharacterDoc['classes'],
+    save: { targetAbility: 'wis'; dcAbility?: 'cha' | 'spell' },
+  ) => {
+    const doc = newCharacterDoc('s1', 'Saver', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 8, dex: 10, con: 10, int: 16, wis: 12, cha: 14 };
+    doc.classes = classes;
+    doc.customEffects = [{ origin, kind: 'action', economy: 'action', label: 'Glare', save }];
+    return deriveSheet(doc, ctx).actions.find((a) => a.label === 'Glare')?.save;
+  };
+
+  it('uses a named ability: 8 + its modifier + proficiency', () => {
+    expect(saveFor([caster('Mage', 3)], { targetAbility: 'wis', dcAbility: 'cha' })).toEqual({
+      targetAbility: 'wis',
+      dc: 12,
+    });
+  });
+
+  it('reads "your spell save DC" from the one caster who has it', () => {
+    expect(saveFor([caster('Mage', 3)], { targetAbility: 'wis', dcAbility: 'spell' })).toEqual({
+      targetAbility: 'wis',
+      dc: 13,
+    });
+  });
+
+  it('shows no number when two casters leave "your spell save DC" unclear', () => {
+    const classes = [caster('Mage', 3), caster('Sorcerer', 3)];
+    expect(saveFor(classes, { targetAbility: 'wis', dcAbility: 'spell' })).toEqual({
+      targetAbility: 'wis',
+    });
+  });
+
+  it('shows no number when nothing casts', () => {
+    expect(saveFor([caster('Monk', 3)], { targetAbility: 'wis', dcAbility: 'spell' })).toEqual({
+      targetAbility: 'wis',
+    });
+  });
+
+  it('shows no number when the prose states no DC', () => {
+    expect(saveFor([caster('Mage', 3)], { targetAbility: 'wis' })).toEqual({
+      targetAbility: 'wis',
+    });
+  });
+
+  it('keeps the printing that states a DC when two of a name force the same save', () => {
+    const doc = newCharacterDoc('s2', 'Saver', 'test-tag');
+    doc.classes = [caster('Mage', 3)];
+    const glare = { origin, kind: 'action', economy: 'action', label: 'Glare' } as const;
+    doc.customEffects = [
+      { ...glare, save: { targetAbility: 'wis' } },
+      { ...glare, save: { targetAbility: 'wis', dcAbility: 'cha' } },
+    ];
+    expect(deriveSheet(doc, ctx).actions.find((a) => a.label === 'Glare')?.save).toEqual({
+      targetAbility: 'wis',
+      dc: 10,
+    });
+  });
+});
+
 describe('deriveSheet — stackable resources (superiority dice)', () => {
   it('sums same-key resources flagged stack; keeps first-wins otherwise', () => {
     const doc = warriorDoc();

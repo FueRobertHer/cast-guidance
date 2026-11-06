@@ -40,3 +40,22 @@ it('draws damage, healing and plain dice each in its own colour', async () => {
   expect(chip('3d6')).toContain('text-heal');
   expect(chip('4d6')).toContain('text-roll');
 });
+
+it('says the save an action forces, and its DC only when it has one', async () => {
+  const doc = testCharacter('Hero', [classEntry('Monk', 2)]);
+  const origin = { label: 'Test', uid: 'feat|test', type: 'feat' } as const;
+  doc.customEffects = [
+    {
+      origin,
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Glare',
+      save: { targetAbility: 'wis', dcAbility: 'wis' },
+    },
+    { origin, kind: 'action', economy: 'reaction', label: 'Shove', save: { targetAbility: 'str' } },
+  ];
+  await renderSheet(doc);
+
+  expect(screen.getByText(/^DC \d+ WIS save$/)).toBeTruthy();
+  expect(screen.getByText('STR save')).toBeTruthy();
+});

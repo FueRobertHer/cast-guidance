@@ -438,11 +438,15 @@ describe('proseScanFeature on 2024 tagged prose', () => {
     });
   });
 
-  function collectBreathWeapon(raceName: string, rulesVersion: '2014' | '2024'): EffectInput[] {
+  function collectBreathWeapon(
+    raceName: string,
+    rulesVersion: '2014' | '2024',
+    entries: unknown = BREATH_WEAPON,
+  ): EffectInput[] {
     const race = {
       name: raceName,
       source: 'XPHB',
-      entries: [{ name: 'Breath Weapon', type: 'entries', entries: BREATH_WEAPON }],
+      entries: [{ name: 'Breath Weapon', type: 'entries', entries }],
     };
     const doc = newCharacterDoc('c', 'H', 't');
     doc.rulesVersion = rulesVersion;
@@ -473,11 +477,346 @@ describe('proseScanFeature on 2024 tagged prose', () => {
     expect(action(collectBreathWeapon('Dragonborn (Black)', '2024'))?.note).toBe('fire');
   });
 
+  it('fills in the DC of a Breath Weapon that names its save and no DC', () => {
+    const effects = collectBreathWeapon('Dragonborn (Red)', '2014', [
+      'As an action, you exhale once per long rest. Each foe must make a Strength saving throw.',
+    ]);
+    expect(action(effects)?.save).toEqual({ targetAbility: 'str', dcAbility: 'con' });
+  });
+
   it('reads a per-level HP rider worded through a tag (Dwarven Toughness)', () => {
     const effects = scan('Dwarven Toughness', [
       'Your {@variantrule Hit Points|XPHB|Hit Point} maximum increases by 1 whenever you gain a level.',
     ]);
     expect(effects).toMatchObject([{ kind: 'hpPerLevel', amount: 1 }]);
+  });
+});
+
+describe('proseScanFeature forced saves', () => {
+  const saveOf = (entries: unknown) =>
+    scan('Trait', entries).flatMap((e) => (e.kind === 'action' ? [e.save] : []))[0];
+  const CHIP = 'As a bonus action, you flare.';
+
+  describe('wordings that put a save on someone else', () => {
+    it.each([
+      ['must make', 'The foe must make a Wisdom saving throw.'],
+      ['must then make', 'The foe must then make a Wisdom saving throw.'],
+      ['must also make', 'The foe must also make a Wisdom saving throw.'],
+      ['must succeed on', 'The foe must succeed on a Wisdom saving throw or fall.'],
+      ['a stated DC first', 'The foe must succeed on a DC 12 Wisdom saving throw or fall.'],
+      ['"you" placing the targets', 'Foes within 5 feet of you must make a Wisdom saving throw.'],
+      ['"you" seen by the targets', 'Foes that can see you must succeed on a Wisdom saving throw.'],
+      ['"you" heard by the targets', 'Foes that can hear you must make a Wisdom saving throw.'],
+      ['"you" who took the damage', 'A foe that dealt damage to you must make a Wisdom save.'],
+      ['"you" as the origin', 'Foes in a cone from you must make a Wisdom saving throw.'],
+      ['"you" as the place', 'A foe that lands on you must make a Wisdom saving throw.'],
+      ['force', 'You can force it to make a Wisdom saving throw.'],
+      ['force your target', 'You can force your target to make a Wisdom saving throw.'],
+      ['"when" inside the subject', 'A foe near you when you flare must make a Wisdom save.'],
+      ['"if" inside the sentence', 'The foe falls if it is Large and must make a Wisdom save.'],
+      ['forces', 'This forces each foe within 5 feet of it to make a Wisdom saving throw.'],
+      ['forcing', 'You roar, forcing the foe to make a Wisdom saving throw.'],
+      ['cause', 'You can cause each foe nearby to make a Wisdom saving throw.'],
+      ['makes, without must', 'Each creature near the flare makes a Wisdom saving throw.'],
+      ['unless it succeeds', 'The foe falls unless it succeeds on a Wisdom saving throw.'],
+      ['unless the foe succeeds', 'It falls, unless the foe succeeds on a Wisdom saving throw.'],
+      ['"save" for "saving throw"', 'You can force a foe to make a Wisdom save.'],
+    ])('reads %s', (_wording, sentence) => {
+      expect(saveOf([`${CHIP} ${sentence}`])).toEqual({ targetAbility: 'wis' });
+    });
+
+    it('names the right ability when the sentence mentions others', () => {
+      expect(
+        saveOf([
+          `${CHIP} You have advantage on Dexterity checks. The foe must make a Strength save.`,
+        ]),
+      ).toEqual({ targetAbility: 'str' });
+    });
+
+    it('reads on past a trigger to the save the feature forces', () => {
+      expect(
+        saveOf([
+          `${CHIP} When an ally must make a Strength save, add 1. The foe must make a Wisdom save.`,
+        ]),
+      ).toEqual({ targetAbility: 'wis' });
+    });
+  });
+
+  describe('rolls that are not a forced save', () => {
+    it.each([
+      ['your own roll', 'You make a Wisdom saving throw.'],
+      ['an imperative to you', 'Make a Wisdom saving throw against a set DC.'],
+      ['your own advantage', 'You have advantage on Wisdom saving throws.'],
+      ['your own failure', 'When you fail a Wisdom saving throw, you can reroll it.'],
+      ['your own success', 'If you succeed on a Wisdom saving throw, you take nothing.'],
+      ['you must make', 'If it hits, you must make a Wisdom saving throw.'],
+      ['you must succeed', 'You must succeed on a Wisdom saving throw or fall.'],
+      ['if you must', 'If you must make a Wisdom saving throw, add 1 to it.'],
+      ['you must, after a word ending in "on"', 'For this reason you must make a Wisdom save.'],
+      ['you must, after a word ending in "to"', 'As it falls into you must make a Wisdom save.'],
+      ['a trigger', 'When an ally must make a Wisdom saving throw, you give it advantage.'],
+      ['a longer trigger', 'Whenever a foe near you must make a Wisdom saving throw, it falls.'],
+      ['a forced save as a trigger', 'If a spell forces an ally to make a Wisdom save, add 1.'],
+      ['a repeat', 'The target can repeat the saving throw at the end of its turn.'],
+      ['a repeat that names it', 'The target can repeat the Wisdom saving throw.'],
+      ['a benefit to an ally', 'When an ally makes a Wisdom saving throw, it adds 1.'],
+      ['a success someone had', 'When a foe succeeds on a Wisdom saving throw, you can move.'],
+      ['forced on you', 'If a spell forces you to make a Wisdom saving throw, add 1.'],
+      ['you being forced', 'When you are forced to make a Wisdom saving throw, add 1.'],
+      ['the damage type', 'It takes force damage and has to make a Wisdom saving throw.'],
+      ['no ability named', 'The foe must make a saving throw of a type you choose.'],
+    ])('leaves out %s', (_wording, sentence) => {
+      expect(saveOf([`${CHIP} ${sentence}`])).toBeUndefined();
+    });
+
+    it('leaves out a trigger in the sentence of a chip that opens on it', () => {
+      expect(
+        saveOf([
+          'When an ally must make a Wisdom saving throw, you can use your reaction to help.',
+        ]),
+      ).toBeUndefined();
+    });
+  });
+
+  describe('which action it belongs to', () => {
+    const save = 'The foe must make a Wisdom saving throw.';
+
+    it('reads a later string of the same benefit', () => {
+      expect(saveOf([CHIP, save])).toEqual({ targetAbility: 'wis' });
+    });
+
+    it('leaves a save before the sentence of the chip to another benefit', () => {
+      expect(saveOf([`${save} ${CHIP}`])).toBeUndefined();
+      expect(saveOf([save, CHIP])).toBeUndefined();
+    });
+
+    it('keeps a save in the same sentence as the chip, on either side of it', () => {
+      expect(saveOf(['You can force a foe to make a Wisdom save as a bonus action.'])).toEqual({
+        targetAbility: 'wis',
+      });
+      expect(saveOf(['As a bonus action, you can force a foe to make a Wisdom save.'])).toEqual({
+        targetAbility: 'wis',
+      });
+    });
+
+    const named = (name: string, ...entries: unknown[]) => ({ type: 'entries', name, entries });
+    const options = (...items: Array<[string, string]>) => ({
+      type: 'list',
+      items: items.map(([name, entry]) => ({ type: 'item', name, entry })),
+    });
+
+    it('leaves a named option to the player who picks it', () => {
+      expect(saveOf([CHIP, options(['Autumn', save], ['Spring', 'You grow.'])])).toBeUndefined();
+    });
+
+    it('does not pick between options with different saves', () => {
+      expect(
+        saveOf([
+          CHIP,
+          options(['Cold', save], ['Heat', 'The foe must make a Strength saving throw.']),
+        ]),
+      ).toBeUndefined();
+    });
+
+    it('reads the option a chip sits in, and stops at its end', () => {
+      expect(saveOf([options(['Retort', `${CHIP} ${save}`], ['Other', 'You grow.'])])).toEqual({
+        targetAbility: 'wis',
+      });
+      expect(saveOf([options(['Retort', CHIP], ['Other', save])])).toBeUndefined();
+    });
+
+    it('reads a named benefit of the action, but not a neighbouring benefit', () => {
+      expect(saveOf([CHIP, named('Aura', save)])).toEqual({ targetAbility: 'wis' });
+      expect(saveOf([named('Bolster', CHIP), named('Burst', save)])).toBeUndefined();
+      expect(saveOf([named('Burst', save), named('Bolster', CHIP)])).toBeUndefined();
+      expect(saveOf([named('Bolster', `${CHIP} ${save}`)])).toEqual({ targetAbility: 'wis' });
+    });
+
+    it('leaves a save after a reaction to that reaction, when a bonus chip won', () => {
+      const reaction = 'As a reaction, you can force the foe to make a Wisdom saving throw.';
+      expect(saveOf([`${CHIP} ${reaction}`])).toBeUndefined();
+    });
+
+    it('leaves a save after a plain action to that action', () => {
+      const action = 'As an action, you can force the foe to make a Wisdom save.';
+      expect(saveOf([`${CHIP} ${action}`])).toBeUndefined();
+      expect(saveOf([`As a reaction, you block. ${action}`])).toBeUndefined();
+    });
+
+    it.each([
+      ['a reaction', 'When you use your action to cast, you can use your reaction to force a foe'],
+      [
+        'a bonus action',
+        'After you use your action to Dash, as a bonus action you can force a foe',
+      ],
+      ['either', 'As an action or as a bonus action, you can force a foe'],
+    ])('reads no action phrase before the chip when the chip is %s', (_chip, lead) => {
+      expect(saveOf([`${lead} to make a Wisdom save.`])).toEqual({ targetAbility: 'wis' });
+    });
+
+    it('keeps a reaction chip its own save', () => {
+      expect(saveOf(['You can use your reaction to force the foe to make a Wisdom save.'])).toEqual(
+        {
+          targetAbility: 'wis',
+        },
+      );
+    });
+
+    it('keeps a plain action chip its own save', () => {
+      expect(
+        saveOf(['Once per long rest, as an action, you can force the foe to make a Wisdom save.']),
+      ).toEqual({ targetAbility: 'wis' });
+    });
+  });
+
+  describe('the DC', () => {
+    const dcOf = (after: string) =>
+      saveOf([`${CHIP} The foe must make a Wisdom saving throw${after}`]);
+
+    it.each([
+      [' (DC 8 + your Charisma modifier + your proficiency bonus).'],
+      [' (DC 8 + your proficiency bonus + your Charisma modifier).'],
+      [' (DC 8 plus your Charisma modifier and Proficiency Bonus).'],
+      [' (DC 8 plus your Charisma modifier and your Proficiency Bonus).'],
+      ['. The DC of the save equals 8 + your proficiency bonus + your Charisma modifier.'],
+    ])('reads a formula naming its ability: %s', (after) => {
+      expect(dcOf(after)).toEqual({ targetAbility: 'wis', dcAbility: 'cha' });
+    });
+
+    it.each([
+      [' against your spell save DC.'],
+      [' against your warlock spell save DC.'],
+      ['. The DC equals your spell save DC.'],
+    ])('leaves a spell save DC for the sheet to fill in: %s', (after) => {
+      expect(dcOf(after)).toEqual({ targetAbility: 'wis', dcAbility: 'spell' });
+    });
+
+    it.each([
+      ['none stated', '.'],
+      ['a fixed number, which the sheet cannot show', ' (DC 14).'],
+      ["another feature's DC", ' against your ki save DC.'],
+      [
+        'a chosen ability',
+        ' (DC 8 + your proficiency bonus + the modifier of the raised ability).',
+      ],
+      [
+        'a choice of ability',
+        ' (DC 8 + your proficiency bonus + your Wisdom or Charisma modifier).',
+      ],
+      ['a spellcasting ability', ' (DC 8 + your proficiency bonus + the spellcasting modifier).'],
+      ['a formula without proficiency', ' (DC 8 + your Charisma modifier).'],
+      [
+        'a die that ends in 8',
+        ' or take 1d8 + your Charisma modifier + your proficiency bonus damage.',
+      ],
+      [
+        'an AC worked out alike',
+        '. Your AC equals 8 + your Dexterity modifier + your proficiency bonus.',
+      ],
+      [
+        'hit points worked out alike',
+        ' and gains temporary hit points equal to 8 + your Charisma modifier + your proficiency bonus.',
+      ],
+      [
+        'a formula with more to it',
+        ' (DC 8 + your Charisma modifier + your proficiency bonus + 2).',
+      ],
+      [
+        'a choice of whole modifiers',
+        ' (DC 8 + your proficiency bonus + your Wisdom modifier or your Charisma modifier).',
+      ],
+      [
+        'a choice after a comma',
+        ' (DC 8 + your proficiency bonus + your Strength modifier, or Dexterity modifier if you choose).',
+      ],
+      [
+        'a formula with more after a comma',
+        ' (DC 8 + your Charisma modifier + your proficiency bonus, plus 2).',
+      ],
+      ['a spell save DC less something', ' (DC equal to your spell save DC - 2).'],
+      ['a spell save DC plus something', ' (DC equal to your spell save DC plus 2).'],
+      ['a spell save DC with a sign', ' (DC equal to your spell save DC +2).'],
+      ['a spell save DC minus something', ' (DC equal to your spell save DC minus 2).'],
+      ['a fixed DC and a clause', ' (DC 14), and your spell save DC rises by 1.'],
+      [
+        'a fixed DC and a formula',
+        ' against DC 14 or lose 8 + your Strength modifier + your proficiency bonus.',
+      ],
+      ['a fixed DC or another', ' (DC 15 or your spell save DC, whichever is higher).'],
+      [
+        'a fixed DC before a spell save DC',
+        ' (DC 14). While you flare, your spell save DC rises by 1.',
+      ],
+    ])('shows no DC for %s', (_case, after) => {
+      expect(dcOf(after)).toEqual({ targetAbility: 'wis' });
+    });
+
+    it.each([
+      [
+        'a semicolon',
+        '; the DC equals 8 + your Charisma modifier + your proficiency bonus; or else.',
+      ],
+      [
+        'a longer lead-in',
+        '. The DC for saving throws against this feature equals 8 + your Charisma modifier + your proficiency bonus.',
+      ],
+    ])('reads a formula after %s', (_case, after) => {
+      expect(dcOf(after)).toEqual({ targetAbility: 'wis', dcAbility: 'cha' });
+    });
+
+    it('reads the DC of a save that "each creature" or "unless" leads into', () => {
+      const formula = 'DC 8 + your Charisma modifier + your proficiency bonus';
+      expect(
+        saveOf([
+          `${CHIP} Each foe takes 2d6 fire damage unless it succeeds on a Wisdom save (${formula}).`,
+        ]),
+      ).toEqual({ targetAbility: 'wis', dcAbility: 'cha' });
+      expect(
+        saveOf([
+          `${CHIP} Each creature falls unless it makes a Wisdom save against your spell save DC.`,
+        ]),
+      ).toEqual({ targetAbility: 'wis', dcAbility: 'spell' });
+    });
+
+    it('takes the first DC named from the save on', () => {
+      expect(
+        dcOf(
+          ' against your spell save DC. A later DC is 8 + your Dexterity modifier + your proficiency bonus.',
+        ),
+      ).toEqual({ targetAbility: 'wis', dcAbility: 'spell' });
+    });
+
+    it.each([
+      ['. The DC of the rest is 8 + your Charisma modifier + your proficiency bonus.'],
+      [' or take damage equal to 8 + your Strength modifier + your proficiency bonus.'],
+      [' against your spell save DC.'],
+    ])('leaves a fixed DC in the save itself alone, whatever follows: %s', (after) => {
+      expect(
+        saveOf([`${CHIP} The foe must succeed on a DC 14 Wisdom saving throw${after}`]),
+      ).toEqual({
+        targetAbility: 'wis',
+      });
+    });
+
+    it('takes no DC from the next save it forces', () => {
+      expect(
+        saveOf([
+          `${CHIP} The foe must make a Wisdom save. You can force another foe to make a Strength save (DC 8 + your Charisma modifier + your proficiency bonus).`,
+        ]),
+      ).toEqual({ targetAbility: 'wis' });
+    });
+
+    it('takes no DC from a save the chip does not force', () => {
+      expect(saveOf([`${CHIP} Against your spell save DC, foes fall.`])).toBeUndefined();
+    });
+
+    it('takes no DC from before the sentence of the chip', () => {
+      expect(
+        saveOf([
+          `The DC is 8 + your Charisma modifier + your proficiency bonus. ${CHIP} The foe must make a Wisdom save.`,
+        ]),
+      ).toEqual({ targetAbility: 'wis' });
+    });
   });
 });
 

@@ -232,8 +232,11 @@ export type EffectInput = { origin: EffectOrigin } & (
       plainDice?: boolean;
       /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
       note?: string;
-      /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
-      save?: { targetAbility: Ability; dcAbility: Ability };
+      /**
+       * Target save + what sets the DC: one of the caster's abilities (8+mod+prof),
+       * their spell save DC, or nothing when the prose states no DC to show.
+       */
+      save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
     }
   | {
       /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
@@ -513,8 +516,8 @@ export interface DerivedSheet {
     origin: string;
     /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
     note?: string;
-    /** Computed save DC + the ability the target saves with. */
-    save?: { targetAbility: Ability; dc: number };
+    /** The ability the target saves with + the computed DC, when there is one to show. */
+    save?: { targetAbility: Ability; dc?: number };
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];

@@ -29,7 +29,14 @@ import { markHeldPicks } from './effects/heldPicks';
 import { collectItems } from './effects/item';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
-import type { CharacterDoc, ChoicePrompt, DerivedSheet, EffectInput, EngineContext } from './types';
+import type {
+  Ability,
+  CharacterDoc,
+  ChoicePrompt,
+  DerivedSheet,
+  EffectInput,
+  EngineContext,
+} from './types';
 
 export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet {
   const col = new Collector(doc, ctx);
@@ -107,6 +114,13 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     const cur = actionByKey.get(key);
     if (cur === undefined || richness(e) > richness(cur)) actionByKey.set(key, e);
   }
+  // "Your spell save DC" is only one number with one caster's block to read it from.
+  const saveDc = (from: Ability | 'spell' | undefined) =>
+    from === 'spell'
+      ? spellcasting[1]
+        ? undefined
+        : spellcasting[0]?.saveDc.value
+      : from && 8 + abilities[from].mod + profBonus.value;
   const actions = [...actionByKey.values()].map((e) => ({
     economy: e.economy,
     label: e.label,
@@ -117,10 +131,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     note: e.note,
     save:
       e.save !== undefined
-        ? {
-            targetAbility: e.save.targetAbility,
-            dc: 8 + abilities[e.save.dcAbility].mod + profBonus.value,
-          }
+        ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
   }));
 
@@ -196,9 +207,12 @@ function dedupeWarnings(warnings: readonly string[]): string[] {
 }
 
 /** How much mechanical detail an action effect carries (for dedupe). */
-function richness(e: { roll?: string; note?: string; save?: unknown }): number {
+function richness(e: { roll?: string; note?: string; save?: { dcAbility?: unknown } }): number {
+  // A save with its DC says more than one without, by less than any other mechanic.
   return (
-    (e.roll !== undefined ? 1 : 0) + (e.note !== undefined ? 2 : 0) + (e.save !== undefined ? 2 : 0)
+    (e.roll !== undefined ? 1 : 0) +
+    (e.note !== undefined ? 2 : 0) +
+    (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0)
   );
 }
 

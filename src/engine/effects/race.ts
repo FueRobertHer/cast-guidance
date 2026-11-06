@@ -165,7 +165,7 @@ function linkDraconicAncestry(col: Collector): void {
       // who keeps the race.
       if (e.note === undefined) e.note = note;
       else if (e.note === ancestry.type) e.note = eitherShape;
-      if (e.save === undefined) e.save = { targetAbility, dcAbility: 'con' };
+      if (e.save?.dcAbility === undefined) e.save = { targetAbility, ...e.save, dcAbility: 'con' };
     }
   }
 }
