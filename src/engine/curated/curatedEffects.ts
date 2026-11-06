@@ -415,8 +415,8 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   'arcane recovery|wizard': (col, origin) => {
     // Recovered ON a short rest but usable once per DAY. The prose scanner
-    // reads the 2024 "when you finish a Short Rest" as a short-rest reset,
-    // which hands it back every rest; pin the daily limit here instead.
+    // reads the 2024 limit, but 2014's "once per day" is no wording it counts,
+    // so pin the daily limit here for both.
     col.add({
       kind: 'resource',
       key: 'arcane-recovery',

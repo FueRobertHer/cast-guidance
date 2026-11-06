@@ -108,6 +108,37 @@ function statesOnceLimit(text: string): boolean {
 
 const sentencesOf = (text: string) => text.split(/(?<=\.) /);
 
+/**
+ * A rest that only says when something else happens: "when you finish a short
+ * rest, you can cast ...", "a ceremony can be held during a short or long rest".
+ */
+const REST_AS_OCCASION =
+  /when you finish a short rest, you can [^.,;]*|(?<=^|[.,;] )[^.,;]*during a short or long rest[^.,;]*/g;
+/** A sentence saying a use comes back: "regain one use", "regain it", "uses are restored". */
+const USE_COMES_BACK =
+  /\b(?:regain|recover|restore)[a-z]*\b[^.,;]*\b(?:uses?\b|(?:it|one|this feature)(?=[.,;]|$))|\buses?\b[^.,;]*\b(?:regained|recovered|restored|returned|returns?)\b|\b(?:recharge|refresh|replenish|reset)/;
+/** A clause giving another go: "you can use it again". */
+const ANOTHER_GO = /\b(?:again|once more)\b/;
+
+/**
+ * Prose without the rests that are only occasions, so none is read as the reset.
+ * Only those two wordings come out, and doubt keeps them: words that a use comes
+ * back leave the sentence whole, so anything added above can only keep a rest in.
+ * If no rest would be left, nothing better says which one it is, so the prose stays.
+ */
+function withoutRestOccasions(text: string): string {
+  const left = sentencesOf(text)
+    .map((sentence) =>
+      USE_COMES_BACK.test(sentence)
+        ? sentence
+        : sentence.replaceAll(REST_AS_OCCASION, (clause) =>
+            ANOTHER_GO.test(clause) ? clause : '',
+          ),
+    )
+    .join(' ');
+  return /\b(?:short|long) rests?\b/.test(left) ? left : text;
+}
+
 /** Text as space-padded words, so a spell's name matches whole words only. */
 const asWords = (text: string) => ` ${text.replaceAll(/[^a-z0-9']+/g, ' ')} `;
 
@@ -464,9 +495,7 @@ export function proseScanFeature(
     const resetText =
       returnsUses.length > 0
         ? returnsUses.join(' ')
-        : statesOnceLimit(notSpells)
-          ? notSpells
-          : text;
+        : withoutRestOccasions(statesOnceLimit(notSpells) ? notSpells : text);
     const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }

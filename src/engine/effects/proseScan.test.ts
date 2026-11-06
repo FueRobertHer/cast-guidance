@@ -286,6 +286,10 @@ describe('proseScanFeature: whose rest a tracker reads', () => {
     ],
     ['first', 'When you finish a short or long rest, you regain the ability to cast fake ward.'],
     ['alone', 'You regain the ability to cast fake ward, when you finish a short or long rest.'],
+    [
+      'after a trigger',
+      'When you finish a short rest, you can regain the ability to cast fake ward, which lasts until you finish a short rest.',
+    ],
   ])('takes no rest from a spell’s free cast, with its rest %s', (_order, spellSentence) => {
     expect(resets(`${LIMIT} ${spellSentence}`)).toEqual(['long']);
   });
@@ -295,6 +299,105 @@ describe('proseScanFeature: whose rest a tracker reads', () => {
       resets(
         'You may cast fake ward once per short rest with no slot, and you regain the ability to cast it this way when you finish a short or long rest.',
       ),
+    ).toEqual(['short']);
+  });
+
+  const ONCE_A_LONG_REST =
+    'Once you use this feature, you can’t do so again until you finish a long rest.';
+
+  it.each([
+    ['before the limit', `When you finish a short rest, you can mend a cloak. ${ONCE_A_LONG_REST}`],
+    ['after the limit', `${ONCE_A_LONG_REST} When you finish a short rest, you can mend a cloak.`],
+    [
+      'in the limit’s own sentence',
+      'When you finish a short rest, you can mend a cloak, but you can’t do so again until you finish a long rest.',
+    ],
+    [
+      'using the feature',
+      `When you finish a short rest, you can use this feature to regain your calm. ${ONCE_A_LONG_REST}`,
+    ],
+  ])('takes no reset from a short rest that triggers the feature, %s', (_where, text) => {
+    expect(resets(text)).toEqual(['long']);
+  });
+
+  it.each([
+    ['are restored', 'and all expended uses are restored when you finish a long rest'],
+    ['are recovered', 'and all expended uses are recovered when you finish a long rest'],
+    ['you recover', 'and you recover all expended uses when you finish a long rest'],
+    ['return', 'and all expended uses return when you finish a long rest'],
+    ['on a long rest', 'and you regain all uses on a long rest'],
+  ])('takes no reset from a rest in an unrelated sentence: uses %s', (_wording, returned) => {
+    const text = `You can use this a number of times equal to your proficiency bonus, ${returned}. A rite to replace the charm can be held during a short or long rest.`;
+    expect(resets(text)).toEqual(['long']);
+  });
+
+  it.each([
+    [
+      'a limit',
+      'Once you use this feature, you can’t use it again until you finish a short or long rest.',
+    ],
+    [
+      'a limit with no opener',
+      'You must finish a short or long rest before you can use this feature again.',
+    ],
+    [
+      'a limit that leaves its rest to the words before it',
+      'When you finish a short rest, you can mend a cloak, and you can’t do so again until you finish another.',
+    ],
+    [
+      'a count with no limit it can read',
+      'Once it uses this feature, it must finish a short or long rest before it can use it again. It can use this feature twice between rests.',
+    ],
+    [
+      'a return before its rest, beside a long limit',
+      `You can use it twice, and you regain all uses on a short or long rest. ${ONCE_A_LONG_REST}`,
+    ],
+    [
+      'a return after its rest, beside a long limit',
+      `You can use it twice. When you finish a short rest, you regain one expended use. ${ONCE_A_LONG_REST}`,
+    ],
+    [
+      'passive return, beside a long limit',
+      `You can use it twice. When you finish a short rest, one expended use is restored. ${ONCE_A_LONG_REST}`,
+    ],
+    [
+      'a return after its rest, before a long return',
+      'You can use it twice. When you finish a short rest, you regain one expended use. All expended uses are restored when you finish a long rest.',
+    ],
+    [
+      'an occasion that is the only rest named',
+      'When you finish a short rest, you can mend a cloak. You can use this feature twice.',
+    ],
+  ])('keeps a true short-rest reset: %s', (_shape, text) => {
+    expect(resets(text)).toEqual(['short']);
+  });
+
+  it.each([
+    'regain one expended use',
+    'recover one expended use',
+    'restore one expended use',
+    'regain it',
+    'regain this feature',
+    'recharge it',
+    'use it again',
+    'use it once more',
+    'pray, and one expended use is restored',
+    'pray, regaining one use',
+  ])('keeps a short rest that gives a use back in the shape of a trigger: you can %s', (back) => {
+    expect(resets(`When you finish a short rest, you can ${back}. ${ONCE_A_LONG_REST}`)).toEqual([
+      'short',
+    ]);
+  });
+
+  it.each([
+    'During a short or long rest, you regain one expended use.',
+    'To regain a use, you must meditate during a short or long rest.',
+    'Expended uses are restored during a short or long rest.',
+    'Expended uses return during a short or long rest.',
+    'It recharges during a short or long rest.',
+  ])('keeps a rest that gives a use back in the shape of a ceremony: %s', (back) => {
+    expect(
+      resets(`You can use it twice. ${back} All expended uses return when you finish a long rest.`),
     ).toEqual(['short']);
   });
 });
