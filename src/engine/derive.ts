@@ -7,7 +7,7 @@
 import { calcAbilities } from './calc/abilities';
 import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
-import { bonusAmount, effectsOf, withOverride } from './calc/core';
+import { bonusAmount, dv, effectsOf, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
 import { calcResources, costOnSheet } from './calc/resources';
 import {
@@ -29,7 +29,14 @@ import { markHeldPicks } from './effects/heldPicks';
 import { collectItems } from './effects/item';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
-import type { CharacterDoc, ChoicePrompt, DerivedSheet, EffectInput, EngineContext } from './types';
+import type {
+  Ability,
+  CharacterDoc,
+  ChoicePrompt,
+  DerivedSheet,
+  EffectInput,
+  EngineContext,
+} from './types';
 
 export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet {
   const col = new Collector(doc, ctx);
@@ -58,12 +65,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   const totalLevel = doc.classes.reduce((sum, c) => sum + c.levels, 0);
   const pbBase = totalLevel > 0 ? 2 + Math.floor((totalLevel - 1) / 4) : 2;
   const profBonus = withOverride(
-    {
-      value: pbBase,
-      base: pbBase,
-      overridden: false,
-      parts: [{ label: `Level ${totalLevel}`, amount: pbBase }],
-    },
+    dv([{ label: `Level ${totalLevel}`, amount: pbBase }]),
     doc.overrides.profBonus,
   );
 
@@ -97,11 +99,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     : halfProfPart(effects, 'dex', profBonus.value, false);
   if (initiativeHalf !== undefined) initiativeParts.push(initiativeHalf);
   initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
-  const initBase = initiativeParts.reduce((s, p) => s + p.amount, 0);
-  const initiative = withOverride(
-    { value: initBase, base: initBase, overridden: false, parts: initiativeParts },
-    doc.overrides.initiative,
-  );
+  const initiative = withOverride(dv(initiativeParts), doc.overrides.initiative);
 
   const weaponProfs = [...new Set(effectsOf(effects, 'weaponProf').map((e) => e.name))];
   const attacks = calcAttacks(doc, col, effects, abilities, profBonus.value, weaponProfs);
@@ -116,6 +114,13 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     const cur = actionByKey.get(key);
     if (cur === undefined || richness(e) > richness(cur)) actionByKey.set(key, e);
   }
+  // "Your spell save DC" is only one number with one caster's block to read it from.
+  const saveDc = (from: Ability | 'spell' | undefined) =>
+    from === 'spell'
+      ? spellcasting[1]
+        ? undefined
+        : spellcasting[0]?.saveDc.value
+      : from && 8 + abilities[from].mod + profBonus.value;
   const actions = [...actionByKey.values()].map((e) => ({
     economy: e.economy,
     label: e.label,
@@ -126,10 +131,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     note: e.note,
     save:
       e.save !== undefined
-        ? {
-            targetAbility: e.save.targetAbility,
-            dc: 8 + abilities[e.save.dcAbility].mod + profBonus.value,
-          }
+        ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
     cost: costOnSheet(e.cost, resources),
   }));
@@ -206,11 +208,17 @@ function dedupeWarnings(warnings: readonly string[]): string[] {
 }
 
 /** How much mechanical detail an action effect carries (for dedupe). */
-function richness(e: { roll?: string; note?: string; save?: unknown; cost?: unknown }): number {
+function richness(e: {
+  roll?: string;
+  note?: string;
+  save?: { dcAbility?: unknown };
+  cost?: unknown;
+}): number {
+  // A save with its DC says more than one without, by less than any other mechanic.
   return (
     (e.roll !== undefined ? 1 : 0) +
     (e.note !== undefined ? 2 : 0) +
-    (e.save !== undefined ? 2 : 0) +
+    (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0) +
     (e.cost !== undefined ? 2 : 0)
   );
 }

@@ -10,7 +10,7 @@ import {
   type ProfLevel,
   SKILLS,
 } from '../types';
-import { bonusAmount, effectsOf, withOverride } from './core';
+import { bonusAmount, dv, effectsOf, withOverride } from './core';
 
 type Part = { label: string; amount: number };
 
@@ -72,8 +72,7 @@ export function calcSaves(
     const prof = profOverride !== undefined ? profOverride.value > 0 : profs.has(a);
     const parts = [{ label: `${a.toUpperCase()} modifier`, amount: abilities[a].mod }];
     if (prof) parts.push({ label: 'Proficiency', amount: profBonus });
-    const value = parts.reduce((s, p) => s + p.amount, 0);
-    out[a] = { total: { value, base: value, overridden: false, parts }, prof };
+    out[a] = { total: dv(parts), prof };
   }
   return out;
 }
@@ -119,11 +118,7 @@ export function calcSkills(
     const half = prof === 0 ? halfProfPart(effects, ability, profBonus, true) : undefined;
     if (half !== undefined) parts.push(half);
     parts.push(...checkBonusParts(effects, abilities, profBonus, ability, name));
-    const base = parts.reduce((s, p) => s + p.amount, 0);
-    const total = withOverride(
-      { value: base, base, overridden: false, parts },
-      doc.overrides[`skill.${name}.bonus`],
-    );
+    const total = withOverride(dv(parts), doc.overrides[`skill.${name}.bonus`]);
     out[name] = {
       total,
       prof,
@@ -149,11 +144,7 @@ export function calcChecks(
     const half = halfProfPart(effects, a, profBonus, false);
     if (half !== undefined) parts.push(half);
     parts.push(...checkBonusParts(effects, abilities, profBonus, a));
-    const value = parts.reduce((s, p) => s + p.amount, 0);
-    out[a] = {
-      total: { value, base: value, overridden: false, parts },
-      halfProf: half !== undefined,
-    };
+    out[a] = { total: dv(parts), halfProf: half !== undefined };
   }
   return out;
 }
@@ -171,9 +162,5 @@ export function calcPassivePerception(
   for (const e of effectsOf(effects, 'passivePerceptionBonus')) {
     parts.push({ label: e.origin.label, amount: e.amount });
   }
-  const base = parts.reduce((s, p) => s + p.amount, 0);
-  return withOverride(
-    { value: base, base, overridden: false, parts },
-    doc.overrides.passivePerception,
-  );
+  return withOverride(dv(parts), doc.overrides.passivePerception);
 }

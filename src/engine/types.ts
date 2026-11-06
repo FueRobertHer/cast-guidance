@@ -255,8 +255,11 @@ export type EffectInput = { origin: EffectOrigin } & (
       plainDice?: boolean;
       /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
       note?: string;
-      /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
-      save?: { targetAbility: Ability; dcAbility: Ability };
+      /**
+       * Target save + what sets the DC: one of the caster's abilities (8+mod+prof),
+       * their spell save DC, or nothing when the prose states no DC to show.
+       */
+      save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
       /** The pool using it spends, when that pool is not the one sharing its name. */
       cost?: ActionCost;
     }
@@ -540,8 +543,8 @@ export interface DerivedSheet {
     origin: string;
     /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
     note?: string;
-    /** Computed save DC + the ability the target saves with. */
-    save?: { targetAbility: Ability; dc: number };
+    /** The ability the target saves with + the computed DC, when there is one to show. */
+    save?: { targetAbility: Ability; dc?: number };
     /** The pool it spends, only when this sheet has that pool. */
     cost?: ActionCost;
   }>;

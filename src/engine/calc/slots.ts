@@ -10,6 +10,7 @@ import {
   type SpellcastingBlock,
   type SpellcastingMode,
 } from '../types';
+import { dv } from './core';
 
 /**
  * Classify how a class relates to its spells from its 5etools data (GAME-002).
@@ -359,18 +360,8 @@ export function calcSpellcasting(
       ...(learnable !== undefined ? { learnable } : {}),
       ability: abilityKey,
       mode: classSpellcastingMode(cs),
-      saveDc: {
-        value: dcParts.reduce((s, p) => s + p.amount, 0),
-        base: dcParts.reduce((s, p) => s + p.amount, 0),
-        overridden: false,
-        parts: dcParts,
-      },
-      attackMod: {
-        value: atkParts.reduce((s, p) => s + p.amount, 0),
-        base: atkParts.reduce((s, p) => s + p.amount, 0),
-        overridden: false,
-        parts: atkParts,
-      },
+      saveDc: dv(dcParts),
+      attackMod: dv(atkParts),
       slots,
       pactSlots,
       ...(mysticArcanum !== undefined ? { mysticArcanum } : {}),
