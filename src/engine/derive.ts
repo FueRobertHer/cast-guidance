@@ -7,7 +7,7 @@
 import { calcAbilities } from './calc/abilities';
 import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
-import { bonusAmount, effectsOf, withOverride } from './calc/core';
+import { bonusAmount, dv, effectsOf, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
 import { calcResources } from './calc/resources';
 import {
@@ -58,12 +58,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   const totalLevel = doc.classes.reduce((sum, c) => sum + c.levels, 0);
   const pbBase = totalLevel > 0 ? 2 + Math.floor((totalLevel - 1) / 4) : 2;
   const profBonus = withOverride(
-    {
-      value: pbBase,
-      base: pbBase,
-      overridden: false,
-      parts: [{ label: `Level ${totalLevel}`, amount: pbBase }],
-    },
+    dv([{ label: `Level ${totalLevel}`, amount: pbBase }]),
     doc.overrides.profBonus,
   );
 
@@ -97,11 +92,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     : halfProfPart(effects, 'dex', profBonus.value, false);
   if (initiativeHalf !== undefined) initiativeParts.push(initiativeHalf);
   initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
-  const initBase = initiativeParts.reduce((s, p) => s + p.amount, 0);
-  const initiative = withOverride(
-    { value: initBase, base: initBase, overridden: false, parts: initiativeParts },
-    doc.overrides.initiative,
-  );
+  const initiative = withOverride(dv(initiativeParts), doc.overrides.initiative);
 
   const weaponProfs = [...new Set(effectsOf(effects, 'weaponProf').map((e) => e.name))];
   const attacks = calcAttacks(doc, col, effects, abilities, profBonus.value, weaponProfs);

@@ -1,7 +1,7 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
 import type { CharacterDoc, DerivedValue, EffectInput } from '../types';
-import { effectsOf, withOverride } from './core';
+import { dv, effectsOf, withOverride } from './core';
 
 export function calcWalkSpeed(
   doc: CharacterDoc,
@@ -27,6 +27,5 @@ export function calcWalkSpeed(
   for (const b of effectsOf(effects, 'speedBonus')) {
     parts.push({ label: b.origin.label, amount: b.amount });
   }
-  const base = parts.reduce((s, p) => s + p.amount, 0);
-  return withOverride({ value: base, base, overridden: false, parts }, doc.overrides['speed.walk']);
+  return withOverride(dv(parts), doc.overrides['speed.walk']);
 }

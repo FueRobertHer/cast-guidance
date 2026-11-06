@@ -8,7 +8,7 @@ import type {
   DerivedValue,
   EffectInput,
 } from '../types';
-import { effectsOf, withOverride } from './core';
+import { dv, effectsOf, withOverride } from './core';
 
 interface AcCandidate {
   label: string;
@@ -89,9 +89,5 @@ export function calcAc(
   for (const b of effectsOf(effects, 'acBonus')) {
     parts.push({ label: b.origin.label, amount: b.amount });
   }
-  const base = parts.reduce((s, p) => s + p.amount, 0);
-  return {
-    ac: withOverride({ value: base, base, overridden: false, parts }, doc.overrides.ac),
-    label: best.label,
-  };
+  return { ac: withOverride(dv(parts), doc.overrides.ac), label: best.label };
 }

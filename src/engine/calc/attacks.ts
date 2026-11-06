@@ -11,7 +11,7 @@ import type {
   DerivedAbility,
   EffectInput,
 } from '../types';
-import { effectsOf } from './core';
+import { dv, effectsOf } from './core';
 
 const PROPERTY_LABELS: Record<string, string> = {
   A: 'ammunition',
@@ -152,7 +152,6 @@ export function calcAttacks(
         parts.push({ label: b.origin.label, amount: b.amount });
       }
     }
-    const toHit = parts.reduce((s, p) => s + p.amount, 0);
 
     let dmgMod = mod + magicBonus;
     for (const b of damageBonuses) {
@@ -161,7 +160,7 @@ export function calcAttacks(
     const dmgSuffix = dmgMod !== 0 ? (dmgMod > 0 ? `+${dmgMod}` : `${dmgMod}`) : '';
     return {
       label,
-      toHit: { value: toHit, base: toHit, overridden: false, parts },
+      toHit: dv(parts),
       damage: damageDice !== undefined ? `${damageDice}${dmgSuffix}` : `${Math.max(1, 1 + dmgMod)}`,
       damageType,
       versatileDamage: versatile !== undefined ? `${versatile}${dmgSuffix}` : undefined,
@@ -180,12 +179,7 @@ export function calcAttacks(
       const a = entry.custom.attack;
       rows.push({
         label: entry.custom.name,
-        toHit: {
-          value: a.toHitBonus,
-          base: a.toHitBonus,
-          overridden: false,
-          parts: [{ label: 'Custom bonus', amount: a.toHitBonus }],
-        },
+        toHit: dv([{ label: 'Custom bonus', amount: a.toHitBonus }]),
         damage: a.damage,
         damageType: a.damageType,
         extraDamage: [],

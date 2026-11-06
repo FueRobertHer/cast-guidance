@@ -221,16 +221,16 @@ function detectUses(
   // "a number of times equal to [1 +] your Charisma modifier [(a minimum of
   // once)]": Divine Sense, Cleansing Touch, and a long tail of race traits.
   const abilityUses = text.match(USES_BY_ABILITY);
-  if (abilityUses?.[2] !== undefined) {
+  if (abilityUses?.[2]) {
     // The pattern admits nothing else but an ability's name.
     const ability = ABILITY_WORDS[abilityUses[2]] as Ability;
-    return abilityUses[1] !== undefined ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
+    return abilityUses[1] ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
   }
   if (statesOnceLimit(text)) return 1;
-  if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) twice/.test(text)) return 2;
-  return /use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) three times/.test(text)
-    ? 3
-    : undefined;
+  const used = (times: string) =>
+    new RegExp(`use (?:this (?:trait|feature)|it|your [\\w\\s]{1,30}?) ${times}`).test(text);
+  if (used('twice')) return 2;
+  return used('three times') ? 3 : undefined;
 }
 
 /**
@@ -378,7 +378,7 @@ function standingBonus(
     origin,
   });
   const half = sentence.match(HALF_PROF)?.groups;
-  if (half !== undefined) {
+  if (half) {
     const named = half.abilities === 'ability' ? undefined : half.abilities;
     const abilities = named?.split(LIST_SEPARATOR).flatMap((word) => ABILITY_WORDS[word] ?? []);
     return {
@@ -392,16 +392,16 @@ function standingBonus(
 
   const added = sentence.match(ADD_TO_INITIATIVE)?.groups;
   // "The roll" means initiative only when the sentence opens by rolling it.
-  if (added !== undefined && (added.target !== 'the roll' || added.rolls !== undefined)) {
+  if (added && (added.target !== 'the roll' || added.rolls !== undefined)) {
     return initiative(amountFrom(added, true));
   }
   const flat = sentence.match(FLAT_INITIATIVE)?.groups;
-  if (flat !== undefined) return initiative(Number(flat.amount));
+  if (flat) return initiative(Number(flat.amount));
   const equal = sentence.match(INITIATIVE_EQUAL_TO)?.groups;
-  if (equal !== undefined) return initiative(amountFrom(equal, false));
+  if (equal) return initiative(amountFrom(equal, false));
 
   const check = sentence.match(CHECK_BONUS)?.groups;
-  if (check !== undefined) {
+  if (check) {
     const target = checkTarget(check.made ?? check.named ?? '');
     const size = check.source !== undefined ? check : next?.match(BONUS_EQUALS)?.groups;
     if (target !== undefined && size !== undefined) {
@@ -416,7 +416,7 @@ function standingBonus(
   }
 
   const passive = sentence.match(PASSIVE_BONUS)?.groups;
-  if (passive !== undefined) {
+  if (passive) {
     return { kind: 'passivePerceptionBonus', amount: Number(passive.amount), origin };
   }
   return undefined;
@@ -498,7 +498,7 @@ export function proseScanFeature(
   const phrase = chipPhrase(text, uses !== undefined);
   // Limited-use features also get a roll chip, from the dice their action rolls.
   const dice = uses !== undefined && phrase !== undefined ? actionDice(text, phrase.at) : null;
-  let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+  let roll = dice?.[1] ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
   const diceAt = dice?.index ?? 0;
   const sentenceEnd = text.indexOf('.', diceAt);
   const diceSentence =
@@ -527,11 +527,11 @@ export function proseScanFeature(
     // From the rolled die on: a step before it scales another benefit's die.
     const fromDice = text.slice(diceAt);
     for (const m of fromDice.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
-      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
+      if (m[1] && m[2]) steps.push([Number(m[2]), m[1]]);
     }
     // Two paren forms: 2024 "levels 5 (2d10)" and FTD "5th level (2d10)".
     for (const m of fromDice.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
-      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
+      if (m[1] && m[2]) steps.push([Number(m[1]), m[2]]);
     }
     steps.sort((a, b) => a[0] - b[0]);
     for (const [stepLevel, stepDice] of steps) {
@@ -594,7 +594,7 @@ export function proseScanFeature(
   const hp = text.match(
     /hit point maximum increases by (\d+)[^.]*?(?:every time|whenever|when) you gain a level/,
   );
-  if (hp?.[1] !== undefined) {
+  if (hp?.[1]) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
   }
 
