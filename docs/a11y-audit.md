@@ -65,6 +65,21 @@ drawer open and close and a die is rolled: with `reducedMotion: 'reduce'` none
 runs longer than 0.01 ms, and the same flow without the preference (the
 canary) does animate.
 
+An attack chip under a condition is the one thing in the app that moves at rest,
+a named exception in the design system (`src/ui/chipFace.css`). Its base CSS is
+the still pose and its loops take no fill, so reduced motion leaves it in that
+pose with its colours. Those loops start on their own, last over five seconds
+and run beside other content, and the WCAG 2.2.2 page does not count
+`prefers-reduced-motion` as a way to stop them, so Settings also has "Animate
+condition effects" (`src/lib/conditionMotion.ts`), on by default. The same spec
+holds all three: the chip moves with no preference (the canary), and holds still
+with the switch off and with reduced motion. Paralyzed's crackle may count as
+more than three flashes a second under WCAG 2.3.1, and passes on area: a chip is
+about 1,900 square pixels against the page's 87,296, and ten together are about
+19,000. Colour never carries the meaning alone: the effect pieces are hidden from
+assistive tech, and the cue over the list and the roll's own result say it in
+words.
+
 ### Touch target sizes
 
 The rule, an owner decision: what a player taps during play is 44 by 44, and
@@ -353,7 +368,7 @@ The automated column says what CI already holds in Chromium (passing on
 | External keyboard | Every action reachable with Tab and Shift+Tab in a sensible order; Enter and Space activate; Escape closes dialogs and drawers; focus is visible throughout. | `keyboard.spec.ts`: the roster, the library and the sheet's tabs by Tab and Enter; Escape on every listed dialog. Not Space, every page, or how visible focus is. |
 | Focus trap and return | Opening a dialog or drawer moves focus inside and keeps it there; closing it returns focus to the control that opened it. | `keyboard.spec.ts`, for the thirteen dialogs and drawers listed above. |
 | Virtual list | In the library's long lists: rows are reachable and announced while scrolling, focus does not get lost when a focused row scrolls out, and the list's length is discoverable ("37 of 1000"). | `keyboard.spec.ts`: 150 rows tabbed through, each rendered and in view, with the list windowed (at most 60 rows) and each row's `aria-posinset` and `aria-setsize` right. `library-scale.spec.ts`: 1,000 rows, the window, the filter and Back. `VirtualList.test.tsx`: a focused row kept rendered through a scroll. Not what is announced. |
-| Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. | `reduced-motion.spec.ts`. |
+| Reduced motion | With Reduce Motion on (iOS) or Remove animations (Android): sheets appear without sliding and nothing spins or fades. An attack chip under a condition keeps its colours and holds still. | `reduced-motion.spec.ts`. |
 | A failure inside a sheet | Offline, without the spell files, open a known spell's rules text from a caster's Play tab: the sheet is announced with its name, the reason ("You're offline, so this spell's description can't be downloaded yet.") is read once, whether the failure lands before or after focus moves into the sheet, and Retry is reachable. | `offline-routes.spec.ts`: one alert inside the sheet, none outside it; `SpellInfoSheet.test.tsx`: the sheet's description is the reason. Not the timing against a real screen reader. |
 
 ### Results

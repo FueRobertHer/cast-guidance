@@ -27,6 +27,7 @@ import { askConfirm } from '@/ui/dialogs';
 import { cardClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { PERSIST_DENIED_TEXT, PersistStatus, STORAGE_DETAILS_ID } from '../onboarding/Status';
+import { ConditionMotionSwitch } from './ConditionMotionSwitch';
 import { SourcesSection } from './SourcesSection';
 import { ThemePicker } from './ThemePicker';
 
@@ -288,6 +289,9 @@ export function Component() {
         <h2 className={H2}>Appearance</h2>
         <div className={cardClass}>
           <ThemePicker />
+        </div>
+        <div className={cardClass}>
+          <ConditionMotionSwitch />
         </div>
       </section>
 

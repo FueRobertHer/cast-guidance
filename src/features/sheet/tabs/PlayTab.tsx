@@ -33,7 +33,7 @@ import { Tip, useTip } from '@/ui/Hint';
 import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
-import { cardClass, listClass } from '@/ui/surfaces';
+import { cardClass, listClass, openListClass } from '@/ui/surfaces';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   type CastResource,
@@ -45,7 +45,7 @@ import {
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
-import { effectLines, noteLines, rollD20Test, useIgnoreOnce } from '../d20Tests';
+import { attackWear, effectLines, noteLines, rollD20Test, useIgnoreOnce } from '../d20Tests';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RollEffectCue } from '../RollEffectCue';
@@ -331,6 +331,13 @@ export function Component() {
     );
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
+  /** The conditions on the attack chips, as the cue over them says them. */
+  const attackChipWear = attackWear(
+    conditions,
+    attackEffects,
+    limits.noActions,
+    ignore.armed('attack'),
+  );
   const spellHasVerbal = (name: string, source: string): boolean => {
     const e = spellEntity(name, source);
     return (e?.components as { v?: boolean } | undefined)?.v === true;
@@ -1152,7 +1159,7 @@ export function Component() {
           <h2 className={H2}>Attacks</h2>
           {limitWarning("Can't take actions", limits.noActions)}
           {attackCue()}
-          <div className={`@container ${listClass}`}>
+          <div className={`@container ${openListClass}`}>
             {sheet.attacks.map((a) => (
               <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
                 <div className="min-w-0 flex-1 basis-18">
@@ -1192,6 +1199,7 @@ export function Component() {
                     label={`${a.label} attack`}
                     variant="d20"
                     roller={rollAttack(a.toHit.value, `${a.label} attack`)}
+                    wear={attackChipWear}
                     onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                   />
                   <RollChip
@@ -1555,6 +1563,7 @@ export function Component() {
                             label={`${ref.name} spell attack`}
                             variant="d20"
                             roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`)}
+                            wear={attackChipWear}
                             onRolled={running ? undefined : cast}
                           />
                         )}
@@ -1770,6 +1779,7 @@ export function Component() {
                         label={`${g.name} spell attack`}
                         variant="d20"
                         roller={rollAttack(attackModifier, `${g.name} spell attack`)}
+                        wear={attackChipWear}
                         onRolled={depleted || running ? undefined : cast}
                       />
                     )}

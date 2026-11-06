@@ -5,7 +5,15 @@ import { type ActiveCondition, type D20Test, d20Effects, type Edition } from '@/
 import { ABILITIES, type Ability } from '@/engine/types';
 import { advModeStore } from '@/stores/advMode';
 import { rollTone } from '@/ui/rollTone';
-import { effectLines, noteLines, rollD20Test, saveEffectLines, useIgnoreOnce } from './d20Tests';
+import { conditionLimits } from './conditionEffects';
+import {
+  attackWear,
+  effectLines,
+  noteLines,
+  rollD20Test,
+  saveEffectLines,
+  useIgnoreOnce,
+} from './d20Tests';
 
 /** The faces the next dice show, in order (the roller draws from crypto). */
 function nextFaces(...faces: number[]) {
@@ -23,6 +31,90 @@ const effects = (ids: ActiveCondition[], edition: Edition, test: D20Test) =>
 
 beforeEach(() => advModeStore.getState().set('normal'));
 afterEach(() => vi.restoreAllMocks());
+
+describe('attackWear: what an attack chip wears', () => {
+  /** As the sheet works it out, from the same effects and warning the cue reads. */
+  const wear = (conditions: ActiveCondition[], edition: Edition = '2014', armed = false) =>
+    attackWear(
+      conditions,
+      effects(conditions, edition, { kind: 'attack' }),
+      conditionLimits(conditions).noActions,
+      armed,
+    );
+  const looks = (...ids: string[]) => wear(ids.map((id) => ({ id }))).looks;
+
+  it('wears each condition that changes the roll', () => {
+    for (const id of ['Blinded', 'Frightened', 'Poisoned', 'Prone', 'Restrained', 'Invisible']) {
+      expect(looks(id), id).toEqual([id]);
+    }
+  });
+
+  it('wears the ones that only stop actions, through the same warning the tab shows', () => {
+    for (const id of ['Paralyzed', 'Stunned', 'Incapacitated', 'Petrified', 'Unconscious']) {
+      expect(looks(id), id).toEqual([id]);
+    }
+  });
+
+  it('stays plain for the conditions that only carry a note, or nothing for attacks', () => {
+    expect(looks('Charmed')).toEqual([]);
+    expect(looks('Deafened')).toEqual([]);
+    expect(looks('Grappled')).toEqual([]);
+    expect(wear([{ id: 'Grappled' }], '2024').looks).toEqual([]);
+  });
+
+  it('draws exhaustion by the edition: 2014 from level 3, with no tag', () => {
+    const at = (level: number) => wear([{ id: 'Exhaustion', level }]);
+    expect(at(2)).toEqual({ looks: [], ignored: false });
+    expect(at(3)).toEqual({ looks: ['Exhaustion'], ignored: false });
+  });
+
+  it('draws exhaustion by the edition: 2024 from level 1, tagged with its penalty', () => {
+    expect(wear([{ id: 'Exhaustion', level: 2 }], '2024')).toEqual({
+      looks: ['Exhaustion'],
+      ignored: false,
+      penalty: -4,
+    });
+    expect(wear([{ id: 'Exhaustion', level: 0 }], '2024')).toEqual({ looks: [], ignored: false });
+  });
+
+  it('adds no look for what a condition implies', () => {
+    // Prone and Incapacitated come with Unconscious, in the cue and on the chip.
+    expect(looks('Unconscious')).toEqual(['Unconscious']);
+    expect(looks('Paralyzed')).toEqual(['Paralyzed']);
+    expect(looks('Stunned')).toEqual(['Stunned']);
+    expect(looks('Petrified')).toEqual(['Petrified']);
+    // Set by hand as well, it is a condition of its own.
+    expect(looks('Unconscious', 'Prone')).toEqual(['Prone', 'Unconscious']);
+  });
+
+  it('adds none for one the rules suppress', () => {
+    expect(looks('Poisoned', 'Petrified')).toEqual(['Petrified']);
+  });
+
+  it('adds none for one switched off on its sheet', () => {
+    expect(wear([{ id: 'Poisoned', ignored: true }]).looks).toEqual([]);
+    expect(wear([{ id: 'Paralyzed', ignored: true }]).looks).toEqual([]);
+    expect(wear([{ id: 'Exhaustion', level: 3, ignored: true }], '2024')).toEqual({
+      looks: [],
+      ignored: false,
+    });
+  });
+
+  it('puts the newest first, the last one added', () => {
+    expect(looks('Poisoned', 'Blinded', 'Prone')).toEqual(['Prone', 'Blinded', 'Poisoned']);
+  });
+
+  it('shows both when advantage and disadvantage meet: the cue says they cancel', () => {
+    expect(looks('Invisible', 'Poisoned')).toEqual(['Poisoned', 'Invisible']);
+  });
+
+  it('says Ignore once is armed, keeping the looks for the ring', () => {
+    expect(wear([{ id: 'Poisoned' }], '2014', true)).toEqual({
+      looks: ['Poisoned'],
+      ignored: true,
+    });
+  });
+});
 
 describe('rollD20Test', () => {
   it('is a plain roll when no condition reaches it', () => {

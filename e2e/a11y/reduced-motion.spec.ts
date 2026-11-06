@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   createBlankCharacter,
   gotoRosterSettled,
@@ -88,10 +88,56 @@ async function moveThroughTheSheet(page: Page): Promise<Motion[]> {
   return page.evaluate(() => [...(window.__motion as Motion[])]);
 }
 
+/**
+ * Puts Poisoned and Paralyzed on a new character, through the picker, and lands
+ * on its attack chip: the one thing in the app that moves at rest.
+ */
+async function afflictAChip(page: Page) {
+  await skipOfflineReadyNotice(page);
+  await recordMotion(page);
+  await gotoRosterSettled(page);
+  const id = await createBlankCharacter(page);
+  await gotoSheetTab(page, id, 'Play');
+
+  await page.getByRole('button', { name: 'Condition', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await picker.getByRole('button', { name: 'Poisoned', exact: true }).click();
+  await picker.getByRole('button', { name: 'Paralyzed', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+
+  return page.getByTitle('Unarmed Strike attack');
+}
+
+/** The names of the CSS animations running on the chip: its loops, not a passing transition. */
+const running = (chip: Locator) =>
+  chip.evaluate((el) =>
+    el
+      .getAnimations({ subtree: true })
+      .filter((a) => a instanceof CSSAnimation && a.playState === 'running')
+      .map((a) => (a as CSSAnimation).animationName),
+  );
+
 test.describe('motion, as the device asks', () => {
   test('without a preference, sheets slide (the canary)', async ({ page }) => {
     const motion = await moveThroughTheSheet(page);
     expect(motion.filter((m) => m.ms >= 100).length).toBeGreaterThan(0);
+  });
+
+  test('without a preference, an afflicted chip keeps moving (the canary)', async ({ page }) => {
+    const chip = await afflictAChip(page);
+    await expect(chip.locator('.cx-on')).toHaveClass(/cx-paralyzed/);
+    await expect.poll(() => running(chip)).toContain('cx-bolt-a');
+  });
+
+  test('with the switch off in Settings, an afflicted chip holds still', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('cast-guidance:condition-motion', 'off');
+    });
+    const chip = await afflictAChip(page);
+    await expect(chip.locator('.cx-on')).toHaveClass(/cx-still/);
+    await expect(chip.locator('.cx-bolt').first()).toHaveCSS('opacity', '0.8');
+    await expect.poll(() => running(chip)).toEqual([]);
   });
 
   test.describe(() => {
@@ -106,6 +152,21 @@ test.describe('motion, as the device asks', () => {
       // which is what lets Radix finish opening and closing them.
       expect(motion.length).toBeGreaterThan(0);
       expect(motion.filter((m) => m.ms > 0.01)).toEqual([]);
+    });
+
+    test('with reduced motion, an afflicted chip keeps its look and holds still', async ({
+      page,
+    }) => {
+      const chip = await afflictAChip(page);
+      await expect(chip.locator('.cx-on')).toHaveClass(/cx-paralyzed/);
+      await expect(chip.locator('.cx-bolt').first()).toBeAttached();
+      // The arrival and each loop run once, instantly, and leave the still pose.
+      await expect.poll(() => running(chip)).toEqual([]);
+      const motion = await page.evaluate(() => [...(window.__motion as Motion[])]);
+      expect(motion.filter((m) => m.name.startsWith('cx-')).length).toBeGreaterThan(0);
+      expect(motion.filter((m) => m.ms > 0.01)).toEqual([]);
+      // Paralyzed's still pose: both bolts at 80%, not the 0 of the last keyframe.
+      await expect(chip.locator('.cx-bolt').first()).toHaveCSS('opacity', '0.8');
     });
   });
 });

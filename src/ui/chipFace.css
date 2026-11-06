@@ -1,0 +1,947 @@
+/*
+ * Condition effects on attack chips: the one named exception to "motion
+ * confirms a result; it never decorates" (design system, Motion). An afflicted
+ * chip wears its condition at rest, in that condition's own hue, and each
+ * condition has one signature that loops. Everything else in the app holds the
+ * general rule.
+ *
+ * The recipe: same look (`.cx-on`), same arrival (`.cx-arrive`), same roll
+ * flash (`.cx-surge`), one signature each, one pace: every loop is a whole
+ * number of 800ms beats, Frightened's tremble aside. chipFace.test.ts holds
+ * the rules below to this file.
+ *
+ * - Base CSS is the still pose. Reduced motion (app.css) and the Settings
+ *   switch (`.cx-still`) stop the animations, and what is left is this pose.
+ * - Loops take no `forwards` or `both` fill, or they would freeze on their last
+ *   keyframe rather than the still pose.
+ * - Only transform, opacity, translate and scale animate. Clip-paths and
+ *   gradients are held still, and filter, box-shadow and layout never move.
+ * - A piece's strength is its `opacity` over `--c`, not a mixed colour, so each
+ *   hue needs two values per theme and no `color-mix`.
+ *
+ * Each hue is a colour (`--c`) and a tint (`--cs`), in both themes. The number
+ * is `ink` in both; contrast.test.ts holds it to 4.5:1 over the strongest layer
+ * behind it.
+ */
+.cx-poisoned {
+  --c: #b7d94c;
+  --cs: #27301a;
+}
+.cx-paralyzed {
+  --c: #ffe94a;
+  --cs: #2f2c10;
+}
+.cx-frightened {
+  --c: #a67dff;
+  --cs: #241538;
+}
+.cx-blinded {
+  --c: #b9b4a8;
+  --cs: #2b2a27;
+}
+.cx-prone {
+  --c: #d0a878;
+  --cs: #2f2517;
+}
+.cx-restrained {
+  --c: #e5894d;
+  --cs: #38200f;
+}
+.cx-exhaustion {
+  --c: #9fd6ff;
+  --cs: #18283a;
+}
+.cx-invisible {
+  --c: #efeaff;
+  --cs: transparent;
+}
+.cx-stunned {
+  --c: #ff86d8;
+  --cs: #3a1730;
+}
+.cx-unconscious {
+  --c: #8f9bf5;
+  --cs: #191c3a;
+}
+.cx-incapacitated {
+  --c: #6fd3c4;
+  --cs: #14302c;
+}
+.cx-petrified {
+  --c: #93a4ad;
+  --cs: #232a2e;
+}
+[data-theme="light"] .cx-poisoned {
+  --c: #5b7a0e;
+  --cs: #e9f0cf;
+}
+[data-theme="light"] .cx-paralyzed {
+  --c: #a88c00;
+  --cs: #f7f0bf;
+}
+[data-theme="light"] .cx-frightened {
+  --c: #5a2db0;
+  --cs: #e9dffa;
+}
+[data-theme="light"] .cx-blinded {
+  --c: #6b665c;
+  --cs: #e4dfd3;
+}
+[data-theme="light"] .cx-prone {
+  --c: #8a5f2c;
+  --cs: #f1e3cd;
+}
+[data-theme="light"] .cx-restrained {
+  --c: #a94e12;
+  --cs: #f8e1cf;
+}
+[data-theme="light"] .cx-exhaustion {
+  --c: #2a6fa8;
+  --cs: #dcebf7;
+}
+[data-theme="light"] .cx-invisible {
+  --c: #4a4a7a;
+  --cs: transparent;
+}
+[data-theme="light"] .cx-stunned {
+  --c: #b0237f;
+  --cs: #f9dcef;
+}
+[data-theme="light"] .cx-unconscious {
+  --c: #3a46b0;
+  --cs: #e2e4f9;
+}
+[data-theme="light"] .cx-incapacitated {
+  --c: #11756a;
+  --cs: #d5efeb;
+}
+[data-theme="light"] .cx-petrified {
+  --c: #4f6069;
+  --cs: #dde4e8;
+}
+
+/*
+ * The chip's parts. The button keeps its place and its size; the face inside
+ * it is what wears the colour and moves, so a tap never misses (WCAG 2.5.8).
+ */
+.cx {
+  display: contents;
+  border-radius: inherit;
+}
+.cx-face {
+  position: relative;
+  display: inline-flex;
+  flex: 1 0 auto;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 0.5rem;
+  border-radius: inherit;
+  background: var(--cg-roll-soft);
+  color: var(--cg-roll);
+  transform-origin: 50% 100%;
+  transition: color 120ms ease-out;
+}
+.cx-num {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+}
+.cx-mat {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.cx-over {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.cx-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.cx-p {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+.cx-tag {
+  position: absolute;
+  top: -9px;
+  left: -6px;
+  z-index: 3;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--cg-surface);
+  color: var(--c);
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.cx-more {
+  right: -6px;
+  left: auto;
+  color: var(--cg-ink-muted);
+}
+
+/* The one look: the tint, a ring in the newest condition's colour, ink. */
+.cx-on .cx-face {
+  overflow: hidden;
+  background: transparent;
+  color: var(--cg-ink);
+}
+.cx-on .cx-num {
+  text-shadow:
+    0 0 3px var(--cs),
+    0 0 6px var(--cs);
+}
+.cx-mat > .cx-layer {
+  background: var(--cs);
+}
+/*
+ * Two conditions split the chip at 115 degrees, whatever its width. Each keeps
+ * to its own side, tint and pieces: stacked, two layers would take the number
+ * as low as 2.9:1. The half pixel they share hides the seam.
+ */
+.cx-two .cx-mat > .cx-layer {
+  clip-path: polygon(0 0, calc(50% + 8px) 0, calc(50% - 8px) 100%, 0 100%);
+}
+.cx-two .cx-mat > .cx-layer + .cx-layer {
+  clip-path: polygon(calc(50% + 7.5px) 0, 100% 0, 100% 100%, calc(50% - 8.5px) 100%);
+}
+.cx-ring {
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--c);
+  opacity: 0.55;
+}
+
+/*
+ * The one arrival, and the one flash, which a roll's total lands on. The tint
+ * floods up over plain blue, except where Invisible has no tint to cover it:
+ * its side would hold the blue for the whole arrival, then snap to glass.
+ */
+.cx-arrive:not(:has(.cx-invisible)) .cx-face {
+  background: var(--cg-roll-soft);
+}
+.cx-arrive .cx-mat {
+  animation: cx-flood 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.cx-surge {
+  inset: 0;
+  background: var(--c);
+  opacity: 0;
+  animation: cx-surge 480ms ease-out both;
+}
+@keyframes cx-flood {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes cx-surge {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Poisoned: murk slops inside, bubbles rise and pop at its surface. */
+.cx-liquid {
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  height: 62%;
+  background: var(--c);
+  opacity: 0.34;
+  clip-path: polygon(
+    0 12%,
+    6.25% 4%,
+    12.5% 0,
+    18.75% 4%,
+    25% 12%,
+    31.25% 20%,
+    37.5% 24%,
+    43.75% 20%,
+    50% 12%,
+    56.25% 4%,
+    62.5% 0,
+    68.75% 4%,
+    75% 12%,
+    81.25% 20%,
+    87.5% 24%,
+    93.75% 20%,
+    100% 12%,
+    100% 100%,
+    0 100%
+  );
+  animation: cx-slosh 3.2s linear infinite;
+}
+.cx-bubble {
+  bottom: 2px;
+  left: 26%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.2px var(--c);
+  animation: cx-bubble 2.4s ease-in infinite;
+}
+.cx-bubble2 {
+  left: 70%;
+  animation-delay: -1.2s;
+}
+@keyframes cx-slosh {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes cx-bubble {
+  0% {
+    transform: translateY(2px) scale(0.5);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    transform: translateY(-13px) scale(1);
+    opacity: 1;
+  }
+  80%,
+  100% {
+    transform: translateY(-16px) scale(1.7);
+    opacity: 0;
+  }
+}
+
+/* Blinded: two fog bands drift across. */
+.cx-fog {
+  top: -2px;
+  left: 5%;
+  width: 90%;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c), transparent);
+  opacity: 0.45;
+  animation: cx-fog 4.8s linear infinite;
+}
+.cx-fog2 {
+  top: 12px;
+  height: 26px;
+  animation-duration: 6.4s;
+  animation-delay: -2.4s;
+}
+@keyframes cx-fog {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+/* Restrained: diagonal bands bite in, strain, settle. */
+.cx-bands {
+  inset: 0 -20px;
+  background: repeating-linear-gradient(115deg, var(--c) 0 5px, transparent 5px 14px);
+  opacity: 0.42;
+  animation: cx-strain 2.4s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+}
+@keyframes cx-strain {
+  0%,
+  58%,
+  100% {
+    transform: translateX(0);
+  }
+  70% {
+    transform: translateX(-3px) scaleY(1.05);
+  }
+  85% {
+    transform: translateX(1px);
+  }
+}
+
+/* Exhausted: the charge drains to 14%, and refills to 72%. */
+.cx-charge {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 100%;
+  background: var(--c);
+  opacity: 0.34;
+  transform: scaleY(0.4);
+  transform-origin: 50% 100%;
+  animation: cx-drain 4.8s ease-in-out infinite;
+}
+@keyframes cx-drain {
+  0%,
+  100% {
+    transform: scaleY(0.72);
+  }
+  45%,
+  55% {
+    transform: scaleY(0.14);
+  }
+}
+
+/* Invisible: glass with a dashed ring, and a glint passes. */
+.cx-ghost {
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px dashed var(--c);
+  border-radius: inherit;
+  opacity: 0.7;
+}
+.cx-glint {
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 14px;
+  background: linear-gradient(90deg, transparent, var(--c), transparent);
+  opacity: 0.8;
+  transform: skewX(-18deg) translateX(-24px);
+  animation: cx-glint 3.2s ease-in-out infinite;
+}
+@keyframes cx-glint {
+  0%,
+  30% {
+    transform: skewX(-18deg) translateX(-24px);
+  }
+  70%,
+  100% {
+    transform: skewX(-18deg) translateX(76px);
+  }
+}
+
+/* Frightened: cowers, shakes and flinches, over a still violet vignette. */
+.cx-vignette {
+  inset: -30%;
+  background: radial-gradient(closest-side, transparent 30%, var(--c) 100%);
+  opacity: 0.6;
+  transform: scale(1.05);
+}
+.cx-body-cower {
+  scale: 0.94;
+  transform-origin: 50% 50%;
+  animation:
+    cx-tremble 130ms linear infinite,
+    cx-flinch 2.4s ease-in-out infinite;
+}
+@keyframes cx-tremble {
+  0%,
+  100% {
+    translate: -0.8px 0;
+  }
+  25% {
+    translate: 0.8px 0.4px;
+  }
+  50% {
+    translate: -0.6px -0.4px;
+  }
+  75% {
+    translate: 0.6px 0.2px;
+  }
+}
+@keyframes cx-flinch {
+  0%,
+  70%,
+  100% {
+    scale: 0.94;
+  }
+  76% {
+    scale: 0.86;
+  }
+  86% {
+    scale: 0.95;
+  }
+}
+
+/* Prone: tipped over, tries to rise, falls back, over a still dust floor. */
+.cx-pile {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 11px;
+  background: var(--c);
+  opacity: 0.5;
+  clip-path: polygon(0 25%, 14% 8%, 30% 34%, 48% 52%, 66% 66%, 84% 82%, 100% 100%, 0 100%);
+}
+.cx-body-fallen {
+  transform: rotate(-8deg);
+  transform-origin: 100% 100%;
+  animation: cx-fallen 3.2s ease-in-out infinite;
+}
+/* It falls when Prone is what arrived, not when something joins it on the floor. */
+.cx-arrive.cx-prone .cx-body-fallen {
+  animation: cx-fall 480ms ease-out both;
+}
+@keyframes cx-fallen {
+  0%,
+  58%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  70% {
+    transform: rotate(-3deg);
+  }
+  76% {
+    transform: rotate(-2.5deg);
+  }
+  84% {
+    transform: rotate(-9deg);
+  }
+  90% {
+    transform: rotate(-7deg);
+  }
+  95% {
+    transform: rotate(-8deg);
+  }
+}
+@keyframes cx-fall {
+  0% {
+    transform: rotate(0);
+  }
+  55% {
+    transform: rotate(-9.5deg);
+  }
+  75% {
+    transform: rotate(-7deg);
+  }
+  100% {
+    transform: rotate(-8deg);
+  }
+}
+
+/* Paralyzed: dead still, then a burst: bolts flash and the chip jolts. */
+.cx-lit {
+  inset: 0;
+  background: var(--c);
+  opacity: 0.14;
+  animation: cx-lit 2.4s steps(1) infinite;
+}
+.cx-bolt {
+  top: 4px;
+  right: -2px;
+  left: -2px;
+  height: 12px;
+  background: var(--c);
+  opacity: 0.8;
+  clip-path: polygon(
+    0 40%,
+    14% 60%,
+    24% 10%,
+    38% 80%,
+    52% 20%,
+    66% 90%,
+    78% 30%,
+    100% 55%,
+    100% 75%,
+    78% 50%,
+    66% 100%,
+    52% 40%,
+    38% 100%,
+    24% 30%,
+    14% 80%,
+    0 60%
+  );
+  /* Held still, the bolts stay in sight: parked at the edges, clear of the number. */
+  transform: translateY(-6px);
+  animation: cx-bolt-a 2.4s steps(1) infinite;
+}
+.cx-bolt2 {
+  top: auto;
+  bottom: 4px;
+  transform: translateY(6px);
+  animation-name: cx-bolt-b;
+}
+.cx-body-rigid {
+  animation: cx-rigid 2.4s linear infinite;
+}
+@keyframes cx-lit {
+  0%,
+  63%,
+  82%,
+  100% {
+    opacity: 0;
+  }
+  64% {
+    opacity: 0.26;
+  }
+  67% {
+    opacity: 0.1;
+  }
+  70% {
+    opacity: 0.22;
+  }
+  73% {
+    opacity: 0.1;
+  }
+  76% {
+    opacity: 0.16;
+  }
+  79% {
+    opacity: 0.06;
+  }
+}
+@keyframes cx-bolt-a {
+  0%,
+  63%,
+  67%,
+  73%,
+  79%,
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  64% {
+    opacity: 0.95;
+    transform: translateX(-2px);
+  }
+  70% {
+    opacity: 0.85;
+    transform: translateX(2px) scaleY(-1);
+  }
+  76% {
+    opacity: 0.6;
+    transform: translateX(-1px);
+  }
+}
+@keyframes cx-bolt-b {
+  0%,
+  66%,
+  70%,
+  76%,
+  82%,
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  67% {
+    opacity: 0.9;
+    transform: translateX(2px) scaleY(-1);
+  }
+  73% {
+    opacity: 0.8;
+    transform: translateX(-2px);
+  }
+  79% {
+    opacity: 0.5;
+    transform: translateX(1px);
+  }
+}
+@keyframes cx-rigid {
+  0%,
+  62%,
+  82%,
+  100% {
+    transform: translateX(0);
+  }
+  64% {
+    transform: translateX(-3px);
+  }
+  67% {
+    transform: translateX(3px);
+  }
+  70% {
+    transform: translateX(-3px);
+  }
+  73% {
+    transform: translateX(3px);
+  }
+  76% {
+    transform: translateX(-2px);
+  }
+  79% {
+    transform: translateX(1px);
+  }
+}
+
+/* Stunned: three stars orbit above the chip, over a still magenta wash. */
+.cx-wash {
+  inset: 0;
+  background: linear-gradient(to top, var(--c), transparent 80%);
+  opacity: 0.48;
+}
+.cx-star {
+  top: -8px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  background: var(--c);
+  clip-path: polygon(
+    50% 0,
+    62% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    38% 35%
+  );
+  transform: translateX(-18px);
+  animation: cx-orbit 1.6s linear infinite;
+}
+.cx-star2 {
+  transform: none;
+  animation-delay: -0.533s;
+}
+.cx-star3 {
+  transform: translateX(18px);
+  animation-delay: -1.067s;
+}
+@keyframes cx-orbit {
+  0%,
+  100% {
+    transform: translate(26px, 0) scale(0.85);
+    opacity: 0.9;
+  }
+  12.5% {
+    transform: translate(18.4px, 4.2px) scale(1);
+    opacity: 1;
+  }
+  25% {
+    transform: translate(0, 6px) scale(1.15);
+    opacity: 1;
+  }
+  37.5% {
+    transform: translate(-18.4px, 4.2px) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-26px, 0) scale(0.85);
+    opacity: 0.9;
+  }
+  62.5% {
+    transform: translate(-18.4px, -4.2px) scale(0.65);
+    opacity: 0.6;
+  }
+  75% {
+    transform: translate(0, -6px) scale(0.55);
+    opacity: 0.45;
+  }
+  87.5% {
+    transform: translate(18.4px, -4.2px) scale(0.65);
+    opacity: 0.6;
+  }
+}
+
+/* Unconscious: three Z's rise over the chip, over a still indigo dusk. */
+.cx-dusk {
+  inset: 0;
+  background: linear-gradient(to bottom, var(--c), transparent 70%);
+  opacity: 0.25;
+}
+.cx-z {
+  top: -6px;
+  left: 62%;
+  color: var(--c);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transform: scale(0.8);
+  animation: cx-z 2.4s linear infinite;
+}
+.cx-z::before {
+  content: "Z";
+}
+.cx-z2 {
+  transform: translate(7px, -6px);
+  animation-delay: -0.8s;
+}
+.cx-z3 {
+  transform: translate(14px, -12px) scale(1.2);
+  animation-delay: -1.6s;
+}
+@keyframes cx-z {
+  0% {
+    transform: translate(0, 2px) scale(0.7);
+    opacity: 0;
+  }
+  15%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(14px, -16px) scale(1.25);
+    opacity: 0;
+  }
+}
+
+/* Incapacitated: crossed out. A slash draws through, holds, then lifts. */
+.cx-strike {
+  bottom: -1px;
+  left: -1px;
+  width: calc(100% + 18px);
+  height: 4px;
+  background: var(--c);
+  opacity: 0.4;
+  transform: rotate(-33deg);
+  transform-origin: 0 50%;
+  animation: cx-strike 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes cx-strike {
+  0% {
+    transform: rotate(-33deg) scaleX(0);
+    opacity: 0.4;
+  }
+  30%,
+  82% {
+    transform: rotate(-33deg) scaleX(1);
+    opacity: 0.4;
+  }
+  100% {
+    transform: rotate(-33deg) scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* Petrified: rows of bricks drop and stack, the chip thuds, the wall falls. */
+.cx-course {
+  right: 0;
+  bottom: 1px;
+  left: 0;
+  height: 10px;
+  background: linear-gradient(90deg, var(--c) 0 18px, transparent 18px) 0 0 / 20px 100% repeat-x;
+  opacity: 0.44;
+  animation: cx-drop 4.8s linear infinite;
+}
+.cx-course2 {
+  bottom: 12px;
+  background-position-x: -10px;
+  animation-delay: -4.416s;
+}
+.cx-course3 {
+  bottom: 23px;
+  animation-delay: -4.032s;
+}
+.cx-body-thud {
+  animation: cx-thud 4.8s steps(1) infinite;
+}
+@keyframes cx-drop {
+  0% {
+    transform: translateY(-44px);
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 0.6);
+  }
+  8% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  10% {
+    transform: translateY(-2px);
+    animation-timing-function: ease-in;
+  }
+  12% {
+    transform: translateY(0);
+    animation-timing-function: linear;
+  }
+  70% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 0.6);
+  }
+  82%,
+  100% {
+    transform: translateY(44px);
+  }
+}
+@keyframes cx-thud {
+  0% {
+    transform: none;
+  }
+  8% {
+    transform: translateY(1.5px);
+  }
+  10% {
+    transform: none;
+  }
+  16% {
+    transform: translateY(1.5px);
+  }
+  18% {
+    transform: none;
+  }
+  24% {
+    transform: translateY(1.5px);
+  }
+  26%,
+  100% {
+    transform: none;
+  }
+}
+
+/*
+ * Ignore once, armed: this roll is normal, so the chip looks normal, and a
+ * dashed ring in the condition's colour says one is waiting.
+ */
+.cx-ig .cx-face {
+  background: var(--cg-roll-soft);
+  color: var(--cg-roll);
+}
+.cx-ig .cx-num {
+  text-shadow: none;
+}
+.cx-ig .cx-mat,
+.cx-ig .cx-over {
+  opacity: 0;
+}
+.cx-ig .cx-p {
+  animation: none;
+}
+.cx-ignore-ring {
+  inset: 0;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--c);
+  border-radius: inherit;
+}
+
+/* Removal: the colour fades to plain blue, and Prone stands back up. */
+.cx-rm .cx-face {
+  background: var(--cg-roll-soft);
+  color: var(--cg-roll);
+  scale: none;
+  animation: none;
+}
+.cx-rm .cx-num {
+  text-shadow: none;
+}
+.cx-rm .cx-mat,
+.cx-rm .cx-over {
+  animation: cx-fade 200ms ease-out both;
+}
+.cx-rm .cx-face.cx-body-fallen {
+  animation: cx-rise 200ms ease-out both;
+}
+@keyframes cx-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes cx-rise {
+  from {
+    transform: rotate(-8deg);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* "Animate condition effects" off (Settings): the still poses, nothing moving. */
+.cx-still .cx-p,
+.cx-still .cx-face {
+  animation: none;
+}

@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
+import { conditionSheetStore } from '@/stores/conditionSheet';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { ConditionStrip } from './ConditionStrip';
 
@@ -186,6 +187,55 @@ describe('exhaustion at its limits', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByText('HP 0')).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(button('Exhausted 6')));
+  });
+});
+
+describe('while a condition sheet is over the attack chips', () => {
+  const held = () => conditionSheetStore.getState().open;
+
+  afterEach(() => conditionSheetStore.setState({ open: false }));
+
+  it('holds them from the moment a sheet opens until just after it closes', async () => {
+    renderStrip([{ id: 'Poisoned' }], { addable: true });
+    expect(held()).toBe(false);
+
+    fireEvent.click(button('Condition'));
+    await screen.findByRole('dialog', { name: 'Conditions' });
+    expect(held()).toBe(true);
+
+    const closing = Date.now();
+    await closeSheet();
+    // Closed, and still held: the chips play what changed once it has cleared.
+    expect(held()).toBe(true);
+    await waitFor(() => expect(held()).toBe(false));
+    expect(Date.now() - closing).toBeGreaterThanOrEqual(290);
+  });
+
+  it('keeps holding across one sheet closing and another opening', async () => {
+    renderStrip([{ id: 'Poisoned' }], { addable: true });
+    fireEvent.click(button('Condition'));
+    await screen.findByRole('dialog', { name: 'Conditions' });
+    await closeSheet();
+    fireEvent.click(button('Poisoned'));
+    await screen.findByRole('dialog', { name: 'Poisoned' });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(held()).toBe(true);
+  });
+
+  it('holds them for a condition’s own sheet too', async () => {
+    renderStrip([{ id: 'Poisoned' }]);
+    fireEvent.click(button('Poisoned'));
+    await screen.findByRole('dialog', { name: 'Poisoned' });
+    expect(held()).toBe(true);
+  });
+
+  it('lets go at once if the strip goes while a sheet is up', async () => {
+    renderStrip([{ id: 'Poisoned' }]);
+    fireEvent.click(button('Poisoned'));
+    await screen.findByRole('dialog', { name: 'Poisoned' });
+    expect(held()).toBe(true);
+    cleanup();
+    expect(held()).toBe(false);
   });
 });
 

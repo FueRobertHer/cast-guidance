@@ -168,6 +168,60 @@ describe('the cue on the Stats tab', () => {
   });
 });
 
+describe('the attack chips on the Play tab', () => {
+  const attackChip = () => {
+    const attacks = screen.getByRole('heading', { name: 'Attacks' }).parentElement;
+    if (attacks === null) throw new Error('no attacks section');
+    const chip = within(attacks).getAllByTitle(/ attack$/)[0];
+    if (chip === undefined) throw new Error('no attack chip');
+    return chip;
+  };
+  const looksOn = (chip: HTMLElement) =>
+    [...(chip.querySelector('.cx')?.classList ?? [])].filter((c) => !c.startsWith('cx-on'));
+
+  it('wear what the cue says, at rest on arriving at the tab', () => {
+    renderTab(<PlayTab />, [{ id: 'Poisoned' }]);
+    const chip = attackChip();
+    expect(looksOn(chip)).toEqual(['cx', 'cx-poisoned']);
+    expect(chip.querySelector('.cx-liquid')).not.toBeNull();
+  });
+
+  it('are plain blue on the same face with no condition on them', () => {
+    renderTab(<PlayTab />, []);
+    const chip = attackChip();
+    expect(looksOn(chip)).toEqual(['cx']);
+    expect(chip.querySelector('.cx-mat')).toBeNull();
+  });
+
+  it('wear a condition that only stops actions, and still roll', () => {
+    renderTab(<PlayTab />, [{ id: 'Paralyzed' }]);
+    const chip = attackChip();
+    expect(looksOn(chip)).toEqual(['cx', 'cx-paralyzed']);
+    fireEvent.click(chip);
+    expect(latest()).toBeDefined();
+  });
+
+  it('go plain with a ring when Ignore once is armed, for the one roll', () => {
+    renderTab(<PlayTab />, [{ id: 'Prone' }]);
+    const chip = attackChip();
+    fireEvent.click(ignoreOnce('attack roll')[0] as HTMLElement);
+    expect(chip.querySelector('.cx')?.classList.contains('cx-ig')).toBe(true);
+    expect(chip.querySelector('.cx-ignore-ring')).not.toBeNull();
+
+    fireEvent.click(chip);
+    expect(latest()?.meta?.cue).toBe('Conditions ignored for this roll');
+    // Its total shows on the plain chip it was rolled from.
+    expect(chip.querySelector('.cx')?.classList.contains('cx-ig')).toBe(true);
+  });
+
+  it('never touch the damage chips beside them', () => {
+    renderTab(<PlayTab />, [{ id: 'Poisoned' }]);
+    const damage = screen.getAllByTitle(/ damage$/);
+    expect(damage.length).toBeGreaterThan(0);
+    for (const chip of damage) expect(chip.querySelector('.cx')).toBeNull();
+  });
+});
+
 describe('the cues on the Play tab', () => {
   it('rolls attacks with Prone’s disadvantage, said over the attack list', () => {
     renderTab(<PlayTab />, [{ id: 'Prone' }]);

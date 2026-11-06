@@ -1,9 +1,16 @@
 import { useState } from 'react';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
-import { type D20Effects, type D20Resolution, noD20Effect, resolveD20 } from '@/engine/conditions';
+import {
+  type ActiveCondition,
+  type D20Effects,
+  type D20Resolution,
+  noD20Effect,
+  resolveD20,
+} from '@/engine/conditions';
 import type { Ability } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
+import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
 
 /**
  * The sheet's d20 tests under the character's conditions: the words a cue
@@ -167,6 +174,40 @@ export function rollD20Test(
   return {
     ...result,
     meta: { ...result.meta, cue, ...(resolution.autoFail ? { autoFail: true } : {}) },
+  };
+}
+
+/**
+ * What an attack chip wears, read only from what the roll's cue says
+ * (`effects`) and the "Can't take actions" warning (`noActions`), so the two
+ * can never disagree. A condition reaches the chip under its own name: an
+ * implied one (Unconscious's Prone and Incapacitated) adds no look of its own,
+ * and one the rules suppress or the player switched off adds none at all. Notes
+ * alone (Charmed, 2024 Grappled) leave the chip plain. The newest condition,
+ * the last one added, comes first.
+ */
+export function attackWear(
+  conditions: readonly ActiveCondition[],
+  effects: D20Effects,
+  noActions: readonly string[],
+  armed: boolean,
+): ChipWear {
+  const reaching = new Set(
+    [
+      ...effects.advantage,
+      ...effects.disadvantage,
+      ...(effects.penalty === undefined ? [] : [effects.penalty.source]),
+      ...noActions,
+    ].map((source) => (source.startsWith('Exhaustion') ? 'Exhaustion' : source)),
+  );
+  const looks: ChipLook[] = [];
+  for (const { id } of conditions) {
+    if (reaching.has(id) && isChipLook(id)) looks.unshift(id);
+  }
+  return {
+    looks,
+    ignored: armed,
+    ...(effects.penalty === undefined ? {} : { penalty: effects.penalty.amount }),
   };
 }
 
