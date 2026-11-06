@@ -1,10 +1,11 @@
 import { AlertTriangle, CircleAlert, Plus, X } from 'lucide-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import type { CharacterDoc } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
+import { conditionSheetStore } from '@/stores/conditionSheet';
 import { Chip, chipClass } from '@/ui/Chip';
 import { Sheet } from '@/ui/sheet';
 import { ToggleChip } from '@/ui/ToggleChip';
@@ -22,6 +23,13 @@ export function conditionLabel(c: Condition): { name: string; level?: number } {
 
 /** Where focus lands when nothing nearer is left: the sheet's title, which takes it. */
 const sheetTitle = () => document.getElementById('sheet-title');
+
+/**
+ * How long after a sheet closes the chips play what changed under it. vaul's
+ * slide takes 500ms, but its curve has cleared most of the page by now, so the
+ * arrival is seen rather than spent behind the sheet.
+ */
+const SHEET_CLEARS_MS = 300;
 
 /**
  * The condition strip (DS "Conditions"): the active conditions, in sight on
@@ -64,6 +72,18 @@ export function ConditionStrip({
   // A removed chip's place: focus goes to the chip now there, the one before
   // it if it was the last, the add chip if none is left, then the title.
   const refocus = useRef<number | null>(null);
+
+  // Tells the attack chips a change is being made over them (conditionSheet.ts).
+  const sheetOpen = infoOpen || pickerOpen;
+  useEffect(() => {
+    if (sheetOpen) {
+      conditionSheetStore.setState({ open: true });
+      return;
+    }
+    const timer = setTimeout(() => conditionSheetStore.setState({ open: false }), SHEET_CLEARS_MS);
+    return () => clearTimeout(timer);
+  }, [sheetOpen]);
+  useEffect(() => () => conditionSheetStore.setState({ open: false }), []);
 
   useLayoutEffect(() => {
     const at = refocus.current;

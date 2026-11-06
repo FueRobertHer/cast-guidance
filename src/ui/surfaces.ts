@@ -14,5 +14,14 @@ export const cardClass = 'rounded-card bg-surface p-4 shadow-card ring-1 ring-li
 export const listClass =
   'flex flex-col divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
 
+/**
+ * A list with attack chips in its rows: unclipped, because a condition's marks
+ * go past a chip's edge, and Unconscious's Z's past the top of the first row.
+ * With nothing clipping its corners, it gives them to its first and last rows,
+ * for a row that paints a ground of its own (`SpellRow`, while concentrating).
+ */
+export const openListClass =
+  'flex flex-col divide-y divide-line rounded-card bg-surface shadow-card ring-1 ring-line ring-inset *:first:rounded-t-card *:last:rounded-b-card';
+
 /** A list row's padding and size: a title over a caption, an action at the end. */
 export const listRowClass = 'flex min-h-14 items-center gap-3 px-4 py-2';
