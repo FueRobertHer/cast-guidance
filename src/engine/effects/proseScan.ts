@@ -27,6 +27,10 @@ const ABILITY_WORDS: Record<string, Ability> = {
   wisdom: 'wis',
   charisma: 'cha',
 };
+const ABILITY_NAME = Object.keys(ABILITY_WORDS).join('|');
+const USES_BY_ABILITY = new RegExp(
+  `number of times equal to (1 \\+ )?your (${ABILITY_NAME}) modifier`,
+);
 
 /**
  * Where prose says a dice roll deals damage, by the wordings the data uses. A
@@ -95,18 +99,45 @@ const slug = (s: string) =>
 
 /** Prose saying a thing can be done once between rests. */
 function statesOnceLimit(text: string): boolean {
-  return (
-    /once per (?:short|long) rest/.test(text) ||
-    /you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)/.test(
-      text,
-    ) ||
-    /must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
-      text,
-    )
+  return /once per (?:short|long) rest|you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)|must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
+    text,
   );
 }
 
+const totalLevelOf = (col: Collector) => col.doc.classes.reduce((s, c) => s + c.levels, 0);
+
 const sentencesOf = (text: string) => text.split(/(?<=\.) /);
+
+/**
+ * A rest that only says when something else happens: "when you finish a short
+ * rest, you can cast ...", "a ceremony can be held during a short or long rest".
+ */
+const REST_AS_OCCASION =
+  /when you finish a short rest, you can [^.,;]*|(?<=^|[.,;] )[^.,;]*during a short or long rest[^.,;]*/g;
+/** A sentence saying a use comes back: "regain one use", "regain it", "uses are restored". */
+const USE_COMES_BACK =
+  /\b(?:regain|recover|restore)[a-z]*\b[^.,;]*\b(?:uses?\b|(?:it|one|this feature)(?=[.,;]|$))|\buses?\b[^.,;]*\b(?:regained|recovered|restored|returned|returns?)\b|\b(?:recharge|refresh|replenish|reset)/;
+/** A clause giving another go: "you can use it again". */
+const ANOTHER_GO = /\b(?:again|once more)\b/;
+
+/**
+ * Prose without the rests that are only occasions, so none is read as the reset.
+ * Only those two wordings come out, and doubt keeps them: words that a use comes
+ * back leave the sentence whole, so anything added above can only keep a rest in.
+ * If no rest would be left, nothing better says which one it is, so the prose stays.
+ */
+function withoutRestOccasions(text: string): string {
+  const left = sentencesOf(text)
+    .map((sentence) =>
+      USE_COMES_BACK.test(sentence)
+        ? sentence
+        : sentence.replaceAll(REST_AS_OCCASION, (clause) =>
+            ANOTHER_GO.test(clause) ? clause : '',
+          ),
+    )
+    .join(' ');
+  return /\b(?:short|long) rests?\b/.test(left) ? left : text;
+}
 
 /** Text as space-padded words, so a spell's name matches whole words only. */
 const asWords = (text: string) => ` ${text.replaceAll(/[^a-z0-9']+/g, ' ')} `;
@@ -189,22 +220,17 @@ function detectUses(
   if (/number of times equal to your proficiency bonus/.test(text)) return 'profBonus';
   // "a number of times equal to [1 +] your Charisma modifier [(a minimum of
   // once)]": Divine Sense, Cleansing Touch, and a long tail of race traits.
-  const abilityUses = text.match(
-    /number of times equal to (1 \+ )?your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
-  );
+  const abilityUses = text.match(USES_BY_ABILITY);
   if (abilityUses?.[2] !== undefined) {
-    const ability = ABILITY_WORDS[abilityUses[2]];
-    if (ability !== undefined) {
-      return abilityUses[1] !== undefined ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
-    }
+    // The pattern admits nothing else but an ability's name.
+    const ability = ABILITY_WORDS[abilityUses[2]] as Ability;
+    return abilityUses[1] !== undefined ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
   }
-  const counts: number[] = [];
-  if (statesOnceLimit(text)) counts.push(1);
-  if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) twice/.test(text)) counts.push(2);
-  if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) three times/.test(text)) {
-    counts.push(3);
-  }
-  return counts.length > 0 ? Math.min(...counts) : undefined;
+  if (statesOnceLimit(text)) return 1;
+  if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) twice/.test(text)) return 2;
+  return /use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) three times/.test(text)
+    ? 3
+    : undefined;
 }
 
 /**
@@ -270,7 +296,6 @@ function actionDice(text: string, phraseAt: number): RegExpExecArray | null {
   return null;
 }
 
-const ABILITY_NAME = Object.keys(ABILITY_WORDS).join('|');
 const SKILL_NAME = SKILLS.map((s) => s.name.toLowerCase()).join('|');
 const LIST_SEPARATOR = /, or |, | or /;
 const listOf = (item: string) => `(?:${item})(?:(?:, or |, | or )(?:${item}))*`;
@@ -347,6 +372,11 @@ function standingBonus(
   next: string | undefined,
   origin: EffectOrigin,
 ): EffectInput | undefined {
+  const initiative = (amount: BonusAmount): EffectInput => ({
+    kind: 'initiativeBonus',
+    amount,
+    origin,
+  });
   const half = sentence.match(HALF_PROF)?.groups;
   if (half !== undefined) {
     const named = half.abilities === 'ability' ? undefined : half.abilities;
@@ -363,16 +393,12 @@ function standingBonus(
   const added = sentence.match(ADD_TO_INITIATIVE)?.groups;
   // "The roll" means initiative only when the sentence opens by rolling it.
   if (added !== undefined && (added.target !== 'the roll' || added.rolls !== undefined)) {
-    return { kind: 'initiativeBonus', amount: amountFrom(added, true), origin };
+    return initiative(amountFrom(added, true));
   }
   const flat = sentence.match(FLAT_INITIATIVE)?.groups;
-  if (flat !== undefined) {
-    return { kind: 'initiativeBonus', amount: Number(flat.amount), origin };
-  }
+  if (flat !== undefined) return initiative(Number(flat.amount));
   const equal = sentence.match(INITIATIVE_EQUAL_TO)?.groups;
-  if (equal !== undefined) {
-    return { kind: 'initiativeBonus', amount: amountFrom(equal, false), origin };
-  }
+  if (equal !== undefined) return initiative(amountFrom(equal, false));
 
   const check = sentence.match(CHECK_BONUS)?.groups;
   if (check !== undefined) {
@@ -418,7 +444,7 @@ const LIMITS = /^once you\b|\bonce per\b|\bthis bonus\b|\bcan't (?:use|do)\b.*\b
  * Another string is taken as another benefit, so its limit is not this bonus's.
  */
 function emitStandingBonuses(col: Collector, entries: unknown, origin: EffectOrigin): void {
-  const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+  const totalLevel = totalLevelOf(col);
   const limits = (sentence: string) => LIMITS.test(sentence) || detectUses(sentence) !== undefined;
   for (const string of entryStrings(entries, { skipNamedOptions: true })) {
     const sentences = string.split(/(?<=[.!?])\s+/).map((s) => s.replace(/[.!?]$/, ''));
@@ -464,9 +490,7 @@ export function proseScanFeature(
     const resetText =
       returnsUses.length > 0
         ? returnsUses.join(' ')
-        : statesOnceLimit(notSpells)
-          ? notSpells
-          : text;
+        : withoutRestOccasions(statesOnceLimit(notSpells) ? notSpells : text);
     const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
@@ -498,7 +522,7 @@ export function proseScanFeature(
   // reached. Two phrasings: 2014 "3d6 at 6th level" and 2024 "levels 5 (2d10),
   // 11 (3d10)". Both give absolute dice for a level threshold.
   if (roll !== undefined) {
-    const totalLevel = col.doc.classes.reduce((s, c) => s + c.levels, 0);
+    const totalLevel = totalLevelOf(col);
     const steps: Array<[number, string]> = [];
     // From the rolled die on: a step before it scales another benefit's die.
     const fromDice = text.slice(diceAt);
@@ -528,7 +552,7 @@ export function proseScanFeature(
   const targetAbility =
     ABILITY_WORDS[
       text.match(
-        /must (?:then )?(?:each )?make an? (strength|dexterity|constitution|intelligence|wisdom|charisma) saving throw/,
+        new RegExp(`must (?:then )?(?:each )?make an? (${ABILITY_NAME}) saving throw`),
       )?.[1] ?? ''
     ];
   // DC phrasing varies: 2014 "equals 8 + your X modifier + your proficiency
@@ -537,10 +561,14 @@ export function proseScanFeature(
   const dcAbility =
     ABILITY_WORDS[
       text.match(
-        /8 (?:\+|plus) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier (?:\+|and) (?:your )?proficiency bonus/,
+        new RegExp(
+          `8 (?:\\+|plus) your (${ABILITY_NAME}) modifier (?:\\+|and) (?:your )?proficiency bonus`,
+        ),
       )?.[1] ??
         text.match(
-          /8 (?:\+|plus) your proficiency bonus (?:\+|and) your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
+          new RegExp(
+            `8 (?:\\+|plus) your proficiency bonus (?:\\+|and) your (${ABILITY_NAME}) modifier`,
+          ),
         )?.[1] ??
         ''
     ];
@@ -583,7 +611,7 @@ export function proseScanFeature(
   // the whole subtree would arm every Beasthide and Swiftstride too.
   const ownText = flattenEntries(entries, { skipNamedOptions: true });
   if (/unarmed strike/.test(ownText)) {
-    const ability = `(${Object.keys(ABILITY_WORDS).join('|')})`;
+    const ability = `(${ABILITY_NAME})`;
     // The modifier is captured from the damage phrase itself, not anywhere in
     // the trait: a Dhampir's bite adds CON while the same trait's save DC also
     // names CON, and Dragon Hide states a DEX-based AC beside a STR bite.
@@ -627,23 +655,20 @@ export function proseScanFeature(
   // Gated to the trait name so unrelated AC mentions don't trigger it;
   // generalizes across Tortle, Lizardfolk, Loxodon, Locathah, Warforged…
   if (/natural armor/.test(name.toLowerCase())) {
-    const withMod = text.match(
-      /(\d+) \+ (?:your )?(strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/,
-    );
+    const withMod = text.match(new RegExp(`(\\d+) \\+ (?:your )?(${ABILITY_NAME}) modifier`));
     const flat =
       text.match(/base ac (?:of|is|equals|,) (\d+)/) ?? text.match(/ac (?:of|is) (\d+)\b/);
     const bonus = text.match(/\+\s*(\d+) bonus to (?:your )?armor class/);
-    if (withMod?.[1] !== undefined && withMod[2] !== undefined) {
-      const ability = ABILITY_WORDS[withMod[2]];
+    const base = withMod?.[1] ?? flat?.[1];
+    if (base !== undefined) {
+      const added = withMod?.[2];
       col.add({
         kind: 'acFormula',
         label: name,
-        base: Number(withMod[1]),
-        addAbilities: ability !== undefined ? [ability] : [],
+        base: Number(base),
+        addAbilities: added === undefined ? [] : [ABILITY_WORDS[added] as Ability],
         origin,
       });
-    } else if (flat?.[1] !== undefined) {
-      col.add({ kind: 'acFormula', label: name, base: Number(flat[1]), addAbilities: [], origin });
     } else if (bonus?.[1] !== undefined) {
       col.add({ kind: 'acBonus', amount: Number(bonus[1]), origin });
     }
