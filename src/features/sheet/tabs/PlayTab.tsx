@@ -1260,7 +1260,7 @@ export function Component() {
               const mechanics = [
                 a.note,
                 a.save !== undefined
-                  ? `DC ${a.save.dc} ${a.save.targetAbility.toUpperCase()} save`
+                  ? `${a.save.dc === undefined ? '' : `DC ${a.save.dc} `}${a.save.targetAbility.toUpperCase()} save`
                   : undefined,
                 remaining !== undefined ? `${remaining} of ${linkedResource?.max} left` : undefined,
               ]

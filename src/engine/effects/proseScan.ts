@@ -57,9 +57,13 @@ const DAMAGE_BEFORE_DICE = /damage (?:equal to|increases (?:to|by)) $/;
  * `skipNamedOptions` drops named items nested in a list or options node. Those
  * are the alternatives a player picks between (a Shifter's Longtooth bite, a
  * Totem Warrior's animal), so a scan that wants only what the trait itself
- * always grants must not read them.
+ * always grants must not read them. `skipNamed` drops every named node, leaving
+ * only the words that are not under any benefit's name.
  */
-function entryStrings(entries: unknown, opts: { skipNamedOptions?: boolean } = {}): string[] {
+function entryStrings(
+  entries: unknown,
+  opts: { skipNamedOptions?: boolean; skipNamed?: boolean } = {},
+): string[] {
   const parts: string[] = [];
   const walk = (v: unknown, inChoiceList: boolean): void => {
     if (typeof v === 'string') {
@@ -72,7 +76,12 @@ function entryStrings(entries: unknown, opts: { skipNamedOptions?: boolean } = {
     }
     if (typeof v === 'object' && v !== null) {
       const o = v as Record<string, unknown>;
-      if (opts.skipNamedOptions === true && inChoiceList && typeof o.name === 'string') return;
+      if (
+        typeof o.name === 'string' &&
+        (opts.skipNamed || (opts.skipNamedOptions && inChoiceList))
+      ) {
+        return;
+      }
       const nested = inChoiceList || o.type === 'list' || o.type === 'options';
       walk(o.entries, nested);
       walk(o.entry, nested);
@@ -86,7 +95,7 @@ function entryStrings(entries: unknown, opts: { skipNamedOptions?: boolean } = {
 /** An entries tree flattened to one string of plain lowercase text. */
 export function flattenEntries(
   entries: unknown,
-  opts: { skipNamedOptions?: boolean } = {},
+  opts: { skipNamedOptions?: boolean; skipNamed?: boolean } = {},
 ): string {
   return entryStrings(entries, opts).join(' ');
 }
@@ -221,17 +230,29 @@ function detectUses(
   // "a number of times equal to [1 +] your Charisma modifier [(a minimum of
   // once)]": Divine Sense, Cleansing Touch, and a long tail of race traits.
   const abilityUses = text.match(USES_BY_ABILITY);
-  if (abilityUses?.[2] !== undefined) {
+  if (abilityUses?.[2]) {
     // The pattern admits nothing else but an ability's name.
     const ability = ABILITY_WORDS[abilityUses[2]] as Ability;
-    return abilityUses[1] !== undefined ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
+    return abilityUses[1] ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
   }
   if (statesOnceLimit(text)) return 1;
-  if (/use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) twice/.test(text)) return 2;
-  return /use (?:this (?:trait|feature)|it|your [\w\s]{1,30}?) three times/.test(text)
-    ? 3
-    : undefined;
+  const used = (times: string) =>
+    new RegExp(`use (?:this (?:trait|feature)|it|your [\\w\\s]{1,30}?) ${times}`).test(text);
+  if (used('twice')) return 2;
+  return used('three times') ? 3 : undefined;
 }
+
+/**
+ * 2024 phrasing, with its subject: "your familiar can take a Reaction" and "each
+ * target can then take a Reaction" spend that creature's Reaction, so they are no
+ * chip for the character, and "you can't" forbids one.
+ */
+const REACTION_PHRASE = /as a reaction|use your reaction|you (?:can|must) take a reaction/;
+/**
+ * 2024 phrasings: "replace one of your attacks" (Attack-action riders) and "as a
+ * Magic action" (the action to use a magical trait, e.g. Healing Hands).
+ */
+const ACTION_PHRASE = /as an action|use your action|replace one of your attacks|as a magic action/;
 
 /**
  * The phrase that earns a chip, and where it sits. Compact, high-signal chips
@@ -244,17 +265,10 @@ function chipPhrase(
 ): { economy: 'bonus' | 'reaction' | 'action'; at: number } | undefined {
   const bonus = text.search(/as a bonus action/);
   if (bonus !== -1) return { economy: 'bonus', at: bonus };
-  // 2024 phrasing, with its subject: "your familiar can take a Reaction" and
-  // "each target can then take a Reaction" spend that creature's Reaction, so
-  // they are no chip for the character, and "you can't" forbids one.
-  const reaction = text.search(/as a reaction|use your reaction|you (?:can|must) take a reaction/);
+  const reaction = text.search(REACTION_PHRASE);
   if (reaction !== -1) return { economy: 'reaction', at: reaction };
   if (!limitedUse) return undefined;
-  // 2024 phrasings: "replace one of your attacks" (Attack-action riders) and
-  // "as a Magic action" (the action to use a magical trait, e.g. Healing Hands).
-  const action = text.search(
-    /as an action|use your action|replace one of your attacks|as a magic action/,
-  );
+  const action = text.search(ACTION_PHRASE);
   return action === -1 ? undefined : { economy: 'action', at: action };
 }
 
@@ -294,6 +308,77 @@ function actionDice(text: string, phraseAt: number): RegExpExecArray | null {
     return m;
   }
   return null;
+}
+
+/**
+ * A save the feature puts on someone else, in the wordings the data uses. Anything
+ * else stays out, so a word missing here costs a chip its save, where a loose match
+ * would show the character's own roll ("you make", "you have advantage on", "when
+ * you fail", a repeat) as one they force. "You must" is theirs too, unless the
+ * "you" only places the targets: "creatures within 10 feet of you must". A clause
+ * opening on "when" or "if" is a trigger, not the feature's doing: "when an ally must
+ * make ..., you can use your reaction". Groups: a fixed DC, then the ability.
+ */
+const FORCED_SAVE = new RegExp(
+  `(?<!(?:^ ?|[.,;] )(?:when|if)[a-z]* [^.,;]{0,99})(?:(?:(?<=\\b(?:of|on|to|from|see|hear) you )|(?<!you ))must (?:[a-z]+ ){0,2}(?:make|succeed on)|(?:each creature|unless) [^.,;]*?(?:makes|succeeds on)|\\b(?:forc|caus)(?:es?|ing) (?!you\\b|damage)[^.,;]*?to make) an? (dc \\d+ )?(${ABILITY_NAME}) sav(?:e|ing throw)\\b`,
+);
+/**
+ * The first DC the prose names, and what it can be read as: your spell save DC (a
+ * first group), or 8 + a named ability + proficiency in either order, 2014 "8 + your
+ * X modifier + your proficiency bonus", 2024 "8 plus your X modifier and proficiency
+ * bonus". Those follow "DC" with no number or clause between, so an AC or hit points
+ * worked out the same way stay out, as does a die ("1d8 + your X modifier") and
+ * whatever follows a fixed DC, and they end there, so "+ 2" or "or your Y modifier"
+ * is not that number. Any other DC matches with no group.
+ */
+const DC_NAMED = new RegExp(
+  `\\b(?:(?:dc [^.,)\\d]{0,50}?)?(your (?:[a-z]+ )?spell save dc)(?! (?:[-+]|plus |minus ))|dc [^.,)\\d]{0,50}?\\b8 (?:\\+|plus) your (?:proficiency bonus (?:\\+|and) your (${ABILITY_NAME}) modifier|(${ABILITY_NAME}) modifier (?:\\+|and) (?:your )?proficiency bonus)(?=[).;]|$)|dc\\b)`,
+);
+
+/**
+ * The save a chip's action forces, read from the sentence of its phrase on, as its
+ * dice are. Under a benefit's own name the phrase reads only that string, so a
+ * neighbouring benefit's save is not this chip's. Otherwise it reads on through the
+ * feature's own text, without the named options a player picks between: one season
+ * of Fey Step or one Celestial Revelation is not what every use does. A save past
+ * the phrase of another action is that action's: a bonus action wins over a reaction
+ * in the same feature, and either wins over a plain action.
+ *
+ * The DC is only what the prose says, the first it names after the save, up to the
+ * next save it forces. A named formula gives its ability, and "your spell save DC"
+ * is the sheet's to fill in. Anything else ("the ability increased by this feat", a
+ * fixed DC, none at all) leaves the DC out.
+ */
+function chipSave(
+  entries: unknown,
+  ownText: string,
+  phrase: { economy: string; at: number },
+): Extract<EffectInput, { kind: 'action' }>['save'] {
+  let left = phrase.at;
+  const string = entryStrings(entries).find((s) => (left -= s.length + 1) < 0) ?? '';
+  const phraseAt = left + string.length + 1;
+  const sentenceAt = string.lastIndexOf('.', phraseAt) + 1;
+  const tail = string.slice(sentenceAt);
+  const read = flattenEntries(entries, { skipNamed: true }).includes(tail)
+    ? ownText.slice(ownText.indexOf(tail))
+    : tail;
+  const forced = read.match(FORCED_SAVE);
+  const targetAbility = ABILITY_WORDS[forced?.[2] ?? ''];
+  const at = forced?.index ?? 0;
+  const past = read.slice(phraseAt - sentenceAt, at);
+  if (
+    targetAbility === undefined ||
+    (phrase.economy === 'bonus' && REACTION_PHRASE.test(past)) ||
+    (phrase.economy !== 'action' && ACTION_PHRASE.test(past))
+  ) {
+    return undefined;
+  }
+  // A split keeps the groups, so the words after this save are its fourth piece.
+  const dc = forced?.[1] ? null : read.slice(at).split(FORCED_SAVE, 4)[3]?.match(DC_NAMED);
+  return {
+    targetAbility,
+    dcAbility: ABILITY_WORDS[dc?.[2] ?? dc?.[3] ?? ''] ?? (dc?.[1] ? 'spell' : undefined),
+  };
 }
 
 const SKILL_NAME = SKILLS.map((s) => s.name.toLowerCase()).join('|');
@@ -378,7 +463,7 @@ function standingBonus(
     origin,
   });
   const half = sentence.match(HALF_PROF)?.groups;
-  if (half !== undefined) {
+  if (half) {
     const named = half.abilities === 'ability' ? undefined : half.abilities;
     const abilities = named?.split(LIST_SEPARATOR).flatMap((word) => ABILITY_WORDS[word] ?? []);
     return {
@@ -392,16 +477,16 @@ function standingBonus(
 
   const added = sentence.match(ADD_TO_INITIATIVE)?.groups;
   // "The roll" means initiative only when the sentence opens by rolling it.
-  if (added !== undefined && (added.target !== 'the roll' || added.rolls !== undefined)) {
+  if (added && (added.target !== 'the roll' || added.rolls !== undefined)) {
     return initiative(amountFrom(added, true));
   }
   const flat = sentence.match(FLAT_INITIATIVE)?.groups;
-  if (flat !== undefined) return initiative(Number(flat.amount));
+  if (flat) return initiative(Number(flat.amount));
   const equal = sentence.match(INITIATIVE_EQUAL_TO)?.groups;
-  if (equal !== undefined) return initiative(amountFrom(equal, false));
+  if (equal) return initiative(amountFrom(equal, false));
 
   const check = sentence.match(CHECK_BONUS)?.groups;
-  if (check !== undefined) {
+  if (check) {
     const target = checkTarget(check.made ?? check.named ?? '');
     const size = check.source !== undefined ? check : next?.match(BONUS_EQUALS)?.groups;
     if (target !== undefined && size !== undefined) {
@@ -416,7 +501,7 @@ function standingBonus(
   }
 
   const passive = sentence.match(PASSIVE_BONUS)?.groups;
-  if (passive !== undefined) {
+  if (passive) {
     return { kind: 'passivePerceptionBonus', amount: Number(passive.amount), origin };
   }
   return undefined;
@@ -498,7 +583,7 @@ export function proseScanFeature(
   const phrase = chipPhrase(text, uses !== undefined);
   // Limited-use features also get a roll chip, from the dice their action rolls.
   const dice = uses !== undefined && phrase !== undefined ? actionDice(text, phrase.at) : null;
-  let roll = dice?.[1] !== undefined ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
+  let roll = dice?.[1] ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
   const diceAt = dice?.index ?? 0;
   const sentenceEnd = text.indexOf('.', diceAt);
   const diceSentence =
@@ -527,11 +612,11 @@ export function proseScanFeature(
     // From the rolled die on: a step before it scales another benefit's die.
     const fromDice = text.slice(diceAt);
     for (const m of fromDice.matchAll(/(\d+d\d+(?: ?[+-] ?\d+)?) at (\d+)(?:st|nd|rd|th) level/g)) {
-      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[2]), m[1]]);
+      if (m[1] && m[2]) steps.push([Number(m[2]), m[1]]);
     }
     // Two paren forms: 2024 "levels 5 (2d10)" and FTD "5th level (2d10)".
     for (const m of fromDice.matchAll(/(\d+)(?:st|nd|rd|th)?(?: level)? \((\d+d\d+)\)/g)) {
-      if (m[1] !== undefined && m[2] !== undefined) steps.push([Number(m[1]), m[2]]);
+      if (m[1] && m[2]) steps.push([Number(m[1]), m[2]]);
     }
     steps.sort((a, b) => a[0] - b[0]);
     for (const [stepLevel, stepDice] of steps) {
@@ -539,9 +624,9 @@ export function proseScanFeature(
     }
   }
 
-  // Mechanics the prose states outright: damage type, area, and save. A
-  // limited-use chip reads its damage type from the rolled die onward, so one
-  // that rolls nothing shows no type from another benefit's die.
+  // Mechanics the prose states outright: damage type and area. A limited-use
+  // chip reads its damage type from the rolled die onward, so one that rolls
+  // nothing shows no type from another benefit's die.
   const dmgType = text
     .slice(uses === undefined ? 0 : (dice?.index ?? text.length))
     .match(new RegExp(`\\d+d\\d+(?: ?[+-] ?\\d+)? (${DAMAGE_TYPES}) damage`))?.[1];
@@ -549,33 +634,7 @@ export function proseScanFeature(
     /in a (\d+-foot-wide, \d+-foot-long line|\d+-foot(?:-radius)? (?:cone|line|sphere|cube|radius))/,
   )?.[1];
   const note = [dmgType, area].filter((s) => s !== undefined).join(' · ') || undefined;
-  const targetAbility =
-    ABILITY_WORDS[
-      text.match(
-        new RegExp(`must (?:then )?(?:each )?make an? (${ABILITY_NAME}) saving throw`),
-      )?.[1] ?? ''
-    ];
-  // DC phrasing varies: 2014 "equals 8 + your X modifier + your proficiency
-  // bonus"; 2024 "(8 plus your X modifier and proficiency bonus)". Accept both
-  // orders of ability/proficiency too.
-  const dcAbility =
-    ABILITY_WORDS[
-      text.match(
-        new RegExp(
-          `8 (?:\\+|plus) your (${ABILITY_NAME}) modifier (?:\\+|and) (?:your )?proficiency bonus`,
-        ),
-      )?.[1] ??
-        text.match(
-          new RegExp(
-            `8 (?:\\+|plus) your proficiency bonus (?:\\+|and) your (${ABILITY_NAME}) modifier`,
-          ),
-        )?.[1] ??
-        ''
-    ];
-  const save =
-    targetAbility !== undefined && dcAbility !== undefined
-      ? { targetAbility, dcAbility }
-      : undefined;
+  const ownText = flattenEntries(entries, { skipNamedOptions: true });
 
   if (phrase !== undefined) {
     col.add({
@@ -585,7 +644,7 @@ export function proseScanFeature(
       heals,
       plainDice,
       note,
-      save,
+      save: chipSave(entries, ownText, phrase),
       origin,
       economy: phrase.economy,
     });
@@ -594,7 +653,7 @@ export function proseScanFeature(
   const hp = text.match(
     /hit point maximum increases by (\d+)[^.]*?(?:every time|whenever|when) you gain a level/,
   );
-  if (hp?.[1] !== undefined) {
+  if (hp?.[1]) {
     col.add({ kind: 'hpPerLevel', amount: Number(hp[1]), origin });
   }
 
@@ -609,7 +668,6 @@ export function proseScanFeature(
   // Read from the trait's own prose, excluding named sub-options: a Shifter's
   // bite belongs to the Longtooth option nested inside Shifting, so scanning
   // the whole subtree would arm every Beasthide and Swiftstride too.
-  const ownText = flattenEntries(entries, { skipNamedOptions: true });
   if (/unarmed strike/.test(ownText)) {
     const ability = `(${ABILITY_NAME})`;
     // The modifier is captured from the damage phrase itself, not anywhere in
