@@ -57,7 +57,9 @@ export function actionUse(
       ? resources.find((r) => r.label.toLowerCase() === label.toLowerCase())
       : undefined;
 
-  const ownLeft = own !== undefined ? own.max - usedOf(own.key) : undefined;
+  // Uses can sit past the maximum after a character loses a level, until the player clamps them.
+  const leftOf = (r: DerivedResource) => Math.max(0, r.max - usedOf(r.key));
+  const ownLeft = own !== undefined ? leftOf(own) : undefined;
   const ownSpend: ActionSpend[] =
     own !== undefined ? [{ key: own.key, max: own.max, amount: 1 }] : [];
   const ownWords = own !== undefined ? [`a ${own.label} use`] : [];
@@ -75,7 +77,7 @@ export function actionUse(
   }
 
   const name = stripTrailingParenthetical(pool.label);
-  const poolLeft = pool.max - usedOf(pool.key);
+  const poolLeft = leftOf(pool);
   const inPool = `${poolLeft} of ${pool.max} left`;
 
   if (cost.amount === 'varies') {

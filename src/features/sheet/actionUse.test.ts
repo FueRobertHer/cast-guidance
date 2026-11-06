@@ -35,6 +35,15 @@ describe('actionUse', () => {
     expect(u.title).toBe('No uses left');
   });
 
+  it('reads uses past the maximum as none left, as after losing a level', () => {
+    const u = use(action(), [OWN], { own: 3 });
+    expect(u.disabled).toBe(true);
+    expect(u.caption).toEqual(['0 of 2 left']);
+    const paying = use(action({ cost: { resource: 'pool', amount: 1 } }), [POOL], { pool: 6 });
+    expect(paying.disabled).toBe(true);
+    expect(paying.caption).toEqual(['Test Pool: 1, 0 of 5 left']);
+  });
+
   it('marks the turn and nothing else with no pool at all', () => {
     const u = use(action(), []);
     expect(u.spends).toEqual([]);
