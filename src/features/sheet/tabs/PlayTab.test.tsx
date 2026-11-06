@@ -438,6 +438,59 @@ describe('PlayTab always-prepared grants (GAME-001)', () => {
   });
 });
 
+describe('PlayTab limited always-prepared grants', () => {
+  const withSigil = (doc: CharacterDoc) => {
+    doc.feats = [{ ref: { name: 'Mote Sigil', source: 'TST' }, instanceId: 'i1' }];
+  };
+  const keyOf = (sheet: { grantedSpells: Array<{ resourceKey?: string }> }) =>
+    sheet.grantedSpells.find((g) => g.resourceKey !== undefined)?.resourceKey ?? '';
+
+  it('gives a non-caster its free use and nothing past it', () => {
+    const { sheet, getDoc } = renderPlay(undefined, withSigil);
+    expect(sheet.grantedSpells).toHaveLength(1);
+    expect(screen.queryByText('Always prepared')).toBeNull();
+
+    const cast = screen.getByRole('button', { name: 'Cast daze mote' });
+    fireEvent.click(cast);
+    expect(getDoc().play.resources).toContainEqual({ key: keyOf(sheet), used: 1 });
+  });
+
+  it('will not cast for a non-caster once the free use is spent', () => {
+    renderPlay((doc) => {
+      doc.play.resources = [{ key: 'spell:mote sigil|tst:daze-mote', used: 1 }];
+    }, withSigil);
+    expect(screen.getByText('0/1 per day')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cast daze mote' })).toHaveProperty('disabled', true);
+  });
+
+  it('gives a caster a slot row and a free row, each spending its own', () => {
+    const { sheet, getDoc } = renderSorcerer(undefined, withSigil);
+    expect(sheet.grantedSpells.map((g) => g.usage)).toEqual(['prepared', '1/day']);
+    expect(screen.getByText('Always prepared')).toBeTruthy();
+    expect(screen.getByText('1/1 per day')).toBeTruthy();
+
+    const [withSlot, free] = screen.getAllByRole('button', { name: 'Cast daze mote' });
+    if (withSlot === undefined || free === undefined) throw new Error('expected two rows');
+    fireEvent.click(free);
+    expect(getDoc().play.resources).toContainEqual({ key: keyOf(sheet), used: 1 });
+    expect(getDoc().play.slotsSpent[0]).toBe(0);
+
+    fireEvent.click(withSlot);
+    expect(getDoc().play.slotsSpent[0]).toBe(1);
+  });
+});
+
+describe('PlayTab inherited casting ability', () => {
+  it('shows the DC of the ability the feat raised', () => {
+    // Level 3, so proficiency +2. Charisma 10 raised to 11 is still +0.
+    renderPlay(undefined, (doc) => {
+      doc.feats = [{ ref: { name: 'Mote Gift', source: 'TST' }, instanceId: 'i1' }];
+    });
+    expect(screen.getByText('CHA')).toBeTruthy();
+    expect(screen.getByText('DC 10')).toBeTruthy();
+  });
+});
+
 describe('PlayTab pick lifecycle (GAME-001)', () => {
   it('drops a pick the build invalidated, with play state untouched', async () => {
     // The other stale-pick tests invalidate by spending a slot, which moves

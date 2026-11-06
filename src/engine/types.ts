@@ -228,6 +228,8 @@ export type EffectInput = { origin: EffectOrigin } & (
       roll?: string;
       /** The roll is hit points regained, not damage dealt. */
       heals?: boolean;
+      /** The roll is neither damage nor healing: a bonus die, temporary hit points. */
+      plainDice?: boolean;
       /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
       note?: string;
       /** Target save + which of the caster's abilities sets the DC (8+mod+prof). */
@@ -258,6 +260,13 @@ export type EffectInput = { origin: EffectOrigin } & (
       usage?: string;
       /** Set when the grant is limited ("1/day"): the resource holding its uses. */
       resourceKey?: string;
+      /** It takes one of the places in its origin class's spells known. */
+      countsAsKnown?: boolean;
+      /**
+       * This row is the way to cast the spell with slots, beside a limited row
+       * for its free uses, so a character with no slots to spend has no such row.
+       */
+      slotsOnly?: boolean;
     }
   | { kind: 'note'; text: string }
 );
@@ -301,12 +310,38 @@ export interface ChoicePrompt {
     | 'optionalfeature'
     /** One branch of a pick-one class or subclass feature (see `collectPick`). */
     | 'feature'
+    /** A spell the player picks (see `spellQuery`). */
+    | 'spell'
+    /** Any mix of skills and tools, as Skilled asks for. */
+    | 'skillOrTool'
+    | 'damageType'
     | 'generic';
   label: string;
   count: number;
   /** Whether the same option may fill more than one pick (ASI +2 is the main case). */
   allowRepeat?: boolean;
+  /** Whether an option another prompt of this kind has picked is closed (see `markHeldPicks`). */
+  distinct?: boolean;
   options: ChoiceOption[];
+  /**
+   * What a `spell` prompt may offer, when that takes the spell files to work out.
+   * Those download on demand and class lists live outside the registry, so the
+   * engine cannot list the spells: `options` then holds only the saved picks, and
+   * the page showing the prompt fills in the rest.
+   */
+  spellQuery?: SpellQuery;
+}
+
+/** A filter on spells, every part of which must hold. An empty list does not filter. */
+export interface SpellQuery {
+  levels: number[];
+  /** The spell is on any of these classes' lists. */
+  classes: string[];
+  /** School codes, in capitals as the data writes them. */
+  schools: string[];
+  ritual: boolean;
+  /** Spell attack codes, in lower case. */
+  attacks: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +508,8 @@ export interface DerivedSheet {
     roll?: string;
     /** The roll is hit points regained, not damage dealt. */
     heals?: boolean;
+    /** The roll is neither damage nor healing: a bonus die, temporary hit points. */
+    plainDice?: boolean;
     origin: string;
     /** Extra mechanics line, e.g. "lightning · 5 by 30 ft. line". */
     note?: string;

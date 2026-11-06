@@ -6,6 +6,7 @@ import { BRANCH_SET, branchSubjects } from './branches';
 import { type JudgmentFile, judgmentKey, setTag } from './judgments';
 import { PROSE_SET } from './proseChecks';
 import { proseSubjects } from './proseSubjects';
+import { REPRINT_SET, reprintPairs } from './reprints';
 
 /** A version whose `_mod` replaces an entry the base does not have. */
 const brokenVersion = (target: string) => ({
@@ -173,12 +174,13 @@ describe('analyzeDataset with saved judgments', () => {
   const [steady] = proseSubjects(reg).filter((s) => s.name === 'Steady Hands');
   const [knight] = branchSubjects(reg);
   const ids = PROSE_SET.questions.map((q) => q.id);
+  const sureOf = new Set(['limitedUses', 'usesProficiency', 'reaction']);
   const judgments: JudgmentFile = {
     sets: { [setTag(PROSE_SET)]: ids, [setTag(BRANCH_SET)]: ['choice'] },
     judgments: {
       [judgmentKey(PROSE_SET, steady?.key ?? '')]: {
         label: 'Steady Hands (feat|HB)',
-        p: ids.map((id) => (id === 'limitedUses' || id === 'usesProficiency' ? 0.95 : 0.05)),
+        p: ids.map((id) => (sureOf.has(id) ? 0.95 : 0.05)),
       },
       [judgmentKey(BRANCH_SET, knight?.key ?? '')]: { label: 'knight', p: [0.91] },
     },
@@ -192,13 +194,13 @@ describe('analyzeDataset with saved judgments', () => {
   });
 
   it('compares the scanner with the saved answers', () => {
-    // The scanner reads the tag as "proficiency" and finds no uses; Jev reads
-    // "Proficiency Bonus" and is sure there are some.
+    // Both read the uses and their Proficiency Bonus, so those stay out. The
+    // prose names no Reaction, so the scanner draws none, and the answer is sure.
     expect(judged.prose.judged).toBe(1);
     expect(judged.prose.disagreements).toEqual([
       expect.objectContaining({
         label: 'Steady Hands (feat|HB)',
-        check: 'limitedUses',
+        check: 'reaction',
         kind: 'missed',
       }),
     ]);
@@ -213,5 +215,48 @@ describe('analyzeDataset with saved judgments', () => {
   it('reports nothing judged without the file', () => {
     expect(report.prose.judged).toBe(0);
     expect(report.branchBlocks.every((b) => b.choiceP === undefined)).toBe(true);
+  });
+});
+
+describe('analyzeDataset on reprints', () => {
+  const reprintFiles = new Map<string, unknown>(
+    Object.entries({
+      ...VALID_BODIES,
+      'spells/spells-test.json': {
+        spell: [
+          {
+            name: 'Test Bolt',
+            source: 'PHB',
+            entries: ['Old words.'],
+            reprintedAs: ['Test Bolt|XPHB'],
+          },
+          { name: 'Test Bolt', source: 'XPHB', entries: ['New words.'] },
+        ],
+      },
+    }),
+  );
+  const run = (judgments?: JudgmentFile) =>
+    analyzeDataset({
+      tag: 'v9.9.9',
+      files: reprintFiles,
+      fileBytes: new Map(),
+      maxFileBytes: 500,
+      ...(judgments === undefined ? {} : { judgments }),
+    });
+
+  it('counts pairs and labels them from what is saved', () => {
+    const before = run().reprints;
+    expect(before).toMatchObject({ pairs: 1, toJudge: 1, judged: 0, notJudged: 1 });
+    expect(before.labels.uncertain).toBe(1);
+
+    const [pair] = reprintPairs(normalizeDataset(reprintFiles)).pairs;
+    const after = run({
+      sets: { [setTag(REPRINT_SET)]: REPRINT_SET.questions.map((q) => q.id) },
+      judgments: {
+        [judgmentKey(REPRINT_SET, pair?.key ?? '')]: { label: 'x', p: [0.9, 0.9, 0.1, 0.1] },
+      },
+    }).reprints;
+    expect(after).toMatchObject({ pairs: 1, toJudge: 1, judged: 1, notJudged: 0 });
+    expect(after.labels.wording).toBe(1);
   });
 });

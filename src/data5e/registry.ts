@@ -17,6 +17,7 @@ import {
 } from './loader';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from './normalize';
 import type { PackId } from './packs';
+import { setRulesBooks } from './rulesVersion';
 import { setHomebrewSourceNames } from './sourceNames';
 
 export type { EntityType } from './normalize';
@@ -223,6 +224,9 @@ async function rebuild({
   if (startedAt === epoch) {
     current = reg;
     currentSignature = signature;
+    // With the publish, so the first render holding this registry already labels
+    // its books, and a stale build finishing last cannot relabel them.
+    setRulesBooks(reg.rulesBooks);
   }
   return reg;
 }

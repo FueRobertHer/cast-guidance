@@ -1,5 +1,5 @@
-import { SOURCES_2024 } from '@/data5e/rulesVersion';
-import { sourceName } from '@/data5e/sourceNames';
+import { isBook2024 } from '@/data5e/rulesVersion';
+import { hasHomebrewTitle, sourceName } from '@/data5e/sourceNames';
 import { badgeClass } from './Badge';
 
 /** Titles like "Player's Handbook (2024)" already carry the year. */
@@ -8,7 +8,10 @@ const HAS_YEAR = /\(20\d\d\)/;
 /** Full title for a source, with the edition spelled out when the title doesn't. */
 export function sourceBadgeLabel(source: string): string {
   const full = sourceName(source);
-  return SOURCES_2024.has(source) && !HAS_YEAR.test(full) ? `${full} (2024 rules)` : full;
+  // A brew's own title stays as written, even on a code an official book shares:
+  // the edition belongs to that book, and the brew's rows do not read as 2024.
+  const rulesBook = isBook2024(source) && !hasHomebrewTitle(source);
+  return rulesBook && !HAS_YEAR.test(full) ? `${full} (2024 rules)` : full;
 }
 
 /**

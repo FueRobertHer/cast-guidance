@@ -409,9 +409,5 @@ export const ROUTES: readonly RouteCase[] = [
   },
 ];
 
-/** Text that means a page is still waiting; none of it may outlast the state it resolves to. */
-export const SPINNERS =
-  /^(Loading…|Loading character…|Loading game data…|Deriving…|Loading spell list…|Loading spell…)$/;
-
 /** RouteError's heading: a page that threw. */
 export const ROUTE_ERROR = 'This screen ran into a problem';

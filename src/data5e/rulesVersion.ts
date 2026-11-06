@@ -50,7 +50,7 @@ function parseReprintUid(uid: string, type: EntityType | undefined): EditionRef 
  * into the race, so every untagged subrace target in the data is a race
  * (`High|PHB` points at `Elf|XPHB`) and none is a subrace.
  */
-function defaultTargetType(holderType: EntityType): EntityType {
+export function defaultTargetType(holderType: EntityType): EntityType {
   return holderType === 'subrace' ? 'race' : holderType;
 }
 
@@ -87,15 +87,48 @@ export function reprintTargets(entity: Entity, holderType?: EntityType): Edition
   return out;
 }
 
-/** Core 2024-revision sources ("one" edition in 5etools terms). */
+/**
+ * Core 2024-revision sources ("one" edition in 5etools terms). Named because
+ * not all of them mark anything: XMM reaches this app as bare languages. Later
+ * 2024-rules books are not listed; `normalizeDataset` reads those from the data.
+ */
 export const SOURCES_2024 = new Set(['XPHB', 'XDMG', 'XMM', 'XScreen']);
 
 export function sourceEdition(source: string | undefined): RulesVersion {
   return source !== undefined && SOURCES_2024.has(source) ? '2024' : '2014';
 }
 
+let rulesBooks: ReadonlySet<string> = new Set();
+
+/**
+ * Publish the books the newest registry read as 2024 rules. The registry build
+ * calls this before it hands the registry out, as it does for homebrew titles.
+ * Wholesale, so a rollback to an older release drops a book it does not have.
+ */
+export function setRulesBooks(books: ReadonlySet<string>): void {
+  rulesBooks = books;
+}
+
+/**
+ * Whether a book counts as 2024 rules, for a label that holds only a source code
+ * and so has no row to ask. Module state because a label is all this decides:
+ * before the first registry build a later book simply goes unlabelled.
+ * `sourceEdition` and `editionOf` stay off this on purpose, since they decide
+ * what a character may pick and must not depend on what has been built so far.
+ */
+export function isBook2024(source: string): boolean {
+  return SOURCES_2024.has(source) || rulesBooks.has(source);
+}
+
+/**
+ * The rules edition of one entity: its own mark, else its book's, else its
+ * source. `normalizeDataset` sets `bookEdition`, so a feat left bare in a
+ * 2024-rules book reads 2024 here without this having to know the book. A mark
+ * the entity inherited from a copy counts as its own: a row that copies a
+ * `classic` one is carrying 2014 content, whatever book it sits in.
+ */
 export function editionOf(e: Entity): RulesVersion {
-  const edition = e.edition;
+  const edition = e.edition ?? e.bookEdition;
   if (edition === 'one') return '2024';
   if (edition === 'classic') return '2014';
   return sourceEdition(typeof e.source === 'string' ? e.source : undefined);

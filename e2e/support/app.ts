@@ -348,10 +348,17 @@ export function sheetMenuButton(page: Page): Locator {
   return page.getByRole('button', { name: 'More: history, export, delete' });
 }
 
+/** Text that means a page is still waiting; none of it may outlast the state it resolves to. */
+export const SPINNERS =
+  /^(Loading…|Loading character…|Loading game data…|Deriving…|Loading spell list…|Loading spell…)$/;
+
 /**
  * Opens a character sheet screen by its label, and waits for it: its tab in
  * the bar marked current, or Edit on Build (the router renders a lazy route
- * only once its module is in), and the character loaded into the header.
+ * only once its module is in), the character loaded into the header, and the
+ * screen past its placeholder. The header is in before the game data the
+ * screen is derived from, so a check made then measures a placeholder and
+ * finds none of the screen's folds.
  */
 export async function gotoSheetTab(page: Page, id: string, label: SheetPage): Promise<void> {
   await page.goto(`/c/${id}${SHEET_PAGES[label]}`);
@@ -363,6 +370,7 @@ export async function gotoSheetTab(page: Page, id: string, label: SheetPage): Pr
           .getByRole('link', { name: label, exact: true });
   await expect(current).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('…');
+  await expect(page.getByText(SPINNERS)).toHaveCount(0);
 }
 
 /** Opens Build from the header's Edit, as from any tab, and waits for it. */

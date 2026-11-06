@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
+import { engineContextFor } from '@/data5e/engineAdapter';
 import { useRegistry, useTypePacks } from '@/data5e/hooks';
 import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
@@ -30,7 +31,7 @@ import {
   makeSubclassEntries,
   raceBlurb,
 } from '@/features/creator/pickerHints';
-import { classRemovalParts, listJoin, picksCleared } from '@/lib/describeRemoval';
+import { classRemovalParts, firstClassShift, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { signed } from '@/lib/signed';
@@ -59,6 +60,7 @@ import {
   registryLookup,
 } from './editionCues';
 import { SpellInfoSheet } from './SpellInfoSheet';
+import { distinctGrants } from './spellData';
 import type { CharacterSheetState } from './useCharacterSheet';
 
 const nameOf = (e: Entity) => String(e.name ?? '?');
@@ -278,8 +280,11 @@ export function Component() {
   // is on now. Keyed by slot + ref so a chip beside a pick finds its own cue.
   const lookup: EntityLookup = registryLookup(registry);
   const cues = editionCues(doc, doc.rulesVersion, lookup);
-  const cueFor = (slot: EditionSlot, ref: { name: string; source: string } | undefined) =>
-    ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref));
+  const cueFor = (
+    slot: EditionSlot,
+    ref: { name: string; source: string } | undefined,
+    classRow?: { name: string; source: string },
+  ) => (ref === undefined ? undefined : cues.find((c) => c.key === cueKey(slot, ref, classRow)));
   const cueNotes = editionCueNotes(cues, doc.rulesVersion);
 
   /**
@@ -365,15 +370,21 @@ export function Component() {
    * Removing a class asks first, whichever class it is: it takes the class's
    * picks, its subclass and its spell list with it. A level-1 class that was not
    * the only one used to go on one tap, with its subclass picks and spells
-   * left behind.
+   * left behind. Removing the first of several also moves what only the first
+   * row gets, and the confirm says that too.
    */
   const removeClass = async (entry: ClassLevelEntry) => {
     const name = entry.ref.name;
     const parts = classRemovalParts(doc, entry, activeChoices);
-    const clears = parts.length > 0 ? `Clears ${listJoin(parts)}.` : 'Nothing else is tied to it.';
+    const goes = [
+      parts.length > 0 && `Clears ${listJoin(parts)}.`,
+      firstClassShift(doc, entry, engineContextFor(registry)),
+    ]
+      .filter(Boolean)
+      .join(' ');
     const ok = await askConfirm({
       title: `Remove ${name}?`,
-      detail: `${clears} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
+      detail: `${goes || 'Nothing else is tied to it.'} You can undo this right after.${doc.classes.length === 1 ? ' Then pick a new class.' : ''}`,
       confirmLabel: 'Remove class',
       danger: true,
     });
@@ -384,8 +395,8 @@ export function Component() {
         const i = d.classes.findIndex((c) => refUid(c.ref) === uid);
         const c = d.classes[i];
         if (c === undefined) return;
-        d.classes.splice(i, 1);
         pruneClass(d, c);
+        d.classes.splice(i, 1);
       },
       () => ({
         title: `Removed ${name}`,
@@ -689,7 +700,7 @@ export function Component() {
                   <summary className="cursor-pointer py-1 text-caption text-ink-muted">
                     Subclass: {entry.subclass?.name ?? 'none picked'}{' '}
                     <EditionChip
-                      cue={cueFor('subclass', entry.subclass)}
+                      cue={cueFor('subclass', entry.subclass, entry.ref)}
                       version={doc.rulesVersion}
                     />
                   </summary>
@@ -1200,9 +1211,9 @@ export function Component() {
           <div className="flex flex-col gap-1">
             <span className={OVERLINE}>Innate & granted spells</span>
             <div className={ROWS}>
-              {sheet.grantedSpells.map((g) => (
+              {distinctGrants(sheet.grantedSpells).map((g) => (
                 <SpellInfoSheet
-                  key={`${g.name}|${g.source}`}
+                  key={`${g.name}|${g.source}|${g.origin}`}
                   name={g.name}
                   source={g.source}
                   version={doc.rulesVersion}

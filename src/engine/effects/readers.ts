@@ -294,6 +294,28 @@ export function weaponOptions(
       : genericOptions(from);
 }
 
+/**
+ * The kinds of weapon with a mastery property. The DMG's firearms stay out, as in
+ * a weapon filter, and a kind printed in more than one book is offered once.
+ */
+export function weaponMasteryOptions(ctx: EngineContext): ChoiceOption[] {
+  const seen = new Set<string>();
+  const options: ChoiceOption[] = [];
+  for (const e of ctx.byType('baseitem')) {
+    const name = str(e.name);
+    const category = str(e.weaponCategory)?.toLowerCase();
+    if (name === undefined || category === undefined || e.age !== undefined) continue;
+    if (!Array.isArray(e.mastery) || e.mastery.length === 0) continue;
+    if (seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const code = String(e.type ?? '').split('|')[0];
+    const mastery = e.mastery.map((m) => String(m).split('|')[0]).join(', ');
+    const summary = weaponSummary(e, category, code === 'R' || code === 'AF');
+    options.push({ id: name, label: name, description: `${mastery}. ${summary}` });
+  }
+  return options.sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** Expertise offers skills you're already proficient in (RAW), else all. */
 export function expertiseOptions(col: Collector): ChoiceOption[] {
   const prof = col.proficientSkills();
@@ -380,6 +402,47 @@ export function readProficiencyList(
         // e.g. tool proficiencies with counts — treat as a grant
         grant(grantName(key));
       }
+    }
+  }
+}
+
+/**
+ * `skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill', 'anyTool'], count: 3 }] }]`,
+ * one list to pick from in any mix. Only those two categories are in the data's
+ * choose lists; a choose with neither offers nothing, and the other shapes of this
+ * field are not read.
+ */
+export function readSkillOrToolChoice(
+  col: Collector,
+  raw: unknown,
+  origin: EffectOrigin,
+  promptIdBase: string,
+): void {
+  let chooseIdx = 0;
+  for (const entry of asEntityArray(raw)) {
+    for (const c of asEntityArray(entry.choose)) {
+      const from = Array.isArray(c.from) ? c.from.map(String) : [];
+      const options = [
+        ...(from.includes('anySkill') ? skillOptions() : []),
+        ...(from.includes('anyTool') ? toolOptions() : []),
+      ];
+      if (options.length === 0) continue;
+      col.choice(
+        {
+          id: `${promptIdBase}:${chooseIdx++}`,
+          origin,
+          kind: 'skillOrTool',
+          label: 'Skill or tool proficiency',
+          count: num(c.count) ?? 1,
+          options,
+        },
+        (selected) => {
+          for (const s of selected) {
+            if (SKILL_ABILITY.has(s)) col.add({ kind: 'skillProf', skill: s, level: 1, origin });
+            else col.add({ kind: 'toolProf', name: s, origin });
+          }
+        },
+      );
     }
   }
 }

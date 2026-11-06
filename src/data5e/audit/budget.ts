@@ -12,6 +12,7 @@
 import type { AuditReport } from './analyze';
 import type { BranchBlock } from './branches';
 import type { DisagreementKind, ProseDisagreement } from './proseChecks';
+import { describeReprints } from './reprints';
 
 /** A multi-name `additionalSpells` block a person read and confirmed. */
 export interface BranchAllow {
@@ -501,6 +502,11 @@ export function toMarkdown(report: AuditReport, evaluation: AuditEvaluation): st
   if (evaluation.notes.length > 0) {
     lines.push('Notes:', '');
     for (const n of evaluation.notes) lines.push(`- ${n}`);
+    lines.push('');
+  }
+  if (report.reprints.pairs > 0) {
+    lines.push('2014/2024 reprints (counts only, not a check):', '');
+    for (const line of describeReprints(report.reprints)) lines.push(`- ${line}`);
     lines.push('');
   }
   return lines.join('\n');

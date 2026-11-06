@@ -54,6 +54,7 @@ import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
 import { SpellSlots } from '../SpellSlots';
 import { findSpell, useSpellData } from '../spellData';
+import { spellSaves } from '../spellMeta';
 import { spellRollActions } from '../spellRolls';
 import { useCastChoice } from '../useCastChoice';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -1315,7 +1316,9 @@ export function Component() {
                       <RollChip
                         expr={a.roll}
                         label={a.label}
-                        variant={a.heals === true ? 'heal' : 'damage'}
+                        variant={
+                          a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
+                        }
                         onRolled={trigger}
                       />
                     ) : (
@@ -1606,7 +1609,7 @@ export function Component() {
               if (entity === undefined && spellsSettling) {
                 return (
                   <PendingSpellRow
-                    key={`${g.name}|${g.source}`}
+                    key={`${g.name}|${g.source}|${g.resourceKey ?? ''}`}
                     name={g.name}
                     source={g.source}
                     version={doc.rulesVersion}
@@ -1681,7 +1684,7 @@ export function Component() {
               };
               return (
                 <div
-                  key={`${g.name}|${g.source}`}
+                  key={`${g.name}|${g.source}|${g.resourceKey ?? ''}`}
                   className={`min-h-11 ${ROW} border-line border-b py-1.5 last:border-b-0`}
                 >
                   <div className={ROW_NAME}>
@@ -1757,6 +1760,9 @@ export function Component() {
                           onPick={(picked) => chooseCastResource(choiceKey, picked)}
                         />
                       )}
+                    {spellSaves(entity).length > 0 && attackModifier !== undefined && (
+                      <Badge tone="arcane">DC {8 + attackModifier}</Badge>
+                    )}
                     {hasAttack && (
                       <RollChip
                         expr={`1d20${fmt(attackModifier)}`}
