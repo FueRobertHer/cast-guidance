@@ -46,6 +46,8 @@ export interface ProseSubject {
   curated: boolean;
   /** What `proseScanFeature` draws from the prose. */
   effects: EffectInput[];
+  /** Each owner's key in `SPEND_LINKS`, which names the printing unlike the curated key. */
+  spendKeys: string[];
 }
 
 /** Anything a registry can list by type. */
@@ -155,6 +157,8 @@ interface Owner {
   entries: unknown;
   /** The curated key the engine tries before it falls back to the scanner. */
   curatedKey: string;
+  /** The key the engine looks up in `SPEND_LINKS`. */
+  spendKey: string;
 }
 
 function* owners(registry: ByType): Generator<Owner> {
@@ -171,6 +175,7 @@ function* owners(registry: ByType): Generator<Owner> {
           label: `${name} (${str(e.name)}|${str(e.source)})`,
           entries: (entry as Entity).entries,
           curatedKey: `trait:${name.toLowerCase()}`,
+          spendKey: `trait:${name.toLowerCase()}`,
         };
       }
     }
@@ -184,6 +189,7 @@ function* owners(registry: ByType): Generator<Owner> {
       label: `${name} (${str(e.className)}|${str(e.source)})`,
       entries: e.entries,
       curatedKey: lower(name, str(e.className)),
+      spendKey: lower(name, str(e.className), str(e.source)),
     };
   }
 
@@ -205,6 +211,7 @@ function* owners(registry: ByType): Generator<Owner> {
       label: `${name} (${str(e.className)}: ${subName}|${str(e.source)})`,
       entries: e.entries,
       curatedKey: lower(name, subName),
+      spendKey: lower(name, subName, str(e.source)),
     };
   }
 
@@ -217,6 +224,7 @@ function* owners(registry: ByType): Generator<Owner> {
         label: `${name} (${type === 'feat' ? 'feat' : 'optional feature'}|${str(e.source)})`,
         entries: e.entries,
         curatedKey: lower(name, str(e.source)),
+        spendKey: lower(name, str(e.source)),
       };
     }
   }
@@ -240,6 +248,7 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
     if (seen !== undefined) {
       seen.owners++;
       seen.curated &&= curated;
+      seen.spendKeys.push(owner.spendKey);
       continue;
     }
     byKey.set(key, {
@@ -251,6 +260,7 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
       owners: 1,
       curated,
       effects: scan(owner.name, owner.entries),
+      spendKeys: [owner.spendKey],
     });
   }
   return [...byKey.values()];

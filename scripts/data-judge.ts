@@ -16,7 +16,8 @@
  *
  *   - `bonus`: check and initiative bonuses in prose, by type;
  *   - `featchoice`: picks feats ask for that the app does not offer;
- *   - `capability`: features always available in combat, with no reminder yet.
+ *   - `capability`: features always available in combat, with no reminder yet;
+ *   - `spend`: which pool each feature spends, one `spend-<pool>` set per pool.
  *
  *   bun run data:judge -- --dry-run            # what would be asked, and a sample request
  *   bun run data:judge -- --limit 25           # a trial: ask about 25 subjects
@@ -57,6 +58,7 @@ import {
   reprintSubjects,
 } from '../src/data5e/audit/reprints';
 import type { Scope } from '../src/data5e/audit/scoping';
+import { spendReport, spendRuns } from '../src/data5e/audit/spendScope';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { readJudgments, writeJudgments } from './data-judgments-file';
@@ -109,12 +111,17 @@ const limit = positive('limit', values.limit);
 const concurrency = positive('concurrency', values.concurrency) ?? 4;
 const scopeNames = Object.keys(SCOPES).join(', ');
 const askedScope = scopeNamed(values.set);
-if (!['all', 'prose', 'branch', 'reprint'].includes(values.set) && askedScope === undefined) {
-  die(`--set must be all, prose, branch, reprint, ${scopeNames}`);
+if (
+  !['all', 'prose', 'branch', 'reprint', 'spend'].includes(values.set) &&
+  askedScope === undefined
+) {
+  die(`--set must be all, prose, branch, reprint, spend, ${scopeNames}`);
 }
 const reportScope = scopeNamed(values.report);
-if (values.report !== undefined && reportScope === undefined) {
-  die(`--report must be ${scopeNames}`);
+const reportSpend = values.report === 'spend';
+const fromSaved = reportScope !== undefined || reportSpend;
+if (values.report !== undefined && !fromSaved) {
+  die(`--report must be spend, ${scopeNames}`);
 }
 
 let tag = values.tag ?? DATA_TAG;
@@ -128,7 +135,7 @@ if (tag === 'latest') {
 if (!isCompatibleTag(tag)) die(`${tag} is not compatible with this build (pinned ${DATA_TAG})`);
 
 const apiKey = process.env.AI_GATEWAY_API_KEY ?? '';
-if (!values['dry-run'] && reportScope === undefined && apiKey === '') {
+if (!values['dry-run'] && !fromSaved && apiKey === '') {
   die('set AI_GATEWAY_API_KEY, or pass --dry-run to see what would be asked');
 }
 
@@ -140,9 +147,9 @@ try {
 }
 
 console.log(
-  reportScope === undefined
-    ? `# data-judge against ${tag}, asking ${model} at ${endpoint}\n`
-    : `# data-judge against ${tag}, from saved answers\n`,
+  fromSaved
+    ? `# data-judge against ${tag}, from saved answers\n`
+    : `# data-judge against ${tag}, asking ${model} at ${endpoint}\n`,
 );
 let release: Awaited<ReturnType<typeof fetchRelease>>;
 try {
@@ -155,6 +162,8 @@ const registry = normalizeDataset(release.files);
 const runs: Array<{ set: JudgeSet; subjects: JudgeSubject[] }> = [];
 if (reportScope !== undefined) {
   console.log(reportScope.report(registry, file));
+} else if (reportSpend) {
+  console.log(spendReport(registry, file));
 } else if (askedScope !== undefined) {
   runs.push({ set: askedScope.set, subjects: askedScope.subjects(registry) });
 } else if (values.set === 'reprint') {
@@ -162,6 +171,8 @@ if (reportScope !== undefined) {
   for (const line of describeReprints(auditReprints(found, file))) console.log(line);
   console.log('');
   runs.push({ set: REPRINT_SET, subjects: reprintSubjects(found.pairs) });
+} else if (values.set === 'spend') {
+  runs.push(...spendRuns(registry));
 } else {
   if (values.set !== 'branch') {
     // Curated features never reach the scanner, so their answers would go unused.
@@ -223,12 +234,13 @@ for (const { set, subjects } of runs) {
   );
 }
 
-if (!values['dry-run'] && reportScope === undefined) {
+if (!values['dry-run'] && !fromSaved) {
+  const reportName = values.set === 'spend' ? 'spend' : askedScope?.set.id;
   summary.push(
     '',
-    askedScope === undefined
+    reportName === undefined
       ? 'Commit `scripts/data-judgments.json`, then run `bun run data:audit` to read the answers against the data.'
-      : `Commit \`scripts/data-judgments.json\`, then run \`bun run data:judge -- --report ${askedScope.set.id}\` for the ranked list.`,
+      : `Commit \`scripts/data-judgments.json\`, then run \`bun run data:judge -- --report ${reportName}\` for the ranked list.`,
   );
   const out = process.env.GITHUB_STEP_SUMMARY;
   if (out) appendFileSync(out, `${summary.join('\n')}\n`);

@@ -9,7 +9,7 @@ import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
 import { bonusAmount, effectsOf, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
-import { calcResources } from './calc/resources';
+import { calcResources, costOnSheet } from './calc/resources';
 import {
   calcChecks,
   calcPassivePerception,
@@ -131,6 +131,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
             dc: 8 + abilities[e.save.dcAbility].mod + profBonus.value,
           }
         : undefined,
+    cost: costOnSheet(e.cost, resources),
   }));
 
   const classLabel = doc.classes
@@ -205,9 +206,12 @@ function dedupeWarnings(warnings: readonly string[]): string[] {
 }
 
 /** How much mechanical detail an action effect carries (for dedupe). */
-function richness(e: { roll?: string; note?: string; save?: unknown }): number {
+function richness(e: { roll?: string; note?: string; save?: unknown; cost?: unknown }): number {
   return (
-    (e.roll !== undefined ? 1 : 0) + (e.note !== undefined ? 2 : 0) + (e.save !== undefined ? 2 : 0)
+    (e.roll !== undefined ? 1 : 0) +
+    (e.note !== undefined ? 2 : 0) +
+    (e.save !== undefined ? 2 : 0) +
+    (e.cost !== undefined ? 2 : 0)
   );
 }
 

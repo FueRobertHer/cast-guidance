@@ -238,7 +238,7 @@ function detectUses(
  * only: bonus/reaction always; plain actions only when limited-use (otherwise
  * every prose "as an action" is noise).
  */
-function chipPhrase(
+export function chipPhrase(
   text: string,
   limitedUse: boolean,
 ): { economy: 'bonus' | 'reaction' | 'action'; at: number } | undefined {

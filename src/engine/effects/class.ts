@@ -1,5 +1,6 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { linkSpend } from '../curated/spendLinks';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells, hasChosenSpell } from './additionalSpells';
@@ -310,6 +311,7 @@ function collectFeatureWithNested(
   if (!emitCurated(col, `${name}|${curatedLabel}`.toLowerCase(), featureOrigin)) {
     proseScanFeature(col, name, feature.entries, featureOrigin);
   }
+  linkSpend(col, `${name}|${curatedLabel}|${String(feature.source)}`, name, featureOrigin);
   const identity = featureIdentity(feature);
   const { refs, picks } = PICK_ONE.has(identity)
     ? { refs: [], picks: [{ count: 1, branches: featureBranches(feature.entries) }] }
@@ -747,6 +749,14 @@ export function collectClasses(col: Collector): void {
             `subclass:${subOrigin.uid}`,
           );
         }
+        // A Battle Master's maneuvers, a Four Elements monk's disciplines, a
+        // Champion's second style, which cannot repeat the class's first.
+        readOptionalFeatures(col, sub, {
+          idBase: `subclass:${subOrigin.uid}`,
+          origin: subOrigin,
+          level: classLevel,
+          distinct: true,
+        });
       }
     }
 

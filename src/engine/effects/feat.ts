@@ -1,4 +1,5 @@
 import { emitCuratedEffects } from '../curated/curatedEffects';
+import { linkSpend } from '../curated/spendLinks';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
@@ -167,6 +168,7 @@ export function collectFeatEntity(
   if (!emitCuratedEffects(col, uid, origin)) {
     proseScanFeature(col, origin.label, e.entries, origin);
   }
+  linkSpend(col, uid, origin.label, origin);
 }
 
 export function collectFeats(col: Collector): void {

@@ -4,6 +4,7 @@
  * `optionalfeatureProgression`, and a pick works the same from either.
  */
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { linkSpend } from '../curated/spendLinks';
 import { summarizeEntries } from '../summarize';
 import type { DataEntity, EffectOrigin } from '../types';
 import { asEntityArray, type Collector, str } from './base';
@@ -121,6 +122,7 @@ export function readOptionalFeatures(
           if (!emitCurated(col, uid, ofOrigin)) {
             proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
           }
+          linkSpend(col, uid, str(of.name) ?? uid, ofOrigin);
         }
       },
     );

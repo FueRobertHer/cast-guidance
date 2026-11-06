@@ -197,7 +197,8 @@ export function poolCastResources(
   for (const pool of pools) {
     const conversion = SLOT_CONVERSIONS[pool.key];
     if (conversion === undefined) continue;
-    const left = poolRemaining(pool, play);
+    // The sheet cannot tell which points are gone, so it assumes the locked ones went first.
+    const left = Math.min(poolRemaining(pool, play), pool.max - (pool.noSlotConversion ?? 0));
     for (let level = spellLevel; level <= conversion.costs.length; level++) {
       const cost = conversion.costs[level - 1];
       if (cost === undefined || cost > left) continue;

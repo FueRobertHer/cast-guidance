@@ -1,5 +1,33 @@
-import type { Ability, CharacterDoc, DerivedAbility, DerivedResource, EffectInput } from '../types';
+import type {
+  Ability,
+  ActionCost,
+  CharacterDoc,
+  DerivedAbility,
+  DerivedResource,
+  EffectInput,
+} from '../types';
 import { effectsOf } from './core';
+
+/**
+ * One pool under two names. A 2014 subclass kept under a 2024 monk says "ki" and
+ * spends the Focus that class has, and the other way round.
+ */
+const SAME_POOL: Readonly<Record<string, string>> = { ki: 'focus', focus: 'ki' };
+
+/**
+ * A cost as this sheet can pay it: on the pool it has under either name, or no
+ * cost at all when it has neither (Stunning Strike with no Focus to spend yet).
+ */
+export function costOnSheet(
+  cost: ActionCost | undefined,
+  resources: readonly DerivedResource[],
+): ActionCost | undefined {
+  if (cost === undefined) return undefined;
+  const has = (key: string) => resources.some((r) => r.key === key);
+  if (has(cost.resource)) return cost;
+  const other = SAME_POOL[cost.resource];
+  return other !== undefined && has(other) ? { ...cost, resource: other } : undefined;
+}
 
 export function calcResources(
   doc: CharacterDoc,
@@ -15,6 +43,8 @@ export function calcResources(
       max = e.max;
     } else if (e.max === 'profBonus') {
       max = profBonus;
+    } else if (e.max === 'twiceProfBonus') {
+      max = 2 * profBonus;
     } else if (e.max.startsWith('abilityMod:')) {
       const ability = e.max.slice('abilityMod:'.length) as Ability;
       max = Math.max(1, abilities[ability]?.mod ?? 1);
@@ -34,11 +64,23 @@ export function calcResources(
     const existingIdx = idxByKey.get(e.key);
     if (existingIdx === undefined) {
       idxByKey.set(e.key, out.length);
-      out.push({ key: e.key, label: e.label, max, resetOn: e.resetOn, origin: e.origin.label });
+      out.push({
+        key: e.key,
+        label: e.label,
+        max,
+        resetOn: e.resetOn,
+        origin: e.origin.label,
+        ...(e.noSlotConversion !== undefined ? { noSlotConversion: e.noSlotConversion } : {}),
+      });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).
       const row = out[existingIdx];
-      if (row !== undefined) row.max += max;
+      if (row !== undefined) {
+        row.max += max;
+        if (e.noSlotConversion !== undefined) {
+          row.noSlotConversion = (row.noSlotConversion ?? 0) + e.noSlotConversion;
+        }
+      }
     }
     // Otherwise first wins: curated entries emit before prose-scanned duplicates.
   }
