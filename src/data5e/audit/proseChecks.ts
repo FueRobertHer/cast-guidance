@@ -13,6 +13,9 @@
  * a lead, not a verdict: the audit counts them against a ceiling, and a person
  * either fixes the scanner or records why it is right (`proseAllow`).
  *
+ * A `missed` the sheet already answers from structured data is not one: the scanner's
+ * silence costs the sheet nothing (`answeredElsewhere`).
+ *
  * Relative imports only: `scripts/data-audit.ts` loads this under plain Bun.
  */
 import type { EffectInput } from '../../engine/types';
@@ -40,6 +43,11 @@ interface ProseCheck {
    * way (a reset policy only means something once uses were found).
    */
   scanner: (effects: readonly Effect[]) => boolean | undefined;
+  /**
+   * The sheet has this from somewhere the scanner does not read, so its silence
+   * misses nothing. It says nothing of what the scanner drew, so no `extra` comes of it.
+   */
+  answeredElsewhere?: (subject: Pick<ProseSubject, 'structuredLimit'>) => boolean;
 }
 
 const CHECKS: readonly ProseCheck[] = [
@@ -72,6 +80,7 @@ const CHECKS: readonly ProseCheck[] = [
     instructions:
       'Can the character use this feature only a limited number of times before they must finish a rest to use it again?',
     scanner: (fx) => resource(fx) !== undefined,
+    answeredElsewhere: (subject) => subject.structuredLimit,
   },
   {
     id: 'usesProficiency',
@@ -139,7 +148,7 @@ export interface ProseAudit {
 
 /** One subject's disagreements with its saved answers. */
 export function disagreementsFor(
-  subject: Pick<ProseSubject, 'key' | 'label' | 'effects'>,
+  subject: Pick<ProseSubject, 'key' | 'label' | 'effects' | 'structuredLimit'>,
   answers: Readonly<Record<string, number>>,
 ): ProseDisagreement[] {
   const out: ProseDisagreement[] = [];
@@ -147,8 +156,12 @@ export function disagreementsFor(
     const p = answers[check.id];
     const said = check.scanner(subject.effects);
     if (p === undefined || said === undefined) continue;
-    const kind: DisagreementKind | undefined =
-      !said && p >= CONFIDENT_YES ? 'missed' : said && p <= CONFIDENT_NO ? 'extra' : undefined;
+    const missed = !said && p >= CONFIDENT_YES && check.answeredElsewhere?.(subject) !== true;
+    const kind: DisagreementKind | undefined = missed
+      ? 'missed'
+      : said && p <= CONFIDENT_NO
+        ? 'extra'
+        : undefined;
     if (kind !== undefined) {
       out.push({ key: subject.key, label: subject.label, check: check.id, kind, p });
     }

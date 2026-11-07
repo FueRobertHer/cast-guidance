@@ -40,6 +40,7 @@ const FEATS = [option('Martial Adept', 'PHB', 'You gain one superiority die.')];
 const registry = {
   byType: (type: string) =>
     type === 'optionalfeature' ? OPTIONS : type === 'feat' ? FEATS : ([] as Entity[]),
+  get: () => undefined,
 };
 
 const poolNamed = (id: string) => {
@@ -148,7 +149,10 @@ describe('spendCounts', () => {
     const options = [
       option('Trip Attack', 'PHB', 'You can expend a spell slot and roll a superiority die.'),
     ];
-    const both = { byType: (t: string) => (t === 'optionalfeature' ? options : []) };
+    const both = {
+      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      get: () => undefined,
+    };
     const subject = proseSubjects(both)[0];
     if (subject === undefined) throw new Error('no subject');
     saveAnswers(file, 'slots', subject, { [SPENDS]: 0.9 });

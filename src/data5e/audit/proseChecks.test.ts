@@ -25,6 +25,7 @@ const subject = (key: string, effects: EffectInput[], curated = false): ProseSub
   curated,
   effects,
   spendKeys: [],
+  structuredLimit: false,
 });
 
 const ids = PROSE_SET.questions.map((q) => q.id);
@@ -74,6 +75,70 @@ describe('disagreementsFor', () => {
         usesProficiency: 0.95,
       }).map((d) => d.check),
     ).toEqual(['action']);
+  });
+
+  describe('with a limit the sheet tracks from structured data', () => {
+    const tracked = { ...subject('a', []), structuredLimit: true };
+    const allNo = Object.fromEntries(ids.map((id) => [id, 0.05]));
+
+    it('does not count the limit as missed, and counts it without the pool', () => {
+      const answers = { ...allNo, limitedUses: 0.95 };
+      expect(disagreementsFor(tracked, answers)).toEqual([]);
+      expect(disagreementsFor(subject('a', []), answers).map((d) => d.check)).toEqual([
+        'limitedUses',
+      ]);
+    });
+
+    it('keeps every other disagreement', () => {
+      const sure = Object.fromEntries(ids.map((id) => [id, 0.95]));
+      const missedBy = (effects: EffectInput[]) =>
+        disagreementsFor({ ...subject('a', effects), structuredLimit: true }, sure).map(
+          (d) => d.check,
+        );
+      // Between them, these two have the scanner of every other check saying no.
+      const twicePerLongRest: EffectInput = {
+        kind: 'resource',
+        key: 'x',
+        label: 'x',
+        max: 2,
+        resetOn: 'long',
+        origin,
+      };
+      const plainRoll: EffectInput = {
+        kind: 'action',
+        economy: 'action',
+        label: 'x',
+        roll: '1d6',
+        origin,
+      };
+      expect(missedBy([twicePerLongRest])).toEqual([
+        'bonusAction',
+        'reaction',
+        'action',
+        'usesProficiency',
+        'shortRest',
+      ]);
+      expect(missedBy([plainRoll])).toEqual(['bonusAction', 'reaction', 'healing', 'forcesSave']);
+    });
+
+    it('starts no comparison that reads the scanner found uses', () => {
+      const sure = Object.fromEntries(ids.map((id) => [id, 0.95]));
+      expect(
+        disagreementsFor(tracked, sure)
+          .map((d) => d.check)
+          .filter((check) => check !== 'bonusAction' && check !== 'reaction'),
+      ).toEqual([]);
+    });
+
+    it('never makes the limit an extra, which is about what the scanner drew', () => {
+      expect(disagreementsFor(tracked, allNo)).toEqual([]);
+      // The scanner did draw this one, and the sheet's other count changes nothing.
+      const drawn = { ...subject('a', [uses]), structuredLimit: true };
+      const answers = { ...allNo, usesProficiency: 0.95 };
+      expect(disagreementsFor(drawn, answers).map((d) => `${d.check} ${d.kind}`)).toEqual([
+        'limitedUses extra',
+      ]);
+    });
   });
 });
 

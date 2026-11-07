@@ -12,9 +12,21 @@
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
 import { CURATED } from '../../engine/curated/curatedEffects';
+import { parseSpellRef } from '../../engine/effects/additionalSpells';
 import { Collector } from '../../engine/effects/base';
+import { collectClasses } from '../../engine/effects/class';
+import { collectFeats } from '../../engine/effects/feat';
+import { readOptionalFeatures } from '../../engine/effects/optionalFeatures';
 import { proseScanFeature } from '../../engine/effects/proseScan';
-import { type EffectInput, newCharacterDoc } from '../../engine/types';
+import { collectRace } from '../../engine/effects/race';
+import {
+  type CharacterDoc,
+  type ChoicePrompt,
+  type ClassLevelEntry,
+  type EffectInput,
+  type EntityRef,
+  newCharacterDoc,
+} from '../../engine/types';
 import type { Entity } from '../copyMod';
 import { plainEntryText } from '../entries/plainText';
 import type { EntityType } from '../normalize';
@@ -48,11 +60,19 @@ export interface ProseSubject {
   effects: EffectInput[];
   /** Each owner's key in `SPEND_LINKS`, which names the printing unlike the curated key. */
   spendKeys: string[];
+  /**
+   * The sheet of every owner holds a per-rest pool that belongs to this prose, read
+   * from `additionalSpells` and not from the prose (see `tracksLimit`). Whether the
+   * prose states a limit at all is the judge's to say. Kept apart from `effects`, whose
+   * other readers would otherwise start comparing a resource the scanner never drew.
+   */
+  structuredLimit: boolean;
 }
 
-/** Anything a registry can list by type. */
+/** Anything a registry can list by type, and look an entity up in. */
 export interface ByType {
   byType(type: EntityType): readonly Entity[];
+  get(type: EntityType, name: string, source?: string): Entity | undefined;
 }
 
 /**
@@ -150,6 +170,12 @@ function scan(name: string, entries: unknown): EffectInput[] {
   return col.effects;
 }
 
+/** A character who has an owner, and the engine's own way of reading them. */
+interface Holder {
+  doc: Partial<Pick<CharacterDoc, 'race' | 'subrace' | 'feats' | 'classes' | 'choices'>>;
+  read: (col: Collector) => void;
+}
+
 interface Owner {
   type: ProseSubjectType;
   name: string;
@@ -159,12 +185,55 @@ interface Owner {
   curatedKey: string;
   /** The key the engine looks up in `SPEND_LINKS`. */
   spendKey: string;
+  holder: Holder;
+}
+
+const refOf = (e: Entity): EntityRef => ({ name: str(e.name), source: str(e.source) });
+
+/** Levels of no class in particular, so every level key on a race or a feat is open. */
+const ANY_LEVELS: ClassLevelEntry[] = [
+  { ref: { name: 'audit', source: 'audit' }, levels: 20, hp: [] },
+];
+
+const inClass = (feature: Entity, subclass?: EntityRef): Holder => ({
+  doc: {
+    classes: [
+      {
+        ref: { name: str(feature.className), source: str(feature.classSource) },
+        ...(subclass !== undefined ? { subclass } : {}),
+        levels: 20,
+        hp: [],
+      },
+    ],
+  },
+  read: collectClasses,
+});
+
+/** The one option an optional feature's own picker needs, offered and picked the way a class does. */
+function pickedOption(e: Entity): Holder {
+  const featureType = Array.isArray(e.featureType) ? e.featureType.map(String) : [];
+  return {
+    doc: {
+      classes: ANY_LEVELS,
+      choices: { [`audit:optfeature:${featureType.join('+')}`]: lower(str(e.name), str(e.source)) },
+    },
+    read: (col) => {
+      readOptionalFeatures(
+        col,
+        { optionalfeatureProgression: [{ featureType, progression: { '*': 1 } }] },
+        { idBase: 'audit', origin: { label: 'audit', uid: 'audit', type: 'class' }, level: 20 },
+      );
+    },
+  };
 }
 
 function* owners(registry: ByType): Generator<Owner> {
   for (const type of ['race', 'subrace'] as const) {
     for (const e of registry.byType(type)) {
       const entries = Array.isArray(e.entries) ? e.entries : [];
+      const race =
+        type === 'race' ? refOf(e) : { name: str(e.raceName), source: str(e.raceSource) };
+      const subrace = type === 'subrace' ? { subrace: refOf(e) } : {};
       for (const entry of entries) {
         if (entry === null || typeof entry !== 'object') continue;
         const name = (entry as Entity).name;
@@ -176,6 +245,7 @@ function* owners(registry: ByType): Generator<Owner> {
           entries: (entry as Entity).entries,
           curatedKey: `trait:${name.toLowerCase()}`,
           spendKey: `trait:${name.toLowerCase()}`,
+          holder: { doc: { race, ...subrace, classes: ANY_LEVELS }, read: collectRace },
         };
       }
     }
@@ -190,21 +260,21 @@ function* owners(registry: ByType): Generator<Owner> {
       entries: e.entries,
       curatedKey: lower(name, str(e.className)),
       spendKey: lower(name, str(e.className), str(e.source)),
+      holder: inClass(e),
     };
   }
 
   // A subclass feature's curated key names the subclass by its full name,
   // while the feature itself only carries the short one.
-  const subclassNames = new Map<string, string>();
+  const subclasses = new Map<string, Entity>();
   for (const sub of registry.byType('subclass')) {
-    const id = lower(str(sub.className), str(sub.shortName), str(sub.source));
-    subclassNames.set(id, str(sub.name));
+    subclasses.set(lower(str(sub.className), str(sub.shortName), str(sub.source)), sub);
   }
   for (const e of registry.byType('subclassFeature')) {
     const name = str(e.name);
     const shortName = str(e.subclassShortName);
-    const subName =
-      subclassNames.get(lower(str(e.className), shortName, str(e.subclassSource))) ?? shortName;
+    const sub = subclasses.get(lower(str(e.className), shortName, str(e.subclassSource)));
+    const subName = sub !== undefined ? str(sub.name) : shortName;
     yield {
       type: 'subclassFeature',
       name,
@@ -212,6 +282,7 @@ function* owners(registry: ByType): Generator<Owner> {
       entries: e.entries,
       curatedKey: lower(name, subName),
       spendKey: lower(name, subName, str(e.source)),
+      holder: inClass(e, sub !== undefined ? refOf(sub) : undefined),
     };
   }
 
@@ -225,15 +296,102 @@ function* owners(registry: ByType): Generator<Owner> {
         entries: e.entries,
         curatedKey: lower(name, str(e.source)),
         spendKey: lower(name, str(e.source)),
+        holder:
+          type === 'feat'
+            ? {
+                doc: { feats: [{ ref: refOf(e), instanceId: 'audit' }], classes: ANY_LEVELS },
+                read: collectFeats,
+              }
+            : pickedOption(e),
       };
     }
   }
+}
+
+type Grant = Extract<EffectInput, { kind: 'grantSpell' }>;
+
+const isBranch = (prompt: ChoicePrompt) =>
+  prompt.kind === 'generic' && prompt.id.endsWith(':branch');
+
+/**
+ * What the engine grants this holder, once per way their block can branch: every
+ * branch is a character someone can build. Other choices the grants wait on, an
+ * ability or a spell, change no pool, so one answer stands for the rest. The engine
+ * grants a spell once and a repeat loses its pool, so no two picks by filter are alike.
+ */
+function grantsPerBuild(registry: ByType, { doc, read }: Holder): Grant[][] {
+  const builds: Grant[][] = [];
+  let picks = 0;
+  // A spell pick by filter lists nothing until the spell files load, and trusts a
+  // saved pick the registry does not know.
+  const answerTo = ({ options, count }: ChoicePrompt) =>
+    options.length > 0
+      ? options.slice(0, count).map((option) => option.id)
+      : Array.from({ length: count }, () => `audit pick ${String(picks++)}|audit`);
+  const build = (choices: CharacterDoc['choices']) => {
+    const col = new Collector(
+      { ...newCharacterDoc('audit', 'audit', 'audit'), ...doc, choices },
+      registry,
+    );
+    read(col);
+    const open = col.pending.filter(
+      (p) => !(p.id in choices) && (p.kind === 'spell' || p.kind === 'ability' || isBranch(p)),
+    );
+    const branch = open.find(isBranch);
+    if (branch !== undefined) {
+      for (const { id } of branch.options) build({ ...choices, [branch.id]: id });
+    } else if (open.length > 0) {
+      build({ ...choices, ...Object.fromEntries(open.map((p) => [p.id, answerTo(p)])) });
+    } else {
+      builds.push(col.effects.filter((e): e is Grant => e.kind === 'grantSpell'));
+    }
+  };
+  build(doc.choices ?? {});
+  return builds;
+}
+
+/** The spells some entries tag, lowercase. Tags, not words: "shield" is also a thing you hold. */
+function spellsNamedIn(entries: unknown): Set<string> {
+  const tags = JSON.stringify(entries ?? null).matchAll(/\{@spell ([^}]+)\}/g);
+  return new Set([...tags].map((tag) => parseSpellRef(tag[1] ?? '').name.toLowerCase()));
+}
+
+/**
+ * Does the sheet of this owner count the limit its prose states, from the owner's
+ * structured data? The engine is asked, not the block, so an owner it does not read
+ * and a limit it does not keep (one written inside `known`) count for nothing. In
+ * every build it must hold a pool on a spell the prose names. A feat's or optional
+ * feature's prose is all there is of it, so a pool on a spell the player picks,
+ * which the prose cannot name, is its too, while a trait or subclass feature shares
+ * one block with its neighbors. A leveled spell the prose names and the engine grants
+ * freely means the sheet tracks only part of the limit, which is not tracking it.
+ * How many uses, and which rest refills them, stay the block's word: this asks that
+ * a pool exists, and does not compare it with the prose.
+ */
+function tracksLimit(registry: ByType, owner: Owner): boolean {
+  const named = spellsNamedIn(owner.entries);
+  const whole = owner.type === 'feat' || owner.type === 'optionalfeature';
+  if (!whole && named.size === 0) return false;
+  const isCantrip = ({ spell }: Grant) =>
+    registry.get('spell', spell.name, spell.source === '' ? undefined : spell.source)?.level === 0;
+  return grantsPerBuild(registry, owner.holder).every((grants) => {
+    const nameOf = (grant: Grant) => grant.spell.name.toLowerCase();
+    const limited = new Set(grants.filter((g) => g.resourceKey !== undefined).map(nameOf));
+    const free = grants.filter((g) => !limited.has(nameOf(g)));
+    return (
+      (whole ? limited.size > 0 : [...named].some((name) => limited.has(name))) &&
+      !free.some((grant) => named.has(nameOf(grant)) && !isCantrip(grant))
+    );
+  });
 }
 
 /**
  * Every scanned trait and feature in the registry, one subject per distinct
  * prose, in registry order. Traits with no prose are left out: there is
  * nothing to scan or to judge.
+ *
+ * Owners sharing prose can differ in their spell block, and a sheet without the
+ * pool is one where the limit goes uncounted, so `structuredLimit` needs them all.
  */
 export function proseSubjects(registry: ByType): ProseSubject[] {
   const byKey = new Map<string, ProseSubject>();
@@ -249,6 +407,7 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
       seen.owners++;
       seen.curated &&= curated;
       seen.spendKeys.push(owner.spendKey);
+      seen.structuredLimit &&= tracksLimit(registry, owner);
       continue;
     }
     byKey.set(key, {
@@ -261,6 +420,7 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
       curated,
       effects: scan(owner.name, owner.entries),
       spendKeys: [owner.spendKey],
+      structuredLimit: tracksLimit(registry, owner),
     });
   }
   return [...byKey.values()];

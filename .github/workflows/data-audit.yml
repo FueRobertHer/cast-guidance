@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           changed=$(git diff --name-only HEAD^1 HEAD)
-          pattern='^(src/data5e/|src/dice/|src/lib/boundedRead\.ts$|src/engine/effects/additionalSpells\.ts$|src/engine/effects/proseScan\.ts$|src/engine/curated/|src/features/sheet/spellRolls\.ts$|scripts/data-|\.github/workflows/data-audit\.yml$|package\.json$|bun\.lock$)'
+          pattern='^(src/data5e/|src/dice/|src/lib/boundedRead\.ts$|src/engine/effects/(additionalSpells|asiFeatInstance|base|class|feat|featPicks|optionalFeatures|prerequisites|proseScan|race|readers)\.ts$|src/engine/spellQuery\.ts$|src/engine/curated/|src/features/sheet/spellRolls\.ts$|scripts/data-|\.github/workflows/data-audit\.yml$|package\.json$|bun\.lock$)'
           # A here-string, not a pipe: with pipefail, `grep -q` exiting at the
           # first match could fail the writer with SIGPIPE and read as false.
           if grep -qE "$pattern" <<< "$changed"; then
