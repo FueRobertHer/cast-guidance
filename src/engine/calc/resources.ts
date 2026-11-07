@@ -1,11 +1,4 @@
-import type {
-  Ability,
-  ActionCost,
-  CharacterDoc,
-  DerivedAbility,
-  DerivedResource,
-  EffectInput,
-} from '../types';
+import type { Ability, CharacterDoc, DerivedAbility, DerivedResource, EffectInput } from '../types';
 import { effectsOf } from './core';
 
 /**
@@ -15,13 +8,14 @@ import { effectsOf } from './core';
 const SAME_POOL: Readonly<Record<string, string>> = { ki: 'focus', focus: 'ki' };
 
 /**
- * A cost as this sheet can pay it: on the pool it has under either name, or no
- * cost at all when it has neither (Stunning Strike with no Focus to spend yet).
+ * A cost or a buy-back as this sheet can pay it: on the pool it has under either
+ * name, or none at all when it has neither (Stunning Strike with no Focus to spend
+ * yet).
  */
-export function costOnSheet(
-  cost: ActionCost | undefined,
+export function costOnSheet<T extends { resource: string }>(
+  cost: T | undefined,
   resources: readonly DerivedResource[],
-): ActionCost | undefined {
+): T | undefined {
   if (cost === undefined) return undefined;
   const has = (key: string) => resources.some((r) => r.key === key);
   if (has(cost.resource)) return cost;
@@ -71,6 +65,7 @@ export function calcResources(
         resetOn: e.resetOn,
         origin: e.origin.label,
         ...(e.noSlotConversion !== undefined ? { noSlotConversion: e.noSlotConversion } : {}),
+        ...(e.regainOnShort !== undefined ? { regainOnShort: e.regainOnShort } : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).
@@ -83,6 +78,10 @@ export function calcResources(
       }
     }
     // Otherwise first wins: curated entries emit before prose-scanned duplicates.
+  }
+  for (const e of effectsOf(effects, 'resourceRegain')) {
+    const row = out.find((r) => r.key === e.key);
+    if (row !== undefined) row.regainOnShort = (row.regainOnShort ?? 0) + e.amount;
   }
   return out;
 }

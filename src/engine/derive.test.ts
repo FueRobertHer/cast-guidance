@@ -855,6 +855,49 @@ describe('deriveSheet — stackable resources (superiority dice)', () => {
   });
 });
 
+describe('deriveSheet: buying a use back', () => {
+  const origin = { label: 'Test', uid: 'test', type: 'custom' as const };
+  const pool = (key: string) => ({
+    kind: 'resource' as const,
+    key,
+    label: 'Points',
+    max: 5,
+    resetOn: 'long' as const,
+    origin,
+  });
+  const leap = (buyBack?: { resource: string; amount: number }) => ({
+    kind: 'action' as const,
+    economy: 'bonus' as const,
+    label: 'Leap',
+    ...(buyBack !== undefined ? { buyBack } : {}),
+    origin,
+  });
+  const leapOf = (customEffects: CharacterDoc['customEffects']) =>
+    deriveSheet({ ...warriorDoc(), customEffects }, ctx).actions.filter((a) => a.label === 'Leap');
+
+  it('carries the buy-back to the sheet, on the pool it has under either name', () => {
+    const buyBack = { resource: 'focus', amount: 2 };
+    expect(leapOf([pool('focus'), leap(buyBack)])[0]?.buyBack).toEqual(buyBack);
+    expect(leapOf([pool('ki'), leap(buyBack)])[0]?.buyBack).toEqual({ ...buyBack, resource: 'ki' });
+  });
+
+  it('drops it when the sheet has no such pool, and keeps the action', () => {
+    const actions = leapOf([leap({ resource: 'focus', amount: 2 })]);
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.buyBack).toBeUndefined();
+  });
+
+  it('keeps the printing with the buy-back when two collapse to one', () => {
+    const buyBack = { resource: 'focus', amount: 2 };
+    expect(leapOf([pool('focus'), leap(), leap(buyBack)])).toMatchObject([{ buyBack }]);
+  });
+
+  it('carries what an action refills to the sheet', () => {
+    const regains = { resource: 'focus', amount: 1 };
+    expect(leapOf([pool('focus'), { ...leap(), regains }])[0]?.regains).toEqual(regains);
+  });
+});
+
 describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {
   function sneakDoc(): CharacterDoc {
     const doc = newCharacterDoc('sn1', 'Sly', 'test-tag');

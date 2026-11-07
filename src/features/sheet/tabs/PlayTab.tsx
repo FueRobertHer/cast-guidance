@@ -35,7 +35,13 @@ import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass, openListClass } from '@/ui/surfaces';
-import { type ActionSpend, actionUse } from '../actionUse';
+import {
+  type ActionRestore,
+  type ActionSpend,
+  type ActionUse,
+  actionUse,
+  applyRestore,
+} from '../actionUse';
 import { CastButton } from '../CastButton';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
@@ -59,7 +65,7 @@ import {
 import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RollEffectCue } from '../RollEffectCue';
-import { longRest, shortRest } from '../rest';
+import { backCaption, giveBack, longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
 import { SpellSlots } from '../SpellSlots';
@@ -320,12 +326,20 @@ export function Component() {
    * Trigger an action: mark its slice of the turn used (a rider has none) AND
    * spend what it costs, in a single update so the sheet stays honest.
    */
-  const triggerAction = (economy: ActionEconomy, spends: readonly ActionSpend[], label?: string) =>
+  const triggerAction = (
+    economy: ActionEconomy,
+    spends: readonly ActionSpend[],
+    label?: string,
+    regains?: ActionUse['regains'],
+  ) =>
     update(
       (d) => {
         const entryOf = (key: string) => d.play.resources.find((r) => r.key === key);
-        // All of it or none: a tap that beat the last render must not take half a cost.
+        // All of it or none: a tap that beat the last render must not take half a cost,
+        // or the use of something with nothing left to refill.
         if (spends.some((s) => (entryOf(s.key)?.used ?? 0) + s.amount > s.max)) return;
+        const refilled = regains !== undefined ? entryOf(regains.key) : undefined;
+        if (regains !== undefined && (refilled === undefined || refilled.used <= 0)) return;
         if (economy !== 'none') {
           const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
           turn[economy] = true;
@@ -336,9 +350,15 @@ export function Component() {
           if (entry !== undefined) entry.used += amount;
           else d.play.resources.push({ key, used: amount });
         }
+        if (regains !== undefined && refilled !== undefined) {
+          giveBack(refilled, regains.max, regains.amount);
+        }
       },
       label !== undefined ? `Used ${label}` : undefined,
     );
+  /** Buy a use back. It takes nothing from the turn: "no action required". */
+  const restoreUse = (restore: ActionRestore) =>
+    update((d) => applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
   /** The conditions on the attack chips, as the cue over them says them. */
@@ -1120,7 +1140,7 @@ export function Component() {
                     ) : (
                       <span className="text-body-strong">{r.label}</span>
                     )}
-                    <span className="text-caption text-ink-muted">Back on a {r.resetOn} rest</span>
+                    <span className="text-caption text-ink-muted">{backCaption(r)}</span>
                   </div>
                   {r.max > 12 ? (
                     // Point pools (Lay on Hands, ki, sorcery points) outgrow
@@ -1277,7 +1297,7 @@ export function Component() {
               // its cost names. See `actionUse`.
               const use = actionUse(a, sheet.resources, usedOf);
               // Using it marks the right slice of the turn and spends the pips.
-              const trigger = () => triggerAction(a.economy, use.spends, a.label);
+              const trigger = () => triggerAction(a.economy, use.spends, a.label, use.regains);
               // Incapacitating conditions stop actions/bonus actions/reactions.
               // A rider takes none of those.
               const blocked = a.economy === 'none' ? [] : limits.noActions;
@@ -1379,6 +1399,19 @@ export function Component() {
                         title={use.paid.title}
                       >
                         {use.paid.label}
+                      </Button>
+                    )}
+                    {use.restore !== undefined && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={use.restore.ariaLabel}
+                        onClick={() => use.restore !== undefined && restoreUse(use.restore)}
+                        disabled={use.restore.disabled}
+                        className="-my-1.5"
+                        title={use.restore.title}
+                      >
+                        Restore
                       </Button>
                     )}
                   </span>

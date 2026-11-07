@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DerivedSheet, PlayState } from '@/engine/types';
-import { longRest, shortRest } from './rest';
+import { backCaption, longRest, shortRest } from './rest';
 
 /** Minimal DerivedSheet with just the fields the rest rules read. */
 function sheet(over: Partial<DerivedSheet> = {}): DerivedSheet {
@@ -70,6 +70,72 @@ describe('shortRest', () => {
     const restored = shortRest(p, sheet());
     expect(p.arcanumUsed).toEqual([6]);
     expect(restored).not.toContain('Mystic Arcanum');
+  });
+
+  describe('a pool that regains some on a short rest', () => {
+    const dice = {
+      key: 'dice',
+      label: 'Test Dice (d8)',
+      max: 6,
+      resetOn: 'long',
+      regainOnShort: 1,
+      origin: 'Test',
+    } as const;
+    const withDice = (over: object = {}) => sheet({ resources: [{ ...dice, ...over }] });
+    const used = (p: PlayState) => p.resources.find((r) => r.key === 'dice')?.used;
+
+    it('gives back that many and says so', () => {
+      const p = play({ resources: [{ key: 'dice', used: 3 }] });
+      expect(shortRest(p, withDice())).toEqual(['1 Test Dice (d8)']);
+      expect(used(p)).toBe(2);
+    });
+
+    it('gives back no more than was spent', () => {
+      const p = play({ resources: [{ key: 'dice', used: 2 }] });
+      expect(shortRest(p, withDice({ regainOnShort: 4 }))).toEqual(['2 Test Dice (d8)']);
+      expect(used(p)).toBe(0);
+    });
+
+    it('says nothing when none were spent', () => {
+      expect(shortRest(play(), withDice())).toEqual([]);
+      const p = play({ resources: [{ key: 'dice', used: 0 }] });
+      expect(shortRest(p, withDice())).toEqual([]);
+    });
+
+    it('counts uses past the maximum as all spent, so one really comes back', () => {
+      const p = play({ resources: [{ key: 'dice', used: 9 }] });
+      shortRest(p, withDice());
+      expect(used(p)).toBe(5);
+    });
+
+    it('resets a short-rest pool in full, whatever else it says', () => {
+      const p = play({ resources: [{ key: 'dice', used: 3 }] });
+      expect(shortRest(p, withDice({ resetOn: 'short' }))).toEqual(['Test Dice (d8)']);
+      expect(used(p)).toBeUndefined();
+    });
+
+    it('still comes back in full on a long rest', () => {
+      const p = play({ resources: [{ key: 'dice', used: 3 }] });
+      longRest(p, withDice(), '2024');
+      expect(p.resources).toEqual([]);
+    });
+  });
+});
+
+describe('backCaption', () => {
+  it('says the one rest for a pool that comes back all at once', () => {
+    expect(backCaption({ resetOn: 'short' })).toBe('Back on a short rest');
+    expect(backCaption({ resetOn: 'long' })).toBe('Back on a long rest');
+    expect(backCaption({ resetOn: 'short', regainOnShort: 1 })).toBe('Back on a short rest');
+  });
+
+  it('says both rests for one that comes back in part', () => {
+    expect(backCaption({ resetOn: 'long', regainOnShort: 1 })).toBe(
+      'One back on a short rest, all on a long rest',
+    );
+    expect(backCaption({ resetOn: 'long', regainOnShort: 4 })).toBe(
+      '4 back on a short rest, all on a long rest',
+    );
   });
 });
 

@@ -134,6 +134,8 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
         ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
     cost: costOnSheet(e.cost, resources),
+    buyBack: costOnSheet(e.buyBack, resources),
+    regains: e.regains,
   }));
 
   const classLabel = doc.classes
@@ -213,13 +215,15 @@ function richness(e: {
   note?: string;
   save?: { dcAbility?: unknown };
   cost?: unknown;
+  buyBack?: unknown;
 }): number {
   // A save with its DC says more than one without, by less than any other mechanic.
   return (
     (e.roll !== undefined ? 1 : 0) +
     (e.note !== undefined ? 2 : 0) +
     (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0) +
-    (e.cost !== undefined ? 2 : 0)
+    (e.cost !== undefined ? 2 : 0) +
+    (e.buyBack !== undefined ? 2 : 0)
   );
 }
 

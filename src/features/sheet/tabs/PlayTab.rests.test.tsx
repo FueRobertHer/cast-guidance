@@ -92,6 +92,32 @@ describe('short rest (TEST-003)', () => {
     expect(saved.play.slotsSpent[0]).toBe(1);
     expect(saved.play.resources).toEqual([{ key: 'sorcery-points', used: 2 }]);
   });
+
+  it('gives back one of a pool that regains one, and says how many', async () => {
+    const doc = testCharacter('Slow', [classEntry('Monk', 2)]);
+    doc.customEffects = [
+      {
+        kind: 'resource',
+        key: 'dice',
+        label: 'Test Dice (d8)',
+        max: 3,
+        resetOn: 'long',
+        regainOnShort: 1,
+        origin: { label: 'Test', uid: 'test', type: 'custom' },
+      },
+    ];
+    const sheet = await renderSheet(doc);
+    expect(screen.getByText('One back on a short rest, all on a long rest')).toBeTruthy();
+    press('Test Dice (d8) use 3');
+    expect(left('Test Dice (d8) use')).toBe(0);
+    await sheet.saved();
+
+    press('Short rest');
+
+    expect(left('Test Dice (d8) use')).toBe(1);
+    expect(notice()).toBe('Short rest: Restored 1 Test Dice (d8)');
+    expect((await sheet.saved()).play.resources).toContainEqual({ key: 'dice', used: 2 });
+  });
 });
 
 describe('long rest (TEST-003)', () => {
