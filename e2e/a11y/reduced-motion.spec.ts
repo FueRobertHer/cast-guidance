@@ -90,7 +90,7 @@ async function moveThroughTheSheet(page: Page): Promise<Motion[]> {
 
 /**
  * Puts Poisoned and Paralyzed on a new character, through the picker, and lands
- * on its attack chip: the one thing in the app that moves at rest.
+ * on its attack chip: the kind of thing in the app that moves at rest.
  */
 async function afflictAChip(page: Page) {
   await skipOfflineReadyNotice(page);
@@ -108,6 +108,32 @@ async function afflictAChip(page: Page) {
 
   return page.getByTitle('Unarmed Strike attack');
 }
+
+/**
+ * Puts Grappled and Frightened on a new character: claws on its Speed cell, and
+ * on the Stats tab a tile's number moved, and motion in the Skills card's strip.
+ */
+async function afflictTheOtherRolls(page: Page) {
+  await skipOfflineReadyNotice(page);
+  await recordMotion(page);
+  await gotoRosterSettled(page);
+  const id = await createBlankCharacter(page);
+  await gotoSheetTab(page, id, 'Play');
+
+  await page.getByRole('button', { name: 'Condition', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await picker.getByRole('button', { name: 'Grappled', exact: true }).click();
+  await picker.getByRole('button', { name: 'Frightened', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  return id;
+}
+
+/** The Stats tab's tiles and Skills card, with what wears them. */
+const statsSurfaces = (page: Page) => ({
+  tile: page.locator('.cx-at-tile.cx-frightened').first(),
+  card: page.locator('.cx-at-card.cx-frightened'),
+});
 
 /** The names of the CSS animations running on the chip: its loops, not a passing transition. */
 const running = (chip: Locator) =>
@@ -130,6 +156,16 @@ test.describe('motion, as the device asks', () => {
     await expect.poll(() => running(chip)).toContain('cx-bolt-a');
   });
 
+  test('without a preference, the other surfaces keep moving (the canary)', async ({ page }) => {
+    const id = await afflictTheOtherRolls(page);
+    const speed = page.locator('.cx-at-cell.cx-grappled');
+    await expect.poll(() => running(speed)).toContain('cx-snap');
+    await gotoSheetTab(page, id, 'Stats');
+    const { tile, card } = statsSurfaces(page);
+    await expect.poll(() => running(tile.locator('.cx-move'))).toContain('cx-tremble');
+    await expect.poll(() => running(card.locator('.cx-strip'))).toContain('cx-flinch');
+  });
+
   test('with the switch off in Settings, an afflicted chip holds still', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('cast-guidance:condition-motion', 'off');
@@ -138,6 +174,21 @@ test.describe('motion, as the device asks', () => {
     await expect(chip.locator('.cx-on')).toHaveClass(/cx-still/);
     await expect(chip.locator('.cx-bolt').first()).toHaveCSS('opacity', '0.8');
     await expect.poll(() => running(chip)).toEqual([]);
+  });
+
+  test('with the switch off in Settings, the other surfaces hold still', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('cast-guidance:condition-motion', 'off');
+    });
+    const id = await afflictTheOtherRolls(page);
+    const speed = page.locator('.cx-at-cell.cx-grappled');
+    await expect(speed.locator('.cx-prong').first()).toHaveCSS('opacity', '0.45');
+    await expect.poll(() => running(speed)).toEqual([]);
+    await gotoSheetTab(page, id, 'Stats');
+    const { tile, card } = statsSurfaces(page);
+    await expect(tile).toHaveClass(/cx-still/);
+    await expect.poll(() => running(tile.locator('.cx-move'))).toEqual([]);
+    await expect.poll(() => running(card.locator('.cx-strip'))).toEqual([]);
   });
 
   test.describe(() => {
@@ -167,6 +218,23 @@ test.describe('motion, as the device asks', () => {
       expect(motion.filter((m) => m.ms > 0.01)).toEqual([]);
       // Paralyzed's still pose: both bolts at 80%, not the 0 of the last keyframe.
       await expect(chip.locator('.cx-bolt').first()).toHaveCSS('opacity', '0.8');
+    });
+
+    test('with reduced motion, the other surfaces keep their looks and hold still', async ({
+      page,
+    }) => {
+      const id = await afflictTheOtherRolls(page);
+      const speed = page.locator('.cx-at-cell.cx-grappled');
+      await expect(speed.locator('.cx-prong')).toHaveCount(4);
+      await expect.poll(() => running(speed)).toEqual([]);
+      await gotoSheetTab(page, id, 'Stats');
+      const { tile, card } = statsSurfaces(page);
+      await expect(tile).toHaveClass(/cx-on/);
+      await expect(card.locator('.cx-strip')).toBeAttached();
+      await expect.poll(() => running(tile.locator('.cx-move'))).toEqual([]);
+      await expect.poll(() => running(card.locator('.cx-strip'))).toEqual([]);
+      const motion = await page.evaluate(() => [...(window.__motion as Motion[])]);
+      expect(motion.filter((m) => m.ms > 0.01)).toEqual([]);
     });
   });
 });

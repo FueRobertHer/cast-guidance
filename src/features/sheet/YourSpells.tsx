@@ -13,10 +13,12 @@ import { signed } from '@/lib/signed';
 import type { DocUpdater } from '@/stores/characterSession';
 import { Badge, badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
+import { type ChipWear, NOT_WORN } from '@/ui/ChipFace';
 import { PackProblem } from '@/ui/PackProblem';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
+import { CastButton } from './CastButton';
 import { askCastResource, CastResourcePicker } from './CastResourcePicker';
 import {
   type CastSpellInfo,
@@ -28,7 +30,14 @@ import {
   needsCastChoice,
 } from './castResources';
 import { conditionLimits } from './conditionEffects';
-import { attackWear, effectLines, noteLines, rollD20Test, useIgnoreOnce } from './d20Tests';
+import {
+  conditionWear,
+  effectLines,
+  noteLines,
+  rollD20Test,
+  rollWear,
+  useIgnoreOnce,
+} from './d20Tests';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -88,7 +97,9 @@ interface RowContext {
   choice: ReturnType<typeof useCastChoice>;
   rollAttack: (modifier: number, label: string) => () => ReturnType<typeof rollD20Test>;
   /** The conditions on the attack chips. */
-  wear: ReturnType<typeof attackWear>;
+  wear: ChipWear;
+  /** On Cast and the dice chip that casts: only what stops casting. */
+  castWear: ChipWear;
   noVerbal: readonly string[];
   entityOf: (ref: { name: string; source: string }) => Entity | undefined;
 }
@@ -147,6 +158,7 @@ function RollChips({
   rolls,
   roller,
   wear,
+  castWear,
   onCast,
 }: {
   name: string;
@@ -155,6 +167,7 @@ function RollChips({
   rolls: ReturnType<typeof spellRollActions>;
   roller: RowContext['rollAttack'];
   wear: RowContext['wear'];
+  castWear: RowContext['castWear'];
   onCast: (() => void) | undefined;
 }) {
   const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
@@ -178,6 +191,9 @@ function RollChips({
           label={action.label}
           variant={action.variant}
           onRolled={!hasAttack && index === 0 ? onCast : undefined}
+          wear={
+            !hasAttack && index === 0 ? (onCast === undefined ? NOT_WORN : castWear) : undefined
+          }
         />
       ))}
     </>
@@ -284,6 +300,7 @@ function SlotSpellRow({
             rolls={rolls}
             roller={ctx.rollAttack}
             wear={ctx.wear}
+            castWear={ctx.castWear}
             onCast={
               concentrating ? undefined : () => castSpell(update, block, level, info, resource)
             }
@@ -292,12 +309,10 @@ function SlotSpellRow({
             <EndButton name={name} update={update} />
           ) : (
             !rolling && (
-              <Button
-                variant="outline"
-                size="sm"
+              <CastButton
+                wear={ctx.castWear}
                 aria-label={`Cast ${name}`}
                 aria-haspopup={choosing ? 'dialog' : undefined}
-                className="-my-1"
                 onClick={() => {
                   void castAsking();
                 }}
@@ -310,9 +325,7 @@ function SlotSpellRow({
                         ? 'Cast with nothing left to spend (marks action economy)'
                         : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                 }
-              >
-                Cast
-              </Button>
+              />
             )
           )}
         </>
@@ -404,23 +417,20 @@ function InnateSpellRow({
             rolls={rolls}
             roller={ctx.rollAttack}
             wear={ctx.wear}
+            castWear={ctx.castWear}
             onCast={concentrating || depleted ? undefined : cast}
           />
           {concentrating ? (
             <EndButton name={name} update={update} />
           ) : (
             !rolling && (
-              <Button
-                variant="outline"
-                size="sm"
+              <CastButton
+                wear={ctx.castWear}
                 aria-label={`Cast ${name}`}
                 disabled={depleted}
-                className="-my-1"
                 onClick={cast}
                 title={depleted ? 'No uses left until you rest' : 'Cast (no slot)'}
-              >
-                Cast
-              </Button>
+              />
             )
           )}
         </>
@@ -666,7 +676,8 @@ export function YourSpells({
     update,
     choice,
     rollAttack,
-    wear: attackWear(doc.play.conditions, attackEffects, limits.noActions, ignore.armed('attack')),
+    wear: rollWear(doc.play.conditions, attackEffects, ignore.armed('attack'), limits.noActions),
+    castWear: conditionWear(doc.play.conditions, limits.noActions),
     noVerbal: limits.noVerbal,
     entityOf,
   };
