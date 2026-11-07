@@ -132,6 +132,400 @@ describe('proseScanFeature — limited-use detection', () => {
     const r = resource(scan('Second Wind', [`You can use it twice. ${returning}`]));
     expect(r).toMatchObject({ max: 2, resetOn: 'short' });
   });
+
+  describe('wordings for one use between rests', () => {
+    it.each([
+      [
+        'the feature',
+        'Once you wake a wisp, you can’t use the feature again until you finish a long rest.',
+      ],
+      [
+        'the action',
+        'Once you sense a gate, you can’t use the action again until you finish a long rest.',
+      ],
+      [
+        'this benefit',
+        'Once you hum, you can’t use this benefit again until you finish a long rest.',
+      ],
+      [
+        'this ability',
+        'Once you hum, you can’t use this ability again until you finish a long rest.',
+      ],
+      [
+        '"in this way"',
+        'Once you hum, you can’t do so in this way again until you finish a long rest.',
+      ],
+      [
+        '"create it"',
+        'Once you raise the glow, you can’t create it again until you finish a long rest.',
+      ],
+      ['"enter"', 'Once you step inside, you can’t enter again until you finish a long rest.'],
+      [
+        '"cast it in this way"',
+        'Once you hum, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        '"another one"',
+        'Once you bottle a mote, you can’t bottle another one with it until you finish a long rest.',
+      ],
+      ['"start"', 'Once you hum, you can’t do so again until you start a long rest.'],
+      [
+        '"roll initiative"',
+        'Once you hum, you can’t do so again until you roll initiative or a long rest passes.',
+      ],
+      ['a third person', 'The knight can’t do so again until he or she finishes a long rest.'],
+      ['"completes"', 'The knight can’t do so again until he or she completes a long rest.'],
+      [
+        '"before you can do so"',
+        'After humming, you must finish a long rest before you can do so here.',
+      ],
+      ['a dawn', 'Once used, the lamp can’t be used again until the next dawn.'],
+    ])('reads %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it.each([
+      [
+        'a target it spares',
+        'You can’t use this feature on that foe again until you finish a long rest.',
+      ],
+      [
+        'a target named by a pronoun',
+        'Once you charm a foe, you can’t charm it again until you finish a long rest.',
+      ],
+      [
+        'each of several benefits',
+        'Once you use one of them, you can’t use that benefit again until you finish a long rest.',
+      ],
+      [
+        'another feature’s wait',
+        'You can’t use Bright Prayer again until you finish 2d4 long rests.',
+      ],
+      ['an unrelated verb', 'You can’t speak again until you finish a long rest.'],
+      [
+        'a verb in place of "another one"',
+        'You can’t bottle a mote with it until you finish a long rest.',
+      ],
+      ['a wait for a turn', 'You flare. You can’t use it again until you start your next turn.'],
+      ['a wait for a ritual', 'You can’t create it again until you finish the ritual.'],
+      [
+        'a cast’s wait for a ritual',
+        'You can’t cast it in this way again until you finish the rite.',
+      ],
+      ['a wait with no rest', 'You can’t forge another one with it until you finish the blade.'],
+      [
+        'a rest past the wait',
+        'You can’t do so again until you finish the song, or rest your voice.',
+      ],
+      ['a third person’s wait', 'The knight can’t do so again until he or she finishes the duel.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it.each([
+      [
+        'a rest of any kind',
+        'Once you hum, you can’t use the feature again until you finish a rest.',
+      ],
+      [
+        '"long rest or short rest" with no initiative',
+        'Once you hum, you can’t do so again until you finish a long rest or short rest.',
+      ],
+      [
+        '"long rest or short rest" after initiative',
+        'Once you hum, you can’t do so again until you roll initiative or finish a long rest or short rest.',
+      ],
+      ['"start a short rest"', 'You hum. You can’t do so again until you start a short rest.'],
+      ['"complete a short rest"', 'You can’t do so again until you complete a short rest.'],
+      ['"finishes"', 'The knight can’t do so again until he or she finishes a short rest.'],
+      ['"completes"', 'The knight can’t do so again until he or she completes a short rest.'],
+    ])('resets on a short rest with %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'short' });
+    });
+
+    it.each([
+      ['a rest with an occasion', 'When you finish a rest, you can choose a new note.'],
+      [
+        'either rest with an occasion',
+        'When you finish a long rest or short rest, you can change your note.',
+      ],
+      ['a rest in a condition', 'If you finish a rest in the shrine, your hum grows louder.'],
+      ['a word that opens on "rest"', 'When you finish a restoration, the ward is whole.'],
+    ])('keeps a long rest beside %s', (_wording, sentence) => {
+      const text = `Once you hum, you can’t do so again until you finish a long rest. ${sentence}`;
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it('keeps a long rest when a word only opens on "rest"', () => {
+      const text = 'You can’t do so again until you finish a restful long rest.';
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+  });
+
+  describe('counts it states outright', () => {
+    it.each([
+      ['one use', 'You have one use of this feature, which comes back with a long rest.', 1],
+      ['two uses', 'You have two uses of this ability, and you regain them with a long rest.', 2],
+      ['three uses', 'You have three uses of this trait, and you regain them with a long rest.', 3],
+      [
+        '"this ability twice"',
+        'You can use this ability twice, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        '"this ability three times"',
+        'You can use this ability three times, and you regain them with a long rest.',
+        3,
+      ],
+      [
+        'a count in a later sentence',
+        'You hum. You have two uses of this ability, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        'a count in a later clause',
+        'For this hum, you have three uses of this trait, and you regain them with a long rest.',
+        3,
+      ],
+      [
+        'a rate per day',
+        'You can use this ability twice per day, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        'a count, not a condition on what is left',
+        'You can use this ability twice, and you regain them with a long rest. While you have one use of this ability left, your eyes glow.',
+        2,
+      ],
+      [
+        'three times over a free use’s words',
+        'You can use your shout three times. You regain the ability to do so after a long rest.',
+        3,
+      ],
+      [
+        'twice over a free use’s words',
+        'You can use this trait twice. You regain the ability to do so after a long rest.',
+        2,
+      ],
+      [
+        'twice over a wait',
+        'You can use it twice here. You must finish a long rest before you can do so now.',
+        2,
+      ],
+      [
+        'a held count over a wait',
+        'You have two uses of this trait. You must finish a long rest before you can do so now.',
+        2,
+      ],
+    ])('reads %s', (_wording, text, max) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max, resetOn: 'long' });
+    });
+
+    it.each([
+      ['uses of something else', 'You have two uses of that wand.'],
+      ['another feature named', 'You can use Bright Prayer twice before a rest.'],
+      ['a count it does not know', 'You have nine uses of this ability.'],
+      ['a condition on what is left', 'When you have one use of this feature left, you glow.'],
+      ['a prohibition', 'You can’t use this ability twice on the same foe.'],
+      ['a rate per turn', 'You can use this ability twice per turn.'],
+      ['a rate each turn', 'You can use this ability twice each turn.'],
+      ['a rate in a turn', 'You can use this ability twice in a turn.'],
+      ['a rate in a round', 'You can use it three times in a round.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it('keeps the old wait over a stated count', () => {
+      const text =
+        'You can use it twice here. After that, you can’t do so again until you finish a long rest.';
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+  });
+
+  describe('a free cast of one spell', () => {
+    it.each([
+      [
+        'in one sentence',
+        'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'over two sentences',
+        'You can cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        '"before you can cast it"',
+        'You can cast fake ward with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        '"to cast the spell"',
+        'You can cast fake ward with no slot, but you must finish a long rest to cast the spell again.',
+      ],
+      [
+        'with a level opener a class writes',
+        'At 11th level, you learn fake ward. You can cast it once with no slot. You must finish a long rest before you can do so once more.',
+      ],
+      [
+        'before a later level',
+        'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest. Starting at 3rd level, you also learn fake bolt.',
+      ],
+      [
+        'at dawn',
+        'You can cast fake ward once with no slot, and you regain the ability to do so at dawn.',
+      ],
+      [
+        'with a class’s "starting at" as its first words',
+        'Starting at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with a class’s "beginning at" as its first words',
+        'Beginning at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with a class’s "starting at level" as its first words',
+        'Starting at level 3, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with "starting at" that names no level',
+        'You can breathe a line of flame starting at your mouth. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'with "you reach" that names no level',
+        'When you reach 0 hit points, you can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'with "each" for its rest',
+        'You can cast fake ward once with no slot, and you regain the ability to do so after each long rest.',
+      ],
+      [
+        'with "each" for its targets',
+        'You can cast fake ward once, for each foe you pick, and you regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with "both" for something else',
+        'You can hum once, holding the note with both hands, and you regain the ability to do so when you finish a long rest.',
+      ],
+    ])('is a tracker %s', (_shape, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it('reads its own rest', () => {
+      const r = resource(
+        scan('Gift', [
+          'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a short or long rest.',
+        ]),
+      );
+      expect(r).toMatchObject({ max: 1, resetOn: 'short' });
+    });
+
+    it.each([
+      [
+        'each of them',
+        'You can cast each spell once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'either of them',
+        'Once you cast either spell, you must finish a long rest before you can cast it again.',
+      ],
+      [
+        'any of them',
+        'Once you cast any of the spells, you must finish a long rest before you can cast it again.',
+      ],
+      [
+        'both of them',
+        'You can cast both spells once with no slot, and you regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'when a level is reached',
+        'When you reach 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'once a level is reached',
+        'Once you reach 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'starting at a level',
+        'You know fake light. Starting at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'beginning at a level',
+        'You know fake light. Beginning at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'a spell arriving a sentence back',
+        'When you reach level 3, you learn fake ward. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a character level',
+        'You know fake light. When you reach character level 3, you always have fake ward. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'character levels',
+        'When you reach character levels 3 and 5, you learn a fake spell. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a wait for a later level’s spell',
+        'When you reach 3rd level, you can cast fake ward with no slot. You must finish a long rest before you can do so now.',
+      ],
+      [
+        '"in this way" for a later level’s spell',
+        'You know fake light. Starting at 3rd level, you can cast fake ward with no slot. Afterward, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        'a wait on each spell, a sentence back',
+        'You can cast each spell once with no slot. You must finish a long rest before you can do so now.',
+      ],
+      [
+        'a wait on either spell',
+        'Once you cast either spell, you must finish a long rest before you can do so now.',
+      ],
+      [
+        'each of them, a sentence back',
+        'You can cast each of them once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'either of them',
+        'You can cast either of them once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'both of them',
+        'You can cast both of them once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'each of these',
+        'You can cast each these two once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'either of those',
+        'You can cast either those two once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'a lost ability that comes back',
+        'While you are stunned, you can’t fly. You regain the ability to do so when the stun ends.',
+      ],
+      [
+        'a lost spell that comes back',
+        'While you wear metal, you can’t cast fake ward. You regain the ability to cast it when you doff it.',
+      ],
+      [
+        'a target’s wait before your next go',
+        'A foe you soothe must finish a long rest before you can do so now.',
+      ],
+      [
+        'a target’s wait to cast',
+        'A foe you silence must finish a long rest to cast the spell again.',
+      ],
+    ])('reads no tracker for %s', (_shape, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it('keeps a standing bonus beside an ability that only comes back', () => {
+      const text =
+        'You have a +2 bonus to initiative. While you are stunned, you can’t fly. You regain the ability to do so when the stun ends.';
+      expect(scan('Gift', [text])).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'initiativeBonus', amount: 2 })]),
+      );
+    });
+  });
 });
 
 describe('proseScanFeature beside a counted spell', () => {
@@ -175,6 +569,46 @@ describe('proseScanFeature beside a counted spell', () => {
       [
         'plain words about the spell between',
         `You may cast fake ward here. Its glow is pale. ${USE_LIMIT}`,
+      ],
+      [
+        'a limit done "in this way"',
+        'You may cast fake ward here. Once you cast it with this gift, you can’t do so in this way again until you finish a long rest.',
+      ],
+      [
+        'a way to cast it again with no comma',
+        'You may cast fake ward here. Once you cast it with this gift, you can’t do so again until you finish a long rest unless you pay a mote.',
+      ],
+      [
+        'a free cast in one sentence',
+        'You may cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a free cast over two sentences',
+        'You may cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a free cast with a wait',
+        'You may cast fake ward with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        'a free cast of a pick the prose cannot name',
+        'You may cast this gift’s spell with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        'a free cast a sentence on from "can cast"',
+        'You can cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a free cast that says "to cast" alone',
+        'Fake ward needs no slot here, but you must finish a long rest to cast it again.',
+      ],
+      [
+        'a wait in this way',
+        'You may cast fake ward with no slot. Afterward, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        'a wait on each spell',
+        'You can cast each spell once with no slot. You must finish a long rest before you can do so now.',
       ],
     ])('%s', (_case, text) => {
       expect(trackers(['fake ward'], text)).toEqual([]);
@@ -246,6 +680,26 @@ describe('proseScanFeature beside a counted spell', () => {
         'a count of another kind',
         ['fake ward'],
         `You may cast fake ward here. ${CAST_LIMIT} You can use your parry twice.`,
+      ],
+      [
+        'a limit of the feature’s own beside a free cast',
+        ['fake ward'],
+        `You may cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest. You may also dash. After you dash, you can’t use it again until you finish a short rest.`,
+      ],
+      [
+        'a return of something that is no cast',
+        ['fake ward'],
+        'You know fake ward. You may hum once. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a return beside "can’t cast"',
+        ['fake ward'],
+        'You know fake ward. While you rage you can’t cast spells, but you can roar once. You regain the ability to do so after a short rest.',
+      ],
+      [
+        'a return beside "as you cast"',
+        ['fake ward'],
+        'You may roar once, even as you cast fake ward, and you regain the ability to do so when you finish a short rest.',
       ],
     ])('%s', (_case, spells, text) => {
       expect(trackers(spells, text)).toHaveLength(1);

@@ -106,16 +106,56 @@ const slug = (s: string) =>
     .replaceAll(/[^a-z0-9]+/g, '-')
     .replaceAll(/^-|-$/g, '');
 
-/** Prose saying a thing can be done once between rests. */
-function statesOnceLimit(text: string): boolean {
-  return /once per (?:short|long) rest|you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)|must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
-    text,
-  );
-}
-
 const totalLevelOf = (col: Collector) => col.doc.classes.reduce((s, c) => s + c.levels, 0);
 
 const sentencesOf = (text: string) => text.split(/(?<=\.) /);
+
+/**
+ * The wordings the release uses for one use between rests, and no others: a verb
+ * missing here costs a tracker, where a loose match would read "you can't charm it
+ * again" as a pool when it only spares that target. Each names what ends the wait:
+ * "until you start your next turn" is no limit between rests.
+ */
+const ONCE_BETWEEN_RESTS =
+  /once per (?:short|long) rest|you can'?t (?:(?:use (?:it|the (?:action|feature)|this (?:trait|feature|benefit|ability))|do so(?: in this way)?|create it|enter) again|[a-z]+ another one with it) until you (?:(?:finish|complete|start)\b[^.,;]*\b(?:rests?|another)\b|roll initiative)|can'?t do so again until he or she (?:finishes|completes)\b[^.,;]*\brests?\b|can'?t be used again until (?:the next )?dawn|must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/;
+/**
+ * A free cast of one spell, in a sentence of its own: "you can cast it once, and you
+ * regain the ability to cast it", or "you must finish a long rest before you can cast
+ * it". The rest and the "you" are required: a lost ability that returns when a stun
+ * ends is no pool, and a target's wait is not yours. A limit on each of several ("cast
+ * either spell", "each spell"), said here or in the sentence before, is left out: a
+ * count of one would be wrong, and `additionalSpells` is what opens one pool per spell.
+ */
+const FREE_CAST =
+  /regain the ability to (?:cast it|do so)\b[^.]*\b(?:rests?|dawn)\b|you must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:(?:before you can|to) cast (?:it|the spell)|before you can do so)\b|you can'?t cast it in this way again until you (?:finish|complete)\b[^.,;]*\brests?\b/;
+const EACH_OF_SEVERAL =
+  /\b(?:each|either|both|any) of\b|\b(?:each|either|both) (?:spell|these|those)/;
+/**
+ * Words that put what follows on a later level. A race's spell waits for that level,
+ * when `additionalSpells` counts it, so reading it here would show a tracker for a
+ * spell the character does not have yet. A class's feature opens on "at 3rd level,"
+ * or "starting at 3rd level," and only reaches the sheet then, so those still count
+ * as now: only a later sentence is a later level.
+ */
+const LATER_LEVEL =
+  /\b(?:(?:when|once) you reach|(?:starting|beginning) at) (?:\d+(?:st|nd|rd|th) level|(?:character )?levels? \d)/;
+const LEVEL_OPENER = /^(?:starting|beginning) at (?:\d+(?:st|nd|rd|th) level|level \d)/;
+
+/** Does this prose give one spell a free cast, with no later level before it? */
+function statesFreeCast(text: string): boolean {
+  let before = '';
+  for (const sentence of sentencesOf(text.replace(LEVEL_OPENER, ''))) {
+    if (LATER_LEVEL.test(sentence)) return false;
+    if (FREE_CAST.test(sentence) && !EACH_OF_SEVERAL.test(`${before} ${sentence}`)) return true;
+    before = sentence;
+  }
+  return false;
+}
+
+/** Prose saying a thing can be done once between rests. */
+function statesOnceLimit(text: string): boolean {
+  return ONCE_BETWEEN_RESTS.test(text) || statesFreeCast(text);
+}
 
 /**
  * A rest that only says when something else happens: "when you finish a short
@@ -123,6 +163,13 @@ const sentencesOf = (text: string) => text.split(/(?<=\.) /);
  */
 const REST_AS_OCCASION =
   /when you finish a short rest, you can [^.,;]*|(?<=^|[.,;] )[^.,;]*during a short or long rest[^.,;]*/g;
+/**
+ * The words that make a short rest the reset. The two looser ones must end a limit
+ * ("until you finish a rest"), so one that only says when something else happens
+ * ("when you finish a rest, you can") leaves a long rest's limit alone.
+ */
+const SHORT_REST_RESET =
+  /short or long rest|(?:finish(?:es)?|completes?|start) a short rest|until you (?:roll initiative or )?finish a (?:rest\b|long rest or short rest)/;
 /** A sentence saying a use comes back: "regain one use", "regain it", "uses are restored". */
 const USE_COMES_BACK =
   /\b(?:regain|recover|restore)[a-z]*\b[^.,;]*\b(?:uses?\b|(?:it|one|this feature)(?=[.,;]|$))|\buses?\b[^.,;]*\b(?:regained|recovered|restored|returned|returns?)\b|\b(?:recharge|refresh|replenish|reset)/;
@@ -153,7 +200,7 @@ const asWords = (text: string) => ` ${text.replaceAll(/[^a-z0-9']+/g, ' ')} `;
 
 /** A sentence that is one limit and nothing more, naming what it limits in `cast ...`. */
 const ONE_LIMIT =
-  /^once you (?:cast ([^,;]+)|use this (?:benefit|feature|trait)), you can'?t (?:do so|use (?:it|this (?:trait|feature))) again until you (?:finish|complete) a (?:short or long|short|long) rest(?:, unless [^;]*)?\.?$/;
+  /^once you (?:cast ([^,;]+)|use this (?:benefit|feature|trait)), you can'?t (?:do so(?: in this way)?|use (?:it|this (?:trait|feature))) again until you (?:finish|complete) a (?:short or long|short|long) rest(?:,? unless [^;]*)?\.?$/;
 /** A benefit of its own: something to do, or something to roll, that is not the spell. */
 const OWN_BENEFIT =
   /as a bonus action|as a reaction|use your reaction|take a reaction|as an action|use your action|\bd?\d+d\d+\b/;
@@ -187,7 +234,9 @@ function usesCounted(before: string[], counted: string[]): boolean {
  * only sits there. So a picked spell, which the prose cannot name, keeps it, and
  * so does a limit with any more to it than the plain sentence ("once you use this
  * feature to alter it"), a benefit between the spell and its limit, or a count of
- * any other kind elsewhere in the prose.
+ * any other kind elsewhere in the prose. The one exception is a free cast, which can
+ * only be a spell's limit: those count for any spell the origin counts, picks too,
+ * since feats that say "this feat's spell" would otherwise show every use twice.
  */
 function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOrigin): boolean {
   const counted = col.effects.flatMap((e) =>
@@ -204,9 +253,16 @@ function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOri
       others.push(sentence);
       continue;
     }
+    const before = sentences.slice(0, at);
+    if (
+      FREE_CAST.test(sentence) &&
+      /\b(?:can|may|to) cast\b/.test(`${before.at(-1) ?? ''} ${sentence}`)
+    ) {
+      found = true;
+      continue;
+    }
     const limit = sentence.match(ONE_LIMIT);
     if (limit === null) return false;
-    const before = sentences.slice(0, at);
     const object = limit[1];
     const spells =
       object !== undefined
@@ -235,11 +291,19 @@ function detectUses(
     const ability = ABILITY_WORDS[abilityUses[2]] as Ability;
     return abilityUses[1] ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
   }
-  if (statesOnceLimit(text)) return 1;
+  if (ONCE_BETWEEN_RESTS.test(text)) return 1;
   const used = (times: string) =>
-    new RegExp(`use (?:this (?:trait|feature)|it|your [\\w\\s]{1,30}?) ${times}`).test(text);
-  if (used('twice')) return 2;
-  return used('three times') ? 3 : undefined;
+    new RegExp(
+      `(?<!can'?t )use (?:this (?:trait|feature|ability)|it|your [\\w\\s]{1,30}?) ${times}(?! (?:per|each|in an?) (?:turn|round))`,
+    ).test(text);
+  const held = text.match(
+    /(?:^|[.,;] )you have (one|two|three) uses? of this (?:ability|feature|trait)\b/,
+  )?.[1];
+  if (held === 'one') return 1;
+  if (used('twice') || held === 'two') return 2;
+  if (used('three times') || held === 'three') return 3;
+  // Last, since "you regain the ability to do so" leaves a count stated above standing.
+  return statesFreeCast(text) ? 1 : undefined;
 }
 
 /**
@@ -576,7 +640,7 @@ export function proseScanFeature(
       returnsUses.length > 0
         ? returnsUses.join(' ')
         : withoutRestOccasions(statesOnceLimit(notSpells) ? notSpells : text);
-    const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
+    const resetOn = SHORT_REST_RESET.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
 
