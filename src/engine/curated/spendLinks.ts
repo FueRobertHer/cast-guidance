@@ -11,13 +11,17 @@
  * Keys name the printing, because the printings disagree (Heightened Spell costs 3
  * in 2014 and 2 in 2024): class features `name|class|source`, subclass features
  * `name|subclass|source`, feats and optional features `name|source`, all lowercase.
+ *
+ * A row from `restore` is the other kind of spending: the pool buys a use back, and
+ * using the feature costs nothing. Those paid in spell slots or Hit Point Dice stay
+ * out, as every cost in them does.
  */
 import type { Collector } from '../effects/base';
-import type { ActionCost, ActionEconomy, EffectOrigin } from '../types';
+import type { ActionBuyBack, ActionCost, ActionEconomy, EffectOrigin } from '../types';
 
 type Amount = ActionCost['amount'];
 
-interface Row {
+interface SpendRow {
   amount: Amount;
   /** The slot it takes. Given when no action row exists yet, or when the scanner's is wrong. */
   economy?: ActionEconomy;
@@ -25,11 +29,30 @@ interface Row {
   optional?: boolean;
   /** It takes a use of the feature as well as the cost. */
   ownUseToo?: boolean;
+  restores?: undefined;
 }
 
-export interface SpendLink extends Row {
-  resource: string;
+/** What a buy-back needs beyond its price, when the sheet does not line up by name. */
+interface Restores {
+  /** The key of the use, when it does not share the action's name (a granted spell's). */
+  own?: string;
+  /** The action to hang it on, when that is another feature's. */
+  onAction?: string;
+  /** Its uses, when the feature has no row counting them. Labelled with the feature's name. */
+  uses?: { key: string; max: number; resetOn: 'short' | 'long' };
 }
+
+interface RestoreRow {
+  amount: number;
+  restores: Restores;
+  economy?: undefined;
+  optional?: undefined;
+  ownUseToo?: undefined;
+}
+
+type Row = SpendRow | RestoreRow;
+
+export type SpendLink = Row & { resource: string };
 
 /** Has its own action in the turn, at this amount. */
 const on = (economy: ActionEconomy, amount: Amount = 1): Row => ({ amount, economy });
@@ -41,6 +64,8 @@ const paid = (economy?: ActionEconomy, amount = 1): Row => ({
   optional: true,
   ...(economy !== undefined ? { economy } : {}),
 });
+/** This much buys back the feature's own use, once none are left. */
+const restore = (amount: number, restores: Restores = {}): Row => ({ amount, restores });
 
 function pool(
   resource: string,
@@ -116,6 +141,10 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'unbroken air|phb': on('action', 'varies'),
     'water whip|phb': on('action', 'varies'),
     'wave of rolling earth|phb': on('action', 6),
+    'aspect of the wyrm|way of the ascendant dragon|ftd': restore(3, {
+      uses: { key: 'aspect-of-the-wyrm', max: 1, resetOn: 'long' },
+    }),
+    'breath of the dragon|way of the ascendant dragon|ftd': restore(2),
   }),
   ...pool('sorcery-points', {
     'magical guidance|sorcerer|tce': rider(),
@@ -153,6 +182,21 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'transmuted spell|xphb': rider(),
     'twinned spell|phb': rider('varies'),
     'twinned spell|xphb': rider(),
+    // Once per benefit, three benefits. The sheet does not track which was used, so
+    // repeating one while another is left is a manual pip tap.
+    'lunar phenomenon|lunar sorcery|dsotdq': restore(5, {
+      uses: { key: 'lunar-phenomenon', max: 3, resetOn: 'long' },
+    }),
+    'warping implosion|aberrant mind|tce': restore(5),
+    'warping implosion|aberrant sorcery|xphb': restore(5),
+    'trance of order|clockwork soul|tce': restore(5),
+    'trance of order|clockwork sorcery|xphb': restore(5),
+    'clockwork cavalcade|clockwork soul|tce': restore(7),
+    'clockwork cavalcade|clockwork sorcery|xphb': restore(7),
+    'umbral form|shadow sorcery|rhw': restore(6),
+    'dragon wings|draconic sorcery|xphb': restore(3),
+    'crown of spellfire|spellfire sorcery|frhof': restore(5),
+    'sorcery incarnate|sorcerer|xphb': restore(2, { onAction: 'Innate Sorcery' }),
   }),
   ...pool('superiority-dice', {
     'ambush|tce': rider(),
@@ -198,6 +242,7 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'tactical assessment|xphb': rider(),
     'trip attack|phb': rider(),
     'trip attack|xphb': rider(),
+    'know your enemy|battle master|xphb': restore(1),
   }),
   // 2024 Turn Undead and Divine Spark are options of the parent feature and never name the pool.
   ...pool('channel-divinity', {
@@ -238,6 +283,7 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     "war god's blessing|war domain|xphb": on('bonus'),
     'divine spark|cleric|xphb': on('action'),
     'turn undead|cleric|xphb': on('action'),
+    'dispelling recovery|arcana domain|au': restore(1),
   }),
   // Divine Sense, Champion Challenge and Dreadful Aspect never name the pool either.
   ...pool('channel-divinity-paladin', {
@@ -276,6 +322,17 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'protective field|psi warrior|xphb': 1,
     'psionic strike|psi warrior|xphb': rider(),
     'guarded mind|psi warrior|xphb': rider(),
+    'telekinetic movement|psi warrior|tce': restore(1),
+    'telekinetic movement|psi warrior|xphb': restore(1),
+    'psi-powered leap|psi warrior|tce': restore(1),
+    'psi-powered leap|psi warrior|xphb': restore(1),
+    'bulwark of force|psi warrior|tce': restore(1),
+    'bulwark of force|psi warrior|xphb': restore(1),
+    // The chip is the bonus attack, and the use is the granted spell's.
+    'telekinetic master|psi warrior|tce': restore(1, { own: 'spell:psi warrior|tce:telekinesis' }),
+    'telekinetic master|psi warrior|xphb': restore(1, {
+      own: 'spell:psi warrior|xphb:telekinesis',
+    }),
   }),
   ...pool('soulknife-dice', {
     'psi-bolstered knack|soulknife|tce': rider(),
@@ -286,6 +343,10 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'psychic whispers|soulknife|xphb': paid('action'),
     'homing strikes|soulknife|xphb': rider(),
     'psychic teleportation|soulknife|xphb': 1,
+    'psychic veil|soulknife|tce': restore(1),
+    'psychic veil|soulknife|xphb': restore(1),
+    'rend mind|soulknife|tce': restore(3),
+    'rend mind|soulknife|xphb': restore(3),
   }),
   ...pool('bardic-inspiration', {
     'cutting words|college of lore|phb': 1,
@@ -305,6 +366,7 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'mantle of inspiration|college of glamour|xphb': 1,
     'cutting words|college of lore|xphb': 1,
     'peerless skill|college of lore|xphb': rider(),
+    'beguiling magic|college of glamour|xphb': restore(1),
   }),
   ...pool('wild-shape', {
     'wild companion|druid|tce': on('action'),
@@ -325,6 +387,10 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'lay on hands|paladin|xphb': 'varies',
     'restoring touch|paladin|xphb': rider('varies'),
   }),
+  ...pool('rage', {
+    'intimidating presence|path of the berserker|xphb': restore(1),
+    'zealous presence|path of the zealot|xphb': restore(1),
+  }),
   ...pool('second-wind', {
     'tactical mind|fighter|xphb': rider(),
   }),
@@ -344,6 +410,10 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
 export function linkSpend(col: Collector, key: string, label: string, origin: EffectOrigin): void {
   const link = SPEND_LINKS[key.toLowerCase()];
   if (link === undefined) return;
+  if (link.restores !== undefined) {
+    linkBuyBack(col, link.resource, link.amount, link.restores, label, origin);
+    return;
+  }
   const cost: ActionCost = {
     resource: link.resource,
     amount: link.amount,
@@ -357,4 +427,27 @@ export function linkSpend(col: Collector, key: string, label: string, origin: Ef
     return;
   }
   col.add({ kind: 'action', economy: link.economy ?? 'none', label, cost, origin });
+}
+
+/**
+ * Hang a buy-back on the action showing that use, or add one that takes no slot:
+ * the features with no action of their own alter something else (Crown of Spellfire)
+ * or ride on a hit (Rend Mind). A scanned row for the same uses comes first and wins.
+ */
+function linkBuyBack(
+  col: Collector,
+  resource: string,
+  amount: number,
+  { own, onAction, uses }: Restores,
+  label: string,
+  origin: EffectOrigin,
+): void {
+  if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
+  const buyBack: ActionBuyBack = { resource, amount, ...(own !== undefined ? { own } : {}) };
+  const target = col.effects.find(
+    (e) =>
+      e.kind === 'action' && (onAction !== undefined ? e.label === onAction : e.origin === origin),
+  );
+  if (target?.kind === 'action') target.buyBack = buyBack;
+  else col.add({ kind: 'action', economy: 'none', label: onAction ?? label, buyBack, origin });
 }

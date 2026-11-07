@@ -34,7 +34,7 @@ import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass, openListClass } from '@/ui/surfaces';
-import { type ActionSpend, actionUse } from '../actionUse';
+import { type ActionRestore, type ActionSpend, actionUse, applyRestore } from '../actionUse';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   type CastResource,
@@ -327,6 +327,9 @@ export function Component() {
       },
       label !== undefined ? `Used ${label}` : undefined,
     );
+  /** Buy a use back. It takes nothing from the turn: "no action required". */
+  const restoreUse = (restore: ActionRestore) =>
+    update((d) => applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
   /** The conditions on the attack chips, as the cue over them says them. */
@@ -1348,6 +1351,19 @@ export function Component() {
                         title={use.paid.title}
                       >
                         {use.paid.label}
+                      </Button>
+                    )}
+                    {use.restore !== undefined && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={use.restore.ariaLabel}
+                        onClick={() => use.restore !== undefined && restoreUse(use.restore)}
+                        disabled={use.restore.disabled}
+                        className="-my-1.5"
+                        title={use.restore.title}
+                      >
+                        Restore
                       </Button>
                     )}
                   </span>

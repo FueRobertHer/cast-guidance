@@ -117,6 +117,83 @@ describe('linkSpend', () => {
     expect(col.effects).toHaveLength(2);
   });
 
+  describe('a buy-back row', () => {
+    const buyBackOf = (col: Collector, label: string) =>
+      col.effects.find((e) => e.kind === 'action' && e.label === label);
+
+    it('hangs on the action the feature emitted, with no cost and the same slot', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Psi-Powered Leap', origin });
+      linkSpend(col, 'psi-powered leap|psi warrior|xphb', 'Psi-Powered Leap', origin);
+      expect(col.effects).toEqual([
+        {
+          kind: 'action',
+          economy: 'bonus',
+          label: 'Psi-Powered Leap',
+          buyBack: { resource: 'psi-warrior-dice', amount: 1 },
+          origin,
+        },
+      ]);
+    });
+
+    it('adds a chip that takes no slot for a feature with no action', () => {
+      const col = collector();
+      linkSpend(col, 'rend mind|soulknife|xphb', 'Rend Mind', origin);
+      expect(col.effects).toEqual([
+        {
+          kind: 'action',
+          economy: 'none',
+          label: 'Rend Mind',
+          buyBack: { resource: 'soulknife-dice', amount: 3 },
+          origin,
+        },
+      ]);
+    });
+
+    it('points at the use when it sits on another row', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin });
+      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', origin);
+      expect(buyBackOf(col, 'Telekinetic Master')).toMatchObject({
+        buyBack: {
+          resource: 'psi-warrior-dice',
+          amount: 1,
+          own: 'spell:psi warrior|tce:telekinesis',
+        },
+      });
+    });
+
+    it("hangs on another feature's action when the row names it", () => {
+      const col = collector();
+      const other: EffectOrigin = { ...origin, label: 'Innate Sorcery' };
+      col.add({ kind: 'action', economy: 'bonus', label: 'Innate Sorcery', origin: other });
+      linkSpend(col, 'sorcery incarnate|sorcerer|xphb', 'Sorcery Incarnate', origin);
+      expect(col.effects).toHaveLength(1);
+      expect(buyBackOf(col, 'Innate Sorcery')).toMatchObject({
+        buyBack: { resource: 'sorcery-points', amount: 2 },
+      });
+    });
+
+    it('counts the uses when the row says so, under the name of the feature', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Aspect of the Wyrm', origin });
+      linkSpend(
+        col,
+        'aspect of the wyrm|way of the ascendant dragon|ftd',
+        'Aspect of the Wyrm',
+        origin,
+      );
+      expect(col.effects).toContainEqual({
+        kind: 'resource',
+        key: 'aspect-of-the-wyrm',
+        label: 'Aspect of the Wyrm',
+        max: 1,
+        resetOn: 'long',
+        origin,
+      });
+    });
+  });
+
   it('does nothing for a feature outside the table', () => {
     const col = collector();
     linkSpend(col, 'nothing like it|tst', 'Nothing', origin);

@@ -850,9 +850,13 @@ describe('PlayTab action costs', () => {
   const origin = 'Test feature';
   const POOL = { key: 'pool', label: 'Test Pool (d6)', max: 3, resetOn: 'long', origin } as const;
   type SheetAction = NonNullable<CharacterSheetState['sheet']>['actions'][number];
+  type SheetResource = NonNullable<CharacterSheetState['sheet']>['resources'][number];
 
   /** A Warrior's Play tab with these actions and one pool, re-read after each save. */
-  function renderCosts(actions: Array<Partial<SheetAction>>) {
+  function renderCosts(
+    actions: Array<Partial<SheetAction>>,
+    moreResources: readonly SheetResource[] = [],
+  ) {
     const doc = newCharacterDoc('p1', 'Hero', 't');
     doc.abilities.method = 'manual';
     doc.classes = [
@@ -863,14 +867,16 @@ describe('PlayTab action costs', () => {
     let current = doc;
     const sheetNow = () => {
       const sheet = deriveSheet(current, makeTestContext());
-      sheet.resources.push({ ...POOL });
+      sheet.resources.push({ ...POOL }, ...moreResources);
       sheet.actions.push(...actions.map((a) => ({ origin, ...a }) as SheetAction));
       return sheet;
     };
-    const update = (recipe: (d: CharacterDoc) => void) => {
+    let lastLabel: string | undefined;
+    const update = (recipe: (d: CharacterDoc) => void, label?: string) => {
       const d = structuredClone(current);
       recipe(d);
       current = d;
+      lastLabel = label;
       rerender();
     };
     const ctxValue = () =>
@@ -895,7 +901,9 @@ describe('PlayTab action costs', () => {
     const rerender = () => view.rerender(<RouterProvider router={createMemoryRouter(routes())} />);
     return {
       used: () => current.play.resources.find((r) => r.key === 'pool')?.used ?? 0,
+      usedOf: (key: string) => current.play.resources.find((r) => r.key === key)?.used ?? 0,
       turn: () => current.play.turn,
+      logged: () => lastLabel,
     };
   }
 
@@ -995,5 +1003,50 @@ describe('PlayTab action costs', () => {
     ]);
     expect(screen.queryByRole('button', { name: 'Use Quick Step' })).toBeNull();
     expect(screen.getByText('Test Pool: you choose, 3 of 3 left')).toBeTruthy();
+  });
+
+  it('offers Restore only at no uses left, and it pays without taking a slot', () => {
+    const { used, turn, usedOf, logged } = renderCosts(
+      [{ economy: 'none', label: 'Quick Step', buyBack: { resource: 'pool', amount: 2 } }],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'long', origin }],
+    );
+    const restore = () =>
+      screen.queryByRole<HTMLButtonElement>('button', {
+        name: 'Restore Quick Step, spending 2 Test Pool',
+      });
+    expect(screen.getByText('1 of 1 left · Test Pool: 2 to restore, 3 of 3 left')).toBeTruthy();
+    expect(restore()).toBeNull();
+
+    fireEvent.click(useButton());
+    expect(usedOf('own')).toBe(1);
+    expect(used()).toBe(0);
+    expect(useButton().disabled).toBe(true);
+
+    const button = restore();
+    if (button === null) throw new Error('no Restore');
+    expect(button.textContent).toBe('Restore');
+    fireEvent.click(button);
+    expect(usedOf('own')).toBe(0);
+    expect(used()).toBe(2);
+    expect(turn()?.action ?? false).toBe(false);
+    expect(turn()?.bonus ?? false).toBe(false);
+    expect(turn()?.reaction ?? false).toBe(false);
+    expect(restore()).toBeNull();
+    expect(useButton().disabled).toBe(false);
+    expect(logged()).toBe('Restored Quick Step');
+  });
+
+  it('keeps Restore in sight but off when the pool cannot pay', () => {
+    const { usedOf } = renderCosts(
+      [{ economy: 'none', label: 'Quick Step', buyBack: { resource: 'pool', amount: 4 } }],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'long', origin }],
+    );
+    fireEvent.click(useButton());
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Restore Quick Step, spending 4 Test Pool',
+    });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('Not enough Test Pool');
+    expect(usedOf('own')).toBe(1);
   });
 });

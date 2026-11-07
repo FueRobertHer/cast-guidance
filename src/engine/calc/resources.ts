@@ -1,11 +1,4 @@
-import type {
-  Ability,
-  ActionCost,
-  CharacterDoc,
-  DerivedAbility,
-  DerivedResource,
-  EffectInput,
-} from '../types';
+import type { Ability, CharacterDoc, DerivedAbility, DerivedResource, EffectInput } from '../types';
 import { effectsOf } from './core';
 
 /**
@@ -15,13 +8,14 @@ import { effectsOf } from './core';
 const SAME_POOL: Readonly<Record<string, string>> = { ki: 'focus', focus: 'ki' };
 
 /**
- * A cost as this sheet can pay it: on the pool it has under either name, or no
- * cost at all when it has neither (Stunning Strike with no Focus to spend yet).
+ * A cost or a buy-back as this sheet can pay it: on the pool it has under either
+ * name, or none at all when it has neither (Stunning Strike with no Focus to spend
+ * yet).
  */
-export function costOnSheet(
-  cost: ActionCost | undefined,
+export function costOnSheet<T extends { resource: string }>(
+  cost: T | undefined,
   resources: readonly DerivedResource[],
-): ActionCost | undefined {
+): T | undefined {
   if (cost === undefined) return undefined;
   const has = (key: string) => resources.some((r) => r.key === key);
   if (has(cost.resource)) return cost;

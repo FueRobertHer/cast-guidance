@@ -192,7 +192,6 @@ const DEFINES = 'defines, grows or converts the pool';
 const HEADING = 'a heading: its options have the rows';
 const UPGRADES = 'upgrades features that have rows';
 const OTHERS = 'another creature spends it';
-const RESTORES = 'spends the pool to restore its own use';
 const FOLLOWS = 'follows from spending, and spends nothing itself';
 const AT_THE_CAST = 'pays for a spell, which is a choice at the cast';
 
@@ -208,8 +207,6 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'disciple of the elements|way of the four elements|phb': HEADING,
     'heightened focus|monk|xphb': UPGRADES,
     'ki-fueled attack|monk|tce': FOLLOWS,
-    'aspect of the wyrm|way of the ascendant dragon|ftd': RESTORES,
-    'breath of the dragon|way of the ascendant dragon|ftd': RESTORES,
   },
   sorcery: {
     'flexible casting|sorcerer|phb': DEFINES,
@@ -217,7 +214,6 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'font of magic|sorcerer|xphb': DEFINES,
     'metamagic adept|tce': DEFINES,
     'metamagic|sorcerer|xphb': HEADING,
-    'sorcery incarnate|sorcerer|xphb': RESTORES,
     'spellfire burst|spellfire sorcery|frhof': FOLLOWS,
     'psionic sorcery|aberrant mind|tce': AT_THE_CAST,
     'psionic sorcery|aberrant sorcery|xphb': AT_THE_CAST,
@@ -227,8 +223,6 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'combat superiority|battle master|xphb': DEFINES,
     'martial adept|phb': DEFINES,
     'superior technique|tce': DEFINES,
-    'know your enemy|battle master|phb': RESTORES,
-    'know your enemy|battle master|xphb': RESTORES,
   },
   channel: {
     'channel divinity|cleric|phb': DEFINES,
@@ -236,7 +230,7 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'channel divinity|paladin|phb': DEFINES,
     'channel divinity|paladin|xphb': DEFINES,
     'channel divinity|oath of glory|tce': HEADING,
-    'living legend|oath of glory|xphb': RESTORES,
+    'elder champion|oath of the ancients|phb': 'names the pool in passing',
   },
   psionic: {
     'soul blades|soulknife|tce': HEADING,
@@ -247,6 +241,8 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'magical inspiration|bard|tce': OTHERS,
     'combat inspiration|college of valor|phb': OTHERS,
     'combat inspiration|college of valor|xphb': OTHERS,
+    'animating performance|college of creation|tce': 'buys its use back with a spell slot',
+    "master's flourish|college of swords|xge": 'rolls a d6 instead of spending it',
   },
   wildshape: {
     'wild shape|druid|phb': DEFINES,

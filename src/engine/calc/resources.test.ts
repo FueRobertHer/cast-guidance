@@ -107,4 +107,10 @@ describe('costOnSheet', () => {
     expect(costOnSheet({ resource: 'dice', amount: 1 }, [pool('ki')])).toBeUndefined();
     expect(costOnSheet(undefined, [pool('ki')])).toBeUndefined();
   });
+
+  it('finds a buy-back the same way, and keeps what else it says', () => {
+    const buyBack = { resource: 'focus', amount: 3, own: 'use' };
+    expect(costOnSheet(buyBack, [pool('ki')])).toEqual({ ...buyBack, resource: 'ki' });
+    expect(costOnSheet(buyBack, [pool('dice')])).toBeUndefined();
+  });
 });
