@@ -17,7 +17,8 @@ export function ConditionMotionSwitch() {
         tone="guide"
       />
       <p className="text-caption text-ink-muted">
-        Conditions keep moving on your attack chips. Off keeps their colours and marks, held still.
+        Conditions keep moving on the rolls and stats they change. Off keeps their colours and
+        marks, held still.
       </p>
     </div>
   );

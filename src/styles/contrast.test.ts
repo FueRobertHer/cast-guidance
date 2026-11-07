@@ -169,8 +169,8 @@ describe('design token contrast, both themes (DS-001)', () => {
   });
 });
 
-// The condition hues on attack chips (ui/chipFace.css) are a named exception to
-// the design's roles, so they are not tokens, but the number on them is text.
+// The condition hues on rolls (ui/chipFace.css) are a named exception to the
+// design's roles, so they are not tokens, but the number on them is text.
 
 const CHIP_CSS = readFileSync(path.join(SRC, 'ui/chipFace.css'), 'utf8');
 
@@ -179,15 +179,18 @@ const CHIP_CSS = readFileSync(path.join(SRC, 'ui/chipFace.css'), 'utf8');
  * taken at full strength. It may be a gradient or a sliver that never covers
  * the number, which only makes this the floor. Invisible has no fill. Paralyzed's
  * bolts and every flash go by in a moment, and the spec accepts those dips; held
- * still, the bolts park clear of the number (chipFace.test.ts).
+ * still, the bolts park clear of the number (chipFace.test.ts). Restrained's
+ * chains hold to the edges for good (chipFace.test.ts too), so all that is behind
+ * its number is its tint, which `null` says.
  */
-const FILLS: Readonly<Record<string, string>> = {
+const FILLS: Readonly<Record<string, string | null>> = {
   poisoned: 'liquid',
   paralyzed: 'lit',
   frightened: 'vignette',
   blinded: 'fog',
   prone: 'pile',
-  restrained: 'bands',
+  restrained: null,
+  grappled: 'prong',
   exhaustion: 'charge',
   stunned: 'wash',
   unconscious: 'dusk',
@@ -223,7 +226,8 @@ describe('the number on a condition’s chip, both themes', () => {
     const failing = THEMES.flatMap((theme) =>
       Object.entries(FILLS).flatMap(([look, piece]) => {
         const { c, cs } = hue(theme, look);
-        const ratio = contrast(colour(theme, 'ink'), over(c, strength(piece), cs));
+        const behind = piece === null ? cs : over(c, strength(piece), cs);
+        const ratio = contrast(colour(theme, 'ink'), behind);
         return ratio < 4.5 ? [`${theme}: ${look} (${ratio.toFixed(2)})`] : [];
       }),
     );
@@ -234,6 +238,7 @@ describe('the number on a condition’s chip, both themes', () => {
     expect(strength('lit')).toBe(0.26);
     expect(strength('liquid')).toBe(0.34);
     expect(strength('strike')).toBe(0.4);
+    expect(strength('prong')).toBe(0.45);
   });
 
   it('keeps Invisible as glass: the number stands on the page', () => {

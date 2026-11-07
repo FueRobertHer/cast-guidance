@@ -4,7 +4,7 @@ import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
-import { ChipFace, type ChipWear } from './ChipFace';
+import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 
 export interface RollChipProps {
   /** Dice expression, e.g. "2d6+3". Invalid expressions render as plain text. */
@@ -34,10 +34,11 @@ export interface RollChipProps {
   inline?: boolean;
   /**
    * The conditions that reach the roll, for a chip they can change: a sheet's
-   * attack chips, plain ones included, so a condition can arrive on them. It
-   * draws the chip on a `ChipFace`; every other chip has no use for one.
+   * attack chips and the dice chip that casts a spell, plain ones included, so a
+   * condition can arrive on them. It draws the chip on a `ChipFace`, in the same
+   * tone; every other chip has no use for one.
    */
-  wear?: ChipWear;
+  wear?: ChipWear | undefined;
 }
 
 /**
@@ -57,6 +58,14 @@ const TONE: Record<NonNullable<RollChipProps['variant']>, string> = {
   d20: 'bg-roll-soft text-roll',
   damage: 'bg-danger-soft text-danger',
   heal: 'bg-heal-soft text-heal',
+};
+
+/** The same tone on a `ChipFace`: roll blue is its own plain colour. */
+const FACE_TONE: Record<NonNullable<RollChipProps['variant']>, 'danger' | 'heal' | undefined> = {
+  dice: undefined,
+  d20: undefined,
+  damage: 'danger',
+  heal: 'heal',
 };
 
 /**
@@ -106,7 +115,7 @@ export function RollChip({
     setResult(r.total);
     setRolls((n) => n + 1);
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setResult(null), 1600);
+    timer.current = setTimeout(() => setResult(null), TOTAL_MS);
   };
 
   const text =
@@ -135,7 +144,7 @@ export function RollChip({
       {wear === undefined ? (
         text
       ) : (
-        <ChipFace wear={wear} rolls={rolls} showing={result !== null}>
+        <ChipFace wear={wear} rolls={rolls} showing={result !== null} tone={FACE_TONE[variant]}>
           {text}
         </ChipFace>
       )}
