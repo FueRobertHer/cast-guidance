@@ -247,6 +247,85 @@ describe('pools a cost spends', () => {
     expect(action(emitted('xphb'))).toBeUndefined();
   });
 
+  it('refills a die with the 2014 bonus action', () => {
+    const emitted = emit('psionic power|soulknife', 'Rogue', 3, printed('tce'));
+    expect(action(emitted)?.regains).toEqual({ resource: 'soulknife-dice', amount: 1 });
+  });
+
+  it('regains one die on a short rest in 2024, and none in 2014', () => {
+    const dice = (source: string) =>
+      resource(
+        emit('psionic power|psi warrior', 'Fighter', 3, printed(source)),
+        'psi-warrior-dice',
+      );
+    expect(dice('xphb')).toMatchObject({ resetOn: 'long', regainOnShort: 1 });
+    expect(dice('tce')).toMatchObject({ resetOn: 'long' });
+    expect(dice('tce')?.regainOnShort).toBeUndefined();
+  });
+
+  it('brings Wild Shape back by the printing: one on a short rest in 2024, all in 2014', () => {
+    const shape = (source: string) =>
+      resource(emit('wild shape|druid', 'Druid', 2, printed(source)), 'wild-shape');
+    expect(shape('xphb')).toMatchObject({ resetOn: 'long', regainOnShort: 1 });
+    expect(shape('phb')).toMatchObject({ resetOn: 'short' });
+    expect(shape('phb')?.regainOnShort).toBeUndefined();
+  });
+
+  it('brings Rage back by the printing, and only 2014 is unlimited at 20', () => {
+    const rage = (levels: number, source: string) =>
+      resource(emit('rage|barbarian', 'Barbarian', levels, printed(source)), 'rage');
+    expect(rage(3, 'xphb')).toMatchObject({ max: 3, resetOn: 'long', regainOnShort: 1 });
+    expect(rage(3, 'phb')).toMatchObject({ max: 3, resetOn: 'long' });
+    expect(rage(3, 'phb')?.regainOnShort).toBeUndefined();
+    expect(rage(19, 'xphb')?.max).toBe(6);
+    expect(rage(20, 'xphb')?.max).toBe(6);
+    expect(rage(20, 'phb')?.max).toBe(99);
+  });
+
+  it.each([
+    ['second wind|fighter', 'Fighter', 'second-wind'],
+    ['channel divinity|cleric', 'Cleric', 'channel-divinity'],
+    ['channel divinity|paladin', 'Paladin', 'channel-divinity-paladin'],
+  ])('brings %s back by the rules version', (key, cls, pool) => {
+    const of = (version: '2014' | '2024') => {
+      const c = col(cls, 5);
+      c.doc.rulesVersion = version;
+      emitCuratedEffects(c, key, origin);
+      return resource(c.effects, pool);
+    };
+    expect(of('2024')).toMatchObject({ resetOn: 'long', regainOnShort: 1 });
+    expect(of('2014')).toMatchObject({ resetOn: 'short' });
+    expect(of('2014')?.regainOnShort).toBeUndefined();
+  });
+
+  it('gives another pool its short rest regain', () => {
+    expect(emit('advanced artifice|artificer', 'Artificer', 20, printed('efa'))).toContainEqual(
+      expect.objectContaining({ kind: 'resourceRegain', key: 'flash-of-genius', amount: 1 }),
+    );
+    expect(
+      emit('dread incarnate|scion of the three', 'Rogue', 17, printed('frhof')),
+    ).toContainEqual(
+      expect.objectContaining({ kind: 'resourceRegain', key: 'bloodthirst', amount: 1 }),
+    );
+  });
+
+  it('reads Sorcerous Restoration by the printing', () => {
+    const restoration = (source: string) =>
+      emit('sorcerous restoration|sorcerer', 'Sorcerer', 20, printed(source));
+    expect(restoration('phb')).toEqual([
+      expect.objectContaining({ kind: 'resourceRegain', key: 'sorcery-points', amount: 4 }),
+    ]);
+    // 2024's is a choice, once per long rest: its one use, and no regain.
+    expect(restoration('xphb')).toEqual([
+      expect.objectContaining({
+        kind: 'resource',
+        key: 'sorcerous-restoration',
+        max: 1,
+        resetOn: 'long',
+      }),
+    ]);
+  });
+
   it('adds Metamagic Adept to Sorcery Points in either order', () => {
     const adept = emit('metamagic adept|tce', 'Sorcerer', 5, origin);
     const font = emit('font of magic|sorcerer', 'Sorcerer', 5, origin);

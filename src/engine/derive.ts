@@ -135,6 +135,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
         : undefined,
     cost: costOnSheet(e.cost, resources),
     buyBack: costOnSheet(e.buyBack, resources),
+    regains: e.regains,
   }));
 
   const classLabel = doc.classes

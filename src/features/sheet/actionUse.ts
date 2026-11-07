@@ -38,6 +38,8 @@ export interface ActionUse {
     title: string;
   };
   restore?: ActionRestore;
+  /** What tapping Use gives back, as well as what it spends. */
+  regains?: { key: string; max: number; amount: number };
 }
 
 const SLOT_WORD = { action: 'action', bonus: 'bonus action', reaction: 'reaction' } as const;
@@ -94,6 +96,38 @@ function buyBackOf(
 }
 
 /**
+ * Add what Use refills. With nothing spent there is nothing to refill, so a tap would
+ * only cost the use: the button goes off and says why.
+ */
+function withRegain(
+  use: ActionUse,
+  action: SheetAction,
+  resources: readonly DerivedResource[],
+  leftOf: (r: DerivedResource) => number,
+): ActionUse {
+  const { regains } = action;
+  const pool =
+    regains !== undefined ? resources.find((r) => r.key === regains.resource) : undefined;
+  if (regains === undefined || pool === undefined) return use;
+  const { amount } = regains;
+  const name = stripTrailingParenthetical(pool.label);
+  const left = leftOf(pool);
+  const full = left >= pool.max;
+  const title = use.disabled
+    ? use.title
+    : full
+      ? `No ${name} to regain`
+      : `${use.title} and regains ${amount} ${name}`;
+  return {
+    ...use,
+    regains: { key: pool.key, max: pool.max, amount },
+    caption: [...use.caption, `${name}: regains ${amount}, ${left} of ${pool.max} left`],
+    disabled: use.disabled || full,
+    title,
+  };
+}
+
+/**
  * What an action spends and what can buy it back. See `spendingOf` for the first,
  * which a buy-back never touches: using the feature costs the use, not the price.
  */
@@ -104,12 +138,12 @@ export function actionUse(
 ): ActionUse {
   // Uses can sit past the maximum after a character loses a level, until the player clamps them.
   const leftOf = (r: DerivedResource) => Math.max(0, r.max - usedOf(r.key));
-  const spending = spendingOf(action, resources, leftOf);
+  const use = withRegain(spendingOf(action, resources, leftOf), action, resources, leftOf);
   const buyBack = buyBackOf(action, resources, leftOf);
-  if (buyBack === undefined) return spending;
+  if (buyBack === undefined) return use;
   return {
-    ...spending,
-    caption: [...spending.caption, buyBack.caption],
+    ...use,
+    caption: [...use.caption, buyBack.caption],
     ...(buyBack.restore !== undefined ? { restore: buyBack.restore } : {}),
   };
 }

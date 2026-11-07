@@ -891,6 +891,11 @@ describe('deriveSheet: buying a use back', () => {
     const buyBack = { resource: 'focus', amount: 2 };
     expect(leapOf([pool('focus'), leap(), leap(buyBack)])).toMatchObject([{ buyBack }]);
   });
+
+  it('carries what an action refills to the sheet', () => {
+    const regains = { resource: 'focus', amount: 1 };
+    expect(leapOf([pool('focus'), { ...leap(), regains }])[0]?.regains).toEqual(regains);
+  });
 });
 
 describe('deriveSheet — class-feature Expertise (prose-only, now prompted)', () => {

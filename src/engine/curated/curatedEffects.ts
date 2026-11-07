@@ -43,11 +43,18 @@ const superiorTechnique: CuratedFn = (col, origin) => {
   });
 };
 
+/** 2024: one back on a short rest, all on a long rest. 2014: all back on either. */
+function recovery(is2024: boolean) {
+  return is2024
+    ? ({ resetOn: 'long', regainOnShort: 1 } as const)
+    : ({ resetOn: 'short' } as const);
+}
+
 /**
  * Psionic Energy Dice, a pool per subclass: "use only the dice from this subclass".
- * 2024 prints a table and regains one on a short rest, which `resetOn` cannot say,
- * so it resets on a long rest and the player taps a pip back. The 2014 bonus action
- * that regains one die keeps the row the scanner gave it.
+ * 2024 prints a table and regains one on a short rest. 2014 regains one with a bonus
+ * action, once per short or long rest. A 2014 character with both subclasses gets one
+ * shared chip, which refills the first pool: the other is a pip tap.
  */
 function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cls: string): void {
   const level = classLevel(col, cls);
@@ -60,6 +67,7 @@ function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cl
     label: `Psionic Energy Dice (d${die})`,
     max: printed2024 ? count2024 : 'twiceProfBonus',
     resetOn: 'long',
+    ...(printed2024 ? { regainOnShort: 1 } : {}),
     origin,
   });
   if (printed2024) return;
@@ -71,11 +79,18 @@ function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cl
     resetOn: 'short',
     origin,
   });
-  col.add({ kind: 'action', economy: 'bonus', label: 'Psionic Power', origin });
+  col.add({
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Psionic Power',
+    regains: { resource: key, amount: 1 },
+    origin,
+  });
 }
 
-function rageUses(level: number): number {
-  if (level >= 20) return 99;
+/** 2014's table says Unlimited at 20. 2024's stays at 6. */
+function rageUses(level: number, printed2024: boolean): number {
+  if (level >= 20 && !printed2024) return 99;
   if (level >= 17) return 6;
   if (level >= 12) return 5;
   if (level >= 6) return 4;
@@ -297,12 +312,14 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   'rage|barbarian': (col, origin) => {
+    const printed2024 = printedIn(origin, 'xphb');
     col.add({
       kind: 'resource',
       key: 'rage',
       label: 'Rage',
-      max: rageUses(classLevel(col, 'Barbarian')),
+      max: rageUses(classLevel(col, 'Barbarian'), printed2024),
       resetOn: 'long',
+      ...(printed2024 ? { regainOnShort: 1 } : {}),
       origin,
     });
     col.add({ kind: 'action', economy: 'bonus', label: 'Rage', origin });
@@ -311,12 +328,13 @@ export const CURATED: Record<string, CuratedFn> = {
     // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
     const lvl = classLevel(col, 'Fighter');
     const uses2024 = lvl >= 10 ? 4 : lvl >= 4 ? 3 : 2;
+    const is2024 = col.doc.rulesVersion === '2024';
     col.add({
       kind: 'resource',
       key: 'second-wind',
       label: 'Second Wind',
-      max: col.doc.rulesVersion === '2024' ? uses2024 : 1,
-      resetOn: 'short',
+      max: is2024 ? uses2024 : 1,
+      ...recovery(is2024),
       origin,
     });
     col.add({
@@ -373,9 +391,7 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
-  // it gave that printing no pool and nothing could spend one. 2024 regains one on a
-  // short rest, which `resetOn` cannot say: this resets all of them, as Second Wind's
-  // 2024 row does.
+  // it gave that printing no pool and nothing could spend one.
   'wild shape|druid': (col, origin) => {
     const printed2024 = printedIn(origin, 'xphb');
     const lvl = classLevel(col, 'Druid');
@@ -384,7 +400,7 @@ export const CURATED: Record<string, CuratedFn> = {
       key: 'wild-shape',
       label: 'Wild Shape',
       max: printed2024 ? (lvl >= 17 ? 4 : lvl >= 6 ? 3 : 2) : 2,
-      resetOn: 'short',
+      ...recovery(printed2024),
       origin,
     });
     col.add({
@@ -401,16 +417,39 @@ export const CURATED: Record<string, CuratedFn> = {
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');
-    const uses =
-      col.doc.rulesVersion === '2024' ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
+    const is2024 = col.doc.rulesVersion === '2024';
+    const uses = is2024 ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
     col.add({
       kind: 'resource',
       key: 'channel-divinity',
       label: 'Channel Divinity',
       max: uses,
-      resetOn: 'short',
+      ...recovery(is2024),
       origin,
     });
+  },
+  // 2014 is a flat 4 points on every short rest. 2024 is a choice of up to half the
+  // level, once per long rest, so its row counts that one use and the player taps
+  // the points back.
+  'sorcerous restoration|sorcerer': (col, origin) => {
+    if (printedIn(origin, 'xphb')) {
+      col.add({
+        kind: 'resource',
+        key: 'sorcerous-restoration',
+        label: 'Sorcerous Restoration',
+        max: 1,
+        resetOn: 'long',
+        origin,
+      });
+    } else {
+      col.add({ kind: 'resourceRegain', key: 'sorcery-points', amount: 4, origin });
+    }
+  },
+  'advanced artifice|artificer': (col, origin) => {
+    col.add({ kind: 'resourceRegain', key: 'flash-of-genius', amount: 1, origin });
+  },
+  'dread incarnate|scion of the three': (col, origin) => {
+    col.add({ kind: 'resourceRegain', key: 'bloodthirst', amount: 1, origin });
   },
   'font of magic|sorcerer': (col, origin) => {
     col.add({
@@ -476,13 +515,14 @@ export const CURATED: Record<string, CuratedFn> = {
     // "each time you use THIS CLASS'S Channel Divinity", and the 2014 pools are
     // separate features with separate uses. A shared key would also make the
     // max depend on which class the player happened to add first.
-    const uses = col.doc.rulesVersion === '2024' ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
+    const is2024 = col.doc.rulesVersion === '2024';
+    const uses = is2024 ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
     col.add({
       kind: 'resource',
       key: 'channel-divinity-paladin',
       label: 'Channel Divinity (Paladin)',
       max: uses,
-      resetOn: 'short',
+      ...recovery(is2024),
       origin,
     });
   },

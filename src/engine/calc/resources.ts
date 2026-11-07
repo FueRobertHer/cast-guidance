@@ -65,6 +65,7 @@ export function calcResources(
         resetOn: e.resetOn,
         origin: e.origin.label,
         ...(e.noSlotConversion !== undefined ? { noSlotConversion: e.noSlotConversion } : {}),
+        ...(e.regainOnShort !== undefined ? { regainOnShort: e.regainOnShort } : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).
@@ -77,6 +78,10 @@ export function calcResources(
       }
     }
     // Otherwise first wins: curated entries emit before prose-scanned duplicates.
+  }
+  for (const e of effectsOf(effects, 'resourceRegain')) {
+    const row = out.find((r) => r.key === e.key);
+    if (row !== undefined) row.regainOnShort = (row.regainOnShort ?? 0) + e.amount;
   }
   return out;
 }

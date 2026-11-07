@@ -199,6 +199,40 @@ describe('a buy-back', () => {
   });
 });
 
+describe('an action that refills a pool', () => {
+  const regains = { resource: 'pool', amount: 1 };
+
+  it('says what it refills, and gives it back on top of spending its use', () => {
+    const u = use(action({ regains }), [OWN, POOL], { pool: 2 });
+    expect(u.spends).toEqual([{ key: 'own', max: 2, amount: 1 }]);
+    expect(u.regains).toEqual({ key: 'pool', max: 5, amount: 1 });
+    expect(u.caption).toEqual(['2 of 2 left', 'Test Pool: regains 1, 3 of 5 left']);
+    expect(u.disabled).toBe(false);
+    expect(u.title).toBe(
+      'Use: marks your bonus action and spends a Quick Step use and regains 1 Test Pool',
+    );
+  });
+
+  it('is off with nothing to refill, so a tap cannot waste the use', () => {
+    const u = use(action({ regains }), [OWN, POOL]);
+    expect(u.disabled).toBe(true);
+    expect(u.title).toBe('No Test Pool to regain');
+  });
+
+  it('says no uses are left before anything else', () => {
+    const u = use(action({ regains }), [OWN, POOL], { own: 2, pool: 2 });
+    expect(u.disabled).toBe(true);
+    expect(u.title).toBe('No uses left');
+  });
+
+  it('adds nothing when the pool is not on the sheet', () => {
+    const u = use(action({ regains }), [OWN]);
+    expect(u.regains).toBeUndefined();
+    expect(u.disabled).toBe(false);
+    expect(u.caption).toEqual(['2 of 2 left']);
+  });
+});
+
 describe('applyRestore', () => {
   const restore = use(action({ buyBack: { resource: 'pool', amount: 2 } }), [OWN, POOL], {
     own: 2,

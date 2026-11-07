@@ -79,6 +79,32 @@ describe('calcResources pooling', () => {
   });
 });
 
+describe('calcResources: regaining on a short rest', () => {
+  const regain = (key: string, amount: number): EffectInput => ({
+    kind: 'resourceRegain',
+    key,
+    amount,
+    origin,
+  });
+  const pool = (effects: EffectInput[]) => calcResources(docWith([]), effects, abilities(), 2)[0];
+
+  it('carries what the pool itself says', () => {
+    expect(pool([res(3, { regainOnShort: 1 })])?.regainOnShort).toBe(1);
+    expect(pool([res(3)])).not.toHaveProperty('regainOnShort');
+  });
+
+  it('adds what another feature gives, whichever comes first', () => {
+    expect(pool([res(3), regain('k', 4)])?.regainOnShort).toBe(4);
+    expect(pool([regain('k', 4), res(3)])?.regainOnShort).toBe(4);
+    expect(pool([res(3, { regainOnShort: 1 }), regain('k', 1)])?.regainOnShort).toBe(2);
+  });
+
+  it('leaves it out when the pool is not there, or is another pool', () => {
+    expect(pool([regain('k', 4)])).toBeUndefined();
+    expect(pool([res(3), regain('other', 4)])).not.toHaveProperty('regainOnShort');
+  });
+});
+
 describe('costOnSheet', () => {
   const pool = (key: string): DerivedResource => ({
     key,

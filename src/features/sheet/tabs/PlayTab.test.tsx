@@ -904,6 +904,15 @@ describe('PlayTab action costs', () => {
       usedOf: (key: string) => current.play.resources.find((r) => r.key === key)?.used ?? 0,
       turn: () => current.play.turn,
       logged: () => lastLabel,
+      spendPool: (amount: number) =>
+        update((d) => {
+          d.play.resources.push({ key: 'pool', used: amount });
+        }),
+      /** Changes the doc with no render, so the buttons still act on what they last saw. */
+      refillUnseen: () => {
+        current = structuredClone(current);
+        current.play.resources = current.play.resources.filter((r) => r.key !== 'pool');
+      },
     };
   }
 
@@ -1034,6 +1043,41 @@ describe('PlayTab action costs', () => {
     expect(restore()).toBeNull();
     expect(useButton().disabled).toBe(false);
     expect(logged()).toBe('Restored Quick Step');
+  });
+
+  it('spends the use and refills the pool in one tap, when the action regains', () => {
+    const { used, turn, usedOf, spendPool } = renderCosts(
+      [{ economy: 'bonus', label: 'Quick Step', regains: { resource: 'pool', amount: 1 } }],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'short', origin }],
+    );
+    expect(useButton().disabled).toBe(true);
+    spendPool(2);
+    fireEvent.click(useButton());
+    expect(used()).toBe(1);
+    expect(usedOf('own')).toBe(1);
+    expect(turn()?.bonus).toBe(true);
+  });
+
+  it('takes nothing when a tap beat the render that showed the pool refilled', () => {
+    const { used, turn, usedOf, spendPool, refillUnseen } = renderCosts(
+      [{ economy: 'bonus', label: 'Quick Step', regains: { resource: 'pool', amount: 1 } }],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'short', origin }],
+    );
+    spendPool(1);
+    expect(useButton().disabled).toBe(false);
+    refillUnseen();
+    fireEvent.click(useButton());
+    expect(used()).toBe(0);
+    expect(usedOf('own')).toBe(0);
+    expect(turn()?.bonus ?? false).toBe(false);
+  });
+
+  it('says when a pool comes back in part, on its row', () => {
+    renderCosts(
+      [],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'long', regainOnShort: 1, origin }],
+    );
+    expect(screen.getByText('One back on a short rest, all on a long rest')).toBeTruthy();
   });
 
   it('keeps Restore in sight but off when the pool cannot pay', () => {
