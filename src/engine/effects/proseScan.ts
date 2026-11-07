@@ -360,7 +360,8 @@ const OPPORTUNITY_ATTACK = /you can make an opportunity attack(?![^.,;]*(?:witho
 /**
  * The phrase that earns a chip, and where it sits. Compact, high-signal chips
  * only: bonus/reaction always; plain actions only when limited-use (otherwise
- * every prose "as an action" is noise).
+ * every prose "as an action" is noise). `plainActionForcingSave` reads the one other
+ * plain action worth a chip.
  */
 export function chipPhrase(
   text: string,
@@ -475,7 +476,8 @@ function chipSave(
   if (
     targetAbility === undefined ||
     (phrase.economy === 'bonus' && REACTION_PHRASE.test(past)) ||
-    (phrase.economy !== 'action' && ACTION_PHRASE.test(past))
+    (phrase.economy !== 'action' && ACTION_PHRASE.test(past)) ||
+    (phrase.economy === 'action' && BONUS_GIVEN.test(past))
   ) {
     return undefined;
   }
@@ -485,6 +487,40 @@ function chipSave(
     targetAbility,
     dcAbility: ABILITY_WORDS[dc?.[2] ?? dc?.[3] ?? ''] ?? (dc?.[1] ? 'spell' : undefined),
   };
+}
+
+/**
+ * How a feature with no limit says a plain action is its own use: a clause opening on
+ * it, in the wordings the data uses. Narrower than `ACTION_PHRASE`, since a chip read
+ * from here exists only for the save past it: "until you use your action to end it",
+ * "you can't use your action", "when you use your action", "your wolf can, as an
+ * action" and "you can end it as an action" are no use of the feature.
+ */
+const PLAIN_USE = new RegExp(
+  `(?<=^|[.,;] )(?:as (?:an|a magic) action, (?:you\\b(?!(?: can)? ${ENDS_IT})|choose|the paladin)|you can (?:use your action|take a magic action) to (?!${ENDS_IT})|you (?:can spend|gain the ability to) [^.,;]*as an action)`,
+);
+
+/**
+ * The plain action a feature with no limit earns a chip by, when `chipSave` reads a
+ * save for it. Only prose with no named parts: those are choices or separate benefits,
+ * and one's save is not what every use does. A slot the prose names first keeps the
+ * chip, and anything less than a save read leaves the feature to `chipPhrase`.
+ */
+function plainActionForcingSave(entries: unknown, text: string) {
+  const at = text.search(PLAIN_USE);
+  if (
+    at === -1 ||
+    text !== flattenEntries(entries, { skipNamed: true }) ||
+    AS_BONUS_ACTION.test(text) ||
+    REACTION_PHRASE.test(text) ||
+    BONUS_GIVEN.test(text.slice(0, at)) ||
+    OPPORTUNITY_ATTACK.test(text.slice(0, at)) ||
+    !FORCED_SAVE.test(text.slice(at))
+  ) {
+    return undefined;
+  }
+  const phrase = { economy: 'action' as const, at };
+  return chipSave(entries, text, phrase) && phrase;
 }
 
 const SKILL_NAME = SKILLS.map((s) => s.name.toLowerCase()).join('|');
@@ -686,7 +722,10 @@ export function proseScanFeature(
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
 
-  const phrase = chipPhrase(text, uses !== undefined);
+  // A limit a counted spell owns still rules this out: the plain action is that casting.
+  const phrase =
+    (detected === undefined ? plainActionForcingSave(entries, text) : undefined) ??
+    chipPhrase(text, uses !== undefined);
   // Limited-use features also get a roll chip, from the dice their action rolls.
   const dice = uses !== undefined && phrase !== undefined ? actionDice(text, phrase.at) : null;
   let roll = dice?.[1] ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;

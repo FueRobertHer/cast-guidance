@@ -546,6 +546,11 @@ describe('proseScanFeature beside a counted spell', () => {
   }
   const trackers = (spells: string[], text: string) =>
     scanBeside(spells, text).filter((e) => e.kind === 'resource');
+  it('reads no plain action for its save when a counted spell owns the limit', () => {
+    const text = `As an action, you can cast Dread with this gift. Each creature within 10 feet of you must make a Wisdom saving throw. Once you cast it with this gift, you can't do so again until you finish a long rest.`;
+    expect(scanBeside(['Dread'], text)).toEqual([]);
+  });
+
   /** The plain limit each form takes, in wording of our own. */
   const CAST_LIMIT =
     'Once you cast it with this gift, you can’t do so again until you finish a long rest.';
@@ -1426,6 +1431,238 @@ describe('proseScanFeature: which slot a feature takes', () => {
 
     it('leaves out a Magic action that ends it with nothing past it', () => {
       expect(economies(`${LIMIT} You can take a Magic action to end it`)).toEqual([]);
+    });
+  });
+
+  describe('plain actions that force a save, with no limit', () => {
+    const SAVE = 'Each creature within 10 feet of you must make a Wisdom saving throw.';
+    const wisdomChip = expect.objectContaining({
+      kind: 'action',
+      economy: 'action',
+      save: expect.objectContaining({ targetAbility: 'wis' }),
+    });
+    const chips = (entries: unknown[]) => scan('Trait', entries).filter((e) => e.kind === 'action');
+    const named = (name: string, ...entries: string[]) => ({ type: 'entries', name, entries });
+    const options = (...entries: unknown[]) => ({ type: 'options', entries });
+
+    it.each([
+      ['"as an action, you"', 'As an action, you roar.'],
+      ['"as a Magic action, you"', 'As a Magic action, you roar.'],
+      ['"as an action, choose"', 'As an action, choose a foe.'],
+      ['"as an action, the paladin"', 'As an action, the paladin roars.'],
+      ['"you can use your action"', 'You can use your action to roar.'],
+      ['"you can take a Magic action"', 'You can take a Magic action to roar.'],
+      ['"you can spend ... as an action"', 'You can spend a point as an action to roar.'],
+      ['"you gain the ability to ... as an action"', 'You gain the ability to roar as an action.'],
+      ['it past a stop', 'You glow. As an action, you roar.'],
+      ['it past a comma', 'In a fight, as an action, you roar.'],
+      ['it past a semicolon', 'You glow; as an action, you roar.'],
+      ['"you can use" past a stop', 'You glow. You can use your action to roar.'],
+      ['"you can use" past a comma', 'In a fight, you can use your action to roar.'],
+      ['"you can use" past a semicolon', 'You glow; you can use your action to roar.'],
+      ['"you can spend" past a comma', 'In a fight, you can spend a point as an action to roar.'],
+      [
+        '"you gain the ability" past a comma',
+        'At dusk, you gain the ability to roar as an action.',
+      ],
+      ['an end to something else, "as an action"', 'As an action, you can end one charm on you.'],
+      ['an end to something else, "use"', 'You can use your action to end one charm on you.'],
+    ])('reads %s', (_wording, text) => {
+      expect(scan('Trait', [`${text} ${SAVE}`])).toContainEqual(wisdomChip);
+    });
+
+    it('reads a save in its sentence', () => {
+      const text = `As an action, you roar, and ${SAVE.toLowerCase()}`;
+      expect(scan('Trait', [text])).toContainEqual(wisdomChip);
+    });
+
+    it('reads a save in a later paragraph', () => {
+      expect(chips(['As an action, you roar.', `The air shakes. ${SAVE}`])).toContainEqual(
+        wisdomChip,
+      );
+    });
+
+    it('reads the save past it over a save before it', () => {
+      const before = 'Each foe within 5 feet of you must make a Dexterity saving throw.';
+      expect(scan('Trait', [`${before} As an action, you roar. ${SAVE}`])).toContainEqual(
+        wisdomChip,
+      );
+    });
+
+    it.each([
+      ['no save', 'As an action, you roar.'],
+      [
+        'the character’s own save',
+        'As an action, you roar. Then you must make a Wisdom saving throw.',
+      ],
+      ['a save before its sentence', `${SAVE} As an action, you roar.`],
+      ['a save before it in its sentence', `${SAVE.slice(0, -1)}; as an action, you roar.`],
+      [
+        'a save that is only a trigger',
+        'As an action, you roar. When a foe must make a Wisdom saving throw, you gain a bonus.',
+      ],
+    ])('earns no chip with %s', (_case, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+
+    it.each([
+      ['"until you use your action"', 'It lasts until you use your action to stop it.'],
+      ['"you don’t need to use"', 'You don’t need to use your action to keep it going.'],
+      ['"you can’t use"', 'While changed, you can’t use your action to cast spells.'],
+      ['"when you use"', 'When you use your action to rest, you glow.'],
+      ['a rider past an opening clause', 'When you rest as an action, you glow.'],
+      ['a rider on a Magic action', 'When you rest as a Magic action, you glow.'],
+      ['"as an action" with no clause', 'The hum lasts as an action would.'],
+      ['"as an action" with no comma', 'As an action you roar.'],
+      ['"you can use" with no "to"', 'You can use your action when the moon rises.'],
+      ['"you can" with no cost', 'You can roar as an action.'],
+      ['a cost, past a stop', 'You can spend a point. The hum lasts as an action would.'],
+      ['a cost, past a comma', 'You can spend a point, and it lasts as an action would.'],
+      ['a cost, past a semicolon', 'You can spend a point; it lasts as an action would.'],
+      ['a cost, then a Magic action', 'You can spend a point as a Magic action to roar.'],
+      ['"you can no longer"', 'While changed, you can no longer cast spells as an action.'],
+      ['"without it counting"', 'You can hum without it counting as an action.'],
+      ['someone else’s, past a comma', 'Your wolf can, as an action, howl.'],
+      ['someone else’s, opening on it', 'As an action, your wolf howls.'],
+      ['an ally’s', 'As an action, an ally of yours can touch the ward.'],
+      ['"you can see", then a use', 'A creature you can see can shake off the charm as an action.'],
+      ['"you can use" inside a clause', 'A foe you can use your action to touch flinches.'],
+      ['"you can take" inside a clause', 'A foe you can take a Magic action to touch flinches.'],
+      [
+        '"you can spend" inside a clause',
+        'A foe you can spend a point as an action to touch flinches.',
+      ],
+      [
+        '"you gain the ability" inside a clause',
+        'Once you gain the ability to roar as an action, you glow.',
+      ],
+      ['"you can end it", opening on it', 'As a Magic action, you can end it.'],
+      ['"you end it", opening on it', 'As an action, you end it.'],
+      ['ending it with "you can use"', 'You can use your action to end it.'],
+      ['ending it, then more', 'You can use your action to end it early.'],
+      ['ending it with "you can take"', 'You can take a Magic action to end it.'],
+      ['ending it with "as an action"', 'You can end the aura as an action.'],
+      ['"using your action", read with a limit', 'Using your action, you grow wings.'],
+      ['a replaced attack, read with a limit', 'You can replace a single attack with a gust.'],
+    ])('earns no chip from %s', (_case, text) => {
+      expect(economies(`${text} ${SAVE}`)).toEqual([]);
+    });
+
+    it.each([
+      ['a named option’s save', ['As an action, you roar:', options(named('Fear', SAVE))]],
+      ['a named option’s action', [options(named('Fear', `As an action, you roar. ${SAVE}`))]],
+      ['a named benefit’s save', ['As an action, you roar.', named('Fear', SAVE)]],
+      ['a named benefit’s action', [named('Fear', `As an action, you roar. ${SAVE}`)]],
+    ])('earns no chip from %s', (_case, entries) => {
+      expect(chips(entries)).toEqual([]);
+    });
+
+    it.each([
+      ['a bonus action past a named option', 'You can use a bonus action to glow.', 'bonus'],
+      [
+        'an Opportunity Attack past a named option',
+        'You can make an Opportunity Attack on a foe.',
+        'reaction',
+      ],
+    ])('keeps %s', (_case, text, economy) => {
+      const effects = chips(['As an action, you roar:', options(named('Fear', SAVE)), text]);
+      expect(effects).toEqual([expect.objectContaining({ economy })]);
+    });
+
+    it('keeps a bonus action’s own save past a named option', () => {
+      const effects = chips([
+        'As an action, you roar:',
+        options(named('Fear', SAVE)),
+        `You can use a bonus action to bellow. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it.each([
+      [
+        'its save before a bonus action',
+        `As an action, you build a drone. ${SAVE} You can take a bonus action to command it.`,
+      ],
+      [
+        'an Opportunity Attack past it',
+        `As an action, you roar. ${SAVE} You can make an Opportunity Attack on a foe.`,
+      ],
+    ])('takes the plain action with %s', (_case, text) => {
+      expect(scan('Trait', [text])).toContainEqual(wisdomChip);
+    });
+
+    it.each([
+      [
+        'a bonus action named first',
+        `You can use a bonus action to glow. As an action, you roar. ${SAVE}`,
+        'bonus',
+      ],
+      [
+        'an Opportunity Attack named first',
+        `You can make an Opportunity Attack on a foe. As an action, you roar. ${SAVE}`,
+        'reaction',
+      ],
+      [
+        'an Opportunity Attack in its clause',
+        `You can make an Opportunity Attack on a foe or roar as an action. ${SAVE}`,
+        'reaction',
+      ],
+      [
+        'a reaction anywhere',
+        `As an action, you roar. ${SAVE} You can use a reaction to flare.`,
+        'reaction',
+      ],
+      [
+        '"as a bonus action" anywhere',
+        `As an action, you roar. ${SAVE} As a bonus action, you glow.`,
+        'bonus',
+      ],
+    ])('leaves the chip on the other slot with %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it('gives a save past a bonus action to that bonus action', () => {
+      const effects = chips([
+        `As an action, you build a drone. You can take a bonus action to command it. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it('leaves a save past a bonus action off a limited plain action', () => {
+      const effects = chips([
+        `As an action, you build a drone. You can take a bonus action to command it. ${SAVE} ${LIMIT}`,
+      ]);
+      expect(effects).toEqual([expect.objectContaining({ economy: 'action' })]);
+      expect(effects[0]).toMatchObject({ save: undefined });
+    });
+
+    it('leaves a save past a bonus action on a reaction', () => {
+      const effects = chips([
+        `You can use a reaction to flare. You can use a bonus action to burn. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'reaction',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it('shows no dice or limit of its own', () => {
+      const text = `As an action, you roar. ${SAVE} A creature takes 2d6 thunder damage on a failure.`;
+      const effects = scan('Trait', [text]);
+      expect(effects.filter((e) => e.kind === 'resource')).toEqual([]);
+      expect(effects).toContainEqual(expect.objectContaining({ kind: 'action', roll: undefined }));
     });
   });
 
