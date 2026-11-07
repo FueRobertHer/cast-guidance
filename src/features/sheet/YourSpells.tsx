@@ -15,7 +15,7 @@ import { Badge, badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
 import { PackProblem } from '@/ui/PackProblem';
 import { RollChip } from '@/ui/RollChip';
-import { cardClass, listClass } from '@/ui/surfaces';
+import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { askCastResource, CastResourcePicker } from './CastResourcePicker';
 import {
@@ -28,7 +28,7 @@ import {
   needsCastChoice,
 } from './castResources';
 import { conditionLimits } from './conditionEffects';
-import { effectLines, noteLines, rollD20Test, useIgnoreOnce } from './d20Tests';
+import { attackWear, effectLines, noteLines, rollD20Test, useIgnoreOnce } from './d20Tests';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -87,6 +87,8 @@ interface RowContext {
   update: DocUpdater;
   choice: ReturnType<typeof useCastChoice>;
   rollAttack: (modifier: number, label: string) => () => ReturnType<typeof rollD20Test>;
+  /** The conditions on the attack chips. */
+  wear: ReturnType<typeof attackWear>;
   noVerbal: readonly string[];
   entityOf: (ref: { name: string; source: string }) => Entity | undefined;
 }
@@ -144,6 +146,7 @@ function RollChips({
   entity,
   rolls,
   roller,
+  wear,
   onCast,
 }: {
   name: string;
@@ -151,6 +154,7 @@ function RollChips({
   entity: Entity | undefined;
   rolls: ReturnType<typeof spellRollActions>;
   roller: RowContext['rollAttack'];
+  wear: RowContext['wear'];
   onCast: (() => void) | undefined;
 }) {
   const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
@@ -163,6 +167,7 @@ function RollChips({
           label={`${name} spell attack`}
           variant="d20"
           roller={roller(attackModifier, `${name} spell attack`)}
+          wear={wear}
           onRolled={onCast}
         />
       )}
@@ -278,6 +283,7 @@ function SlotSpellRow({
             entity={entity}
             rolls={rolls}
             roller={ctx.rollAttack}
+            wear={ctx.wear}
             onCast={
               concentrating ? undefined : () => castSpell(update, block, level, info, resource)
             }
@@ -397,6 +403,7 @@ function InnateSpellRow({
             entity={entity}
             rolls={rolls}
             roller={ctx.rollAttack}
+            wear={ctx.wear}
             onCast={concentrating || depleted ? undefined : cast}
           />
           {concentrating ? (
@@ -440,7 +447,7 @@ function SpellGroup({
           <span className="text-caption text-ink-muted tabular-nums">{caption}</span>
         )}
       </div>
-      <div className={listClass}>{children}</div>
+      <div className={openListClass}>{children}</div>
     </section>
   );
 }
@@ -659,6 +666,7 @@ export function YourSpells({
     update,
     choice,
     rollAttack,
+    wear: attackWear(doc.play.conditions, attackEffects, limits.noActions, ignore.armed('attack')),
     noVerbal: limits.noVerbal,
     entityOf,
   };
@@ -737,7 +745,7 @@ export function YourSpells({
       {innateShown.length > 0 && (
         <section className="flex flex-col gap-1.5">
           <h2 className="px-1 text-heading">Innate &amp; granted spells</h2>
-          <div className={listClass}>
+          <div className={openListClass}>
             {innateShown.map((g) => {
               const entity = entityOf(g);
               const spell: OwnSpell = {

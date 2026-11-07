@@ -169,6 +169,85 @@ describe('design token contrast, both themes (DS-001)', () => {
   });
 });
 
+// The condition hues on attack chips (ui/chipFace.css) are a named exception to
+// the design's roles, so they are not tokens, but the number on them is text.
+
+const CHIP_CSS = readFileSync(path.join(SRC, 'ui/chipFace.css'), 'utf8');
+
+/**
+ * The piece of each signature that lays the most colour behind the number,
+ * taken at full strength. It may be a gradient or a sliver that never covers
+ * the number, which only makes this the floor. Invisible has no fill. Paralyzed's
+ * bolts and every flash go by in a moment, and the spec accepts those dips; held
+ * still, the bolts park clear of the number (chipFace.test.ts).
+ */
+const FILLS: Readonly<Record<string, string>> = {
+  poisoned: 'liquid',
+  paralyzed: 'lit',
+  frightened: 'vignette',
+  blinded: 'fog',
+  prone: 'pile',
+  restrained: 'bands',
+  exhaustion: 'charge',
+  stunned: 'wash',
+  unconscious: 'dusk',
+  incapacitated: 'strike',
+  petrified: 'course',
+};
+
+/** A condition's colour (`c`) and tint (`cs`) in one theme. */
+function hue(theme: Theme, look: string): { c: string; cs: string } {
+  const selector = theme === 'dark' ? `.cx-${look}` : `[data-theme="light"] .cx-${look}`;
+  const at = CHIP_CSS.split('\n').indexOf(`${selector} {`);
+  if (at < 0) throw new Error(`no ${theme} hue for ${look} in chipFace.css`);
+  const [c, cs] = CHIP_CSS.split('\n')
+    .slice(at + 1, at + 3)
+    .map((line) => /:\s*([^;]+);/.exec(line)?.[1]);
+  if (c === undefined || cs === undefined) throw new Error(`unreadable hue for ${look}`);
+  return { c, cs };
+}
+
+/** A piece's strongest opacity: what its rule sets, or its own keyframes raise it to. */
+function strength(piece: string): number {
+  const rule = new RegExp(`^\\.cx-${piece} \\{[^}]*?\\n\\s*opacity: ([\\d.]+);`, 'm').exec(
+    CHIP_CSS,
+  );
+  if (rule === null) throw new Error(`no opacity on .cx-${piece}`);
+  const frames = new RegExp(`@keyframes cx-${piece} \\{(?:[^{}]*\\{[^{}]*\\})*`).exec(CHIP_CSS);
+  const raised = [...(frames?.[0] ?? '').matchAll(/opacity: ([\d.]+);/g)].map((m) => Number(m[1]));
+  return Math.max(Number(rule[1]), ...raised);
+}
+
+describe('the number on a condition’s chip, both themes', () => {
+  it('holds ink to 4.5:1 over each condition’s strongest layer on its tint', () => {
+    const failing = THEMES.flatMap((theme) =>
+      Object.entries(FILLS).flatMap(([look, piece]) => {
+        const { c, cs } = hue(theme, look);
+        const ratio = contrast(colour(theme, 'ink'), over(c, strength(piece), cs));
+        return ratio < 4.5 ? [`${theme}: ${look} (${ratio.toFixed(2)})`] : [];
+      }),
+    );
+    expect(failing).toEqual([]);
+  });
+
+  it('reads Paralyzed’s glow at its peak, not its still pose', () => {
+    expect(strength('lit')).toBe(0.26);
+    expect(strength('liquid')).toBe(0.34);
+    expect(strength('strike')).toBe(0.4);
+  });
+
+  it('keeps Invisible as glass: the number stands on the page', () => {
+    for (const theme of THEMES) expect(hue(theme, 'invisible').cs).toBe('transparent');
+  });
+
+  it('holds the 2024 exhaustion tag to 4.5:1 on its surface, where it pokes past the chip', () => {
+    for (const theme of THEMES) {
+      const ratio = contrast(hue(theme, 'exhaustion').c, colour(theme, 'surface'));
+      expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
 /** Every source file the app's classes come from, tests left out. */
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
