@@ -106,16 +106,56 @@ const slug = (s: string) =>
     .replaceAll(/[^a-z0-9]+/g, '-')
     .replaceAll(/^-|-$/g, '');
 
-/** Prose saying a thing can be done once between rests. */
-function statesOnceLimit(text: string): boolean {
-  return /once per (?:short|long) rest|you can'?t (?:use (?:it|this (?:trait|feature))|do so) again until you (?:finish|complete)|must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/.test(
-    text,
-  );
-}
-
 const totalLevelOf = (col: Collector) => col.doc.classes.reduce((s, c) => s + c.levels, 0);
 
 const sentencesOf = (text: string) => text.split(/(?<=\.) /);
+
+/**
+ * The wordings the release uses for one use between rests, and no others: a verb
+ * missing here costs a tracker, where a loose match would read "you can't charm it
+ * again" as a pool when it only spares that target. Each names what ends the wait:
+ * "until you start your next turn" is no limit between rests.
+ */
+const ONCE_BETWEEN_RESTS =
+  /once per (?:short|long) rest|you can'?t (?:(?:use (?:it|the (?:action|feature)|this (?:trait|feature|benefit|ability))|do so(?: in this way)?|create it|enter) again|[a-z]+ another one with it) until you (?:(?:finish|complete|start)\b[^.,;]*\b(?:rests?|another)\b|roll initiative)|can'?t do so again until he or she (?:finishes|completes)\b[^.,;]*\brests?\b|can'?t be used again until (?:the next )?dawn|must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:before you can use|to use)/;
+/**
+ * A free cast of one spell, in a sentence of its own: "you can cast it once, and you
+ * regain the ability to cast it", or "you must finish a long rest before you can cast
+ * it". The rest and the "you" are required: a lost ability that returns when a stun
+ * ends is no pool, and a target's wait is not yours. A limit on each of several ("cast
+ * either spell", "each spell"), said here or in the sentence before, is left out: a
+ * count of one would be wrong, and `additionalSpells` is what opens one pool per spell.
+ */
+const FREE_CAST =
+  /regain the ability to (?:cast it|do so)\b[^.]*\b(?:rests?|dawn)\b|you must (?:then )?(?:finish|complete) a (?:short or long|short|long) rest (?:(?:before you can|to) cast (?:it|the spell)|before you can do so)\b|you can'?t cast it in this way again until you (?:finish|complete)\b[^.,;]*\brests?\b/;
+const EACH_OF_SEVERAL =
+  /\b(?:each|either|both|any) of\b|\b(?:each|either|both) (?:spell|these|those)/;
+/**
+ * Words that put what follows on a later level. A race's spell waits for that level,
+ * when `additionalSpells` counts it, so reading it here would show a tracker for a
+ * spell the character does not have yet. A class's feature opens on "at 3rd level,"
+ * or "starting at 3rd level," and only reaches the sheet then, so those still count
+ * as now: only a later sentence is a later level.
+ */
+const LATER_LEVEL =
+  /\b(?:(?:when|once) you reach|(?:starting|beginning) at) (?:\d+(?:st|nd|rd|th) level|(?:character )?levels? \d)/;
+const LEVEL_OPENER = /^(?:starting|beginning) at (?:\d+(?:st|nd|rd|th) level|level \d)/;
+
+/** Does this prose give one spell a free cast, with no later level before it? */
+function statesFreeCast(text: string): boolean {
+  let before = '';
+  for (const sentence of sentencesOf(text.replace(LEVEL_OPENER, ''))) {
+    if (LATER_LEVEL.test(sentence)) return false;
+    if (FREE_CAST.test(sentence) && !EACH_OF_SEVERAL.test(`${before} ${sentence}`)) return true;
+    before = sentence;
+  }
+  return false;
+}
+
+/** Prose saying a thing can be done once between rests. */
+function statesOnceLimit(text: string): boolean {
+  return ONCE_BETWEEN_RESTS.test(text) || statesFreeCast(text);
+}
 
 /**
  * A rest that only says when something else happens: "when you finish a short
@@ -123,6 +163,13 @@ const sentencesOf = (text: string) => text.split(/(?<=\.) /);
  */
 const REST_AS_OCCASION =
   /when you finish a short rest, you can [^.,;]*|(?<=^|[.,;] )[^.,;]*during a short or long rest[^.,;]*/g;
+/**
+ * The words that make a short rest the reset. The two looser ones must end a limit
+ * ("until you finish a rest"), so one that only says when something else happens
+ * ("when you finish a rest, you can") leaves a long rest's limit alone.
+ */
+const SHORT_REST_RESET =
+  /short or long rest|(?:finish(?:es)?|completes?|start) a short rest|until you (?:roll initiative or )?finish a (?:rest\b|long rest or short rest)/;
 /** A sentence saying a use comes back: "regain one use", "regain it", "uses are restored". */
 const USE_COMES_BACK =
   /\b(?:regain|recover|restore)[a-z]*\b[^.,;]*\b(?:uses?\b|(?:it|one|this feature)(?=[.,;]|$))|\buses?\b[^.,;]*\b(?:regained|recovered|restored|returned|returns?)\b|\b(?:recharge|refresh|replenish|reset)/;
@@ -153,7 +200,7 @@ const asWords = (text: string) => ` ${text.replaceAll(/[^a-z0-9']+/g, ' ')} `;
 
 /** A sentence that is one limit and nothing more, naming what it limits in `cast ...`. */
 const ONE_LIMIT =
-  /^once you (?:cast ([^,;]+)|use this (?:benefit|feature|trait)), you can'?t (?:do so|use (?:it|this (?:trait|feature))) again until you (?:finish|complete) a (?:short or long|short|long) rest(?:, unless [^;]*)?\.?$/;
+  /^once you (?:cast ([^,;]+)|use this (?:benefit|feature|trait)), you can'?t (?:do so(?: in this way)?|use (?:it|this (?:trait|feature))) again until you (?:finish|complete) a (?:short or long|short|long) rest(?:,? unless [^;]*)?\.?$/;
 /** A benefit of its own: something to do, or something to roll, that is not the spell. */
 const OWN_BENEFIT =
   /as a bonus action|as a reaction|use your reaction|take a reaction|as an action|use your action|\bd?\d+d\d+\b/;
@@ -187,7 +234,9 @@ function usesCounted(before: string[], counted: string[]): boolean {
  * only sits there. So a picked spell, which the prose cannot name, keeps it, and
  * so does a limit with any more to it than the plain sentence ("once you use this
  * feature to alter it"), a benefit between the spell and its limit, or a count of
- * any other kind elsewhere in the prose.
+ * any other kind elsewhere in the prose. The one exception is a free cast, which can
+ * only be a spell's limit: those count for any spell the origin counts, picks too,
+ * since feats that say "this feat's spell" would otherwise show every use twice.
  */
 function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOrigin): boolean {
   const counted = col.effects.flatMap((e) =>
@@ -204,9 +253,16 @@ function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOri
       others.push(sentence);
       continue;
     }
+    const before = sentences.slice(0, at);
+    if (
+      FREE_CAST.test(sentence) &&
+      /\b(?:can|may|to) cast\b/.test(`${before.at(-1) ?? ''} ${sentence}`)
+    ) {
+      found = true;
+      continue;
+    }
     const limit = sentence.match(ONE_LIMIT);
     if (limit === null) return false;
-    const before = sentences.slice(0, at);
     const object = limit[1];
     const spells =
       object !== undefined
@@ -235,41 +291,92 @@ function detectUses(
     const ability = ABILITY_WORDS[abilityUses[2]] as Ability;
     return abilityUses[1] ? `abilityModPlus1:${ability}` : `abilityMod:${ability}`;
   }
-  if (statesOnceLimit(text)) return 1;
+  if (ONCE_BETWEEN_RESTS.test(text)) return 1;
   const used = (times: string) =>
-    new RegExp(`use (?:this (?:trait|feature)|it|your [\\w\\s]{1,30}?) ${times}`).test(text);
-  if (used('twice')) return 2;
-  return used('three times') ? 3 : undefined;
+    new RegExp(
+      `(?<!can'?t )use (?:this (?:trait|feature|ability)|it|your [\\w\\s]{1,30}?) ${times}(?! (?:per|each|in an?) (?:turn|round))`,
+    ).test(text);
+  const held = text.match(
+    /(?:^|[.,;] )you have (one|two|three) uses? of this (?:ability|feature|trait)\b/,
+  )?.[1];
+  if (held === 'one') return 1;
+  if (used('twice') || held === 'two') return 2;
+  if (used('three times') || held === 'three') return 3;
+  // Last, since "you regain the ability to do so" leaves a count stated above standing.
+  return statesFreeCast(text) ? 1 : undefined;
 }
 
 /**
- * 2024 phrasing, with its subject: "your familiar can take a Reaction" and "each
- * target can then take a Reaction" spend that creature's Reaction, so they are no
- * chip for the character, and "you can't" forbids one.
+ * A clause that only ends what the feature started: the verb and a short object, "end
+ * it", "dismiss the spectral mind", "extinguish or restore the light". A longer object
+ * is something else being ended ("end one effect on yourself"), which can be the
+ * feature's whole use.
  */
-const REACTION_PHRASE = /as a reaction|use your reaction|you (?:can|must) take a reaction/;
+const ENDS_IT = String.raw`\b(?:end|dismiss|extinguish(?: or restore)?) (?:it|them|(?:this|that|the|your) (?:\w+ )?\w+)`;
+/**
+ * "As a bonus action", unless it only ends what the feature started: "until you end it
+ * as a bonus action" is how a transformation stops, and the slot that starts it is the
+ * one to show. "Summon or dismiss it" starts it too.
+ */
+const AS_BONUS_ACTION = new RegExp(`(?<!(?<! or )${ENDS_IT} )as a bonus action`);
+/**
+ * The wordings with their subject: "your familiar can take a Reaction" and "each
+ * target can then take a Reaction" spend that creature's Reaction, so they are no
+ * chip for the character, and "you can't" forbids one. "Using" also needs a clause that
+ * spends it: "without using your reaction" keeps it, and "when using" is a trigger.
+ */
+const REACTION_PHRASE =
+  /as a reaction|\buse your reaction|(?<!\b(?:without|of|when|while) )\busing your reaction|you can use a reaction|the sidekick can use its reaction|you (?:can|must) take a reaction|you get a special reaction/;
 /**
  * 2024 phrasings: "replace one of your attacks" (Attack-action riders) and "as a
- * Magic action" (the action to use a magical trait, e.g. Healing Hands).
+ * Magic action" (the action to use a magical trait, e.g. Healing Hands). A subject is
+ * needed for "take a Magic action" and the other "replace" wordings, since "until you
+ * take a Magic action to dismiss it" is no use of the feature and "your wolf can replace"
+ * is the wolf's. "Using your action" opens its clause, as "you can do so without using
+ * your action" does not.
  */
-const ACTION_PHRASE = /as an action|use your action|replace one of your attacks|as a magic action/;
+const ACTION_PHRASE = new RegExp(
+  `as an action|\\buse your action|(?<=^|[.,;] )using your action|replace one of your attacks|you can replace (?:one of the attacks|a single attack)|as a magic action|you can take a magic action(?! to ${ENDS_IT}(?:[.,;]|$))`,
+);
+/**
+ * A bonus action the feature gives, in its looser wordings, with its subject as for a
+ * reaction: "when you take a bonus action" only rides on one, and "the paladin can use
+ * a bonus action" is the same feature's follow-up. These read after the wordings above,
+ * so a chip those give stays where it is. Beside a limited feature's plain action, the
+ * first one named is its use: "as an action, you build it" comes before the bonus action
+ * that commands it, and the limit is on building it.
+ */
+const BONUS_GIVEN = new RegExp(
+  `(?:you|the sidekick) can (?:use|take) (?:a|the) bonus action(?! to ${ENDS_IT}(?:[.,;]|$))|unless you take a bonus action|follow that attack with a bonus action`,
+);
+/**
+ * A reaction the sentence does not name, since an Opportunity Attack always takes one,
+ * unless its own clause says otherwise. It is no phrase of `REACTION_PHRASE`, which also
+ * ends what a bonus action's chip reads: a rider with an Opportunity Attack leaves that
+ * chip's save its own.
+ */
+const OPPORTUNITY_ATTACK = /you can make an opportunity attack(?![^.,;]*(?:without|bonus action))/;
 
 /**
  * The phrase that earns a chip, and where it sits. Compact, high-signal chips
  * only: bonus/reaction always; plain actions only when limited-use (otherwise
- * every prose "as an action" is noise).
+ * every prose "as an action" is noise). `plainActionForcingSave` reads the one other
+ * plain action worth a chip.
  */
 export function chipPhrase(
   text: string,
   limitedUse: boolean,
 ): { economy: 'bonus' | 'reaction' | 'action'; at: number } | undefined {
-  const bonus = text.search(/as a bonus action/);
+  const bonus = text.search(AS_BONUS_ACTION);
   if (bonus !== -1) return { economy: 'bonus', at: bonus };
   const reaction = text.search(REACTION_PHRASE);
   if (reaction !== -1) return { economy: 'reaction', at: reaction };
-  if (!limitedUse) return undefined;
-  const action = text.search(ACTION_PHRASE);
-  return action === -1 ? undefined : { economy: 'action', at: action };
+  const action = limitedUse ? text.search(ACTION_PHRASE) : -1;
+  const given = text.search(BONUS_GIVEN);
+  if (action !== -1 && (given === -1 || action < given)) return { economy: 'action', at: action };
+  if (given !== -1) return { economy: 'bonus', at: given };
+  const opportunity = text.search(OPPORTUNITY_ATTACK);
+  return opportunity === -1 ? undefined : { economy: 'reaction', at: opportunity };
 }
 
 /**
@@ -369,7 +476,8 @@ function chipSave(
   if (
     targetAbility === undefined ||
     (phrase.economy === 'bonus' && REACTION_PHRASE.test(past)) ||
-    (phrase.economy !== 'action' && ACTION_PHRASE.test(past))
+    (phrase.economy !== 'action' && ACTION_PHRASE.test(past)) ||
+    (phrase.economy === 'action' && BONUS_GIVEN.test(past))
   ) {
     return undefined;
   }
@@ -379,6 +487,40 @@ function chipSave(
     targetAbility,
     dcAbility: ABILITY_WORDS[dc?.[2] ?? dc?.[3] ?? ''] ?? (dc?.[1] ? 'spell' : undefined),
   };
+}
+
+/**
+ * How a feature with no limit says a plain action is its own use: a clause opening on
+ * it, in the wordings the data uses. Narrower than `ACTION_PHRASE`, since a chip read
+ * from here exists only for the save past it: "until you use your action to end it",
+ * "you can't use your action", "when you use your action", "your wolf can, as an
+ * action" and "you can end it as an action" are no use of the feature.
+ */
+const PLAIN_USE = new RegExp(
+  `(?<=^|[.,;] )(?:as (?:an|a magic) action, (?:you\\b(?!(?: can)? ${ENDS_IT})|choose|the paladin)|you can (?:use your action|take a magic action) to (?!${ENDS_IT})|you (?:can spend|gain the ability to) [^.,;]*as an action)`,
+);
+
+/**
+ * The plain action a feature with no limit earns a chip by, when `chipSave` reads a
+ * save for it. Only prose with no named parts: those are choices or separate benefits,
+ * and one's save is not what every use does. A slot the prose names first keeps the
+ * chip, and anything less than a save read leaves the feature to `chipPhrase`.
+ */
+function plainActionForcingSave(entries: unknown, text: string) {
+  const at = text.search(PLAIN_USE);
+  if (
+    at === -1 ||
+    text !== flattenEntries(entries, { skipNamed: true }) ||
+    AS_BONUS_ACTION.test(text) ||
+    REACTION_PHRASE.test(text) ||
+    BONUS_GIVEN.test(text.slice(0, at)) ||
+    OPPORTUNITY_ATTACK.test(text.slice(0, at)) ||
+    !FORCED_SAVE.test(text.slice(at))
+  ) {
+    return undefined;
+  }
+  const phrase = { economy: 'action' as const, at };
+  return chipSave(entries, text, phrase) && phrase;
 }
 
 const SKILL_NAME = SKILLS.map((s) => s.name.toLowerCase()).join('|');
@@ -576,11 +718,14 @@ export function proseScanFeature(
       returnsUses.length > 0
         ? returnsUses.join(' ')
         : withoutRestOccasions(statesOnceLimit(notSpells) ? notSpells : text);
-    const resetOn = /short or long rest|finish a short rest/.test(resetText) ? 'short' : 'long';
+    const resetOn = SHORT_REST_RESET.test(resetText) ? 'short' : 'long';
     col.add({ kind: 'resource', key: slug(name), label: name, max: uses, resetOn, origin });
   }
 
-  const phrase = chipPhrase(text, uses !== undefined);
+  // A limit a counted spell owns still rules this out: the plain action is that casting.
+  const phrase =
+    (detected === undefined ? plainActionForcingSave(entries, text) : undefined) ??
+    chipPhrase(text, uses !== undefined);
   // Limited-use features also get a roll chip, from the dice their action rolls.
   const dice = uses !== undefined && phrase !== undefined ? actionDice(text, phrase.at) : null;
   let roll = dice?.[1] ? dice[1].replace(/^d/, '1d').replaceAll(' ', '') : undefined;
