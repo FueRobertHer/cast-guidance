@@ -307,16 +307,55 @@ function detectUses(
 }
 
 /**
- * 2024 phrasing, with its subject: "your familiar can take a Reaction" and "each
- * target can then take a Reaction" spend that creature's Reaction, so they are no
- * chip for the character, and "you can't" forbids one.
+ * A clause that only ends what the feature started: the verb and a short object, "end
+ * it", "dismiss the spectral mind", "extinguish or restore the light". A longer object
+ * is something else being ended ("end one effect on yourself"), which can be the
+ * feature's whole use.
  */
-const REACTION_PHRASE = /as a reaction|use your reaction|you (?:can|must) take a reaction/;
+const ENDS_IT = String.raw`\b(?:end|dismiss|extinguish(?: or restore)?) (?:it|them|(?:this|that|the|your) (?:\w+ )?\w+)`;
+/**
+ * "As a bonus action", unless it only ends what the feature started: "until you end it
+ * as a bonus action" is how a transformation stops, and the slot that starts it is the
+ * one to show. "Summon or dismiss it" starts it too.
+ */
+const AS_BONUS_ACTION = new RegExp(`(?<!(?<! or )${ENDS_IT} )as a bonus action`);
+/**
+ * The wordings with their subject: "your familiar can take a Reaction" and "each
+ * target can then take a Reaction" spend that creature's Reaction, so they are no
+ * chip for the character, and "you can't" forbids one. "Using" also needs a clause that
+ * spends it: "without using your reaction" keeps it, and "when using" is a trigger.
+ */
+const REACTION_PHRASE =
+  /as a reaction|\buse your reaction|(?<!\b(?:without|of|when|while) )\busing your reaction|you can use a reaction|the sidekick can use its reaction|you (?:can|must) take a reaction|you get a special reaction/;
 /**
  * 2024 phrasings: "replace one of your attacks" (Attack-action riders) and "as a
- * Magic action" (the action to use a magical trait, e.g. Healing Hands).
+ * Magic action" (the action to use a magical trait, e.g. Healing Hands). A subject is
+ * needed for "take a Magic action" and the other "replace" wordings, since "until you
+ * take a Magic action to dismiss it" is no use of the feature and "your wolf can replace"
+ * is the wolf's. "Using your action" opens its clause, as "you can do so without using
+ * your action" does not.
  */
-const ACTION_PHRASE = /as an action|use your action|replace one of your attacks|as a magic action/;
+const ACTION_PHRASE = new RegExp(
+  `as an action|\\buse your action|(?<=^|[.,;] )using your action|replace one of your attacks|you can replace (?:one of the attacks|a single attack)|as a magic action|you can take a magic action(?! to ${ENDS_IT}(?:[.,;]|$))`,
+);
+/**
+ * A bonus action the feature gives, in its looser wordings, with its subject as for a
+ * reaction: "when you take a bonus action" only rides on one, and "the paladin can use
+ * a bonus action" is the same feature's follow-up. These read after the wordings above,
+ * so a chip those give stays where it is. Beside a limited feature's plain action, the
+ * first one named is its use: "as an action, you build it" comes before the bonus action
+ * that commands it, and the limit is on building it.
+ */
+const BONUS_GIVEN = new RegExp(
+  `(?:you|the sidekick) can (?:use|take) (?:a|the) bonus action(?! to ${ENDS_IT}(?:[.,;]|$))|unless you take a bonus action|follow that attack with a bonus action`,
+);
+/**
+ * A reaction the sentence does not name, since an Opportunity Attack always takes one,
+ * unless its own clause says otherwise. It is no phrase of `REACTION_PHRASE`, which also
+ * ends what a bonus action's chip reads: a rider with an Opportunity Attack leaves that
+ * chip's save its own.
+ */
+const OPPORTUNITY_ATTACK = /you can make an opportunity attack(?![^.,;]*(?:without|bonus action))/;
 
 /**
  * The phrase that earns a chip, and where it sits. Compact, high-signal chips
@@ -327,13 +366,16 @@ export function chipPhrase(
   text: string,
   limitedUse: boolean,
 ): { economy: 'bonus' | 'reaction' | 'action'; at: number } | undefined {
-  const bonus = text.search(/as a bonus action/);
+  const bonus = text.search(AS_BONUS_ACTION);
   if (bonus !== -1) return { economy: 'bonus', at: bonus };
   const reaction = text.search(REACTION_PHRASE);
   if (reaction !== -1) return { economy: 'reaction', at: reaction };
-  if (!limitedUse) return undefined;
-  const action = text.search(ACTION_PHRASE);
-  return action === -1 ? undefined : { economy: 'action', at: action };
+  const action = limitedUse ? text.search(ACTION_PHRASE) : -1;
+  const given = text.search(BONUS_GIVEN);
+  if (action !== -1 && (given === -1 || action < given)) return { economy: 'action', at: action };
+  if (given !== -1) return { economy: 'bonus', at: given };
+  const opportunity = text.search(OPPORTUNITY_ATTACK);
+  return opportunity === -1 ? undefined : { economy: 'reaction', at: opportunity };
 }
 
 /**

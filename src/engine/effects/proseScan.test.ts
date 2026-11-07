@@ -1319,6 +1319,226 @@ describe('proseScanFeature reaction wording', () => {
   });
 });
 
+describe('proseScanFeature: which slot a feature takes', () => {
+  const economies = (entries: string) =>
+    scan('Trait', [entries]).flatMap((e) => (e.kind === 'action' ? [e.economy] : []));
+  const LIMIT = 'Afterward, you can’t use this feature again until you finish a long rest.';
+
+  describe('reactions', () => {
+    it.each([
+      ['"use a reaction"', 'Right after you take damage, you can use a reaction to fade.'],
+      ['"using your reaction"', 'You can stop the damage by using your reaction to drop a ward.'],
+      ['a sidekick’s', 'The sidekick can use its reaction to shield a friend.'],
+      ['a special one', 'In a fight, you get a special reaction to take on a foe’s turn.'],
+      ['an Opportunity Attack', 'Right after a foe hits you, you can make an Opportunity Attack.'],
+      ['"using" with no comma', 'You can stamp a hoof using your reaction.'],
+      ['an attack, a sentence ahead', 'You can make an Opportunity Attack. Without it, you fall.'],
+      ['an attack, a clause ahead', 'You can make an Opportunity Attack, without moving.'],
+      ['an attack, a part ahead', 'You can make an Opportunity Attack; without it, you fall.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(text)).toEqual(['reaction']);
+    });
+
+    it.each([
+      ['a wielder’s', 'While holding it, the wielder can use a reaction to push the foe.'],
+      ['another creature’s', 'The creature can use its reaction to dodge the blow.'],
+      ['a rider', 'You can move your speed as part of the same reaction.'],
+      ['a rider on an Opportunity Attack', 'When you roll for an Opportunity Attack, roll twice.'],
+      ['"without using"', 'You can drop your shield without using your reaction.'],
+      ['"instead of using"', 'Instead of using your reaction to dodge, you can slip away.'],
+      ['"when using"', 'When using your reaction to swing, you gain a bonus.'],
+      ['"while using"', 'While using your reaction to swing, you gain a bonus.'],
+      ['a word ending on "use"', 'Because your reaction is spent, you gain a bonus.'],
+      ['a word ending on "using"', 'Focusing your reaction on one foe gives you a bonus.'],
+      ['an ally’s special one', 'Your ally gains a special reaction it can use to strike a foe.'],
+      [
+        'an attack with no reaction',
+        'You can make an Opportunity Attack without spending anything.',
+      ],
+      ['an attack on a bonus action', 'You can make an Opportunity Attack in this bonus action.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+  });
+
+  describe('bonus actions', () => {
+    it.each([
+      ['"can use a bonus action"', 'You can use a bonus action to start the hum.'],
+      ['"can take a bonus action"', 'While hurt, you can take a Bonus Action to steady yourself.'],
+      ['"the bonus action"', 'You can use the bonus action from your Quick Feet to pick a lock.'],
+      ['a sidekick’s', 'The sidekick can use a bonus action on its turn to catch its breath.'],
+      ['a command', 'It only dodges unless you take a bonus action to command it.'],
+      ['a follow-up', 'You can follow that attack with a bonus action, making one kick.'],
+      ['an end to something else', 'You can use a bonus action to end one charm on you.'],
+      ['more past the end', 'You can use a bonus action to end it and heal.'],
+      ['a longer object', 'You can use a bonus action to end the charm on yourself.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(text)).toEqual(['bonus']);
+    });
+
+    it.each([
+      ['a rider', 'When you take a bonus action to inspire, you can also teleport.'],
+      ['a casting time', 'You can cast it here using your bonus action instead.'],
+      ['a changed casting time', 'You can change the casting time to 1 bonus action.'],
+      ['someone else’s', 'The knight can use a bonus action to command the shade.'],
+      ['part of another', 'As part of this bonus action, you can strike.'],
+      ['a prohibition', 'While it lasts, you can’t take a bonus action.'],
+      ['an end, then a stop', 'You sprout wings. You can use a bonus action to dismiss them.'],
+      ['an end, then a comma', 'You can use a bonus action to dismiss it, and it fades.'],
+      ['an end, then a semicolon', 'You can use a bonus action to dismiss it; it fades.'],
+      ['an end with nothing past it', 'You can use a bonus action to dismiss it'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+  });
+
+  describe('plain actions, which need a limit', () => {
+    it.each([
+      ['"using your action"', 'Using your action, you grow wings.'],
+      ['"take a Magic action"', 'You can take a Magic action to change shape.'],
+      ['"one of the attacks"', 'You can replace one of the attacks with a gust.'],
+      ['"a single attack"', 'You can replace a single attack with a gust.'],
+      ['"using" past a sentence', 'You glow. Using your action, you grow wings.'],
+      ['"using" past a clause', 'In a fight, using your action, you grow wings.'],
+      ['"using" past a part', 'You glow; using your action, you grow wings.'],
+      ['a Magic action to end something else', 'You can take a Magic action to end one charm.'],
+      ['a Magic action with more past the end', 'You can take a Magic action to end it and heal.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(`${text} ${LIMIT}`)).toEqual(['action']);
+      expect(economies(text)).toEqual([]);
+    });
+
+    it.each([
+      ['a Magic action with no subject', 'It lasts until you take a Magic action to end it.'],
+      ['a Magic action as a trigger', 'When you take a Magic action to speak, you gain a bonus.'],
+      ['a Magic action that only ends it', 'You can take a Magic action to end it.'],
+      ['a Magic action, then a comma', 'You can take a Magic action to end it, and it fades.'],
+      ['a Magic action, then a semicolon', 'You can take a Magic action to end it; it fades.'],
+      ['"without using"', 'You can swap your gear without using your action.'],
+      ['"instead of using"', 'Instead of using your action to hide, you can slip away.'],
+      ['"by using"', 'You can end the wings by using your action.'],
+      ['a word ending on "use"', 'Because your action is spent, you gain a bonus.'],
+      ['a wolf’s single attack', 'Your wolf can replace a single attack with a bite.'],
+      ['a drone’s attack', 'Your drone can replace one of the attacks with a spark.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(`${text} ${LIMIT}`)).toEqual([]);
+    });
+
+    it('leaves out a Magic action that ends it with nothing past it', () => {
+      expect(economies(`${LIMIT} You can take a Magic action to end it`)).toEqual([]);
+    });
+  });
+
+  describe('a feature that names more than one', () => {
+    it.each([
+      [
+        'a limit on the plain action, not the bonus action after it',
+        `As an action, you build a drone. You can take a bonus action to command it. ${LIMIT}`,
+        'action',
+      ],
+      [
+        'the bonus action named before a plain action',
+        `You can use a bonus action to don it. ${LIMIT} You can take a Magic action to doff it.`,
+        'bonus',
+      ],
+      [
+        'the bonus action, with no limit to make the plain action worth a chip',
+        'As an action, you build a drone. You can take a bonus action to command it.',
+        'bonus',
+      ],
+      [
+        'the reaction over a looser bonus action',
+        'You can use a bonus action to glow. You can use your reaction to flare.',
+        'reaction',
+      ],
+      [
+        'the bonus action over an Opportunity Attack',
+        'You can use a bonus action to glow. You can make an Opportunity Attack on a foe.',
+        'bonus',
+      ],
+      [
+        'the plain action over an Opportunity Attack',
+        `As an action, you glow. You can make an Opportunity Attack on a foe. ${LIMIT}`,
+        'action',
+      ],
+    ])('takes %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it.each([
+      ['end', 'You can use your reaction to flare. It lasts until you end it as a bonus action.'],
+      ['dismiss', 'You can use your reaction to flare. You can dismiss it as a bonus action.'],
+      [
+        'extinguish',
+        'You can use your reaction to flare. You can extinguish it as a bonus action.',
+      ],
+      [
+        'extinguish or restore',
+        'You can use your reaction to flare. You can extinguish or restore it as a bonus action.',
+      ],
+    ])('reads no chip from a bonus action to %s it', (_verb, text) => {
+      expect(economies(text)).toEqual(['reaction']);
+    });
+
+    it.each([
+      ['them', 'They fade once you dismiss them as a bonus action.'],
+      ['this', 'You can end this hum as a bonus action.'],
+      ['that', 'You can end that hum as a bonus action.'],
+      ['the', 'You can end the hum as a bonus action.'],
+      ['your', 'You can end your hum as a bonus action.'],
+      ['two words', 'You can end the loud hum as a bonus action.'],
+    ])('reads no chip from a bonus action to end %s', (_object, text) => {
+      expect(economies(`You can use your reaction to flare. ${text}`)).toEqual(['reaction']);
+    });
+
+    it.each([
+      [
+        'the plain action',
+        `You can use your action to shift. ${LIMIT} You can end it as a bonus action.`,
+        'action',
+      ],
+      [
+        'its looser wording',
+        'You can use a bonus action to shift. You can end it as a bonus action.',
+        'bonus',
+      ],
+      [
+        'an earlier one',
+        'As a bonus action, you glow. You can end the glow as a bonus action.',
+        'bonus',
+      ],
+    ])('reads what starts it from %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it.each([
+      ['a word that holds "end"', 'You can tend the fire as a bonus action.'],
+      ['a word that opens on "end"', 'You can endure the pain as a bonus action.'],
+      ['a sentence before', 'You can end it. As a bonus action, you glow.'],
+      ['a clause before', 'You can end it, and as a bonus action, you glow.'],
+      ['a part before', 'You can end it; as a bonus action, you glow.'],
+      ['a choice that also starts it', 'You can summon or dismiss your blade as a bonus action.'],
+      ['an end to something else', 'You can end one charm on you as a bonus action.'],
+      ['a longer object', 'You can dismiss the old spirit and call a new one as a bonus action.'],
+      ['the noun "end"', 'You gain a ward until the end of your turn as a bonus action.'],
+      ['a clause opening on the noun', 'At the end of a turn you can move as a bonus action.'],
+    ])('still reads a bonus action past %s', (_case, text) => {
+      expect(economies(text)).toEqual(['bonus']);
+    });
+
+    it('leaves a bonus action’s save its own past an Opportunity Attack', () => {
+      const text =
+        'As a Bonus Action, you change. You can make an Opportunity Attack on a foe. Each creature within 10 feet of you must make a Wisdom saving throw.';
+      expect(scan('Trait', [text])).toContainEqual(
+        expect.objectContaining({
+          kind: 'action',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      );
+    });
+  });
+});
+
 describe('proseScanFeature rolls', () => {
   const action = (entries: string) =>
     scan('Trait', entries).find((e) => e.kind === 'action') as

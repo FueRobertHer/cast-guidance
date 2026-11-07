@@ -279,7 +279,7 @@
         }
       ],
       "prose": {
-        "disagreements": 180,
+        "disagreements": 62,
         "allow": [
           {
             "key": "04ae356a954bb1",
@@ -728,6 +728,447 @@
             "kind": "missed",
             "label": "Wood Elf Magic (feat|XGE)",
             "note": "additionalSpells opens a pool per spell; checked on a real sheet."
+          },
+          {
+            "key": "0a4a4eb2e350bb",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Agile Strikes (Bard: College of Dance|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1ce728b407e55d",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Commander's Strike (optional feature|PHB)",
+            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+          },
+          {
+            "key": "04e8e796be5c95",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Dispelling Recovery (Cleric: Arcana Domain|AU)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1adad70cb1b4a7",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Drunken Technique (Monk: Way of the Drunken Master|XGE)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "0fdeaf9d144679",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Elder Champion (Paladin: Oath of the Ancients|PHB)",
+            "note": "Changes a spell's casting time, so the slot is the spell's."
+          },
+          {
+            "key": "1d3622bf836f0c",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Embodiment of the Law (Cleric: Order Domain|TCE)",
+            "note": "Changes a spell's casting time, so the slot is the spell's."
+          },
+          {
+            "key": "062a449adab696",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Exceptional Training (Ranger: Beast Master|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "0742227e16e8bb",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Feinting Attack (optional feature|PHB)",
+            "note": "Its SPEND_LINKS row gives it this slot on a real sheet."
+          },
+          {
+            "key": "0bc790d1b7270b",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Fleet Step (Monk: Warrior of the Open Hand|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "18ec26869fd1d5",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Flurry of Healing and Harm (Monk: Way of Mercy|TCE)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "062f50300cfab8",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Fortified Position (Artificer: Artillerist|EFA)",
+            "note": "Eldritch Cannon's bonus action, which now works two cannons."
+          },
+          {
+            "key": "0593a7f429e24d",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Fortified Position (Artificer: Artillerist|TCE)",
+            "note": "Eldritch Cannon's bonus action, which now works two cannons."
+          },
+          {
+            "key": "041e450b5ac599",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Gnomish Lineage (Gnome|XPHB)",
+            "note": "The bonus action works a crafted device, and anyone can take it."
+          },
+          {
+            "key": "163d4360a23e65",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Gnomish Lineage (Rock Gnome) (Gnome; Rock Gnome Lineage|XPHB)",
+            "note": "The bonus action works a crafted device, and anyone can take it."
+          },
+          {
+            "key": "1758a4a7dc620d",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Heightened Focus (Monk|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "092d670e26bef8",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Improved Mystic Fighting Style (Monk: Warrior of the Mystic Arts|AU)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "08d743c56c164e",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Improved Shadow Step (Monk: Warrior of Shadow|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "100e1078569635",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Instinctive Pounce (Barbarian|TCE)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "049860030cf78f",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Instinctive Pounce (Barbarian|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1e64bef178154b",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Intoxicated Frenzy (Monk: Way of the Drunken Master|XGE)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "0f2e5126a67c55",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Mantle of Whispers (Bard: College of Whispers|XGE)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "0ca565e516c96c",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Moon's Inspiration (Bard: College of the Moon|FRHoF)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "15b826a5bf038a",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Necrotic Shroud (Fallen|VGM)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "08984f99214e4e",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Psionic Mastery (1/Day) (Mystic|UATheMysticClass)",
+            "note": "Names what its points can be spent on. Its own use is the action."
+          },
+          {
+            "key": "019e4618fe3dca",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Quickened Spell (optional feature|PHB)",
+            "note": "Changes a spell's casting time, so the slot is the spell's."
+          },
+          {
+            "key": "0184e2a580603a",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Quickened Spell (optional feature|XPHB)",
+            "note": "Changes a spell's casting time, so the slot is the spell's."
+          },
+          {
+            "key": "056891dfae7235",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Radiant Consumption (Scourge|VGM)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "1c433abfa81f69",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Radiant Soul (Protector|VGM)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "0ad4228136cc18",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Radiant Weapon (optional feature|TCE)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "0c054159b8ea1a",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Sorcery Incarnate (Sorcerer|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1b2982f13b95bc",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Spellfire Burst (Sorcerer: Spellfire Sorcery|FRHoF)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "048679da7ec7e5",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Sun Shield (Monk: Way of the Sun Soul|XGE)",
+            "note": "The bonus action only ends it. The chip is on the slot that starts it."
+          },
+          {
+            "key": "03d4d7a0dc2ea6",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Tactical Shift (Fighter|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "080f2c2e6d481d",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Trickster's Transposition (Cleric: Trickery Domain|XPHB)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "123b890e5215ac",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Absorb Spells (Sorcerer: Spellfire Sorcery|FRHoF)",
+            "note": "Counterspell's reaction, shown on the spell."
+          },
+          {
+            "key": "0a4a4eb2e350bb",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Agile Strikes (Bard: College of Dance|XPHB)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "0140e1301fde3a",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Armor of Magical Strength (optional feature|TCE)",
+            "note": "The wearer's reaction, and an infusion can be on someone else."
+          },
+          {
+            "key": "028b394d2f72e2",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Combat Inspiration (Bard: College of Valor|PHB)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "144fdc6e713263",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Combat Inspiration (Bard: College of Valor|XPHB)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "0b18fb54fa4501",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Crown of Spellfire (Sorcerer: Spellfire Sorcery|FRHoF)",
+            "note": "No reaction: its once-per-turn benefit takes no slot."
+          },
+          {
+            "key": "04e8e796be5c95",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Dispelling Recovery (Cleric: Arcana Domain|AU)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "14bd8da7755564",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Eventide's Splendor (Bard: College of the Moon|FRHoF)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "1e75753d619748",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Greater Mark of Handling (feat|EFA)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "1c4e4bd1a65ae9",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Greater Mark of Sentinel (feat|EFA)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "1986bd1e181848",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Hold the Line (Fighter: Cavalier|XGE)",
+            "note": "Widens when an opportunity attack is provoked, which takes no slot of its own."
+          },
+          {
+            "key": "110553fe377637",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Improved Defender (Artificer: Battle Smith|EFA)",
+            "note": "The defender's reaction, not the character's."
+          },
+          {
+            "key": "1b867e04bd652f",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Improved Defender (Artificer: Battle Smith|TCE)",
+            "note": "The defender's reaction, not the character's."
+          },
+          {
+            "key": "0c5dc280fdd830",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Improved Warding Flare (Cleric: Light Domain|XPHB)",
+            "note": "Warding Flare's reaction."
+          },
+          {
+            "key": "021ce97bd17b92",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Ingenious Movement (Artificer: Cartographer|EFA)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "1fd0161fe63c49",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Mantle of Inspiration (Bard: College of Glamour|XGE)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "04cf83bc9e58cd",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Mantle of Inspiration (Bard: College of Glamour|XPHB)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "0d95a275b085b9",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Mind Sharpener (optional feature|TCE)",
+            "note": "The wearer's reaction, and an infusion can be on someone else."
+          },
+          {
+            "key": "09969dc069324b",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Necromancy Spellbook (Wizard: Necromancer|AU)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "1a2645e1fb8042",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Pact of the Chain (optional feature|PHB)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "0aed0af815db34",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Pact of the Chain (optional feature|XPHB)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "0c60deb9258f06",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Protective Bond (Cleric: Peace Domain|TCE)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "09380d1acfb103",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Relentless Avenger (Paladin: Oath of Vengeance|PHB)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "003045e0d47cf0",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Relentless Avenger (Paladin: Oath of Vengeance|XPHB)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "0dc1e4d0da30a5",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Repulsion Shield (optional feature|TCE)",
+            "note": "The wearer's reaction, and an infusion can be on someone else."
+          },
+          {
+            "key": "01b94cf56a4d84",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Strixhaven Mascot (feat|SCC)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "108226b4d2cc0b",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Voice of Authority (Cleric: Order Domain|TCE)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "0f189822d88baf",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Warlike Familiar (feat|AU)",
+            "note": "Another creature's reaction, not the character's."
+          },
+          {
+            "key": "194f52dbf4032b",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Zhentarim Ruffian (feat|FRHoF)",
+            "note": "Rides on another reaction, with no slot of its own."
           }
         ]
       }
