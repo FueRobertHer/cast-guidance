@@ -4,6 +4,7 @@ import { ABILITIES, type Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { rollLogStore } from '@/stores/rollLog';
 import { BreakdownParts, BreakdownSheet } from '@/ui/BreakdownSheet';
+import { ChipFace, type ChipWear, useRollMoment } from '@/ui/ChipFace';
 import { D20Icon } from '@/ui/D20Icon';
 import { Tip, useTip } from '@/ui/Hint';
 import { ProfDot } from '@/ui/ProfDot';
@@ -13,6 +14,7 @@ import {
   noteLines,
   type RollGroup,
   rollD20Test,
+  rollWear,
   saveEffectLines,
   useIgnoreOnce,
 } from '../d20Tests';
@@ -44,6 +46,175 @@ const ROLLS = 'transition-colors duration-120 hover:bg-surface-raised active:bg-
  */
 const SAVES =
   'grid grid-cols-[repeat(auto-fit,minmax(max(5.75rem,(100%_-_1rem)/3),1fr))] gap-2 sm:@min-[37rem]:grid-cols-6';
+
+type Sheet = NonNullable<CharacterSheetState['sheet']>;
+
+/**
+ * An ability: its check bonus to tap and roll, the score pill under it for its
+ * breakdown. The bonus is the modifier unless something adds to every check of
+ * the ability: half proficiency (2014 Jack of All Trades) puts its mark by the
+ * name, and the pill's sheet then shows the check's math too. A condition's tint
+ * goes on the whole tile, which holds both buttons, and only the number moves.
+ */
+function AbilityTile({
+  name,
+  ability,
+  check,
+  wear,
+  onRoll,
+}: {
+  name: Ability;
+  ability: Sheet['abilities'][Ability];
+  check: Sheet['checks'][Ability];
+  wear: ChipWear;
+  onRoll: () => void;
+}) {
+  const moment = useRollMoment();
+  return (
+    <div className={`relative flex rounded-card ${TILE}`}>
+      <ChipFace surface="tile" wear={wear} rolls={moment.rolls} showing={moment.showing}>
+        {/* The mark stays outside the uppercase label, so its words are not
+            shouted, and in ink as on the skill rows. With large text in a narrow
+            tile it wraps above the label rather than pushing the pair out of the
+            tile. */}
+        <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5">
+          {check.halfProf && <ProfDot level="half" />}
+          <span className="cx-ink text-ink-muted text-overline uppercase">{name}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            onRoll();
+            moment.rolled();
+          }}
+          aria-label={`Roll ${name.toUpperCase()} check (${signed(check.total.value)})`}
+          className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
+          title={`Roll ${name.toUpperCase()} check`}
+        >
+          <span className="cx-move">{signed(check.total.value)}</span>
+        </button>
+        <BreakdownSheet
+          title={`${name.toUpperCase()} score`}
+          value={ability}
+          trigger={
+            <button
+              type="button"
+              aria-label={`${name.toUpperCase()} score ${ability.value}${
+                ability.overridden ? ' (set manually)' : ''
+              }: breakdown`}
+              // A thumb-sized target around the small score pill
+              // (A11Y-003: it was 13 by 16, under even axe's 24px floor):
+              // the pill is what shows, the transparent rest takes the
+              // tap. The negative margin spends the card's bottom
+              // padding, so the card grows less than the target does.
+              className="group tap -mb-2"
+            >
+              <span className="cx-ink h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
+                {ability.value}
+                {ability.overridden ? '•' : ''}
+              </span>
+            </button>
+          }
+        >
+          {check.total.parts.length > 1 ? (
+            <div className="flex flex-col gap-1">
+              <p className="flex justify-between gap-3 font-semibold text-body">
+                <span>{name.toUpperCase()} check</span>
+                <span className="tabular-nums">{signed(check.total.value)}</span>
+              </p>
+              <BreakdownParts parts={check.total.parts} />
+            </div>
+          ) : undefined}
+        </BreakdownSheet>
+      </ChipFace>
+    </div>
+  );
+}
+
+/**
+ * A save: a proficiency dot where the old fill was. The button's name stays
+ * "STR +2", which never said the level either.
+ */
+function SaveButton({
+  name,
+  save,
+  wear,
+  onRoll,
+}: {
+  name: Ability;
+  save: Sheet['saves'][Ability];
+  wear: ChipWear;
+  onRoll: () => void;
+}) {
+  const moment = useRollMoment();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onRoll();
+        moment.rolled();
+      }}
+      className={`relative flex min-h-tap rounded-control text-ink ${TILE} ${ROLLS}`}
+    >
+      <ChipFace surface="save" wear={wear} rolls={moment.rolls} showing={moment.showing}>
+        <span className="inline-flex items-center gap-2 text-label">
+          <ProfDot level={save.prof ? 1 : 0} decorative />
+          <span className="cx-ink text-ink-muted">{name.toUpperCase()}</span>
+        </span>{' '}
+        <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
+      </ChipFace>
+    </button>
+  );
+}
+
+/**
+ * The skills: whole-row rolls in ink rather than the roll blue, so 18 rows do not
+ * read as links, with a faint die that says the row rolls. A condition reaches
+ * every skill alike, so it wears the whole card, and its motion stays out of the
+ * rows, so no one skill looks singled out.
+ */
+function SkillsCard({
+  skills,
+  wear,
+  onRoll,
+}: {
+  skills: Sheet['skills'];
+  wear: ChipWear;
+  onRoll: (name: string, skill: Sheet['skills'][string]) => void;
+}) {
+  const moment = useRollMoment();
+  return (
+    <div className={`relative ${listClass}`}>
+      <ChipFace surface="card" wear={wear} rolls={moment.rolls} showing={moment.showing}>
+        <span className="flex flex-col divide-y divide-line">
+          {Object.entries(skills).map(([name, s]) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                onRoll(name, s);
+                moment.rolled();
+              }}
+              className={`flex min-h-tap items-center gap-3 pr-3 pl-4 text-left text-ink ${ROLLS}`}
+            >
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <ProfDot level={s.halfProf ? 'half' : s.prof} />
+                {name}
+                <span className="cx-ink font-semibold text-[0.75rem] text-ink-muted uppercase leading-4 tracking-[0.04em]">
+                  {s.ability}
+                </span>
+              </span>
+              <span className="min-w-9 text-right font-bold tabular-nums">
+                {signed(s.total.value)}
+              </span>
+              <D20Icon size={16} className="cx-ink shrink-0 text-ink-faint" />
+            </button>
+          ))}
+        </span>
+      </ChipFace>
+    </div>
+  );
+}
 
 export function Component() {
   const { sheet, doc } = useOutletContext<CharacterSheetState>();
@@ -87,87 +258,30 @@ export function Component() {
           Tap any modifier to roll it. The switch at the bottom applies to every roll.
         </Tip>
       )}
-      {/* Abilities, check bonus first: tap it to roll a check, the score pill
-          under it for its breakdown; any cue for checks over them. The bonus is
-          the modifier unless something adds to every check of the ability: half
-          proficiency (2014 Jack of All Trades) puts its mark by the name, and
-          the pill's sheet then shows the check's math too. */}
+      {/* Abilities, with any cue for checks over them. */}
       <div className="flex flex-col gap-2">
         {checkCue}
         <section className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-          {ABILITIES.map((a) => {
-            const ability = sheet.abilities[a];
-            const check = sheet.checks[a];
-            return (
-              <div
-                key={a}
-                className={`flex flex-col items-center rounded-card px-1 pt-3 pb-2 ${TILE}`}
-              >
-                {/* The mark stays outside the uppercase label, so its words
-                    are not shouted, and in ink as on the skill rows. With large
-                    text in a narrow tile it wraps above the label rather than
-                    pushing the pair out of the tile. */}
-                <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5">
-                  {check.halfProf && <ProfDot level="half" />}
-                  <span className="text-ink-muted text-overline uppercase">{a}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    rollTest(
-                      `${a.toUpperCase()} check`,
-                      check.total.value,
-                      'check',
-                      checkEffects(a),
-                    )
-                  }
-                  aria-label={`Roll ${a.toUpperCase()} check (${signed(check.total.value)})`}
-                  className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
-                  title={`Roll ${a.toUpperCase()} check`}
-                >
-                  {signed(check.total.value)}
-                </button>
-                <BreakdownSheet
-                  title={`${a.toUpperCase()} score`}
-                  value={ability}
-                  trigger={
-                    <button
-                      type="button"
-                      aria-label={`${a.toUpperCase()} score ${ability.value}${
-                        ability.overridden ? ' (set manually)' : ''
-                      }: breakdown`}
-                      // A thumb-sized target around the small score pill
-                      // (A11Y-003: it was 13 by 16, under even axe's 24px floor):
-                      // the pill is what shows, the transparent rest takes the
-                      // tap. The negative margin spends the card's bottom
-                      // padding, so the card grows less than the target does.
-                      className="group tap -mb-2"
-                    >
-                      <span className="h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
-                        {ability.value}
-                        {ability.overridden ? '•' : ''}
-                      </span>
-                    </button>
-                  }
-                >
-                  {check.total.parts.length > 1 ? (
-                    <div className="flex flex-col gap-1">
-                      <p className="flex justify-between gap-3 font-semibold text-body">
-                        <span>{a.toUpperCase()} check</span>
-                        <span className="tabular-nums">{signed(check.total.value)}</span>
-                      </p>
-                      <BreakdownParts parts={check.total.parts} />
-                    </div>
-                  ) : undefined}
-                </BreakdownSheet>
-              </div>
-            );
-          })}
+          {ABILITIES.map((a) => (
+            <AbilityTile
+              key={a}
+              name={a}
+              ability={sheet.abilities[a]}
+              check={sheet.checks[a]}
+              wear={rollWear(conditions, checkEffects(a), ignore.armed('check'))}
+              onRoll={() =>
+                rollTest(
+                  `${a.toUpperCase()} check`,
+                  sheet.checks[a].total.value,
+                  'check',
+                  checkEffects(a),
+                )
+              }
+            />
+          ))}
         </section>
       </div>
 
-      {/* Saves: a proficiency dot where the old fill was. The button's name
-          stays "STR +2", which never said the level either. */}
       <section className="@container flex flex-col gap-2">
         <h2 className={H2}>Saving throws</h2>
         <RollEffectCue
@@ -177,57 +291,35 @@ export function Component() {
           onIgnore={() => ignore.toggle('save')}
         />
         <div className={SAVES}>
-          {ABILITIES.map((a) => {
-            const save = sheet.saves[a];
-            return (
-              <button
-                key={a}
-                type="button"
-                onClick={() =>
-                  rollTest(`${a.toUpperCase()} save`, save.total.value, 'save', saveEffects[a])
-                }
-                className={`flex min-h-tap items-center justify-between gap-2 rounded-control px-3 text-ink ${TILE} ${ROLLS}`}
-              >
-                <span className="inline-flex items-center gap-2 text-label">
-                  <ProfDot level={save.prof ? 1 : 0} decorative />
-                  <span className="text-ink-muted">{a.toUpperCase()}</span>
-                </span>{' '}
-                <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
-              </button>
-            );
-          })}
+          {ABILITIES.map((a) => (
+            <SaveButton
+              key={a}
+              name={a}
+              save={sheet.saves[a]}
+              wear={rollWear(conditions, saveEffects[a], ignore.armed('save'))}
+              onRoll={() =>
+                rollTest(
+                  `${a.toUpperCase()} save`,
+                  sheet.saves[a].total.value,
+                  'save',
+                  saveEffects[a],
+                )
+              }
+            />
+          ))}
         </div>
       </section>
 
-      {/* Skills: whole-row rolls in ink rather than the roll blue, so 18 rows
-          do not read as links, with a faint die that says the row rolls. */}
       <section className="flex flex-col gap-2">
         <h2 className={H2}>Skills</h2>
         {checkCue}
-        <div className={listClass}>
-          {Object.entries(sheet.skills).map(([name, s]) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() =>
-                rollTest(`${name} check`, s.total.value, 'check', checkEffects(s.ability))
-              }
-              className={`flex min-h-tap items-center gap-3 pr-3 pl-4 text-left text-ink ${ROLLS}`}
-            >
-              <span className="flex min-w-0 flex-1 items-center gap-3">
-                <ProfDot level={s.halfProf ? 'half' : s.prof} />
-                {name}
-                <span className="font-semibold text-[0.75rem] text-ink-muted uppercase leading-4 tracking-[0.04em]">
-                  {s.ability}
-                </span>
-              </span>
-              <span className="min-w-9 text-right font-bold tabular-nums">
-                {signed(s.total.value)}
-              </span>
-              <D20Icon size={16} className="shrink-0 text-ink-faint" />
-            </button>
-          ))}
-        </div>
+        <SkillsCard
+          skills={sheet.skills}
+          wear={rollWear(conditions, checkEffects('str'), ignore.armed('check'))}
+          onRoll={(name, s) =>
+            rollTest(`${name} check`, s.total.value, 'check', checkEffects(s.ability))
+          }
+        />
       </section>
 
       {/* Passives, senses, proficiencies, languages */}

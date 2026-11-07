@@ -6,7 +6,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DataEntity } from '@/engine/types';
+import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
   classEntry,
@@ -57,6 +57,19 @@ const flick: DataEntity = {
   entries: ['A harmless spark.'],
 };
 const ref = (name: string) => ({ name, source: 'TST' });
+/** A concentration spell whose dice are rolled turn after turn, and scale with the slot. */
+const shaft: DataEntity = {
+  name: 'Moon Shaft',
+  source: 'TST',
+  level: 2,
+  school: 'V',
+  time: [{ number: 1, unit: 'action' }],
+  duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: true }],
+  entries: ['A beam deals {@damage 2d10} radiant damage.'],
+  entriesHigherLevel: [
+    { entries: ['The damage increases by {@scaledamage 2d10|2-9|1d10} per slot above 2nd.'] },
+  ],
+};
 
 describe('casting from the Play tab (TEST-003)', () => {
   it('spends the lowest slot from the roll chip and lights one fewer pip', async () => {
@@ -156,18 +169,6 @@ describe('casting from the Play tab (TEST-003)', () => {
   });
 
   it('rolls a running concentration spell at its cast slot, spending nothing more', async () => {
-    const shaft: DataEntity = {
-      name: 'Moon Shaft',
-      source: 'TST',
-      level: 2,
-      school: 'V',
-      time: [{ number: 1, unit: 'action' }],
-      duration: [{ type: 'timed', duration: { type: 'minute', amount: 1 }, concentration: true }],
-      entries: ['A beam deals {@damage 2d10} radiant damage.'],
-      entriesHigherLevel: [
-        { entries: ['The damage increases by {@scaledamage 2d10|2-9|1d10} per slot above 2nd.'] },
-      ],
-    };
     const doc = sorcerer();
     doc.spellcasting = { 'sorcerer|tst': { known: [ref('Moon Shaft')], prepared: [] } };
     await renderSheet(doc, { extra: { spell: [shaft] } });
@@ -204,6 +205,46 @@ describe('casting from the Play tab (TEST-003)', () => {
       label: 'Warding Hum',
       level: 1,
     });
+  });
+});
+
+describe('a condition on casting from the Play tab', () => {
+  const wearing = (control: Element) => control.querySelector('.cx')?.className ?? '';
+  /** Knows a spell that casts from its chip, and one that casts from its button. */
+  const caster = (conditions: CharacterDoc['play']['conditions']) => {
+    const doc = sorcerer();
+    doc.spellcasting = {
+      'sorcerer|tst': {
+        known: [ref('Searing Bolt'), ref('Daze Mote'), ref('Moon Shaft')],
+        prepared: [],
+      },
+    };
+    doc.play.conditions = conditions;
+    return doc;
+  };
+
+  it('wears what stops casting on Cast and the chip that casts', async () => {
+    await renderSheet(caster([{ id: 'Paralyzed' }]), { extra: { spell: [shaft] } });
+    expect(wearing(screen.getByRole('button', { name: 'Cast Daze Mote' }))).toContain(
+      'cx-paralyzed',
+    );
+    expect(wearing(screen.getByTitle('Searing Bolt fire damage'))).toContain('cx-paralyzed');
+  });
+
+  it('leaves them plain under a condition that only touches attacks', async () => {
+    await renderSheet(caster([{ id: 'Poisoned' }]), { extra: { spell: [shaft] } });
+    expect(wearing(screen.getByRole('button', { name: 'Cast Daze Mote' }))).not.toContain('cx-on');
+    expect(wearing(screen.getByTitle('Searing Bolt fire damage'))).not.toContain('cx-on');
+  });
+
+  it('fades off a chip whose own roll starts its concentration, as it stops casting', async () => {
+    await renderSheet(caster([{ id: 'Paralyzed' }]), { extra: { spell: [shaft] } });
+    const chip = screen.getByTitle('Moon Shaft radiant damage');
+    expect(wearing(chip)).toContain('cx-paralyzed');
+
+    fireEvent.click(chip);
+
+    expect(wearing(screen.getByTitle('Moon Shaft radiant damage'))).toContain('cx-rm');
   });
 });
 

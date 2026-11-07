@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useAnimateConditions } from '@/lib/conditionMotion';
 import { useConditionSheetOpen } from '@/stores/conditionSheet';
 import './chipFace.css';
@@ -7,6 +7,7 @@ export type ChipLook =
   | 'Poisoned'
   | 'Blinded'
   | 'Restrained'
+  | 'Grappled'
   | 'Exhaustion'
   | 'Invisible'
   | 'Frightened'
@@ -18,16 +19,25 @@ export type ChipLook =
   | 'Petrified';
 
 /**
- * What a condition looks like on a chip: the pieces inside it, the pieces over
- * it (the only ones that leave its edge), and how the face itself moves. Their
- * looks and keyframes are in `chipFace.css`.
+ * What a condition looks like on a control: the pieces inside it, the pieces
+ * over it (the only ones that leave its edge), and how the face itself moves.
+ * Their looks and keyframes are in `chipFace.css`.
  */
 const LOOKS: Readonly<
   Record<ChipLook, { parts: readonly string[]; over?: readonly string[]; body?: string }>
 > = {
   Poisoned: { parts: ['cx-liquid', 'cx-bubble', 'cx-bubble cx-bubble2'] },
   Blinded: { parts: ['cx-fog', 'cx-fog cx-fog2'] },
-  Restrained: { parts: ['cx-bands'] },
+  Restrained: { parts: ['cx-chain', 'cx-chain cx-chain2'] },
+  // Its two wrists stay still, so they are the layer's own, not moving pieces.
+  Grappled: {
+    parts: [
+      'cx-prong',
+      'cx-prong cx-prong-below',
+      'cx-prong cx-prong-right',
+      'cx-prong cx-prong-right cx-prong-below',
+    ],
+  },
   Exhaustion: { parts: ['cx-charge'] },
   Invisible: { parts: ['cx-ghost', 'cx-glint'] },
   Frightened: { parts: ['cx-vignette'], body: 'cx-body-cower' },
@@ -46,21 +56,43 @@ export function isChipLook(id: string): id is ChipLook {
   return Object.hasOwn(LOOKS, id);
 }
 
-/** What a chip wears, worked out by whoever knows what reaches its roll. */
+/** What a control wears, worked out by whoever knows what reaches it. */
 export interface ChipWear {
-  /** Every condition that reaches the roll, newest first. */
+  /** Every condition that reaches it, newest first. */
   looks: readonly ChipLook[];
-  /** "Ignore once" is armed for the roll. */
+  /** "Ignore once" is armed for its roll. */
   ignored: boolean;
   /** 2024 exhaustion's penalty on the roll: a negative amount. */
   penalty?: number;
 }
 
+/**
+ * For a control that wears nothing for now but can again, such as a casting chip
+ * while its spell runs: its face stays on, so what it wore fades.
+ */
+export const NOT_WORN: ChipWear = { looks: [], ignored: false };
+
+/**
+ * The controls a face can fill, each sized in `chipFace.css`:
+ *
+ * - `chip`: a roll chip, in its own tone.
+ * - `cast`: a small outline button.
+ * - `save`: a button with a label at one end and a number at the other.
+ * - `cell`: a cell of the Play tab's stat strip, in a strip that clips.
+ * - `tile`: a whole ability tile, which holds buttons of its own, so only its
+ *   number (`cx-move`) moves.
+ * - `card`: a list card. It takes the tint and ring, and the motion and the flash
+ *   run in a slim strip above its first row.
+ */
+export type WearSurface = 'chip' | 'cast' | 'save' | 'cell' | 'tile' | 'card';
+
 /** How long the arrival and the roll's flash take, and removal. */
 const MOMENT_MS = 480;
 const LEAVE_MS = 200;
+/** How long a roll's total stays on a chip. */
+export const TOTAL_MS = 1600;
 
-/** What a chip is doing, kept between renders. */
+/** What a control is doing, kept between renders. */
 export interface ChipMoments {
   shown: ChipWear;
   rolls: number;
@@ -90,18 +122,18 @@ const sameWear = (a: ChipWear, b: ChipWear) =>
   a.ignored === b.ignored && a.penalty === b.penalty && a.looks.join() === b.looks.join();
 
 /**
- * The next state of a chip, or the same object when nothing changed. A wear it
- * mounted with never plays, so a tab change or a load shows it at rest; only a
- * change while it is on screen does.
+ * The next state of a control, or the same object when nothing changed. A wear
+ * it mounted with never plays, so a tab change or a load shows it at rest; only
+ * a change while it is on screen does.
  */
 export function nextMoments(
   m: ChipMoments,
   input: {
     wear: ChipWear;
     rolls: number;
-    /** The roll's total is on the chip. */
+    /** The roll's total is on the control, or in the toast for it. */
     showing: boolean;
-    /** A condition sheet is over the page: the chip keeps what it showed. */
+    /** A condition sheet is over the page: the control keeps what it showed. */
     held: boolean;
     /** Off in Settings: every change lands at once. */
     animate: boolean;
@@ -128,7 +160,7 @@ export function nextMoments(
     spent = false;
     arrive = true;
   } else if (had.ignored && !wear.ignored) {
-    // Spent by another chip's roll, or pressed off.
+    // Spent by another control's roll, or pressed off.
     arrive = true;
   }
   if (!spent && !wear.ignored && wear.looks.some((look) => !had.looks.includes(look))) {
@@ -156,35 +188,57 @@ export function nextMoments(
   };
 }
 
+/**
+ * The rolls of a control whose total lands in the toast, not on the control: it
+ * counts them for the flash, and holds a spent "Ignore once" plain for as long
+ * as a chip holds its total.
+ */
+export function useRollMoment() {
+  const [state, setState] = useState({ rolls: 0, showing: false });
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const rolled = useCallback(() => {
+    setState((s) => ({ rolls: s.rolls + 1, showing: true }));
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState((s) => ({ ...s, showing: false })), TOTAL_MS);
+  }, []);
+  return { ...state, rolled };
+}
+
 /** One piece of a signature. */
 function Part({ className }: { className: string }) {
   return <i className={`cx-p ${className}`} />;
 }
 
 /**
- * Inside an attack chip's button: the face that wears its conditions, and the
- * moments they play, as `chipFace.css` draws them. The effect pieces are hidden
- * from assistive tech and take no taps, so what the chip means is still said by
- * its text and its cue (`RollEffectCue`), and the button never moves under a
- * finger.
+ * Inside a control that a condition can reach: the face that wears its
+ * conditions, and the moments they play, as `chipFace.css` draws them. The
+ * effect pieces are hidden from assistive tech and take no taps, so what the
+ * control means is still said by its text and its cue (`RollEffectCue`), and the
+ * control never moves under a finger.
  */
 export function ChipFace({
   wear,
   rolls,
   showing,
+  surface = 'chip',
+  tone,
   children,
 }: {
   wear: ChipWear;
-  /** How many rolls this chip has made. */
+  /** How many rolls this control has made. */
   rolls: number;
   showing: boolean;
+  surface?: WearSurface;
+  /** A chip's plain colour, when it is not the roll blue. */
+  tone?: 'danger' | 'heal' | undefined;
   children: ReactNode;
 }) {
   const animate = useAnimateConditions();
   const held = useConditionSheetOpen();
   const [state, setState] = useState(() => restingMoments(wear, rolls));
-  // Worked out in render, as the chip draws: from an effect, the new look would
-  // paint for a frame before its arrival started.
+  // Worked out in render, as the control draws: from an effect, the new look
+  // would paint for a frame before its arrival started.
   const m = nextMoments(state, { wear, rolls, showing, held, animate });
   if (m !== state) setState(m);
 
@@ -208,11 +262,13 @@ export function ChipFace({
   const looks = worn.looks.slice(0, 2);
   const lead = looks[0];
   const ignored = lead !== undefined && leaving === null && (m.shown.ignored || m.spent);
-  // The newest condition that moves the chip moves it.
+  // The newest condition that moves the control moves it.
   const body = ignored ? undefined : looks.map((look) => LOOKS[look].body).find(Boolean);
   const extra = worn.looks.length - looks.length;
   const root = [
     'cx',
+    surface !== 'chip' && `cx-at-${surface}`,
+    tone !== undefined && `cx-tone-${tone}`,
     lead !== undefined && `cx-on cx-${lead.toLowerCase()}`,
     looks.length > 1 && 'cx-two',
     m.arriving && 'cx-arrive',
@@ -223,23 +279,59 @@ export function ChipFace({
     .filter(Boolean)
     .join(' ');
 
+  const card = surface === 'card';
+  const moved = (name: string) => (body === undefined ? name : `${name} ${body}`);
+  const pieces = looks.map((look) => (
+    <span key={look} className={`cx-layer cx-${look.toLowerCase()}`}>
+      {LOOKS[look].parts.map((part) => (
+        <Part key={part} className={part} />
+      ))}
+    </span>
+  ));
+  const surge = m.flashing && <Part key={m.flash} className="cx-surge" />;
+  const tags = (
+    <>
+      {leaving === null && !ignored && m.shown.penalty !== undefined && (
+        <span className="cx-tag cx-exhaustion text-overline" aria-hidden="true">
+          {`−${Math.abs(m.shown.penalty)}`}
+        </span>
+      )}
+      {!ignored && extra > 0 && (
+        <span className="cx-tag cx-more text-overline" aria-hidden="true">
+          {`+${extra}`}
+        </span>
+      )}
+    </>
+  );
+
   return (
     <span className={root}>
-      <span className={body === undefined ? 'cx-face' : `cx-face ${body}`}>
+      <span className={card ? 'cx-face' : moved('cx-face')}>
         {lead !== undefined && (
           <span className="cx-mat" aria-hidden="true">
-            {looks.map((look) => (
-              <span key={look} className={`cx-layer cx-${look.toLowerCase()}`}>
-                {LOOKS[look].parts.map((part) => (
-                  <Part key={part} className={part} />
-                ))}
-              </span>
-            ))}
+            {card
+              ? looks.map((look) => (
+                  <span key={look} className={`cx-layer cx-${look.toLowerCase()}`} />
+                ))
+              : pieces}
             {lead !== 'Invisible' && <Part className="cx-ring" />}
-            {m.flashing && <Part key={m.flash} className="cx-surge" />}
+            {!card && surge}
           </span>
         )}
         {ignored && <i className="cx-p cx-ignore-ring" aria-hidden="true" />}
+        {/* Armed for Ignore once it is empty, but keeps its place: the rows under it
+            are targets, and a roll brings the strip back as a finger reaches for one. */}
+        {card && lead !== undefined && (
+          <span className={moved('cx-strip')} aria-hidden="true">
+            {!ignored && (
+              <span className="cx-mat">
+                {pieces}
+                {surge}
+              </span>
+            )}
+            {tags}
+          </span>
+        )}
         <span className="cx-num">{children}</span>
       </span>
       {lead !== undefined && (
@@ -253,16 +345,7 @@ export function ChipFace({
           ))}
         </span>
       )}
-      {leaving === null && !ignored && m.shown.penalty !== undefined && (
-        <span className="cx-tag cx-exhaustion text-overline" aria-hidden="true">
-          {`−${Math.abs(m.shown.penalty)}`}
-        </span>
-      )}
-      {!ignored && extra > 0 && (
-        <span className="cx-tag cx-more text-overline" aria-hidden="true">
-          {`+${extra}`}
-        </span>
-      )}
+      {!card && tags}
     </span>
   );
 }

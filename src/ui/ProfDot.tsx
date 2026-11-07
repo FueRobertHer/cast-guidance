@@ -16,7 +16,8 @@ const LABELS: Record<ProfMark, string> = {
  * inside a ring (expertise). Carries the state as text for screen readers so
  * the meaning never depends on hue alone.
  *
- * The empty ring is `line-strong`; the dot takes its control's text colour, which is
+ * The empty ring is `line-strong`, and `ink` on a surface a condition wears
+ * (`chipFace.css`); the dot takes its control's text colour, which is
  * `ink` in a skill row (DS-001: selection and proficiency are ink, told apart
  * by shape), and stays visible on a pressed `ink` pill. The half mark's ring is
  * that colour too, so it reads as the dot half filled rather than as the empty
@@ -34,7 +35,7 @@ export function ProfDot({ level, decorative }: { level: ProfMark; decorative?: b
         ? 'bg-current'
         : level === 'half'
           ? 'bg-[linear-gradient(90deg,currentColor_50%,transparent_50%)] ring-[1.5px] ring-current ring-inset'
-          : 'ring-[1.5px] ring-line-strong ring-inset';
+          : 'cx-ink-ring ring-[1.5px] ring-line-strong ring-inset';
   const dot = <span aria-hidden className={`inline-block size-2.5 rounded-full ${shape}`} />;
   if (decorative === true) return <span className="inline-flex items-center">{dot}</span>;
   return (

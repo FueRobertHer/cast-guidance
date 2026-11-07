@@ -251,8 +251,8 @@
    * Motion confirms a result; it never decorates. 120ms for presses and
    * toggles (`duration-120`), 200ms for rows and tabs, 260ms for a toast,
    * 320ms for a roll total. Arrivals take this curve, fades `ease-out`. The
-   * one named exception is a condition on an attack chip, which moves at rest:
-   * `ui/chipFace.css` has its own rules.
+   * one named exception is a condition on a control it reaches, which moves at
+   * rest: `ui/chipFace.css` has its own rules.
    */
   --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1);
 

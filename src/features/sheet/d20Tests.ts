@@ -178,37 +178,55 @@ export function rollD20Test(
 }
 
 /**
- * What an attack chip wears, read only from what the roll's cue says
- * (`effects`) and the "Can't take actions" warning (`noActions`), so the two
- * can never disagree. A condition reaches the chip under its own name: an
- * implied one (Unconscious's Prone and Incapacitated) adds no look of its own,
- * and one the rules suppress or the player switched off adds none at all. Notes
- * alone (Charmed, 2024 Grappled) leave the chip plain. The newest condition,
- * the last one added, comes first.
+ * What a control wears, read only from the names its own words give (`sources`,
+ * from a cue, a warning or the Speed label), so the two can never disagree. A
+ * condition reaches it under its own name: an implied one (Unconscious's Prone
+ * and Incapacitated) adds no look of its own, and one the rules suppress or the
+ * player switched off adds none at all. The newest condition, the last one
+ * added, comes first.
+ *
+ * Cast passes only `noActions`, so a worn Cast always means you can't cast.
+ * Speed passes what `conditionSpeed` says changed it.
  */
-export function attackWear(
+export function conditionWear(
   conditions: readonly ActiveCondition[],
-  effects: D20Effects,
-  noActions: readonly string[],
-  armed: boolean,
+  sources: readonly string[],
+  armed = false,
+  penalty?: number,
 ): ChipWear {
   const reaching = new Set(
-    [
-      ...effects.advantage,
-      ...effects.disadvantage,
-      ...(effects.penalty === undefined ? [] : [effects.penalty.source]),
-      ...noActions,
-    ].map((source) => (source.startsWith('Exhaustion') ? 'Exhaustion' : source)),
+    sources.map((source) => (source.startsWith('Exhaustion') ? 'Exhaustion' : source)),
   );
   const looks: ChipLook[] = [];
   for (const { id } of conditions) {
     if (reaching.has(id) && isChipLook(id)) looks.unshift(id);
   }
-  return {
-    looks,
-    ignored: armed,
-    ...(effects.penalty === undefined ? {} : { penalty: effects.penalty.amount }),
-  };
+  return { looks, ignored: armed, ...(penalty === undefined ? {} : { penalty }) };
+}
+
+/**
+ * What a roll's control wears: every effect its cue says, failing a save
+ * included. Notes alone (Charmed, 2024 Grappled) leave it plain. An attack chip
+ * adds the "Can't take actions" warning (`noActions`).
+ */
+export function rollWear(
+  conditions: readonly ActiveCondition[],
+  effects: D20Effects,
+  armed: boolean,
+  noActions: readonly string[] = [],
+): ChipWear {
+  return conditionWear(
+    conditions,
+    [
+      ...effects.advantage,
+      ...effects.disadvantage,
+      ...effects.autoFail,
+      ...(effects.penalty === undefined ? [] : [effects.penalty.source]),
+      ...noActions,
+    ],
+    armed,
+    effects.penalty?.amount,
+  );
 }
 
 /** A set of rolls that share a cue, and so its override. */

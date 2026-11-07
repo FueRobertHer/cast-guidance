@@ -26,6 +26,7 @@ import { Badge, badgeClass } from '@/ui/Badge';
 import { BannerAction } from '@/ui/Banner';
 import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { Button, buttonClass } from '@/ui/Button';
+import { ChipFace, NOT_WORN, useRollMoment } from '@/ui/ChipFace';
 import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
@@ -35,6 +36,7 @@ import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass, openListClass } from '@/ui/surfaces';
 import { type ActionSpend, actionUse } from '../actionUse';
+import { CastButton } from '../CastButton';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   type CastResource,
@@ -46,7 +48,14 @@ import {
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
-import { attackWear, effectLines, noteLines, rollD20Test, useIgnoreOnce } from '../d20Tests';
+import {
+  conditionWear,
+  effectLines,
+  noteLines,
+  rollD20Test,
+  rollWear,
+  useIgnoreOnce,
+} from '../d20Tests';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RollEffectCue } from '../RollEffectCue';
@@ -113,6 +122,8 @@ const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
  */
 const TILE = 'flex min-h-19 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2';
 const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
+/** A cell a condition can wear: its `ChipFace` lays it out as `TILE` does the others. */
+const WORN_TILE = 'relative flex min-h-19 min-w-0 flex-col';
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
@@ -229,6 +240,7 @@ export function Component() {
   const castChoice = useCastChoice(doc?.play);
   // The cues' "Ignore once", for as long as the tab is open.
   const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
+  const initiativeRoll = useRollMoment();
   const hpTip = useTip('hp-exact');
   const rulesTip = useTip('tap-for-rules');
   const hpNumber = useRef<HTMLButtonElement>(null);
@@ -330,12 +342,14 @@ export function Component() {
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(play.conditions);
   /** The conditions on the attack chips, as the cue over them says them. */
-  const attackChipWear = attackWear(
+  const attackChipWear = rollWear(
     conditions,
     attackEffects,
-    limits.noActions,
     ignore.armed('attack'),
+    limits.noActions,
   );
+  /** On Cast and the dice chip that casts: only what stops casting. */
+  const castWear = conditionWear(conditions, limits.noActions);
   const spellHasVerbal = (name: string, source: string): boolean => {
     const e = spellEntity(name, source);
     return (e?.components as { v?: boolean } | undefined)?.v === true;
@@ -840,43 +854,60 @@ export function Component() {
           />
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
               rollLogStore.getState().append(
                 rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
                   label: 'Initiative',
                   effects: initiativeEffects,
                   ignored: ignore.take('initiative', initiativeEffects),
                 }),
-              )
-            }
-            className={`${TILE} border-line border-l`}
+              );
+              initiativeRoll.rolled();
+            }}
+            className={`${WORN_TILE} border-line border-l`}
           >
-            <div className="text-roll text-stat tabular-nums">{signed(sheet.initiative.value)}</div>
-            <div className={`flex items-center justify-center gap-0.75 ${TILE_LABEL}`}>
-              Initiative <D20Icon size={14} className="shrink-0" />
-            </div>
+            <ChipFace
+              surface="cell"
+              wear={rollWear(conditions, initiativeEffects, ignore.armed('initiative'))}
+              rolls={initiativeRoll.rolls}
+              showing={initiativeRoll.showing}
+            >
+              <span className="cx-ink block text-roll text-stat tabular-nums">
+                {signed(sheet.initiative.value)}
+              </span>
+              <span className={`cx-ink flex items-center justify-center gap-0.75 ${TILE_LABEL}`}>
+                Initiative <D20Icon size={14} className="shrink-0" />
+              </span>
+            </ChipFace>
           </button>
           <div
-            className={`${TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
+            className={`${WORN_TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
           >
-            <div className="text-stat tabular-nums">
-              {speed.value}
-              <small className="ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
-                ft
-              </small>
-              {speed.value !== sheet.speedWalk.value && (
-                <span className="ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
-                  <span className="sr-only">, down from </span>
-                  {sheet.speedWalk.value}
-                </span>
-              )}
-            </div>
-            <div className={TILE_LABEL}>
-              Speed
-              {speed.sources.length > 0 && (
-                <span className="text-guide"> · {speed.sources.join(', ')}</span>
-              )}
-            </div>
+            <ChipFace
+              surface="cell"
+              wear={conditionWear(conditions, speed.sources)}
+              rolls={0}
+              showing={false}
+            >
+              <span className="block text-stat tabular-nums">
+                {speed.value}
+                <small className="cx-ink ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
+                  ft
+                </small>
+                {speed.value !== sheet.speedWalk.value && (
+                  <span className="cx-ink ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
+                    <span className="sr-only">, down from </span>
+                    {sheet.speedWalk.value}
+                  </span>
+                )}
+              </span>
+              <span className={`cx-ink block ${TILE_LABEL}`}>
+                Speed
+                {speed.sources.length > 0 && (
+                  <span className="cx-ink text-guide"> · {speed.sources.join(', ')}</span>
+                )}
+              </span>
+            </ChipFace>
           </div>
           <div className={`${TILE} border-line border-t border-l @min-[18rem]:border-t-0`}>
             <div className="text-stat tabular-nums">{signed(sheet.profBonus.value)}</div>
@@ -1574,15 +1605,20 @@ export function Component() {
                             label={action.label}
                             variant={action.variant}
                             onRolled={!running && !hasAttack && index === 0 ? cast : undefined}
+                            wear={
+                              !hasAttack && index === 0
+                                ? running
+                                  ? NOT_WORN
+                                  : castWear
+                                : undefined
+                            }
                           />
                         ))}
                         {!hasAttack && rolls.length === 0 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
+                          <CastButton
+                            wear={castWear}
                             aria-label={`Cast ${ref.name}`}
                             onClick={cast}
-                            className="-my-1"
                             title={
                               level === 0
                                 ? 'Cast cantrip (marks the action economy its casting time uses)'
@@ -1590,9 +1626,7 @@ export function Component() {
                                   ? 'Cast with nothing left to spend (marks action economy)'
                                   : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                             }
-                          >
-                            Cast
-                          </Button>
+                          />
                         )}
                       </span>
                     </div>
@@ -1792,16 +1826,21 @@ export function Component() {
                         onRolled={
                           !hasAttack && index === 0 && !depleted && !running ? cast : undefined
                         }
+                        wear={
+                          !hasAttack && index === 0
+                            ? depleted || running
+                              ? NOT_WORN
+                              : castWear
+                            : undefined
+                        }
                       />
                     ))}
                     {!hasAttack && rolls.length === 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
+                      <CastButton
+                        wear={castWear}
                         aria-label={`Cast ${g.name}`}
                         onClick={cast}
                         disabled={depleted}
-                        className="-my-1"
                         title={
                           depleted
                             ? 'No uses left until you rest'
@@ -1811,9 +1850,7 @@ export function Component() {
                                 ? 'Cast with nothing left to spend (marks action economy)'
                                 : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
                         }
-                      >
-                        Cast
-                      </Button>
+                      />
                     )}
                   </span>
                 </div>
