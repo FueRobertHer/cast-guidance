@@ -62,11 +62,16 @@ export interface ProseSubject {
   spendKeys: string[];
   /**
    * The sheet of every owner holds a per-rest pool that belongs to this prose, read
-   * from `additionalSpells` and not from the prose (see `tracksLimit`). Whether the
+   * from `additionalSpells` and not from the prose (see `structuredLimitOf`). Whether the
    * prose states a limit at all is the judge's to say. Kept apart from `effects`, whose
    * other readers would otherwise start comparing a resource the scanner never drew.
    */
   structuredLimit: boolean;
+  /**
+   * In every build of every owner, one of those pools refills on a short rest. It
+   * means nothing unless `structuredLimit` holds.
+   */
+  structuredShortRest: boolean;
 }
 
 /** Anything a registry can list by type, and look an entity up in. */
@@ -309,18 +314,19 @@ function* owners(registry: ByType): Generator<Owner> {
 }
 
 type Grant = Extract<EffectInput, { kind: 'grantSpell' }>;
+type Pool = Extract<EffectInput, { kind: 'resource' }>;
 
 const isBranch = (prompt: ChoicePrompt) =>
   prompt.kind === 'generic' && prompt.id.endsWith(':branch');
 
 /**
- * What the engine grants this holder, once per way their block can branch: every
+ * What the engine gives this holder, once per way their block can branch: every
  * branch is a character someone can build. Other choices the grants wait on, an
  * ability or a spell, change no pool, so one answer stands for the rest. The engine
  * grants a spell once and a repeat loses its pool, so no two picks by filter are alike.
  */
-function grantsPerBuild(registry: ByType, { doc, read }: Holder): Grant[][] {
-  const builds: Grant[][] = [];
+function effectsPerBuild(registry: ByType, { doc, read }: Holder): EffectInput[][] {
+  const builds: EffectInput[][] = [];
   let picks = 0;
   // A spell pick by filter lists nothing until the spell files load, and trusts a
   // saved pick the registry does not know.
@@ -343,7 +349,7 @@ function grantsPerBuild(registry: ByType, { doc, read }: Holder): Grant[][] {
     } else if (open.length > 0) {
       build({ ...choices, ...Object.fromEntries(open.map((p) => [p.id, answerTo(p)])) });
     } else {
-      builds.push(col.effects.filter((e): e is Grant => e.kind === 'grantSpell'));
+      builds.push(col.effects);
     }
   };
   build(doc.choices ?? {});
@@ -357,32 +363,46 @@ function spellsNamedIn(entries: unknown): Set<string> {
 }
 
 /**
- * Does the sheet of this owner count the limit its prose states, from the owner's
- * structured data? The engine is asked, not the block, so an owner it does not read
+ * What the sheet of this owner holds of the limit its prose states, from the owner's
+ * structured data. The engine is asked, not the block, so an owner it does not read
  * and a limit it does not keep (one written inside `known`) count for nothing. In
  * every build it must hold a pool on a spell the prose names. A feat's or optional
  * feature's prose is all there is of it, so a pool on a spell the player picks,
  * which the prose cannot name, is its too, while a trait or subclass feature shares
  * one block with its neighbors. A leveled spell the prose names and the engine grants
  * freely means the sheet tracks only part of the limit, which is not tracking it.
- * How many uses, and which rest refills them, stay the block's word: this asks that
- * a pool exists, and does not compare it with the prose.
+ * Which rest refills those pools goes to the check, which has the judge's answer. How
+ * many uses they hold stays the block's word.
  */
-function tracksLimit(registry: ByType, owner: Owner): boolean {
+function structuredLimitOf(
+  registry: ByType,
+  owner: Owner,
+): Pick<ProseSubject, 'structuredLimit' | 'structuredShortRest'> {
   const named = spellsNamedIn(owner.entries);
   const whole = owner.type === 'feat' || owner.type === 'optionalfeature';
-  if (!whole && named.size === 0) return false;
+  if (!whole && named.size === 0) return { structuredLimit: false, structuredShortRest: false };
   const isCantrip = ({ spell }: Grant) =>
     registry.get('spell', spell.name, spell.source === '' ? undefined : spell.source)?.level === 0;
-  return grantsPerBuild(registry, owner.holder).every((grants) => {
-    const nameOf = (grant: Grant) => grant.spell.name.toLowerCase();
-    const limited = new Set(grants.filter((g) => g.resourceKey !== undefined).map(nameOf));
-    const free = grants.filter((g) => !limited.has(nameOf(g)));
-    return (
-      (whole ? limited.size > 0 : [...named].some((name) => limited.has(name))) &&
-      !free.some((grant) => named.has(nameOf(grant)) && !isCantrip(grant))
-    );
+  const nameOf = (grant: Grant) => grant.spell.name.toLowerCase();
+  const builds = effectsPerBuild(registry, owner.holder).map((effects) => {
+    const grants = effects.filter((e): e is Grant => e.kind === 'grantSpell');
+    const limited = grants.filter((g) => g.resourceKey !== undefined);
+    const limitedNames = new Set(limited.map(nameOf));
+    const free = grants.filter((g) => !limitedNames.has(nameOf(g)));
+    const pools = limited.filter((g) => whole || named.has(nameOf(g)));
+    // A key written twice adds to one pool, and the sheet keeps the first one's refill.
+    const refillOf = ({ resourceKey }: Grant) =>
+      effects.find((e): e is Pool => e.kind === 'resource' && e.key === resourceKey)?.resetOn;
+    return {
+      holds:
+        pools.length > 0 && !free.some((grant) => named.has(nameOf(grant)) && !isCantrip(grant)),
+      short: pools.some((g) => refillOf(g) === 'short'),
+    };
   });
+  return {
+    structuredLimit: builds.every((build) => build.holds),
+    structuredShortRest: builds.every((build) => build.short),
+  };
 }
 
 /**
@@ -391,7 +411,8 @@ function tracksLimit(registry: ByType, owner: Owner): boolean {
  * nothing to scan or to judge.
  *
  * Owners sharing prose can differ in their spell block, and a sheet without the
- * pool is one where the limit goes uncounted, so `structuredLimit` needs them all.
+ * pool is one where the limit goes uncounted, so `structuredLimit` needs them all,
+ * as `structuredShortRest` does.
  */
 export function proseSubjects(registry: ByType): ProseSubject[] {
   const byKey = new Map<string, ProseSubject>();
@@ -402,12 +423,14 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
     const state = `${owner.name}\n${prose}`;
     const key = textHash(state);
     const curated = Object.hasOwn(CURATED, owner.curatedKey);
+    const limit = structuredLimitOf(registry, owner);
     const seen = byKey.get(key);
     if (seen !== undefined) {
       seen.owners++;
       seen.curated &&= curated;
       seen.spendKeys.push(owner.spendKey);
-      seen.structuredLimit &&= tracksLimit(registry, owner);
+      seen.structuredLimit &&= limit.structuredLimit;
+      seen.structuredShortRest &&= limit.structuredShortRest;
       continue;
     }
     byKey.set(key, {
@@ -420,7 +443,7 @@ export function proseSubjects(registry: ByType): ProseSubject[] {
       curated,
       effects: scan(owner.name, owner.entries),
       spendKeys: [owner.spendKey],
-      structuredLimit: tracksLimit(registry, owner),
+      ...limit,
     });
   }
   return [...byKey.values()];

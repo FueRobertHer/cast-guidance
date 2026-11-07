@@ -26,6 +26,7 @@ const subject = (key: string, effects: EffectInput[], curated = false): ProseSub
   effects,
   spendKeys: [],
   structuredLimit: false,
+  structuredShortRest: false,
 });
 
 const ids = PROSE_SET.questions.map((q) => q.id);
@@ -79,6 +80,7 @@ describe('disagreementsFor', () => {
 
   describe('with a limit the sheet tracks from structured data', () => {
     const tracked = { ...subject('a', []), structuredLimit: true };
+    const shortPool = { ...tracked, structuredShortRest: true };
     const allNo = Object.fromEntries(ids.map((id) => [id, 0.05]));
 
     it('does not count the limit as missed, and counts it without the pool', () => {
@@ -92,9 +94,7 @@ describe('disagreementsFor', () => {
     it('keeps every other disagreement', () => {
       const sure = Object.fromEntries(ids.map((id) => [id, 0.95]));
       const missedBy = (effects: EffectInput[]) =>
-        disagreementsFor({ ...subject('a', effects), structuredLimit: true }, sure).map(
-          (d) => d.check,
-        );
+        disagreementsFor({ ...shortPool, effects }, sure).map((d) => d.check);
       // Between them, these two have the scanner of every other check saying no.
       const twicePerLongRest: EffectInput = {
         kind: 'resource',
@@ -124,10 +124,42 @@ describe('disagreementsFor', () => {
     it('starts no comparison that reads the scanner found uses', () => {
       const sure = Object.fromEntries(ids.map((id) => [id, 0.95]));
       expect(
-        disagreementsFor(tracked, sure)
+        disagreementsFor(shortPool, sure)
           .map((d) => d.check)
           .filter((check) => check !== 'bonusAction' && check !== 'reaction'),
       ).toEqual([]);
+    });
+
+    describe('compared with the short rest answer', () => {
+      const limitWith = (shortRest: number) => ({ ...allNo, limitedUses: 0.95, shortRest });
+
+      it('counts a long rest pool when the prose says a short rest', () => {
+        expect(disagreementsFor(tracked, limitWith(0.8))).toEqual([
+          { key: 'a', label: 'Feature a', check: 'limitedUses', kind: 'missed', p: 0.95 },
+        ]);
+      });
+
+      it('counts a short rest pool when the prose says otherwise', () => {
+        expect(disagreementsFor(shortPool, limitWith(0.2))).toEqual([
+          { key: 'a', label: 'Feature a', check: 'limitedUses', kind: 'missed', p: 0.95 },
+        ]);
+      });
+
+      it('settles a pool on the rest the prose says', () => {
+        expect(disagreementsFor(tracked, limitWith(0.05))).toEqual([]);
+        expect(disagreementsFor(shortPool, limitWith(0.95))).toEqual([]);
+      });
+
+      it('settles on an answer too unsure to contradict the pool', () => {
+        expect(disagreementsFor(tracked, limitWith(0.79))).toEqual([]);
+        expect(disagreementsFor(shortPool, limitWith(0.21))).toEqual([]);
+      });
+
+      it('settles when there is no answer to compare', () => {
+        const { shortRest: _unasked, ...noAnswer } = limitWith(0.95);
+        expect(disagreementsFor(tracked, noAnswer)).toEqual([]);
+        expect(disagreementsFor(shortPool, noAnswer)).toEqual([]);
+      });
     });
 
     it('never makes the limit an extra, which is about what the scanner drew', () => {

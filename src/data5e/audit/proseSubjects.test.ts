@@ -239,11 +239,13 @@ describe('structuredLimit', () => {
 
   const subjectsOf = (bodies: Record<string, unknown>) =>
     proseSubjects(normalizeDataset(new Map(Object.entries({ ...SPELLS, ...bodies }))));
-  const limitOf = (bodies: Record<string, unknown>, name: string) => {
+  const named = (bodies: Record<string, unknown>, name: string) => {
     const found = subjectsOf(bodies).find((s) => s.name === name);
     if (found === undefined) throw new Error(`no subject named ${name}`);
-    return found.structuredLimit;
+    return found;
   };
+  const limitOf = (bodies: Record<string, unknown>, name: string) =>
+    named(bodies, name).structuredLimit;
 
   it('holds when the engine gives the owner a pool on a spell the prose names', () => {
     expect(
@@ -547,6 +549,102 @@ describe('structuredLimit', () => {
       const no = branch('Moon', 'test ward|hb', false);
       expect(limitOf(feat('Branch Feat', [yes, no]), 'Branch Feat')).toBe(false);
       expect(limitOf(feat('Branch Feat', [no, yes]), 'Branch Feat')).toBe(false);
+    });
+  });
+
+  describe('structuredShortRest', () => {
+    const perRest = (spell: unknown) => [
+      { ability: 'int', innate: { _: { rest: { 1: [spell] } } } },
+    ];
+    const shortOf = (bodies: Record<string, unknown>, name: string) =>
+      named(bodies, name).structuredShortRest;
+
+    it('reads the rest that refills the pool', () => {
+      const bodies = races(
+        race('Folk', perRest('test bolt|hb'), [trait('Short Trait', 'test bolt|hb')]),
+        race('Others', limited('test ward|hb'), [trait('Long Trait', 'test ward|hb')]),
+      );
+      expect(limitOf(bodies, 'Short Trait')).toBe(true);
+      expect(shortOf(bodies, 'Short Trait')).toBe(true);
+      expect(limitOf(bodies, 'Long Trait')).toBe(true);
+      expect(shortOf(bodies, 'Long Trait')).toBe(false);
+    });
+
+    it('reads only the pools on spells the prose names', () => {
+      const block = [
+        {
+          ability: 'int',
+          innate: { _: { daily: { 1: ['test bolt|hb'] }, rest: { 1: ['test ward|hb'] } } },
+        },
+      ];
+      const bodies = races(
+        race('Folk', block, [
+          trait('Long Trait', 'test bolt|hb'),
+          trait('Short Trait', 'test ward|hb'),
+          trait('Both Trait', 'test bolt|hb', 'test ward|hb'),
+        ]),
+      );
+      expect(shortOf(bodies, 'Long Trait')).toBe(false);
+      expect(shortOf(bodies, 'Short Trait')).toBe(true);
+      expect(shortOf(bodies, 'Both Trait')).toBe(true);
+    });
+
+    it('reads the refill the sheet keeps when one pool is written with two', () => {
+      const bothOf = (first: string, second: string) =>
+        races(
+          race(
+            'Folk',
+            [
+              {
+                ability: 'int',
+                innate: { _: { [first]: { 1: ['test bolt|hb'] } } },
+                prepared: { _: { [second]: { 1: ['test bolt|hb'] } } },
+              },
+            ],
+            [trait('Bolt Trait', 'test bolt|hb')],
+          ),
+        );
+      expect(shortOf(bothOf('daily', 'rest'), 'Bolt Trait')).toBe(false);
+      expect(shortOf(bothOf('rest', 'daily'), 'Bolt Trait')).toBe(true);
+    });
+
+    it("reads a feat's pick, which is the feat's", () => {
+      expect(shortOf(feat('Pick Feat', perRest({ choose: 'level=1' })), 'Pick Feat')).toBe(true);
+    });
+
+    it('needs it of every owner, in either order', () => {
+      const short = race('Folk', perRest('test bolt|hb'), [trait('Bolt Trait', 'test bolt|hb')]);
+      const long = race('Others', limited('test bolt|hb'), [trait('Bolt Trait', 'test bolt|hb')]);
+      expect(shortOf(races(short, long), 'Bolt Trait')).toBe(false);
+      expect(shortOf(races(long, short), 'Bolt Trait')).toBe(false);
+      expect(limitOf(races(short, long), 'Bolt Trait')).toBe(true);
+    });
+
+    it('needs it of every branch, in either order', () => {
+      const short = { name: 'Sun', ...perRest('test bolt|hb')[0] };
+      const long = { name: 'Moon', ...limited('test ward|hb')[0] };
+      expect(shortOf(feat('Branch Feat', [short, long]), 'Branch Feat')).toBe(false);
+      expect(shortOf(feat('Branch Feat', [long, short]), 'Branch Feat')).toBe(false);
+      expect(limitOf(feat('Branch Feat', [short, long]), 'Branch Feat')).toBe(true);
+    });
+
+    it('keeps a pool on the wrong rest counted in the audit', () => {
+      const subjects = subjectsOf(
+        races(
+          race('Folk', limited('test bolt|hb'), [trait('Long Trait', 'test bolt|hb')]),
+          race('Others', perRest('test ward|hb'), [trait('Short Trait', 'test ward|hb')]),
+        ),
+      );
+      const ids = PROSE_SET.questions.map((q) => q.id);
+      const yes = ['limitedUses', 'shortRest'];
+      const sure = { label: 'saved', p: ids.map((id) => (yes.includes(id) ? 0.95 : 0.05)) };
+      const file: JudgmentFile = {
+        sets: { [setTag(PROSE_SET)]: ids },
+        judgments: Object.fromEntries(subjects.map((s) => [judgmentKey(PROSE_SET, s.key), sure])),
+      };
+      const audit = auditProse(subjects, file);
+      expect(audit.disagreements.map((d) => d.label)).toEqual(['Long Trait (Folk|HB)']);
+      expect(audit.byCheck).toEqual({ 'limitedUses: missed': 1 });
     });
   });
 
