@@ -7,9 +7,41 @@
  * These are facts of the game rules — fine to commit.
  */
 import type { Collector } from '../effects/base';
+import { skillOptions } from '../effects/readers';
 import type { EffectOrigin } from '../types';
 
 type CuratedFn = (col: Collector, origin: EffectOrigin) => void;
+
+/**
+ * A skill a feature both grants and doubles. The proficiency is its own effect,
+ * since that is what tells another pick the skill is already taken.
+ */
+function skillAtExpertise(col: Collector, skill: string, origin: EffectOrigin): void {
+  col.add({ kind: 'skillProf', skill, level: 1, origin });
+  col.add({ kind: 'skillProf', skill, level: 2, origin });
+}
+
+/** A subclass feature's pick among skills, under the subclass so swapping it clears the pick. */
+function subclassSkillPick(
+  col: Collector,
+  origin: EffectOrigin,
+  label: string,
+  count: number,
+  from: readonly string[],
+  grant: (skill: string) => void,
+): void {
+  col.choice(
+    {
+      id: `subclass:${origin.uid}:skill:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'skill',
+      label,
+      count,
+      options: skillOptions(from),
+    },
+    (selected) => selected.forEach(grant),
+  );
+}
 
 function classLevel(col: Collector, className: string): number {
   const entry = col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
@@ -24,6 +56,21 @@ function classLevel(col: Collector, className: string): number {
 function printedIn(origin: EffectOrigin, source: string): boolean {
   return origin.uid.endsWith(`|${source}`);
 }
+
+/**
+ * The 2014 and FRHoF printings share this pick. What else each grants (two
+ * languages, or a kind of artisan's tools) stays in the card's prose.
+ */
+const blessingsOfKnowledge: CuratedFn = (col, origin) => {
+  subclassSkillPick(
+    col,
+    origin,
+    'Skills with expertise',
+    2,
+    ['Arcana', 'History', 'Nature', 'Religion'],
+    (skill) => skillAtExpertise(col, skill, origin),
+  );
+};
 
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
@@ -621,6 +668,34 @@ export const CURATED: Record<string, CuratedFn> = {
   'elegant courtier|samurai': (col, origin) => {
     col.add({ kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis', origin });
   },
+  // One printing, under either the 2014 or the 2024 rogue. Having a skill already
+  // asks nothing: it is doubled all the same.
+  'survivalist|scout': (col, origin) => {
+    skillAtExpertise(col, 'Nature', origin);
+    skillAtExpertise(col, 'Survival', origin);
+  },
+  // Persuasion is doubled however the fighter came by it, and having it already
+  // swaps the proficiency for a plain one in another skill. Only what is collected
+  // so far can say so: a later class's pick shows its own "already proficient" cue,
+  // and a later fixed grant just overlaps.
+  'royal envoy|purple dragon knight (banneret)': (col, origin) => {
+    if (col.proficientSkills().some((s) => s.toLowerCase() === 'persuasion')) {
+      col.add({ kind: 'skillProf', skill: 'Persuasion', level: 2, origin });
+      subclassSkillPick(
+        col,
+        origin,
+        'Skill in place of Persuasion',
+        1,
+        ['Animal Handling', 'Insight', 'Intimidation', 'Performance'],
+        (skill) => col.add({ kind: 'skillProf', skill, level: 1, origin }),
+      );
+    } else {
+      skillAtExpertise(col, 'Persuasion', origin);
+    }
+  },
+  'blessings of knowledge|knowledge domain': blessingsOfKnowledge,
+  // The PSA domain refers to the same feature, and the key names the subclass walked.
+  'blessings of knowledge|knowledge domain (psa)': blessingsOfKnowledge,
 
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
   // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
