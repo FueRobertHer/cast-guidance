@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SPEND_SKIPPED } from '../../data5e/audit/spendScope';
+import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { Collector } from '../effects/base';
 import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { linkSpend, SPEND_LINKS } from './spendLinks';
@@ -33,9 +33,35 @@ describe('SPEND_LINKS', () => {
     }
   });
 
-  it('never both links and skips a feature', () => {
-    const skipped = Object.values(SPEND_SKIPPED).flatMap((pool) => Object.keys(pool));
-    expect(skipped.filter((key) => SPEND_LINKS[key] !== undefined)).toEqual([]);
+  it('never both links and skips a feature for one pool', () => {
+    // A feature can name several: Twinned Spell spends Sorcery Points and names a slot's level.
+    const both = SPEND_POOLS.flatMap((pool) =>
+      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) => {
+        const link = SPEND_LINKS[key];
+        return link !== undefined && pool.resources.includes(link.resource);
+      }),
+    );
+    expect(both).toEqual([]);
+  });
+
+  it('gives its reasons to pools that exist', () => {
+    const ids = SPEND_POOLS.map((pool) => pool.id);
+    expect(Object.keys(SPEND_SKIPPED).filter((id) => !ids.includes(id))).toEqual([]);
+  });
+
+  it("leaves out an oath's Channel Divinity heading only where its options have rows", () => {
+    const headings = Object.keys(SPEND_SKIPPED.channel ?? {}).filter((key) =>
+      key.startsWith('channel divinity|oath'),
+    );
+    expect(headings).toHaveLength(9);
+    for (const key of headings) {
+      const [, subclass, source] = key.split('|');
+      const options = rows.filter(
+        ([row, link]) =>
+          row.endsWith(`|${subclass}|${source}`) && link.resource === 'channel-divinity-paladin',
+      );
+      expect(options.length, key).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it('keeps the printings apart where their costs differ', () => {

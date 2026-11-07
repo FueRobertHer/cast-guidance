@@ -190,14 +190,25 @@ export function spendRuns(registry: ByType): Array<{ set: JudgeSet; subjects: Ju
 
 const DEFINES = 'defines, grows or converts the pool';
 const HEADING = 'a heading: its options have the rows';
-const UPGRADES = 'upgrades features that have rows';
+const UPGRADES = 'improves features that spend it, and spends nothing itself';
 const OTHERS = 'another creature spends it';
 const FOLLOWS = 'follows from spending, and spends nothing itself';
 const AT_THE_CAST = 'pays for a spell, which is a choice at the cast';
+const FLAVOUR = 'flavour text, which does nothing with the pool';
+const PASSING = 'names the pool in passing';
+const WHILE_ON = 'a benefit while the feature runs, and spends nothing itself';
+const OWN_ENTRY = "the pool's curated entry already does this";
+const DIE_SIZE = 'grows the die, which the sheet does not show yet';
+const TRIGGERED = 'regains on a trigger, which stays a pip tap for the player';
+const SLOT_BACK = 'buys a use back with a spell slot';
+const ROLLS = 'rolls a d6 instead of spending it';
 
 /**
- * Confident spenders, per pool, that are no cost on an action. Each was read, so
- * the report's list of unlinked spenders stays worth reading.
+ * Features that name a pool and are no cost on an action, per pool. Each was read,
+ * so what the report still lists stays worth reading. The two pools no action can
+ * spend hold only the lines Jev was unsure of: their confident spenders and buy-backs
+ * stay listed until those costs have a way onto the sheet. That work needs `SLOT_BACK`
+ * too, since those are real buy-backs that the report's buy-back list does not show.
  */
 export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   focus: {
@@ -207,8 +218,36 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'disciple of the elements|way of the four elements|phb': HEADING,
     'heightened focus|monk|xphb': UPGRADES,
     'ki-fueled attack|monk|tce': FOLLOWS,
+    'open hand technique|way of the open hand|phb': FOLLOWS,
+    'way of the four elements|way of the four elements|phb': FLAVOUR,
+    'way of the open hand|way of the open hand|phb': FLAVOUR,
+    'way of the astral self|way of the astral self|tce': FLAVOUR,
+  },
+  slots: {
+    'pact magic|warlock|phb': DEFINES,
+    'arcane dabbler|order of the wu jen|uathemysticclass': DEFINES,
+    'empowered spells|spellcaster sidekick|tce': FOLLOWS,
+    'awakened spellbook|order of scribes|tce': FOLLOWS,
+    'twinned spell|xphb': PASSING,
+    'fortified position|artillerist|efa': SLOT_BACK,
+    'reanimated companion|reanimator|rhw': SLOT_BACK,
+    'divine reaper|grave domain|rhw': SLOT_BACK,
+    'distant transposition|conjurer|au': SLOT_BACK,
+    'splintered summons|conjurer|au': SLOT_BACK,
+  },
+  hitdice: {
+    'trait:black blood healing': FOLLOWS,
+    'song of rest (d6)|bard|phb': FOLLOWS,
+    'boon of bountiful health|frhof': FOLLOWS,
+    'chef|tce': FOLLOWS,
+    'chef|xphb': FOLLOWS,
+    'vigor of the hill giant|bgg': FOLLOWS,
+    'healer|xphb': OTHERS,
   },
   sorcery: {
+    'sorcery points|sorcerer|phb': DEFINES,
+    'lunar boons|lunar sorcery|dsotdq': 'takes a point off Metamagic, which the player taps back',
+    'absorb spells|spellfire sorcery|frhof': TRIGGERED,
     'flexible casting|sorcerer|phb': DEFINES,
     'font of magic|sorcerer|phb': DEFINES,
     'font of magic|sorcerer|xphb': DEFINES,
@@ -223,6 +262,9 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'combat superiority|battle master|xphb': DEFINES,
     'martial adept|phb': DEFINES,
     'superior technique|tce': DEFINES,
+    'improved combat superiority (d10)|battle master|phb': OWN_ENTRY,
+    'improved combat superiority (d12)|battle master|phb': OWN_ENTRY,
+    'improved combat superiority|battle master|xphb': OWN_ENTRY,
   },
   channel: {
     'channel divinity|cleric|phb': DEFINES,
@@ -230,19 +272,44 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'channel divinity|paladin|phb': DEFINES,
     'channel divinity|paladin|xphb': DEFINES,
     'channel divinity|oath of glory|tce': HEADING,
-    'elder champion|oath of the ancients|phb': 'names the pool in passing',
+    'channel divinity|oathbreaker|dmg': HEADING,
+    'channel divinity|oath of the ancients|phb': HEADING,
+    'channel divinity|oath of devotion|phb': HEADING,
+    'channel divinity|oath of vengeance|phb': HEADING,
+    'channel divinity|oath of the crown|scag': HEADING,
+    'channel divinity|oath of conquest|xge': HEADING,
+    'channel divinity|oath of redemption|xge': HEADING,
+    'channel divinity|oath of the watchers|tce': HEADING,
+    'elder champion|oath of the ancients|phb': PASSING,
+    'sacred oath|paladin|phb': PASSING,
+    'inescapable destruction|death domain|dmg': PASSING,
+    'supreme healing|life domain|xphb': PASSING,
   },
   psionic: {
     'soul blades|soulknife|tce': HEADING,
+    'psionic power|psi warrior|tce': DEFINES,
+    'psionic power|psi warrior|xphb': DEFINES,
+    'psionic power|soulknife|tce': DEFINES,
+    'psionic power|soulknife|xphb': DEFINES,
+    'order of the awakened|order of the awakened|uathemysticclass': FLAVOUR,
+    'order of the immortal|order of the immortal|uathemysticclass': FLAVOUR,
+    'aberrant sorcery|aberrant sorcery|xphb': FLAVOUR,
   },
   bardic: {
     'bardic inspiration|bard|phb': DEFINES,
     'bardic inspiration|bard|xphb': DEFINES,
+    'bardic inspiration (d8)|bard|phb': DIE_SIZE,
+    'bardic inspiration (d10)|bard|phb': DIE_SIZE,
+    'bardic inspiration (d12)|bard|phb': DIE_SIZE,
+    'font of inspiration|bard|phb': OWN_ENTRY,
     'magical inspiration|bard|tce': OTHERS,
     'combat inspiration|college of valor|phb': OTHERS,
     'combat inspiration|college of valor|xphb': OTHERS,
-    'animating performance|college of creation|tce': 'buys its use back with a spell slot',
-    "master's flourish|college of swords|xge": 'rolls a d6 instead of spending it',
+    'mote of potential|college of creation|tce': OTHERS,
+    'unfailing inspiration|college of eloquence|tce': FOLLOWS,
+    'animating performance|college of creation|tce': SLOT_BACK,
+    "master's flourish|college of swords|xge": ROLLS,
+    "eventide's splendor|college of the moon|frhof": ROLLS,
   },
   wildshape: {
     'wild shape|druid|phb': DEFINES,
@@ -250,11 +317,40 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'archdruid|druid|xphb': DEFINES,
     'wild resurgence|druid|xphb': DEFINES,
     'circle forms|circle of the moon|phb': DEFINES,
+    'wild shape improvement|druid|phb': UPGRADES,
+    'circle forms|circle of the moon|xphb': UPGRADES,
+    'beast spells|druid|xphb': WHILE_ON,
   },
   rage: {
     'rage|barbarian|phb': DEFINES,
+    'rage|barbarian|xphb': DEFINES,
     'rage of the gods|path of the zealot|xphb':
       'its own uses and a reaction that spends Rage share one chip, so a cost would mislead',
+    'persistent rage|barbarian|xphb': TRIGGERED,
+    'feral instinct|barbarian|phb': PASSING,
+    'instinctive pounce|barbarian|xphb': FOLLOWS,
+    'frenzy|path of the berserker|phb': FOLLOWS,
+    'wild surge|path of wild magic|tce': FOLLOWS,
+    "giant's havoc|path of the giant|bgg": WHILE_ON,
+    'demiurgic colossus|path of the giant|bgg': WHILE_ON,
+    'mindless rage|path of the berserker|phb': WHILE_ON,
+    'reckless abandon|path of the battlerager|scag': WHILE_ON,
+    'form of the beast|path of the beast|tce': WHILE_ON,
+    'ancestral protectors|path of the ancestral guardian|xge': WHILE_ON,
+    'rage of the wilds|path of the wild heart|xphb': WHILE_ON,
+    'power of the wilds|path of the wild heart|xphb': WHILE_ON,
+    'vitality of the tree|path of the world tree|xphb': WHILE_ON,
+    'travel along the tree|path of the world tree|xphb': WHILE_ON,
+    'path of the giant|path of the giant|bgg': FLAVOUR,
+    'path of the berserker|path of the berserker|phb': FLAVOUR,
+    'path of the berserker|path of the berserker|xphb': FLAVOUR,
+    'path of the totem warrior|path of the totem warrior|phb': FLAVOUR,
+    'path of the beast|path of the beast|tce': FLAVOUR,
+    'path of the storm herald|path of the storm herald|xge': FLAVOUR,
+    'path of the zealot|path of the zealot|xge': FLAVOUR,
+    'path of the zealot|path of the zealot|xphb': FLAVOUR,
+    'path of the wild heart|path of the wild heart|xphb': FLAVOUR,
+    'path of the world tree|path of the world tree|xphb': FLAVOUR,
   },
 };
 
