@@ -12,10 +12,11 @@ import { spellRollActions } from '../../features/sheet/spellRolls';
 import { isRenderedTag } from '../entries/inlineTags';
 import { normalizeDataset } from '../normalize';
 import { BRANCH_SET, type BranchBlock, branchSubjects, findBranchBlocks } from './branches';
-import { answersFor, type JudgmentFile } from './judgments';
+import { answersFor, emptyJudgments, type JudgmentFile } from './judgments';
 import { auditProse, type ProseAudit } from './proseChecks';
 import { proseSubjects } from './proseSubjects';
 import { auditReprints, type ReprintAudit, reprintPairs } from './reprints';
+import { type SpendCounts, spendCounts } from './spendScope';
 
 export interface FileSize {
   path: string;
@@ -56,6 +57,8 @@ export interface AuditReport {
   prose: ProseAudit;
   /** 2014/2024 reprint pairs and their labels. Counts only: nothing here can fail. */
   reprints: ReprintAudit;
+  /** Features that spend a pool, against the link table. Counts only: nothing here can fail. */
+  spend: SpendCounts;
 }
 
 export interface AnalyzeInput {
@@ -201,6 +204,7 @@ export function analyzeDataset(input: AnalyzeInput): AuditReport {
     branchBlocks: withChoiceProposals(findBranchBlocks(reg), reg, judgments),
     prose: auditProse(proseSubjects(reg), judgments),
     reprints: auditReprints(reprintPairs(reg), judgments),
+    spend: spendCounts(reg, judgments ?? emptyJudgments()),
   };
 }
 

@@ -165,6 +165,26 @@ export type BonusAmount =
   | `abilityModMin0:${Ability}`
   | `abilityModMin1:${Ability}`;
 
+/**
+ * What an action takes from the turn. `none` takes nothing: a rider on a hit or on
+ * a spell (Stunning Strike, Quickened Spell), where tapping it must only spend.
+ */
+export type ActionEconomy = 'action' | 'bonus' | 'reaction' | 'none';
+
+export interface ActionCost {
+  /** The key of the resource it spends. */
+  resource: string;
+  /** How many. `varies` is the player's call, so nothing spends by itself. */
+  amount: number | 'varies';
+  /** The base use is free and the pool pays for more (2024 Patient Defense). */
+  optional?: boolean;
+  /**
+   * It takes a use of the feature as well (Hand of Ultimate Mercy). Otherwise a pool
+   * sharing the action's name is not touched.
+   */
+  ownUseToo?: boolean;
+}
+
 export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'abilityBonus'; ability: Ability; amount: number }
   | { kind: 'abilityMin'; ability: Ability; min: number }
@@ -210,6 +230,7 @@ export type EffectInput = { origin: EffectOrigin } & (
       max:
         | number
         | 'profBonus'
+        | 'twiceProfBonus'
         | `abilityMod:${Ability}`
         | `abilityModPlus1:${Ability}`
         | `level:${string}`;
@@ -220,10 +241,12 @@ export type EffectInput = { origin: EffectOrigin } & (
        * Technique stack). Default is first-wins (curated beats prose-scan dup).
        */
       stack?: boolean;
+      /** How many of these points cannot become a spell slot (Metamagic Adept's). */
+      noSlotConversion?: number;
     }
   | {
       kind: 'action';
-      economy: 'action' | 'bonus' | 'reaction';
+      economy: ActionEconomy;
       label: string;
       roll?: string;
       /** The roll is hit points regained, not damage dealt. */
@@ -237,6 +260,8 @@ export type EffectInput = { origin: EffectOrigin } & (
        * their spell save DC, or nothing when the prose states no DC to show.
        */
       save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
+      /** The pool using it spends, when that pool is not the one sharing its name. */
+      cost?: ActionCost;
     }
   | {
       /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
@@ -453,6 +478,8 @@ export interface DerivedResource {
   max: number;
   resetOn: 'short' | 'long';
   origin: string;
+  /** How many of these points cannot become a spell slot. */
+  noSlotConversion?: number;
 }
 
 export interface DerivedSheet {
@@ -506,7 +533,7 @@ export interface DerivedSheet {
   attacks: AttackRow[];
   spellcasting: SpellcastingBlock[];
   actions: Array<{
-    economy: 'action' | 'bonus' | 'reaction';
+    economy: ActionEconomy;
     label: string;
     roll?: string;
     /** The roll is hit points regained, not damage dealt. */
@@ -518,6 +545,8 @@ export interface DerivedSheet {
     note?: string;
     /** The ability the target saves with + the computed DC, when there is one to show. */
     save?: { targetAbility: Ability; dc?: number };
+    /** The pool it spends, only when this sheet has that pool. */
+    cost?: ActionCost;
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];

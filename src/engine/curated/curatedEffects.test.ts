@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Collector } from '../effects/base';
-import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
+import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { emitCuratedEffects } from './curatedEffects';
 
 const ctx: EngineContext = { get: () => undefined, byType: () => [] };
@@ -179,5 +179,87 @@ describe('features that add to checks and initiative', () => {
       { kind: 'halfProf', round: 'down', abilities: ['int'] },
     ]);
     expect(emit('observant|phb')).toEqual([{ kind: 'passivePerceptionBonus', amount: 5 }]);
+  });
+});
+
+describe('pools a cost spends', () => {
+  const printed = (source: string): EffectOrigin => ({
+    label: 'Feature',
+    uid: `feature|${source}`,
+    type: 'class',
+  });
+  const emit = (key: string, cls: string, levels: number, from: EffectOrigin) => {
+    const c = col(cls, levels);
+    expect(emitCuratedEffects(c, key, from)).toBe(true);
+    return c.effects;
+  };
+  const resource = (effects: EffectInput[], key: string) =>
+    effects.find((e) => e.kind === 'resource' && e.key === key) as
+      | Extract<EffectInput, { kind: 'resource' }>
+      | undefined;
+  const action = (effects: EffectInput[]) =>
+    effects.find((e) => e.kind === 'action') as
+      | Extract<EffectInput, { kind: 'action' }>
+      | undefined;
+
+  it('counts Wild Shape by the printing: 2 uses in 2014, more with levels in 2024', () => {
+    const uses = (levels: number, source: string) =>
+      resource(emit('wild shape|druid', 'Druid', levels, printed(source)), 'wild-shape')?.max;
+    expect(uses(20, 'phb')).toBe(2);
+    expect([2, 5, 6, 16, 17].map((level) => uses(level, 'xphb'))).toEqual([2, 2, 3, 3, 4]);
+  });
+
+  it('gives Wild Shape the slot its printing says', () => {
+    const slot = (source: string) =>
+      action(emit('wild shape|druid', 'Druid', 2, printed(source)))?.economy;
+    expect(slot('phb')).toBe('action');
+    expect(slot('xphb')).toBe('bonus');
+  });
+
+  it.each([
+    ['psionic power|psi warrior', 'Fighter', 'psi-warrior-dice'],
+    ['psionic power|soulknife', 'Rogue', 'soulknife-dice'],
+  ])('keeps a pool per subclass for %s', (key, cls, pool) => {
+    const dice = (levels: number, source: string) =>
+      resource(emit(key, cls, levels, printed(source)), pool);
+    // 2014: twice the proficiency bonus, whatever the class level.
+    expect(dice(3, 'tce')?.max).toBe('twiceProfBonus');
+    expect(dice(3, 'tce')?.resetOn).toBe('long');
+    // 2024 prints a table.
+    expect([3, 5, 9, 11, 13, 17].map((level) => dice(level, 'xphb')?.max)).toEqual([
+      4, 6, 8, 8, 10, 12,
+    ]);
+    // The die grows at the same levels in both.
+    expect([3, 5, 11, 17].map((level) => dice(level, 'xphb')?.label)).toEqual([
+      'Psionic Energy Dice (d6)',
+      'Psionic Energy Dice (d8)',
+      'Psionic Energy Dice (d10)',
+      'Psionic Energy Dice (d12)',
+    ]);
+  });
+
+  it('keeps the 2014 bonus action that regains a die, which 2024 does not have', () => {
+    const emitted = (source: string) =>
+      emit('psionic power|psi warrior', 'Fighter', 3, printed(source));
+    expect(resource(emitted('tce'), 'psionic-power')?.max).toBe(1);
+    expect(action(emitted('tce'))?.economy).toBe('bonus');
+    expect(resource(emitted('xphb'), 'psionic-power')).toBeUndefined();
+    expect(action(emitted('xphb'))).toBeUndefined();
+  });
+
+  it('adds Metamagic Adept to Sorcery Points in either order', () => {
+    const adept = emit('metamagic adept|tce', 'Sorcerer', 5, origin);
+    const font = emit('font of magic|sorcerer', 'Sorcerer', 5, origin);
+    expect(resource(adept, 'sorcery-points')).toMatchObject({
+      max: 2,
+      stack: true,
+      noSlotConversion: 2,
+    });
+    expect(resource(font, 'sorcery-points')).toMatchObject({ max: 'level:Sorcerer', stack: true });
+    expect(resource(font, 'sorcery-points')?.noSlotConversion).toBeUndefined();
+  });
+
+  it('lets Stunning Strike ride on a hit, with no slot of its own', () => {
+    expect(action(emit('stunning strike|monk', 'Monk', 5, origin))?.economy).toBe('none');
   });
 });

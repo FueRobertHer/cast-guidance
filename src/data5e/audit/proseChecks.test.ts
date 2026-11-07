@@ -24,6 +24,7 @@ const subject = (key: string, effects: EffectInput[], curated = false): ProseSub
   owners: 1,
   curated,
   effects,
+  spendKeys: [],
 });
 
 const ids = PROSE_SET.questions.map((q) => q.id);

@@ -845,3 +845,155 @@ describe('PlayTab HP tip (DS-001 Hint)', () => {
     expect(screen.queryByText(/tap ±1 or ±5/)).toBeNull();
   });
 });
+
+describe('PlayTab action costs', () => {
+  const origin = 'Test feature';
+  const POOL = { key: 'pool', label: 'Test Pool (d6)', max: 3, resetOn: 'long', origin } as const;
+  type SheetAction = NonNullable<CharacterSheetState['sheet']>['actions'][number];
+
+  /** A Warrior's Play tab with these actions and one pool, re-read after each save. */
+  function renderCosts(actions: Array<Partial<SheetAction>>) {
+    const doc = newCharacterDoc('p1', 'Hero', 't');
+    doc.abilities.method = 'manual';
+    doc.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 3, hp: ['avg', 'avg', 'avg'] },
+    ];
+    doc.play.hpInitialized = true;
+    doc.play.currentHp = 10;
+    let current = doc;
+    const sheetNow = () => {
+      const sheet = deriveSheet(current, makeTestContext());
+      sheet.resources.push({ ...POOL });
+      sheet.actions.push(...actions.map((a) => ({ origin, ...a }) as SheetAction));
+      return sheet;
+    };
+    const update = (recipe: (d: CharacterDoc) => void) => {
+      const d = structuredClone(current);
+      recipe(d);
+      current = d;
+      rerender();
+    };
+    const ctxValue = () =>
+      ({
+        doc: current,
+        sheet: sheetNow(),
+        update,
+        loadStatus: 'ready',
+        missing: false,
+        error: null,
+        saveStatus: 'saved',
+        retryLoad: () => undefined,
+      }) as unknown as CharacterSheetState;
+    const routes = () => [
+      {
+        path: '/',
+        element: <Outlet context={ctxValue()} />,
+        children: [{ index: true, element: <PlayTab /> }],
+      },
+    ];
+    const view = render(<RouterProvider router={createMemoryRouter(routes())} />);
+    const rerender = () => view.rerender(<RouterProvider router={createMemoryRouter(routes())} />);
+    return {
+      used: () => current.play.resources.find((r) => r.key === 'pool')?.used ?? 0,
+      turn: () => current.play.turn,
+    };
+  }
+
+  const useButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Use Quick Step' });
+
+  it('spends the amount the cost names and marks the slot', () => {
+    const { used, turn } = renderCosts([
+      { economy: 'bonus', label: 'Quick Step', cost: { resource: 'pool', amount: 2 } },
+    ]);
+    fireEvent.click(useButton());
+    expect(used()).toBe(2);
+    expect(turn()?.bonus).toBe(true);
+  });
+
+  it('turns the button off when the pool cannot pay', () => {
+    const { used } = renderCosts([
+      { economy: 'action', label: 'Quick Step', cost: { resource: 'pool', amount: 2 } },
+    ]);
+    fireEvent.click(useButton());
+    expect(useButton().disabled).toBe(true);
+    expect(useButton().title).toBe('Not enough Test Pool');
+    expect(used()).toBe(2);
+  });
+
+  it('spends on a rider without marking any slot', () => {
+    const { used, turn } = renderCosts([
+      { economy: 'none', label: 'Quick Step', cost: { resource: 'pool', amount: 1 } },
+    ]);
+    fireEvent.click(useButton());
+    expect(used()).toBe(1);
+    expect(turn()?.action ?? false).toBe(false);
+    expect(turn()?.bonus ?? false).toBe(false);
+    expect(turn()?.reaction ?? false).toBe(false);
+  });
+
+  it('records a rolled use only while the pool can pay', () => {
+    const rolled = (amount: number) => ({
+      economy: 'action' as const,
+      label: 'Quick Step',
+      roll: '1d4',
+      cost: { resource: 'pool', amount },
+    });
+    const first = renderCosts([rolled(2)]);
+    const chip = () => screen.getByTitle('Quick Step');
+    fireEvent.click(chip());
+    expect(first.used()).toBe(2);
+    expect(first.turn()?.action).toBe(true);
+    // One left of three: the dice roll, and nothing more is spent.
+    fireEvent.click(chip());
+    expect(first.used()).toBe(2);
+    cleanup();
+
+    // Short from the start: nothing is spent and the slot stays open.
+    const short = renderCosts([rolled(4)]);
+    fireEvent.click(chip());
+    expect(short.used()).toBe(0);
+    expect(short.turn()?.action ?? false).toBe(false);
+  });
+
+  it('warns about a condition on an action, not on a rider', () => {
+    renderCosts([
+      { economy: 'none', label: 'Quick Step', cost: { resource: 'pool', amount: 1 } },
+      { economy: 'action', label: 'Slow Step' },
+    ]);
+    expect(screen.queryByText(/normally can't take/)).toBeNull();
+  });
+
+  it('offers a free use and a paid one, each doing only that', () => {
+    const { used, turn } = renderCosts([
+      {
+        economy: 'bonus',
+        label: 'Quick Step',
+        cost: { resource: 'pool', amount: 1, optional: true },
+      },
+    ]);
+    fireEvent.click(useButton());
+    expect(used()).toBe(0);
+    expect(turn()?.bonus).toBe(true);
+    const paid = screen.getByRole('button', { name: 'Use Quick Step, spending 1 Test Pool' });
+    expect(paid.textContent).toBe('+1 Test Pool');
+    fireEvent.click(paid);
+    expect(used()).toBe(1);
+  });
+
+  it('leaves the spending to the player when the amount varies', () => {
+    const { used, turn } = renderCosts([
+      { economy: 'action', label: 'Quick Step', cost: { resource: 'pool', amount: 'varies' } },
+    ]);
+    fireEvent.click(useButton());
+    expect(used()).toBe(0);
+    expect(turn()?.action).toBe(true);
+  });
+
+  it('has no button for a rider whose amount the player decides, and still says the pool', () => {
+    renderCosts([
+      { economy: 'none', label: 'Quick Step', cost: { resource: 'pool', amount: 'varies' } },
+    ]);
+    expect(screen.queryByRole('button', { name: 'Use Quick Step' })).toBeNull();
+    expect(screen.getByText('Test Pool: you choose, 3 of 3 left')).toBeTruthy();
+  });
+});

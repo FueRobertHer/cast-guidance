@@ -43,6 +43,37 @@ const superiorTechnique: CuratedFn = (col, origin) => {
   });
 };
 
+/**
+ * Psionic Energy Dice, a pool per subclass: "use only the dice from this subclass".
+ * 2024 prints a table and regains one on a short rest, which `resetOn` cannot say,
+ * so it resets on a long rest and the player taps a pip back. The 2014 bonus action
+ * that regains one die keeps the row the scanner gave it.
+ */
+function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cls: string): void {
+  const level = classLevel(col, cls);
+  const die = level >= 17 ? 12 : level >= 11 ? 10 : level >= 5 ? 8 : 6;
+  const printed2024 = printedIn(origin, 'xphb');
+  const count2024 = level >= 17 ? 12 : level >= 13 ? 10 : level >= 9 ? 8 : level >= 5 ? 6 : 4;
+  col.add({
+    kind: 'resource',
+    key,
+    label: `Psionic Energy Dice (d${die})`,
+    max: printed2024 ? count2024 : 'twiceProfBonus',
+    resetOn: 'long',
+    origin,
+  });
+  if (printed2024) return;
+  col.add({
+    kind: 'resource',
+    key: 'psionic-power',
+    label: 'Psionic Power',
+    max: 1,
+    resetOn: 'short',
+    origin,
+  });
+  col.add({ kind: 'action', economy: 'bonus', label: 'Psionic Power', origin });
+}
+
 function rageUses(level: number): number {
   if (level >= 20) return 99;
   if (level >= 17) return 6;
@@ -329,17 +360,44 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   // Stunning Strike states its effect but leaves the DC to the "ki save DC"
   // defined in the Ki/Monk's Focus feature — the prose scanner can't resolve a
-  // cross-feature DC, so pin it here: Con save vs 8 + prof + Wis mod.
+  // cross-feature DC, so pin it here: Con save vs 8 + prof + Wis mod. It rides on
+  // a hit, so it takes no slot of its own. Its cost is in `SPEND_LINKS`.
   'stunning strike|monk': (col, origin) => {
     col.add({
       kind: 'action',
-      economy: 'action',
+      economy: 'none',
       label: 'Stunning Strike',
-      note: 'spend 1 focus/ki · stunned until your next turn on a failed save',
+      note: 'stunned until your next turn on a failed save',
       save: { targetAbility: 'con', dcAbility: 'wis' },
       origin,
     });
   },
+  // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
+  // it gave that printing no pool and nothing could spend one. 2024 regains one on a
+  // short rest, which `resetOn` cannot say: this resets all of them, as Second Wind's
+  // 2024 row does.
+  'wild shape|druid': (col, origin) => {
+    const printed2024 = printedIn(origin, 'xphb');
+    const lvl = classLevel(col, 'Druid');
+    col.add({
+      kind: 'resource',
+      key: 'wild-shape',
+      label: 'Wild Shape',
+      max: printed2024 ? (lvl >= 17 ? 4 : lvl >= 6 ? 3 : 2) : 2,
+      resetOn: 'short',
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: printed2024 ? 'bonus' : 'action',
+      label: 'Wild Shape',
+      origin,
+    });
+  },
+  'psionic power|psi warrior': (col, origin) =>
+    psionicEnergyDice(col, origin, 'psi-warrior-dice', 'Fighter'),
+  'psionic power|soulknife': (col, origin) =>
+    psionicEnergyDice(col, origin, 'soulknife-dice', 'Rogue'),
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');
@@ -361,6 +419,21 @@ export const CURATED: Record<string, CuratedFn> = {
       label: 'Sorcery Points',
       max: 'level:Sorcerer',
       resetOn: 'long',
+      // Adds to Metamagic Adept's two, whichever comes first.
+      stack: true,
+      origin,
+    });
+  },
+  'metamagic adept|tce': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'sorcery-points',
+      label: 'Sorcery Points',
+      max: 2,
+      resetOn: 'long',
+      stack: true,
+      // They add to the pool but go only on Metamagic.
+      noSlotConversion: 2,
       origin,
     });
   },

@@ -17,7 +17,7 @@ import type { RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
-import type { PlayState, SpellcastingBlock } from '@/engine/types';
+import type { ActionEconomy, PlayState, SpellcastingBlock } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
@@ -34,6 +34,7 @@ import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass, openListClass } from '@/ui/surfaces';
+import { type ActionSpend, actionUse } from '../actionUse';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   type CastResource,
@@ -304,27 +305,24 @@ export function Component() {
       d.play.turn = turn;
     }, label);
   /**
-   * Trigger an action: mark its slice of the turn used AND spend one pip of its
-   * linked resource (if any), in a single update so the sheet stays honest.
+   * Trigger an action: mark its slice of the turn used (a rider has none) AND
+   * spend what it costs, in a single update so the sheet stays honest.
    */
-  const triggerAction = (
-    economy: 'action' | 'bonus' | 'reaction',
-    resourceKey?: string,
-    max?: number,
-    label?: string,
-  ) =>
+  const triggerAction = (economy: ActionEconomy, spends: readonly ActionSpend[], label?: string) =>
     update(
       (d) => {
-        const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
-        turn[economy] = true;
-        d.play.turn = turn;
-        if (resourceKey !== undefined && max !== undefined) {
-          const entry = d.play.resources.find((r) => r.key === resourceKey);
-          const used = entry?.used ?? 0;
-          if (used < max) {
-            if (entry !== undefined) entry.used = used + 1;
-            else d.play.resources.push({ key: resourceKey, used: 1 });
-          }
+        const entryOf = (key: string) => d.play.resources.find((r) => r.key === key);
+        // All of it or none: a tap that beat the last render must not take half a cost.
+        if (spends.some((s) => (entryOf(s.key)?.used ?? 0) + s.amount > s.max)) return;
+        if (economy !== 'none') {
+          const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+          turn[economy] = true;
+          d.play.turn = turn;
+        }
+        for (const { key, amount } of spends) {
+          const entry = entryOf(key);
+          if (entry !== undefined) entry.used += amount;
+          else d.play.resources.push({ key, used: amount });
         }
       },
       label !== undefined ? `Used ${label}` : undefined,
@@ -1244,21 +1242,14 @@ export function Component() {
           <div className="flex flex-wrap gap-1.5">
             {sheet.actions.map((a) => {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
-              // Limited-use actions share a name with their resource — triggering
-              // one spends a use so the pips stay honest.
-              const linkedResource = sheet.resources.find(
-                (r) => r.label.toLowerCase() === a.label.toLowerCase(),
-              );
-              const remaining =
-                linkedResource !== undefined
-                  ? linkedResource.max - usedOf(linkedResource.key)
-                  : undefined;
-              // Using it marks the right slice of the turn and spends a pip.
-              const trigger = () =>
-                triggerAction(a.economy, linkedResource?.key, linkedResource?.max, a.label);
-              const depleted = remaining === 0;
+              // What it spends: a use of the pool sharing its name, and the pool
+              // its cost names. See `actionUse`.
+              const use = actionUse(a, sheet.resources, usedOf);
+              // Using it marks the right slice of the turn and spends the pips.
+              const trigger = () => triggerAction(a.economy, use.spends, a.label);
               // Incapacitating conditions stop actions/bonus actions/reactions.
-              const blocked = limits.noActions;
+              // A rider takes none of those.
+              const blocked = a.economy === 'none' ? [] : limits.noActions;
               const economyLabel =
                 a.economy === 'bonus'
                   ? 'bonus action'
@@ -1270,7 +1261,7 @@ export function Component() {
                 a.save !== undefined
                   ? `${a.save.dc === undefined ? '' : `DC ${a.save.dc} `}${a.save.targetAbility.toUpperCase()} save`
                   : undefined,
-                remaining !== undefined ? `${remaining} of ${linkedResource?.max} left` : undefined,
+                ...use.caption,
               ]
                 .filter((s) => s !== undefined)
                 .join(' · ');
@@ -1327,27 +1318,36 @@ export function Component() {
                         variant={
                           a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
                         }
-                        onRolled={trigger}
+                        // The dice still roll; only a use it can pay for is recorded.
+                        onRolled={use.noButton || use.disabled ? undefined : trigger}
                       />
-                    ) : (
+                    ) : use.noButton ? null : (
                       <Button
                         variant="outline"
                         size="sm"
                         aria-label={`Use ${a.label}`}
                         onClick={trigger}
-                        disabled={depleted}
+                        disabled={use.disabled}
                         className="-my-1.5"
-                        title={
-                          depleted
-                            ? 'No uses left'
-                            : `Use: marks your ${economyLabel}${
-                                linkedResource !== undefined
-                                  ? ` and spends a ${linkedResource.label} use`
-                                  : ''
-                              }`
-                        }
+                        title={use.title}
                       >
                         Use
+                      </Button>
+                    )}
+                    {use.paid !== undefined && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={use.paid.ariaLabel}
+                        onClick={() =>
+                          use.paid !== undefined &&
+                          triggerAction(a.economy, use.paid.spends, a.label)
+                        }
+                        disabled={use.paid.disabled}
+                        className="-my-1.5"
+                        title={use.paid.title}
+                      >
+                        {use.paid.label}
                       </Button>
                     )}
                   </span>

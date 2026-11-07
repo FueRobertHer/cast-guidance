@@ -9,7 +9,7 @@ import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
 import { bonusAmount, dv, effectsOf, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
-import { calcResources } from './calc/resources';
+import { calcResources, costOnSheet } from './calc/resources';
 import {
   calcChecks,
   calcPassivePerception,
@@ -133,6 +133,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
       e.save !== undefined
         ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
+    cost: costOnSheet(e.cost, resources),
   }));
 
   const classLabel = doc.classes
@@ -207,12 +208,18 @@ function dedupeWarnings(warnings: readonly string[]): string[] {
 }
 
 /** How much mechanical detail an action effect carries (for dedupe). */
-function richness(e: { roll?: string; note?: string; save?: { dcAbility?: unknown } }): number {
+function richness(e: {
+  roll?: string;
+  note?: string;
+  save?: { dcAbility?: unknown };
+  cost?: unknown;
+}): number {
   // A save with its DC says more than one without, by less than any other mechanic.
   return (
     (e.roll !== undefined ? 1 : 0) +
     (e.note !== undefined ? 2 : 0) +
-    (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0)
+    (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0) +
+    (e.cost !== undefined ? 2 : 0)
   );
 }
 

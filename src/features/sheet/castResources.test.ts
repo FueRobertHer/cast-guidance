@@ -404,6 +404,20 @@ describe('pool conversions as cast sources (GAME-001)', () => {
     expect(poolCastResources([points(6)], play, 1)).toEqual([]);
   });
 
+  it('will not buy a slot with points that cannot become one', () => {
+    const levels = (pool: DerivedResource, play = emptyPlayState()) =>
+      poolCastResources([pool], play, 1).map((o) => o.level);
+    // All of them locked: nothing to offer at all.
+    expect(levels({ ...points(2), noSlotConversion: 2 })).toEqual([]);
+    // Three of five free: five points would buy a 3rd, three stop at a 2nd.
+    const mixed = { ...points(5), noSlotConversion: 2 };
+    expect(levels(mixed)).toEqual([1, 2]);
+    // Two gone could be the locked ones, so the three free points still count.
+    const play = emptyPlayState();
+    play.resources = [{ key: 'sorcery-points', used: 2 }];
+    expect(levels(mixed, play)).toEqual([1, 2]);
+  });
+
   it('ignores pools with no slot conversion', () => {
     const ki: DerivedResource = {
       key: 'ki',
