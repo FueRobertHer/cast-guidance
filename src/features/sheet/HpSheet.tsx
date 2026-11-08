@@ -48,7 +48,7 @@ const KEY =
 /** A key's digit: the keypad's own size, between `body` and `stat`. */
 const DIGIT = 'font-semibold text-[1.375rem] tabular-nums';
 
-/** A digit on the end of a typed number: three at most, no leading zeros. */
+/** A digit on the end of the amount: three at most, no leading zeros. */
 export function typeDigit(amount: string, digit: string): string {
   return `${amount}${digit}`.replace(/^0+(?=\d)/, '').slice(0, 3);
 }
@@ -57,26 +57,16 @@ export function typeDigit(amount: string, digit: string): string {
 export type AmountTap = { digit: string } | { add: number };
 
 /**
- * The amount the taps make, as a sum of parts. A digit goes on the end of the
- * number being typed, or starts a new one after a quick amount, so 10, +5, 3 is
- * 10 + 5 + 3, which is 18 and never 153. "" is nothing keyed, "0" a deliberate
- * zero.
+ * The amount the taps make. A quick amount adds to what is shown, and a digit
+ * is typed on the end of what is shown, whatever made it: 14, +1 is 15, and a 0
+ * after that is 150. "" is nothing keyed, "0" a deliberate zero.
  */
 export function amountOf(taps: readonly AmountTap[]): string {
-  if (taps.length === 0) return '';
-  const parts: number[] = [];
-  let typing: string | null = null;
+  let amount = '';
   for (const tap of taps) {
-    if ('add' in tap) {
-      if (typing !== null) parts.push(Number(typing));
-      typing = null;
-      parts.push(tap.add);
-    } else {
-      typing = typeDigit(typing ?? '', tap.digit);
-    }
+    amount = 'add' in tap ? String(Number(amount) + tap.add) : typeDigit(amount, tap.digit);
   }
-  if (typing !== null) parts.push(Number(typing));
-  return String(parts.reduce((sum, n) => sum + n, 0));
+  return amount;
 }
 
 /**

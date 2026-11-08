@@ -167,23 +167,32 @@ describe('the HP sheet', () => {
     expect(hp().temp).toBe(0);
   });
 
-  it('adds quick amounts to what was typed, and Undo takes back the last tap', async () => {
+  it('adds quick amounts to what is shown, and types digits on its end', async () => {
     await renderSheet(warrior(5));
     fireEvent.click(cardButton('Damage'));
     const sheet = await sheetDialog();
-    expect(quickKey(sheet, '+1')).toBeTruthy();
-    expect(quickKey(sheet, '+10')).toBeTruthy();
-    key(sheet, '10');
     quick(sheet, '+5');
-    expect(confirm(sheet).textContent).toBe('Take 15 damage');
-    // A digit after a quick amount starts a number of its own: 18, never 153.
+    expect(confirm(sheet).textContent).toBe('Take 5 damage');
+    // A digit after a quick amount types, as it would anywhere else.
     key(sheet, '3');
-    expect(confirm(sheet).textContent).toBe('Take 18 damage');
+    expect(confirm(sheet).textContent).toBe('Take 53 damage');
+    quick(sheet, '+1');
+    expect(confirm(sheet).textContent).toBe('Take 54 damage');
+  });
+
+  it('takes back the last tap on Undo: a digit, or a whole quick amount', async () => {
+    await renderSheet(warrior(5));
+    fireEvent.click(cardButton('Damage'));
+    const sheet = await sheetDialog();
+    key(sheet, '14');
+    quick(sheet, '+1');
+    key(sheet, '0');
+    expect(confirm(sheet).textContent).toBe('Take 150 damage');
     undo(sheet);
     expect(confirm(sheet).textContent).toBe('Take 15 damage');
-    // The whole +5 at once, not one of its digits.
+    // The whole +1 at once, not a digit of 15.
     undo(sheet);
-    expect(confirm(sheet).textContent).toBe('Take 10 damage');
+    expect(confirm(sheet).textContent).toBe('Take 14 damage');
     undo(sheet);
     expect(confirm(sheet).textContent).toBe('Take 1 damage');
     undo(sheet);
