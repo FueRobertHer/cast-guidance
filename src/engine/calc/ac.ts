@@ -1,5 +1,5 @@
 import type { Collector } from '../effects/base';
-import { isArmor, isShield, lookupItem, parseBonus } from '../effects/item';
+import { isArmor, isShield, lookupItem, magicWorks, parseBonus } from '../effects/item';
 import type {
   Ability,
   CharacterDoc,
@@ -16,7 +16,12 @@ interface AcCandidate {
   parts: Array<{ label: string; amount: number }>;
 }
 
-function armorCandidate(e: DataEntity, itemLabel: string, dexMod: number): AcCandidate | undefined {
+function armorCandidate(
+  e: DataEntity,
+  itemLabel: string,
+  dexMod: number,
+  attuned: boolean,
+): AcCandidate | undefined {
   const ac = typeof e.ac === 'number' ? e.ac : undefined;
   if (ac === undefined) return undefined;
   const type = String(e.type ?? '').split('|')[0];
@@ -26,7 +31,7 @@ function armorCandidate(e: DataEntity, itemLabel: string, dexMod: number): AcCan
   } else if (type === 'MA') {
     parts.push({ label: 'DEX modifier (max 2)', amount: Math.min(dexMod, 2) });
   } // HA: no dex
-  const bonus = parseBonus(e.bonusAc);
+  const bonus = magicWorks(e, attuned) ? parseBonus(e.bonusAc) : 0;
   if (bonus !== 0) parts.push({ label: 'Magic bonus', amount: bonus });
   return { label: itemLabel, parts };
 }
@@ -87,11 +92,12 @@ export function calcAc(
     if (e === undefined) continue;
     const label = String(e.name ?? entry.ref.name);
     if (isArmor(e)) {
-      const c = armorCandidate(e, label, dexMod);
+      const c = armorCandidate(e, label, dexMod, entry.attuned);
       if (c !== undefined) candidates.push(c);
     } else if (isShield(e)) {
       const ac = typeof e.ac === 'number' ? e.ac : 2;
-      shield = { label, amount: ac + parseBonus(e.bonusAc) };
+      const bonus = magicWorks(e, entry.attuned) ? parseBonus(e.bonusAc) : 0;
+      shield = { label, amount: ac + bonus };
     }
   }
 

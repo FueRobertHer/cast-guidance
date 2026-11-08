@@ -1162,7 +1162,7 @@ describe('deriveSheet — dragonborn ancestry linkage', () => {
     return doc;
   }
 
-  it('subrace ancestry pre-answers the racial resistance choice', () => {
+  it("subrace ancestry's fixed resistance replaces the racial choice", () => {
     const sheet = deriveSheet(dragonbornDoc(true), ctx);
     expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(false);
     expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');

@@ -24,13 +24,31 @@ export interface ActiveCondition {
 
 /**
  * A d20 test the sheet rolls. A death save is a save with no ability;
- * initiative is a Dexterity check with rules of its own besides.
+ * initiative is a Dexterity check with rules of its own besides. The detail an
+ * effect in play may ask about (Reckless Attack: melee weapon attacks with
+ * Strength) is optional, and a filter that needs it does not reach a test
+ * without it.
  */
 export type D20Test =
-  | { kind: 'attack' }
-  | { kind: 'check'; ability?: Ability }
+  | { kind: 'attack'; attack?: 'weapon' | 'spell'; range?: 'melee' | 'ranged'; ability?: Ability }
+  | { kind: 'check'; ability?: Ability; skill?: string }
   | { kind: 'initiative' }
   | { kind: 'save'; ability?: Ability };
+
+/** A condition the character is immune to, and what makes them so (`DerivedSheet.conditionImmunities`). */
+export interface ConditionImmunity {
+  condition: string;
+  origin: string;
+}
+
+export interface ConditionOptions {
+  /**
+   * Conditions the character is immune to. One in play is held off: listed,
+   * and nothing applies, as if switched off. So is one another condition
+   * brings (an Unconscious character immune to Prone is not prone).
+   */
+  immune?: ReadonlyArray<ConditionImmunity>;
+}
 
 type TestKind = D20Test['kind'];
 
@@ -51,6 +69,8 @@ interface ConditionRules {
   notes?: ReadonlyArray<{ on: readonly TestKind[]; text: string }>;
   /** Speed 0. */
   immobile?: true;
+  /** Damage types it resists ("all"). */
+  resist?: readonly string[];
   /** About attacks against the character: information, not a roll. */
   against?: readonly string[];
 }
@@ -97,6 +117,7 @@ const RULES_2014: Record<string, ConditionRules> = {
     suppresses: ['Poisoned'],
     rolls: [FAILS_STR_DEX],
     immobile: true,
+    resist: ['all'],
     against: [ADV_AGAINST, 'You resist all damage'],
   },
   Poisoned: {
@@ -158,6 +179,44 @@ const RULES: Record<Edition, Record<string, ConditionRules>> = {
 
 const clampLevel = (level: number | undefined) => Math.max(0, Math.min(6, level ?? 0));
 
+/** The names an immunity holds off, compared without case: data says "frightened". */
+function heldNames(options: ConditionOptions): Set<string> {
+  return new Set((options.immune ?? []).map((i) => i.condition.trim().toLowerCase()));
+}
+
+/** Switched off or held off: in play, applying nothing. */
+function applies(c: ActiveCondition, held: ReadonlySet<string>): boolean {
+  return c.ignored !== true && !held.has(c.id.toLowerCase());
+}
+
+/** The exhaustion level in force: none when switched off or held off. */
+function exhaustionLevel(
+  conditions: ReadonlyArray<ActiveCondition>,
+  options: ConditionOptions,
+): number {
+  const held = heldNames(options);
+  const exhaustion = conditions.find((c) => c.id === 'Exhaustion' && applies(c, held));
+  return clampLevel(exhaustion?.level);
+}
+
+/**
+ * The conditions in play an immunity holds off, each with what holds it off,
+ * for its chip. A condition only brought along by another one has no chip.
+ */
+export function heldOff(
+  conditions: ReadonlyArray<ActiveCondition>,
+  options: ConditionOptions,
+): Array<{ id: string; by: string[] }> {
+  const out: Array<{ id: string; by: string[] }> = [];
+  for (const c of conditions) {
+    const by = (options.immune ?? [])
+      .filter((i) => i.condition.trim().toLowerCase() === c.id.toLowerCase())
+      .map((i) => i.origin);
+    if (by.length > 0) out.push({ id: c.id, by: [...new Set(by)] });
+  }
+  return out;
+}
+
 /**
  * Exhaustion's roll rules at a level. 2014 is the cumulative table (level 1
  * checks, level 3 attacks and saves); 2024 has none of these and takes 2 per
@@ -174,9 +233,11 @@ function exhaustionRules(level: number, edition: Edition): ConditionRules {
 function inForce(
   conditions: ReadonlyArray<ActiveCondition>,
   edition: Edition,
+  options: ConditionOptions = {},
 ): Array<{ source: string; rules: ConditionRules }> {
   const table = RULES[edition];
-  const active = conditions.filter((c) => c.ignored !== true);
+  const held = heldNames(options);
+  const active = conditions.filter((c) => applies(c, held));
   const suppressed = new Set(active.flatMap((c) => table[c.id]?.suppresses ?? []));
   const out: Array<{ source: string; rules: ConditionRules }> = [];
   for (const c of active) {
@@ -191,16 +252,16 @@ function inForce(
     out.push({ source: c.id, rules });
     for (const included of rules.includes ?? []) {
       const more = table[included];
-      if (more !== undefined) out.push({ source: c.id, rules: more });
+      if (more !== undefined && !held.has(included.toLowerCase()))
+        out.push({ source: c.id, rules: more });
     }
   }
   return out;
 }
 
 /** The ability a test is made with: initiative is a Dexterity check. */
-function testAbility(test: D20Test): Ability | undefined {
-  if (test.kind === 'initiative') return 'dex';
-  return test.kind === 'attack' ? undefined : test.ability;
+export function testAbility(test: D20Test): Ability | undefined {
+  return test.kind === 'initiative' ? 'dex' : test.ability;
 }
 
 /** Does a rule reach this test? Initiative takes the check rules too. */
@@ -232,9 +293,10 @@ export function d20Effects(
   conditions: ReadonlyArray<ActiveCondition>,
   edition: Edition,
   test: D20Test,
+  options: ConditionOptions = {},
 ): D20Effects {
   const effects: D20Effects = { advantage: [], disadvantage: [], autoFail: [], notes: [] };
-  for (const { source, rules } of inForce(conditions, edition)) {
+  for (const { source, rules } of inForce(conditions, edition, options)) {
     for (const rule of rules.rolls ?? []) {
       if (!reaches(rule, test)) continue;
       const list =
@@ -254,8 +316,7 @@ export function d20Effects(
   // 2024: "When you make a D20 Test, the roll is reduced by 2 times your
   // Exhaustion level." Attacks, checks (initiative among them) and saves
   // (death saves among them) are all D20 Tests.
-  const exhaustion = conditions.find((c) => c.id === 'Exhaustion' && c.ignored !== true);
-  const level = clampLevel(exhaustion?.level);
+  const level = exhaustionLevel(conditions, options);
   if (edition === '2024' && level > 0) {
     effects.penalty = { amount: -2 * level, source: `Exhaustion ${level}` };
   }
@@ -304,18 +365,22 @@ export function resolveD20(
 /**
  * Walking speed under the conditions in force, and the sources that changed
  * it, in order. Exhaustion first (2014: halved from level 2, round down, 0 from
- * level 5; 2024: 5 ft less per level), then speed 0 from a condition, which
- * no bonus lifts.
+ * level 5; 2024: 5 ft less per level), then an effect's multiplier (Haste
+ * doubles what exhaustion left: 30 less 5 is 25, doubled 50), then speed 0
+ * from a condition, which nothing lifts.
  */
 export function conditionSpeed(
   base: number,
   conditions: ReadonlyArray<ActiveCondition>,
   edition: Edition,
+  options: ConditionOptions & {
+    /** `DerivedSheet.speedMultiplier`. */
+    multiplier?: { factor: number; sources: readonly string[] };
+  } = {},
 ): { value: number; sources: string[] } {
   let value = base;
   const sources: string[] = [];
-  const exhaustion = conditions.find((c) => c.id === 'Exhaustion' && c.ignored !== true);
-  const level = clampLevel(exhaustion?.level);
+  const level = exhaustionLevel(conditions, options);
   if (level > 0) {
     const after =
       edition === '2024'
@@ -328,7 +393,13 @@ export function conditionSpeed(
     if (after !== value) sources.push(`Exhaustion ${level}`);
     value = after;
   }
-  for (const { source, rules } of inForce(conditions, edition)) {
+  const multiplier = options.multiplier;
+  if (multiplier !== undefined && multiplier.factor !== 1) {
+    const after = Math.floor(value * multiplier.factor);
+    if (after !== value) for (const source of multiplier.sources) addOnce(sources, source);
+    value = after;
+  }
+  for (const { source, rules } of inForce(conditions, edition, options)) {
     if (rules.immobile !== true) continue;
     addOnce(sources, source);
     value = 0;
@@ -344,10 +415,10 @@ export function conditionMaxHp(
   max: number,
   conditions: ReadonlyArray<ActiveCondition>,
   edition: Edition,
+  options: ConditionOptions = {},
 ): { value: number; source?: string } {
   if (edition === '2024') return { value: max };
-  const exhaustion = conditions.find((c) => c.id === 'Exhaustion' && c.ignored !== true);
-  const level = clampLevel(exhaustion?.level);
+  const level = exhaustionLevel(conditions, options);
   if (level < 4 || max <= 0) return { value: max };
   return { value: Math.max(1, Math.floor(max / 2)), source: `Exhaustion ${level}` };
 }
@@ -356,9 +427,10 @@ export function conditionMaxHp(
 export function attacksAgainst(
   conditions: ReadonlyArray<ActiveCondition>,
   edition: Edition,
+  options: ConditionOptions = {},
 ): Array<{ text: string; sources: string[] }> {
   const out: Array<{ text: string; sources: string[] }> = [];
-  for (const { source, rules } of inForce(conditions, edition)) {
+  for (const { source, rules } of inForce(conditions, edition, options)) {
     for (const text of rules.against ?? []) {
       const line = out.find((l) => l.text === text);
       if (line === undefined) out.push({ text, sources: [source] });
@@ -373,6 +445,22 @@ export function attacksAgainst(
     adv.text = 'Attack rolls against you have advantage within 5 ft, a straight roll beyond';
     for (const source of prone.sources) addOnce(adv.sources, source);
     out.splice(out.indexOf(prone), 1);
+  }
+  return out;
+}
+
+/** Damage the conditions in force resist (a Petrified character resists all), named for the condition. */
+export function conditionDefenses(
+  conditions: ReadonlyArray<ActiveCondition>,
+  edition: Edition,
+  options: ConditionOptions = {},
+): Array<{ damageType: string; origin: string }> {
+  const out: Array<{ damageType: string; origin: string }> = [];
+  for (const { source, rules } of inForce(conditions, edition, options)) {
+    for (const damageType of rules.resist ?? []) {
+      if (!out.some((d) => d.damageType === damageType && d.origin === source))
+        out.push({ damageType, origin: source });
+    }
   }
   return out;
 }

@@ -31,27 +31,30 @@ describe('amountOf', () => {
     expect(amountOf(taps('0'))).toBe('0');
   });
 
-  it('adds a quick amount to what was typed, never onto its digits', () => {
-    expect(amountOf(taps('1', '0', '+5', '3'))).toBe('18');
+  it('adds a quick amount to what is shown', () => {
     expect(amountOf(taps('8', '+5'))).toBe('13');
     expect(amountOf(taps('+10', '+5', '+1'))).toBe('16');
-    expect(amountOf(taps('+5', '1', '2'))).toBe('17');
   });
 
-  it('types each number after a quick amount as its own, three digits at most', () => {
-    expect(amountOf(taps('+5', '0', '3'))).toBe('8');
+  it('types a digit on the end of what is shown, even after a quick amount', () => {
+    expect(amountOf(taps('1', '4', '+1', '0'))).toBe('150');
+    expect(amountOf(taps('+5', '3'))).toBe('53');
+    expect(amountOf(taps('+5', '0', '3'))).toBe('503');
+  });
+
+  it('types three digits at most', () => {
     expect(amountOf(taps('1', '2', '3', '4'))).toBe('123');
-    expect(amountOf(taps('+1', '1', '2', '3', '4'))).toBe('124');
+    expect(amountOf(taps('+1', '1', '2', '3'))).toBe('112');
   });
 });
 
 describe('addTap', () => {
   it('keeps each tap that changes the amount, so Undo takes back exactly one', () => {
-    const kept = tapped('1', '0', '+5', '3');
-    expect(kept).toEqual(taps('1', '0', '+5', '3'));
-    // Undo is the taps less the last: the 3, then the whole +5, then a digit.
+    const kept = tapped('1', '4', '+1', '0');
+    expect(kept).toEqual(taps('1', '4', '+1', '0'));
+    // Undo is the taps less the last: the 0, then the whole +1, then a digit.
     expect(amountOf(kept.slice(0, -1))).toBe('15');
-    expect(amountOf(kept.slice(0, -2))).toBe('10');
+    expect(amountOf(kept.slice(0, -2))).toBe('14');
     expect(amountOf(kept.slice(0, -3))).toBe('1');
     expect(amountOf(kept.slice(0, -4))).toBe('');
   });
@@ -65,17 +68,16 @@ describe('addTap', () => {
   it('drops a tap that changes nothing, so Undo never seems to do nothing', () => {
     expect(tapped('0', '0')).toEqual(taps('0'));
     expect(tapped('1', '2', '3', '4')).toEqual(taps('1', '2', '3'));
-    expect(tapped('+5', '0')).toEqual(taps('+5'));
+    expect(tapped('+5', '0', '0', '0')).toEqual(taps('+5', '0', '0'));
   });
 
   it('never takes the amount past 999', () => {
     expect(amountOf(tapped('9', '9', '0', '+10'))).toBe('990');
     expect(amountOf(tapped('9', '9', '0', '+10', '+5', '+5'))).toBe('995');
-    expect(amountOf(tapped('+10', '9', '9', '0'))).toBe('109');
     expect(amountOf(tapped('9', '9', '9', '+1'))).toBe('999');
     // 999 itself is fine, however it is made.
-    expect(amountOf(tapped('+10', '9', '8', '9'))).toBe('999');
-    expect(amountOf(tapped('+10', '9', '8', '9', '+1'))).toBe('999');
+    expect(amountOf(tapped('9', '8', '+1', '9'))).toBe('999');
+    expect(amountOf(tapped('9', '8', '+1', '9', '+1'))).toBe('999');
   });
 });
 

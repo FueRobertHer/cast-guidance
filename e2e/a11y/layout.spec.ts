@@ -577,11 +577,12 @@ test.describe('the HP sheet', () => {
         ['Temp HP', 'Set temp HP to 150'],
       ] as const) {
         await sheet.getByRole('button', { name: mode, exact: true }).click();
-        // 10 and then 140, as quick amounts add to what is typed.
+        // 14, +1 is 15, and a 0 typed on its end is 150.
         if (mode === 'Damage') {
-          await quick.getByRole('button', { name: '+10', exact: true }).click();
-          for (const digit of ['1', '4', '0'])
+          for (const digit of ['1', '4'])
             await keypad.getByRole('button', { name: digit, exact: true }).click();
+          await quick.getByRole('button', { name: '+1', exact: true }).click();
+          await keypad.getByRole('button', { name: '0', exact: true }).click();
         }
         expect(await pastRightEdge(sheet), `${mode}: past the sheet`).toEqual([]);
         for (const control of [

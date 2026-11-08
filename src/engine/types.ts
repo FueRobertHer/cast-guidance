@@ -65,6 +65,12 @@ export type OverridePath =
 export interface PlayState {
   currentHp: number;
   tempHp: number;
+  /**
+   * The effect in play whose temporary hit points these are (Heroism's), so
+   * they go when it ends. Absent when they came from anywhere else: any other
+   * write to `tempHp` deletes it.
+   */
+  tempHpFrom?: string;
   /** die label ('d10') -> spent count */
   hitDiceSpent: Record<string, number>;
   /** index 0 = level-1 slots spent */

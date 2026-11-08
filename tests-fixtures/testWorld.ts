@@ -32,8 +32,8 @@ const race: DataEntity[] = [
     ],
   },
   {
-    // PHB-shaped Dragonborn: the racial resistance is a `choose` the subrace
-    // pre-answers, and the Breath Weapon mechanics live in prose (the typed
+    // PHB-shaped Dragonborn: the racial resistance is a `choose` the subrace's
+    // own `resist` replaces, and the Breath Weapon mechanics live in prose (the typed
     // damage/area/save comes from the curated ancestry table in race.ts).
     name: 'Dragonborn',
     source: 'TST',
