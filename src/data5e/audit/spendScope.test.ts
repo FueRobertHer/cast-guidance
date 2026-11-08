@@ -164,7 +164,10 @@ describe('spendCounts', () => {
     const options = [
       option('Twinned Spell', 'XPHB', 'Spend a sorcery point on a higher-level spell slot.'),
     ];
-    const both = { byType: (t: string) => (t === 'optionalfeature' ? options : []) };
+    const both = {
+      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      get: () => undefined,
+    };
     const subject = proseSubjects(both)[0];
     if (subject === undefined) throw new Error('no subject');
     saveAnswers(file, 'sorcery', subject, { [SPENDS]: 0.95 });
