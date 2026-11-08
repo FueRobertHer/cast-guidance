@@ -10,8 +10,8 @@ import {
   genericOptions,
   languageOptions,
   readAbilityBlock,
+  readDefenses,
   readProficiencyList,
-  readResistList,
   readSkillOrToolChoice,
   skillOptions,
   toolOptions,
@@ -112,7 +112,7 @@ export function collectFeatEntity(
     genericOptions,
   );
   readSkillOrToolChoice(col, e.skillToolLanguageProficiencies, origin, `${idBase}:skillTool`);
-  readResistList(col, e.resist, origin, `${idBase}:resist`);
+  readDefenses(col, e, origin, idBase);
   readFeatOptionalFeatures(col, e, uid, origin, idBase);
   const picked = readProsePick(col, uid, origin, idBase);
 

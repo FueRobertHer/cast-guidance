@@ -337,7 +337,8 @@ export function Component() {
         {sheet.resists.length > 0 && (
           <div className={ROW}>
             <span className="text-ink-muted">Resistances: </span>
-            {sheet.resists.map((r) => r.damageType).join(', ')}
+            {/* A species and a ring can both resist fire: name it once. */}
+            {[...new Set(sheet.resists.map((r) => r.damageType))].join(', ')}
           </div>
         )}
         {sheet.languages.length > 0 && (
