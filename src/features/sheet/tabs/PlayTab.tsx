@@ -1307,7 +1307,16 @@ export function Component() {
                   : a.economy === 'reaction'
                     ? 'reaction'
                     : 'action';
+              // A feature with a chip per slot (summon with an action, command with a
+              // bonus action) shows the same name twice, so each says its slot.
+              const sharesName =
+                sheet.actions.filter((b) => b.origin === a.origin && b.label === a.label).length >
+                1;
+              const slot = sharesName
+                ? economyLabel.charAt(0).toUpperCase() + economyLabel.slice(1)
+                : undefined;
               const mechanics = [
+                slot,
                 a.note,
                 a.save !== undefined
                   ? `${a.save.dc === undefined ? '' : `DC ${a.save.dc} `}${a.save.targetAbility.toUpperCase()} save`
@@ -1336,7 +1345,7 @@ export function Component() {
                 );
               return (
                 <span
-                  key={`${a.origin}:${a.label}`}
+                  key={`${a.origin}:${a.label}:${a.economy}`}
                   // Ink, whatever the economy: green and blue outlines read as
                   // statuses, and colour alone is no way to say which slot an
                   // action spends (DS-001 TurnTracker). The Use button's
@@ -1376,7 +1385,9 @@ export function Component() {
                       <Button
                         variant="outline"
                         size="sm"
-                        aria-label={`Use ${a.label}`}
+                        aria-label={
+                          slot === undefined ? `Use ${a.label}` : `Use ${a.label}, ${economyLabel}`
+                        }
                         onClick={trigger}
                         disabled={use.disabled}
                         className="-my-1.5"

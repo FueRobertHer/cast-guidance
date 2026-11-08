@@ -324,9 +324,11 @@ const AS_BONUS_ACTION = new RegExp(`(?<!(?<! or )${ENDS_IT} )as a bonus action`)
  * target can then take a Reaction" spend that creature's Reaction, so they are no
  * chip for the character, and "you can't" forbids one. "Using" also needs a clause that
  * spends it: "without using your reaction" keeps it, and "when using" is a trigger.
+ * "As a reaction" is the character's unless its clause gives another subject: "they
+ * can immediately make one weapon attack as a reaction" is the ally's.
  */
 const REACTION_PHRASE =
-  /as a reaction|\buse your reaction|(?<!\b(?:without|of|when|while) )\busing your reaction|you can use a reaction|the sidekick can use its reaction|you (?:can|must) take a reaction|you get a special reaction/;
+  /(?<!\b(?!you\b|sidekick\b|paladin\b)[a-z]+ can\b[^.,;:]*)as a reaction|\buse your reaction|(?<!\b(?:without|of|when|while) )\busing your reaction|you can use a reaction|the sidekick can use its reaction|you (?:can|must) take a reaction|you get a special reaction/;
 /**
  * 2024 phrasings: "replace one of your attacks" (Attack-action riders) and "as a
  * Magic action" (the action to use a magical trait, e.g. Healing Hands). A subject is
@@ -340,14 +342,15 @@ const ACTION_PHRASE = new RegExp(
 );
 /**
  * A bonus action the feature gives, in its looser wordings, with its subject as for a
- * reaction: "when you take a bonus action" only rides on one, and "the paladin can use
- * a bonus action" is the same feature's follow-up. These read after the wordings above,
- * so a chip those give stays where it is. Beside a limited feature's plain action, the
+ * reaction: "when you take a bonus action" only rides on one. The paladin is the
+ * character, in the DMG's third person. These read after the wordings above, so a
+ * chip those give stays where it is. Beside a limited feature's plain action, the
  * first one named is its use: "as an action, you build it" comes before the bonus action
- * that commands it, and the limit is on building it.
+ * that commands it, and the limit is on building it. The bonus action is then a
+ * follow-up (`followUpPhrases`).
  */
 const BONUS_GIVEN = new RegExp(
-  `(?:you|the sidekick) can (?:use|take) (?:a|the) bonus action(?! to ${ENDS_IT}(?:[.,;]|$))|unless you take a bonus action|follow that attack with a bonus action`,
+  `(?:you|the sidekick|the paladin) can (?:use|take) (?:a|the) bonus action(?! to ${ENDS_IT}(?:[.,;]|$))|unless you take a bonus action|follow that attack with a bonus action`,
 );
 /**
  * A reaction the sentence does not name, since an Opportunity Attack always takes one,
@@ -378,6 +381,50 @@ export function chipPhrase(
   const opportunity = text.search(OPPORTUNITY_ATTACK);
   return opportunity === -1 ? undefined : { economy: 'reaction', at: opportunity };
 }
+
+type Phrase = NonNullable<ReturnType<typeof chipPhrase>>;
+type Economy = Phrase['economy'];
+
+/**
+ * A reaction the character takes, unless it only ends what the feature started:
+ * "until you use your reaction to end it", as for a bonus action.
+ */
+const REACTION_GIVEN = new RegExp(
+  `(?<!(?<! or )${ENDS_IT} )(?:${REACTION_PHRASE.source})(?! to ${ENDS_IT}(?:[.,;]|$))`,
+);
+
+/**
+ * The other slots a feature with a chip gives the character, one chip each, from the
+ * first phrase naming the slot: the bonus action that commands what an action
+ * summoned, a reaction while a bonus action's state lasts. They read with the
+ * wordings that give `chipPhrase` its chip, so "its reaction" (another creature's)
+ * gives none here either, and neither does a slot that only ends the feature. "As a
+ * bonus action" always makes the first chip, so a bonus follow-up has only the looser
+ * wordings. A plain action is no follow-up: beside a faster slot it is too often
+ * something else the prose allows.
+ */
+export function followUpPhrases(text: string, first: Phrase): Phrase[] {
+  const reactions = [REACTION_GIVEN, OPPORTUNITY_ATTACK]
+    .map((p) => text.search(p))
+    .filter((found) => found !== -1);
+  const at: Record<Exclude<Economy, 'action'>, number> = {
+    bonus: text.search(BONUS_GIVEN),
+    reaction: reactions.length === 0 ? -1 : Math.min(...reactions),
+  };
+  return (['bonus', 'reaction'] as const)
+    .filter((economy) => economy !== first.economy && at[economy] !== -1)
+    .map((economy) => ({ economy, at: at[economy] }));
+}
+
+/**
+ * A count the prose gives one slot, which makes the feature's pool that slot's: "you
+ * can use this reaction a number of times equal to your proficiency bonus".
+ */
+const SLOT_COUNTED: Record<Economy, RegExp> = {
+  bonus: /\byou can (?:use|take) this bonus action a number of times\b/,
+  reaction: /\byou can (?:use|take) this reaction a number of times\b/,
+  action: /\byou can (?:use|take) this action a number of times\b/,
+};
 
 /**
  * Dice a chip can roll. A bare d20 is left out: that names a test the player
@@ -448,8 +495,9 @@ const DC_NAMED = new RegExp(
  * neighbouring benefit's save is not this chip's. Otherwise it reads on through the
  * feature's own text, without the named options a player picks between: one season
  * of Fey Step or one Celestial Revelation is not what every use does. A save past
- * the phrase of another action is that action's: a bonus action wins over a reaction
- * in the same feature, and either wins over a plain action.
+ * the phrase of another slot is that slot's chip's (`followUpPhrases`), and a
+ * follow-up takes none before its own phrase, so no save shows on two chips. An
+ * Opportunity Attack is no such phrase: its chip takes no save.
  *
  * The DC is only what the prose says, the first it names after the save, up to the
  * next save it forces. A named formula gives its ability, and "your spell save DC"
@@ -460,6 +508,7 @@ function chipSave(
   entries: unknown,
   ownText: string,
   phrase: { economy: string; at: number },
+  followUp = false,
 ): Extract<EffectInput, { kind: 'action' }>['save'] {
   let left = phrase.at;
   const string = entryStrings(entries).find((s) => (left -= s.length + 1) < 0) ?? '';
@@ -475,9 +524,11 @@ function chipSave(
   const past = read.slice(phraseAt - sentenceAt, at);
   if (
     targetAbility === undefined ||
+    (followUp && at < phraseAt - sentenceAt) ||
     (phrase.economy === 'bonus' && REACTION_PHRASE.test(past)) ||
     (phrase.economy !== 'action' && ACTION_PHRASE.test(past)) ||
-    (phrase.economy === 'action' && BONUS_GIVEN.test(past))
+    (phrase.economy === 'action' && BONUS_GIVEN.test(past)) ||
+    (phrase.economy === 'reaction' && (AS_BONUS_ACTION.test(past) || BONUS_GIVEN.test(past)))
   ) {
     return undefined;
   }
@@ -782,17 +833,26 @@ export function proseScanFeature(
   const ownText = flattenEntries(entries, { skipNamedOptions: true });
 
   if (phrase !== undefined) {
-    col.add({
-      kind: 'action',
-      label: name,
-      roll,
-      heals,
-      plainDice,
-      note,
-      save: chipSave(entries, ownText, phrase),
-      origin,
-      economy: phrase.economy,
-    });
+    // The first chip carries what the scan read for the feature; a follow-up only
+    // marks its slot and any save of its own. The pool is the first chip's to spend,
+    // unless the prose counts a slot of its own: then that slot's chips spend it.
+    const phrases = [phrase, ...followUpPhrases(text, phrase)];
+    const economies = phrases.map((p) => p.economy);
+    const counted = economies.filter((economy) => SLOT_COUNTED[economy].test(text));
+    const spenders = counted.length > 0 ? counted : [phrase.economy];
+    for (const p of phrases) {
+      // An opportunity attack is an attack: a save past it stays the other chip's.
+      const opportunity = p !== phrase && text.slice(p.at).search(OPPORTUNITY_ATTACK) === 0;
+      col.add({
+        kind: 'action',
+        label: name,
+        ...(p === phrase ? { roll, heals, plainDice, note } : {}),
+        save: opportunity ? undefined : chipSave(entries, ownText, p, p !== phrase),
+        ...(spenders.includes(p.economy) ? {} : { spendsNoUse: true }),
+        origin,
+        economy: p.economy,
+      });
+    }
   }
 
   const hp = text.match(

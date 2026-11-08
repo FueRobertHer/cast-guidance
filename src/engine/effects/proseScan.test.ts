@@ -1642,17 +1642,23 @@ describe('proseScanFeature: which slot a feature takes', () => {
       const effects = chips([
         `As an action, you build a drone. You can take a bonus action to command it. ${SAVE} ${LIMIT}`,
       ]);
-      expect(effects).toEqual([expect.objectContaining({ economy: 'action' })]);
-      expect(effects[0]).toMatchObject({ save: undefined });
+      expect(effects).toEqual([
+        expect.objectContaining({ economy: 'action', save: undefined }),
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
     });
 
-    it('leaves a save past a bonus action on a reaction', () => {
+    it('gives a save past a bonus action to the bonus action, not a reaction before it', () => {
       const effects = chips([
         `You can use a reaction to flare. You can use a bonus action to burn. ${SAVE}`,
       ]);
       expect(effects).toEqual([
+        expect.objectContaining({ economy: 'reaction', save: undefined }),
         expect.objectContaining({
-          economy: 'reaction',
+          economy: 'bonus',
           save: expect.objectContaining({ targetAbility: 'wis' }),
         }),
       ]);
@@ -1667,39 +1673,41 @@ describe('proseScanFeature: which slot a feature takes', () => {
   });
 
   describe('a feature that names more than one', () => {
+    // The first chip is the one that carries the feature's roll and use; the rest
+    // are follow-ups (see `proseScanFeature: a chip for each slot`).
     it.each([
       [
         'a limit on the plain action, not the bonus action after it',
         `As an action, you build a drone. You can take a bonus action to command it. ${LIMIT}`,
-        'action',
+        ['action', 'bonus'],
       ],
       [
         'the bonus action named before a plain action',
         `You can use a bonus action to don it. ${LIMIT} You can take a Magic action to doff it.`,
-        'bonus',
+        ['bonus'],
       ],
       [
         'the bonus action, with no limit to make the plain action worth a chip',
         'As an action, you build a drone. You can take a bonus action to command it.',
-        'bonus',
+        ['bonus'],
       ],
       [
         'the reaction over a looser bonus action',
         'You can use a bonus action to glow. You can use your reaction to flare.',
-        'reaction',
+        ['reaction', 'bonus'],
       ],
       [
         'the bonus action over an Opportunity Attack',
         'You can use a bonus action to glow. You can make an Opportunity Attack on a foe.',
-        'bonus',
+        ['bonus', 'reaction'],
       ],
       [
         'the plain action over an Opportunity Attack',
         `As an action, you glow. You can make an Opportunity Attack on a foe. ${LIMIT}`,
-        'action',
+        ['action', 'reaction'],
       ],
-    ])('takes %s', (_case, text, economy) => {
-      expect(economies(text)).toEqual([economy]);
+    ])('takes %s first', (_case, text, chips) => {
+      expect(economies(text)).toEqual(chips);
     });
 
     it.each([
@@ -1766,12 +1774,252 @@ describe('proseScanFeature: which slot a feature takes', () => {
     it('leaves a bonus action’s save its own past an Opportunity Attack', () => {
       const text =
         'As a Bonus Action, you change. You can make an Opportunity Attack on a foe. Each creature within 10 feet of you must make a Wisdom saving throw.';
-      expect(scan('Trait', [text])).toContainEqual(
+      expect(scan('Trait', [text]).filter((e) => e.kind === 'action')).toEqual([
         expect.objectContaining({
-          kind: 'action',
+          economy: 'bonus',
           save: expect.objectContaining({ targetAbility: 'wis' }),
         }),
+        // The attack's chip shows no second copy of it.
+        expect.objectContaining({ economy: 'reaction', save: undefined }),
+      ]);
+    });
+  });
+});
+
+describe('proseScanFeature: a chip for each slot', () => {
+  const LIMIT = 'Once you do this, you can’t do so again until you finish a long rest.';
+  const chips = (...entries: unknown[]) =>
+    scan('Trait', entries).filter(
+      (e): e is Extract<EffectInput, { kind: 'action' }> => e.kind === 'action',
+    );
+  const economies = (...entries: unknown[]) => chips(...entries).map((e) => e.economy);
+  const named = (name: string, ...entries: string[]) => ({ type: 'entries', name, entries });
+
+  describe('follow-ups it reads', () => {
+    it.each([
+      [
+        'a command after a summon',
+        `As an action, you call up a hound. It only dodges unless you take a bonus action to command it. ${LIMIT}`,
+        ['action', 'bonus'],
+      ],
+      [
+        'a bonus action the character can take to work it',
+        `As an action, you raise a totem. On your turn, you can take a bonus action to make it pulse. ${LIMIT}`,
+        ['action', 'bonus'],
+      ],
+      [
+        'the paladin’s bonus action, in the third person',
+        `The paladin can, as an action, call a storm. While it rages, the paladin can use a bonus action to aim a bolt. ${LIMIT}`,
+        ['action', 'bonus'],
+      ],
+      [
+        'a reaction while a bonus action’s state lasts',
+        `As a bonus action, you blaze for 1 minute. While you blaze, you can use your reaction to reroll a failed save. ${LIMIT}`,
+        ['bonus', 'reaction'],
+      ],
+      [
+        'a reaction as a named benefit',
+        named('Glare', 'When a foe misses you, you can take a Reaction to glare back.'),
+        ['bonus', 'reaction'],
+      ],
+      [
+        'a move as a reaction',
+        'As a bonus action, you change shape. While changed, you can step 10 feet as a reaction when a foe comes near.',
+        ['bonus', 'reaction'],
+      ],
+      [
+        'an Opportunity Attack',
+        'You can use a bonus action to send out a double. When a foe leaves it, you can make an Opportunity Attack on that foe.',
+        ['bonus', 'reaction'],
+      ],
+    ])('reads %s', (_case, entry, expected) => {
+      const entries =
+        typeof entry === 'string' ? [entry] : ['As a Bonus Action, you change shape.', entry];
+      expect(economies(...entries)).toEqual(expected);
+    });
+
+    it('reads one chip for each slot, however often the prose names it', () => {
+      expect(
+        economies(
+          'As a bonus action, you change. As a bonus action, you leap. You can use your reaction to dodge. You can use your reaction to parry.',
+        ),
+      ).toEqual(['bonus', 'reaction']);
+    });
+  });
+
+  describe('follow-ups it leaves out', () => {
+    it.each([
+      [
+        'an ally’s reaction',
+        'As a bonus action, you call an ally to strike. If it hears you, it can make one attack as a reaction.',
+      ],
+      [
+        'allies’ reactions',
+        'As a bonus action, you rally your friends. They can each move up to half their speed as a reaction.',
+      ],
+      [
+        'its reaction',
+        'As a bonus action, you call a hound. It can use its reaction to bite a foe.',
+      ],
+      [
+        'a mount’s reaction',
+        'As a bonus action, you spur your mount. Your mount can take a Reaction to charge.',
+      ],
+      [
+        'a bonus action that only ends it',
+        `As an action, you step into a pocket realm. You leave early if you end it as a bonus action. ${LIMIT}`,
+      ],
+      [
+        'a reaction that only ends it',
+        'As a bonus action, you blaze for 1 minute. The blaze lasts until you use your reaction to end it.',
+      ],
+      [
+        'a reaction that only dismisses it',
+        'As a bonus action, you call a wisp. You can dismiss the wisp as a reaction.',
+      ],
+      [
+        'a plain action beside a faster slot',
+        `As a bonus action, you glow. As an action, you can flare. ${LIMIT}`,
+      ],
+    ])('leaves out %s', (_case, text) => {
+      expect(economies(text)).toHaveLength(1);
+    });
+
+    it.each([
+      ['the sidekick', 'The sidekick can step 5 feet as a reaction when hit.'],
+      ['the paladin', 'The paladin can step 5 feet as a reaction when hit.'],
+      ['a clause opening on it', 'As a reaction when you are hit, you can step 5 feet.'],
+    ])('still reads "as a reaction" for %s', (_case, text) => {
+      expect(economies(text)).toEqual(['reaction']);
+    });
+
+    it('reads no reaction an ally takes, even with no other chip', () => {
+      expect(economies('If your friend hears you, they can attack once as a reaction.')).toEqual(
+        [],
       );
+    });
+  });
+
+  describe('what a follow-up carries', () => {
+    it('rolls nothing and notes nothing: the first chip has the feature’s dice', () => {
+      const [first, next] = chips(
+        `As an action, you raise a gloom in a 30-foot radius, and foes in it take 2d10 psychic damage. While it lasts, you can use a bonus action to strike with it for 3d10 necrotic damage. ${LIMIT}`,
+      );
+      expect(first).toMatchObject({ economy: 'action', roll: '2d10' });
+      expect(first?.note).toBeDefined();
+      expect(next).toMatchObject({ economy: 'bonus' });
+      expect(next).not.toHaveProperty('roll');
+      expect(next).not.toHaveProperty('note');
+    });
+
+    it('spends no use of the feature’s pool, which the first chip spends', () => {
+      const [first, next] = chips(
+        `As a bonus action, you blaze. While you blaze, you can use your reaction to reroll a save. ${LIMIT}`,
+      );
+      expect(first).not.toHaveProperty('spendsNoUse');
+      expect(next).toMatchObject({ economy: 'reaction', spendsNoUse: true });
+    });
+
+    it('spends the pool when the prose counts that slot itself, and the other chip does not', () => {
+      const [first, next] = chips(
+        named('Infuse', 'As a bonus action, you coat a blade in acid.'),
+        named(
+          'Shrug',
+          'When you take acid damage, you can use your reaction to resist it. You can use this reaction a number of times equal to your proficiency bonus, and you regain all expended uses when you finish a long rest.',
+        ),
+      );
+      expect(first).toMatchObject({ economy: 'bonus', spendsNoUse: true });
+      expect(next).toMatchObject({ economy: 'reaction' });
+      expect(next).not.toHaveProperty('spendsNoUse');
+    });
+
+    it('lets every slot the prose counts spend the pool', () => {
+      const count = (slot: string) =>
+        `You can take this ${slot} a number of times equal to your Intelligence modifier, and you regain all expended uses when you finish a long rest.`;
+      const effects = chips(
+        named(
+          'Warden',
+          `When a foe ends its turn near you, you can take a Reaction to pull it. ${count('Reaction')}`,
+        ),
+        named(
+          'Glider',
+          `As a Bonus Action, you can fly until the end of the turn. ${count('Bonus Action')}`,
+        ),
+      );
+      expect(effects.map((e) => e.economy)).toEqual(['bonus', 'reaction']);
+      expect(effects.filter((e) => e.spendsNoUse === true)).toEqual([]);
+    });
+
+    it('takes a save past its own phrase, which the first chip then does not show', () => {
+      const effects = chips(
+        named(
+          'Warden',
+          'When a foe ends its turn near you, you can take a Reaction to force it to make a Strength saving throw against your spell save DC.',
+        ),
+        named('Glider', 'As a Bonus Action, you can fly until the end of the turn.'),
+      );
+      expect(effects).toEqual([
+        expect.objectContaining({ economy: 'bonus', save: undefined }),
+        expect.objectContaining({
+          economy: 'reaction',
+          save: { targetAbility: 'str', dcAbility: 'spell' },
+        }),
+      ]);
+    });
+
+    it('reads a reaction from its first phrase, ahead of an Opportunity Attack after it', () => {
+      const effects = chips(
+        'As a bonus action, you change. While changed, you can use your reaction to snarl, and each creature within 10 feet of you must make a Wisdom saving throw. Later, you can make an Opportunity Attack on a foe that leaves you.',
+      );
+      expect(effects).toEqual([
+        expect.objectContaining({ economy: 'bonus', save: undefined }),
+        expect.objectContaining({
+          economy: 'reaction',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it('leaves a save past "as a bonus action" off a reaction before it', () => {
+      const effects = chips(
+        'When a foe hits you, you can use your reaction to flash. As a bonus action, you can flare, and each creature within 10 feet of you must make a Wisdom saving throw.',
+      );
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+        expect.objectContaining({ economy: 'reaction', save: undefined }),
+      ]);
+    });
+
+    it.each([
+      ['an earlier sentence', '. It only dodges unless'],
+      ['its own sentence', ', and it only dodges unless'],
+    ])('leaves a save before its phrase, in %s, to the first chip', (_case, joint) => {
+      const effects = chips(
+        `As an action, you call up a spirit, and each creature within 10 feet of it must succeed on a Dexterity saving throw against your spell save DC${joint} you take a bonus action to command it. ${LIMIT}`,
+      );
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'action',
+          save: { targetAbility: 'dex', dcAbility: 'spell' },
+        }),
+        expect.objectContaining({ economy: 'bonus', save: undefined }),
+      ]);
+    });
+
+    it('leaves a save before a reaction in its sentence to the bonus action', () => {
+      const effects = chips(
+        'As a bonus action, you roar, and each creature within 10 feet of you must make a Wisdom saving throw, and while you roar you can use your reaction to snarl.',
+      );
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+        expect.objectContaining({ economy: 'reaction', save: undefined }),
+      ]);
     });
   });
 });

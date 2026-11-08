@@ -173,6 +173,7 @@ export function deriveSheet(
     cost: costOnSheet(e.cost, resources),
     buyBack: costOnSheet(e.buyBack, resources),
     regains: e.regains,
+    ...(e.spendsNoUse === true ? { spendsNoUse: true } : {}),
   }));
 
   const classLabel = doc.classes

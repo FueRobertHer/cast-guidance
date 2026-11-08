@@ -170,7 +170,8 @@ export function applyRestore(entries: PlayState['resources'], restore: ActionRes
  * With a cost, what the cost names: a pool that shares the name then belongs to
  * another clause of the feature (Waxing and Waning's free spells) or another source
  * altogether (a race's Darkness), so it pays only when the cost says so (Hand of
- * Ultimate Mercy).
+ * Ultimate Mercy). A chip whose feature's use another chip spends (`spendsNoUse`)
+ * takes none of it.
  */
 function spendingOf(
   action: SheetAction,
@@ -180,7 +181,9 @@ function spendingOf(
   const { cost, economy, label } = action;
   const pool = cost !== undefined ? resources.find((r) => r.key === cost.resource) : undefined;
   const own =
-    cost === undefined || cost.ownUseToo === true ? sharingName(resources, label) : undefined;
+    action.spendsNoUse !== true && (cost === undefined || cost.ownUseToo === true)
+      ? sharingName(resources, label)
+      : undefined;
 
   const ownLeft = own !== undefined ? leftOf(own) : undefined;
   const ownSpend: ActionSpend[] =

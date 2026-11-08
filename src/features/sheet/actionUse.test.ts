@@ -83,6 +83,14 @@ describe('actionUse', () => {
     expect(u.disabled).toBe(false);
   });
 
+  it('spends no use of the pool sharing its name when another chip of the feature does', () => {
+    const u = use(action({ spendsNoUse: true }), [OWN], { own: 2 });
+    expect(u.spends).toEqual([]);
+    expect(u.caption).toEqual([]);
+    expect(u.disabled).toBe(false);
+    expect(u.title).toBe('Use: marks your bonus action');
+  });
+
   it('pays once when the cost names the pool sharing its name', () => {
     const u = use(action({ cost: { resource: 'own', amount: 2 } }), [OWN]);
     expect(u.spends).toEqual([{ key: 'own', max: 2, amount: 2 }]);

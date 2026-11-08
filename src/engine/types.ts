@@ -428,6 +428,12 @@ export type EffectInput = { origin: EffectOrigin } & (
       buyBack?: ActionBuyBack;
       /** The pool using it refills. */
       regains?: ActionRegain;
+      /**
+       * Using it spends no use of the pool sharing its name, which another chip of
+       * the same feature spends: the bonus action commanding what it summoned, a
+       * reaction while it lasts.
+       */
+      spendsNoUse?: boolean;
     }
   | {
       /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
@@ -821,6 +827,8 @@ export interface DerivedSheet {
     buyBack?: ActionBuyBack;
     /** The pool using it refills. */
     regains?: ActionRegain;
+    /** Another chip of the same feature spends the pool sharing its name. */
+    spendsNoUse?: boolean;
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];
