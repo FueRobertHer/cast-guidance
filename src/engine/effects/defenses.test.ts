@@ -165,7 +165,7 @@ describe('defenses and speeds a species gives', () => {
     source: 'TST',
     raceName: 'Testkin',
     raceSource: 'TST',
-    speed: { walk: 35, swim: 40 },
+    speed: { walk: 35, fly: true, swim: 40 },
   };
   const ctx = world([species, sub]);
   const doc = () => {
@@ -193,12 +193,14 @@ describe('defenses and speeds a species gives', () => {
     ]);
   });
 
-  it("adds a subrace's swim speed to the species' own", () => {
+  // 5etools assigns a subrace's `speed` over the species' whole, so a mode the
+  // subrace leaves out (climb here) goes. No subrace on the release leaves out
+  // a mode its species has.
+  it("takes a subrace's speeds in place of the species' own, as 5etools merges them", () => {
     const d = doc();
     d.subrace = { name: 'Deep', source: 'TST' };
     expect(deriveSheet(d, ctx).otherSpeeds).toEqual([
-      { mode: 'fly', value: 35, origin: 'Testkin' },
-      { mode: 'climb', value: 20, origin: 'Testkin' },
+      { mode: 'fly', value: 35, origin: 'Deep' },
       { mode: 'swim', value: 40, origin: 'Deep' },
     ]);
   });

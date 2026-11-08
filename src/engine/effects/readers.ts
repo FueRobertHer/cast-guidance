@@ -582,9 +582,7 @@ const DAMAGE_LIST_LABEL = {
 
 /**
  * `resist: ['fire', { choose: { from: [...] } }]` and the same shape under
- * `immune` and `vulnerable`. `predetermined` are types another part of the
- * build already fixes (e.g. a Dragonborn subrace's ancestry): a choose prompt
- * whose options cover one of them is already answered, so no prompt is emitted.
+ * `immune` and `vulnerable`.
  */
 export function readDamageList(
   col: Collector,
@@ -592,7 +590,6 @@ export function readDamageList(
   raw: unknown,
   origin: EffectOrigin,
   promptIdBase: string,
-  predetermined: readonly string[] = [],
 ): void {
   if (!Array.isArray(raw)) return;
   let chooseIdx = 0;
@@ -605,7 +602,6 @@ export function readDamageList(
         count?: number;
       };
       const from = (c.from ?? []).map(String);
-      if (predetermined.some((p) => from.includes(p.toLowerCase()))) continue;
       const id = `${promptIdBase}:r${chooseIdx++}`;
       col.choice(
         {
@@ -633,9 +629,8 @@ export function readDefenses(
   e: DataEntity,
   origin: EffectOrigin,
   idBase: string,
-  predeterminedResists: readonly string[] = [],
 ): void {
-  readDamageList(col, 'resist', e.resist, origin, `${idBase}:resist`, predeterminedResists);
+  readDamageList(col, 'resist', e.resist, origin, `${idBase}:resist`);
   readDamageList(col, 'immune', e.immune, origin, `${idBase}:immune`);
   readDamageList(col, 'vulnerable', e.vulnerable, origin, `${idBase}:vulnerable`);
   if (!Array.isArray(e.conditionImmune)) return;

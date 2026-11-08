@@ -1,5 +1,13 @@
+import { subraceBelongsTo } from '../../data5e/subraceOptions';
 import { emitCuratedTrait } from '../curated/curatedEffects';
-import { type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
+import {
+  type Ability,
+  type CharacterDoc,
+  type DataEntity,
+  type EffectOrigin,
+  type EngineContext,
+  refUid,
+} from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { proseScanFeature } from './proseScan';
@@ -14,28 +22,151 @@ import {
   weaponOptions,
 } from './readers';
 
+/**
+ * The character's subrace. Subraces are found by name and source, and two
+ * races can each have one of the same name and source (Ixalan|PSX for the
+ * Goblin and the Vampire), so the one that belongs to the character's race
+ * wins. A pick that belongs to neither is found as before.
+ */
+export function subraceFor(
+  ctx: EngineContext,
+  doc: Pick<CharacterDoc, 'race' | 'subrace'>,
+): DataEntity | undefined {
+  const ref = doc.subrace;
+  if (ref === undefined) return undefined;
+  const first = ctx.get('subrace', ref.name, ref.source);
+  const race = doc.race;
+  if (first === undefined || race === undefined || subraceBelongsTo(first, race)) return first;
+  const uid = refUid(ref);
+  const sameRef = (s: DataEntity) => `${String(s.name)}|${String(s.source)}`.toLowerCase() === uid;
+  return ctx.byType('subrace').find((s) => sameRef(s) && subraceBelongsTo(s, race)) ?? first;
+}
+
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
   const doc = col.doc;
   const race = doc.race ? col.ctx.get('race', doc.race.name, doc.race.source) : undefined;
   if (doc.race && race === undefined) {
     col.warn(`Race not found: ${refUid(doc.race)} (data pack missing or renamed)`);
   }
-  const subrace = doc.subrace
-    ? col.ctx.get('subrace', doc.subrace.name, doc.subrace.source)
-    : undefined;
+  const subrace = subraceFor(col.ctx, doc);
   if (doc.subrace && subrace === undefined) {
     col.warn(`Subrace not found: ${refUid(doc.subrace)}`);
   }
   return { race, subrace };
 }
 
-function collectFrom(
-  col: Collector,
-  e: DataEntity,
-  origin: EffectOrigin,
-  idBase: string,
-  predeterminedResists: readonly string[] = [],
-): void {
+/**
+ * Keys 5etools adds to the race's own rather than replacing them, unless the
+ * subrace's `overwrite` object flags the key: ability scores and skills key by
+ * key, languages and trait tags beside the race's.
+ */
+const ADDED_KEYS = new Set(['ability', 'skillProficiencies', 'languageProficiencies', 'traitTags']);
+
+const isEntity = (v: unknown): v is DataEntity => typeof v === 'object' && v !== null;
+
+/** How 5etools matches a trait to the name in `data.overwrite`. */
+const traitKey = (name: string) => name.toLowerCase().trim();
+
+/** The keys the ability reader asks a pick for. */
+const abilityPick = (key: string) => key === 'choose';
+/** The keys the skill reader asks a pick for. */
+const skillPick = (key: string) => key === 'choose' || key.startsWith('any');
+
+/**
+ * An ability list whose entries are all weighted choices: the reader reads
+ * them as alternatives and asks which one applies.
+ */
+function arrangements(list: unknown): boolean {
+  const entries = asEntityArray(list);
+  return (
+    entries.length > 1 && entries.every((e) => isEntity(e.choose) && isEntity(e.choose.weighted))
+  );
+}
+
+/**
+ * The race's list with the keys the subrace's entry at the same place sets
+ * taken out of the first `places` entries, since 5etools assigns the
+ * subrace's over the race's there. The readers number a list's picks in
+ * reading order, so a pick the subrace also sets stays (and the race still
+ * asks it) wherever taking it out would renumber a later pick the player may
+ * have answered.
+ */
+function lessSubraceKeys(
+  raceList: unknown,
+  subList: unknown,
+  places: number,
+  asksAPick: (key: string) => boolean,
+): unknown {
+  if (!Array.isArray(raceList) || !Array.isArray(subList)) return raceList;
+  const dropped = raceList.map(() => new Set<string>());
+  let pickAfter = false;
+  for (let i = raceList.length - 1; i >= 0; i--) {
+    const entry: unknown = raceList[i];
+    const over: unknown = subList[i];
+    if (!isEntity(entry)) continue;
+    const shared = new Set(i < places && isEntity(over) ? Object.keys(over) : []);
+    for (const key of Object.keys(entry).reverse()) {
+      if (shared.has(key) && !(pickAfter && asksAPick(key))) dropped[i]?.add(key);
+      else if (asksAPick(key)) pickAfter = true;
+    }
+  }
+  return raceList.map((entry, i) => {
+    const drop = dropped[i];
+    if (!isEntity(entry) || drop === undefined || drop.size === 0) return entry;
+    return Object.fromEntries(Object.entries(entry).filter(([key]) => !drop.has(key)));
+  });
+}
+
+/**
+ * The race as a subrace leaves it. 5etools merges the two into one entity
+ * (`Renderer.race._getMergedSubrace` in its render.js); the engine collects
+ * them apart, so each keeps its own origin and prompt ids, and takes off the
+ * race what that merge would replace:
+ * - a subrace trait with `data.overwrite` replaces the race trait of that name
+ *   (Mammon's Legacy of Minauros for the Tiefling's Infernal Legacy);
+ * - ability scores and the first skill entry take the subrace's value for any
+ *   key both set, languages add to the race's, and the subrace's `overwrite`
+ *   flag on one of these replaces the race's outright;
+ * - every other key the subrace sets replaces the race's, spells included,
+ *   and a `null` one removes it (a Winged tiefling casts none of the race's),
+ *   `entries` too: the subrace's own traits go on its own card.
+ */
+export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEntity {
+  const view: DataEntity = { ...race };
+  const flags = isEntity(subrace.overwrite) ? subrace.overwrite : {};
+  for (const [key, value] of Object.entries(subrace)) {
+    // An `undefined` key is one the subrace does not set (JSON has no such value).
+    if (value === undefined || key === 'name' || key === 'source') continue;
+    if (key === 'entries') {
+      if (value === null) delete view.entries;
+      continue;
+    }
+    if (value === null || !ADDED_KEYS.has(key) || flags[key] === true) delete view[key];
+    else if (key === 'ability') {
+      // Emptying one of the race's alternative arrangements would make it
+      // read the rest as all applying at once, so they stay whole.
+      if (!arrangements(view.ability)) {
+        view.ability = lessSubraceKeys(view.ability, value, Infinity, abilityPick);
+      }
+    } else if (key === 'skillProficiencies') {
+      view.skillProficiencies = lessSubraceKeys(view.skillProficiencies, value, 1, skillPick);
+    }
+  }
+  const replaced = new Set<string>();
+  for (const entry of asEntityArray(subrace.entries)) {
+    const name = isEntity(entry.data) ? str(entry.data.overwrite) : undefined;
+    if (name !== undefined) replaced.add(traitKey(name));
+  }
+  if (replaced.size > 0 && Array.isArray(view.entries)) {
+    view.entries = view.entries.filter((entry: unknown) => {
+      const name = isEntity(entry) ? str(entry.name) : undefined;
+      return name === undefined || !replaced.has(traitKey(name));
+    });
+  }
+  return view;
+}
+
+function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase: string): void {
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
 
   // Walking speed is read straight from the entities in calc/speed; the other
@@ -108,7 +239,7 @@ function collectFrom(
     (name) => col.add({ kind: 'armorProf', name, origin }),
     genericOptions,
   );
-  readDefenses(col, e, origin, idBase, predeterminedResists);
+  readDefenses(col, e, origin, idBase);
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
@@ -178,19 +309,24 @@ function linkDraconicAncestry(col: Collector): void {
 
 export function collectRace(col: Collector): void {
   const { race, subrace } = raceEntity(col);
-  // Resistances the subrace fixes outright (a Dragonborn ancestry's damage
-  // type) pre-answer any matching "choose a resistance" on the base race.
-  const subraceResists = Array.isArray(subrace?.resist)
-    ? subrace.resist.filter((r): r is string => typeof r === 'string')
-    : [];
   if (race !== undefined && col.doc.race !== undefined) {
     const origin: EffectOrigin = {
       label: str(race.name) ?? col.doc.race.name,
       uid: refUid(col.doc.race),
       type: 'race',
     };
-    collectFrom(col, race, origin, `race:${origin.uid}`, subraceResists);
-    col.features.push({ name: origin.label, origin, entries: race.entries });
+    // A Dragonborn ancestry's fixed resistance replaces the race's choice here.
+    // Only a subrace of this race reshapes it, not a pick another race's
+    // subrace still holds.
+    const own =
+      subrace !== undefined && subraceBelongsTo(subrace, col.doc.race)
+        ? raceUnderSubrace(race, subrace)
+        : race;
+    collectFrom(col, own, origin, `race:${origin.uid}`);
+    // A subrace that replaces every trait (Keldon's Human) leaves no card.
+    const listsTraits = (e: DataEntity) => Array.isArray(e.entries) && e.entries.length > 0;
+    const emptied = listsTraits(race) && !listsTraits(own);
+    if (!emptied) col.features.push({ name: origin.label, origin, entries: own.entries });
   }
   if (subrace !== undefined && col.doc.subrace !== undefined) {
     const origin: EffectOrigin = {
