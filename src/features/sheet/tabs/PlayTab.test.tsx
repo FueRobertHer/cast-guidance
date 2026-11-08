@@ -972,6 +972,47 @@ describe('PlayTab action costs', () => {
     expect(short.turn()?.action ?? false).toBe(false);
   });
 
+  it('shows a chip per slot of one feature, each naming its slot and spending its own way', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { usedOf, turn } = renderCosts(
+      [
+        { economy: 'action', label: 'Quick Step' },
+        { economy: 'bonus', label: 'Quick Step', spendsNoUse: true },
+      ],
+      [{ key: 'own', label: 'Quick Step', max: 1, resetOn: 'long', origin }],
+    );
+    const actions = within(
+      screen.getByRole('heading', { name: 'Actions' }).parentElement as HTMLElement,
+    );
+    expect(actions.getByText('Action · 1 of 1 left')).toBeTruthy();
+    expect(actions.getByText('Bonus action')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Quick Step, bonus action' }));
+    expect(usedOf('own')).toBe(0);
+    expect(turn()?.bonus).toBe(true);
+    expect(turn()?.action ?? false).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Quick Step, action' }));
+    expect(usedOf('own')).toBe(1);
+    expect(turn()?.action).toBe(true);
+    // Each chip keeps its own row: React warns when two share a key.
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    errors.mockRestore();
+  });
+
+  it('names no slot on a chip whose name is its own', () => {
+    renderCosts([
+      { economy: 'action', label: 'Quick Step' },
+      { economy: 'bonus', label: 'Slow Step' },
+    ]);
+    expect(useButton()).toBeTruthy();
+    const actions = within(
+      screen.getByRole('heading', { name: 'Actions' }).parentElement as HTMLElement,
+    );
+    expect(actions.queryByText('Action')).toBeNull();
+    expect(actions.queryByText('Bonus action')).toBeNull();
+  });
+
   it('warns about a condition on an action, not on a rider', () => {
     renderCosts([
       { economy: 'none', label: 'Quick Step', cost: { resource: 'pool', amount: 1 } },

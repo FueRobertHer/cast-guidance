@@ -139,6 +139,13 @@ const race: DataEntity[] = [
         type: 'entries',
         entries: ['You know things. This trait has no usage limits at all.'],
       },
+      {
+        name: 'Test Hound',
+        type: 'entries',
+        entries: [
+          'As an action, you call up a spectral hound. It only dodges unless you take a bonus action to command it. Once you call it, you can’t do so again until you finish a long rest.',
+        ],
+      },
     ],
   },
   {

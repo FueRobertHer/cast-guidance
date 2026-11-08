@@ -1124,6 +1124,15 @@ describe('deriveSheet — generic prose scan (Prosefolk)', () => {
     );
   });
 
+  it('a summon with a command → an action spending the use + a bonus action that spends none', () => {
+    expect(sheet.resources.find((r) => r.key === 'test-hound')?.max).toBe(1);
+    expect(sheet.actions.filter((a) => a.label === 'Test Hound')).toEqual([
+      expect.objectContaining({ economy: 'action' }),
+      expect.objectContaining({ economy: 'bonus', spendsNoUse: true }),
+    ]);
+    expect(sheet.actions.find((a) => a.label === 'Test Hound')).not.toHaveProperty('spendsNoUse');
+  });
+
   it('per-level HP rider → +1 HP per level', () => {
     // Warrior baseline is 44; Test Toughness adds 1×5 levels.
     expect(sheet.maxHp.value).toBe(49);
