@@ -316,10 +316,37 @@ export function weaponMasteryOptions(ctx: EngineContext): ChoiceOption[] {
   return options.sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Expertise offers skills you're already proficient in (RAW), else all. */
+/**
+ * Expertise offers skills you're already proficient in (RAW), else all. A skill a
+ * feature grants straight at expertise (a Scout's Survivalist pair) is no
+ * proficiency to build on, so it alone does not end the fallback; a skill another
+ * pick doubled still does.
+ */
 export function expertiseOptions(col: Collector): ChoiceOption[] {
   const prof = col.proficientSkills();
-  return prof.length > 0 ? prof.map((n) => ({ id: n, label: n })) : skillOptions();
+  const grantedDoubled = new Set(
+    col.effects.flatMap((e) =>
+      e.kind === 'skillProf' && e.level > 1 && !col.pickOf.has(e) ? [e.skill] : [],
+    ),
+  );
+  return prof.some((s) => !grantedDoubled.has(s))
+    ? prof.map((n) => ({ id: n, label: n }))
+    : skillOptions();
+}
+
+/**
+ * Languages you already speak shouldn't be spent again: disable, don't hide,
+ * so the list stays recognizable (Dragonborn + Acolyte can't re-pick Common).
+ */
+export function markKnownLanguages(col: Collector, options: ChoiceOption[]): ChoiceOption[] {
+  const known = new Set(
+    col.effects.filter((e) => e.kind === 'language').map((e) => e.name.toLowerCase()),
+  );
+  return options.map((o) =>
+    known.has(o.id.toLowerCase())
+      ? { ...o, disabled: { reason: `You already speak ${o.label}` } }
+      : o,
+  );
 }
 
 /**
@@ -338,19 +365,8 @@ export function readProficiencyList(
 ): void {
   const entries = asEntityArray(raw);
   let chooseIdx = 0;
-  // Languages you already speak shouldn't be spent again — disable, don't hide,
-  // so the list stays recognizable (Dragonborn + Acolyte can't re-pick Common).
-  const withDupesDisabled = (options: ChoiceOption[]): ChoiceOption[] => {
-    if (kind !== 'language') return options;
-    const known = new Set(
-      col.effects.filter((e) => e.kind === 'language').map((e) => e.name.toLowerCase()),
-    );
-    return options.map((o) =>
-      known.has(o.id.toLowerCase())
-        ? { ...o, disabled: { reason: `You already speak ${o.label}` } }
-        : o,
-    );
-  };
+  const withDupesDisabled = (options: ChoiceOption[]): ChoiceOption[] =>
+    kind === 'language' ? markKnownLanguages(col, options) : options;
   for (const entry of entries) {
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {

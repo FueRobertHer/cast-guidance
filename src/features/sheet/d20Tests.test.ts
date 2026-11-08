@@ -1,16 +1,23 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ActiveCondition, type D20Test, d20Effects, type Edition } from '@/engine/conditions';
+import {
+  type ActiveCondition,
+  conditionSpeed,
+  type D20Test,
+  d20Effects,
+  type Edition,
+} from '@/engine/conditions';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { advModeStore } from '@/stores/advMode';
 import { rollTone } from '@/ui/rollTone';
 import { conditionLimits } from './conditionEffects';
 import {
-  attackWear,
+  conditionWear,
   effectLines,
   noteLines,
   rollD20Test,
+  rollWear,
   saveEffectLines,
   useIgnoreOnce,
 } from './d20Tests';
@@ -32,14 +39,119 @@ const effects = (ids: ActiveCondition[], edition: Edition, test: D20Test) =>
 beforeEach(() => advModeStore.getState().set('normal'));
 afterEach(() => vi.restoreAllMocks());
 
-describe('attackWear: what an attack chip wears', () => {
+describe('rollWear: what each roll’s control wears', () => {
+  const onRoll = (ids: string[], test: D20Test, edition: Edition = '2014') =>
+    rollWear(
+      ids.map((id) => ({ id })),
+      effects(
+        ids.map((id) => ({ id })),
+        edition,
+        test,
+      ),
+      false,
+    ).looks;
+
+  it('wears a save that fails automatically, only on the abilities the rule reaches', () => {
+    for (const id of ['Paralyzed', 'Petrified', 'Stunned', 'Unconscious']) {
+      expect(onRoll([id], { kind: 'save', ability: 'str' }), id).toEqual([id]);
+      expect(onRoll([id], { kind: 'save', ability: 'dex' }), id).toEqual([id]);
+      expect(onRoll([id], { kind: 'save', ability: 'wis' }), id).toEqual([]);
+    }
+  });
+
+  it('wears Restrained on DEX saves alone', () => {
+    expect(onRoll(['Restrained'], { kind: 'save', ability: 'dex' })).toEqual(['Restrained']);
+    expect(onRoll(['Restrained'], { kind: 'save', ability: 'str' })).toEqual([]);
+  });
+
+  it('wears exhaustion on saves from level 3 in 2014, and any level in 2024', () => {
+    const save = (level: number, edition: Edition) =>
+      rollWear(
+        [{ id: 'Exhaustion', level }],
+        effects([{ id: 'Exhaustion', level }], edition, { kind: 'save', ability: 'wis' }),
+        false,
+      );
+    expect(save(2, '2014').looks).toEqual([]);
+    expect(save(3, '2014').looks).toEqual(['Exhaustion']);
+    expect(save(1, '2024')).toEqual({ looks: ['Exhaustion'], ignored: false, penalty: -2 });
+  });
+
+  it('wears checks for what reaches them, and leaves Blinded and Deafened to their notes', () => {
+    const check = { kind: 'check', ability: 'str' } as const;
+    expect(onRoll(['Poisoned'], check)).toEqual(['Poisoned']);
+    expect(onRoll(['Frightened'], check)).toEqual(['Frightened']);
+    expect(onRoll(['Blinded'], check)).toEqual([]);
+    expect(onRoll(['Deafened'], check)).toEqual([]);
+    const exhausted = (level: number, edition: Edition) =>
+      rollWear(
+        [{ id: 'Exhaustion', level }],
+        effects([{ id: 'Exhaustion', level }], edition, check),
+        false,
+      ).looks;
+    expect(exhausted(1, '2014')).toEqual(['Exhaustion']);
+    expect(exhausted(1, '2024')).toEqual(['Exhaustion']);
+  });
+
+  it('wears initiative by the edition', () => {
+    const initiative = { kind: 'initiative' } as const;
+    expect(onRoll(['Poisoned'], initiative)).toEqual(['Poisoned']);
+    expect(onRoll(['Frightened'], initiative)).toEqual(['Frightened']);
+    for (const id of ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious']) {
+      expect(onRoll([id], initiative), id).toEqual([]);
+      expect(onRoll([id], initiative, '2024'), id).toEqual([id]);
+    }
+    expect(onRoll(['Invisible'], initiative)).toEqual([]);
+    expect(onRoll(['Invisible'], initiative, '2024')).toEqual(['Invisible']);
+  });
+
+  it('says Ignore once is armed on a save it reaches, for the ring', () => {
+    const paralyzed = [{ id: 'Paralyzed' }];
+    expect(
+      rollWear(paralyzed, effects(paralyzed, '2014', { kind: 'save', ability: 'dex' }), true),
+    ).toEqual({ looks: ['Paralyzed'], ignored: true });
+  });
+});
+
+describe('conditionWear: what a control with no cue of its own wears', () => {
+  const speed = (conditions: ActiveCondition[], edition: Edition = '2014') =>
+    conditionWear(conditions, conditionSpeed(30, conditions, edition).sources);
+
+  it('wears Cast only for what stops casting', () => {
+    const cast = (id: string) => conditionWear([{ id }], conditionLimits([{ id }]).noActions).looks;
+    for (const id of ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious']) {
+      expect(cast(id), id).toEqual([id]);
+    }
+    for (const id of ['Poisoned', 'Blinded', 'Prone', 'Restrained', 'Frightened', 'Grappled']) {
+      expect(cast(id), id).toEqual([]);
+    }
+  });
+
+  it('wears Speed for what holds it at 0, with Grappled the only roll-free look', () => {
+    for (const id of ['Grappled', 'Restrained', 'Paralyzed', 'Petrified', 'Unconscious']) {
+      expect(speed([{ id }]).looks, id).toEqual([id]);
+      expect(speed([{ id }], '2024').looks, id).toEqual([id]);
+    }
+    expect(speed([{ id: 'Stunned' }]).looks).toEqual(['Stunned']);
+    expect(speed([{ id: 'Stunned' }], '2024').looks).toEqual([]);
+    expect(speed([{ id: 'Poisoned' }]).looks).toEqual([]);
+  });
+
+  it('wears exhaustion on Speed once it lowers it, with no tag', () => {
+    const at = (level: number, edition: Edition) => speed([{ id: 'Exhaustion', level }], edition);
+    expect(at(1, '2014').looks).toEqual([]);
+    expect(at(2, '2014')).toEqual({ looks: ['Exhaustion'], ignored: false });
+    expect(at(1, '2024')).toEqual({ looks: ['Exhaustion'], ignored: false });
+  });
+});
+
+describe('rollWear on an attack chip', () => {
   /** As the sheet works it out, from the same effects and warning the cue reads. */
   const wear = (conditions: ActiveCondition[], edition: Edition = '2014', armed = false) =>
-    attackWear(
+    rollWear(
       conditions,
       effects(conditions, edition, { kind: 'attack' }),
-      conditionLimits(conditions).noActions,
       armed,
+      conditionLimits(conditions).noActions,
     );
   const looks = (...ids: string[]) => wear(ids.map((id) => ({ id }))).looks;
 

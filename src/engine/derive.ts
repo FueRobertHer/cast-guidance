@@ -101,7 +101,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
   const initiative = withOverride(dv(initiativeParts), doc.overrides.initiative);
 
-  const weaponProfs = [...new Set(effectsOf(effects, 'weaponProf').map((e) => e.name))];
+  const weaponProfs = uniqueNames(effectsOf(effects, 'weaponProf').map((e) => e.name));
   const attacks = calcAttacks(doc, col, effects, abilities, profBonus.value, weaponProfs);
   const spellcasting = calcSpellcasting(doc, col, abilities, profBonus.value);
   const resources = calcResources(doc, effects, abilities, profBonus.value);
@@ -134,6 +134,8 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
         ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
     cost: costOnSheet(e.cost, resources),
+    buyBack: costOnSheet(e.buyBack, resources),
+    regains: e.regains,
   }));
 
   const classLabel = doc.classes
@@ -171,9 +173,9 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
       origin: e.origin.label,
     })),
     languages: [...new Set(effectsOf(effects, 'language').map((e) => e.name))],
-    armorProfs: [...new Set(effectsOf(effects, 'armorProf').map((e) => e.name))],
+    armorProfs: uniqueNames(effectsOf(effects, 'armorProf').map((e) => e.name)),
     weaponProfs,
-    toolProfs: [...new Set(effectsOf(effects, 'toolProf').map((e) => e.name))],
+    toolProfs: uniqueNames(effectsOf(effects, 'toolProf').map((e) => e.name)),
     attacks,
     spellcasting,
     actions,
@@ -191,6 +193,20 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/**
+ * Proficiency names once each, the first spelling kept: a race's pick keeps the
+ * data's "smith's tools" while a subclass grants "Smith's Tools".
+ */
+function uniqueNames(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return names.filter((name) => {
+    const key = name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Collapse repeated collector notes while preserving the first useful wording. */
@@ -213,13 +229,15 @@ function richness(e: {
   note?: string;
   save?: { dcAbility?: unknown };
   cost?: unknown;
+  buyBack?: unknown;
 }): number {
   // A save with its DC says more than one without, by less than any other mechanic.
   return (
     (e.roll !== undefined ? 1 : 0) +
     (e.note !== undefined ? 2 : 0) +
     (e.save?.dcAbility ? 2.5 : e.save ? 2 : 0) +
-    (e.cost !== undefined ? 2 : 0)
+    (e.cost !== undefined ? 2 : 0) +
+    (e.buyBack !== undefined ? 2 : 0)
   );
 }
 

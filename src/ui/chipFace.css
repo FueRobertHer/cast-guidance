@@ -1,14 +1,15 @@
 /*
- * Condition effects on attack chips: the one named exception to "motion
- * confirms a result; it never decorates" (design system, Motion). An afflicted
- * chip wears its condition at rest, in that condition's own hue, and each
- * condition has one signature that loops. Everything else in the app holds the
- * general rule.
+ * Condition effects on the rolls a condition reaches, and on Cast and Speed: the
+ * one named exception to "motion confirms a result; it never decorates" (design
+ * system, Motion). An afflicted control loses its blue and wears its condition
+ * at rest, in that condition's own hue, and each condition has one signature
+ * that loops. Everything else in the app holds the general rule.
  *
  * The recipe: same look (`.cx-on`), same arrival (`.cx-arrive`), same roll
  * flash (`.cx-surge`), one signature each, one pace: every loop is a whole
  * number of 800ms beats, Frightened's tremble aside. chipFace.test.ts holds
- * the rules below to this file.
+ * the rules below to this file. The sizes are a chip's, and each surface that is
+ * not a chip sets its own near the end of this file.
  *
  * - Base CSS is the still pose. Reduced motion (app.css) and the Settings
  *   switch (`.cx-still`) stop the animations, and what is left is this pose.
@@ -46,6 +47,10 @@
 .cx-restrained {
   --c: #e5894d;
   --cs: #38200f;
+}
+.cx-grappled {
+  --c: #c98fa6;
+  --cs: #321c26;
 }
 .cx-exhaustion {
   --c: #9fd6ff;
@@ -95,6 +100,10 @@
   --c: #a94e12;
   --cs: #f8e1cf;
 }
+[data-theme="light"] .cx-grappled {
+  --c: #8f3f5f;
+  --cs: #f5e0e8;
+}
 [data-theme="light"] .cx-exhaustion {
   --c: #2a6fa8;
   --cs: #dcebf7;
@@ -121,12 +130,24 @@
 }
 
 /*
- * The chip's parts. The button keeps its place and its size; the face inside
+ * The control's parts. The button keeps its place and its size; the face inside
  * it is what wears the colour and moves, so a tap never misses (WCAG 2.5.8).
+ * `--cx-plain` and `--cx-plain-ink` are what it shows with nothing on it, and
+ * what it floods over and fades back to.
  */
 .cx {
+  --cx-plain: var(--cg-roll-soft);
+  --cx-plain-ink: var(--cg-roll);
   display: contents;
   border-radius: inherit;
+}
+.cx-tone-danger {
+  --cx-plain: var(--cg-danger-soft);
+  --cx-plain-ink: var(--cg-danger);
+}
+.cx-tone-heal {
+  --cx-plain: var(--cg-heal-soft);
+  --cx-plain-ink: var(--cg-heal);
 }
 .cx-face {
   position: relative;
@@ -138,8 +159,8 @@
   box-sizing: border-box;
   padding: 0 0.5rem;
   border-radius: inherit;
-  background: var(--cg-roll-soft);
-  color: var(--cg-roll);
+  background: var(--cx-plain);
+  color: var(--cx-plain-ink);
   transform-origin: 50% 100%;
   transition: color 120ms ease-out;
 }
@@ -147,6 +168,20 @@
   position: relative;
   z-index: 1;
   display: inline-block;
+}
+.cx-move {
+  display: inline-block;
+}
+.cx-strip {
+  position: relative;
+  z-index: 1;
+  display: block;
+  flex: none;
+  box-sizing: border-box;
+  height: 1.75rem;
+  border-bottom: 1px solid var(--cg-line);
+  border-radius: 0;
+  pointer-events: none;
 }
 .cx-mat {
   position: absolute;
@@ -202,6 +237,13 @@
     0 0 3px var(--cs),
     0 0 6px var(--cs);
 }
+/* Muted text, a guide note and the blue number all go to ink on a worn surface. */
+.cx-on:not(.cx-ig, .cx-rm) .cx-ink {
+  color: var(--cg-ink);
+}
+.cx-on:not(.cx-ig, .cx-rm) .cx-ink-ring {
+  --tw-ring-color: var(--cg-ink);
+}
 .cx-mat > .cx-layer {
   background: var(--cs);
 }
@@ -229,7 +271,7 @@
  * its side would hold the blue for the whole arrival, then snap to glass.
  */
 .cx-arrive:not(:has(.cx-invisible)) .cx-face {
-  background: var(--cg-roll-soft);
+  background: var(--cx-plain);
 }
 .cx-arrive .cx-mat {
   animation: cx-flood 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -257,14 +299,25 @@
   }
 }
 
-/* Poisoned: murk slops inside, bubbles rise and pop at its surface. */
+/*
+ * Poisoned: murk slops inside, bubbles rise and pop at its surface. The wave is
+ * twice the piece's width so it can travel, and it is a pseudo-element so the
+ * piece's own box stays inside the control: axe takes a wider box for something
+ * behind the next control's text, however it is clipped.
+ */
 .cx-liquid {
   bottom: 0;
   left: 0;
-  width: 200%;
+  width: 100%;
   height: 62%;
-  background: var(--c);
   opacity: 0.34;
+}
+.cx-liquid::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 200%;
+  background: var(--c);
+  content: "";
   clip-path: polygon(
     0 12%,
     6.25% 4%,
@@ -315,12 +368,12 @@
     opacity: 1;
   }
   70% {
-    transform: translateY(-13px) scale(1);
+    transform: translateY(var(--cx-rise, -13px)) scale(1);
     opacity: 1;
   }
   80%,
   100% {
-    transform: translateY(-16px) scale(1.7);
+    transform: translateY(var(--cx-pop, -16px)) scale(1.7);
     opacity: 0;
   }
 }
@@ -351,24 +404,120 @@
   }
 }
 
-/* Restrained: diagonal bands bite in, strain, settle. */
-.cx-bands {
-  inset: 0 -20px;
-  background: repeating-linear-gradient(115deg, var(--c) 0 5px, transparent 5px 14px);
-  opacity: 0.42;
-  animation: cx-strain 2.4s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+/*
+ * Restrained: chains along the top and bottom edges rattle in place, then stop
+ * dead. They never travel: a chain that travels says the opposite of being held.
+ * At 80% they can't sit behind the number, so they hold to the edges of even a
+ * 34px chip (chipFace.test.ts).
+ */
+.cx-chain {
+  --cx-sway: 1;
+  top: 1px;
+  right: -14px;
+  left: -14px;
+  height: 8px;
+  background:
+    radial-gradient(5px 4px at 5px 50%, transparent 50%, var(--c) 56% 90%, transparent 96%) 0 0 /
+    14px 100% repeat-x,
+    linear-gradient(90deg, transparent 9px, var(--c) 9px 14px) 0 50% / 14px 2px repeat-x;
+  opacity: 0.8;
+  animation: cx-shake 2.4s linear infinite;
 }
-@keyframes cx-strain {
+.cx-chain2 {
+  --cx-sway: -1;
+  top: auto;
+  bottom: 1px;
+}
+@keyframes cx-shake {
   0%,
-  58%,
+  63%,
+  82%,
   100% {
-    transform: translateX(0);
+    transform: none;
+  }
+  64% {
+    transform: translate(calc(var(--cx-sway) * -1.5px), 0.6px);
+  }
+  67% {
+    transform: translate(calc(var(--cx-sway) * 1.5px), -0.6px);
   }
   70% {
-    transform: translateX(-3px) scaleY(1.05);
+    transform: translate(calc(var(--cx-sway) * -1.2px), 0.4px);
   }
-  85% {
-    transform: translateX(1px);
+  73% {
+    transform: translate(calc(var(--cx-sway) * 1.2px), -0.4px);
+  }
+  76% {
+    transform: translate(calc(var(--cx-sway) * -0.7px), 0.2px);
+  }
+  79% {
+    transform: translate(calc(var(--cx-sway) * 0.4px), 0);
+  }
+}
+
+/*
+ * Grappled: wrap claws. A still wrist on each edge holds two jointed prongs,
+ * which curve above and below the number; they hold shut, flex open and clamp
+ * back. The number never moves, which keeps this apart from Restrained. It only
+ * ever wears the Speed cell, so the prongs are sized for one: their length is a
+ * share of the cell, and their joint is on the number's line (the cell's padding
+ * and half its stat line, in rem, so it holds at 200% text).
+ */
+.cx-prong {
+  --cx-flip-x: 1;
+  --cx-flip-y: 1;
+  top: calc(1.5rem - 1.25rem);
+  left: 2px;
+  width: 44%;
+  height: 1.25rem;
+  background: var(--c);
+  opacity: 0.45;
+  clip-path: polygon(0 100%, 0 65%, 26% 0, 79% 0, 100% 40%, 74% 25%, 34% 25%, 13% 100%);
+  transform: scale(var(--cx-flip-x), var(--cx-flip-y));
+  transform-origin: 0 100%;
+  animation: cx-snap 2.4s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+}
+.cx-prong-below {
+  --cx-flip-y: -1;
+}
+.cx-prong-right {
+  --cx-flip-x: -1;
+  left: calc(100% - 2px);
+}
+.cx-mat > .cx-grappled::before,
+.cx-mat > .cx-grappled::after {
+  position: absolute;
+  top: calc(1.5rem - 7px);
+  left: -1px;
+  width: 7px;
+  height: 14px;
+  border-radius: 0 3px 3px 0;
+  background: radial-gradient(circle at 3.5px 50%, var(--cs) 1.4px, var(--c) 2px);
+  content: "";
+  opacity: 0.75;
+}
+.cx-mat > .cx-grappled::after {
+  right: -1px;
+  left: auto;
+  border-radius: 3px 0 0 3px;
+}
+@keyframes cx-snap {
+  0%,
+  44%,
+  67%,
+  74%,
+  100% {
+    transform: scale(var(--cx-flip-x), var(--cx-flip-y)) translateX(0) rotate(0deg);
+  }
+  60% {
+    transform: scale(var(--cx-flip-x), var(--cx-flip-y)) translateX(-4px) rotate(-14deg);
+  }
+  63% {
+    transform: scale(var(--cx-flip-x), var(--cx-flip-y)) translateX(-4px) rotate(-14deg);
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.6);
+  }
+  70% {
+    transform: scale(var(--cx-flip-x), var(--cx-flip-y)) translateX(-0.56px) rotate(-1.96deg);
   }
 }
 
@@ -420,7 +569,7 @@
   }
   70%,
   100% {
-    transform: skewX(-18deg) translateX(76px);
+    transform: skewX(-18deg) translateX(var(--cx-glint-end, 76px));
   }
 }
 
@@ -431,8 +580,9 @@
   opacity: 0.6;
   transform: scale(1.05);
 }
-.cx-body-cower {
-  scale: 0.94;
+.cx-body-cower,
+.cx-at-tile .cx-body-cower .cx-move {
+  scale: var(--cx-cower, 0.94);
   transform-origin: 50% 50%;
   animation:
     cx-tremble 130ms linear infinite,
@@ -457,13 +607,13 @@
   0%,
   70%,
   100% {
-    scale: 0.94;
+    scale: var(--cx-cower, 0.94);
   }
   76% {
-    scale: 0.86;
+    scale: var(--cx-flinch, 0.86);
   }
   86% {
-    scale: 0.95;
+    scale: var(--cx-settle, 0.95);
   }
 }
 
@@ -788,22 +938,22 @@
   height: 4px;
   background: var(--c);
   opacity: 0.4;
-  transform: rotate(-33deg);
+  transform: rotate(var(--cx-slash, -33deg));
   transform-origin: 0 50%;
   animation: cx-strike 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 @keyframes cx-strike {
   0% {
-    transform: rotate(-33deg) scaleX(0);
+    transform: rotate(var(--cx-slash, -33deg)) scaleX(0);
     opacity: 0.4;
   }
   30%,
   82% {
-    transform: rotate(-33deg) scaleX(1);
+    transform: rotate(var(--cx-slash, -33deg)) scaleX(1);
     opacity: 0.4;
   }
   100% {
-    transform: rotate(-33deg) scaleX(1);
+    transform: rotate(var(--cx-slash, -33deg)) scaleX(1);
     opacity: 0;
   }
 }
@@ -832,7 +982,7 @@
 }
 @keyframes cx-drop {
   0% {
-    transform: translateY(-44px);
+    transform: translateY(calc(-1 * var(--cx-fall, 44px)));
     animation-timing-function: cubic-bezier(0.5, 0, 1, 0.6);
   }
   8% {
@@ -853,7 +1003,7 @@
   }
   82%,
   100% {
-    transform: translateY(44px);
+    transform: translateY(var(--cx-fall, 44px));
   }
 }
 @keyframes cx-thud {
@@ -886,8 +1036,8 @@
  * dashed ring in the condition's colour says one is waiting.
  */
 .cx-ig .cx-face {
-  background: var(--cg-roll-soft);
-  color: var(--cg-roll);
+  background: var(--cx-plain);
+  color: var(--cx-plain-ink);
 }
 .cx-ig .cx-num {
   text-shadow: none;
@@ -896,7 +1046,8 @@
 .cx-ig .cx-over {
   opacity: 0;
 }
-.cx-ig .cx-p {
+.cx-ig .cx-p,
+.cx-ig .cx-liquid::before {
   animation: none;
 }
 .cx-ignore-ring {
@@ -906,10 +1057,15 @@
   border-radius: inherit;
 }
 
-/* Removal: the colour fades to plain blue, and Prone stands back up. */
+/* Removal: the colour fades to plain, and Prone stands back up. */
 .cx-rm .cx-face {
-  background: var(--cg-roll-soft);
-  color: var(--cg-roll);
+  background: var(--cx-plain);
+  color: var(--cx-plain-ink);
+  scale: none;
+  animation: none;
+}
+.cx-rm .cx-strip,
+.cx-rm .cx-body-cower .cx-move {
   scale: none;
   animation: none;
 }
@@ -940,8 +1096,222 @@
   }
 }
 
+/*
+ * The surfaces that are not chips. Each paints its own ground, so there is no
+ * colour to flood over or fade to, and its own text colour stays. Anything that
+ * moves or scales the face takes its own amount, to feel the same strength.
+ */
+.cx-at-cast,
+.cx-at-save,
+.cx-at-cell,
+.cx-at-tile,
+.cx-at-card {
+  --cx-plain: transparent;
+  --cx-plain-ink: currentColor;
+}
+.cx-at-save .cx-face,
+.cx-at-cell .cx-face,
+.cx-at-tile .cx-face,
+.cx-at-card .cx-face {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A small outline button: the 36px fill inside its 44px target. */
+.cx-at-cast .cx-face {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.625rem;
+}
+
+/* A save: its label at one end, its number at the other. */
+.cx-at-save .cx-face {
+  padding: 0 0.75rem;
+}
+.cx-at-save .cx-num {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.cx-at-save .cx-course {
+  height: 13px;
+}
+.cx-at-save .cx-course2 {
+  bottom: 15px;
+}
+.cx-at-save .cx-course3 {
+  bottom: 29px;
+}
+
+/* A cell of the stat strip, which clips: its marks and tags stay inside it. */
+.cx-at-cell {
+  --cx-cower: 0.97;
+  --cx-flinch: 0.93;
+  --cx-settle: 0.975;
+  --cx-rise: -44px;
+  --cx-pop: -52px;
+  --cx-slash: -41.8deg;
+  --cx-fall: 96px;
+  --cx-glint-end: 112px;
+}
+.cx-at-cell .cx-face {
+  flex-direction: column;
+  padding: 0.5rem 0.25rem;
+}
+/* The claws' joint is on the number's line, so a centred number can't drift off it. */
+.cx-at-cell:not(.cx-rm):has(.cx-grappled) .cx-face {
+  justify-content: flex-start;
+}
+.cx-at-cell .cx-num {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  max-width: 100%;
+}
+.cx-at-cell .cx-tag {
+  top: 0.25rem;
+  left: 0.25rem;
+}
+.cx-at-cell .cx-more {
+  right: 0.25rem;
+  left: auto;
+}
+.cx-at-cell .cx-bubble {
+  width: 7px;
+  height: 7px;
+}
+.cx-at-cell .cx-bolt {
+  top: 8px;
+}
+.cx-at-cell .cx-bolt2 {
+  top: auto;
+  bottom: 8px;
+}
+.cx-at-cell .cx-chain {
+  top: 2px;
+}
+.cx-at-cell .cx-chain2 {
+  top: auto;
+  bottom: 2px;
+}
+.cx-at-cell .cx-course {
+  height: 22px;
+  background: linear-gradient(90deg, var(--c) 0 32px, transparent 32px) 0 0 / 36px 100% repeat-x;
+}
+.cx-at-cell .cx-course2 {
+  bottom: 25px;
+  background-position-x: -18px;
+}
+.cx-at-cell .cx-course3 {
+  bottom: 49px;
+}
+.cx-at-cell .cx-strike {
+  width: calc(100% + 30px);
+}
+.cx-at-cell .cx-star {
+  top: 8px;
+}
+/* The loop rises past the number; at rest they wait in the band above its digits. */
+.cx-at-cell .cx-z {
+  top: 18px;
+  left: 60%;
+  transform: translateY(-15px) scale(0.8);
+}
+.cx-at-cell .cx-z2 {
+  transform: translate(7px, -15px);
+}
+.cx-at-cell .cx-z3 {
+  transform: translate(14px, -15px) scale(1.2);
+}
+
+/*
+ * An ability tile holds two buttons, so the tint goes on the tile and Frightened
+ * moves only the number inside its button. Nothing moves the tile's own face, so
+ * it clips only for the flood, and never the focus ring of a button inside it.
+ */
+.cx-at-tile {
+  --cx-rise: -58px;
+  --cx-pop: -66px;
+}
+.cx-at-tile .cx-face {
+  padding: 0.75rem 0.25rem 0.5rem;
+}
+.cx-at-tile.cx-on:not(.cx-arrive) .cx-face {
+  overflow: visible;
+}
+.cx-at-tile .cx-body-cower {
+  scale: none;
+  animation: none;
+}
+.cx-at-tile .cx-num {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.cx-at-tile .cx-bubble {
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+}
+.cx-at-tile .cx-bubble2 {
+  left: 68%;
+}
+
+/*
+ * A list card takes the tint and ring whole. The motion and the flash run only in
+ * a slim strip above its first row, so no one row looks singled out. The flood
+ * fills the card, so the strip holds no tint of its own, and floods with it.
+ */
+.cx-at-card {
+  --cx-cower: 0.99;
+  --cx-flinch: 0.975;
+  --cx-settle: 0.992;
+  --cx-rise: -12px;
+  --cx-pop: -16px;
+}
+.cx-at-card .cx-face {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+}
+.cx-at-card .cx-num {
+  display: block;
+  width: 100%;
+}
+.cx-strip > .cx-mat > .cx-layer {
+  background: none;
+}
+.cx-at-card.cx-arrive .cx-strip > .cx-mat {
+  animation: none;
+}
+.cx-at-card .cx-tag {
+  top: 0.375rem;
+  left: 1rem;
+}
+.cx-at-card .cx-more {
+  right: 1rem;
+  left: auto;
+}
+
+/* A worn control's mat covers its own hover fill, so it brightens as a chip does. */
+@media (hover: hover) {
+  button:hover > .cx-at-cast.cx-on:not(.cx-ig) > .cx-face,
+  button:hover > .cx-at-save.cx-on:not(.cx-ig) > .cx-face,
+  button:hover > .cx-at-cell.cx-on:not(.cx-ig) > .cx-face {
+    filter: brightness(1.12);
+  }
+}
+
 /* "Animate condition effects" off (Settings): the still poses, nothing moving. */
+.cx-still .cx-strip,
+.cx-still .cx-body-cower .cx-move,
 .cx-still .cx-p,
+.cx-still .cx-liquid::before,
 .cx-still .cx-face {
   animation: none;
 }

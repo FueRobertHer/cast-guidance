@@ -222,6 +222,156 @@ describe('the attack chips on the Play tab', () => {
   });
 });
 
+describe('what a condition wears on the Stats tab', () => {
+  const saveButton = (name: RegExp) => {
+    const saves = screen.getByRole('heading', { name: 'Saving throws' }).parentElement;
+    if (saves === null) throw new Error('no saves section');
+    return within(saves).getByRole('button', { name });
+  };
+  const checkButton = (name: string) =>
+    screen.getByRole('button', { name: new RegExp(`^Roll ${name} check`) });
+  /** The look on a control, with the tile a check button sits in. */
+  const wornOn = (control: Element) => {
+    const root = control.closest('.cx') ?? control.querySelector('.cx');
+    if (root === null) throw new Error('nothing that can wear a look');
+    return root;
+  };
+  const skillsCard = () => wornOn(screen.getByRole('button', { name: /Athletics/ }));
+
+  it('wears Paralyzed on the saves it fails, and leaves the rest plain', () => {
+    renderTab(<StatsTab />, [{ id: 'Paralyzed' }]);
+    for (const save of [/^STR/, /^DEX/]) {
+      expect(wornOn(saveButton(save)).className).toContain('cx-paralyzed');
+    }
+    for (const save of [/^CON/, /^INT/, /^WIS/, /^CHA/]) {
+      expect(wornOn(saveButton(save)).className).not.toContain('cx-on');
+    }
+    // It does nothing to a check.
+    expect(wornOn(checkButton('STR')).className).not.toContain('cx-on');
+    expect(skillsCard().className).not.toContain('cx-on');
+  });
+
+  it('flashes a save it reaches as the roll lands, and not one it does not', () => {
+    renderTab(<StatsTab />, [{ id: 'Restrained' }]);
+    fireEvent.click(saveButton(/^WIS/));
+    expect(wornOn(saveButton(/^WIS/)).querySelector('.cx-surge')).toBeNull();
+    fireEvent.click(saveButton(/^DEX/));
+    expect(wornOn(saveButton(/^DEX/)).querySelector('.cx-surge')).not.toBeNull();
+    expect(wornOn(saveButton(/^DEX/)).querySelector('.cx-chain')).not.toBeNull();
+  });
+
+  it('goes plain with a ring on the save Ignore once reaches', () => {
+    renderTab(<StatsTab />, [{ id: 'Restrained' }]);
+    fireEvent.click(ignoreOnce('save')[0] as HTMLElement);
+    expect(wornOn(saveButton(/^DEX/)).className).toContain('cx-ig');
+    expect(wornOn(saveButton(/^WIS/)).className).not.toContain('cx-ig');
+  });
+
+  it('wears Poisoned on every tile and the whole Skills card, and on no save', () => {
+    renderTab(<StatsTab />, [{ id: 'Poisoned' }]);
+    for (const ability of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
+      const tile = wornOn(checkButton(ability));
+      expect(tile.className, ability).toContain('cx-at-tile');
+      expect(tile.className, ability).toContain('cx-poisoned');
+    }
+    expect(skillsCard().className).toContain('cx-at-card');
+    expect(skillsCard().className).toContain('cx-poisoned');
+    expect(skillsCard().querySelectorAll('.cx-strip')).toHaveLength(1);
+    expect(wornOn(saveButton(/^STR/)).className).not.toContain('cx-on');
+    expect(namelessControls()).toEqual([]);
+  });
+
+  it('flashes the tile it rolled from, and the Skills strip for any skill', () => {
+    renderTab(<StatsTab />, [{ id: 'Poisoned' }]);
+    fireEvent.click(checkButton('STR'));
+    expect(wornOn(checkButton('STR')).querySelector('.cx-surge')).not.toBeNull();
+    expect(wornOn(checkButton('DEX')).querySelector('.cx-surge')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Stealth/ }));
+    expect(skillsCard().querySelector('.cx-strip .cx-surge')).not.toBeNull();
+  });
+
+  it('moves only a tile’s number under Frightened', () => {
+    renderTab(<StatsTab />, [{ id: 'Frightened' }]);
+    const button = checkButton('STR');
+    expect(button.querySelector('.cx-move')?.textContent).toBe(button.textContent);
+    expect(wornOn(button).querySelector('.cx-face')?.className).toContain('cx-body-cower');
+  });
+
+  it('clears the tiles and the card together with the checks’ one Ignore once', () => {
+    renderTab(<StatsTab />, [{ id: 'Poisoned' }]);
+    fireEvent.click(ignoreOnce('ability check')[0] as HTMLElement);
+    expect(wornOn(checkButton('STR')).className).toContain('cx-ig');
+    expect(skillsCard().className).toContain('cx-ig');
+    // Nothing moves in the strip, which keeps its place so no skill moves either.
+    expect(skillsCard().querySelector('.cx-strip')?.childElementCount).toBe(0);
+  });
+
+  it('leaves Blinded and Deafened to their notes on checks', () => {
+    renderTab(<StatsTab />, [{ id: 'Blinded' }]);
+    expect(wornOn(checkButton('STR')).className).not.toContain('cx-on');
+    expect(skillsCard().className).not.toContain('cx-on');
+  });
+
+  it('tags 2024 exhaustion on each tile, each save, and the Skills strip', () => {
+    renderTab(<StatsTab />, [{ id: 'Exhaustion', level: 2 }], '2024');
+    expect(wornOn(checkButton('STR')).querySelector('.cx-tag')?.textContent).toBe('−4');
+    expect(wornOn(saveButton(/^WIS/)).querySelector('.cx-tag')?.textContent).toBe('−4');
+    expect(skillsCard().querySelector('.cx-strip .cx-tag')?.textContent).toBe('−4');
+  });
+});
+
+describe('what a condition wears on the Play tab’s strip', () => {
+  const initiative = () => screen.getByRole('button', { name: /Initiative/ });
+  const speedCell = () => {
+    const speed = screen.getByText('Speed', { exact: false }).closest('.cx');
+    if (speed === null) throw new Error('no Speed cell');
+    return speed;
+  };
+  const worn = () => initiative().querySelector('.cx')?.className;
+
+  it('wears Initiative by the edition', () => {
+    renderTab(<PlayTab />, [{ id: 'Paralyzed' }]);
+    expect(worn()).not.toContain('cx-on');
+    expect(speedCell().className).toContain('cx-paralyzed');
+    cleanup();
+    renderTab(<PlayTab />, [{ id: 'Paralyzed' }], '2024');
+    expect(worn()).toContain('cx-paralyzed');
+    cleanup();
+    renderTab(<PlayTab />, [{ id: 'Invisible' }], '2024');
+    expect(worn()).toContain('cx-invisible');
+  });
+
+  it('flashes Initiative as the roll lands, and tags 2024 exhaustion on it', () => {
+    renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 1 }], '2024');
+    expect(initiative().querySelector('.cx-tag')?.textContent).toBe('−2');
+    fireEvent.click(initiative());
+    expect(initiative().querySelector('.cx-surge')).not.toBeNull();
+  });
+
+  it('wears Grappled on Speed alone, as wrap claws', () => {
+    renderTab(<PlayTab />, [{ id: 'Grappled' }]);
+    expect(speedCell().className).toContain('cx-grappled');
+    expect(speedCell().querySelectorAll('.cx-prong')).toHaveLength(4);
+    expect(worn()).not.toContain('cx-on');
+    const chip = screen.getAllByTitle(/ attack$/)[0];
+    expect(chip?.querySelector('.cx')?.className).not.toContain('cx-grappled');
+  });
+
+  it('gives Speed no tag, and no flash from the roll beside it', () => {
+    renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 2 }], '2024');
+    expect(speedCell().className).toContain('cx-exhaustion');
+    expect(speedCell().querySelector('.cx-tag')).toBeNull();
+    fireEvent.click(initiative());
+    expect(initiative().querySelector('.cx-surge')).not.toBeNull();
+    expect(speedCell().querySelector('.cx-surge')).toBeNull();
+  });
+
+  it('leaves Speed plain under exhaustion that has not lowered it', () => {
+    renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 1 }]);
+    expect(speedCell().className).not.toContain('cx-on');
+  });
+});
+
 describe('the cues on the Play tab', () => {
   it('rolls attacks with Prone’s disadvantage, said over the attack list', () => {
     renderTab(<PlayTab />, [{ id: 'Prone' }]);

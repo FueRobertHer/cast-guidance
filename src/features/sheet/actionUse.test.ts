@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DerivedResource, DerivedSheet } from '@/engine/types';
-import { actionUse } from './actionUse';
+import { actionUse, applyRestore } from './actionUse';
 
 type SheetAction = DerivedSheet['actions'][number];
 
@@ -131,5 +131,159 @@ describe('actionUse', () => {
     expect(u.disabled).toBe(false);
     expect(u.paid?.disabled).toBe(true);
     expect(u.paid?.title).toBe('Not enough Test Pool');
+  });
+});
+
+describe('a buy-back', () => {
+  const buyBack = { resource: 'pool', amount: 2 };
+
+  it('says the price while uses are left, with no button', () => {
+    const u = use(action({ buyBack }), [OWN, POOL], { pool: 1 });
+    expect(u.spends).toEqual([{ key: 'own', max: 2, amount: 1 }]);
+    expect(u.caption).toEqual(['2 of 2 left', 'Test Pool: 2 to restore, 4 of 5 left']);
+    expect(u.restore).toBeUndefined();
+  });
+
+  it('never spends the pool on Use', () => {
+    const u = use(action({ buyBack }), [OWN, POOL], { own: 1 });
+    expect(u.spends).toEqual([{ key: 'own', max: 2, amount: 1 }]);
+    expect(u.disabled).toBe(false);
+  });
+
+  it('offers the button at no uses left, with Use still out of reach', () => {
+    const u = use(action({ buyBack }), [OWN, POOL], { own: 2 });
+    expect(u.disabled).toBe(true);
+    expect(u.restore).toEqual({
+      label: 'Quick Step',
+      own: { key: 'own', max: 2 },
+      spend: { key: 'pool', max: 5, amount: 2 },
+      ariaLabel: 'Restore Quick Step, spending 2 Test Pool',
+      disabled: false,
+      title: 'Restore: spends 2 Test Pool for one more use',
+    });
+  });
+
+  it('disables the button when the pool is short', () => {
+    const u = use(action({ buyBack }), [OWN, POOL], { own: 2, pool: 4 });
+    expect(u.restore?.disabled).toBe(true);
+    expect(u.restore?.title).toBe('Not enough Test Pool');
+  });
+
+  it('names the use when it sits on another row, and leaves Use alone', () => {
+    const spell = resource('spell-key', 'Far Reach', 1);
+    const a = action({ buyBack: { ...buyBack, own: 'spell-key' } });
+    const left = use(a, [spell, POOL]);
+    expect(left.caption).toEqual(['Test Pool: 2 to restore Far Reach, 5 of 5 left']);
+    expect(left.spends).toEqual([]);
+    expect(left.restore).toBeUndefined();
+
+    const none = use(a, [spell, POOL], { 'spell-key': 1 });
+    expect(none.disabled).toBe(false);
+    expect(none.restore?.own).toEqual({ key: 'spell-key', max: 1 });
+    expect(none.restore?.label).toBe('Far Reach');
+  });
+
+  it('keeps a cost and a buy-back apart on one action', () => {
+    const a = action({ cost: { resource: 'other', amount: 1 }, buyBack });
+    const other = resource('other', 'Other', 3);
+    const u = use(a, [OWN, POOL, other], { own: 2 });
+    expect(u.spends).toEqual([{ key: 'other', max: 3, amount: 1 }]);
+    expect(u.caption).toEqual(['Other: 1, 3 of 3 left', 'Test Pool: 2 to restore, 5 of 5 left']);
+    expect(u.restore?.spend.key).toBe('pool');
+  });
+
+  it('shows nothing when the use or the pool is missing', () => {
+    expect(use(action({ buyBack }), [OWN]).restore).toBeUndefined();
+    expect(use(action({ buyBack }), [OWN]).caption).toEqual(['2 of 2 left']);
+    expect(use(action({ buyBack: { ...buyBack, own: 'gone' } }), [POOL]).caption).toEqual([]);
+  });
+});
+
+describe('an action that refills a pool', () => {
+  const regains = { resource: 'pool', amount: 1 };
+
+  it('says what it refills, and gives it back on top of spending its use', () => {
+    const u = use(action({ regains }), [OWN, POOL], { pool: 2 });
+    expect(u.spends).toEqual([{ key: 'own', max: 2, amount: 1 }]);
+    expect(u.regains).toEqual({ key: 'pool', max: 5, amount: 1 });
+    expect(u.caption).toEqual(['2 of 2 left', 'Test Pool: regains 1, 3 of 5 left']);
+    expect(u.disabled).toBe(false);
+    expect(u.title).toBe(
+      'Use: marks your bonus action and spends a Quick Step use and regains 1 Test Pool',
+    );
+  });
+
+  it('is off with nothing to refill, so a tap cannot waste the use', () => {
+    const u = use(action({ regains }), [OWN, POOL]);
+    expect(u.disabled).toBe(true);
+    expect(u.title).toBe('No Test Pool to regain');
+  });
+
+  it('says no uses are left before anything else', () => {
+    const u = use(action({ regains }), [OWN, POOL], { own: 2, pool: 2 });
+    expect(u.disabled).toBe(true);
+    expect(u.title).toBe('No uses left');
+  });
+
+  it('adds nothing when the pool is not on the sheet', () => {
+    const u = use(action({ regains }), [OWN]);
+    expect(u.regains).toBeUndefined();
+    expect(u.disabled).toBe(false);
+    expect(u.caption).toEqual(['2 of 2 left']);
+  });
+});
+
+describe('applyRestore', () => {
+  const restore = use(action({ buyBack: { resource: 'pool', amount: 2 } }), [OWN, POOL], {
+    own: 2,
+  }).restore;
+  if (restore === undefined) throw new Error('no restore');
+
+  it('takes the price and gives one use back', () => {
+    const entries = [{ key: 'own', used: 2 }];
+    applyRestore(entries, restore);
+    expect(entries).toEqual([
+      { key: 'own', used: 1 },
+      { key: 'pool', used: 2 },
+    ]);
+  });
+
+  it('adds to what the pool has already spent', () => {
+    const entries = [
+      { key: 'own', used: 2 },
+      { key: 'pool', used: 3 },
+    ];
+    applyRestore(entries, restore);
+    expect(entries).toEqual([
+      { key: 'own', used: 1 },
+      { key: 'pool', used: 5 },
+    ]);
+  });
+
+  it('brings a count past the maximum back to one use left', () => {
+    const entries = [{ key: 'own', used: 5 }];
+    applyRestore(entries, restore);
+    expect(entries[0]).toEqual({ key: 'own', used: 1 });
+  });
+
+  it('takes nothing when the pool no longer has the price', () => {
+    const entries = [
+      { key: 'own', used: 2 },
+      { key: 'pool', used: 4 },
+    ];
+    applyRestore(entries, restore);
+    expect(entries).toEqual([
+      { key: 'own', used: 2 },
+      { key: 'pool', used: 4 },
+    ]);
+  });
+
+  it('takes nothing when a use is already back', () => {
+    const entries = [{ key: 'own', used: 1 }];
+    applyRestore(entries, restore);
+    expect(entries).toEqual([{ key: 'own', used: 1 }]);
+    const none: { key: string; used: number }[] = [];
+    applyRestore(none, restore);
+    expect(none).toEqual([]);
   });
 });

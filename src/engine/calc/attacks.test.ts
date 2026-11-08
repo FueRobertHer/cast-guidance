@@ -40,6 +40,40 @@ const WEAPONS: Record<string, DataEntity> = {
     dmgType: 'P',
     range: '80/320',
   },
+  Warbow: {
+    name: 'Warbow',
+    type: 'R',
+    weaponCategory: 'martial',
+    dmg1: '1d8',
+    dmgType: 'P',
+    property: ['2H'],
+    range: '100/400',
+  },
+  Maul: {
+    name: 'Maul',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '2d6',
+    dmgType: 'B',
+    property: ['H|XPHB', '2H|XPHB'],
+  },
+  // One of the two marked-absent properties each, so each exclusion is tested alone.
+  'Double Blade': {
+    name: 'Double Blade',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d6',
+    dmgType: 'S',
+    property: ['2H'],
+  },
+  'Heavy Pick': {
+    name: 'Heavy Pick',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d10',
+    dmgType: 'P',
+    property: ['H'],
+  },
   'Flame Sword': {
     name: 'Flame Sword',
     type: 'M',
@@ -178,6 +212,28 @@ describe('calcAttacks', () => {
 
     it('with no property in it covers the whole type', () => {
       expect(toHit('Longsword', 'type=martial weapon')).toBe(2);
+    });
+
+    it('needs every type clause to hold, not only the first', () => {
+      const martialRanged = 'type=martial weapon|type=ranged weapon';
+      expect(toHit('Warbow', martialRanged)).toBe(2);
+      expect(toHit('Longsword', martialRanged)).toBe(0);
+      expect(toHit('Shortbow', martialRanged)).toBe(0);
+    });
+
+    it('leaves out a weapon with a property marked absent', () => {
+      const light = 'type=martial weapon|type=melee weapon|property=!two-handed;!heavy';
+      expect(toHit('Longsword', light)).toBe(2);
+      expect(toHit('Rapier', light)).toBe(2);
+      expect(toHit('Maul', light)).toBe(0);
+      expect(toHit('Double Blade', light)).toBe(0);
+      expect(toHit('Heavy Pick', light)).toBe(0);
+      expect(toHit('Warbow', light)).toBe(0);
+    });
+
+    it('still wants one listed property beside one marked absent', () => {
+      expect(toHit('Rapier', 'property=finesse;!heavy')).toBe(2);
+      expect(toHit('Longsword', 'property=finesse;!heavy')).toBe(0);
     });
   });
 

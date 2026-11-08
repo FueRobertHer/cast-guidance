@@ -5,7 +5,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DataEntity } from '@/engine/types';
+import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
   chooseSpells,
@@ -234,6 +234,46 @@ describe('a spell that rolls', () => {
 
     press('End concentration on Moon Shaft');
     expect(screen.getByRole('button', { name: '2d10' })).toBeTruthy();
+  });
+});
+
+describe('a condition on casting', () => {
+  const wearing = (control: Element) => control.querySelector('.cx')?.className ?? '';
+  /** Knows a spell that casts from its chip, and one that casts from its button. */
+  const caster = (conditions: CharacterDoc['play']['conditions']) => {
+    const doc = sorcerer();
+    doc.spellcasting = {
+      'sorcerer|tst': {
+        known: [ref('Searing Bolt'), ref('Daze Mote'), ref('Moon Shaft')],
+        prepared: [],
+      },
+    };
+    doc.play.conditions = conditions;
+    return doc;
+  };
+
+  it('wears what stops casting on Cast and the chip that casts', async () => {
+    await renderSheet(caster([{ id: 'Paralyzed' }]), { path: 'spells', extra: { spell: [shaft] } });
+    expect(wearing(screen.getByRole('button', { name: 'Cast Daze Mote' }))).toContain(
+      'cx-paralyzed',
+    );
+    expect(wearing(screen.getByTitle('Searing Bolt fire damage'))).toContain('cx-paralyzed');
+  });
+
+  it('leaves them plain under a condition that only touches attacks', async () => {
+    await renderSheet(caster([{ id: 'Poisoned' }]), { path: 'spells', extra: { spell: [shaft] } });
+    expect(wearing(screen.getByRole('button', { name: 'Cast Daze Mote' }))).not.toContain('cx-on');
+    expect(wearing(screen.getByTitle('Searing Bolt fire damage'))).not.toContain('cx-on');
+  });
+
+  it('fades off a chip whose own roll starts its concentration, as it stops casting', async () => {
+    await renderSheet(caster([{ id: 'Paralyzed' }]), { path: 'spells', extra: { spell: [shaft] } });
+    const chip = screen.getByTitle('Moon Shaft radiant damage');
+    expect(wearing(chip)).toContain('cx-paralyzed');
+
+    fireEvent.click(chip);
+
+    expect(wearing(screen.getByTitle('Moon Shaft radiant damage'))).toContain('cx-rm');
   });
 });
 

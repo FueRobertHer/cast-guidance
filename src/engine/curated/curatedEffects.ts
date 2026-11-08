@@ -6,14 +6,231 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
-import type { Collector } from '../effects/base';
-import type { EffectOrigin } from '../types';
+import { asEntityArray, type Collector } from '../effects/base';
+import {
+  LANGUAGE_OPTIONS,
+  markKnownLanguages,
+  skillOptions,
+  toolOptions,
+  weaponOptions,
+} from '../effects/readers';
+import {
+  type Ability,
+  type ChoiceOption,
+  type DataEntity,
+  type EffectOrigin,
+  SKILLS,
+} from '../types';
 
 type CuratedFn = (col: Collector, origin: EffectOrigin) => void;
 
+const proficient = (col: Collector, skill: string, origin: EffectOrigin) =>
+  col.add({ kind: 'skillProf', skill, level: 1, origin });
+
+/**
+ * A skill a feature both grants and doubles. The proficiency is its own effect,
+ * since that is what tells another pick the skill is already taken.
+ */
+function skillAtExpertise(col: Collector, skill: string, origin: EffectOrigin): void {
+  proficient(col, skill, origin);
+  col.add({ kind: 'skillProf', skill, level: 2, origin });
+}
+
+/**
+ * A feature's pick among skills (every skill when `from` is empty), under its
+ * class or subclass, so removing the class or swapping the subclass clears it.
+ */
+function featureSkillPick(
+  col: Collector,
+  origin: EffectOrigin,
+  count: number,
+  from: readonly string[],
+  grant = (skill: string) => proficient(col, skill, origin),
+  label = count > 1 ? 'Skill proficiencies' : 'Skill proficiency',
+  extra: ChoiceOption[] = [],
+): void {
+  col.choice(
+    {
+      id: `${origin.type}:${origin.uid}:skill:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'skill',
+      label,
+      count,
+      options: [...skillOptions(from), ...extra],
+    },
+    (selected) => selected.forEach(grant),
+  );
+}
+
+/**
+ * Armor, weapons and tools a feature grants in prose, named as the class lists
+ * name them ("heavy", "martial"), so the sheet's list shows each once and an
+ * attack finds its category. `filter` is a weapon grant no category or name can
+ * say: the words the sheet shows, and the filter attacks match.
+ */
+interface Kit {
+  armor?: string[];
+  weapons?: string[];
+  tools?: string[];
+  filter?: [shown: string, filter: string];
+}
+
+function grantKit(col: Collector, origin: EffectOrigin, kit: Kit): void {
+  for (const name of kit.armor ?? []) col.add({ kind: 'armorProf', name, origin });
+  for (const name of kit.weapons ?? []) col.add({ kind: 'weaponProf', name, origin });
+  for (const name of kit.tools ?? []) col.add({ kind: 'toolProf', name, origin });
+  if (kit.filter !== undefined) {
+    col.add({ kind: 'weaponProf', name: kit.filter[0], origin });
+    col.add({ kind: 'weaponProfFilter', filter: kit.filter[1], origin });
+  }
+}
+
+/** Each of a feature's parts, in order. */
+const all =
+  (...parts: CuratedFn[]): CuratedFn =>
+  (col, origin) => {
+    for (const fn of parts) fn(col, origin);
+  };
+
+/** A kit, then whatever else the feature does. */
+const kit = (grants: Kit, ...rest: CuratedFn[]): CuratedFn =>
+  all((col, origin) => grantKit(col, origin, grants), ...rest);
+
+/** Unarmored AC: `base` plus the abilities' modifiers, labelled with the feature. */
+const unarmored =
+  (base: number, ...abilities: Ability[]): CuratedFn =>
+  (col, origin) =>
+    col.add({ kind: 'acFormula', label: origin.label, base, addAbilities: abilities, origin });
+
+const heldTools = (col: Collector) =>
+  new Set(col.effects.flatMap((e) => (e.kind === 'toolProf' ? [e.name.toLowerCase()] : [])));
+
+/**
+ * A pick of tools, among `from` (category words such as "artisan's tools" expand).
+ * A tool collected so far is offered disabled, since the pick is for one the
+ * character lacks.
+ */
+function featureToolPick(
+  col: Collector,
+  origin: EffectOrigin,
+  count: number,
+  from: readonly string[],
+  label = count > 1 ? 'Tool proficiencies' : 'Tool proficiency',
+): void {
+  const held = heldTools(col);
+  const options = toolOptions(from).map((o) =>
+    held.has(o.id.toLowerCase())
+      ? { ...o, disabled: { reason: `You already have ${o.label}` } }
+      : o,
+  );
+  col.choice(
+    {
+      id: `${origin.type}:${origin.uid}:tool:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'tool',
+      label,
+      count,
+      options,
+    },
+    (selected) => {
+      for (const id of selected) {
+        const name = options.find((o) => o.id === id)?.label ?? id;
+        col.add({ kind: 'toolProf', name, origin });
+      }
+    },
+  );
+}
+
+const toolPick =
+  (count: number, from: readonly string[]): CuratedFn =>
+  (col, origin) =>
+    featureToolPick(col, origin, count, from);
+
+/**
+ * The artificer subclasses' tools: each one the character already has turns into
+ * a pick of another artisan's tool. Like Royal Envoy, only what is collected so far
+ * counts (species, background, an earlier class, and a feat from any of this
+ * class's ability score improvements, which are all collected before the
+ * subclass); the artificer's own "one type of artisan's tools of your choice" is
+ * words in the class data, not a pick, so it never does.
+ */
+const toolsOrAnother =
+  (...tools: string[]): CuratedFn =>
+  (col, origin) => {
+    const held = heldTools(col);
+    const known = tools.filter((t) => held.has(t.toLowerCase()));
+    for (const name of tools) {
+      if (!known.includes(name)) col.add({ kind: 'toolProf', name, origin });
+    }
+    if (known.length > 0) {
+      featureToolPick(
+        col,
+        origin,
+        known.length,
+        ["artisan's tools"],
+        `Tool in place of ${known.join(' and ')}`,
+      );
+    }
+  };
+
+/** Bladesinging (TCE): one kind of one-handed melee weapon, from the base items. */
+const oneHandedMeleePick: CuratedFn = (col, origin) => {
+  const twoHanded = new Set(
+    col.ctx
+      .byType('baseitem')
+      .filter((e) =>
+        (Array.isArray(e.property) ? e.property : []).some(
+          (p) => String(typeof p === 'string' ? p : (p as DataEntity).uid).split('|')[0] === '2H',
+        ),
+      )
+      .map((e) => String(e.name).toLowerCase()),
+  );
+  col.choice(
+    {
+      id: `${origin.type}:${origin.uid}:weapon:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'generic',
+      label: 'Weapon proficiency',
+      count: 1,
+      options: weaponOptions(col.ctx)(undefined, 'type=melee weapon').filter(
+        (o) => !twoHanded.has(o.id.toLowerCase()),
+      ),
+    },
+    (selected) => {
+      for (const name of selected) col.add({ kind: 'weaponProf', name, origin });
+    },
+  );
+};
+
+/** Fixed grants of plain proficiency. Having a skill already asks for nothing in its place. */
+const skills =
+  (...names: string[]): CuratedFn =>
+  (col, origin) => {
+    for (const skill of names) proficient(col, skill, origin);
+  };
+
+/** A pick of `count` plain proficiencies, among `from` or every skill. */
+const skillPick =
+  (count: number, from: readonly string[] = []): CuratedFn =>
+  (col, origin) =>
+    featureSkillPick(col, origin, count, from);
+
+const classEntry = (col: Collector, className: string) =>
+  col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
+
 function classLevel(col: Collector, className: string): number {
-  const entry = col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
-  return entry?.levels ?? 0;
+  return classEntry(col, className)?.levels ?? 0;
+}
+
+/** "The skills available to Fighters at level 1": that class's own list, in the printing taken. */
+function classSkillList(col: Collector, className: string): string[] {
+  const entry = classEntry(col, className);
+  const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
+  const lists = (cls?.startingProficiencies as DataEntity | undefined)?.skills;
+  return asEntityArray(lists).flatMap((s) => {
+    const from = (s.choose as DataEntity | undefined)?.from;
+    return Array.isArray(from) ? from.map(String) : [];
+  });
 }
 
 /**
@@ -24,6 +241,39 @@ function classLevel(col: Collector, className: string): number {
 function printedIn(origin: EffectOrigin, source: string): boolean {
   return origin.uid.endsWith(`|${source}`);
 }
+
+/**
+ * The 2014 and FRHoF printings share this pick. FRHoF adds a kind of artisan's
+ * tools; the 2014 printing's two languages stay in the card's prose.
+ */
+const blessingsOfKnowledge: CuratedFn = (col, origin) => {
+  if (printedIn(origin, 'frhof')) featureToolPick(col, origin, 1, ["artisan's tools"]);
+  featureSkillPick(
+    col,
+    origin,
+    2,
+    ['Arcana', 'History', 'Nature', 'Religion'],
+    (skill) => skillAtExpertise(col, skill, origin),
+    'Skills with expertise',
+  );
+};
+
+/** Cavalier and Samurai: one of the listed skills, or a language instead, in one pick. */
+const skillOrLanguage =
+  (from: readonly string[]): CuratedFn =>
+  (col, origin) =>
+    featureSkillPick(
+      col,
+      origin,
+      1,
+      from,
+      (pick) =>
+        SKILLS.some((s) => s.name === pick)
+          ? proficient(col, pick, origin)
+          : col.add({ kind: 'language', name: pick, origin }),
+      'Skill or language',
+      markKnownLanguages(col, LANGUAGE_OPTIONS),
+    );
 
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
@@ -43,11 +293,18 @@ const superiorTechnique: CuratedFn = (col, origin) => {
   });
 };
 
+/** 2024: one back on a short rest, all on a long rest. 2014: all back on either. */
+function recovery(is2024: boolean) {
+  return is2024
+    ? ({ resetOn: 'long', regainOnShort: 1 } as const)
+    : ({ resetOn: 'short' } as const);
+}
+
 /**
  * Psionic Energy Dice, a pool per subclass: "use only the dice from this subclass".
- * 2024 prints a table and regains one on a short rest, which `resetOn` cannot say,
- * so it resets on a long rest and the player taps a pip back. The 2014 bonus action
- * that regains one die keeps the row the scanner gave it.
+ * 2024 prints a table and regains one on a short rest. 2014 regains one with a bonus
+ * action, once per short or long rest. A 2014 character with both subclasses gets one
+ * shared chip, which refills the first pool: the other is a pip tap.
  */
 function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cls: string): void {
   const level = classLevel(col, cls);
@@ -60,6 +317,7 @@ function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cl
     label: `Psionic Energy Dice (d${die})`,
     max: printed2024 ? count2024 : 'twiceProfBonus',
     resetOn: 'long',
+    ...(printed2024 ? { regainOnShort: 1 } : {}),
     origin,
   });
   if (printed2024) return;
@@ -71,11 +329,18 @@ function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cl
     resetOn: 'short',
     origin,
   });
-  col.add({ kind: 'action', economy: 'bonus', label: 'Psionic Power', origin });
+  col.add({
+    kind: 'action',
+    economy: 'bonus',
+    label: 'Psionic Power',
+    regains: { resource: key, amount: 1 },
+    origin,
+  });
 }
 
-function rageUses(level: number): number {
-  if (level >= 20) return 99;
+/** 2014's table says Unlimited at 20. 2024's stays at 6. */
+function rageUses(level: number, printed2024: boolean): number {
+  if (level >= 20 && !printed2024) return 99;
   if (level >= 17) return 6;
   if (level >= 12) return 5;
   if (level >= 6) return 4;
@@ -297,12 +562,14 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   'rage|barbarian': (col, origin) => {
+    const printed2024 = printedIn(origin, 'xphb');
     col.add({
       kind: 'resource',
       key: 'rage',
       label: 'Rage',
-      max: rageUses(classLevel(col, 'Barbarian')),
+      max: rageUses(classLevel(col, 'Barbarian'), printed2024),
       resetOn: 'long',
+      ...(printed2024 ? { regainOnShort: 1 } : {}),
       origin,
     });
     col.add({ kind: 'action', economy: 'bonus', label: 'Rage', origin });
@@ -311,12 +578,13 @@ export const CURATED: Record<string, CuratedFn> = {
     // 2024 scales uses (2 → 3 @4 → 4 @10); 2014 is once per rest.
     const lvl = classLevel(col, 'Fighter');
     const uses2024 = lvl >= 10 ? 4 : lvl >= 4 ? 3 : 2;
+    const is2024 = col.doc.rulesVersion === '2024';
     col.add({
       kind: 'resource',
       key: 'second-wind',
       label: 'Second Wind',
-      max: col.doc.rulesVersion === '2024' ? uses2024 : 1,
-      resetOn: 'short',
+      max: is2024 ? uses2024 : 1,
+      ...recovery(is2024),
       origin,
     });
     col.add({
@@ -373,9 +641,7 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
-  // it gave that printing no pool and nothing could spend one. 2024 regains one on a
-  // short rest, which `resetOn` cannot say: this resets all of them, as Second Wind's
-  // 2024 row does.
+  // it gave that printing no pool and nothing could spend one.
   'wild shape|druid': (col, origin) => {
     const printed2024 = printedIn(origin, 'xphb');
     const lvl = classLevel(col, 'Druid');
@@ -384,7 +650,7 @@ export const CURATED: Record<string, CuratedFn> = {
       key: 'wild-shape',
       label: 'Wild Shape',
       max: printed2024 ? (lvl >= 17 ? 4 : lvl >= 6 ? 3 : 2) : 2,
-      resetOn: 'short',
+      ...recovery(printed2024),
       origin,
     });
     col.add({
@@ -401,16 +667,39 @@ export const CURATED: Record<string, CuratedFn> = {
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');
-    const uses =
-      col.doc.rulesVersion === '2024' ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
+    const is2024 = col.doc.rulesVersion === '2024';
+    const uses = is2024 ? (lvl >= 6 ? 3 : 2) : lvl >= 18 ? 3 : lvl >= 6 ? 2 : 1;
     col.add({
       kind: 'resource',
       key: 'channel-divinity',
       label: 'Channel Divinity',
       max: uses,
-      resetOn: 'short',
+      ...recovery(is2024),
       origin,
     });
+  },
+  // 2014 is a flat 4 points on every short rest. 2024 is a choice of up to half the
+  // level, once per long rest, so its row counts that one use and the player taps
+  // the points back.
+  'sorcerous restoration|sorcerer': (col, origin) => {
+    if (printedIn(origin, 'xphb')) {
+      col.add({
+        kind: 'resource',
+        key: 'sorcerous-restoration',
+        label: 'Sorcerous Restoration',
+        max: 1,
+        resetOn: 'long',
+        origin,
+      });
+    } else {
+      col.add({ kind: 'resourceRegain', key: 'sorcery-points', amount: 4, origin });
+    }
+  },
+  'advanced artifice|artificer': (col, origin) => {
+    col.add({ kind: 'resourceRegain', key: 'flash-of-genius', amount: 1, origin });
+  },
+  'dread incarnate|scion of the three': (col, origin) => {
+    col.add({ kind: 'resourceRegain', key: 'bloodthirst', amount: 1, origin });
   },
   'font of magic|sorcerer': (col, origin) => {
     col.add({
@@ -476,13 +765,14 @@ export const CURATED: Record<string, CuratedFn> = {
     // "each time you use THIS CLASS'S Channel Divinity", and the 2014 pools are
     // separate features with separate uses. A shared key would also make the
     // max depend on which class the player happened to add first.
-    const uses = col.doc.rulesVersion === '2024' ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
+    const is2024 = col.doc.rulesVersion === '2024';
+    const uses = is2024 ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
     col.add({
       kind: 'resource',
       key: 'channel-divinity-paladin',
       label: 'Channel Divinity (Paladin)',
       max: uses,
-      resetOn: 'short',
+      ...recovery(is2024),
       origin,
     });
   },
@@ -519,6 +809,42 @@ export const CURATED: Record<string, CuratedFn> = {
         : { kind: 'halfProf', round: 'down', origin },
     );
   },
+  // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
+  'primal knowledge|barbarian': (col, origin) => {
+    const count = printedIn(origin, 'phb') && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
+    featureSkillPick(col, origin, count, classSkillList(col, 'Barbarian'));
+  },
+  // The sidekick classes' saving throw stays in the card, and so do the weapons,
+  // shields and tools that depend on the creature's stat block.
+  'bonus proficiencies|expert sidekick': kit({ armor: ['light'] }, skillPick(5)),
+  'bonus proficiencies|spellcaster sidekick': kit(
+    { armor: ['light'] },
+    skillPick(2, [
+      'Arcana',
+      'History',
+      'Insight',
+      'Investigation',
+      'Medicine',
+      'Performance',
+      'Persuasion',
+      'Religion',
+    ]),
+  ),
+  'bonus proficiencies|warrior sidekick': kit(
+    { armor: ['light', 'medium', 'heavy'] },
+    skillPick(2, [
+      'Acrobatics',
+      'Animal Handling',
+      'Athletics',
+      'Intimidation',
+      'Nature',
+      'Perception',
+      'Survival',
+    ]),
+  ),
+  // The 2024 Divine Order and Primal Order branches that train for battle.
+  'protector|cleric': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'warden|druid': kit({ armor: ['medium'], weapons: ['martial'] }),
   // The 2024 Divine Order and Primal Order branches: WIS on two INT skills.
   'thaumaturge|cleric': (col, origin) => {
     col.add({
@@ -575,11 +901,228 @@ export const CURATED: Record<string, CuratedFn> = {
   'aura of the sentinel|oath of the watchers': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'equalToProfBonus', origin });
   },
+  // Both printings: the bonus, and one skill of three.
   'otherworldly glamour|fey wanderer': (col, origin) => {
     col.add({ kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis', origin });
+    featureSkillPick(col, origin, 1, ['Deception', 'Performance', 'Persuasion']);
   },
   'elegant courtier|samurai': (col, origin) => {
     col.add({ kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis', origin });
+  },
+  // One printing, under either the 2014 or the 2024 rogue. Having a skill already
+  // asks nothing: it is doubled all the same.
+  'survivalist|scout': (col, origin) => {
+    skillAtExpertise(col, 'Nature', origin);
+    skillAtExpertise(col, 'Survival', origin);
+  },
+  // Persuasion is doubled however the fighter came by it, and having it already
+  // swaps the proficiency for a plain one in another skill. Only what is collected
+  // so far can say so: a later class's pick shows its own "already proficient" cue,
+  // and a later fixed grant just overlaps.
+  'royal envoy|purple dragon knight (banneret)': (col, origin) => {
+    if (col.proficientSkills().some((s) => s.toLowerCase() === 'persuasion')) {
+      col.add({ kind: 'skillProf', skill: 'Persuasion', level: 2, origin });
+      featureSkillPick(
+        col,
+        origin,
+        1,
+        ['Animal Handling', 'Insight', 'Intimidation', 'Performance'],
+        undefined,
+        'Skill in place of Persuasion',
+      );
+    } else {
+      skillAtExpertise(col, 'Persuasion', origin);
+    }
+  },
+  'blessings of knowledge|knowledge domain': blessingsOfKnowledge,
+  // The PSA domain refers to the same feature, and the key names the subclass walked.
+  'blessings of knowledge|knowledge domain (psa)': blessingsOfKnowledge,
+  // The skills, armor, weapons and tools these grant in prose alone. Languages
+  // and cantrips beside them stay in the card.
+  // XGE picks one. AU grants both, and each one already held turns into a pick
+  // from the fighter's list; like Royal Envoy, only what is collected so far counts.
+  'arcane archer lore|arcane archer': (col, origin) => {
+    if (!printedIn(origin, 'au')) return featureSkillPick(col, origin, 1, ['Arcana', 'Nature']);
+    const held = col.proficientSkills().map((s) => s.toLowerCase());
+    const known = ['Arcana', 'Nature'].filter((s) => held.includes(s.toLowerCase()));
+    for (const skill of ['Arcana', 'Nature']) {
+      if (!known.includes(skill)) proficient(col, skill, origin);
+    }
+    if (known.length > 0) {
+      featureSkillPick(
+        col,
+        origin,
+        known.length,
+        classSkillList(col, 'Fighter'),
+        undefined,
+        `Skill in place of ${known.join(' and ')}`,
+      );
+    }
+  },
+  'bonus proficiency|cavalier': skillOrLanguage([
+    'Animal Handling',
+    'History',
+    'Insight',
+    'Performance',
+    'Persuasion',
+  ]),
+  'bonus proficiency|samurai': skillOrLanguage(['History', 'Insight', 'Performance', 'Persuasion']),
+  'knightly envoy|banneret': skillPick(1, ['Insight', 'Intimidation', 'Persuasion', 'Performance']),
+  // An artisan's tool in both printings; 2024 adds a skill.
+  'student of war|battle master': (col, origin) => {
+    featureToolPick(col, origin, 1, ["artisan's tools"]);
+    if (printedIn(origin, 'xphb')) {
+      featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
+    }
+  },
+  'bonus proficiencies|rune knight': kit({ tools: ["Smith's Tools"] }),
+  'bonus proficiencies|assassin': kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
+  "assassin's tools|assassin": kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
+  'master of intrigue|mastermind': kit(
+    { tools: ['Disguise Kit', 'Forgery Kit'] },
+    toolPick(1, ['gaming set']),
+  ),
+  'hex warrior|the hexblade': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
+  'bonus proficiencies|college of valor': kit({
+    armor: ['medium', 'shield'],
+    weapons: ['martial'],
+  }),
+  'martial training|college of valor': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
+  'bonus proficiencies|college of swords': kit({ armor: ['medium'], weapons: ['scimitar'] }),
+  'channeler|college of spirits': kit({ tools: ['Playing Card Set'] }),
+  'unarmored defense|college of dance': unarmored(10, 'dex', 'cha'),
+  'bonus proficiency|life domain': kit({ armor: ['heavy'] }),
+  'bonus proficiency|nature domain': kit({ armor: ['heavy'] }),
+  'bonus proficiency|strength domain (psa)': kit({ armor: ['heavy'] }),
+  'bonus proficiency|solidarity domain (psa)': kit({ armor: ['heavy'] }),
+  'bonus proficiency|forge domain': kit({ armor: ['heavy'], tools: ["Smith's Tools"] }),
+  'bonus proficiencies|tempest domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|war domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|zeal domain (psa)': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|twilight domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiency|death domain': kit({ weapons: ['martial'] }),
+  // The artificer subclasses (TCE and EFA share each subclass name).
+  'battle ready|battle smith': kit({ weapons: ['martial'] }),
+  'tool proficiency|battle smith': toolsOrAnother("Smith's Tools"),
+  'tool proficiency|alchemist': toolsOrAnother("Alchemist's Supplies"),
+  'tool proficiency|artillerist': toolsOrAnother("Woodcarver's Tools"),
+  'tools of the trade|armorer': kit({ armor: ['heavy'] }, toolsOrAnother("Smith's Tools")),
+  'tools of the trade|battle smith': toolsOrAnother("Smith's Tools"),
+  'tools of the trade|alchemist': toolsOrAnother("Alchemist's Supplies", 'Herbalism Kit'),
+  'tools of the trade|artillerist': kit(
+    { filter: ['Martial Ranged weapons', 'type=martial weapon|type=ranged weapon'] },
+    toolsOrAnother("Woodcarver's Tools"),
+  ),
+  'tools of the trade|cartographer': toolsOrAnother(
+    "Calligrapher's Supplies",
+    "Cartographer's Tools",
+  ),
+  // The scanner read Jolt to Life's uses before this row turned it off; keep them.
+  "reanimator's skill set|reanimator": all(toolsOrAnother("Alchemist's Supplies"), (col, origin) =>
+    col.add({
+      kind: 'resource',
+      key: 'reanimator-s-skill-set',
+      label: "Reanimator's Skill Set",
+      max: 'abilityMod:int',
+      resetOn: 'long',
+      origin,
+    }),
+  ),
+  // Its kensei weapons, which also become monk weapons, stay in the card.
+  'path of the kensei|way of the kensei': toolPick(1, [
+    "calligrapher's supplies",
+    "painter's supplies",
+  ]),
+  // The 2014 printing's +1 hit point per level is what the scanner read; keep it.
+  'draconic resilience|draconic bloodline': all(unarmored(13, 'dex'), (col, origin) =>
+    col.add({ kind: 'hpPerLevel', amount: 1, origin }),
+  ),
+  'draconic resilience|draconic sorcery': unarmored(10, 'dex', 'cha'),
+  // The UA Mystic's orders.
+  'armor training|order of the avatar': kit({ armor: ['medium', 'shield'] }),
+  'martial training|order of the soul knife': kit({ armor: ['medium'], weapons: ['martial'] }),
+  'immortal durability|order of the immortal': unarmored(10, 'dex', 'con'),
+  'acolyte of nature|nature domain': skillPick(1, ['Animal Handling', 'Nature', 'Survival']),
+  'acolyte of strength|strength domain (psa)': skillPick(1, [
+    'Animal Handling',
+    'Athletics',
+    'Nature',
+    'Survival',
+  ]),
+  'arcane initiate|arcana domain': skills('Arcana'),
+  'bonus proficiencies|order domain': kit(
+    { armor: ['heavy'] },
+    skillPick(1, ['Intimidation', 'Persuasion']),
+  ),
+  'implement of peace|peace domain': skillPick(1, ['Insight', 'Performance', 'Persuasion']),
+  'student of arcana|arcana domain': (col, origin) => {
+    featureSkillPick(col, origin, 1, ['Arcana', ...classSkillList(col, 'Cleric')]);
+  },
+  'bonus proficiencies|college of lore': skillPick(3),
+  'primal lore|college of the moon': skillPick(1, [
+    'Animal Handling',
+    'Insight',
+    'Medicine',
+    'Nature',
+    'Perception',
+    'Survival',
+  ]),
+  'awakened talent|order of the awakened': skillPick(2, [
+    'Animal Handling',
+    'Deception',
+    'Insight',
+    'Intimidation',
+    'Investigation',
+    'Perception',
+    'Persuasion',
+  ]),
+  "hermit's study|order of the wu jen": skillPick(2, [
+    'Animal Handling',
+    'Arcana',
+    'History',
+    'Insight',
+    'Medicine',
+    'Nature',
+    'Perception',
+    'Religion',
+    'Survival',
+  ]),
+  'implements of mercy|way of mercy': kit(
+    { tools: ['Herbalism Kit'] },
+    skills('Insight', 'Medicine'),
+  ),
+  'implements of mercy|warrior of mercy': kit(
+    { tools: ['Herbalism Kit'] },
+    skills('Insight', 'Medicine'),
+  ),
+  'bonus proficiencies|way of the drunken master': kit(
+    { tools: ["Brewer's Supplies"] },
+    skills('Performance'),
+  ),
+  "genie's splendor|oath of the noble genies": all(
+    unarmored(10, 'dex', 'cha'),
+    skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
+  ),
+  'training in war and song (bladesinging)|bladesinging': kit(
+    { armor: ['light'] },
+    skills('Performance'),
+    oneHandedMeleePick,
+  ),
+  'training in war and song|bladesinger': kit(
+    {
+      filter: [
+        'Melee Martial weapons without Two-Handed or Heavy',
+        'type=martial weapon|type=melee weapon|property=!two-handed;!heavy',
+      ],
+    },
+    skillPick(1, ['Acrobatics', 'Athletics', 'Performance', 'Persuasion']),
+  ),
+  // The skill picked also takes the bonus.
+  'enchanting conversationalist|enchanter': (col, origin) => {
+    featureSkillPick(col, origin, 1, ['Deception', 'Intimidation', 'Persuasion'], (skill) => {
+      proficient(col, skill, origin);
+      col.add({ kind: 'checkBonus', skills: [skill], amount: 'abilityModMin1:int', origin });
+    });
   },
 
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------

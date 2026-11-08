@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONDITION_MOTION_KEY, setAnimateConditions } from '@/lib/conditionMotion';
 import { conditionSheetStore } from '@/stores/conditionSheet';
@@ -11,6 +11,9 @@ import {
   isChipLook,
   nextMoments,
   restingMoments,
+  TOTAL_MS,
+  useRollMoment,
+  type WearSurface,
 } from './ChipFace';
 import { RollChip } from './RollChip';
 
@@ -23,6 +26,7 @@ const ALL_LOOKS: readonly ChipLook[] = [
   'Poisoned',
   'Blinded',
   'Restrained',
+  'Grappled',
   'Exhaustion',
   'Invisible',
   'Frightened',
@@ -399,6 +403,148 @@ describe('ChipFace, as assistive tech meets it', () => {
   });
 });
 
+describe('ChipFace, on each surface', () => {
+  const on = (surface: WearSurface, wear: ChipWear, rolls = 0, tone?: 'danger' | 'heal') => (
+    <ChipFace wear={wear} rolls={rolls} showing={false} surface={surface} tone={tone}>
+      +5
+    </ChipFace>
+  );
+
+  it('names its surface, and adds nothing to a chip’s own classes', () => {
+    const c = chip(POISONED);
+    expect(c.root().className).toBe('cx cx-on cx-poisoned');
+    cleanup();
+    for (const surface of ['cast', 'save', 'cell', 'tile', 'card'] as const) {
+      const { container } = render(on(surface, PLAIN));
+      expect(container.querySelector('.cx')?.className).toBe(`cx cx-at-${surface}`);
+      cleanup();
+    }
+  });
+
+  it('keeps a damage or healing chip’s tone', () => {
+    const { container } = render(on('chip', PLAIN, 0, 'danger'));
+    expect(container.querySelector('.cx')?.className).toBe('cx cx-tone-danger');
+  });
+
+  it('draws each look on a save and a cell as on a chip, moving the face or not', () => {
+    for (const surface of ['save', 'cell', 'cast'] as const) {
+      const { container } = render(on(surface, worn('Paralyzed')));
+      expect(container.querySelectorAll('.cx-mat .cx-bolt')).toHaveLength(2);
+      expect(container.querySelector('.cx-face')?.className).toContain('cx-body-rigid');
+      expect(container.querySelector('.cx-strip')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('flashes on a roll, and a control that never rolls never flashes', () => {
+    const { container, rerender } = render(on('save', POISONED));
+    rerender(on('save', POISONED, 1));
+    expect(container.querySelector('.cx-surge')).not.toBeNull();
+    advance(480);
+    expect(container.querySelector('.cx-surge')).toBeNull();
+
+    // Cast and Speed count no rolls, so a new render of the same wear is nothing.
+    const cast = render(on('cast', POISONED));
+    cast.rerender(on('cast', POISONED));
+    expect(cast.container.querySelector('.cx-surge')).toBeNull();
+  });
+
+  it('gives Grappled four moving prongs and moves nothing else', () => {
+    const { container } = render(on('cell', worn('Grappled')));
+    expect(container.querySelectorAll('.cx-layer .cx-prong')).toHaveLength(4);
+    expect(container.querySelectorAll('.cx-layer .cx-p')).toHaveLength(4);
+    expect(container.querySelector('.cx-face')?.className).toBe('cx-face');
+  });
+
+  describe('on a card', () => {
+    it('takes the tint and ring whole, and keeps every moving piece in its strip', () => {
+      const { container } = render(on('card', POISONED));
+      const card = container.querySelector('.cx-face > .cx-mat');
+      const strip = container.querySelector('.cx-strip');
+      expect(card?.querySelector('.cx-layer')?.className).toBe('cx-layer cx-poisoned');
+      expect(card?.querySelector('.cx-ring')).not.toBeNull();
+      expect(card?.querySelector('.cx-liquid')).toBeNull();
+      expect(strip?.querySelector('.cx-liquid')).not.toBeNull();
+      expect(strip?.getAttribute('aria-hidden')).toBe('true');
+      // The rows are not in the strip.
+      expect(strip?.textContent).toBe('');
+    });
+
+    it('moves the strip, never the card, under Frightened', () => {
+      const { container } = render(on('card', worn('Frightened')));
+      expect(container.querySelector('.cx-face')?.className).toBe('cx-face');
+      expect(container.querySelector('.cx-strip')?.className).toContain('cx-body-cower');
+    });
+
+    it('floods the card as a condition arrives, and flashes only in the strip', () => {
+      const { container, rerender } = render(on('card', PLAIN));
+      expect(container.querySelector('.cx-strip')).toBeNull();
+      rerender(on('card', POISONED));
+      expect(container.querySelector('.cx')?.className).toContain('cx-arrive');
+      expect(container.querySelector('.cx-strip .cx-surge')).not.toBeNull();
+      expect(container.querySelector('.cx-face > .cx-mat .cx-surge')).toBeNull();
+    });
+
+    it('holds its tag at the strip’s corner', () => {
+      const penalty: ChipWear = { looks: ['Exhaustion'], ignored: false, penalty: -2 };
+      const { container } = render(on('card', penalty));
+      expect(container.querySelector('.cx-strip .cx-tag')?.textContent).toBe('−2');
+      expect(container.querySelectorAll('.cx-tag')).toHaveLength(1);
+    });
+
+    it('goes plain with a dashed ring when Ignore once is armed, and no row moves', () => {
+      const { container } = render(on('card', ARMED));
+      expect(container.querySelector('.cx-ignore-ring')).not.toBeNull();
+      // The strip keeps its place, with nothing in it, so the rows stay where they are.
+      const strip = container.querySelector('.cx-strip');
+      expect(strip).not.toBeNull();
+      expect(strip?.childElementCount).toBe(0);
+    });
+
+    it('keeps the same strip as a roll spends Ignore once and the conditions come back', () => {
+      const rolled = (showing: boolean) => (
+        <ChipFace wear={POISONED} rolls={1} showing={showing} surface="card">
+          +5
+        </ChipFace>
+      );
+      const { container, rerender } = render(on('card', ARMED));
+      const strip = container.querySelector('.cx-strip');
+      rerender(rolled(true));
+      expect(container.querySelector('.cx-ig')).not.toBeNull();
+      expect(container.querySelector('.cx-strip')).toBe(strip);
+      rerender(rolled(false));
+      expect(container.querySelector('.cx-ig')).toBeNull();
+      expect(container.querySelector('.cx-strip')).toBe(strip);
+      expect(strip?.querySelector('.cx-liquid')).not.toBeNull();
+    });
+
+    it('keeps its strip while the last condition fades, then lets it go', () => {
+      const { container, rerender } = render(on('card', POISONED));
+      rerender(on('card', PLAIN));
+      expect(container.querySelector('.cx-strip')).not.toBeNull();
+      advance(200);
+      expect(container.querySelector('.cx-strip')).toBeNull();
+    });
+  });
+});
+
+describe('useRollMoment, for a control whose total lands in the toast', () => {
+  it('counts each roll, and holds the moment as long as a chip holds its total', () => {
+    const { result } = renderHook(() => useRollMoment());
+    expect(result.current).toMatchObject({ rolls: 0, showing: false });
+    act(() => result.current.rolled());
+    expect(result.current).toMatchObject({ rolls: 1, showing: true });
+    advance(TOTAL_MS - 1);
+    expect(result.current.showing).toBe(true);
+    // Another roll starts the wait again.
+    act(() => result.current.rolled());
+    advance(TOTAL_MS - 1);
+    expect(result.current).toMatchObject({ rolls: 2, showing: true });
+    advance(1);
+    expect(result.current.showing).toBe(false);
+  });
+});
+
 describe('RollChip, wearing conditions', () => {
   const props = {
     expr: '1d20+5',
@@ -439,5 +585,14 @@ describe('RollChip, wearing conditions', () => {
     const { container } = render(<RollChip {...props} wear={PLAIN} />);
     expect(container.querySelector('.cx-face')).not.toBeNull();
     expect(screen.getByRole('button').className).not.toContain('bg-roll-soft');
+  });
+
+  it('keeps a casting chip’s damage or healing tone on the face', () => {
+    const damage = render(<RollChip expr="1d6" variant="damage" wear={PLAIN} />);
+    expect(damage.container.querySelector('.cx')?.className).toBe('cx cx-tone-danger');
+    expect(screen.getByRole('button').className).not.toContain('bg-danger-soft');
+    cleanup();
+    const heal = render(<RollChip expr="1d6" variant="heal" wear={PLAIN} />);
+    expect(heal.container.querySelector('.cx')?.className).toBe('cx cx-tone-heal');
   });
 });

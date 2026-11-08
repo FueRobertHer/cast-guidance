@@ -132,6 +132,400 @@ describe('proseScanFeature — limited-use detection', () => {
     const r = resource(scan('Second Wind', [`You can use it twice. ${returning}`]));
     expect(r).toMatchObject({ max: 2, resetOn: 'short' });
   });
+
+  describe('wordings for one use between rests', () => {
+    it.each([
+      [
+        'the feature',
+        'Once you wake a wisp, you can’t use the feature again until you finish a long rest.',
+      ],
+      [
+        'the action',
+        'Once you sense a gate, you can’t use the action again until you finish a long rest.',
+      ],
+      [
+        'this benefit',
+        'Once you hum, you can’t use this benefit again until you finish a long rest.',
+      ],
+      [
+        'this ability',
+        'Once you hum, you can’t use this ability again until you finish a long rest.',
+      ],
+      [
+        '"in this way"',
+        'Once you hum, you can’t do so in this way again until you finish a long rest.',
+      ],
+      [
+        '"create it"',
+        'Once you raise the glow, you can’t create it again until you finish a long rest.',
+      ],
+      ['"enter"', 'Once you step inside, you can’t enter again until you finish a long rest.'],
+      [
+        '"cast it in this way"',
+        'Once you hum, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        '"another one"',
+        'Once you bottle a mote, you can’t bottle another one with it until you finish a long rest.',
+      ],
+      ['"start"', 'Once you hum, you can’t do so again until you start a long rest.'],
+      [
+        '"roll initiative"',
+        'Once you hum, you can’t do so again until you roll initiative or a long rest passes.',
+      ],
+      ['a third person', 'The knight can’t do so again until he or she finishes a long rest.'],
+      ['"completes"', 'The knight can’t do so again until he or she completes a long rest.'],
+      [
+        '"before you can do so"',
+        'After humming, you must finish a long rest before you can do so here.',
+      ],
+      ['a dawn', 'Once used, the lamp can’t be used again until the next dawn.'],
+    ])('reads %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it.each([
+      [
+        'a target it spares',
+        'You can’t use this feature on that foe again until you finish a long rest.',
+      ],
+      [
+        'a target named by a pronoun',
+        'Once you charm a foe, you can’t charm it again until you finish a long rest.',
+      ],
+      [
+        'each of several benefits',
+        'Once you use one of them, you can’t use that benefit again until you finish a long rest.',
+      ],
+      [
+        'another feature’s wait',
+        'You can’t use Bright Prayer again until you finish 2d4 long rests.',
+      ],
+      ['an unrelated verb', 'You can’t speak again until you finish a long rest.'],
+      [
+        'a verb in place of "another one"',
+        'You can’t bottle a mote with it until you finish a long rest.',
+      ],
+      ['a wait for a turn', 'You flare. You can’t use it again until you start your next turn.'],
+      ['a wait for a ritual', 'You can’t create it again until you finish the ritual.'],
+      [
+        'a cast’s wait for a ritual',
+        'You can’t cast it in this way again until you finish the rite.',
+      ],
+      ['a wait with no rest', 'You can’t forge another one with it until you finish the blade.'],
+      [
+        'a rest past the wait',
+        'You can’t do so again until you finish the song, or rest your voice.',
+      ],
+      ['a third person’s wait', 'The knight can’t do so again until he or she finishes the duel.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it.each([
+      [
+        'a rest of any kind',
+        'Once you hum, you can’t use the feature again until you finish a rest.',
+      ],
+      [
+        '"long rest or short rest" with no initiative',
+        'Once you hum, you can’t do so again until you finish a long rest or short rest.',
+      ],
+      [
+        '"long rest or short rest" after initiative',
+        'Once you hum, you can’t do so again until you roll initiative or finish a long rest or short rest.',
+      ],
+      ['"start a short rest"', 'You hum. You can’t do so again until you start a short rest.'],
+      ['"complete a short rest"', 'You can’t do so again until you complete a short rest.'],
+      ['"finishes"', 'The knight can’t do so again until he or she finishes a short rest.'],
+      ['"completes"', 'The knight can’t do so again until he or she completes a short rest.'],
+    ])('resets on a short rest with %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'short' });
+    });
+
+    it.each([
+      ['a rest with an occasion', 'When you finish a rest, you can choose a new note.'],
+      [
+        'either rest with an occasion',
+        'When you finish a long rest or short rest, you can change your note.',
+      ],
+      ['a rest in a condition', 'If you finish a rest in the shrine, your hum grows louder.'],
+      ['a word that opens on "rest"', 'When you finish a restoration, the ward is whole.'],
+    ])('keeps a long rest beside %s', (_wording, sentence) => {
+      const text = `Once you hum, you can’t do so again until you finish a long rest. ${sentence}`;
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it('keeps a long rest when a word only opens on "rest"', () => {
+      const text = 'You can’t do so again until you finish a restful long rest.';
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+  });
+
+  describe('counts it states outright', () => {
+    it.each([
+      ['one use', 'You have one use of this feature, which comes back with a long rest.', 1],
+      ['two uses', 'You have two uses of this ability, and you regain them with a long rest.', 2],
+      ['three uses', 'You have three uses of this trait, and you regain them with a long rest.', 3],
+      [
+        '"this ability twice"',
+        'You can use this ability twice, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        '"this ability three times"',
+        'You can use this ability three times, and you regain them with a long rest.',
+        3,
+      ],
+      [
+        'a count in a later sentence',
+        'You hum. You have two uses of this ability, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        'a count in a later clause',
+        'For this hum, you have three uses of this trait, and you regain them with a long rest.',
+        3,
+      ],
+      [
+        'a rate per day',
+        'You can use this ability twice per day, and you regain them with a long rest.',
+        2,
+      ],
+      [
+        'a count, not a condition on what is left',
+        'You can use this ability twice, and you regain them with a long rest. While you have one use of this ability left, your eyes glow.',
+        2,
+      ],
+      [
+        'three times over a free use’s words',
+        'You can use your shout three times. You regain the ability to do so after a long rest.',
+        3,
+      ],
+      [
+        'twice over a free use’s words',
+        'You can use this trait twice. You regain the ability to do so after a long rest.',
+        2,
+      ],
+      [
+        'twice over a wait',
+        'You can use it twice here. You must finish a long rest before you can do so now.',
+        2,
+      ],
+      [
+        'a held count over a wait',
+        'You have two uses of this trait. You must finish a long rest before you can do so now.',
+        2,
+      ],
+    ])('reads %s', (_wording, text, max) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max, resetOn: 'long' });
+    });
+
+    it.each([
+      ['uses of something else', 'You have two uses of that wand.'],
+      ['another feature named', 'You can use Bright Prayer twice before a rest.'],
+      ['a count it does not know', 'You have nine uses of this ability.'],
+      ['a condition on what is left', 'When you have one use of this feature left, you glow.'],
+      ['a prohibition', 'You can’t use this ability twice on the same foe.'],
+      ['a rate per turn', 'You can use this ability twice per turn.'],
+      ['a rate each turn', 'You can use this ability twice each turn.'],
+      ['a rate in a turn', 'You can use this ability twice in a turn.'],
+      ['a rate in a round', 'You can use it three times in a round.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it('keeps the old wait over a stated count', () => {
+      const text =
+        'You can use it twice here. After that, you can’t do so again until you finish a long rest.';
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+  });
+
+  describe('a free cast of one spell', () => {
+    it.each([
+      [
+        'in one sentence',
+        'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'over two sentences',
+        'You can cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        '"before you can cast it"',
+        'You can cast fake ward with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        '"to cast the spell"',
+        'You can cast fake ward with no slot, but you must finish a long rest to cast the spell again.',
+      ],
+      [
+        'with a level opener a class writes',
+        'At 11th level, you learn fake ward. You can cast it once with no slot. You must finish a long rest before you can do so once more.',
+      ],
+      [
+        'before a later level',
+        'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest. Starting at 3rd level, you also learn fake bolt.',
+      ],
+      [
+        'at dawn',
+        'You can cast fake ward once with no slot, and you regain the ability to do so at dawn.',
+      ],
+      [
+        'with a class’s "starting at" as its first words',
+        'Starting at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with a class’s "beginning at" as its first words',
+        'Beginning at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with a class’s "starting at level" as its first words',
+        'Starting at level 3, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with "starting at" that names no level',
+        'You can breathe a line of flame starting at your mouth. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'with "you reach" that names no level',
+        'When you reach 0 hit points, you can cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'with "each" for its rest',
+        'You can cast fake ward once with no slot, and you regain the ability to do so after each long rest.',
+      ],
+      [
+        'with "each" for its targets',
+        'You can cast fake ward once, for each foe you pick, and you regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'with "both" for something else',
+        'You can hum once, holding the note with both hands, and you regain the ability to do so when you finish a long rest.',
+      ],
+    ])('is a tracker %s', (_shape, text) => {
+      expect(resource(scan('Gift', [text]))).toMatchObject({ max: 1, resetOn: 'long' });
+    });
+
+    it('reads its own rest', () => {
+      const r = resource(
+        scan('Gift', [
+          'You can cast fake ward once with no slot, and you regain the ability to cast it when you finish a short or long rest.',
+        ]),
+      );
+      expect(r).toMatchObject({ max: 1, resetOn: 'short' });
+    });
+
+    it.each([
+      [
+        'each of them',
+        'You can cast each spell once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'either of them',
+        'Once you cast either spell, you must finish a long rest before you can cast it again.',
+      ],
+      [
+        'any of them',
+        'Once you cast any of the spells, you must finish a long rest before you can cast it again.',
+      ],
+      [
+        'both of them',
+        'You can cast both spells once with no slot, and you regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'when a level is reached',
+        'When you reach 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'once a level is reached',
+        'Once you reach 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'starting at a level',
+        'You know fake light. Starting at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'beginning at a level',
+        'You know fake light. Beginning at 3rd level, you can cast fake ward once and regain the ability to do so when you finish a long rest.',
+      ],
+      [
+        'a spell arriving a sentence back',
+        'When you reach level 3, you learn fake ward. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a character level',
+        'You know fake light. When you reach character level 3, you always have fake ward. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'character levels',
+        'When you reach character levels 3 and 5, you learn a fake spell. You can cast it once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a wait for a later level’s spell',
+        'When you reach 3rd level, you can cast fake ward with no slot. You must finish a long rest before you can do so now.',
+      ],
+      [
+        '"in this way" for a later level’s spell',
+        'You know fake light. Starting at 3rd level, you can cast fake ward with no slot. Afterward, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        'a wait on each spell, a sentence back',
+        'You can cast each spell once with no slot. You must finish a long rest before you can do so now.',
+      ],
+      [
+        'a wait on either spell',
+        'Once you cast either spell, you must finish a long rest before you can do so now.',
+      ],
+      [
+        'each of them, a sentence back',
+        'You can cast each of them once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'either of them',
+        'You can cast either of them once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'both of them',
+        'You can cast both of them once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'each of these',
+        'You can cast each these two once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'either of those',
+        'You can cast either those two once with no slot, and you regain the ability to do so after a long rest.',
+      ],
+      [
+        'a lost ability that comes back',
+        'While you are stunned, you can’t fly. You regain the ability to do so when the stun ends.',
+      ],
+      [
+        'a lost spell that comes back',
+        'While you wear metal, you can’t cast fake ward. You regain the ability to cast it when you doff it.',
+      ],
+      [
+        'a target’s wait before your next go',
+        'A foe you soothe must finish a long rest before you can do so now.',
+      ],
+      [
+        'a target’s wait to cast',
+        'A foe you silence must finish a long rest to cast the spell again.',
+      ],
+    ])('reads no tracker for %s', (_shape, text) => {
+      expect(resource(scan('Gift', [text]))).toBeUndefined();
+    });
+
+    it('keeps a standing bonus beside an ability that only comes back', () => {
+      const text =
+        'You have a +2 bonus to initiative. While you are stunned, you can’t fly. You regain the ability to do so when the stun ends.';
+      expect(scan('Gift', [text])).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'initiativeBonus', amount: 2 })]),
+      );
+    });
+  });
 });
 
 describe('proseScanFeature beside a counted spell', () => {
@@ -152,6 +546,11 @@ describe('proseScanFeature beside a counted spell', () => {
   }
   const trackers = (spells: string[], text: string) =>
     scanBeside(spells, text).filter((e) => e.kind === 'resource');
+  it('reads no plain action for its save when a counted spell owns the limit', () => {
+    const text = `As an action, you can cast Dread with this gift. Each creature within 10 feet of you must make a Wisdom saving throw. Once you cast it with this gift, you can't do so again until you finish a long rest.`;
+    expect(scanBeside(['Dread'], text)).toEqual([]);
+  });
+
   /** The plain limit each form takes, in wording of our own. */
   const CAST_LIMIT =
     'Once you cast it with this gift, you can’t do so again until you finish a long rest.';
@@ -175,6 +574,46 @@ describe('proseScanFeature beside a counted spell', () => {
       [
         'plain words about the spell between',
         `You may cast fake ward here. Its glow is pale. ${USE_LIMIT}`,
+      ],
+      [
+        'a limit done "in this way"',
+        'You may cast fake ward here. Once you cast it with this gift, you can’t do so in this way again until you finish a long rest.',
+      ],
+      [
+        'a way to cast it again with no comma',
+        'You may cast fake ward here. Once you cast it with this gift, you can’t do so again until you finish a long rest unless you pay a mote.',
+      ],
+      [
+        'a free cast in one sentence',
+        'You may cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest.',
+      ],
+      [
+        'a free cast over two sentences',
+        'You may cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a free cast with a wait',
+        'You may cast fake ward with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        'a free cast of a pick the prose cannot name',
+        'You may cast this gift’s spell with no slot, and you must finish a long rest before you can cast it in this way again.',
+      ],
+      [
+        'a free cast a sentence on from "can cast"',
+        'You can cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a free cast that says "to cast" alone',
+        'Fake ward needs no slot here, but you must finish a long rest to cast it again.',
+      ],
+      [
+        'a wait in this way',
+        'You may cast fake ward with no slot. Afterward, you can’t cast it in this way again until you finish a long rest.',
+      ],
+      [
+        'a wait on each spell',
+        'You can cast each spell once with no slot. You must finish a long rest before you can do so now.',
       ],
     ])('%s', (_case, text) => {
       expect(trackers(['fake ward'], text)).toEqual([]);
@@ -246,6 +685,26 @@ describe('proseScanFeature beside a counted spell', () => {
         'a count of another kind',
         ['fake ward'],
         `You may cast fake ward here. ${CAST_LIMIT} You can use your parry twice.`,
+      ],
+      [
+        'a limit of the feature’s own beside a free cast',
+        ['fake ward'],
+        `You may cast fake ward once with no slot, and you regain the ability to cast it when you finish a long rest. You may also dash. After you dash, you can’t use it again until you finish a short rest.`,
+      ],
+      [
+        'a return of something that is no cast',
+        ['fake ward'],
+        'You know fake ward. You may hum once. You regain the ability to do so after a long rest.',
+      ],
+      [
+        'a return beside "can’t cast"',
+        ['fake ward'],
+        'You know fake ward. While you rage you can’t cast spells, but you can roar once. You regain the ability to do so after a short rest.',
+      ],
+      [
+        'a return beside "as you cast"',
+        ['fake ward'],
+        'You may roar once, even as you cast fake ward, and you regain the ability to do so when you finish a short rest.',
       ],
     ])('%s', (_case, spells, text) => {
       expect(trackers(spells, text)).toHaveLength(1);
@@ -862,6 +1321,458 @@ describe('proseScanFeature reaction wording', () => {
     expect(effects).toContainEqual(
       expect.objectContaining({ kind: 'resource', max: 1, resetOn: 'long' }),
     );
+  });
+});
+
+describe('proseScanFeature: which slot a feature takes', () => {
+  const economies = (entries: string) =>
+    scan('Trait', [entries]).flatMap((e) => (e.kind === 'action' ? [e.economy] : []));
+  const LIMIT = 'Afterward, you can’t use this feature again until you finish a long rest.';
+
+  describe('reactions', () => {
+    it.each([
+      ['"use a reaction"', 'Right after you take damage, you can use a reaction to fade.'],
+      ['"using your reaction"', 'You can stop the damage by using your reaction to drop a ward.'],
+      ['a sidekick’s', 'The sidekick can use its reaction to shield a friend.'],
+      ['a special one', 'In a fight, you get a special reaction to take on a foe’s turn.'],
+      ['an Opportunity Attack', 'Right after a foe hits you, you can make an Opportunity Attack.'],
+      ['"using" with no comma', 'You can stamp a hoof using your reaction.'],
+      ['an attack, a sentence ahead', 'You can make an Opportunity Attack. Without it, you fall.'],
+      ['an attack, a clause ahead', 'You can make an Opportunity Attack, without moving.'],
+      ['an attack, a part ahead', 'You can make an Opportunity Attack; without it, you fall.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(text)).toEqual(['reaction']);
+    });
+
+    it.each([
+      ['a wielder’s', 'While holding it, the wielder can use a reaction to push the foe.'],
+      ['another creature’s', 'The creature can use its reaction to dodge the blow.'],
+      ['a rider', 'You can move your speed as part of the same reaction.'],
+      ['a rider on an Opportunity Attack', 'When you roll for an Opportunity Attack, roll twice.'],
+      ['"without using"', 'You can drop your shield without using your reaction.'],
+      ['"instead of using"', 'Instead of using your reaction to dodge, you can slip away.'],
+      ['"when using"', 'When using your reaction to swing, you gain a bonus.'],
+      ['"while using"', 'While using your reaction to swing, you gain a bonus.'],
+      ['a word ending on "use"', 'Because your reaction is spent, you gain a bonus.'],
+      ['a word ending on "using"', 'Focusing your reaction on one foe gives you a bonus.'],
+      ['an ally’s special one', 'Your ally gains a special reaction it can use to strike a foe.'],
+      [
+        'an attack with no reaction',
+        'You can make an Opportunity Attack without spending anything.',
+      ],
+      ['an attack on a bonus action', 'You can make an Opportunity Attack in this bonus action.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+  });
+
+  describe('bonus actions', () => {
+    it.each([
+      ['"can use a bonus action"', 'You can use a bonus action to start the hum.'],
+      ['"can take a bonus action"', 'While hurt, you can take a Bonus Action to steady yourself.'],
+      ['"the bonus action"', 'You can use the bonus action from your Quick Feet to pick a lock.'],
+      ['a sidekick’s', 'The sidekick can use a bonus action on its turn to catch its breath.'],
+      ['a command', 'It only dodges unless you take a bonus action to command it.'],
+      ['a follow-up', 'You can follow that attack with a bonus action, making one kick.'],
+      ['an end to something else', 'You can use a bonus action to end one charm on you.'],
+      ['more past the end', 'You can use a bonus action to end it and heal.'],
+      ['a longer object', 'You can use a bonus action to end the charm on yourself.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(text)).toEqual(['bonus']);
+    });
+
+    it.each([
+      ['a rider', 'When you take a bonus action to inspire, you can also teleport.'],
+      ['a casting time', 'You can cast it here using your bonus action instead.'],
+      ['a changed casting time', 'You can change the casting time to 1 bonus action.'],
+      ['someone else’s', 'The knight can use a bonus action to command the shade.'],
+      ['part of another', 'As part of this bonus action, you can strike.'],
+      ['a prohibition', 'While it lasts, you can’t take a bonus action.'],
+      ['an end, then a stop', 'You sprout wings. You can use a bonus action to dismiss them.'],
+      ['an end, then a comma', 'You can use a bonus action to dismiss it, and it fades.'],
+      ['an end, then a semicolon', 'You can use a bonus action to dismiss it; it fades.'],
+      ['an end with nothing past it', 'You can use a bonus action to dismiss it'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+  });
+
+  describe('plain actions, which need a limit', () => {
+    it.each([
+      ['"using your action"', 'Using your action, you grow wings.'],
+      ['"take a Magic action"', 'You can take a Magic action to change shape.'],
+      ['"one of the attacks"', 'You can replace one of the attacks with a gust.'],
+      ['"a single attack"', 'You can replace a single attack with a gust.'],
+      ['"using" past a sentence', 'You glow. Using your action, you grow wings.'],
+      ['"using" past a clause', 'In a fight, using your action, you grow wings.'],
+      ['"using" past a part', 'You glow; using your action, you grow wings.'],
+      ['a Magic action to end something else', 'You can take a Magic action to end one charm.'],
+      ['a Magic action with more past the end', 'You can take a Magic action to end it and heal.'],
+    ])('reads %s', (_wording, text) => {
+      expect(economies(`${text} ${LIMIT}`)).toEqual(['action']);
+      expect(economies(text)).toEqual([]);
+    });
+
+    it.each([
+      ['a Magic action with no subject', 'It lasts until you take a Magic action to end it.'],
+      ['a Magic action as a trigger', 'When you take a Magic action to speak, you gain a bonus.'],
+      ['a Magic action that only ends it', 'You can take a Magic action to end it.'],
+      ['a Magic action, then a comma', 'You can take a Magic action to end it, and it fades.'],
+      ['a Magic action, then a semicolon', 'You can take a Magic action to end it; it fades.'],
+      ['"without using"', 'You can swap your gear without using your action.'],
+      ['"instead of using"', 'Instead of using your action to hide, you can slip away.'],
+      ['"by using"', 'You can end the wings by using your action.'],
+      ['a word ending on "use"', 'Because your action is spent, you gain a bonus.'],
+      ['a wolf’s single attack', 'Your wolf can replace a single attack with a bite.'],
+      ['a drone’s attack', 'Your drone can replace one of the attacks with a spark.'],
+    ])('leaves out %s', (_wording, text) => {
+      expect(economies(`${text} ${LIMIT}`)).toEqual([]);
+    });
+
+    it('leaves out a Magic action that ends it with nothing past it', () => {
+      expect(economies(`${LIMIT} You can take a Magic action to end it`)).toEqual([]);
+    });
+  });
+
+  describe('plain actions that force a save, with no limit', () => {
+    const SAVE = 'Each creature within 10 feet of you must make a Wisdom saving throw.';
+    const wisdomChip = expect.objectContaining({
+      kind: 'action',
+      economy: 'action',
+      save: expect.objectContaining({ targetAbility: 'wis' }),
+    });
+    const chips = (entries: unknown[]) => scan('Trait', entries).filter((e) => e.kind === 'action');
+    const named = (name: string, ...entries: string[]) => ({ type: 'entries', name, entries });
+    const options = (...entries: unknown[]) => ({ type: 'options', entries });
+
+    it.each([
+      ['"as an action, you"', 'As an action, you roar.'],
+      ['"as a Magic action, you"', 'As a Magic action, you roar.'],
+      ['"as an action, choose"', 'As an action, choose a foe.'],
+      ['"as an action, the paladin"', 'As an action, the paladin roars.'],
+      ['"you can use your action"', 'You can use your action to roar.'],
+      ['"you can take a Magic action"', 'You can take a Magic action to roar.'],
+      ['"you can spend ... as an action"', 'You can spend a point as an action to roar.'],
+      ['"you gain the ability to ... as an action"', 'You gain the ability to roar as an action.'],
+      ['it past a stop', 'You glow. As an action, you roar.'],
+      ['it past a comma', 'In a fight, as an action, you roar.'],
+      ['it past a semicolon', 'You glow; as an action, you roar.'],
+      ['"you can use" past a stop', 'You glow. You can use your action to roar.'],
+      ['"you can use" past a comma', 'In a fight, you can use your action to roar.'],
+      ['"you can use" past a semicolon', 'You glow; you can use your action to roar.'],
+      ['"you can spend" past a comma', 'In a fight, you can spend a point as an action to roar.'],
+      [
+        '"you gain the ability" past a comma',
+        'At dusk, you gain the ability to roar as an action.',
+      ],
+      ['an end to something else, "as an action"', 'As an action, you can end one charm on you.'],
+      ['an end to something else, "use"', 'You can use your action to end one charm on you.'],
+    ])('reads %s', (_wording, text) => {
+      expect(scan('Trait', [`${text} ${SAVE}`])).toContainEqual(wisdomChip);
+    });
+
+    it('reads a save in its sentence', () => {
+      const text = `As an action, you roar, and ${SAVE.toLowerCase()}`;
+      expect(scan('Trait', [text])).toContainEqual(wisdomChip);
+    });
+
+    it('reads a save in a later paragraph', () => {
+      expect(chips(['As an action, you roar.', `The air shakes. ${SAVE}`])).toContainEqual(
+        wisdomChip,
+      );
+    });
+
+    it('reads the save past it over a save before it', () => {
+      const before = 'Each foe within 5 feet of you must make a Dexterity saving throw.';
+      expect(scan('Trait', [`${before} As an action, you roar. ${SAVE}`])).toContainEqual(
+        wisdomChip,
+      );
+    });
+
+    it.each([
+      ['no save', 'As an action, you roar.'],
+      [
+        'the character’s own save',
+        'As an action, you roar. Then you must make a Wisdom saving throw.',
+      ],
+      ['a save before its sentence', `${SAVE} As an action, you roar.`],
+      ['a save before it in its sentence', `${SAVE.slice(0, -1)}; as an action, you roar.`],
+      [
+        'a save that is only a trigger',
+        'As an action, you roar. When a foe must make a Wisdom saving throw, you gain a bonus.',
+      ],
+    ])('earns no chip with %s', (_case, text) => {
+      expect(economies(text)).toEqual([]);
+    });
+
+    it.each([
+      ['"until you use your action"', 'It lasts until you use your action to stop it.'],
+      ['"you don’t need to use"', 'You don’t need to use your action to keep it going.'],
+      ['"you can’t use"', 'While changed, you can’t use your action to cast spells.'],
+      ['"when you use"', 'When you use your action to rest, you glow.'],
+      ['a rider past an opening clause', 'When you rest as an action, you glow.'],
+      ['a rider on a Magic action', 'When you rest as a Magic action, you glow.'],
+      ['"as an action" with no clause', 'The hum lasts as an action would.'],
+      ['"as an action" with no comma', 'As an action you roar.'],
+      ['"you can use" with no "to"', 'You can use your action when the moon rises.'],
+      ['"you can" with no cost', 'You can roar as an action.'],
+      ['a cost, past a stop', 'You can spend a point. The hum lasts as an action would.'],
+      ['a cost, past a comma', 'You can spend a point, and it lasts as an action would.'],
+      ['a cost, past a semicolon', 'You can spend a point; it lasts as an action would.'],
+      ['a cost, then a Magic action', 'You can spend a point as a Magic action to roar.'],
+      ['"you can no longer"', 'While changed, you can no longer cast spells as an action.'],
+      ['"without it counting"', 'You can hum without it counting as an action.'],
+      ['someone else’s, past a comma', 'Your wolf can, as an action, howl.'],
+      ['someone else’s, opening on it', 'As an action, your wolf howls.'],
+      ['an ally’s', 'As an action, an ally of yours can touch the ward.'],
+      ['"you can see", then a use', 'A creature you can see can shake off the charm as an action.'],
+      ['"you can use" inside a clause', 'A foe you can use your action to touch flinches.'],
+      ['"you can take" inside a clause', 'A foe you can take a Magic action to touch flinches.'],
+      [
+        '"you can spend" inside a clause',
+        'A foe you can spend a point as an action to touch flinches.',
+      ],
+      [
+        '"you gain the ability" inside a clause',
+        'Once you gain the ability to roar as an action, you glow.',
+      ],
+      ['"you can end it", opening on it', 'As a Magic action, you can end it.'],
+      ['"you end it", opening on it', 'As an action, you end it.'],
+      ['ending it with "you can use"', 'You can use your action to end it.'],
+      ['ending it, then more', 'You can use your action to end it early.'],
+      ['ending it with "you can take"', 'You can take a Magic action to end it.'],
+      ['ending it with "as an action"', 'You can end the aura as an action.'],
+      ['"using your action", read with a limit', 'Using your action, you grow wings.'],
+      ['a replaced attack, read with a limit', 'You can replace a single attack with a gust.'],
+    ])('earns no chip from %s', (_case, text) => {
+      expect(economies(`${text} ${SAVE}`)).toEqual([]);
+    });
+
+    it.each([
+      ['a named option’s save', ['As an action, you roar:', options(named('Fear', SAVE))]],
+      ['a named option’s action', [options(named('Fear', `As an action, you roar. ${SAVE}`))]],
+      ['a named benefit’s save', ['As an action, you roar.', named('Fear', SAVE)]],
+      ['a named benefit’s action', [named('Fear', `As an action, you roar. ${SAVE}`)]],
+    ])('earns no chip from %s', (_case, entries) => {
+      expect(chips(entries)).toEqual([]);
+    });
+
+    it.each([
+      ['a bonus action past a named option', 'You can use a bonus action to glow.', 'bonus'],
+      [
+        'an Opportunity Attack past a named option',
+        'You can make an Opportunity Attack on a foe.',
+        'reaction',
+      ],
+    ])('keeps %s', (_case, text, economy) => {
+      const effects = chips(['As an action, you roar:', options(named('Fear', SAVE)), text]);
+      expect(effects).toEqual([expect.objectContaining({ economy })]);
+    });
+
+    it('keeps a bonus action’s own save past a named option', () => {
+      const effects = chips([
+        'As an action, you roar:',
+        options(named('Fear', SAVE)),
+        `You can use a bonus action to bellow. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it.each([
+      [
+        'its save before a bonus action',
+        `As an action, you build a drone. ${SAVE} You can take a bonus action to command it.`,
+      ],
+      [
+        'an Opportunity Attack past it',
+        `As an action, you roar. ${SAVE} You can make an Opportunity Attack on a foe.`,
+      ],
+    ])('takes the plain action with %s', (_case, text) => {
+      expect(scan('Trait', [text])).toContainEqual(wisdomChip);
+    });
+
+    it.each([
+      [
+        'a bonus action named first',
+        `You can use a bonus action to glow. As an action, you roar. ${SAVE}`,
+        'bonus',
+      ],
+      [
+        'an Opportunity Attack named first',
+        `You can make an Opportunity Attack on a foe. As an action, you roar. ${SAVE}`,
+        'reaction',
+      ],
+      [
+        'an Opportunity Attack in its clause',
+        `You can make an Opportunity Attack on a foe or roar as an action. ${SAVE}`,
+        'reaction',
+      ],
+      [
+        'a reaction anywhere',
+        `As an action, you roar. ${SAVE} You can use a reaction to flare.`,
+        'reaction',
+      ],
+      [
+        '"as a bonus action" anywhere',
+        `As an action, you roar. ${SAVE} As a bonus action, you glow.`,
+        'bonus',
+      ],
+    ])('leaves the chip on the other slot with %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it('gives a save past a bonus action to that bonus action', () => {
+      const effects = chips([
+        `As an action, you build a drone. You can take a bonus action to command it. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'bonus',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it('leaves a save past a bonus action off a limited plain action', () => {
+      const effects = chips([
+        `As an action, you build a drone. You can take a bonus action to command it. ${SAVE} ${LIMIT}`,
+      ]);
+      expect(effects).toEqual([expect.objectContaining({ economy: 'action' })]);
+      expect(effects[0]).toMatchObject({ save: undefined });
+    });
+
+    it('leaves a save past a bonus action on a reaction', () => {
+      const effects = chips([
+        `You can use a reaction to flare. You can use a bonus action to burn. ${SAVE}`,
+      ]);
+      expect(effects).toEqual([
+        expect.objectContaining({
+          economy: 'reaction',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      ]);
+    });
+
+    it('shows no dice or limit of its own', () => {
+      const text = `As an action, you roar. ${SAVE} A creature takes 2d6 thunder damage on a failure.`;
+      const effects = scan('Trait', [text]);
+      expect(effects.filter((e) => e.kind === 'resource')).toEqual([]);
+      expect(effects).toContainEqual(expect.objectContaining({ kind: 'action', roll: undefined }));
+    });
+  });
+
+  describe('a feature that names more than one', () => {
+    it.each([
+      [
+        'a limit on the plain action, not the bonus action after it',
+        `As an action, you build a drone. You can take a bonus action to command it. ${LIMIT}`,
+        'action',
+      ],
+      [
+        'the bonus action named before a plain action',
+        `You can use a bonus action to don it. ${LIMIT} You can take a Magic action to doff it.`,
+        'bonus',
+      ],
+      [
+        'the bonus action, with no limit to make the plain action worth a chip',
+        'As an action, you build a drone. You can take a bonus action to command it.',
+        'bonus',
+      ],
+      [
+        'the reaction over a looser bonus action',
+        'You can use a bonus action to glow. You can use your reaction to flare.',
+        'reaction',
+      ],
+      [
+        'the bonus action over an Opportunity Attack',
+        'You can use a bonus action to glow. You can make an Opportunity Attack on a foe.',
+        'bonus',
+      ],
+      [
+        'the plain action over an Opportunity Attack',
+        `As an action, you glow. You can make an Opportunity Attack on a foe. ${LIMIT}`,
+        'action',
+      ],
+    ])('takes %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it.each([
+      ['end', 'You can use your reaction to flare. It lasts until you end it as a bonus action.'],
+      ['dismiss', 'You can use your reaction to flare. You can dismiss it as a bonus action.'],
+      [
+        'extinguish',
+        'You can use your reaction to flare. You can extinguish it as a bonus action.',
+      ],
+      [
+        'extinguish or restore',
+        'You can use your reaction to flare. You can extinguish or restore it as a bonus action.',
+      ],
+    ])('reads no chip from a bonus action to %s it', (_verb, text) => {
+      expect(economies(text)).toEqual(['reaction']);
+    });
+
+    it.each([
+      ['them', 'They fade once you dismiss them as a bonus action.'],
+      ['this', 'You can end this hum as a bonus action.'],
+      ['that', 'You can end that hum as a bonus action.'],
+      ['the', 'You can end the hum as a bonus action.'],
+      ['your', 'You can end your hum as a bonus action.'],
+      ['two words', 'You can end the loud hum as a bonus action.'],
+    ])('reads no chip from a bonus action to end %s', (_object, text) => {
+      expect(economies(`You can use your reaction to flare. ${text}`)).toEqual(['reaction']);
+    });
+
+    it.each([
+      [
+        'the plain action',
+        `You can use your action to shift. ${LIMIT} You can end it as a bonus action.`,
+        'action',
+      ],
+      [
+        'its looser wording',
+        'You can use a bonus action to shift. You can end it as a bonus action.',
+        'bonus',
+      ],
+      [
+        'an earlier one',
+        'As a bonus action, you glow. You can end the glow as a bonus action.',
+        'bonus',
+      ],
+    ])('reads what starts it from %s', (_case, text, economy) => {
+      expect(economies(text)).toEqual([economy]);
+    });
+
+    it.each([
+      ['a word that holds "end"', 'You can tend the fire as a bonus action.'],
+      ['a word that opens on "end"', 'You can endure the pain as a bonus action.'],
+      ['a sentence before', 'You can end it. As a bonus action, you glow.'],
+      ['a clause before', 'You can end it, and as a bonus action, you glow.'],
+      ['a part before', 'You can end it; as a bonus action, you glow.'],
+      ['a choice that also starts it', 'You can summon or dismiss your blade as a bonus action.'],
+      ['an end to something else', 'You can end one charm on you as a bonus action.'],
+      ['a longer object', 'You can dismiss the old spirit and call a new one as a bonus action.'],
+      ['the noun "end"', 'You gain a ward until the end of your turn as a bonus action.'],
+      ['a clause opening on the noun', 'At the end of a turn you can move as a bonus action.'],
+    ])('still reads a bonus action past %s', (_case, text) => {
+      expect(economies(text)).toEqual(['bonus']);
+    });
+
+    it('leaves a bonus action’s save its own past an Opportunity Attack', () => {
+      const text =
+        'As a Bonus Action, you change. You can make an Opportunity Attack on a foe. Each creature within 10 feet of you must make a Wisdom saving throw.';
+      expect(scan('Trait', [text])).toContainEqual(
+        expect.objectContaining({
+          kind: 'action',
+          save: expect.objectContaining({ targetAbility: 'wis' }),
+        }),
+      );
+    });
   });
 });
 

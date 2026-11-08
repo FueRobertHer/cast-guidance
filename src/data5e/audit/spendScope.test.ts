@@ -159,6 +159,24 @@ describe('spendCounts', () => {
     expect(spendCounts(both, file)).toMatchObject({ linked: 0, noCostYet: 1 });
   });
 
+  it('takes a row in one pool and a reason in another for the same feature', () => {
+    const file = emptyJudgments();
+    const options = [
+      option('Twinned Spell', 'XPHB', 'Spend a sorcery point on a higher-level spell slot.'),
+    ];
+    const both = { byType: (t: string) => (t === 'optionalfeature' ? options : []) };
+    const subject = proseSubjects(both)[0];
+    if (subject === undefined) throw new Error('no subject');
+    saveAnswers(file, 'sorcery', subject, { [SPENDS]: 0.95 });
+    saveAnswers(file, 'slots', subject, { [SPENDS]: 0.5 });
+    expect(spendCounts(both, file)).toMatchObject({ linked: 1, skipped: 1 });
+    const report = spendReport(both, file);
+    expect(report).toContain('# sorcery: 1 answered, 0 not asked, 1 linked.');
+    expect(report).toContain(
+      '## Left out, with a reason: 1\n- 0.50 Twinned Spell (optional feature|XPHB): names the pool in passing',
+    );
+  });
+
   it('survives the file format', () => {
     const file = parseJudgments(JSON.parse(serializeJudgments(answered())));
     expect(spendCounts(registry, file).linked).toBe(1);

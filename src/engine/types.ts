@@ -185,6 +185,25 @@ export interface ActionCost {
   ownUseToo?: boolean;
 }
 
+/**
+ * Paying a pool to get a use back (Psi-Powered Leap). It sits beside `cost` because
+ * using the feature spends none of it: the price is for the next use.
+ */
+export interface ActionBuyBack {
+  /** The key of the resource it pays from. */
+  resource: string;
+  amount: number;
+  /** The key of the use it gives back, when that use does not share the action's name. */
+  own?: string;
+}
+
+/** What using an action gives back, as well as what it spends (2014 Psionic Power's die). */
+export interface ActionRegain {
+  /** The key of the resource it refills. */
+  resource: string;
+  amount: number;
+}
+
 export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'abilityBonus'; ability: Ability; amount: number }
   | { kind: 'abilityMin'; ability: Ability; min: number }
@@ -243,6 +262,17 @@ export type EffectInput = { origin: EffectOrigin } & (
       stack?: boolean;
       /** How many of these points cannot become a spell slot (Metamagic Adept's). */
       noSlotConversion?: number;
+      /**
+       * How many come back on a short rest, with `resetOn: 'long'` still bringing
+       * them all back (2024 Rage, one at a time).
+       */
+      regainOnShort?: number;
+    }
+  | {
+      /** A feature that gives another feature's pool `regainOnShort` (Advanced Artifice). */
+      kind: 'resourceRegain';
+      key: string;
+      amount: number;
     }
   | {
       kind: 'action';
@@ -262,6 +292,10 @@ export type EffectInput = { origin: EffectOrigin } & (
       save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
       /** The pool using it spends, when that pool is not the one sharing its name. */
       cost?: ActionCost;
+      /** The pool that pays for another use once there are none left. */
+      buyBack?: ActionBuyBack;
+      /** The pool using it refills. */
+      regains?: ActionRegain;
     }
   | {
       /** A racial natural weapon (Ram, Cat's Claws, Bite, …): an unarmed strike
@@ -480,6 +514,8 @@ export interface DerivedResource {
   origin: string;
   /** How many of these points cannot become a spell slot. */
   noSlotConversion?: number;
+  /** How many come back on a short rest, when `resetOn` is `long`. */
+  regainOnShort?: number;
 }
 
 export interface DerivedSheet {
@@ -547,6 +583,10 @@ export interface DerivedSheet {
     save?: { targetAbility: Ability; dc?: number };
     /** The pool it spends, only when this sheet has that pool. */
     cost?: ActionCost;
+    /** The pool that buys a use back, only when this sheet has that pool. */
+    buyBack?: ActionBuyBack;
+    /** The pool using it refills. */
+    regains?: ActionRegain;
   }>;
   resources: DerivedResource[];
   features: FeatureCard[];

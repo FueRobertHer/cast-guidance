@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SPEND_SKIPPED } from '../../data5e/audit/spendScope';
+import { SPEND_POOLS, SPEND_SKIPPED } from '../../data5e/audit/spendScope';
 import { Collector } from '../effects/base';
 import { type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
 import { linkSpend, SPEND_LINKS } from './spendLinks';
@@ -33,9 +33,35 @@ describe('SPEND_LINKS', () => {
     }
   });
 
-  it('never both links and skips a feature', () => {
-    const skipped = Object.values(SPEND_SKIPPED).flatMap((pool) => Object.keys(pool));
-    expect(skipped.filter((key) => SPEND_LINKS[key] !== undefined)).toEqual([]);
+  it('never both links and skips a feature for one pool', () => {
+    // A feature can name several: Twinned Spell spends Sorcery Points and names a slot's level.
+    const both = SPEND_POOLS.flatMap((pool) =>
+      Object.keys(SPEND_SKIPPED[pool.id] ?? {}).filter((key) => {
+        const link = SPEND_LINKS[key];
+        return link !== undefined && pool.resources.includes(link.resource);
+      }),
+    );
+    expect(both).toEqual([]);
+  });
+
+  it('gives its reasons to pools that exist', () => {
+    const ids = SPEND_POOLS.map((pool) => pool.id);
+    expect(Object.keys(SPEND_SKIPPED).filter((id) => !ids.includes(id))).toEqual([]);
+  });
+
+  it("leaves out an oath's Channel Divinity heading only where its options have rows", () => {
+    const headings = Object.keys(SPEND_SKIPPED.channel ?? {}).filter((key) =>
+      key.startsWith('channel divinity|oath'),
+    );
+    expect(headings).toHaveLength(9);
+    for (const key of headings) {
+      const [, subclass, source] = key.split('|');
+      const options = rows.filter(
+        ([row, link]) =>
+          row.endsWith(`|${subclass}|${source}`) && link.resource === 'channel-divinity-paladin',
+      );
+      expect(options.length, key).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it('keeps the printings apart where their costs differ', () => {
@@ -115,6 +141,83 @@ describe('linkSpend', () => {
     linkSpend(col, 'trip attack|phb', 'Trip Attack', origin);
     expect(col.effects[0]).not.toHaveProperty('cost');
     expect(col.effects).toHaveLength(2);
+  });
+
+  describe('a buy-back row', () => {
+    const buyBackOf = (col: Collector, label: string) =>
+      col.effects.find((e) => e.kind === 'action' && e.label === label);
+
+    it('hangs on the action the feature emitted, with no cost and the same slot', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Psi-Powered Leap', origin });
+      linkSpend(col, 'psi-powered leap|psi warrior|xphb', 'Psi-Powered Leap', origin);
+      expect(col.effects).toEqual([
+        {
+          kind: 'action',
+          economy: 'bonus',
+          label: 'Psi-Powered Leap',
+          buyBack: { resource: 'psi-warrior-dice', amount: 1 },
+          origin,
+        },
+      ]);
+    });
+
+    it('adds a chip that takes no slot for a feature with no action', () => {
+      const col = collector();
+      linkSpend(col, 'rend mind|soulknife|xphb', 'Rend Mind', origin);
+      expect(col.effects).toEqual([
+        {
+          kind: 'action',
+          economy: 'none',
+          label: 'Rend Mind',
+          buyBack: { resource: 'soulknife-dice', amount: 3 },
+          origin,
+        },
+      ]);
+    });
+
+    it('points at the use when it sits on another row', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin });
+      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', origin);
+      expect(buyBackOf(col, 'Telekinetic Master')).toMatchObject({
+        buyBack: {
+          resource: 'psi-warrior-dice',
+          amount: 1,
+          own: 'spell:psi warrior|tce:telekinesis',
+        },
+      });
+    });
+
+    it("hangs on another feature's action when the row names it", () => {
+      const col = collector();
+      const other: EffectOrigin = { ...origin, label: 'Innate Sorcery' };
+      col.add({ kind: 'action', economy: 'bonus', label: 'Innate Sorcery', origin: other });
+      linkSpend(col, 'sorcery incarnate|sorcerer|xphb', 'Sorcery Incarnate', origin);
+      expect(col.effects).toHaveLength(1);
+      expect(buyBackOf(col, 'Innate Sorcery')).toMatchObject({
+        buyBack: { resource: 'sorcery-points', amount: 2 },
+      });
+    });
+
+    it('counts the uses when the row says so, under the name of the feature', () => {
+      const col = collector();
+      col.add({ kind: 'action', economy: 'bonus', label: 'Aspect of the Wyrm', origin });
+      linkSpend(
+        col,
+        'aspect of the wyrm|way of the ascendant dragon|ftd',
+        'Aspect of the Wyrm',
+        origin,
+      );
+      expect(col.effects).toContainEqual({
+        kind: 'resource',
+        key: 'aspect-of-the-wyrm',
+        label: 'Aspect of the Wyrm',
+        max: 1,
+        resetOn: 'long',
+        origin,
+      });
+    });
   });
 
   it('does nothing for a feature outside the table', () => {
