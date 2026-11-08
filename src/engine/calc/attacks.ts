@@ -235,12 +235,14 @@ export function calcAttacks(
           : 'str'
         : 'str';
     const range = str(e.range);
+    // The magic bonus and damage riders wait on attunement when the item asks for it.
+    const magic = magicWorks(e, entry.attuned);
     rows.push(
       buildRow(
         str(e.name) ?? entry.ref.name,
         ability,
         isProficient(e, weaponProfs, profFilters),
-        magicWorks(e, entry.attuned) ? parseBonus(e.bonusWeapon) : 0,
+        magic ? parseBonus(e.bonusWeapon) : 0,
         ranged,
         str(e.dmg1),
         str(e.dmgType) !== undefined
@@ -256,7 +258,7 @@ export function calcAttacks(
         ],
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',
-        extraDamageOf(e),
+        magic ? extraDamageOf(e) : [],
       ),
     );
   }
