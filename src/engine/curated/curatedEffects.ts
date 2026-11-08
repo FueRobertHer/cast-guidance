@@ -6,46 +6,79 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
-import type { Collector } from '../effects/base';
-import { skillOptions } from '../effects/readers';
-import type { EffectOrigin } from '../types';
+import { asEntityArray, type Collector } from '../effects/base';
+import { LANGUAGE_OPTIONS, markKnownLanguages, skillOptions } from '../effects/readers';
+import { type ChoiceOption, type DataEntity, type EffectOrigin, SKILLS } from '../types';
 
 type CuratedFn = (col: Collector, origin: EffectOrigin) => void;
+
+const proficient = (col: Collector, skill: string, origin: EffectOrigin) =>
+  col.add({ kind: 'skillProf', skill, level: 1, origin });
 
 /**
  * A skill a feature both grants and doubles. The proficiency is its own effect,
  * since that is what tells another pick the skill is already taken.
  */
 function skillAtExpertise(col: Collector, skill: string, origin: EffectOrigin): void {
-  col.add({ kind: 'skillProf', skill, level: 1, origin });
+  proficient(col, skill, origin);
   col.add({ kind: 'skillProf', skill, level: 2, origin });
 }
 
-/** A subclass feature's pick among skills, under the subclass so swapping it clears the pick. */
-function subclassSkillPick(
+/**
+ * A feature's pick among skills (every skill when `from` is empty), under its
+ * class or subclass, so removing the class or swapping the subclass clears it.
+ */
+function featureSkillPick(
   col: Collector,
   origin: EffectOrigin,
-  label: string,
   count: number,
   from: readonly string[],
-  grant: (skill: string) => void,
+  grant = (skill: string) => proficient(col, skill, origin),
+  label = count > 1 ? 'Skill proficiencies' : 'Skill proficiency',
+  extra: ChoiceOption[] = [],
 ): void {
   col.choice(
     {
-      id: `subclass:${origin.uid}:skill:${origin.label.toLowerCase()}`,
+      id: `${origin.type}:${origin.uid}:skill:${origin.label.toLowerCase()}`,
       origin,
       kind: 'skill',
       label,
       count,
-      options: skillOptions(from),
+      options: [...skillOptions(from), ...extra],
     },
     (selected) => selected.forEach(grant),
   );
 }
 
+/** Fixed grants of plain proficiency. Having a skill already asks for nothing in its place. */
+const skills =
+  (...names: string[]): CuratedFn =>
+  (col, origin) => {
+    for (const skill of names) proficient(col, skill, origin);
+  };
+
+/** A pick of `count` plain proficiencies, among `from` or every skill. */
+const skillPick =
+  (count: number, from: readonly string[] = []): CuratedFn =>
+  (col, origin) =>
+    featureSkillPick(col, origin, count, from);
+
+const classEntry = (col: Collector, className: string) =>
+  col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
+
 function classLevel(col: Collector, className: string): number {
-  const entry = col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
-  return entry?.levels ?? 0;
+  return classEntry(col, className)?.levels ?? 0;
+}
+
+/** "The skills available to Fighters at level 1": that class's own list, in the printing taken. */
+function classSkillList(col: Collector, className: string): string[] {
+  const entry = classEntry(col, className);
+  const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
+  const lists = (cls?.startingProficiencies as DataEntity | undefined)?.skills;
+  return asEntityArray(lists).flatMap((s) => {
+    const from = (s.choose as DataEntity | undefined)?.from;
+    return Array.isArray(from) ? from.map(String) : [];
+  });
 }
 
 /**
@@ -62,15 +95,32 @@ function printedIn(origin: EffectOrigin, source: string): boolean {
  * languages, or a kind of artisan's tools) stays in the card's prose.
  */
 const blessingsOfKnowledge: CuratedFn = (col, origin) => {
-  subclassSkillPick(
+  featureSkillPick(
     col,
     origin,
-    'Skills with expertise',
     2,
     ['Arcana', 'History', 'Nature', 'Religion'],
     (skill) => skillAtExpertise(col, skill, origin),
+    'Skills with expertise',
   );
 };
+
+/** Cavalier and Samurai: one of the listed skills, or a language instead, in one pick. */
+const skillOrLanguage =
+  (from: readonly string[]): CuratedFn =>
+  (col, origin) =>
+    featureSkillPick(
+      col,
+      origin,
+      1,
+      from,
+      (pick) =>
+        SKILLS.some((s) => s.name === pick)
+          ? proficient(col, pick, origin)
+          : col.add({ kind: 'language', name: pick, origin }),
+      'Skill or language',
+      markKnownLanguages(col, LANGUAGE_OPTIONS),
+    );
 
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
@@ -606,6 +656,32 @@ export const CURATED: Record<string, CuratedFn> = {
         : { kind: 'halfProf', round: 'down', origin },
     );
   },
+  // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
+  'primal knowledge|barbarian': (col, origin) => {
+    const count = printedIn(origin, 'phb') && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
+    featureSkillPick(col, origin, count, classSkillList(col, 'Barbarian'));
+  },
+  // The sidekick classes' saving throw, armor, weapons and tools stay in the card.
+  'bonus proficiencies|expert sidekick': skillPick(5),
+  'bonus proficiencies|spellcaster sidekick': skillPick(2, [
+    'Arcana',
+    'History',
+    'Insight',
+    'Investigation',
+    'Medicine',
+    'Performance',
+    'Persuasion',
+    'Religion',
+  ]),
+  'bonus proficiencies|warrior sidekick': skillPick(2, [
+    'Acrobatics',
+    'Animal Handling',
+    'Athletics',
+    'Intimidation',
+    'Nature',
+    'Perception',
+    'Survival',
+  ]),
   // The 2024 Divine Order and Primal Order branches: WIS on two INT skills.
   'thaumaturge|cleric': (col, origin) => {
     col.add({
@@ -662,8 +738,10 @@ export const CURATED: Record<string, CuratedFn> = {
   'aura of the sentinel|oath of the watchers': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'equalToProfBonus', origin });
   },
+  // Both printings: the bonus, and one skill of three.
   'otherworldly glamour|fey wanderer': (col, origin) => {
     col.add({ kind: 'checkBonus', ability: 'cha', amount: 'abilityModMin1:wis', origin });
+    featureSkillPick(col, origin, 1, ['Deception', 'Performance', 'Persuasion']);
   },
   'elegant courtier|samurai': (col, origin) => {
     col.add({ kind: 'checkBonus', skills: ['Persuasion'], amount: 'abilityMod:wis', origin });
@@ -681,13 +759,13 @@ export const CURATED: Record<string, CuratedFn> = {
   'royal envoy|purple dragon knight (banneret)': (col, origin) => {
     if (col.proficientSkills().some((s) => s.toLowerCase() === 'persuasion')) {
       col.add({ kind: 'skillProf', skill: 'Persuasion', level: 2, origin });
-      subclassSkillPick(
+      featureSkillPick(
         col,
         origin,
-        'Skill in place of Persuasion',
         1,
         ['Animal Handling', 'Insight', 'Intimidation', 'Performance'],
-        (skill) => col.add({ kind: 'skillProf', skill, level: 1, origin }),
+        undefined,
+        'Skill in place of Persuasion',
       );
     } else {
       skillAtExpertise(col, 'Persuasion', origin);
@@ -696,6 +774,108 @@ export const CURATED: Record<string, CuratedFn> = {
   'blessings of knowledge|knowledge domain': blessingsOfKnowledge,
   // The PSA domain refers to the same feature, and the key names the subclass walked.
   'blessings of knowledge|knowledge domain (psa)': blessingsOfKnowledge,
+  // The skills these grant in prose alone. Tools, armor, weapons, languages and
+  // cantrips beside them stay in the card unless said otherwise.
+  // XGE picks one. AU grants both, and each one already held turns into a pick
+  // from the fighter's list; like Royal Envoy, only what is collected so far counts.
+  'arcane archer lore|arcane archer': (col, origin) => {
+    if (!printedIn(origin, 'au')) return featureSkillPick(col, origin, 1, ['Arcana', 'Nature']);
+    const held = col.proficientSkills().map((s) => s.toLowerCase());
+    const known = ['Arcana', 'Nature'].filter((s) => held.includes(s.toLowerCase()));
+    for (const skill of ['Arcana', 'Nature']) {
+      if (!known.includes(skill)) proficient(col, skill, origin);
+    }
+    if (known.length > 0) {
+      featureSkillPick(
+        col,
+        origin,
+        known.length,
+        classSkillList(col, 'Fighter'),
+        undefined,
+        `Skill in place of ${known.join(' and ')}`,
+      );
+    }
+  },
+  'bonus proficiency|cavalier': skillOrLanguage([
+    'Animal Handling',
+    'History',
+    'Insight',
+    'Performance',
+    'Persuasion',
+  ]),
+  'bonus proficiency|samurai': skillOrLanguage(['History', 'Insight', 'Performance', 'Persuasion']),
+  'knightly envoy|banneret': skillPick(1, ['Insight', 'Intimidation', 'Persuasion', 'Performance']),
+  // The 2014 Battle Master's Student of War is a tool alone.
+  'student of war|battle master': (col, origin) => {
+    if (printedIn(origin, 'xphb')) {
+      featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
+    }
+  },
+  'acolyte of nature|nature domain': skillPick(1, ['Animal Handling', 'Nature', 'Survival']),
+  'acolyte of strength|strength domain (psa)': skillPick(1, [
+    'Animal Handling',
+    'Athletics',
+    'Nature',
+    'Survival',
+  ]),
+  'arcane initiate|arcana domain': skills('Arcana'),
+  'bonus proficiencies|order domain': skillPick(1, ['Intimidation', 'Persuasion']),
+  'implement of peace|peace domain': skillPick(1, ['Insight', 'Performance', 'Persuasion']),
+  'student of arcana|arcana domain': (col, origin) => {
+    featureSkillPick(col, origin, 1, ['Arcana', ...classSkillList(col, 'Cleric')]);
+  },
+  'bonus proficiencies|college of lore': skillPick(3),
+  'primal lore|college of the moon': skillPick(1, [
+    'Animal Handling',
+    'Insight',
+    'Medicine',
+    'Nature',
+    'Perception',
+    'Survival',
+  ]),
+  'awakened talent|order of the awakened': skillPick(2, [
+    'Animal Handling',
+    'Deception',
+    'Insight',
+    'Intimidation',
+    'Investigation',
+    'Perception',
+    'Persuasion',
+  ]),
+  "hermit's study|order of the wu jen": skillPick(2, [
+    'Animal Handling',
+    'Arcana',
+    'History',
+    'Insight',
+    'Medicine',
+    'Nature',
+    'Perception',
+    'Religion',
+    'Survival',
+  ]),
+  'implements of mercy|way of mercy': skills('Insight', 'Medicine'),
+  'implements of mercy|warrior of mercy': skills('Insight', 'Medicine'),
+  'bonus proficiencies|way of the drunken master': skills('Performance'),
+  "genie's splendor|oath of the noble genies": skillPick(1, [
+    'Acrobatics',
+    'Intimidation',
+    'Performance',
+    'Persuasion',
+  ]),
+  'training in war and song (bladesinging)|bladesinging': skills('Performance'),
+  'training in war and song|bladesinger': skillPick(1, [
+    'Acrobatics',
+    'Athletics',
+    'Performance',
+    'Persuasion',
+  ]),
+  // The skill picked also takes the bonus.
+  'enchanting conversationalist|enchanter': (col, origin) => {
+    featureSkillPick(col, origin, 1, ['Deception', 'Intimidation', 'Persuasion'], (skill) => {
+      proficient(col, skill, origin);
+      col.add({ kind: 'checkBonus', skills: [skill], amount: 'abilityModMin1:int', origin });
+    });
+  },
 
   // --- Racial traits (keyed `trait:<traitName>`) ---------------------------
   // Most limited-use traits (Relentless Endurance, Breath Weapon, Fey Step,
