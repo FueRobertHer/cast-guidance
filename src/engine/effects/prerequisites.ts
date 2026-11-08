@@ -138,6 +138,13 @@ export interface PrereqContext {
   backgroundName?: string;
   /** Lowercased skill/tool/armor/weapon proficiency names collected so far. */
   proficiencies: Set<string>;
+  /**
+   * The armor and the weapon names alone, which an `armor` or `weapon` requirement
+   * reads, so a weapon named for what it lacks ("... without Two-Handed or Heavy")
+   * is not heavy armor.
+   */
+  armorProfs: Set<string>;
+  weaponProfs: Set<string>;
   hasSpellcasting: boolean;
 }
 
@@ -177,10 +184,15 @@ export function buildPrereqContext(col: Collector): PrereqContext {
   }
 
   const proficiencies = new Set<string>();
+  const armorProfs = new Set<string>();
+  const weaponProfs = new Set<string>();
   for (const e of col.effects) {
     if (e.kind === 'skillProf') proficiencies.add(e.skill.toLowerCase());
     else if (e.kind === 'toolProf' || e.kind === 'armorProf' || e.kind === 'weaponProf') {
-      proficiencies.add(e.name.toLowerCase());
+      const name = e.name.toLowerCase();
+      proficiencies.add(name);
+      if (e.kind === 'armorProf') armorProfs.add(name);
+      if (e.kind === 'weaponProf') weaponProfs.add(name);
     }
   }
 
@@ -205,13 +217,22 @@ export function buildPrereqContext(col: Collector): PrereqContext {
     featNames,
     backgroundName: doc.background?.name.toLowerCase(),
     proficiencies,
+    armorProfs,
+    weaponProfs,
     hasSpellcasting,
   };
 }
 
-function hasProficiency(value: string, ctx: PrereqContext): boolean {
+/** Whether a requirement such as `{ armor: "heavy" }` is met, read against its own kind. */
+function hasProficiency(kind: string, value: string, ctx: PrereqContext): boolean {
   const v = value.toLowerCase();
-  for (const p of ctx.proficiencies) {
+  const pool =
+    kind === 'armor'
+      ? ctx.armorProfs
+      : kind === 'weapon' || kind === 'weaponGroup'
+        ? ctx.weaponProfs
+        : ctx.proficiencies;
+  for (const p of pool) {
     if (p === v || p.includes(v) || v.includes(p)) return true;
   }
   return false;
@@ -261,8 +282,8 @@ function meetsReqSet(r: Record<string, unknown>, ctx: PrereqContext): boolean {
   if (Array.isArray(r.proficiency)) {
     for (const p of r.proficiency) {
       if (p !== null && typeof p === 'object') {
-        for (const v of Object.values(p)) {
-          if (typeof v === 'string' && v !== '' && !hasProficiency(v, ctx)) return false;
+        for (const [k, v] of Object.entries(p)) {
+          if (typeof v === 'string' && v !== '' && !hasProficiency(k, v, ctx)) return false;
         }
       }
     }

@@ -28,6 +28,8 @@ function prereqCtx(over: Partial<PrereqContext> = {}): PrereqContext {
     featNames: new Set(),
     backgroundName: undefined,
     proficiencies: new Set(),
+    armorProfs: new Set(),
+    weaponProfs: new Set(),
     hasSpellcasting: false,
     ...over,
   };
@@ -173,10 +175,24 @@ describe('meetsPrerequisite (GAME-005)', () => {
     expect(
       meetsPrerequisite(
         [{ proficiency: [{ armor: 'heavy' }] }],
-        prereqCtx({ proficiencies: new Set(['heavy', 'light']) }),
+        prereqCtx({ armorProfs: new Set(['heavy', 'light']) }),
       ),
     ).toBe(true);
     expect(meetsPrerequisite([{ proficiency: [{ armor: 'heavy' }] }], prereqCtx())).toBe(false);
+  });
+
+  it('reads an armor or weapon requirement against that kind alone', () => {
+    const named = 'melee martial weapons without two-handed or heavy';
+    const ctx = prereqCtx({ proficiencies: new Set([named]), weaponProfs: new Set([named]) });
+    expect(meetsPrerequisite([{ proficiency: [{ armor: 'heavy' }] }], ctx)).toBe(false);
+    expect(meetsPrerequisite([{ proficiency: [{ weapon: 'martial' }] }], ctx)).toBe(true);
+    expect(meetsPrerequisite([{ proficiency: [{ weaponGroup: 'martial' }] }], ctx)).toBe(true);
+    const armored = prereqCtx({
+      proficiencies: new Set(['heavy']),
+      armorProfs: new Set(['heavy']),
+    });
+    expect(meetsPrerequisite([{ proficiency: [{ weapon: 'heavy' }] }], armored)).toBe(false);
+    expect(meetsPrerequisite([{ proficiency: [{ weaponGroup: 'heavy' }] }], armored)).toBe(false);
   });
 
   it('is satisfied when ANY alternative requirement set matches (OR)', () => {
@@ -226,6 +242,18 @@ describe('buildPrereqContext (GAME-005)', () => {
     expect(ctx.raceName.toLowerCase()).toContain('testfolk');
     expect(ctx.featNames.has('alert')).toBe(true);
     expect(ctx.hasSpellcasting).toBe(true); // Mage is a full caster
+  });
+
+  it('keeps armor and weapon names apart for the requirements that read them', () => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    const origin = { label: 'Test', uid: 'test', type: 'class' as const };
+    col.add({ kind: 'weaponProf', name: 'Heavy Crossbow', origin });
+    col.add({ kind: 'armorProf', name: 'Light', origin });
+    const ctx = buildPrereqContext(col);
+    expect([...ctx.weaponProfs]).toEqual(['heavy crossbow']);
+    expect([...ctx.armorProfs]).toEqual(['light']);
+    expect(meetsPrerequisite([{ proficiency: [{ armor: 'heavy' }] }], ctx)).toBe(false);
+    expect(meetsPrerequisite([{ proficiency: [{ armor: 'light' }] }], ctx)).toBe(true);
   });
 
   it('reports no spellcasting for a martial class', () => {

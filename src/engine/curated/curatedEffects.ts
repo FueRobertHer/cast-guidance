@@ -7,8 +7,20 @@
  * These are facts of the game rules — fine to commit.
  */
 import { asEntityArray, type Collector } from '../effects/base';
-import { LANGUAGE_OPTIONS, markKnownLanguages, skillOptions } from '../effects/readers';
-import { type ChoiceOption, type DataEntity, type EffectOrigin, SKILLS } from '../types';
+import {
+  LANGUAGE_OPTIONS,
+  markKnownLanguages,
+  skillOptions,
+  toolOptions,
+  weaponOptions,
+} from '../effects/readers';
+import {
+  type Ability,
+  type ChoiceOption,
+  type DataEntity,
+  type EffectOrigin,
+  SKILLS,
+} from '../types';
 
 type CuratedFn = (col: Collector, origin: EffectOrigin) => void;
 
@@ -49,6 +61,146 @@ function featureSkillPick(
     (selected) => selected.forEach(grant),
   );
 }
+
+/**
+ * Armor, weapons and tools a feature grants in prose, named as the class lists
+ * name them ("heavy", "martial"), so the sheet's list shows each once and an
+ * attack finds its category. `filter` is a weapon grant no category or name can
+ * say: the words the sheet shows, and the filter attacks match.
+ */
+interface Kit {
+  armor?: string[];
+  weapons?: string[];
+  tools?: string[];
+  filter?: [shown: string, filter: string];
+}
+
+function grantKit(col: Collector, origin: EffectOrigin, kit: Kit): void {
+  for (const name of kit.armor ?? []) col.add({ kind: 'armorProf', name, origin });
+  for (const name of kit.weapons ?? []) col.add({ kind: 'weaponProf', name, origin });
+  for (const name of kit.tools ?? []) col.add({ kind: 'toolProf', name, origin });
+  if (kit.filter !== undefined) {
+    col.add({ kind: 'weaponProf', name: kit.filter[0], origin });
+    col.add({ kind: 'weaponProfFilter', filter: kit.filter[1], origin });
+  }
+}
+
+/** Each of a feature's parts, in order. */
+const all =
+  (...parts: CuratedFn[]): CuratedFn =>
+  (col, origin) => {
+    for (const fn of parts) fn(col, origin);
+  };
+
+/** A kit, then whatever else the feature does. */
+const kit = (grants: Kit, ...rest: CuratedFn[]): CuratedFn =>
+  all((col, origin) => grantKit(col, origin, grants), ...rest);
+
+/** Unarmored AC: `base` plus the abilities' modifiers, labelled with the feature. */
+const unarmored =
+  (base: number, ...abilities: Ability[]): CuratedFn =>
+  (col, origin) =>
+    col.add({ kind: 'acFormula', label: origin.label, base, addAbilities: abilities, origin });
+
+const heldTools = (col: Collector) =>
+  new Set(col.effects.flatMap((e) => (e.kind === 'toolProf' ? [e.name.toLowerCase()] : [])));
+
+/**
+ * A pick of tools, among `from` (category words such as "artisan's tools" expand).
+ * A tool collected so far is offered disabled, since the pick is for one the
+ * character lacks.
+ */
+function featureToolPick(
+  col: Collector,
+  origin: EffectOrigin,
+  count: number,
+  from: readonly string[],
+  label = count > 1 ? 'Tool proficiencies' : 'Tool proficiency',
+): void {
+  const held = heldTools(col);
+  const options = toolOptions(from).map((o) =>
+    held.has(o.id.toLowerCase())
+      ? { ...o, disabled: { reason: `You already have ${o.label}` } }
+      : o,
+  );
+  col.choice(
+    {
+      id: `${origin.type}:${origin.uid}:tool:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'tool',
+      label,
+      count,
+      options,
+    },
+    (selected) => {
+      for (const id of selected) {
+        const name = options.find((o) => o.id === id)?.label ?? id;
+        col.add({ kind: 'toolProf', name, origin });
+      }
+    },
+  );
+}
+
+const toolPick =
+  (count: number, from: readonly string[]): CuratedFn =>
+  (col, origin) =>
+    featureToolPick(col, origin, count, from);
+
+/**
+ * The artificer subclasses' tools: each one the character already has turns into
+ * a pick of another artisan's tool. Like Royal Envoy, only what is collected so far
+ * counts (species, background, an earlier class, and a feat from any of this
+ * class's ability score improvements, which are all collected before the
+ * subclass); the artificer's own "one type of artisan's tools of your choice" is
+ * words in the class data, not a pick, so it never does.
+ */
+const toolsOrAnother =
+  (...tools: string[]): CuratedFn =>
+  (col, origin) => {
+    const held = heldTools(col);
+    const known = tools.filter((t) => held.has(t.toLowerCase()));
+    for (const name of tools) {
+      if (!known.includes(name)) col.add({ kind: 'toolProf', name, origin });
+    }
+    if (known.length > 0) {
+      featureToolPick(
+        col,
+        origin,
+        known.length,
+        ["artisan's tools"],
+        `Tool in place of ${known.join(' and ')}`,
+      );
+    }
+  };
+
+/** Bladesinging (TCE): one kind of one-handed melee weapon, from the base items. */
+const oneHandedMeleePick: CuratedFn = (col, origin) => {
+  const twoHanded = new Set(
+    col.ctx
+      .byType('baseitem')
+      .filter((e) =>
+        (Array.isArray(e.property) ? e.property : []).some(
+          (p) => String(typeof p === 'string' ? p : (p as DataEntity).uid).split('|')[0] === '2H',
+        ),
+      )
+      .map((e) => String(e.name).toLowerCase()),
+  );
+  col.choice(
+    {
+      id: `${origin.type}:${origin.uid}:weapon:${origin.label.toLowerCase()}`,
+      origin,
+      kind: 'generic',
+      label: 'Weapon proficiency',
+      count: 1,
+      options: weaponOptions(col.ctx)(undefined, 'type=melee weapon').filter(
+        (o) => !twoHanded.has(o.id.toLowerCase()),
+      ),
+    },
+    (selected) => {
+      for (const name of selected) col.add({ kind: 'weaponProf', name, origin });
+    },
+  );
+};
 
 /** Fixed grants of plain proficiency. Having a skill already asks for nothing in its place. */
 const skills =
@@ -91,10 +243,11 @@ function printedIn(origin: EffectOrigin, source: string): boolean {
 }
 
 /**
- * The 2014 and FRHoF printings share this pick. What else each grants (two
- * languages, or a kind of artisan's tools) stays in the card's prose.
+ * The 2014 and FRHoF printings share this pick. FRHoF adds a kind of artisan's
+ * tools; the 2014 printing's two languages stay in the card's prose.
  */
 const blessingsOfKnowledge: CuratedFn = (col, origin) => {
+  if (printedIn(origin, 'frhof')) featureToolPick(col, origin, 1, ["artisan's tools"]);
   featureSkillPick(
     col,
     origin,
@@ -661,27 +814,37 @@ export const CURATED: Record<string, CuratedFn> = {
     const count = printedIn(origin, 'phb') && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
     featureSkillPick(col, origin, count, classSkillList(col, 'Barbarian'));
   },
-  // The sidekick classes' saving throw, armor, weapons and tools stay in the card.
-  'bonus proficiencies|expert sidekick': skillPick(5),
-  'bonus proficiencies|spellcaster sidekick': skillPick(2, [
-    'Arcana',
-    'History',
-    'Insight',
-    'Investigation',
-    'Medicine',
-    'Performance',
-    'Persuasion',
-    'Religion',
-  ]),
-  'bonus proficiencies|warrior sidekick': skillPick(2, [
-    'Acrobatics',
-    'Animal Handling',
-    'Athletics',
-    'Intimidation',
-    'Nature',
-    'Perception',
-    'Survival',
-  ]),
+  // The sidekick classes' saving throw stays in the card, and so do the weapons,
+  // shields and tools that depend on the creature's stat block.
+  'bonus proficiencies|expert sidekick': kit({ armor: ['light'] }, skillPick(5)),
+  'bonus proficiencies|spellcaster sidekick': kit(
+    { armor: ['light'] },
+    skillPick(2, [
+      'Arcana',
+      'History',
+      'Insight',
+      'Investigation',
+      'Medicine',
+      'Performance',
+      'Persuasion',
+      'Religion',
+    ]),
+  ),
+  'bonus proficiencies|warrior sidekick': kit(
+    { armor: ['light', 'medium', 'heavy'] },
+    skillPick(2, [
+      'Acrobatics',
+      'Animal Handling',
+      'Athletics',
+      'Intimidation',
+      'Nature',
+      'Perception',
+      'Survival',
+    ]),
+  ),
+  // The 2024 Divine Order and Primal Order branches that train for battle.
+  'protector|cleric': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'warden|druid': kit({ armor: ['medium'], weapons: ['martial'] }),
   // The 2024 Divine Order and Primal Order branches: WIS on two INT skills.
   'thaumaturge|cleric': (col, origin) => {
     col.add({
@@ -774,8 +937,8 @@ export const CURATED: Record<string, CuratedFn> = {
   'blessings of knowledge|knowledge domain': blessingsOfKnowledge,
   // The PSA domain refers to the same feature, and the key names the subclass walked.
   'blessings of knowledge|knowledge domain (psa)': blessingsOfKnowledge,
-  // The skills these grant in prose alone. Tools, armor, weapons, languages and
-  // cantrips beside them stay in the card unless said otherwise.
+  // The skills, armor, weapons and tools these grant in prose alone. Languages
+  // and cantrips beside them stay in the card.
   // XGE picks one. AU grants both, and each one already held turns into a pick
   // from the fighter's list; like Royal Envoy, only what is collected so far counts.
   'arcane archer lore|arcane archer': (col, origin) => {
@@ -805,12 +968,80 @@ export const CURATED: Record<string, CuratedFn> = {
   ]),
   'bonus proficiency|samurai': skillOrLanguage(['History', 'Insight', 'Performance', 'Persuasion']),
   'knightly envoy|banneret': skillPick(1, ['Insight', 'Intimidation', 'Persuasion', 'Performance']),
-  // The 2014 Battle Master's Student of War is a tool alone.
+  // An artisan's tool in both printings; 2024 adds a skill.
   'student of war|battle master': (col, origin) => {
+    featureToolPick(col, origin, 1, ["artisan's tools"]);
     if (printedIn(origin, 'xphb')) {
       featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
     }
   },
+  'bonus proficiencies|rune knight': kit({ tools: ["Smith's Tools"] }),
+  'bonus proficiencies|assassin': kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
+  "assassin's tools|assassin": kit({ tools: ['Disguise Kit', "Poisoner's Kit"] }),
+  'master of intrigue|mastermind': kit(
+    { tools: ['Disguise Kit', 'Forgery Kit'] },
+    toolPick(1, ['gaming set']),
+  ),
+  'hex warrior|the hexblade': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
+  'bonus proficiencies|college of valor': kit({
+    armor: ['medium', 'shield'],
+    weapons: ['martial'],
+  }),
+  'martial training|college of valor': kit({ armor: ['medium', 'shield'], weapons: ['martial'] }),
+  'bonus proficiencies|college of swords': kit({ armor: ['medium'], weapons: ['scimitar'] }),
+  'channeler|college of spirits': kit({ tools: ['Playing Card Set'] }),
+  'unarmored defense|college of dance': unarmored(10, 'dex', 'cha'),
+  'bonus proficiency|life domain': kit({ armor: ['heavy'] }),
+  'bonus proficiency|nature domain': kit({ armor: ['heavy'] }),
+  'bonus proficiency|strength domain (psa)': kit({ armor: ['heavy'] }),
+  'bonus proficiency|solidarity domain (psa)': kit({ armor: ['heavy'] }),
+  'bonus proficiency|forge domain': kit({ armor: ['heavy'], tools: ["Smith's Tools"] }),
+  'bonus proficiencies|tempest domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|war domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|zeal domain (psa)': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiencies|twilight domain': kit({ armor: ['heavy'], weapons: ['martial'] }),
+  'bonus proficiency|death domain': kit({ weapons: ['martial'] }),
+  // The artificer subclasses (TCE and EFA share each subclass name).
+  'battle ready|battle smith': kit({ weapons: ['martial'] }),
+  'tool proficiency|battle smith': toolsOrAnother("Smith's Tools"),
+  'tool proficiency|alchemist': toolsOrAnother("Alchemist's Supplies"),
+  'tool proficiency|artillerist': toolsOrAnother("Woodcarver's Tools"),
+  'tools of the trade|armorer': kit({ armor: ['heavy'] }, toolsOrAnother("Smith's Tools")),
+  'tools of the trade|battle smith': toolsOrAnother("Smith's Tools"),
+  'tools of the trade|alchemist': toolsOrAnother("Alchemist's Supplies", 'Herbalism Kit'),
+  'tools of the trade|artillerist': kit(
+    { filter: ['Martial Ranged weapons', 'type=martial weapon|type=ranged weapon'] },
+    toolsOrAnother("Woodcarver's Tools"),
+  ),
+  'tools of the trade|cartographer': toolsOrAnother(
+    "Calligrapher's Supplies",
+    "Cartographer's Tools",
+  ),
+  // The scanner read Jolt to Life's uses before this row turned it off; keep them.
+  "reanimator's skill set|reanimator": all(toolsOrAnother("Alchemist's Supplies"), (col, origin) =>
+    col.add({
+      kind: 'resource',
+      key: 'reanimator-s-skill-set',
+      label: "Reanimator's Skill Set",
+      max: 'abilityMod:int',
+      resetOn: 'long',
+      origin,
+    }),
+  ),
+  // Its kensei weapons, which also become monk weapons, stay in the card.
+  'path of the kensei|way of the kensei': toolPick(1, [
+    "calligrapher's supplies",
+    "painter's supplies",
+  ]),
+  // The 2014 printing's +1 hit point per level is what the scanner read; keep it.
+  'draconic resilience|draconic bloodline': all(unarmored(13, 'dex'), (col, origin) =>
+    col.add({ kind: 'hpPerLevel', amount: 1, origin }),
+  ),
+  'draconic resilience|draconic sorcery': unarmored(10, 'dex', 'cha'),
+  // The UA Mystic's orders.
+  'armor training|order of the avatar': kit({ armor: ['medium', 'shield'] }),
+  'martial training|order of the soul knife': kit({ armor: ['medium'], weapons: ['martial'] }),
+  'immortal durability|order of the immortal': unarmored(10, 'dex', 'con'),
   'acolyte of nature|nature domain': skillPick(1, ['Animal Handling', 'Nature', 'Survival']),
   'acolyte of strength|strength domain (psa)': skillPick(1, [
     'Animal Handling',
@@ -819,7 +1050,10 @@ export const CURATED: Record<string, CuratedFn> = {
     'Survival',
   ]),
   'arcane initiate|arcana domain': skills('Arcana'),
-  'bonus proficiencies|order domain': skillPick(1, ['Intimidation', 'Persuasion']),
+  'bonus proficiencies|order domain': kit(
+    { armor: ['heavy'] },
+    skillPick(1, ['Intimidation', 'Persuasion']),
+  ),
   'implement of peace|peace domain': skillPick(1, ['Insight', 'Performance', 'Persuasion']),
   'student of arcana|arcana domain': (col, origin) => {
     featureSkillPick(col, origin, 1, ['Arcana', ...classSkillList(col, 'Cleric')]);
@@ -853,22 +1087,36 @@ export const CURATED: Record<string, CuratedFn> = {
     'Religion',
     'Survival',
   ]),
-  'implements of mercy|way of mercy': skills('Insight', 'Medicine'),
-  'implements of mercy|warrior of mercy': skills('Insight', 'Medicine'),
-  'bonus proficiencies|way of the drunken master': skills('Performance'),
-  "genie's splendor|oath of the noble genies": skillPick(1, [
-    'Acrobatics',
-    'Intimidation',
-    'Performance',
-    'Persuasion',
-  ]),
-  'training in war and song (bladesinging)|bladesinging': skills('Performance'),
-  'training in war and song|bladesinger': skillPick(1, [
-    'Acrobatics',
-    'Athletics',
-    'Performance',
-    'Persuasion',
-  ]),
+  'implements of mercy|way of mercy': kit(
+    { tools: ['Herbalism Kit'] },
+    skills('Insight', 'Medicine'),
+  ),
+  'implements of mercy|warrior of mercy': kit(
+    { tools: ['Herbalism Kit'] },
+    skills('Insight', 'Medicine'),
+  ),
+  'bonus proficiencies|way of the drunken master': kit(
+    { tools: ["Brewer's Supplies"] },
+    skills('Performance'),
+  ),
+  "genie's splendor|oath of the noble genies": all(
+    unarmored(10, 'dex', 'cha'),
+    skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
+  ),
+  'training in war and song (bladesinging)|bladesinging': kit(
+    { armor: ['light'] },
+    skills('Performance'),
+    oneHandedMeleePick,
+  ),
+  'training in war and song|bladesinger': kit(
+    {
+      filter: [
+        'Melee Martial weapons without Two-Handed or Heavy',
+        'type=martial weapon|type=melee weapon|property=!two-handed;!heavy',
+      ],
+    },
+    skillPick(1, ['Acrobatics', 'Athletics', 'Performance', 'Persuasion']),
+  ),
   // The skill picked also takes the bonus.
   'enchanting conversationalist|enchanter': (col, origin) => {
     featureSkillPick(col, origin, 1, ['Deception', 'Intimidation', 'Persuasion'], (skill) => {
