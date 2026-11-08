@@ -1,6 +1,6 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
-import { lookupItem, parseBonus } from '../effects/item';
+import { lookupItem, magicWorks, parseBonus } from '../effects/item';
 import { weaponFitsTypes } from '../effects/readers';
 import type {
   Ability,
@@ -240,7 +240,7 @@ export function calcAttacks(
         str(e.name) ?? entry.ref.name,
         ability,
         isProficient(e, weaponProfs, profFilters),
-        parseBonus(e.bonusWeapon),
+        magicWorks(e, entry.attuned) ? parseBonus(e.bonusWeapon) : 0,
         ranged,
         str(e.dmg1),
         str(e.dmgType) !== undefined

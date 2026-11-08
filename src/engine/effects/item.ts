@@ -46,28 +46,33 @@ export function needsAttunement(e: DataEntity): boolean {
   return e.reqAttune === true || (typeof e.reqAttune === 'string' && e.reqAttune !== 'optional');
 }
 
+/**
+ * Whether an equipped item's magic works: its bonuses to AC, attacks and saves
+ * and its defenses. An item that asks for attunement gives them only once attuned;
+ * the armor, shield or weapon underneath works either way.
+ */
+export function magicWorks(e: DataEntity, attuned: boolean): boolean {
+  return attuned || !needsAttunement(e);
+}
+
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 
 /**
- * The defenses and save bonus an equipped item gives, from its data tags as
- * `ITEM_TAG_FIXES` corrects them. A defense waits on attunement when the item
- * asks for it, as the 2024 Periapt of Proof against Poison does; a save bonus
- * follows equipping alone, as `bonusAc` does. A potion's last a while once it
- * is drunk, so it gives none while carried.
+ * The defenses and save bonus an equipped item gives, once its magic works
+ * (`magicWorks`), from its data tags as `ITEM_TAG_FIXES` corrects them. A
+ * potion's last a while once it is drunk, so it gives none while carried.
  */
-function readWornTags(col: Collector, e: DataEntity, attuned: boolean, origin: EffectOrigin): void {
+function readWornTags(col: Collector, e: DataEntity, origin: EffectOrigin): void {
   if (itemTypeCode(e) === 'P') return;
   const fix = ITEM_TAG_FIXES[refUid({ name: str(e.name) ?? '', source: str(e.source) ?? '' })];
-  if (attuned || !needsAttunement(e)) {
-    for (const kind of ['resist', 'immune', 'vulnerable'] as const) {
-      for (const damageType of strings(fix?.[kind] ?? e[kind])) {
-        col.add({ kind, damageType, origin });
-      }
+  for (const kind of ['resist', 'immune', 'vulnerable'] as const) {
+    for (const damageType of strings(fix?.[kind] ?? e[kind])) {
+      col.add({ kind, damageType, origin });
     }
-    for (const condition of strings(fix?.conditionImmune ?? e.conditionImmune)) {
-      col.add({ kind: 'conditionImmune', condition, origin });
-    }
+  }
+  for (const condition of strings(fix?.conditionImmune ?? e.conditionImmune)) {
+    col.add({ kind: 'conditionImmune', condition, origin });
   }
   const save = fix?.save !== undefined ? fix.save : { amount: parseBonus(e.bonusSavingThrow) };
   if (save !== null && save.amount !== 0) {
@@ -105,18 +110,20 @@ export function collectItems(col: Collector): void {
       uid: refUid(entry.ref),
       type: 'item',
     };
-    // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
-    const bonusAc = parseBonus(e.bonusAc);
-    if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
-      col.add({ kind: 'acBonus', amount: bonusAc, origin });
+    if (magicWorks(e, entry.attuned)) {
+      // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
+      const bonusAc = parseBonus(e.bonusAc);
+      if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
+        col.add({ kind: 'acBonus', amount: bonusAc, origin });
+      }
+      readWornTags(col, e, origin);
     }
-    readWornTags(col, e, entry.attuned, origin);
 
     // Spells the item grants: a wand's cantrip, a cloak's daily misty step.
     // Same 5etools shape races and feats use, so an imported magic item and a
     // homebrew one both arrive here already speaking it. Equipping is what
-    // turns it on: only an item's defenses wait on attunement (see
-    // `readWornTags`), and its spells, like its AC and save bonuses, do not.
+    // turns it on: an item's bonuses and defenses wait on attunement
+    // (`magicWorks`), and its spells do not.
     collectAdditionalSpells(col, e.additionalSpells, origin);
   }
 }
