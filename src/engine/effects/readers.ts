@@ -574,18 +574,12 @@ export function readAbilityBlock(
   }
 }
 
-/**
- * `resist: ['fire', { choose: { from: [...] } }]` and similar damage lists.
- * `predetermined` are resistances another part of the build already fixes
- * (e.g. a Dragonborn subrace's ancestry): a choose prompt whose options cover
- * one of them is already answered, so no prompt is emitted.
- */
+/** `resist: ['fire', { choose: { from: [...] } }]` and similar damage lists. */
 export function readResistList(
   col: Collector,
   raw: unknown,
   origin: EffectOrigin,
   promptIdBase: string,
-  predetermined: readonly string[] = [],
 ): void {
   if (!Array.isArray(raw)) return;
   let chooseIdx = 0;
@@ -598,7 +592,6 @@ export function readResistList(
         count?: number;
       };
       const from = (c.from ?? []).map(String);
-      if (predetermined.some((p) => from.includes(p.toLowerCase()))) continue;
       const id = `${promptIdBase}:r${chooseIdx++}`;
       col.choice(
         {
