@@ -1,11 +1,11 @@
 {
-  "$comment": "Bytes; gzip is level 9. Set about 10% over the measured build. Ratchet down after a size win; raise only with a reason in the PR. Baseline in FUTURE_WORK.md.",
-  "entryBytes": 420000,
-  "entryGzipBytes": 132000,
-  "initialJsBytes": 586000,
-  "initialJsGzipBytes": 188000,
-  "totalJsBytes": 1224000,
-  "largestChunkBytes": 420000,
-  "cssBytes": 79000,
-  "precacheBytes": 1475000
+  "$comment": "Bytes; gzip is level 9. Set about 20% over the measured build, the owner's choice so that the features still coming do not each need a raise. Ratchet down after a size win; raise only with a reason in the PR. Baseline in FUTURE_WORK.md.",
+  "entryBytes": 493000,
+  "entryGzipBytes": 157000,
+  "initialJsBytes": 695000,
+  "initialJsGzipBytes": 225000,
+  "totalJsBytes": 1438000,
+  "largestChunkBytes": 493000,
+  "cssBytes": 94000,
+  "precacheBytes": 1679000
 }
