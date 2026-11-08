@@ -48,6 +48,34 @@ const HALFKIN: DataEntity = {
   entries: [trait('Versatility')],
 };
 
+// Several picks in one list: the readers number them in reading order.
+const PICKKIN: DataEntity = {
+  name: 'Pickkin',
+  source: 'TST',
+  ability: [{ choose: { from: ['str', 'dex'] } }, { choose: { from: ['int', 'wis'] } }],
+  skillProficiencies: [{ any: 1, choose: { from: ['arcana', 'history'] } }],
+  entries: [trait('Knack')],
+};
+
+// Alternative ability arrangements: the reader asks which one applies.
+const weighted = (weights: number[], from = ['str', 'dex', 'con']) => ({
+  choose: { weighted: { from, weights } },
+});
+const ARRKIN: DataEntity = {
+  name: 'Arrkin',
+  source: 'TST',
+  ability: [weighted([2, 1]), weighted([1, 1, 1])],
+  entries: [trait('Knack')],
+};
+
+// An `any` key in an ability list, which the ability reader asks nothing for.
+const ODDKIN: DataEntity = {
+  name: 'Oddkin',
+  source: 'TST',
+  ability: [{ choose: { from: ['str', 'dex'] } }, { any: 1 }],
+  entries: [trait('Knack')],
+};
+
 const sub = (name: string, fields: DataEntity, race = FIENDKIN): DataEntity => ({
   name,
   source: 'TST',
@@ -109,11 +137,40 @@ const SUBRACES: DataEntity[] = [
     },
   ),
   sub('Variant', { skillProficiencies: [{ any: 2 }] }, HALFKIN),
+  // Sets the race's first picks, which a later race pick follows.
+  sub(
+    'Early Picks',
+    { ability: [{ choose: { from: ['cha'] } }, { con: 1 }], skillProficiencies: [{ any: 1 }] },
+    PICKKIN,
+  ),
+  // Sets only the race's last picks.
+  sub(
+    'Late Picks',
+    {
+      ability: [{}, { choose: { from: ['cha'] } }],
+      skillProficiencies: [{ choose: { from: ['stealth'] } }],
+    },
+    PICKKIN,
+  ),
+  // Hand-written homebrew: no `raceSource`.
+  {
+    name: 'Homebrew',
+    source: 'TST',
+    raceName: 'Fiendkin',
+    additionalSpells: null,
+    entries: [trait('Z', 'Fiend Gift')],
+  },
+  sub('Blank', { entries: null }),
+  sub('Late Arrangement', { ability: [{}, weighted([1], ['cha'])] }, ARRKIN),
+  sub('Odd Pick', { ability: [{ choose: { from: ['cha'] } }, {}] }, ODDKIN),
 ];
 
 function ctx(): EngineContext {
   const base = makeTestContext();
-  const extra: Record<string, DataEntity[]> = { race: [FIENDKIN, HALFKIN], subrace: SUBRACES };
+  const extra: Record<string, DataEntity[]> = {
+    race: [FIENDKIN, HALFKIN, PICKKIN, ARRKIN, ODDKIN],
+    subrace: SUBRACES,
+  };
   return {
     byType: (t) => [...(extra[t] ?? []), ...base.byType(t)],
     get: (type, name, source) =>
@@ -209,6 +266,19 @@ describe('a subrace trait that overwrites a race trait', () => {
     expect(traitNames(raceCard(sheet))).toEqual(traitNames(FIENDKIN));
     expect(spells(sheet)).toContain('aid [Fiendkin]');
   });
+
+  it('applies a subrace with no race source to the race it names', () => {
+    const sheet = derive('Homebrew');
+    expect(traitNames(raceCard(sheet))).not.toContain('Fiend Gift');
+    expect(spells(sheet)).toEqual([]);
+  });
+
+  it('removes every race trait when the subrace sets its entries to null', () => {
+    const sheet = derive('Blank');
+    expect(raceCard(sheet)).toBeUndefined();
+    expect(pools(sheet)).not.toContain('relentless-endurance');
+    expect(spells(sheet)).toEqual(['aid [Fiendkin]', 'guidance [Fiendkin]']);
+  });
 });
 
 describe('the rest of the 5etools subrace merge', () => {
@@ -257,9 +327,48 @@ describe('the rest of the 5etools subrace merge', () => {
     expect(skillPicks(derive(undefined, 'Halfkin'))).toEqual([['race:halfkin|tst:skill:0', 2]]);
   });
 
-  it('keeps the prompt ids of race picks the subrace leaves alone', () => {
-    const sheet = derive('Legacy', 'Fiendkin', { 'race:fiendkin|tst:lang:0': ['Elvish'] });
-    expect(sheet.languages).toContain('Elvish');
+  const racePicks = (sheet: ReturnType<typeof derive>, race = 'pickkin') =>
+    sheet.pending
+      .filter((p) => p.id.startsWith(`race:${race}|tst:`))
+      .map((p) => p.id)
+      .sort();
+
+  it('keeps a shared race pick that a later race pick follows, so ids stay put', () => {
+    const answered = derive('Early Picks', 'Pickkin', {
+      'race:pickkin|tst:ability:c1': ['int'],
+      'race:pickkin|tst:skill:1': ['Arcana'],
+    });
+    expect(bonus(answered, 'int')).toEqual([{ label: 'Pickkin', amount: 1 }]);
+    expect(answered.skills.Arcana?.profBase).toBe(1);
+    expect(racePicks(derive('Early Picks', 'Pickkin'))).toEqual([
+      'race:pickkin|tst:ability:c0',
+      'race:pickkin|tst:ability:c1',
+      'race:pickkin|tst:skill:0',
+      'race:pickkin|tst:skill:1',
+    ]);
+  });
+
+  it('drops a shared race pick that no later race pick follows', () => {
+    expect(racePicks(derive('Late Picks', 'Pickkin'))).toEqual([
+      'race:pickkin|tst:ability:c0',
+      'race:pickkin|tst:skill:0',
+    ]);
+    expect(racePicks(derive(undefined, 'Pickkin'))).toEqual([
+      'race:pickkin|tst:ability:c0',
+      'race:pickkin|tst:ability:c1',
+      'race:pickkin|tst:skill:0',
+      'race:pickkin|tst:skill:1',
+    ]);
+  });
+
+  it("keeps the race's alternative ability arrangements whole, so it still asks which", () => {
+    const asked = ['race:arrkin|tst:ability:arrangement'];
+    expect(racePicks(derive(undefined, 'Arrkin'), 'arrkin')).toEqual(asked);
+    expect(racePicks(derive('Late Arrangement', 'Arrkin'), 'arrkin')).toEqual(asked);
+  });
+
+  it('counts only the ability picks the ability reader asks', () => {
+    expect(racePicks(derive('Odd Pick', 'Oddkin'), 'oddkin')).toEqual([]);
   });
 });
 

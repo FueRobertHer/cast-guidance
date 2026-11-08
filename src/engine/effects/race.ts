@@ -41,20 +41,53 @@ const isEntity = (v: unknown): v is DataEntity => typeof v === 'object' && v !==
 /** How 5etools matches a trait to the name in `data.overwrite`. */
 const traitKey = (name: string) => name.toLowerCase().trim();
 
+/** The keys the ability reader asks a pick for. */
+const abilityPick = (key: string) => key === 'choose';
+/** The keys the skill reader asks a pick for. */
+const skillPick = (key: string) => key === 'choose' || key.startsWith('any');
+
+/**
+ * An ability list whose entries are all weighted choices: the reader reads
+ * them as alternatives and asks which one applies.
+ */
+function arrangements(list: unknown): boolean {
+  const entries = asEntityArray(list);
+  return (
+    entries.length > 1 && entries.every((e) => isEntity(e.choose) && isEntity(e.choose.weighted))
+  );
+}
+
 /**
  * The race's list with the keys the subrace's entry at the same place sets
  * taken out of the first `places` entries, since 5etools assigns the
- * subrace's over the race's there. Places keep their index, and so their
- * prompt ids.
+ * subrace's over the race's there. The readers number a list's picks in
+ * reading order, so a pick the subrace also sets stays (and the race still
+ * asks it) wherever taking it out would renumber a later pick the player may
+ * have answered.
  */
-function lessSubraceKeys(raceList: unknown, subList: unknown, places: number): unknown {
+function lessSubraceKeys(
+  raceList: unknown,
+  subList: unknown,
+  places: number,
+  asksAPick: (key: string) => boolean,
+): unknown {
   if (!Array.isArray(raceList) || !Array.isArray(subList)) return raceList;
-  return raceList.map((entry, i) => {
+  const dropped = raceList.map(() => new Set<string>());
+  let pickAfter = false;
+  for (let i = raceList.length - 1; i >= 0; i--) {
+    const entry: unknown = raceList[i];
     const over: unknown = subList[i];
-    if (i >= places || !isEntity(entry) || !isEntity(over)) return entry;
-    const kept = { ...entry };
-    for (const key of Object.keys(over)) delete kept[key];
-    return kept;
+    if (!isEntity(entry)) continue;
+    const shared = new Set(i < places && isEntity(over) ? Object.keys(over) : []);
+    for (const key of Object.keys(entry).reverse()) {
+      if (shared.has(key) && !(pickAfter && asksAPick(key))) dropped[i]?.add(key);
+      else if (asksAPick(key)) pickAfter = true;
+    }
+  }
+  return raceList.map((entry, i) => {
+    const drop = dropped[i];
+    if (!isEntity(entry) || drop === undefined || drop.size === 0) return entry;
+    return Object.fromEntries(Object.entries(entry).filter(([key]) => !drop.has(key)));
   });
 }
 
@@ -69,18 +102,28 @@ function lessSubraceKeys(raceList: unknown, subList: unknown, places: number): u
  *   key both set, languages add to the race's, and the subrace's `overwrite`
  *   flag on one of these replaces the race's outright;
  * - every other key the subrace sets replaces the race's, spells included,
- *   and a `null` one removes it (a Winged tiefling casts none of the race's).
+ *   and a `null` one removes it (a Winged tiefling casts none of the race's),
+ *   `entries` too: the subrace's own traits go on its own card.
  */
 export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEntity {
   const view: DataEntity = { ...race };
   const flags = isEntity(subrace.overwrite) ? subrace.overwrite : {};
   for (const [key, value] of Object.entries(subrace)) {
     // An `undefined` key is one the subrace does not set (JSON has no such value).
-    if (value === undefined || key === 'name' || key === 'source' || key === 'entries') continue;
+    if (value === undefined || key === 'name' || key === 'source') continue;
+    if (key === 'entries') {
+      if (value === null) delete view.entries;
+      continue;
+    }
     if (value === null || !ADDED_KEYS.has(key) || flags[key] === true) delete view[key];
-    else if (key === 'ability') view.ability = lessSubraceKeys(view.ability, value, Infinity);
-    else if (key === 'skillProficiencies') {
-      view.skillProficiencies = lessSubraceKeys(view.skillProficiencies, value, 1);
+    else if (key === 'ability') {
+      // Emptying one of the race's alternative arrangements would make it
+      // read the rest as all applying at once, so they stay whole.
+      if (!arrangements(view.ability)) {
+        view.ability = lessSubraceKeys(view.ability, value, Infinity, abilityPick);
+      }
+    } else if (key === 'skillProficiencies') {
+      view.skillProficiencies = lessSubraceKeys(view.skillProficiencies, value, 1, skillPick);
     }
   }
   const replaced = new Set<string>();
@@ -88,8 +131,8 @@ export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEnt
     const name = isEntity(entry.data) ? str(entry.data.overwrite) : undefined;
     if (name !== undefined) replaced.add(traitKey(name));
   }
-  if (replaced.size > 0 && Array.isArray(race.entries)) {
-    view.entries = race.entries.filter((entry: unknown) => {
+  if (replaced.size > 0 && Array.isArray(view.entries)) {
+    view.entries = view.entries.filter((entry: unknown) => {
       const name = isEntity(entry) ? str(entry.name) : undefined;
       return name === undefined || !replaced.has(traitKey(name));
     });
@@ -97,11 +140,16 @@ export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEnt
   return view;
 }
 
-/** Whether the subrace names this race as the one it belongs to. */
+/**
+ * Whether the subrace names this race as the one it belongs to. One with no
+ * `raceSource` (hand-written homebrew) goes by the name alone, as the subrace
+ * picker lists it.
+ */
 function subraceOf(subrace: DataEntity, race: EntityRef): boolean {
   const same = (a: unknown, b: string) =>
     typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
-  return same(subrace.raceName, race.name) && same(subrace.raceSource, race.source);
+  const anySource = typeof subrace.raceSource !== 'string';
+  return same(subrace.raceName, race.name) && (anySource || same(subrace.raceSource, race.source));
 }
 
 function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase: string): void {
@@ -257,7 +305,8 @@ export function collectRace(col: Collector): void {
         : race;
     collectFrom(col, own, origin, `race:${origin.uid}`);
     // A subrace that replaces every trait (Keldon's Human) leaves no card.
-    const emptied = Array.isArray(own.entries) && own.entries.length === 0 && own !== race;
+    const listsTraits = (e: DataEntity) => Array.isArray(e.entries) && e.entries.length > 0;
+    const emptied = listsTraits(race) && !listsTraits(own);
     if (!emptied) col.features.push({ name: origin.label, origin, entries: own.entries });
   }
   if (subrace !== undefined && col.doc.subrace !== undefined) {
