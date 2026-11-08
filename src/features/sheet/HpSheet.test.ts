@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { hpSheetCopy, typeDigit } from './HpSheet';
+import { type AmountTap, addTap, amountOf, hpSheetCopy, typeDigit } from './HpSheet';
 
 const hp = { currentHp: 19, tempHp: 5, maxHp: 27 };
+
+/** Taps as the keypad makes them: a digit is "7", a quick amount "+5". */
+const taps = (...keys: string[]): AmountTap[] =>
+  keys.map((k) => (k.startsWith('+') ? { add: Number(k) } : { digit: k }));
+/** Each tap kept or dropped as the sheet does it. */
+const tapped = (...keys: string[]) =>
+  taps(...keys).reduce<readonly AmountTap[]>((kept, tap) => addTap(kept, tap), []);
 
 describe('typeDigit', () => {
   it('adds on the end, three digits at most', () => {
@@ -15,6 +22,60 @@ describe('typeDigit', () => {
     expect(typeDigit('0', '0')).toBe('0');
     expect(typeDigit('0', '5')).toBe('5');
     expect(typeDigit('10', '0')).toBe('100');
+  });
+});
+
+describe('amountOf', () => {
+  it('is nothing until a tap, and a deliberate zero after one', () => {
+    expect(amountOf([])).toBe('');
+    expect(amountOf(taps('0'))).toBe('0');
+  });
+
+  it('adds a quick amount to what was typed, never onto its digits', () => {
+    expect(amountOf(taps('1', '0', '+5', '3'))).toBe('18');
+    expect(amountOf(taps('8', '+5'))).toBe('13');
+    expect(amountOf(taps('+10', '+5', '+1'))).toBe('16');
+    expect(amountOf(taps('+5', '1', '2'))).toBe('17');
+  });
+
+  it('types each number after a quick amount as its own, three digits at most', () => {
+    expect(amountOf(taps('+5', '0', '3'))).toBe('8');
+    expect(amountOf(taps('1', '2', '3', '4'))).toBe('123');
+    expect(amountOf(taps('+1', '1', '2', '3', '4'))).toBe('124');
+  });
+});
+
+describe('addTap', () => {
+  it('keeps each tap that changes the amount, so Undo takes back exactly one', () => {
+    const kept = tapped('1', '0', '+5', '3');
+    expect(kept).toEqual(taps('1', '0', '+5', '3'));
+    // Undo is the taps less the last: the 3, then the whole +5, then a digit.
+    expect(amountOf(kept.slice(0, -1))).toBe('15');
+    expect(amountOf(kept.slice(0, -2))).toBe('10');
+    expect(amountOf(kept.slice(0, -3))).toBe('1');
+    expect(amountOf(kept.slice(0, -4))).toBe('');
+  });
+
+  it('keeps a lone zero, so Undo after 0 then 5 is back to the zero', () => {
+    const kept = tapped('0', '5');
+    expect(kept).toEqual(taps('0', '5'));
+    expect(amountOf(kept.slice(0, -1))).toBe('0');
+  });
+
+  it('drops a tap that changes nothing, so Undo never seems to do nothing', () => {
+    expect(tapped('0', '0')).toEqual(taps('0'));
+    expect(tapped('1', '2', '3', '4')).toEqual(taps('1', '2', '3'));
+    expect(tapped('+5', '0')).toEqual(taps('+5'));
+  });
+
+  it('never takes the amount past 999', () => {
+    expect(amountOf(tapped('9', '9', '0', '+10'))).toBe('990');
+    expect(amountOf(tapped('9', '9', '0', '+10', '+5', '+5'))).toBe('995');
+    expect(amountOf(tapped('+10', '9', '9', '0'))).toBe('109');
+    expect(amountOf(tapped('9', '9', '9', '+1'))).toBe('999');
+    // 999 itself is fine, however it is made.
+    expect(amountOf(tapped('+10', '9', '8', '9'))).toBe('999');
+    expect(amountOf(tapped('+10', '9', '8', '9', '+1'))).toBe('999');
   });
 });
 

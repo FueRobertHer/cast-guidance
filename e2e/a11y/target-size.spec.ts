@@ -186,8 +186,8 @@ test.describe('touch target sizes', () => {
     await expect(hpSheet).toBeVisible();
     await animationsSettled(page);
     await expectTargets(
-      hpSheet.getByRole('group', { name: 'Quick amounts' }).getByRole('button'),
-      4,
+      hpSheet.getByRole('group', { name: 'Add to the amount' }).getByRole('button'),
+      3,
     );
     const keypad = hpSheet.getByRole('group', { name: 'Keypad' });
     await expectTargets(keypad.getByRole('button'), 12);
