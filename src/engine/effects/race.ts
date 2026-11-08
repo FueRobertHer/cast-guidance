@@ -7,8 +7,8 @@ import {
   genericOptions,
   languageOptions,
   readAbilityBlock,
+  readDefenses,
   readProficiencyList,
-  readResistList,
   skillOptions,
   toolOptions,
   weaponOptions,
@@ -38,10 +38,16 @@ function collectFrom(
 ): void {
   readAbilityBlock(col, e.ability, origin, `${idBase}:ability`);
 
-  const speed = e.speed;
-  if (typeof speed === 'number' || typeof speed === 'object') {
-    // walk speed handled in calc/speed via raw values on effects? Keep simple:
-    // speed is read directly by calc/speed from the entities; nothing emitted here.
+  // Walking speed is read straight from the entities in calc/speed; the other
+  // ways to move become effects, `true` meaning as fast as the character walks.
+  if (typeof e.speed === 'object' && e.speed !== null) {
+    const speed = e.speed as Record<string, unknown>;
+    for (const mode of ['fly', 'climb', 'swim'] as const) {
+      const raw = speed[mode];
+      const value =
+        raw === true ? 'walk' : (num(raw) ?? num((raw as { number?: unknown } | null)?.number));
+      if (value !== undefined) col.add({ kind: 'moveSpeed', mode, speed: value, origin });
+    }
   }
 
   const darkvision = num(e.darkvision);
@@ -102,7 +108,7 @@ function collectFrom(
     (name) => col.add({ kind: 'armorProf', name, origin }),
     genericOptions,
   );
-  readResistList(col, e.resist, origin, `${idBase}:resist`, predeterminedResists);
+  readDefenses(col, e, origin, idBase, predeterminedResists);
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
