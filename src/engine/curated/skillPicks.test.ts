@@ -352,7 +352,8 @@ describe('Student of War', () => {
 
   it('asks for no skill in the 2014 printing, a tool alone', () => {
     const sheet = derive(build(FIGHTER, 3, { subclass: { name: 'Battle Master', source: 'PHB' } }));
-    expect(sheet.pending.filter((p) => p.origin.label === 'Student of War')).toEqual([]);
+    const fromStudent = sheet.pending.filter((p) => p.origin.label === 'Student of War');
+    expect(fromStudent.map((p) => p.kind)).toEqual(['tool']);
     expect(fromFeature(sheet, 'Student of War')).toEqual([]);
   });
 });

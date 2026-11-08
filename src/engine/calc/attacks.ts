@@ -1,7 +1,7 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
 import { lookupItem, parseBonus } from '../effects/item';
-import { filterValues, weaponFitsTypes } from '../effects/readers';
+import { weaponFitsTypes } from '../effects/readers';
 import type {
   Ability,
   AttackRow,
@@ -94,14 +94,28 @@ function isWeapon(e: DataEntity): boolean {
   return type === 'M' || type === 'R' || type === 'AF';
 }
 
-/** Whether a proficiency filter ("type=martial weapon|property=light;finesse") covers a weapon. */
+/**
+ * Whether a proficiency filter ("type=martial weapon|property=light;finesse") covers a
+ * weapon. A clause's values are alternatives and every clause must hold, so a curated
+ * grant can say "martial and ranged" in two `type` clauses. A property after `!` must
+ * be absent ("property=!two-handed;!heavy").
+ */
 function inProficiencyFilter(e: DataEntity, filter: string): boolean {
   const category = str(e.weaponCategory)?.toLowerCase();
   if (category === undefined) return false;
-  if (!weaponFitsTypes(filterValues(filter, 'type'), category, isRangedWeapon(e))) return false;
-  const wanted = filterValues(filter, 'property');
   const has = propertyCodes(e).map((c) => PROPERTY_LABELS[c]);
-  return wanted.length === 0 || wanted.some((p) => has.includes(p));
+  return filter.split('|').every((clause) => {
+    const [key = '', values] = clause.split('=');
+    const list = values?.split(';').map((t) => t.trim().toLowerCase()) ?? [];
+    const name = key.trim().toLowerCase();
+    if (name === 'type') return weaponFitsTypes(list, category, isRangedWeapon(e));
+    if (name !== 'property') return true;
+    const wanted = list.filter((p) => !p.startsWith('!'));
+    return (
+      list.every((p) => !p.startsWith('!') || !has.includes(p.slice(1))) &&
+      (wanted.length === 0 || wanted.some((p) => has.includes(p)))
+    );
+  });
 }
 
 function isProficient(e: DataEntity, weaponProfs: string[], filters: string[]): boolean {

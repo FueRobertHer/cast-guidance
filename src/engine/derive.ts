@@ -101,7 +101,7 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
   const initiative = withOverride(dv(initiativeParts), doc.overrides.initiative);
 
-  const weaponProfs = [...new Set(effectsOf(effects, 'weaponProf').map((e) => e.name))];
+  const weaponProfs = uniqueNames(effectsOf(effects, 'weaponProf').map((e) => e.name));
   const attacks = calcAttacks(doc, col, effects, abilities, profBonus.value, weaponProfs);
   const spellcasting = calcSpellcasting(doc, col, abilities, profBonus.value);
   const resources = calcResources(doc, effects, abilities, profBonus.value);
@@ -173,9 +173,9 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
       origin: e.origin.label,
     })),
     languages: [...new Set(effectsOf(effects, 'language').map((e) => e.name))],
-    armorProfs: [...new Set(effectsOf(effects, 'armorProf').map((e) => e.name))],
+    armorProfs: uniqueNames(effectsOf(effects, 'armorProf').map((e) => e.name)),
     weaponProfs,
-    toolProfs: [...new Set(effectsOf(effects, 'toolProf').map((e) => e.name))],
+    toolProfs: uniqueNames(effectsOf(effects, 'toolProf').map((e) => e.name)),
     attacks,
     spellcasting,
     actions,
@@ -193,6 +193,20 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/**
+ * Proficiency names once each, the first spelling kept: a race's pick keeps the
+ * data's "smith's tools" while a subclass grants "Smith's Tools".
+ */
+function uniqueNames(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return names.filter((name) => {
+    const key = name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Collapse repeated collector notes while preserving the first useful wording. */
