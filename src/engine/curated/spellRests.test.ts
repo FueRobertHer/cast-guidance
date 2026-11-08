@@ -181,8 +181,12 @@ describe('spell pools the data writes as daily', () => {
       });
     });
 
+    // A plain Tiefling: Mammon's trait replaces Infernal Legacy, so a Mammon
+    // tiefling casts none of these once the subrace merge honors that.
     it("leaves the Tiefling's own daily spells on a long rest", () => {
-      const sheet = mammon(5);
+      const doc = fighter(5);
+      doc.race = { name: 'Tiefling', source: 'PHB' };
+      const sheet = deriveSheet(doc, ctx);
       expect(pool(sheet, 'hellish rebuke')).toMatchObject({ resetOn: 'long', usage: '1/day' });
       expect(pool(sheet, 'darkness')).toMatchObject({ resetOn: 'long', usage: '1/day' });
     });
