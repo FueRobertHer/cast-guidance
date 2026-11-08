@@ -4,10 +4,11 @@
  * choices, surfacing pending ones), fold them into derived values in a
  * fixed order, then apply overrides last.
  */
+import { countingEffects, readActiveEffects } from './activeEffects';
 import { calcAbilities } from './calc/abilities';
 import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
-import { bonusAmount, dv, effectsOf, withOverride } from './calc/core';
+import { bonusAmount, dv, effectsOf, inPlay, onTop, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
 import { calcResources, costOnSheet } from './calc/resources';
 import {
@@ -19,7 +20,7 @@ import {
   halfProfPart,
 } from './calc/skills';
 import { calcSpellcasting } from './calc/slots';
-import { calcWalkSpeed } from './calc/speed';
+import { calcOtherSpeeds, calcSpeedMultiplier, calcWalkSpeed } from './calc/speed';
 import { settleInheritedAbilities } from './effects/additionalSpells';
 import { collectBackground } from './effects/background';
 import { Collector } from './effects/base';
@@ -36,9 +37,23 @@ import type {
   DerivedSheet,
   EffectInput,
   EngineContext,
+  NotCounted,
+  RollRider,
 } from './types';
 
-export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet {
+export interface DeriveOptions {
+  /**
+   * Whether effects in play (`play.activeEffects`) count; true when absent.
+   * False gives the build alone, to compare against or to show on Build.
+   */
+  active?: boolean;
+}
+
+export function deriveSheet(
+  doc: CharacterDoc,
+  ctx: EngineContext,
+  options: DeriveOptions = {},
+): DerivedSheet {
   const col = new Collector(doc, ctx);
 
   // 1. Collect effects in origin order
@@ -56,6 +71,15 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   noteSkillSources(col);
   markHeldPicks(col);
   settleInheritedAbilities(col);
+  // Effects in play come last: they reach numbers and rolls, never a pick.
+  let effectsNotCounted: NotCounted[] = [];
+  if (options.active !== false) {
+    const { effects: played, problems } = readActiveEffects(doc.play.activeEffects);
+    for (const problem of problems) col.warn(problem);
+    const counting = countingEffects(played);
+    for (const e of counting.inputs) col.add(e);
+    effectsNotCounted = counting.notCounted;
+  }
 
   const effects = col.effects;
 
@@ -75,9 +99,14 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
   const passivePerception = calcPassivePerception(doc, skills, effects);
   const speedWalk = calcWalkSpeed(doc, col, effects);
   const { maxHp, hitDice } = calcMaxHp(doc, col, effects, abilities.con.mod);
-  const { ac, label: acFormulaLabel } = calcAc(doc, col, effects, abilities);
+  const {
+    ac,
+    label: acFormulaLabel,
+    notCounted: acNotCounted,
+  } = calcAc(doc, col, effects, abilities);
 
   const initiativeParts = [{ label: 'DEX modifier', amount: abilities.dex.mod }];
+  const initiativeOnTop: typeof initiativeParts = [];
   // The proficiency bonus goes on a roll once, however many features add it
   // (2024 Alert beside a Harengon's Hare-Trigger). A bonus that only equals it
   // (Aura of the Sentinel) is not that bonus, so it counts for neither limit.
@@ -87,7 +116,8 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
       if (addsProf) continue;
       addsProf = true;
     }
-    initiativeParts.push({
+    // One from something in play counts over a hand-set initiative too.
+    (inPlay(b) ? initiativeOnTop : initiativeParts).push({
       label: b.origin.label,
       amount: bonusAmount(b.amount, abilities, profBonus.value),
     });
@@ -98,8 +128,15 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     ? undefined
     : halfProfPart(effects, 'dex', profBonus.value, false);
   if (initiativeHalf !== undefined) initiativeParts.push(initiativeHalf);
-  initiativeParts.push(...checkBonusParts(effects, abilities, profBonus.value, 'dex'));
-  const initiative = withOverride(dv(initiativeParts), doc.overrides.initiative);
+  const build = effects.filter((e) => !inPlay(e));
+  initiativeParts.push(...checkBonusParts(build, abilities, profBonus.value, 'dex'));
+  initiativeOnTop.push(
+    ...checkBonusParts(effects.filter(inPlay), abilities, profBonus.value, 'dex'),
+  );
+  const initiative = onTop(
+    withOverride(dv(initiativeParts), doc.overrides.initiative),
+    initiativeOnTop,
+  );
 
   const weaponProfs = uniqueNames(effectsOf(effects, 'weaponProf').map((e) => e.name));
   const attacks = calcAttacks(doc, col, effects, abilities, profBonus.value, weaponProfs);
@@ -157,8 +194,11 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     passivePerception,
     ac,
     acFormulaLabel,
+    acNotCounted,
     initiative,
     speedWalk,
+    speedMultiplier: calcSpeedMultiplier(effects),
+    otherSpeeds: calcOtherSpeeds(effects, speedWalk.value),
     maxHp,
     hitDice,
     totalLevel,
@@ -171,7 +211,46 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     resists: effectsOf(effects, 'resist').map((e) => ({
       damageType: e.damageType,
       origin: e.origin.label,
+      ...(e.note !== undefined ? { note: e.note } : {}),
     })),
+    immunities: effectsOf(effects, 'immune').map((e) => ({
+      damageType: e.damageType,
+      origin: e.origin.label,
+      ...(e.note !== undefined ? { note: e.note } : {}),
+    })),
+    vulnerabilities: effectsOf(effects, 'vulnerable').map((e) => ({
+      damageType: e.damageType,
+      origin: e.origin.label,
+    })),
+    conditionImmunities: effectsOf(effects, 'conditionImmune').map((e) => ({
+      condition: e.condition,
+      origin: e.origin.label,
+      ...(e.note !== undefined ? { note: e.note } : {}),
+    })),
+    rollRiders: rollRiders(effects),
+    extraActions: effectsOf(effects, 'extraAction').map((e) => ({
+      label: e.label,
+      ...(e.note !== undefined ? { note: e.note } : {}),
+      origin: e.origin.label,
+    })),
+    critRange: effectsOf(effects, 'critRange').reduce<DerivedSheet['critRange']>(
+      (best, e) =>
+        best === undefined || e.min < best.min ? { min: e.min, origin: e.origin.label } : best,
+      undefined,
+    ),
+    tempHpEachTurn: effectsOf(effects, 'tempHpEachTurn').reduce<DerivedSheet['tempHpEachTurn']>(
+      (best, e) =>
+        best === undefined || e.amount > best.amount
+          ? { amount: e.amount, origin: e.origin.label }
+          : best,
+      undefined,
+    ),
+    cues: effectsOf(effects, 'cue').map((e) => ({
+      tone: e.tone,
+      text: e.text,
+      origin: e.origin.label,
+    })),
+    effectsNotCounted,
     languages: [...new Set(effectsOf(effects, 'language').map((e) => e.name))],
     armorProfs: uniqueNames(effectsOf(effects, 'armorProf').map((e) => e.name)),
     weaponProfs,
@@ -193,6 +272,30 @@ export function deriveSheet(doc: CharacterDoc, ctx: EngineContext): DerivedSheet
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/** Dice and advantage for rolls, each under its source and, from an effect in play, its id. */
+function rollRiders(effects: readonly EffectInput[]): RollRider[] {
+  const out: RollRider[] = [];
+  for (const e of effects) {
+    if (e.kind !== 'rollDie' && e.kind !== 'rollOffer' && e.kind !== 'rollAdvantage') continue;
+    const from = {
+      on: e.on,
+      origin: e.origin.label,
+      ...(inPlay(e) ? { effectId: e.origin.uid } : {}),
+    };
+    if (e.kind === 'rollDie') out.push({ ...from, kind: 'die', dice: e.dice });
+    else if (e.kind === 'rollOffer')
+      out.push({
+        ...from,
+        kind: 'offer',
+        dice: e.dice,
+        ...(e.once !== undefined ? { once: e.once } : {}),
+        ...(e.ifFailed !== undefined ? { ifFailed: e.ifFailed } : {}),
+      });
+    else out.push({ ...from, kind: 'advantage', mode: e.mode });
+  }
+  return out;
 }
 
 /**

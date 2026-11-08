@@ -7,7 +7,7 @@
  * restore preview (current → snapshot) and an undo (now → before).
  */
 import { characterSourceList } from '@/data5e/sourceNames';
-import { ABILITIES, type CharacterDoc, type EntityRef } from '@/engine/types';
+import { ABILITIES, type ActiveEffect, type CharacterDoc, type EntityRef } from '@/engine/types';
 
 export type ChangeKind =
   | 'name'
@@ -29,6 +29,7 @@ export type ChangeKind =
   | 'hp'
   | 'tempHp'
   | 'conditions'
+  | 'effects'
   | 'slots'
   | 'hitDice'
   | 'resources'
@@ -70,6 +71,7 @@ const FAMILY: Record<ChangeKind, string | undefined> = {
   deathSaves: 'vitals',
   concentration: 'vitals',
   conditions: 'conditions',
+  effects: 'effects',
   slots: 'spend',
   hitDice: 'spend',
   resources: 'spend',
@@ -188,6 +190,8 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
     // Absent on older documents, which are left exactly as saved: settled.
     hpInitialized: p.hpInitialized !== false,
   };
+  // None in play reads as absent, so a document from before effects keeps its key.
+  if (effectsInPlay(doc).length === 0) delete (clone.play as Record<string, unknown>).activeEffects;
   clone.hpMethod = doc.hpMethod ?? 'average';
   return sortedJson(clone);
 }
@@ -202,6 +206,44 @@ function same(a: unknown, b: unknown): boolean {
 
 function refName(ref: EntityRef | undefined): string {
   return ref?.name ?? 'none';
+}
+
+/** The effects in play, none when absent; a stored entry with no name reads as "effect". */
+export function effectsInPlay(doc: CharacterDoc): ActiveEffect[] {
+  const list: unknown = doc.play.activeEffects;
+  // An imported document is only checked when derived, so take what is an object.
+  return Array.isArray(list)
+    ? list.filter((e): e is ActiveEffect => e !== null && typeof e === 'object')
+    : [];
+}
+
+const effectName = (e: ActiveEffect) => (typeof e.name === 'string' ? e.name : 'effect');
+
+/**
+ * What changed among the effects in play, by id: added and ended by name, then
+ * one switched off or on, or edited in place.
+ */
+export function effectChanges(
+  from: CharacterDoc,
+  to: CharacterDoc,
+): { added: string[]; ended: string[]; toggled: string[]; edited: string[] } {
+  const was = new Map(effectsInPlay(from).map((e) => [e.id, e]));
+  const now = new Map(effectsInPlay(to).map((e) => [e.id, e]));
+  const out = {
+    added: [] as string[],
+    ended: [] as string[],
+    toggled: [] as string[],
+    edited: [] as string[],
+  };
+  for (const [id, e] of now) {
+    const before = was.get(id);
+    if (before === undefined) out.added.push(effectName(e));
+    else if ((before.off === true) !== (e.off === true))
+      out.toggled.push(`${effectName(e)} ${e.off === true ? 'off' : 'on'}`);
+    else if (!same(before, e)) out.edited.push(effectName(e));
+  }
+  for (const [id, e] of was) if (!now.has(id)) out.ended.push(effectName(e));
+  return out;
 }
 
 /** "+Shield, +Rope, −Longsword", at most three names then a count. */
@@ -364,6 +406,12 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
     if (was !== undefined && was !== (c.ignored === true))
       push('conditions', `${c.id} effects ${c.ignored === true ? 'off' : 'on'}`);
   }
+
+  const fx = effectChanges(from, to);
+  if (fx.added.length > 0 || fx.ended.length > 0)
+    push('effects', `Effects: ${signedNames(fx.added, fx.ended)}`);
+  for (const line of fx.toggled) push('effects', line);
+  for (const name of fx.edited) push('effects', `${name} edited`);
 
   for (let i = 0; i < Math.max(p.slotsSpent.length, n.slotsSpent.length); i++) {
     const was = p.slotsSpent[i] ?? 0;

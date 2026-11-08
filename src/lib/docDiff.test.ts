@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { burstKey, type DocChange, diffDocs, sameContent, summarizeChanges } from './docDiff';
+import {
+  burstKey,
+  contentKey,
+  type DocChange,
+  diffDocs,
+  sameContent,
+  summarizeChanges,
+} from './docDiff';
 
 const base = (): CharacterDoc => newCharacterDoc('c1', 'Bo', 'tag');
 /** A copy of the base document with `edit` applied. */
@@ -277,5 +284,69 @@ describe('summarizeChanges', () => {
     }));
     expect(summarizeChanges(many, 3)).toEqual(['line 0', 'line 1', 'line 2', '…and 2 more']);
     expect(summarizeChanges(many)).toHaveLength(5);
+  });
+});
+
+describe('effects in play', () => {
+  const bless = { id: 'b1', name: 'Bless', parts: [{ kind: 'acBonus' as const, amount: 1 }] };
+  const haste = { id: 'h1', name: 'Haste', parts: [] };
+
+  it('keeps the key of a document saved before effects existed', () => {
+    // Captured from main before effects were added: the save journal compares
+    // hashes the previous app wrote, so this string must never drift.
+    const doc = newCharacterDoc('fixed', 'Fixed', 'tag');
+    doc.createdAt = '2026-01-01T00:00:00.000Z';
+    doc.updatedAt = '2026-01-01T00:00:00.000Z';
+    const before =
+      '{"abilities":{"base":{"cha":10,"con":10,"dex":10,"int":10,"str":10,"wis":10},"method":"standard"},"allowedSources":[],"choices":{},"classes":[],"customEffects":[],"dataTag":"tag","equipment":[],"feats":[],"hpMethod":"average","name":"Fixed","notes":"","overrides":{},"play":{"conditions":[],"currency":{"cp":0,"ep":0,"gp":0,"pp":0,"sp":0},"currentHp":0,"deathSaves":{"fail":0,"success":0},"hitDiceSpent":{},"hpInitialized":false,"inspiration":false,"pactSlotsSpent":0,"resources":[],"slotsSpent":[],"tempHp":0,"turn":{"action":false,"bonus":false,"reaction":false},"xp":0},"rulesVersion":"2014","spellcasting":{}}';
+    expect(contentKey(doc)).toBe(before);
+    doc.play.activeEffects = [];
+    expect(contentKey(doc)).toBe(before);
+  });
+
+  it('reads none in play the same as none listed', () => {
+    const empty = edited((d) => {
+      d.play.activeEffects = [];
+    });
+    expect(diffDocs(base(), empty)).toEqual([]);
+    expect(sameContent(base(), empty)).toBe(true);
+  });
+
+  it('sees an effect switched off as a change', () => {
+    const on = edited((d) => {
+      d.play.activeEffects = [bless];
+    });
+    const off = edited((d) => {
+      d.play.activeEffects = [{ ...bless, off: true }];
+    });
+    expect(sameContent(on, off)).toBe(false);
+    expect(lines(on, off)).toEqual(['Bless off']);
+    expect(lines(off, on)).toEqual(['Bless on']);
+  });
+
+  it('reports effects that only change order, since the first added counts', () => {
+    const ab = edited((d) => {
+      d.play.activeEffects = [bless, haste];
+    });
+    const ba = edited((d) => {
+      d.play.activeEffects = [haste, bless];
+    });
+    expect(sameContent(ab, ba)).toBe(false);
+    expect(lines(ab, ba)).not.toEqual([]);
+  });
+
+  it('names effects added, ended and edited', () => {
+    const blessed = edited((d) => {
+      d.play.activeEffects = [bless];
+    });
+    const hasted = edited((d) => {
+      d.play.activeEffects = [haste];
+    });
+    expect(lines(base(), blessed)).toEqual(['Effects: +Bless']);
+    expect(lines(blessed, hasted)).toEqual(['Effects: +Haste, −Bless']);
+    const stronger = edited((d) => {
+      d.play.activeEffects = [{ ...bless, parts: [{ kind: 'acBonus', amount: 2 }] }];
+    });
+    expect(lines(blessed, stronger)).toEqual(['Bless edited']);
   });
 });

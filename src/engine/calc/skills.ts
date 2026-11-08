@@ -10,7 +10,7 @@ import {
   type ProfLevel,
   SKILLS,
 } from '../types';
-import { bonusAmount, dv, effectsOf, withOverride } from './core';
+import { bonusAmount, dv, effectsOf, inPlay, onTop, withOverride } from './core';
 
 type Part = { label: string; amount: number };
 
@@ -66,12 +66,17 @@ export function calcSaves(
   profBonus: number,
 ): DerivedSheet['saves'] {
   const profs = new Set(effectsOf(effects, 'saveProf').map((e) => e.ability));
+  const bonuses = effectsOf(effects, 'saveBonus');
   const out = {} as DerivedSheet['saves'];
   for (const a of ABILITIES) {
     const profOverride = doc.overrides[`save.${a}.prof`];
     const prof = profOverride !== undefined ? profOverride.value > 0 : profs.has(a);
     const parts = [{ label: `${a.toUpperCase()} modifier`, amount: abilities[a].mod }];
     if (prof) parts.push({ label: 'Proficiency', amount: profBonus });
+    for (const b of bonuses) {
+      if (b.abilities !== undefined && !b.abilities.includes(a)) continue;
+      parts.push({ label: b.origin.label, amount: bonusAmount(b.amount, abilities, profBonus) });
+    }
     out[a] = { total: dv(parts), prof };
   }
   return out;
@@ -95,6 +100,9 @@ export function calcSkills(
   }
   const sources = skillSources(effects, { expertise: true });
   const besideBackground = skillSources(effects, { skip: (e) => fromBackground.has(e) });
+  // A bonus from something in play counts over a hand-set skill total too.
+  const build = effects.filter((e) => !inPlay(e));
+  const played = effects.filter(inPlay);
 
   const out: DerivedSheet['skills'] = {};
   for (const { name, ability } of SKILLS) {
@@ -117,8 +125,11 @@ export function calcSkills(
     }
     const half = prof === 0 ? halfProfPart(effects, ability, profBonus, true) : undefined;
     if (half !== undefined) parts.push(half);
-    parts.push(...checkBonusParts(effects, abilities, profBonus, ability, name));
-    const total = withOverride(dv(parts), doc.overrides[`skill.${name}.bonus`]);
+    parts.push(...checkBonusParts(build, abilities, profBonus, ability, name));
+    const total = onTop(
+      withOverride(dv(parts), doc.overrides[`skill.${name}.bonus`]),
+      checkBonusParts(played, abilities, profBonus, ability, name),
+    );
     out[name] = {
       total,
       prof,

@@ -295,6 +295,28 @@ export function calcSpellcasting(
       { label: 'Proficiency', amount: profBonus },
       { label: `${abilityKey.toUpperCase()} modifier`, amount: mod },
     ];
+    // A spell attack is one modifier for melee and ranged alike, so only a
+    // bonus to every attack reaches it.
+    // A DC bonus names its class; a subclass caster's block goes by either name.
+    const names = [str(cls.name) ?? entry.ref.name, str(sub?.name)]
+      .filter((n): n is string => n !== undefined)
+      .map((n) => n.trim().toLowerCase());
+    for (const b of col.effects) {
+      if (
+        b.kind === 'attackBonus' &&
+        (b.attack === 'spell' || b.attack === 'any') &&
+        b.scope === 'all' &&
+        (b.ability === undefined || b.ability === abilityKey)
+      ) {
+        atkParts.push({ label: b.origin.label, amount: b.amount });
+      }
+      if (
+        b.kind === 'spellDcBonus' &&
+        (b.className === undefined || names.includes(b.className.trim().toLowerCase()))
+      ) {
+        dcParts.push({ label: b.origin.label, amount: b.amount });
+      }
+    }
 
     // Spell slots are a character-wide pool: every caster block sees the same
     // slots; pact magic is tracked on top for warlocks.

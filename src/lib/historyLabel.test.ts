@@ -87,6 +87,37 @@ describe('historyLabel', () => {
     expect(historyLabel(off, on)).toBe('Poisoned effects on');
   });
 
+  it('names an effect added, ended, switched off and changed', () => {
+    const bless = { id: 'b1', name: 'Bless', parts: [] };
+    const blessed = base();
+    blessed.play.activeEffects = [bless];
+    const off = base();
+    off.play.activeEffects = [{ ...bless, off: true }];
+    const longer = base();
+    longer.play.activeEffects = [{ ...bless, turnsLeft: 3 }];
+    expect(historyLabel(base(), blessed)).toBe('Bless added');
+    expect(historyLabel(blessed, base())).toBe('Bless ended');
+    expect(historyLabel(blessed, off)).toBe('Bless off');
+    expect(historyLabel(off, blessed)).toBe('Bless on');
+    expect(historyLabel(blessed, longer)).toBe('Bless changed');
+  });
+
+  it('still says Play state when effects only change order', () => {
+    const a = { id: 'a', name: 'Bless', parts: [] };
+    const b = { id: 'b', name: 'Haste', parts: [] };
+    const ab = base();
+    ab.play.activeEffects = [a, b];
+    const ba = base();
+    ba.play.activeEffects = [b, a];
+    expect(historyLabel(ab, ba)).toBe('Play state');
+  });
+
+  it('labels nothing when none in play becomes an empty list', () => {
+    const empty = base();
+    empty.play.activeEffects = [];
+    expect(historyLabel(base(), empty)).toBe('Edited');
+  });
+
   it('names an equipment swap and a learned spell', () => {
     const withDagger = base();
     withDagger.equipment = [
