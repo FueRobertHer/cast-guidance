@@ -310,8 +310,8 @@ test.describe('axe: pages and overlays', () => {
     const hpSheet = page.getByRole('dialog', { name: 'Hit points' });
     await opened(page, hpSheet);
     await hpSheet
-      .getByRole('group', { name: 'Quick amounts' })
-      .getByRole('button', { name: '5', exact: true })
+      .getByRole('group', { name: 'Add to the amount' })
+      .getByRole('button', { name: '+5', exact: true })
       .click();
     await expect(hpSheet.getByRole('button', { name: 'Take 5 damage' })).toBeVisible();
     await scanState(page, 'hp-sheet');

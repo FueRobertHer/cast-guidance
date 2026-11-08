@@ -1,4 +1,4 @@
-import { ArrowLeft, HeartCrack, HeartPlus, Shield } from 'lucide-react';
+import { HeartCrack, HeartPlus, Shield, Undo2 } from 'lucide-react';
 import { type KeyboardEvent, type RefObject, useRef, useState } from 'react';
 import { Button, type ButtonVariant } from '@/ui/Button';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -20,8 +20,11 @@ const MODES: ReadonlyArray<{ value: HpMode; label: string }> = [
   { value: 'temp', label: 'Temp HP' },
 ];
 
-const QUICK = ['1', '5', '10', '15'];
+/** Quick amounts add to what is keyed, so the common sums are a tap or two. */
+const QUICK = [1, 5, 10];
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+/** The amount never goes past three digits, however it is made. */
+const MOST = 999;
 
 /**
  * `damage` and `heal` are this sheet's own two hues (DS-001 Button). Temp HP has
@@ -33,17 +36,58 @@ const CONFIRM: Record<HpMode, { variant: ButtonVariant; Icon: typeof Shield }> =
   temp: { variant: 'brand', Icon: Shield },
 };
 
-/** 36px to the eye in a 44px tap, as the small button does it. */
+/**
+ * 36px to the eye in a 44px tap, as the small button does it. `ink-faint` where
+ * it would take the amount past 999: `aria-disabled` rather than `disabled`, as
+ * the tap that got there would otherwise drop focus out of the sheet.
+ */
 const QUICK_KEY =
-  'min-h-tap min-w-16 rounded-full border-4 border-transparent bg-clip-padding text-label tabular-nums ring-1 ring-line-strong ring-inset transition-colors duration-120 [--tap-inset:0.25rem] hover:bg-surface-raised';
+  'min-h-tap min-w-16 rounded-full border-4 border-transparent bg-clip-padding text-label tabular-nums ring-1 ring-line-strong ring-inset transition-colors duration-120 [--tap-inset:0.25rem] hover:bg-surface-raised aria-disabled:text-ink-faint aria-disabled:hover:bg-transparent';
 const KEY =
   'flex min-h-13 items-center justify-center rounded-control bg-surface-raised px-1 transition-colors duration-120 hover:bg-surface-hover active:bg-surface-hover';
 /** A key's digit: the keypad's own size, between `body` and `stat`. */
 const DIGIT = 'font-semibold text-[1.375rem] tabular-nums';
 
-/** A digit on the end of the amount: three at most, no leading zeros. */
+/** A digit on the end of a typed number: three at most, no leading zeros. */
 export function typeDigit(amount: string, digit: string): string {
   return `${amount}${digit}`.replace(/^0+(?=\d)/, '').slice(0, 3);
+}
+
+/** One tap that makes the amount: a digit, or a whole quick amount. */
+export type AmountTap = { digit: string } | { add: number };
+
+/**
+ * The amount the taps make, as a sum of parts. A digit goes on the end of the
+ * number being typed, or starts a new one after a quick amount, so 10, +5, 3 is
+ * 10 + 5 + 3, which is 18 and never 153. "" is nothing keyed, "0" a deliberate
+ * zero.
+ */
+export function amountOf(taps: readonly AmountTap[]): string {
+  if (taps.length === 0) return '';
+  const parts: number[] = [];
+  let typing: string | null = null;
+  for (const tap of taps) {
+    if ('add' in tap) {
+      if (typing !== null) parts.push(Number(typing));
+      typing = null;
+      parts.push(tap.add);
+    } else {
+      typing = typeDigit(typing ?? '', tap.digit);
+    }
+  }
+  if (typing !== null) parts.push(Number(typing));
+  return String(parts.reduce((sum, n) => sum + n, 0));
+}
+
+/**
+ * The taps with one more on the end, kept so Undo can take back exactly the
+ * last. A tap that would change nothing (a fourth digit, a second leading zero)
+ * or take the amount past 999 is not kept, so Undo never seems to do nothing.
+ */
+export function addTap(taps: readonly AmountTap[], tap: AmountTap): readonly AmountTap[] {
+  const next = [...taps, tap];
+  const amount = amountOf(next);
+  return amount === amountOf(taps) || Number(amount) > MOST ? taps : next;
 }
 
 /**
@@ -113,8 +157,9 @@ export function hpSheetCopy(
 
 /**
  * The HP sheet (DS-001 HitPoints, BottomSheet): an exact change to hit points,
- * opened on Damage, Heal or Temp HP from the card. Quick amounts for the common
- * case, a keypad for anything else, and a confirm that says what it will do.
+ * opened on Damage, Heal or Temp HP from the card. Quick amounts that add to
+ * the amount for the common case, a keypad for anything else, Undo for the last
+ * tap, and a confirm that says what it will do.
  *
  * It only asks. `onApply` makes the change, and the sheet stays up until that
  * is done, because damage can stop to ask about Relentless Endurance: that
@@ -180,7 +225,8 @@ function HpSheetBody({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState(initialMode);
-  const [amount, setAmount] = useState('');
+  const [taps, setTaps] = useState<readonly AmountTap[]>([]);
+  const amount = amountOf(taps);
   // The numbers move behind the sheet the moment it applies. Sliding away it
   // keeps saying what it just did, not what a second go would.
   const shown = useRef(hp);
@@ -200,13 +246,16 @@ function HpSheetBody({
     onClose();
   };
 
-  const press = (digit: string) => setAmount((a) => typeDigit(a, digit));
+  const press = (tap: AmountTap) => setTaps((t) => addTap(t, tap));
+  // Takes back the last tap, a digit or a whole quick amount. Not a delete:
+  // taking digits off a sum would leave a mistaken +10 for Clear to fix.
+  const undo = () => setTaps((t) => t.slice(0, -1));
   // The keypad's keys for a keyboard: the prompt this replaced had a field to
   // type in. Enter is left alone, as it presses whichever key has focus.
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (/^[0-9]$/.test(event.key)) press(event.key);
-    else if (event.key === 'Backspace') setAmount((a) => a.slice(0, -1));
+    if (/^[0-9]$/.test(event.key)) press({ digit: event.key });
+    else if (event.key === 'Backspace') undo();
   };
 
   return (
@@ -244,39 +293,52 @@ function HpSheetBody({
           {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
           <div
             role="group"
-            aria-label="Quick amounts"
+            aria-label="Add to the amount"
             className="mb-2 flex flex-wrap justify-center"
           >
             {QUICK.map((q) => (
-              <button key={q} type="button" onClick={() => setAmount(q)} className={QUICK_KEY}>
-                {q}
+              <button
+                key={q}
+                type="button"
+                onClick={() => press({ add: q })}
+                aria-disabled={Number(amount) + q > MOST}
+                className={QUICK_KEY}
+              >
+                +{q}
               </button>
             ))}
           </div>
           {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
           <div role="group" aria-label="Keypad" className="mb-3 grid grid-cols-3 gap-2">
             {DIGITS.map((d) => (
-              <button key={d} type="button" onClick={() => press(d)} className={`${KEY} ${DIGIT}`}>
+              <button
+                key={d}
+                type="button"
+                onClick={() => press({ digit: d })}
+                className={`${KEY} ${DIGIT}`}
+              >
                 {d}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => setAmount('')}
-              className={`${KEY} text-body-strong`}
-            >
+            <button type="button" onClick={() => setTaps([])} className={`${KEY} text-body-strong`}>
               Clear
             </button>
-            <button type="button" onClick={() => press('0')} className={`${KEY} ${DIGIT}`}>
-              0
-            </button>
             <button
               type="button"
-              aria-label="Delete"
-              onClick={() => setAmount((a) => a.slice(0, -1))}
-              className={KEY}
+              onClick={() => press({ digit: '0' })}
+              className={`${KEY} ${DIGIT}`}
             >
-              <ArrowLeft size={20} aria-hidden="true" />
+              0
+            </button>
+            {/* The icon goes above the word where both do not fit on a line
+                (large text), rather than push the word over the 0. */}
+            <button
+              type="button"
+              onClick={undo}
+              className={`${KEY} flex-wrap content-center gap-1.5 text-body-strong`}
+            >
+              <Undo2 size={18} aria-hidden="true" className="shrink-0" />
+              Undo
             </button>
           </div>
         </div>
@@ -292,7 +354,7 @@ function HpSheetBody({
         block
         data-vaul-no-drag=""
         // Not `disabled`: focus would fall out of the sheet if the amount were
-        // deleted while the confirm had it.
+        // undone or cleared while the confirm had it.
         aria-disabled={!ready}
         onClick={() => void run()}
         className="shrink-0"
