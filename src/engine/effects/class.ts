@@ -622,6 +622,8 @@ export function collectClasses(col: Collector): void {
       const ref = refStr !== undefined ? parseClassFeatureRef(refStr) : undefined;
       if (ref !== undefined && ref.level <= classLevel) ledger.claimed.add(classFeatureKey(ref));
     }
+    // Expertise levels, asked for once the subclass is collected (see below).
+    const expertiseAt: number[] = [];
     for (const rawRef of featureRefs) {
       const isGainSubclass =
         typeof rawRef === 'object' && rawRef !== null && 'gainSubclassFeature' in rawRef;
@@ -650,25 +652,7 @@ export function collectClasses(col: Collector): void {
       if (ref.name.startsWith('Ability Score Improvement')) {
         handleAsi(col, origin, classUid, ref.level);
       }
-      // Rogue/Bard "Expertise" is prose-only in the data — emit the choice.
-      if (ref.name === 'Expertise') {
-        const featOrigin: EffectOrigin = { ...origin, label: `${origin.label} Expertise` };
-        col.choice(
-          {
-            id: `class:${classUid}:expertise:${ref.level}`,
-            origin: featOrigin,
-            kind: 'expertise',
-            label: `Expertise: 2 proficient skills (level ${ref.level})`,
-            count: 2,
-            options: expertiseOptions(col),
-          },
-          (selected) => {
-            for (const s of selected) {
-              col.add({ kind: 'skillProf', skill: s, level: 2, origin: featOrigin });
-            }
-          },
-        );
-      }
+      if (ref.name === 'Expertise') expertiseAt.push(ref.level);
       collectFeatureWithNested(
         classWalk,
         feature,
@@ -761,6 +745,29 @@ export function collectClasses(col: Collector): void {
     }
 
     readOptionalFeatures(col, cls, { idBase: `class:${classUid}`, origin, level: classLevel });
+
+    // Rogue/Bard "Expertise" is prose-only in the data, so emit the choice. It
+    // comes after the subclass, so it can take a skill the subclass grants (a
+    // College of Lore bard's three). It also sees skills from the class's later
+    // levels, such as a feat taken at an ability score improvement.
+    for (const level of expertiseAt) {
+      const featOrigin: EffectOrigin = { ...origin, label: `${origin.label} Expertise` };
+      col.choice(
+        {
+          id: `class:${classUid}:expertise:${level}`,
+          origin: featOrigin,
+          kind: 'expertise',
+          label: `Expertise: 2 proficient skills (level ${level})`,
+          count: 2,
+          options: expertiseOptions(col),
+        },
+        (selected) => {
+          for (const s of selected) {
+            col.add({ kind: 'skillProf', skill: s, level: 2, origin: featOrigin });
+          }
+        },
+      );
+    }
     emitCurated(col, `class:${classUid}`, origin);
   });
 }
