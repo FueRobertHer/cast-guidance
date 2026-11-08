@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   type ActiveCondition,
   attacksAgainst,
+  conditionDefenses,
   conditionMaxHp,
   conditionSpeed,
   type D20Effects,
   type D20Test,
   d20Effects,
   type Edition,
+  heldOff,
   noD20Effect,
   resolveD20,
 } from './conditions';
@@ -369,5 +371,108 @@ describe('attacksAgainst', () => {
         sources: ['Restrained', 'Prone'],
       },
     ]);
+  });
+});
+
+describe('held off by an immunity', () => {
+  const immune = (...conditions: string[]) => ({
+    immune: conditions.map((condition) => ({ condition, origin: "Heroes' Feast" })),
+  });
+
+  it('applies nothing for a condition the character is immune to, whatever its case', () => {
+    const frightened = [{ id: 'Frightened' }];
+    expect(d20Effects(frightened, '2014', { kind: 'attack' }).disadvantage).toEqual(['Frightened']);
+    expect(d20Effects(frightened, '2014', { kind: 'attack' }, immune('frightened'))).toEqual(
+      d20Effects([], '2014', { kind: 'attack' }),
+    );
+  });
+
+  it('holds off what another condition brings, and keeps the rest of it', () => {
+    const asleep = [{ id: 'Unconscious' }];
+    const against = attacksAgainst(asleep, '2014', immune('Prone')).map((l) => l.text);
+    expect(against).toEqual([
+      'Attack rolls against you have advantage',
+      'Hits from within 5 ft are critical hits',
+    ]);
+    expect(d20Effects(asleep, '2014', { kind: 'attack' }, immune('Prone')).disadvantage).toEqual(
+      [],
+    );
+    expect(
+      d20Effects(asleep, '2014', { kind: 'save', ability: 'dex' }, immune('Prone')).autoFail,
+    ).toEqual(['Unconscious']);
+  });
+
+  it('holds off exhaustion everywhere it is looked up', () => {
+    const tired = [{ id: 'Exhaustion', level: 4 }];
+    expect(d20Effects(tired, '2024', { kind: 'attack' }, immune('Exhaustion')).penalty).toBe(
+      undefined,
+    );
+    expect(conditionSpeed(30, tired, '2024', immune('exhaustion')).value).toBe(30);
+    expect(conditionMaxHp(40, tired, '2014', immune('Exhaustion')).value).toBe(40);
+  });
+
+  it('lets a held-off Petrified suspend nothing', () => {
+    const both = [{ id: 'Petrified' }, { id: 'Poisoned' }];
+    expect(d20Effects(both, '2014', { kind: 'attack' }, immune('Petrified')).disadvantage).toEqual([
+      'Poisoned',
+    ]);
+  });
+
+  it('names what holds each condition off, for its chip', () => {
+    const conditions = [{ id: 'Frightened' }, { id: 'Prone' }, { id: 'Charmed', ignored: true }];
+    expect(
+      heldOff(conditions, {
+        immune: [
+          { condition: 'frightened', origin: "Heroes' Feast" },
+          { condition: 'Frightened', origin: 'Mindless Rage' },
+          { condition: 'charmed', origin: 'Mindless Rage' },
+        ],
+      }),
+    ).toEqual([
+      { id: 'Frightened', by: ["Heroes' Feast", 'Mindless Rage'] },
+      { id: 'Charmed', by: ['Mindless Rage'] },
+    ]);
+  });
+});
+
+describe('conditionDefenses', () => {
+  it('resists all damage while Petrified, in both editions', () => {
+    for (const edition of ['2014', '2024'] as const) {
+      expect(conditionDefenses([{ id: 'Petrified' }], edition)).toEqual([
+        { damageType: 'all', origin: 'Petrified' },
+      ]);
+    }
+    expect(conditionDefenses([{ id: 'Petrified', ignored: true }], '2014')).toEqual([]);
+    expect(conditionDefenses([{ id: 'Prone' }], '2014')).toEqual([]);
+  });
+});
+
+describe('conditionSpeed with a multiplier', () => {
+  const haste = { multiplier: { factor: 2, sources: ['Haste'] } };
+
+  it('doubles what exhaustion left, so 2024 exhaustion 1 under Haste is 50', () => {
+    expect(conditionSpeed(30, [{ id: 'Exhaustion', level: 1 }], '2024', haste)).toEqual({
+      value: 50,
+      sources: ['Exhaustion 1', 'Haste'],
+    });
+    expect(conditionSpeed(30, [{ id: 'Exhaustion', level: 2 }], '2014', haste).value).toBe(30);
+    expect(conditionSpeed(30, [], '2014', haste)).toEqual({ value: 60, sources: ['Haste'] });
+  });
+
+  it('never lifts speed 0 from a condition, and names no multiplier that changed nothing', () => {
+    expect(conditionSpeed(30, [{ id: 'Grappled' }], '2014', haste)).toEqual({
+      value: 0,
+      sources: ['Haste', 'Grappled'],
+    });
+    expect(conditionSpeed(0, [], '2014', haste)).toEqual({ value: 0, sources: [] });
+    expect(conditionSpeed(30, [], '2014', { multiplier: { factor: 1, sources: [] } })).toEqual({
+      value: 30,
+      sources: [],
+    });
+  });
+
+  it('rounds a slowed speed down', () => {
+    const slow = { multiplier: { factor: 0.5, sources: ['Slow'] } };
+    expect(conditionSpeed(35, [], '2014', slow)).toEqual({ value: 17, sources: ['Slow'] });
   });
 });
