@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { heldOff } from '../conditions';
 import { deriveSheet } from '../derive';
 import {
   type CharacterDoc,
@@ -122,12 +123,19 @@ describe('a save bonus an equipped item gives', () => {
     bonusSavingThrow: '+1',
   });
 
-  it('adds to every save, named for the item, attuned or not as its AC bonus is', () => {
-    const sheet = deriveSheet(wearing(cloak), world([cloak]));
+  it('adds to every save, named for the item, once attuned, with its AC bonus', () => {
+    const sheet = deriveSheet(wearing(cloak, true), world([cloak]));
     for (const a of ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const) {
       expect(sheet.saves[a].total.value).toBe(1);
       expect(sheet.saves[a].total.parts).toContainEqual({ label: 'Cloak of Testing', amount: 1 });
     }
+    expect(sheet.ac.value).toBe(11);
+  });
+
+  it('gives neither bonus before attuning to an item that asks for it', () => {
+    const sheet = deriveSheet(wearing(cloak), world([cloak]));
+    expect(sheet.saves.wis.total.value).toBe(0);
+    expect(sheet.ac.value).toBe(10);
   });
 
   it('takes a penalty as well', () => {
@@ -145,6 +153,62 @@ describe('a save bonus an equipped item gives', () => {
   it('leaves out a bonus that only holds sometimes', () => {
     const rod = item({ name: 'Rod of Alertness', source: 'DMG', bonusSavingThrow: '+1' });
     expect(deriveSheet(wearing(rod), world([rod])).saves.dex.total.value).toBe(0);
+  });
+});
+
+describe("an armor's, shield's or weapon's magic bonus", () => {
+  const plate = item({
+    name: 'Plate of Tests',
+    type: 'HA',
+    ac: 18,
+    bonusAc: '+1',
+    reqAttune: true,
+  });
+  const shield = item({
+    name: 'Shield of Tests',
+    type: 'S',
+    ac: 2,
+    bonusAc: '+2',
+    reqAttune: true,
+  });
+  const sword = item({
+    name: 'Sword of Tests',
+    type: 'M',
+    dmg1: '1d8',
+    dmgType: 'S',
+    bonusWeapon: '+2',
+    reqAttune: true,
+  });
+  const plainSword = item({ name: 'Plain +1 Sword', type: 'M', dmg1: '1d8', bonusWeapon: '+1' });
+  const ctx = world([plate, shield, sword, plainSword]);
+  const all = (attuned: boolean) => {
+    const doc = newCharacterDoc('c', 'Hild', 't');
+    doc.equipment = [plate, shield, sword, plainSword].map((it, i) => ({
+      id: `e${i}`,
+      ref: { name: String(it.name), source: 'TST' },
+      qty: 1,
+      equipped: true,
+      attuned,
+    }));
+    return deriveSheet(doc, ctx);
+  };
+  const toHit = (sheet: ReturnType<typeof all>, label: string) =>
+    sheet.attacks.find((a) => a.label === label)?.toHit.parts;
+
+  it('waits on attunement when the item asks for it; the armor, shield and weapon still work', () => {
+    const off = all(false);
+    expect(off.ac.value).toBe(20);
+    expect(off.ac.parts.map((p) => p.label)).not.toContain('Magic bonus');
+    expect(toHit(off, 'Sword of Tests')).not.toContainEqual({ label: 'Magic bonus', amount: 2 });
+
+    const on = all(true);
+    expect(on.ac.value).toBe(23);
+    expect(on.ac.parts).toContainEqual({ label: 'Magic bonus', amount: 1 });
+    expect(toHit(on, 'Sword of Tests')).toContainEqual({ label: 'Magic bonus', amount: 2 });
+  });
+
+  it('counts at once on an item that needs no attunement', () => {
+    expect(toHit(all(false), 'Plain +1 Sword')).toContainEqual({ label: 'Magic bonus', amount: 1 });
   });
 });
 
@@ -180,6 +244,13 @@ describe('defenses and speeds a species gives', () => {
     expect(sheet.immunities).toEqual([{ damageType: 'poison', origin: 'Testkin' }]);
     expect(sheet.vulnerabilities).toEqual([{ damageType: 'bludgeoning', origin: 'Testkin' }]);
     expect(sheet.conditionImmunities).toEqual([{ condition: 'poisoned', origin: 'Testkin' }]);
+  });
+
+  it("holds off the app's condition of that name, though the data writes it in lower case", () => {
+    const immune = deriveSheet(doc(), ctx).conditionImmunities;
+    expect(heldOff([{ id: 'Poisoned' }, { id: 'Prone' }], { immune })).toEqual([
+      { id: 'Poisoned', by: ['Testkin'] },
+    ]);
   });
 
   it('reads fly and climb speeds, `true` as fast as the character walks', () => {

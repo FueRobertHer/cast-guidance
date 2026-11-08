@@ -93,6 +93,16 @@ const WEAPONS: Record<string, DataEntity> = {
     dmgType: 'S',
     extraDamage: { dmg: '1d6', dmgType: 'cold' },
   },
+  // A homebrew rider weapon that asks for attunement.
+  'Bound Flame Sword': {
+    name: 'Bound Flame Sword',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d6',
+    dmgType: 'S',
+    reqAttune: true,
+    extraDamage: [{ dmg: '2d6', dmgType: 'F' }],
+  },
 };
 
 const ctx: EngineContext = { byType: () => [], get: (_t, name) => WEAPONS[name] };
@@ -144,6 +154,15 @@ describe('calcAttacks', () => {
   it('accepts a lone rider object and a damage type already spelled out', () => {
     expect(row(attacks(docWith('Frost Axe'), abilities(3, 1)), 'Frost Axe')?.extraDamage).toEqual([
       { dice: '1d6', damageType: 'cold' },
+    ]);
+  });
+
+  it('holds back the riders of a weapon that asks for attunement until it is attuned', () => {
+    const d = docWith('Bound Flame Sword');
+    expect(row(attacks(d, abilities(3, 1)), 'Bound Flame Sword')?.extraDamage).toEqual([]);
+    d.equipment[0]!.attuned = true;
+    expect(row(attacks(d, abilities(3, 1)), 'Bound Flame Sword')?.extraDamage).toEqual([
+      { dice: '2d6', damageType: 'fire' },
     ]);
   });
 
