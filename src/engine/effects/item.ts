@@ -69,8 +69,7 @@ function readWornTags(col: Collector, e: DataEntity, attuned: boolean, origin: E
       col.add({ kind: 'conditionImmune', condition, origin });
     }
   }
-  const save =
-    fix?.save !== undefined ? fix.save : { amount: parseBonus(e.bonusSavingThrow) };
+  const save = fix?.save !== undefined ? fix.save : { amount: parseBonus(e.bonusSavingThrow) };
   if (save !== null && save.amount !== 0) {
     col.add({
       kind: 'saveBonus',
@@ -116,8 +115,8 @@ export function collectItems(col: Collector): void {
     // Spells the item grants: a wand's cantrip, a cloak's daily misty step.
     // Same 5etools shape races and feats use, so an imported magic item and a
     // homebrew one both arrive here already speaking it. Equipping is what
-    // turns it on: attunement is tracked on the sheet but never enforced, and
-    // gating a granted spell on it would be the one place that did.
+    // turns it on: only an item's defenses wait on attunement (see
+    // `readWornTags`), and its spells, like its AC and save bonuses, do not.
     collectAdditionalSpells(col, e.additionalSpells, origin);
   }
 }

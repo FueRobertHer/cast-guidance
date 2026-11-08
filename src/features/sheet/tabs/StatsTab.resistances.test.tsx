@@ -21,7 +21,13 @@ it('names fire once when a species and a ring both resist it', () => {
   const doc = newCharacterDoc('c1', 'Hero', 't');
   doc.race = { name: 'Emberkin', source: 'TST' };
   doc.equipment = [
-    { id: 'e1', ref: { name: 'Ring of Embers', source: 'TST' }, qty: 1, equipped: true, attuned: false },
+    {
+      id: 'e1',
+      ref: { name: 'Ring of Embers', source: 'TST' },
+      qty: 1,
+      equipped: true,
+      attuned: false,
+    },
   ];
   const sheet = deriveSheet(doc, ctx);
   expect(sheet.resists).toHaveLength(3);

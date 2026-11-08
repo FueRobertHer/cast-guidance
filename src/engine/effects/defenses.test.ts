@@ -204,7 +204,12 @@ describe('defenses and speeds a species gives', () => {
   });
 
   it('reads a speed given as a number in an object', () => {
-    const owl = { type_: 'race', name: 'Owlkin', source: 'TST', speed: { walk: 25, fly: { number: 50 } } };
+    const owl = {
+      type_: 'race',
+      name: 'Owlkin',
+      source: 'TST',
+      speed: { walk: 25, fly: { number: 50 } },
+    };
     const d = newCharacterDoc('c', 'Hild', 't');
     d.race = { name: 'Owlkin', source: 'TST' };
     expect(deriveSheet(d, world([owl])).otherSpeeds).toEqual([
