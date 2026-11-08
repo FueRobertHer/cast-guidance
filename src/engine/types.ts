@@ -96,6 +96,62 @@ export interface PlayState {
    * pre-existing docs, which are left exactly as saved.
    */
   hpInitialized?: boolean;
+  /**
+   * What is helping (or hindering) the character right now: Bless, Rage, a
+   * potion. Absent rather than empty when there are none, so older docs read
+   * the same; writers delete it when the last one ends.
+   */
+  activeEffects?: ActiveEffect[];
+}
+
+/**
+ * One effect on the character during play. It stores what it does, with every
+ * question it asked already answered (a slot level, a damage type, the bard's
+ * die), never a pointer into a catalog: the sheet works it out with nothing
+ * else loaded, and an effect the player described is stored the same way.
+ */
+export interface ActiveEffect {
+  /** This instance: two Blesses from two clerics are two effects. */
+  id: string;
+  /** What the chip says: "Bless", "Protection: fire". */
+  name: string;
+  /**
+   * The named effect it is, when that is not its name: a Potion of Speed is
+   * Haste. Effects of one name never add up (see `countingEffects`).
+   */
+  same?: string;
+  parts: EffectPart[];
+  lasts?: EffectDuration;
+  /** New turns until it ends: 1 is the start of your next turn, 2 the end of it. */
+  turnsLeft?: number;
+  /** This character cast it, so it ends when their concentration does. */
+  mine?: boolean;
+  /** Switched off: still listed, nothing applies. Writers delete it rather than store false. */
+  off?: boolean;
+}
+
+/** How long an effect lasts, for what a rest ends. The app counts neither rounds nor hours. */
+export interface EffectDuration {
+  /** Its longest duration: a short rest ends an hour or less, a long rest 8 hours or less. */
+  minutes?: number;
+  /** It lasts until you finish a rest of this kind. */
+  rest?: 'short' | 'long';
+  concentration?: boolean;
+}
+
+/**
+ * Which rolls a die or advantage reaches. Every field given must hold; one
+ * left out does not narrow it. Initiative counts as a Dexterity check, and a
+ * death save as a save with no ability.
+ */
+export interface RollFilter {
+  rolls: Array<'attack' | 'save' | 'check'>;
+  /** The ability the roll is made with: a save's, a check's, or an attack's. */
+  abilities?: Ability[];
+  /** Checks with one of these skills. */
+  skills?: string[];
+  attack?: 'weapon' | 'spell';
+  range?: 'melee' | 'ranged';
 }
 
 export interface CharacterDoc {
@@ -146,7 +202,17 @@ export interface CharacterDoc {
 export interface EffectOrigin {
   label: string;
   uid: string;
-  type: 'race' | 'background' | 'class' | 'subclass' | 'feat' | 'item' | 'custom' | 'curated';
+  /** `active`: an effect on the character during play, its `uid` the effect's id. */
+  type:
+    | 'race'
+    | 'background'
+    | 'class'
+    | 'subclass'
+    | 'feat'
+    | 'item'
+    | 'custom'
+    | 'curated'
+    | 'active';
 }
 
 /**
@@ -216,11 +282,45 @@ export type EffectInput = { origin: EffectOrigin } & (
   | { kind: 'language'; name: string }
   | { kind: 'acFormula'; label: string; base: number; addAbilities: Ability[]; dexMax?: number }
   | { kind: 'acBonus'; amount: number }
+  /** Armor Class can't be less than this, whatever else counts (Barkskin). */
+  | { kind: 'acMin'; min: number }
   | { kind: 'hpPerLevel'; amount: number }
+  /** A flat rise in the hit point maximum (Aid). */
+  | { kind: 'maxHpBonus'; amount: number }
   | { kind: 'initiativeBonus'; amount: BonusAmount }
   | { kind: 'speedBonus'; amount: number }
-  | { kind: 'attackBonus'; scope: 'melee' | 'ranged' | 'all'; amount: number }
-  | { kind: 'damageBonus'; scope: 'melee' | 'ranged' | 'all'; amount: number }
+  /**
+   * Walking speed times this, after every addition and after what conditions
+   * take away (Haste). Two of them do not multiply: the largest counts.
+   */
+  | { kind: 'speedMultiplier'; factor: number }
+  /** A way to move besides walking, at a speed of its own or the walking speed (Fly, Spider Climb). */
+  | { kind: 'moveSpeed'; mode: 'fly' | 'climb' | 'swim'; speed: number | 'walk' }
+  | {
+      /**
+       * To hit with weapon attacks unless `attack` says otherwise; `spell` reaches
+       * spell attacks, which have one modifier for melee and ranged, so only
+       * `scope: 'all'` reaches them. `ability` limits it to attacks made with it.
+       */
+      kind: 'attackBonus';
+      scope: 'melee' | 'ranged' | 'all';
+      amount: number;
+      attack?: 'weapon' | 'spell' | 'any';
+      ability?: Ability;
+    }
+  /** Weapon damage; `ability` limits it to attacks made with it (Rage: Strength). */
+  | {
+      kind: 'damageBonus';
+      scope: 'melee' | 'ranged' | 'all';
+      amount: number;
+      ability?: Ability;
+    }
+  /** A die of extra damage on every weapon hit, rolled apart (Enlarge, Elemental Weapon). */
+  | { kind: 'damageDie'; scope: 'melee' | 'ranged' | 'all'; dice: string; damageType?: string }
+  /** Spell save DC; `className` limits it to that class's spells (2024 Innate Sorcery). */
+  | { kind: 'spellDcBonus'; amount: number; className?: string }
+  /** A flat bonus to saving throws, every one or those of `abilities`. */
+  | { kind: 'saveBonus'; amount: BonusAmount; abilities?: Ability[] }
   | {
       /**
        * Half the proficiency bonus on checks that do not already add it (Jack
@@ -241,7 +341,39 @@ export type EffectInput = { origin: EffectOrigin } & (
     ))
   | { kind: 'passivePerceptionBonus'; amount: number }
   | { kind: 'sense'; sense: string; range: number }
-  | { kind: 'resist'; damageType: string }
+  /**
+   * Half damage of a type, or of every type when `damageType` is `all`
+   * (Warding Bond). `note` says when it holds ("nonmagical"), for the player.
+   */
+  | { kind: 'resist'; damageType: string; note?: string }
+  /** No damage of a type, or of every type when `damageType` is `all`. */
+  | { kind: 'immune'; damageType: string; note?: string }
+  /** Double damage of a type. */
+  | { kind: 'vulnerable'; damageType: string }
+  /** A condition that cannot be put on the character ("paralyzed by magic" in `note`). */
+  | { kind: 'conditionImmune'; condition: string; note?: string }
+  /** A die added to every roll the filter reaches, rolled in with it (Bless). */
+  | { kind: 'rollDie'; dice: string; on: RollFilter }
+  /**
+   * A die offered after a roll it fits, for the player to add (Guidance,
+   * Bardic Inspiration). `once`: spent when added. `ifFailed`: only on a roll
+   * that failed, which the player says (2024 Bardic Inspiration).
+   */
+  | { kind: 'rollOffer'; dice: string; on: RollFilter; once?: boolean; ifFailed?: boolean }
+  | { kind: 'rollAdvantage'; mode: 'adv' | 'dis'; on: RollFilter }
+  /** Temporary hit points at the start of each of the character's turns (Heroism). */
+  | { kind: 'tempHpEachTurn'; amount: number }
+  /** One more thing to do each turn, with what it may be spent on (Haste). */
+  | { kind: 'extraAction'; label: string; note?: string }
+  /** Attacks score a critical hit on this number or higher on the d20. */
+  | { kind: 'critRange'; min: number }
+  /**
+   * A line the player should know, with nothing to work out: what helps, what
+   * protects, what it costs, or plain information. What counts only against
+   * one creature, or one kind of creature, is a line too: the sheet never
+   * knows the target.
+   */
+  | { kind: 'cue'; tone: 'help' | 'ward' | 'warn' | 'info'; text: string }
   | {
       kind: 'resource';
       key: string;
@@ -332,6 +464,57 @@ export type EffectInput = { origin: EffectOrigin } & (
     }
   | { kind: 'note'; text: string }
 );
+
+/**
+ * The kinds an effect in play may carry. Each reaches numbers or rolls only,
+ * never a pick, a pool or a spell, so an effect cannot change the build.
+ */
+export const ACTIVE_PART_KINDS = [
+  'abilityMin',
+  'acBonus',
+  'acFormula',
+  'acMin',
+  'attackBonus',
+  'checkBonus',
+  'conditionImmune',
+  'critRange',
+  'cue',
+  'damageBonus',
+  'damageDie',
+  'extraAction',
+  'immune',
+  'initiativeBonus',
+  'maxHpBonus',
+  'moveSpeed',
+  'resist',
+  'rollAdvantage',
+  'rollDie',
+  'rollOffer',
+  'saveBonus',
+  'sense',
+  'spellDcBonus',
+  'speedBonus',
+  'speedMultiplier',
+  'tempHpEachTurn',
+  'vulnerable',
+] as const satisfies ReadonlyArray<EffectInput['kind']>;
+
+export type ActivePartKind = (typeof ACTIVE_PART_KINDS)[number];
+
+type NoOrigin<E> = E extends unknown ? Omit<E, 'origin'> : never;
+/** An amount stored in play is a number: an ally's bonus is worked out on their sheet. */
+type PlainAmount<E> = E extends { amount: unknown } ? Omit<E, 'amount'> & { amount: number } : E;
+
+/**
+ * One thing an effect in play does: an `EffectInput` with no origin. This is
+ * stored in the character document, so these kinds' fields are a storage
+ * format now: add fields as optional, and never rename one. `same` names the
+ * effect this part counts as, when only part of an effect is another one (a
+ * Potion of Heroism's d4 is Bless; its temp HP are not).
+ */
+export type EffectPart = PlainAmount<NoOrigin<Extract<EffectInput, { kind: ActivePartKind }>>> & {
+  same?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Choices
@@ -431,6 +614,30 @@ export interface DerivedAbility extends DerivedValue {
 export interface DamageRider {
   dice: string;
   damageType?: string;
+  /** What adds it, when an effect does (Enlarge), so two riders of the same dice stay apart. */
+  label?: string;
+}
+
+/** A die or advantage an effect brings to rolls, as `DerivedSheet.rollRiders` lists it. */
+export type RollRider = {
+  on: RollFilter;
+  origin: string;
+  /** The effect in play it comes from, so spending a one-use die can end it. */
+  effectId?: string;
+} & (
+  | { kind: 'die'; dice: string }
+  | { kind: 'offer'; dice: string; once?: boolean; ifFailed?: boolean }
+  | { kind: 'advantage'; mode: 'adv' | 'dis' }
+);
+
+/** Part of an effect in play that counts for nothing, and the effect that counts instead. */
+export interface NotCounted {
+  effectId: string;
+  effectName: string;
+  /** The named effect both are: "Bless". */
+  same: string;
+  /** The effect of that name that counts. */
+  countedFrom: string;
 }
 
 export interface AttackRow {
@@ -553,15 +760,42 @@ export interface DerivedSheet {
   passivePerception: DerivedValue;
   ac: DerivedValue;
   acFormulaLabel: string;
+  /**
+   * What could have set Armor Class and did not: a formula below the best
+   * (Mage Armor under Unarmored Defense), one an override set aside, or a floor
+   * the AC is already over (Barkskin's 16 under 18).
+   */
+  acNotCounted: Array<{ label: string; value: number; why: 'lower' | 'override' | 'floor' }>;
   initiative: DerivedValue;
   speedWalk: DerivedValue;
+  /**
+   * Walking speed is multiplied by `factor` after conditions take their share
+   * (Haste doubles a speed exhaustion has cut). 1 with no sources when nothing does.
+   */
+  speedMultiplier: { factor: number; sources: string[] };
+  /** Ways to move besides walking, the best of each, before `speedMultiplier`. */
+  otherSpeeds: Array<{ mode: 'fly' | 'climb' | 'swim'; value: number; origin: string }>;
   maxHp: DerivedValue;
   /** die label ('d10') -> count */
   hitDice: Record<string, number>;
   totalLevel: number;
   classLabel: string;
   senses: Array<{ sense: string; range: number; origin: string }>;
-  resists: Array<{ damageType: string; origin: string }>;
+  /** `damageType` is `all` for every type (Warding Bond). */
+  resists: Array<{ damageType: string; origin: string; note?: string }>;
+  immunities: Array<{ damageType: string; origin: string; note?: string }>;
+  vulnerabilities: Array<{ damageType: string; origin: string }>;
+  conditionImmunities: Array<{ condition: string; origin: string; note?: string }>;
+  /** Dice and advantage effects bring to rolls; the roll decides which reach it. */
+  rollRiders: RollRider[];
+  extraActions: Array<{ label: string; note?: string; origin: string }>;
+  /** The lowest d20 that crits on an attack, when something lowers it from 20. */
+  critRange?: { min: number; origin: string };
+  /** The most temporary hit points offered at the start of each turn. */
+  tempHpEachTurn?: { amount: number; origin: string };
+  cues: Array<{ tone: 'help' | 'ward' | 'warn' | 'info'; text: string; origin: string }>;
+  /** Effects in play that count for nothing because one of the same name does. */
+  effectsNotCounted: NotCounted[];
   languages: string[];
   armorProfs: string[];
   weaponProfs: string[];

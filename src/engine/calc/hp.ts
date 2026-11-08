@@ -1,7 +1,7 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
 import type { CharacterDoc, DerivedValue, EffectInput } from '../types';
-import { effectsOf, withOverride } from './core';
+import { atLeast, effectsOf, inPlay, onTop, withOverride } from './core';
 
 export function calcMaxHp(
   doc: CharacterDoc,
@@ -43,13 +43,24 @@ export function calcMaxHp(
   for (const e of effectsOf(effects, 'hpPerLevel')) {
     parts.push({ label: `${e.origin.label} × level`, amount: e.amount * totalLevel });
   }
+  const raises = effectsOf(effects, 'maxHpBonus');
+  for (const e of raises) {
+    if (!inPlay(e)) parts.push({ label: e.origin.label, amount: e.amount });
+  }
 
   const base = Math.max(
     totalLevel > 0 ? 1 : 0,
     parts.reduce((s, p) => s + p.amount, 0),
   );
+  // Aid raises the maximum even when it is set by hand: it is not part of the build.
+  const played = raises.filter(inPlay).map((e) => ({ label: e.origin.label, amount: e.amount }));
+  const maxHp = onTop(
+    withOverride({ value: base, base, overridden: false, parts }, doc.overrides.maxHp),
+    played,
+  );
+  // A drain in play lowers it, never under the build's own floor.
   return {
-    maxHp: withOverride({ value: base, base, overridden: false, parts }, doc.overrides.maxHp),
+    maxHp: played.length > 0 && totalLevel > 0 ? atLeast(maxHp, 1, 'Minimum (1)') : maxHp,
     hitDice,
     totalLevel,
   };

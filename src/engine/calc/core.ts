@@ -12,6 +12,32 @@ export function withOverride(v: DerivedValue, override?: { value: number }): Der
   return { ...v, value: override.value, overridden: true };
 }
 
+/**
+ * Add parts after any override: an effect in play is not part of the build an
+ * override corrects, so a hand-set AC still takes Shield of Faith's +2.
+ */
+export function onTop(
+  v: DerivedValue,
+  parts: ReadonlyArray<{ label: string; amount: number }>,
+): DerivedValue {
+  if (parts.length === 0) return v;
+  const sum = parts.reduce((s, p) => s + p.amount, 0);
+  return { ...v, value: v.value + sum, base: v.base + sum, parts: [...v.parts, ...parts] };
+}
+
+/**
+ * Raise a value to a floor with a part of its own, so its parts still sum to
+ * the computed number the breakdown shows.
+ */
+export function atLeast(v: DerivedValue, min: number, label: string): DerivedValue {
+  return v.value >= min ? v : onTop(v, [{ label, amount: min - v.value }]);
+}
+
+/** An effect from something in play (Bless, Rage) rather than from the build. */
+export function inPlay(e: EffectInput): boolean {
+  return e.origin.type === 'active';
+}
+
 /** Resolve a {@link BonusAmount} against the final ability modifiers and proficiency bonus. */
 export function bonusAmount(
   amount: BonusAmount,

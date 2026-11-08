@@ -139,9 +139,19 @@ export function calcAttacks(
   weaponProfs: string[],
 ): AttackRow[] {
   const rows: AttackRow[] = [];
-  const attackBonuses = effectsOf(effects, 'attackBonus');
+  // Spell attacks take theirs in the spellcasting block.
+  const attackBonuses = effectsOf(effects, 'attackBonus').filter((b) => b.attack !== 'spell');
   const damageBonuses = effectsOf(effects, 'damageBonus');
+  const riderDice = effectsOf(effects, 'damageDie');
   const profFilters = effectsOf(effects, 'weaponProfFilter').map((f) => f.filter);
+  /** A bonus's scope reaches this attack, and so does its ability, when it names one. */
+  const reaches = (
+    b: { scope: 'melee' | 'ranged' | 'all'; ability?: Ability },
+    ranged: boolean,
+    ability: Ability,
+  ) =>
+    (b.scope === 'all' || (b.scope === 'ranged') === ranged) &&
+    (b.ability === undefined || b.ability === ability);
 
   const buildRow = (
     label: string,
@@ -162,15 +172,23 @@ export function calcAttacks(
     if (proficient) parts.push({ label: 'Proficiency', amount: profBonus });
     if (magicBonus !== 0) parts.push({ label: 'Magic bonus', amount: magicBonus });
     for (const b of attackBonuses) {
-      if (b.scope === 'all' || (b.scope === 'ranged') === ranged) {
-        parts.push({ label: b.origin.label, amount: b.amount });
-      }
+      if (reaches(b, ranged, ability)) parts.push({ label: b.origin.label, amount: b.amount });
     }
 
     let dmgMod = mod + magicBonus;
     for (const b of damageBonuses) {
-      if (b.scope === 'all' || (b.scope === 'ranged') === ranged) dmgMod += b.amount;
+      if (reaches(b, ranged, ability)) dmgMod += b.amount;
     }
+    const riders = [
+      ...extraDamage,
+      ...riderDice
+        .filter((d) => reaches(d, ranged, ability))
+        .map((d) => ({
+          dice: d.dice,
+          ...(d.damageType !== undefined ? { damageType: d.damageType } : {}),
+          label: d.origin.label,
+        })),
+    ];
     const dmgSuffix = dmgMod !== 0 ? (dmgMod > 0 ? `+${dmgMod}` : `${dmgMod}`) : '';
     return {
       label,
@@ -180,7 +198,7 @@ export function calcAttacks(
       versatileDamage: versatile !== undefined ? `${versatile}${dmgSuffix}` : undefined,
       // Riders are flat dice: `dmgSuffix` is deliberately not applied. You add
       // your Strength to the sword, not to the flames.
-      extraDamage,
+      extraDamage: riders,
       properties,
       range,
       origin,

@@ -1,6 +1,6 @@
 /** Short human labels for character history snapshots. */
 import type { CharacterDoc } from '@/engine/types';
-import { firstWithMore, humanKey, nameDiff, spellNames } from './docDiff';
+import { effectChanges, firstWithMore, humanKey, nameDiff, spellNames } from './docDiff';
 
 function equipmentLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
   const nameOf = (e: CharacterDoc['equipment'][number]) => e.ref?.name ?? e.custom?.name ?? 'item';
@@ -48,6 +48,15 @@ function conditionsLabel(prev: CharacterDoc, next: CharacterDoc): string | undef
   return undefined;
 }
 
+function effectsLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
+  const fx = effectChanges(prev, next);
+  if (fx.added.length > 0) return `${firstWithMore(fx.added)} added`;
+  if (fx.ended.length > 0) return `${firstWithMore(fx.ended)} ended`;
+  if (fx.toggled.length > 0) return fx.toggled[0];
+  if (fx.edited.length > 0) return `${firstWithMore(fx.edited)} changed`;
+  return undefined;
+}
+
 /**
  * True when play state changed at all, ignoring what HP and conditions already
  * report and the `hpInitialized` bookkeeping flag the reader can't act on.
@@ -57,12 +66,16 @@ function conditionsLabel(prev: CharacterDoc, next: CharacterDoc): string | undef
  * hides changes. The caller pairs this with playLabels instead, so 'Play state'
  * fires exactly when something moved that nothing else managed to name.
  */
-function playChanged(prev: CharacterDoc, next: CharacterDoc): boolean {
+function playChanged(prev: CharacterDoc, next: CharacterDoc, effectsNamed: boolean): boolean {
   const strip = (play: CharacterDoc['play']): Record<string, unknown> => {
     const clone: Record<string, unknown> = { ...play };
     delete clone.currentHp;
     delete clone.conditions;
     delete clone.hpInitialized;
+    // Effects already named need no "Play state", and none in play is the same
+    // as none listed. A move the effects label cannot name (a reorder) still counts.
+    const none = Array.isArray(clone.activeEffects) && clone.activeEffects.length === 0;
+    if (effectsNamed || none) delete clone.activeEffects;
     return clone;
   };
   return JSON.stringify(strip(prev.play)) !== JSON.stringify(strip(next.play));
@@ -243,10 +256,12 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
     labels.push(`HP ${prev.play.currentHp}→${next.play.currentHp}`);
   const cond = conditionsLabel(prev, next);
   if (cond !== undefined) labels.push(cond);
+  const fx = effectsLabel(prev, next);
+  if (fx !== undefined) labels.push(fx);
   const named = playLabels(prev, next);
   labels.push(...named);
   // Something moved that nothing above could name: still better than 'Edited'.
-  if (named.length === 0 && playChanged(prev, next)) labels.push('Play state');
+  if (named.length === 0 && playChanged(prev, next, fx !== undefined)) labels.push('Play state');
 
   if (labels.length === 0) return 'Edited';
   return labels.slice(0, 3).join(' · ') + (labels.length > 3 ? ' · …' : '');

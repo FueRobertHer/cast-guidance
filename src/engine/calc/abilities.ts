@@ -6,7 +6,7 @@ import {
   type DerivedAbility,
   type EffectInput,
 } from '../types';
-import { effectsOf } from './core';
+import { effectsOf, inPlay } from './core';
 
 export const POINT_BUY_COSTS: Record<number, number> = {
   8: 0,
@@ -52,13 +52,23 @@ export function calcAbilities(
       value = 20;
     }
     for (const m of mins) {
-      if (m.ability === a && value < m.min) {
+      if (m.ability === a && !inPlay(m) && value < m.min) {
         parts.push({ label: `${m.origin.label} (minimum)`, amount: m.min - value });
         value = m.min;
       }
     }
     const override = doc.overrides[`ability.${a}`];
-    const final = override !== undefined ? override.value : value;
+    let final = override !== undefined ? override.value : value;
+    // A floor from something in play (a Potion of Giant Strength) holds over
+    // an override too, since it is not part of the build the override corrects.
+    // Its part raises the computed score by as much, so the parts still sum to it.
+    for (const m of mins) {
+      if (m.ability !== a || !inPlay(m) || final >= m.min) continue;
+      const amount = m.min - final;
+      parts.push({ label: `${m.origin.label} (minimum)`, amount });
+      final += amount;
+      value += amount;
+    }
     out[a] = {
       value: final,
       base: value,
