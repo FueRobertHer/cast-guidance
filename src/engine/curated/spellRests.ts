@@ -8,7 +8,8 @@
 const SHORT_REST_SPELLS: Readonly<Record<string, 'every' | readonly string[]>> = {
   'feat:fey teleportation|xge': ['misty step'],
   'feat:boon of siberys|efa': 'every',
-  // Legacy of Minauros. Its arcane lock really is once per long rest.
+  // The Mammon subrace (a subrace's origin has type `race`), trait Legacy of
+  // Minauros. Its arcane lock really is once per long rest.
   'race:mammon|mtf': ["tenser's floating disk"],
 };
 

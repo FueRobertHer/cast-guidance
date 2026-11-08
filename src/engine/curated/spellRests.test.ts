@@ -186,5 +186,37 @@ describe('spell pools the data writes as daily', () => {
       expect(pool(sheet, 'hellish rebuke')).toMatchObject({ resetOn: 'long', usage: '1/day' });
       expect(pool(sheet, 'darkness')).toMatchObject({ resetOn: 'long', usage: '1/day' });
     });
+
+    describe('with both spells in one bucket, as no printing writes them', () => {
+      /** Mammon with `count` uses of both spells, the disk's ref written capitalised. */
+      const bucketed = (count: string) => {
+        const spells = ["Tenser's Floating Disk|PHB", 'arcane lock'];
+        const bucket = [{ ability: 'cha', innate: { _: { daily: { [count]: spells } } } }];
+        const doc = fighter(5);
+        doc.subrace = { name: 'Mammon', source: 'MTF' };
+        return deriveSheet(doc, {
+          ...ctx,
+          get: (type, name, source) => {
+            const found = ctx.get(type, name, source);
+            return type === 'subrace' && found ? { ...found, additionalSpells: bucket } : found;
+          },
+        });
+      };
+
+      it('reads each spell of an "each" count as its own pool', () => {
+        const sheet = bucketed('1e');
+        expect(pool(sheet, "Tenser's Floating Disk")).toMatchObject({ resetOn: 'short' });
+        expect(pool(sheet, 'arcane lock')).toMatchObject({ resetOn: 'long' });
+      });
+
+      it('leaves a pool shared with a long rest spell on a long rest', () => {
+        const sheet = bucketed('1');
+        expect(pool(sheet, "Tenser's Floating Disk")).toEqual({
+          key: 'spell:mammon|mtf:tenser-s-floating-disk+arcane-lock',
+          resetOn: 'long',
+          usage: '1/day',
+        });
+      });
+    });
   });
 });
