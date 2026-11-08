@@ -54,10 +54,15 @@ function key(sheet: HTMLElement, keys: string) {
   const pad = within(sheet).getByRole('group', { name: 'Keypad' });
   for (const k of keys) fireEvent.click(within(pad).getByRole('button', { name: k }));
 }
-const quick = (sheet: HTMLElement, amount: string) =>
+const quickKey = (sheet: HTMLElement, amount: string) =>
+  within(within(sheet).getByRole('group', { name: 'Add to the amount' })).getByRole('button', {
+    name: amount,
+  });
+const quick = (sheet: HTMLElement, amount: string) => fireEvent.click(quickKey(sheet, amount));
+const undo = (sheet: HTMLElement) =>
   fireEvent.click(
-    within(within(sheet).getByRole('group', { name: 'Quick amounts' })).getByRole('button', {
-      name: amount,
+    within(within(sheet).getByRole('group', { name: 'Keypad' })).getByRole('button', {
+      name: 'Undo',
     }),
   );
 /** The confirm is the sheet's last button. */
@@ -95,7 +100,7 @@ describe('the HP sheet', () => {
     await renderSheet(warrior(19, 10));
     fireEvent.click(cardButton('Damage'));
     const sheet = await sheetDialog();
-    quick(sheet, '5');
+    quick(sheet, '+5');
     fireEvent.click(confirm(sheet));
     await isClosed();
     expect(hp()).toMatchObject({ current: 19, temp: 5 });
@@ -162,21 +167,63 @@ describe('the HP sheet', () => {
     expect(hp().temp).toBe(0);
   });
 
-  it('keeps the amount through a change of mode, and edits it from the keypad', async () => {
+  it('adds quick amounts to what was typed, and Undo takes back the last tap', async () => {
     await renderSheet(warrior(5));
     fireEvent.click(cardButton('Damage'));
     const sheet = await sheetDialog();
-    quick(sheet, '15');
-    quick(sheet, '10');
+    expect(quickKey(sheet, '+1')).toBeTruthy();
+    expect(quickKey(sheet, '+10')).toBeTruthy();
+    key(sheet, '10');
+    quick(sheet, '+5');
+    expect(confirm(sheet).textContent).toBe('Take 15 damage');
+    // A digit after a quick amount starts a number of its own: 18, never 153.
+    key(sheet, '3');
+    expect(confirm(sheet).textContent).toBe('Take 18 damage');
+    undo(sheet);
+    expect(confirm(sheet).textContent).toBe('Take 15 damage');
+    // The whole +5 at once, not one of its digits.
+    undo(sheet);
     expect(confirm(sheet).textContent).toBe('Take 10 damage');
-    key(sheet, '1');
-    expect(confirm(sheet).textContent).toBe('Take 101 damage');
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Delete' }));
-    expect(confirm(sheet).textContent).toBe('Take 10 damage');
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Heal' }));
-    expect(confirm(sheet).textContent).toMatch(/^Heal \d+ HP$/);
+    undo(sheet);
+    expect(confirm(sheet).textContent).toBe('Take 1 damage');
+    undo(sheet);
+    expect(confirm(sheet).textContent).toBe('Enter an amount');
+    // Nothing left to take back.
+    undo(sheet);
+    expect(confirm(sheet).textContent).toBe('Enter an amount');
+  });
+
+  it('keeps the amount through a change of mode, until Clear', async () => {
+    await renderSheet(warrior(5));
+    fireEvent.click(cardButton('Damage'));
+    const sheet = await sheetDialog();
+    quick(sheet, '+10');
+    quick(sheet, '+10');
+    expect(confirm(sheet).textContent).toBe('Take 20 damage');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Temp HP' }));
+    expect(confirm(sheet).textContent).toBe('Set temp HP to 20');
     fireEvent.click(within(sheet).getByRole('button', { name: 'Clear' }));
     expect(confirm(sheet).textContent).toBe('Enter an amount');
+  });
+
+  it('goes no further than 999, and says so on the quick amounts that would', async () => {
+    await renderSheet(warrior(19));
+    fireEvent.click(cardButton('Damage'));
+    const sheet = await sheetDialog();
+    key(sheet, '990');
+    expect(quickKey(sheet, '+10').getAttribute('aria-disabled')).toBe('true');
+    expect(quickKey(sheet, '+5').getAttribute('aria-disabled')).toBe('false');
+    quick(sheet, '+10');
+    expect(confirm(sheet).textContent).toBe('Take 990 damage');
+    quick(sheet, '+5');
+    expect(confirm(sheet).textContent).toBe('Take 995 damage');
+    expect(quickKey(sheet, '+5').getAttribute('aria-disabled')).toBe('true');
+    quick(sheet, '+5');
+    key(sheet, '9');
+    expect(confirm(sheet).textContent).toBe('Take 995 damage');
+    // The +10 the cap turned away is not there to take back: Undo goes to 990.
+    undo(sheet);
+    expect(confirm(sheet).textContent).toBe('Take 990 damage');
   });
 
   it('starts fresh each time it opens', async () => {
@@ -203,6 +250,11 @@ describe('the HP sheet', () => {
     fireEvent.keyDown(control, { key: '3' });
     fireEvent.keyDown(control, { key: '9' });
     expect(confirm(sheet).textContent).toBe('Take 139 damage');
+    fireEvent.keyDown(control, { key: 'Backspace' });
+    expect(confirm(sheet).textContent).toBe('Take 13 damage');
+    // Backspace is Undo too, so it takes back a whole quick amount.
+    quick(sheet, '+10');
+    expect(confirm(sheet).textContent).toBe('Take 23 damage');
     fireEvent.keyDown(control, { key: 'Backspace' });
     expect(confirm(sheet).textContent).toBe('Take 13 damage');
     // A browser shortcut is not a digit.

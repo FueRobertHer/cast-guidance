@@ -13,6 +13,7 @@
  * prompt where `offersPick` says so, and otherwise still a note.
  */
 import { classSpellcastingMode } from '../calc/slots';
+import { refillsOnShortRest } from '../curated/spellRests';
 import { describeSpellQuery, parseSpellFilter, spellFitsQuery } from '../spellQuery';
 import {
   ABILITIES,
@@ -346,13 +347,15 @@ function grantSpellEntry(
       }
       return;
     }
-    const { uses, resetOn } = group.limit;
-    const per = resetOn === 'long' ? 'day' : 'rest';
+    const { uses } = group.limit;
     // A shared count is one pool the whole bucket draws from; "each" opens one
     // per spell. Either way the origin is in the key, so a wand's misty step
     // and a cloak's are never the same pool.
     const pools = group.shared ? [spells] : spells.map((spell) => [spell]);
     for (const pool of pools) {
+      // The data writes a few short rest pools as daily, so its rest can be overruled.
+      const resetOn = refillsOnShortRest(origin, pool) ? 'short' : group.limit.resetOn;
+      const per = resetOn === 'long' ? 'day' : 'rest';
       const key = `spell:${origin.uid}:${pool.map((s) => slugName(s.name)).join('+')}`;
       col.add({
         kind: 'resource',

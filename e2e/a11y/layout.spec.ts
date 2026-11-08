@@ -550,7 +550,7 @@ test.describe('the HP sheet', () => {
       await page.getByRole('button', { name: 'Temp HP' }).click();
       const sheet = page.getByRole('dialog', { name: 'Hit points' });
       await expect(sheet).toBeVisible();
-      const quick = sheet.getByRole('group', { name: 'Quick amounts' });
+      const quick = sheet.getByRole('group', { name: 'Add to the amount' });
       const keypad = sheet.getByRole('group', { name: 'Keypad' });
       await animationsSettled(page);
       await keypad.getByRole('button', { name: '5' }).click();
@@ -577,17 +577,19 @@ test.describe('the HP sheet', () => {
         ['Temp HP', 'Set temp HP to 150'],
       ] as const) {
         await sheet.getByRole('button', { name: mode, exact: true }).click();
+        // 10 and then 140, as quick amounts add to what is typed.
         if (mode === 'Damage') {
-          await quick.getByRole('button', { name: '15', exact: true }).click();
-          await keypad.getByRole('button', { name: '0', exact: true }).click();
+          await quick.getByRole('button', { name: '+10', exact: true }).click();
+          for (const digit of ['1', '4', '0'])
+            await keypad.getByRole('button', { name: digit, exact: true }).click();
         }
         expect(await pastRightEdge(sheet), `${mode}: past the sheet`).toEqual([]);
         for (const control of [
           sheet.getByRole('button', { name: mode, exact: true }),
-          quick.getByRole('button', { name: '15', exact: true }),
+          quick.getByRole('button', { name: '+10', exact: true }),
           keypad.getByRole('button', { name: '1', exact: true }),
           keypad.getByRole('button', { name: 'Clear' }),
-          keypad.getByRole('button', { name: 'Delete' }),
+          keypad.getByRole('button', { name: 'Undo' }),
           sheet.getByRole('button', { name: confirm }),
         ]) {
           await control.scrollIntoViewIfNeeded();

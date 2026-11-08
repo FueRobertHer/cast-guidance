@@ -574,9 +574,19 @@ export function readAbilityBlock(
   }
 }
 
-/** `resist: ['fire', { choose: { from: [...] } }]` and similar damage lists. */
-export function readResistList(
+const DAMAGE_LIST_LABEL = {
+  resist: 'Damage resistance',
+  immune: 'Damage immunity',
+  vulnerable: 'Damage vulnerability',
+} as const;
+
+/**
+ * `resist: ['fire', { choose: { from: [...] } }]` and the same shape under
+ * `immune` and `vulnerable`.
+ */
+export function readDamageList(
   col: Collector,
+  kind: keyof typeof DAMAGE_LIST_LABEL,
   raw: unknown,
   origin: EffectOrigin,
   promptIdBase: string,
@@ -585,7 +595,7 @@ export function readResistList(
   let chooseIdx = 0;
   for (const entry of raw) {
     if (typeof entry === 'string') {
-      col.add({ kind: 'resist', damageType: entry, origin });
+      col.add({ kind, damageType: entry, origin });
     } else if (typeof entry === 'object' && entry !== null && 'choose' in entry) {
       const c = ((entry as { choose?: unknown }).choose ?? {}) as {
         from?: unknown[];
@@ -598,14 +608,33 @@ export function readResistList(
           id,
           origin,
           kind: 'generic',
-          label: 'Damage resistance',
+          label: DAMAGE_LIST_LABEL[kind],
           count: c.count ?? 1,
           options: from.map((f) => ({ id: f, label: titleCase(f) })),
         },
         (selected) => {
-          for (const s of selected) col.add({ kind: 'resist', damageType: s, origin });
+          for (const s of selected) col.add({ kind, damageType: s, origin });
         },
       );
     }
+  }
+}
+
+/**
+ * A species' or feat's damage resistances, immunities and vulnerabilities and
+ * the conditions it cannot have. Condition lists hold plain names only.
+ */
+export function readDefenses(
+  col: Collector,
+  e: DataEntity,
+  origin: EffectOrigin,
+  idBase: string,
+): void {
+  readDamageList(col, 'resist', e.resist, origin, `${idBase}:resist`);
+  readDamageList(col, 'immune', e.immune, origin, `${idBase}:immune`);
+  readDamageList(col, 'vulnerable', e.vulnerable, origin, `${idBase}:vulnerable`);
+  if (!Array.isArray(e.conditionImmune)) return;
+  for (const condition of e.conditionImmune) {
+    if (typeof condition === 'string') col.add({ kind: 'conditionImmune', condition, origin });
   }
 }
