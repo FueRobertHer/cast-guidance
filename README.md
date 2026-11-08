@@ -58,6 +58,11 @@ asks only about new or changed text. The audit itself never calls a model: it
 compares the scanner with the saved answers, counts each confident answer the
 scanner contradicts as a disagreement against the tag's `prose` ceiling in the
 budget, and quotes the saved branch answer when a block has no verdict. A
+limited-uses answer the scanner missed does not count when the sheet already
+holds those uses in a per-rest pool from `additionalSpells`. The audit asks the
+engine's own collectors about every owner of the prose, so a block the engine
+does not read, or a limit it does not keep, still counts, as does a pool that
+refills on a rest the short-rest answer confidently contradicts. Any other
 disagreement is settled by fixing the scanner or by a verdict in
 `prose.allow`. `--dry-run` shows what would be asked and a sample request,
 `--limit <n>` runs a trial, and the on-demand `Data judge` workflow

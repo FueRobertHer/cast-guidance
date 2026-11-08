@@ -289,34 +289,6 @@
             "note": "The curated Action Surge pool reaches 2 at level 17; this entry is only that step."
           },
           {
-            "key": "16063a6bed4280",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Blessing of the Moon Weaver (Pallid|EGW)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "02ce36597cc4a5",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Call to the Wave (Water|EEPC)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1c73719ac1c2e4",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Call to the Wave (Water|MPMM)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "082cf6ef0e9827",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Celestial Legacy (Aasimar|DMG)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
             "key": "00a80e9814a588",
             "check": "limitedUses",
             "kind": "missed",
@@ -331,27 +303,6 @@
             "note": "A heading; the pool is the class Channel Divinity."
           },
           {
-            "key": "1a764cd74cf0fc",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Child of the Wood (Lotusden|EGW)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0b8809ab316a71",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Cold Fire Magic (Rimekin|LFL)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0d538b5e79194a",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Control Air and Water (Triton|MOT)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
             "key": "1cc31e5f477305",
             "check": "limitedUses",
             "kind": "missed",
@@ -359,277 +310,11 @@
             "note": "A free craft after a long rest, with nothing to spend."
           },
           {
-            "key": "1df3ce4c99142c",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Devil's Tongue (Variant; Devil's Tongue|SCAG)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "03ca3ac83193c0",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Divinely Favored (feat|DSotDQ)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1df628dd2b0f91",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Drow Magic (Drow|PHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0da5007ab96b4e",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Duergar Magic (Duergar|MPMM)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "19b8e6108e9d88",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Duergar Magic (Duergar|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "07760ee9060c0d",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (Drow) (Elf; Drow Lineage|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1a9ae4ec14f9e5",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (Elf|LFL)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1ff1f144f9c586",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (High Elf) (Elf; High Elf Lineage|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0dc49814762f94",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (Lorwyn) (Elf; Lorwyn Lineage|LFL)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "051b19220d1eeb",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (Shadowmoor) (Elf; Shadowmoor Lineage|LFL)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "111fea892feed5",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Elven Lineage (Wood Elf) (Elf; Wood Elf Lineage|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "04c57678f982bc",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fairy Magic (Faerie|LFL)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "12138fc45cfe8d",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fairy Magic (Fairy|WBtW)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0db002082d5568",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fey Touched (feat|TCE)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "10c1fe0fd0d428",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fey-Touched (feat|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "116d09e9d67d92",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fiendish Legacy (Abyssal) (Tiefling; Abyssal Legacy|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1cd0770112e83c",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fiendish Legacy (Chthonic) (Tiefling; Chthonic Legacy|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1e6b5224dbc0a8",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fiendish Legacy (Infernal) (Tiefling; Infernal Legacy|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0d9a9c24b95a74",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Fiendish Legacy (Tiefling|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0d5cdb3c6e253e",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Gift of the Svirfneblin (Deep Gnome|MPMM)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "09feb4f5becbb2",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Githyanki Psionics (Githyanki|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1c7462fc9f18c5",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Githzerai Psionics (Githzerai|MPMM)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "16129e3adbbce4",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Githzerai Psionics (Githzerai|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
             "key": "00ce2751851a8c",
             "check": "limitedUses",
             "kind": "missed",
             "label": "Greater Divine Intervention (Cleric|XPHB)",
             "note": "A longer wait on Divine Intervention's own pool, not a use of this feature."
-          },
-          {
-            "key": "19cf77cfa60381",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Hellfire (Variant; Hellfire|SCAG)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "013c26f98aa567",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Infernal Legacy (Tiefling|PHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0a069e847347a5",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Initiate of High Sorcery (feat|DSotDQ)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0868b917c505ff",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Avernus (Zariel|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1811d27f2c8120",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Cania (Mephistopheles|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0ca8cb93574643",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Dis (Dispater|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "04012b807ff4d6",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Maladomini (Baalzebul|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "1b4317aafbf55c",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Malbolge (Glasya|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "15542ce848f349",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Minauros (Mammon|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0ff2b68b38fd96",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Phlegethos (Fierna|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "12713da010c8bb",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Legacy of Stygia (Levistus|MTF)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "046ffd6fc77048",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Mark of Warding (feat|EFA)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "11b38310969d01",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Mingle with the Wind (Air|MPMM)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0dd7efe5ee8251",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Mul Daya Magic (Mul Daya Nation|PSZ)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "06b518f83405ce",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Outlands Envoy (feat|SatO)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
           },
           {
             "key": "1db3522447cd6c",
@@ -646,39 +331,11 @@
             "note": "Spell slots, shown in the spellcasting block."
           },
           {
-            "key": "0fe0409de06b17",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Reach to the Blaze (Fire|EEPC)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
             "key": "1f56675f47a795",
             "check": "limitedUses",
             "kind": "missed",
             "label": "Second Wind Improvement (Warrior Sidekick|TCE)",
             "note": "The sidekick's Second Wind pool already reaches 2 at this level."
-          },
-          {
-            "key": "04c8b1f31b1a6b",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Shadow Touched (feat|TCE)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0d9504abb3c888",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Shadow-Touched (feat|XPHB)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "08681d8ad92a0a",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Shape Shadows (Mark of Shadow|ERLW)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
           },
           {
             "key": "0f2647b35d894d",
@@ -702,32 +359,11 @@
             "note": "Spell slots, shown in the spellcasting block."
           },
           {
-            "key": "1b32488824147b",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Variant Feature (Choose 1) (Variant; Drow Descent|SCAG)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
-            "key": "0a5cfb33e6a1d4",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Variant Feature; Drow Magic (Variant; Drow Descent; Drow Magic|SCAG)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
-          },
-          {
             "key": "10eb3c3ec8f4d2",
             "check": "limitedUses",
             "kind": "missed",
             "label": "War God's Blessing (Cleric: War Domain|XPHB)",
             "note": "Spends Channel Divinity through its SPEND_LINKS row, with no pool of its own."
-          },
-          {
-            "key": "0511aa39f88007",
-            "check": "limitedUses",
-            "kind": "missed",
-            "label": "Wood Elf Magic (feat|XGE)",
-            "note": "additionalSpells opens a pool per spell; checked on a real sheet."
           },
           {
             "key": "0a4a4eb2e350bb",
