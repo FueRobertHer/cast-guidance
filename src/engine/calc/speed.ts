@@ -1,5 +1,6 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
+import { subraceFor } from '../effects/race';
 import type { CharacterDoc, DerivedSheet, DerivedValue, EffectInput } from '../types';
 import { atLeast, dv, effectsOf, inPlay, onTop, withOverride } from './core';
 
@@ -11,9 +12,7 @@ export function calcWalkSpeed(
   let raceSpeed = 30;
   let label = 'Base';
   const race = doc.race ? col.ctx.get('race', doc.race.name, doc.race.source) : undefined;
-  const subrace = doc.subrace
-    ? col.ctx.get('subrace', doc.subrace.name, doc.subrace.source)
-    : undefined;
+  const subrace = subraceFor(col.ctx, doc);
   for (const e of [race, subrace]) {
     if (e === undefined) continue;
     const speed = e.speed;

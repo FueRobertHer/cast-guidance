@@ -161,6 +161,13 @@ const SUBRACES: DataEntity[] = [
     entries: [trait('Z', 'Fiend Gift')],
   },
   sub('Blank', { entries: null }),
+  // Two races' subraces of one name and source (Ixalan|PSX for the Goblin and
+  // the Vampire); a lookup by name and source finds the Fiendkin's first.
+  sub('Twin', { speed: 25, entries: [trait('Fiend Twin')] }),
+  sub('Twin', { speed: 35, skillProficiencies: null, entries: [trait('Half Twin')] }, HALFKIN),
+  // A later copy of the same race's one (homebrew re-adding it): the first
+  // wins, as in the registry and the picker.
+  sub('Twin', { speed: 40, entries: [trait('Late Twin')] }, HALFKIN),
   sub('Late Arrangement', { ability: [{}, weighted([1], ['cha'])] }, ARRKIN),
   sub('Odd Pick', { ability: [{ choose: { from: ['cha'] } }, {}] }, ODDKIN),
 ];
@@ -256,6 +263,7 @@ describe('a subrace trait that overwrites a race trait', () => {
 
   it('leaves the race alone when the subrace belongs to another race', () => {
     const sheet = derive('Stray');
+    expect(traitNames(sheet.features.find((f) => f.name === 'Stray'))).toEqual(['X']);
     expect(traitNames(raceCard(sheet))).toEqual(traitNames(FIENDKIN));
     expect(spells(sheet)).toContain('aid [Fiendkin]');
     expect(sheet.resists.map((r) => r.damageType)).toEqual(['fire']);
@@ -265,6 +273,16 @@ describe('a subrace trait that overwrites a race trait', () => {
     const sheet = derive('Elsewhere');
     expect(traitNames(raceCard(sheet))).toEqual(traitNames(FIENDKIN));
     expect(spells(sheet)).toContain('aid [Fiendkin]');
+  });
+
+  it("reads the race's own subrace when another race has one of that name and source", () => {
+    const half = derive('Twin', 'Halfkin');
+    expect(traitNames(half.features.find((f) => f.name === 'Twin'))).toEqual(['Half Twin']);
+    expect(half.speedWalk.value).toBe(35);
+    expect(half.pending.some((p) => p.id === 'race:halfkin|tst:skill:0')).toBe(false);
+    const fiend = derive('Twin');
+    expect(traitNames(fiend.features.find((f) => f.name === 'Twin'))).toEqual(['Fiend Twin']);
+    expect(fiend.speedWalk.value).toBe(25);
   });
 
   it('applies a subrace with no race source to the race it names', () => {

@@ -1,5 +1,13 @@
+import { subraceBelongsTo } from '../../data5e/subraceOptions';
 import { emitCuratedTrait } from '../curated/curatedEffects';
-import { type Ability, type DataEntity, type EffectOrigin, type EntityRef, refUid } from '../types';
+import {
+  type Ability,
+  type CharacterDoc,
+  type DataEntity,
+  type EffectOrigin,
+  type EngineContext,
+  refUid,
+} from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { proseScanFeature } from './proseScan';
@@ -14,15 +22,33 @@ import {
   weaponOptions,
 } from './readers';
 
+/**
+ * The character's subrace. Subraces are found by name and source, and two
+ * races can each have one of the same name and source (Ixalan|PSX for the
+ * Goblin and the Vampire), so the one that belongs to the character's race
+ * wins. A pick that belongs to neither is found as before.
+ */
+export function subraceFor(
+  ctx: EngineContext,
+  doc: Pick<CharacterDoc, 'race' | 'subrace'>,
+): DataEntity | undefined {
+  const ref = doc.subrace;
+  if (ref === undefined) return undefined;
+  const first = ctx.get('subrace', ref.name, ref.source);
+  const race = doc.race;
+  if (first === undefined || race === undefined || subraceBelongsTo(first, race)) return first;
+  const uid = refUid(ref);
+  const sameRef = (s: DataEntity) => `${String(s.name)}|${String(s.source)}`.toLowerCase() === uid;
+  return ctx.byType('subrace').find((s) => sameRef(s) && subraceBelongsTo(s, race)) ?? first;
+}
+
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
   const doc = col.doc;
   const race = doc.race ? col.ctx.get('race', doc.race.name, doc.race.source) : undefined;
   if (doc.race && race === undefined) {
     col.warn(`Race not found: ${refUid(doc.race)} (data pack missing or renamed)`);
   }
-  const subrace = doc.subrace
-    ? col.ctx.get('subrace', doc.subrace.name, doc.subrace.source)
-    : undefined;
+  const subrace = subraceFor(col.ctx, doc);
   if (doc.subrace && subrace === undefined) {
     col.warn(`Subrace not found: ${refUid(doc.subrace)}`);
   }
@@ -138,18 +164,6 @@ export function raceUnderSubrace(race: DataEntity, subrace: DataEntity): DataEnt
     });
   }
   return view;
-}
-
-/**
- * Whether the subrace names this race as the one it belongs to. One with no
- * `raceSource` (hand-written homebrew) goes by the name alone, as the subrace
- * picker lists it.
- */
-function subraceOf(subrace: DataEntity, race: EntityRef): boolean {
-  const same = (a: unknown, b: string) =>
-    typeof a === 'string' && a.toLowerCase() === b.toLowerCase();
-  const anySource = typeof subrace.raceSource !== 'string';
-  return same(subrace.raceName, race.name) && (anySource || same(subrace.raceSource, race.source));
 }
 
 function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase: string): void {
@@ -296,11 +310,10 @@ export function collectRace(col: Collector): void {
       type: 'race',
     };
     // A Dragonborn ancestry's fixed resistance replaces the race's choice here.
-    // Only a subrace of this race reshapes it: two races can each have a
-    // subrace of the same name and source, and the lookup above can return
-    // the other one.
+    // Only a subrace of this race reshapes it, not a pick another race's
+    // subrace still holds.
     const own =
-      subrace !== undefined && subraceOf(subrace, col.doc.race)
+      subrace !== undefined && subraceBelongsTo(subrace, col.doc.race)
         ? raceUnderSubrace(race, subrace)
         : race;
     collectFrom(col, own, origin, `race:${origin.uid}`);

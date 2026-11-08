@@ -44,6 +44,22 @@ describe('subraceOptions', () => {
     expect(uids(list)).toEqual(['High|PHB']);
   });
 
+  // As on the release: the Goblin's and the Vampire's Ixalan are both Ixalan|PSX.
+  const twins: Entity[] = [
+    { name: 'Ixalan', source: 'PSX', raceName: 'Goblin', raceSource: 'PSZ', speed: 25 },
+    { name: 'Ixalan', source: 'PSX', raceName: 'Vampire', raceSource: 'PSZ', speed: 35 },
+  ];
+  const ixalan = { name: 'Ixalan', source: 'PSX' };
+
+  it("shows a held pick once, as the race's own, when another race has one of that name", () => {
+    expect(subraceOptions(twins, { name: 'Vampire', source: 'PSZ' }, ixalan)).toEqual([twins[1]]);
+    expect(subraceOptions(twins, { name: 'Goblin', source: 'PSZ' }, ixalan)).toEqual([twins[0]]);
+  });
+
+  it('keeps one held pick from other races, the one the registry would find first', () => {
+    expect(subraceOptions(twins, { name: 'Elf', source: 'PHB' }, ixalan)).toEqual([twins[0]]);
+  });
+
   it('matches a subrace with no race source by name alone', () => {
     const homebrew: Entity[] = [{ name: 'Moon', source: 'HB', raceName: 'Elf' }];
     expect(uids(subraceOptions(homebrew, { name: 'Elf', source: 'XPHB' }))).toEqual(['Moon|HB']);
