@@ -350,21 +350,36 @@ describe('feat grants against left-out feats', () => {
       <name>Lamplighter</name>
       <trait><name>Feat: Ember Adept (Fire)</name><text>You gain the feat.</text></trait>
     </background>`;
-  const grant = (isInstalled?: (kind: string, name: string) => boolean) => {
-    const opts =
-      isInstalled === undefined ? { fileName: FILE_2024 } : { fileName: FILE_2024, isInstalled };
-    const { json } = convertFc5Compendium(parseXml(`<compendium>${body}</compendium>`), opts);
-    return Object.keys((json.background as { feats: Record<string, true>[] }[])[0]?.feats[0] ?? {});
+  const installed = (kind: string, name: string) => kind === 'feat' && name === 'Ember Adept';
+  const grant = (opts: Omit<ConvertOptions, 'fileName'> = {}) => {
+    const { json, report } = convertFc5Compendium(parseXml(`<compendium>${body}</compendium>`), {
+      fileName: FILE_2024,
+      ...opts,
+    });
+    const background = (json.background as { feats?: Record<string, true>[] }[])[0];
+    const note = report.notes.find((n) => n.kind === 'background');
+    return { keys: Object.keys(background?.feats?.[0] ?? {}), reasons: note?.reasons ?? [] };
   };
 
   it("names this file's feat whole for a feat the file keeps, since its choice is inside it", () => {
-    expect(grant()).toEqual(['ember adept|fcorigins55e']);
+    expect(grant().keys).toEqual(['ember adept|fcorigins55e']);
   });
 
   it('names the installed copy for a feat left out as installed', () => {
-    expect(grant((kind, name) => kind === 'feat' && name === 'Ember Adept')).toEqual([
+    const officialFeat = (name: string) =>
+      name === 'Ember Adept' ? 'ember adept|xphb' : undefined;
+    expect(grant({ isInstalled: installed, officialFeat }).keys).toEqual([
       'ember adept; fire|xphb',
     ]);
+  });
+
+  it('guesses no book when the game data cannot say which feat it is', () => {
+    expect(grant({ isInstalled: installed })).toEqual({
+      keys: [],
+      reasons: [
+        'its feat (Ember Adept (Fire)) is in neither this file nor the game data, so it is kept as text',
+      ],
+    });
   });
 });
 

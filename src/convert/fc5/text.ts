@@ -14,6 +14,7 @@
  * `{@dice 2d6}` otherwise, which is what the sheet's roll parser reads.
  */
 import type { RulesVersion } from '../../data5e/rulesVersion';
+import { childElements, textContent, type XmlElement } from '../xml';
 
 export type Entry = string | Record<string, unknown>;
 
@@ -197,7 +198,7 @@ const MAX_TABLE_COLUMNS = 24;
 
 const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
 
-function countWord(word: string): number | undefined {
+export function countWord(word: string): number | undefined {
   const w = word.toLowerCase();
   const n = own(NUMBER_WORDS, w) ?? Number(w);
   return Number.isInteger(n) && n > 0 ? n : undefined;
@@ -210,10 +211,26 @@ function countWord(word: string): number | undefined {
  */
 export function readLanguages(raw: string): Record<string, unknown> | undefined {
   // One space between words, so no pattern below backtracks over a long run.
-  const text = raw.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+  const text = raw
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.$/, '')
+    // "Two of your choice (Celestial or Gith recommended)": advice, not a list.
+    .replace(/ \([^()]{0,120}\brecommended\)$/i, '');
+  // "Choose one of Elvish, Giant, or Kraul", "Choose either Abyssal or Giant",
+  // "Choose one of Elvish, Dwarvish and Gnomish".
+  const pick = /^(?:choose (?:one of|either)|one of your choice of) (.+)$/i.exec(text);
+  if (pick !== null) {
+    const from = (pick[1] ?? '')
+      .split(/,|\bor\b|\band\b/i)
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
+    if (from.length < 2 || !from.every(languageName)) return undefined;
+    return { choose: { from: from.map((l) => l.toLowerCase()) } };
+  }
   const out: Record<string, unknown> = {};
   const choice =
-    /(?:^|,?\s*(?:and|plus)\s+)(one|two|three|four|\d)\s+(?:extra\s+|other\s+|additional\s+|standard\s+)*(?:languages?\s+)?of your choice$/i.exec(
+    /(?:^|,?\s*(?:and|plus)\s+)(?:any\s+)?(one|two|three|four|\d)\s+(?:extra\s+|other\s+|additional\s+|standard\s+)*(?:languages?\s+)?of your choice$/i.exec(
       text,
     );
   let named = text;
@@ -223,13 +240,656 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
     out.anyStandard = count;
     named = text.slice(0, choice.index);
   }
-  if (/\b(?:choice|choose|any)\b/i.test(named)) return undefined;
   for (const name of splitList(named)) {
-    if (!/^[A-Za-z][A-Za-z' -]*$/.test(name)) return undefined;
+    // `Any 1 language`, `Any two languages`: the tag some files use for a choice.
+    const any =
+      /^any (one|two|three|four|\d) (?:other |extra |additional |standard )?languages?$/i.exec(
+        name,
+      );
+    if (any !== null) {
+      const count = countWord(any[1] ?? '');
+      if (count === undefined) return undefined;
+      out.anyStandard = Number(out.anyStandard ?? 0) + count;
+      continue;
+    }
+    // "Draconic or Elven", "either Abyssal or Void Speech": one of them.
+    const either = /^(?:either )?([^,]{1,40}) or ([^,]{1,40})$/i.exec(name);
+    if (either !== null && out.choose === undefined) {
+      const from = [either[1] ?? '', either[2] ?? ''].map((l) => l.trim());
+      if (!from.every(languageName)) return undefined;
+      out.choose = { from: from.map((l) => l.toLowerCase()) };
+      continue;
+    }
+    if (!languageName(name)) return undefined;
     out[name.toLowerCase()] = true;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
+
+/**
+ * Whether a list item is a language's name ("Deep Speech", "Thieves' Cant")
+ * rather than a phrase about languages: "the languages you knew in life",
+ * "you only speak Common", "telepathy 120 ft.", "one racial language".
+ */
+function languageName(name: string): boolean {
+  return (
+    /^[A-Za-z][A-Za-z' -]{0,30}$/.test(name) &&
+    name.split(' ').length <= 3 &&
+    !/^(?:one|two|three|four|an?) /i.test(name) &&
+    !/\b(?:choice|choose|any|or|and|either|you|your|the|of|other|though|only|can|speak|know|most|from|all|as|in|through|understand|communicate|languages|telepathy)\b/i.test(
+      name,
+    )
+  );
+}
+
+/** The base weapons by their 5etools names, to check a list a file words its own way. */
+const WEAPONS = new Set([
+  'battleaxe',
+  'blowgun',
+  'club',
+  'dagger',
+  'dart',
+  'flail',
+  'glaive',
+  'greataxe',
+  'greatclub',
+  'greatsword',
+  'halberd',
+  'hand crossbow',
+  'handaxe',
+  'heavy crossbow',
+  'javelin',
+  'lance',
+  'light crossbow',
+  'light hammer',
+  'longbow',
+  'longsword',
+  'mace',
+  'maul',
+  'morningstar',
+  'net',
+  'pike',
+  'quarterstaff',
+  'rapier',
+  'scimitar',
+  'shortbow',
+  'shortsword',
+  'sickle',
+  'sling',
+  'spear',
+  'trident',
+  'war pick',
+  'warhammer',
+  'whip',
+]);
+
+/** `Shortswords`, `short bow` into a base weapon's name, or undefined. */
+function weaponName(word: string): string | undefined {
+  const w = word.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const candidate of [
+    w,
+    w.replace(/s$/, ''),
+    w.replace(/ /g, ''),
+    w.replace(/s$/, '').replace(/ /g, ''),
+  ]) {
+    if (WEAPONS.has(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * A weapon list into a 5etools `weaponProficiencies` entry: named weapons
+ * (`Battleaxe, Handaxe`), a category (`Simple Weapons`), or a choice (`Two
+ * martial weapons of your choice`). Undefined when anything is said that is
+ * none of those (`Finesse Weapon`, `Improvised Weapons`).
+ */
+export function readWeapons(
+  raw: string,
+  edition: RulesVersion,
+): Record<string, unknown> | undefined {
+  const text = raw.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+  const choice = /^(one|two|three|four|\d) (martial|simple) weapons? of your choice$/i.exec(text);
+  if (choice !== null) {
+    const count = countWord(choice[1] ?? '');
+    if (count === undefined) return undefined;
+    const category = (choice[2] ?? '').toLowerCase();
+    return { choose: { fromFilter: `type=${category} weapon|miscellaneous=mundane`, count } };
+  }
+  const book = edition === '2024' ? 'xphb' : 'phb';
+  const out: Record<string, unknown> = {};
+  for (const part of splitList(text)) {
+    // `improvised` and `firearms` are 5etools keys too (Tavern Brawler, Gunner).
+    const category = /^(simple|martial|improvised) weapons?$|^(firearms)$/i.exec(part);
+    if (category !== null) {
+      out[(category[1] ?? category[2] ?? '').toLowerCase()] = true;
+      continue;
+    }
+    const name = weaponName(part);
+    if (name === undefined) return undefined;
+    out[`${name}|${book}`] = true;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const ARMOR: Record<string, string> = {
+  'light armor': 'light',
+  'medium armor': 'medium',
+  'heavy armor': 'heavy',
+  shield: 'shield',
+  shields: 'shield',
+};
+
+/** `Light Armor, Medium Armor, Shields` into a 5etools `armorProficiencies` entry. */
+export function readArmor(raw: string): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const part of splitList(raw.replace(/\.$/, ''))) {
+    const key = own(ARMOR, part.toLowerCase());
+    if (key === undefined) return undefined;
+    out[key] = true;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** The 5etools keys for "one kind of …", which the engine turns into a choice. */
+const TOOL_CATEGORIES: Record<string, string> = {
+  'gaming set': 'anyGamingSet',
+  "artisan's tools": 'anyArtisansTool',
+  "artisan's tool": 'anyArtisansTool',
+  'musical instrument': 'anyMusicalInstrument',
+};
+
+/** `Gaming Sets`, `artisan's tool` as a {@link TOOL_CATEGORIES} key, or undefined. */
+function toolCategory(word: string): string | undefined {
+  const w = word.toLowerCase().replace(/’/g, "'").trim();
+  return own(TOOL_CATEGORIES, w) ?? own(TOOL_CATEGORIES, w.replace(/s$/, ''));
+}
+
+/** Words that make a tool list a sentence rather than names: "Special (see origin below)". */
+const NOT_A_TOOL =
+  /\b(?:see|special|table|from|choice|choose|any|your|other|type|kind|proficienc[a-z]*|recommended|appropriate)\b/i;
+
+/** Other spellings the files use for a tool of the rules, by that tool's name. */
+const TOOL_SPELLINGS: Record<string, string> = {
+  "alchemist's tools": "alchemist's supplies",
+  "calligrapher's tools": "calligrapher's supplies",
+  'forgery tools': 'forgery kit',
+  'herbalist kit': 'herbalism kit',
+  "herbalist's kit": 'herbalism kit',
+  'land vehicles': 'vehicles (land)',
+  'land-based vehicles': 'vehicles (land)',
+  'thieves tools': "thieves' tools",
+  'vehicle (land)': 'vehicles (land)',
+  'vehicle (water)': 'vehicles (water)',
+  'water vehicles': 'vehicles (water)',
+};
+
+/**
+ * A tool's own name ("Thieves' tools", "Vehicles (land)"), lowercased, or
+ * undefined. A spelling of a tool of the rules ("Disguise kits", "Thieves
+ * tools") becomes that tool's name; any other name stays as the file writes it.
+ */
+function toolName(part: string): string | undefined {
+  const name = part.toLowerCase();
+  if (!/^[a-z][a-z' -]{0,30}(?: \([a-z]{1,12}\))?$/.test(name)) return undefined;
+  if (NOT_A_TOOL.test(name) || /^(?:one|two|three|four|an?|\d) /.test(name)) return undefined;
+  const single = name.replace(/s$/, '');
+  return own(TOOL_SPELLINGS, name) ?? (KNOWN_TOOLS.has(single) ? single : name);
+}
+
+/**
+ * One item of a tool list: a kind of tool, which is a choice of that many
+ * ("Gaming Set", "One type of gaming set", "One set of artisan's tools", "1
+ * Musical Instrument of your choice"), any tool ("Two of your choice", "1 tool
+ * of your choice"), or a tool's own name. Undefined for anything else.
+ */
+function toolPart(part: string): { key: string; count: number } | { name: string } | undefined {
+  const anyTool = /^(one|two|three|four|\d) (?:tools? )?of your choice$/i.exec(part);
+  const anyCount = anyTool === null ? undefined : countWord(anyTool[1] ?? '');
+  if (anyCount !== undefined) return { key: 'any', count: anyCount };
+  const counted =
+    /^(?:choose )?(?:(one|two|three|four|an?|\d) )?(?:(?:type|kind|set)s? of )?([a-z' ]{0,30}?)(?: of your choice)?$/i.exec(
+      part,
+    );
+  if (counted !== null) {
+    const word = (counted[1] ?? '').toLowerCase();
+    const count = word === '' || word === 'a' || word === 'an' ? 1 : countWord(word);
+    const kind = (counted[2] ?? '').toLowerCase();
+    const key =
+      kind === '' || /^tools?$/.test(kind) ? (word === '' ? undefined : 'any') : toolCategory(kind);
+    if (count !== undefined && key !== undefined) return { key, count };
+  }
+  const name = toolName(part);
+  return name === undefined ? undefined : { name };
+}
+
+/**
+ * A tool line into a 5etools `toolProficiencies` entry: tools by name and kinds
+ * of tool ("One type of gaming set, thieves' tools"), any tool ("Two of your
+ * choice"), or one to pick from a list ("Your choice of a gaming set or a
+ * musical instrument", "Artisan's tools of your choice: smith's tools,
+ * brewer's supplies, or mason's tools", "Disguise kit, forgery kit, or
+ * thieves' tools (one of your choice)"). Undefined for anything else, so the
+ * line stays as text.
+ */
+export function readTools(list: string): Record<string, unknown> | undefined {
+  const text = list
+    .replace(/’/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.$/, '')
+    // "One gaming set of your choice (such as playing cards …)": an example, not a list.
+    .replace(/ \((?:such as|e\.g\.|one of your choice)[^()]{0,160}\)$/i, '');
+  const from = /^(?:[a-z' ]{1,40}) of your choice: (.+)$/i.exec(text);
+  const alternatives =
+    from?.[1] ??
+    (/ or /i.test(text) && !/\band\b/i.test(text)
+      ? text.replace(/^your choice of /i, '')
+      : undefined);
+  if (alternatives !== undefined) {
+    const options: string[] = [];
+    for (const part of alternatives.split(/,|\bor\b/i)) {
+      const trimmed = part.trim().replace(/^(?:one (?:type |kind )?of |an? |one )/i, '');
+      if (trimmed === '') continue;
+      const category = toolCategory(trimmed);
+      const name = category === undefined ? toolName(trimmed) : undefined;
+      // A kind of tool in a `from` list is its group's name, which the engine expands.
+      const option = category !== undefined ? own(CATEGORY_GROUPS, category) : name;
+      if (option === undefined) return undefined;
+      options.push(option);
+    }
+    return options.length >= 2 ? { choose: { from: options } } : undefined;
+  }
+  const out: Record<string, unknown> = {};
+  for (const part of splitList(text)) {
+    const read = toolPart(part);
+    if (read === undefined) return undefined;
+    if ('name' in read) out[read.name] = true;
+    else out[read.key] = Number(out[read.key] ?? 0) + read.count;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** The tools of the rules, by name: a tool a sentence names must be one of these. */
+const KNOWN_TOOLS = new Set([
+  "alchemist's supplies",
+  "brewer's supplies",
+  "calligrapher's supplies",
+  "carpenter's tools",
+  "cartographer's tools",
+  "cobbler's tools",
+  "cook's utensils",
+  "glassblower's tools",
+  "jeweler's tools",
+  "leatherworker's tools",
+  "mason's tools",
+  "painter's supplies",
+  "potter's tools",
+  "smith's tools",
+  "tinker's tools",
+  "weaver's tools",
+  "woodcarver's tools",
+  'bagpipes',
+  'drum',
+  'dulcimer',
+  'flute',
+  'horn',
+  'lute',
+  'lyre',
+  'pan flute',
+  'shawm',
+  'viol',
+  'dice set',
+  'dragonchess set',
+  'playing card set',
+  'three-dragon ante set',
+  'disguise kit',
+  'forgery kit',
+  'herbalism kit',
+  "navigator's tools",
+  "poisoner's kit",
+  "thieves' tools",
+  'vehicles (land)',
+  'vehicles (water)',
+]);
+
+/** What a proficiency sentence grants, in 5etools fields ({@link proficiencySentence}). */
+export interface ProficiencyGrant {
+  skills?: Record<string, unknown>;
+  /** A weapon list {@link readWeapons} reads, read once the entry's edition is known. */
+  weapons?: string;
+  armor?: Record<string, unknown>;
+  tools?: Record<string, unknown>;
+}
+
+/** Skill names by their 5etools keys, or undefined if any is not a skill. */
+function skillNames(list: string[]): string[] | undefined {
+  const names = list.map((s) => s.trim().toLowerCase()).filter((s) => s !== '');
+  return names.length > 0 && names.every((n) => (SKILLS as readonly string[]).includes(n))
+    ? names
+    : undefined;
+}
+
+/**
+ * A sentence that grants proficiency in the book's own words, lowercased and
+ * without its full stop: "you gain proficiency in the intimidation skill", "in
+ * the acrobatics or athletics skill (your choice)", "in two skills of your
+ * choice", "in one of the following skills of your choice: …", "with the
+ * longsword, shortsword, shortbow, and longbow", "with light and medium
+ * armor", "with cook's utensils if you don't already have it". A tool is read
+ * only where `tools` allows: `known` for a tool of the rules or a kind of tool
+ * ("one type of artisan's tools of your choice"), `any` for any name, `none`
+ * not at all. Undefined for any other sentence, or one not read in full.
+ */
+export function proficiencySentence(
+  sentence: string,
+  tools: 'any' | 'known' | 'none',
+): ProficiencyGrant | undefined {
+  const s = sentence.replace(/ if you don't already have (?:it|this proficiency)$/, '');
+  const skill =
+    /^you (?:have|gain) proficiency in the (.{1,80}) skills?(?: \(your choice\))?$/.exec(s);
+  if (skill !== null) {
+    const list = skill[1] ?? '';
+    if (/ or /.test(list)) {
+      const from = skillNames(list.split(/,|\bor\b/));
+      return from === undefined ? undefined : { skills: { choose: { from } } };
+    }
+    const named = skillNames(splitList(list));
+    return named === undefined
+      ? undefined
+      : { skills: Object.fromEntries(named.map((n) => [n, true])) };
+  }
+  const anySkill = /^you (?:have|gain) proficiency in (one|two|three) skills? of your choice$/.exec(
+    s,
+  );
+  if (anySkill !== null) {
+    const count = countWord(anySkill[1] ?? '');
+    return count === undefined ? undefined : { skills: { any: count } };
+  }
+  const fromSkills =
+    /^you (?:have|gain) proficiency (?:in|with) (?:your choice of )?(one|two|three) of the following skills(?: of your choice)?: (.{1,200})$/.exec(
+      s,
+    );
+  if (fromSkills !== null) {
+    const count = countWord(fromSkills[1] ?? '');
+    const from = skillNames((fromSkills[2] ?? '').split(/,|\band\b|\bor\b/));
+    if (count === undefined || from === undefined) return undefined;
+    return { skills: { choose: count === 1 ? { from } : { from, count } } };
+  }
+  const withWhat = /^you (?:have|gain) proficiency (?:with|in) (?:the )?(.{1,160})$/.exec(s);
+  if (withWhat === null) return undefined;
+  const list = (withWhat[1] ?? '').replace(/\bthe /g, '');
+  if (readWeapons(list, '2014') !== undefined) return { weapons: list };
+  // Light and medium armor: each kind its own item.
+  const armor = readArmor(list.replace(/\b(light|medium|heavy)\b(?! armor)/g, '$1 armor'));
+  if (armor !== undefined) return { armor };
+  if (tools === 'none') return undefined;
+  // Armor, weapons or skills the readers above did not take are no tools.
+  if (/\b(?:armor|weapons?|shields?|skills?|saving throws?)\b/.test(list)) return undefined;
+  const read = readTools(list);
+  if (read === undefined) return undefined;
+  const known = Object.keys(read).every(
+    (k) => k === 'choose' || k === 'any' || k.startsWith('any') || KNOWN_TOOLS.has(k),
+  );
+  const choices = (read.choose as { from?: string[] } | undefined)?.from ?? [];
+  const knownChoices = choices.every(
+    (t) => KNOWN_TOOLS.has(t) || own(CATEGORY_GROUPS_BY_NAME, t) !== undefined,
+  );
+  return tools === 'any' || (known && knownChoices) ? { tools: read } : undefined;
+}
+
+/** Every sentence of an entry's text, lowercased, without its full stop or a bullet. */
+export function sentences(prose: string): string[] {
+  return prose
+    .split(/\n|(?<=\.) /)
+    .map((line) =>
+      line
+        .replace(/^[•·*-] ?/, '')
+        .trim()
+        .replace(/\.$/, '')
+        .toLowerCase(),
+    )
+    .filter((line) => line !== '');
+}
+
+/** What a sentence says its reader resists, is immune or vulnerable to ({@link defenseSentence}). */
+export interface Defenses {
+  resist?: string[];
+  immune?: string[];
+  vulnerable?: string[];
+  conditionImmune?: string[];
+}
+
+const DAMAGE = `(?:${DAMAGE_TYPES.join('|')})`;
+/** "fire", "cold and necrotic", "lightning damage and thunder", "bludgeoning, piercing, and slashing". */
+const DAMAGE_LIST = `${DAMAGE}(?: damage)?(?:(?:,| and|, and) ${DAMAGE}(?: damage)?){0,12}`;
+/** Who a clause is about: "you have", "you are", or a clause joined on with "and". */
+const SUBJECT = "(?:^|[ ,])(?:you (?:also )?(?:have|gain) |you(?:'re| are) |and (?:are |have )?)";
+const CONDITION =
+  '(?:blinded|charmed|deafened|exhaustion|frightened|grappled|incapacitated|paralyzed|petrified|poisoned|prone|restrained|stunned)';
+const CONDITION_LIST = `${CONDITION}(?:(?:,| and|, and) ${CONDITION}){0,8}`;
+/**
+ * A clause ends the sentence or gives way to the next one, never "damage from
+ * nonmagical attacks", and never partway through its own list: "the charmed
+ * and frightened conditions from spells" is not "the charmed".
+ */
+const CLAUSE_END = `(?=$|,| and )(?!(?:,|,? and)(?: the)? (?:${CONDITION}|${DAMAGE})\\b)`;
+const DAMAGE_CLAUSE = new RegExp(
+  `${SUBJECT}(resistance|immunity|immune|vulnerable|vulnerability) (?:to|against) (${DAMAGE_LIST}) damage(?: and the (${CONDITION_LIST}) conditions?)?${CLAUSE_END}`,
+  'g',
+);
+const CONDITION_CLAUSE = new RegExp(
+  `${SUBJECT}(?:immune|immunity) to (?:the )?(${CONDITION_LIST})(?: conditions?)?(?: and (${DAMAGE_LIST}) damage)?${CLAUSE_END}`,
+  'g',
+);
+const BEING_CLAUSE = new RegExp(
+  `${SUBJECT}immune to being (charmed|frightened|paralyzed|petrified|poisoned|knocked prone|stunned)${CLAUSE_END}`,
+  'g',
+);
+/**
+ * A word that makes a defense last only a while, or hang on a choice or a
+ * proviso, or belong to someone else: "for 1 minute", "when you", "one of the
+ * following", "as long as", "your allies", "your familiar", "ignore
+ * resistance".
+ */
+export const NOT_STANDING =
+  /\b(?:can|can't|cannot|when|whenever|if|until|unless|once|while|action|reaction|after|each time|minutes?|hours?|rounds?|turns?|choose|chosen|choice|one of|instead|except|half|only|lose|loses|no longer|duration|creatures?|ally|allies|target|within|form|state|rage|raging|as long as|provided|but|familiar|steed|companion|(?:ignor(?:e|es|ing)|bypass(?:es|ing)?) (?:resistance|immunity))\b/;
+
+/**
+ * The resistances and immunities a sentence about "you" states in the book's
+ * own words, lowercased and without its full stop: "you have resistance to
+ * cold damage", "you are immune to necrotic and cold damage and vulnerable to
+ * fire and radiant damage", "you gain a +1 bonus to ac and resistance to
+ * radiant damage", "you are immune to the poisoned condition". Undefined for a
+ * sentence that says none, or says one that lasts only a while or hangs on a
+ * choice ({@link NOT_STANDING}). The caller decides when the sentence holds:
+ * an item's while you wear it, a race's always.
+ */
+export function defenseSentence(raw: string): Defenses | undefined {
+  const sentence = raw.replace(/’/g, "'");
+  if (!/^you\b/.test(sentence) || NOT_STANDING.test(sentence)) return undefined;
+  const out: Required<Defenses> = { resist: [], immune: [], vulnerable: [], conditionImmune: [] };
+  const add = (list: string[], words: string[]) => {
+    for (const w of words) if (!list.includes(w)) list.push(w);
+  };
+  const words = (list: string, pattern: string) => list.match(new RegExp(pattern, 'g')) ?? [];
+  // "Immunity to Poison damage and the Poisoned condition": both kinds in one clause.
+  for (const m of sentence.matchAll(DAMAGE_CLAUSE)) {
+    const kind = m[1] ?? '';
+    const types = words(m[2] ?? '', DAMAGE);
+    if (kind === 'resistance') add(out.resist, types);
+    else if (kind.startsWith('vulnerab')) add(out.vulnerable, types);
+    else {
+      add(out.immune, types);
+      add(out.conditionImmune, words(m[3] ?? '', CONDITION));
+    }
+  }
+  // "Immunity to the Poisoned condition and Poison damage": both kinds in one clause.
+  for (const m of sentence.matchAll(CONDITION_CLAUSE)) {
+    add(out.conditionImmune, words(m[1] ?? '', CONDITION));
+    add(out.immune, words(m[2] ?? '', DAMAGE));
+  }
+  for (const m of sentence.matchAll(BEING_CLAUSE)) {
+    add(out.conditionImmune, [(m[1] ?? '').replace('knocked ', '')]);
+  }
+  const found = Object.fromEntries(Object.entries(out).filter(([, v]) => v.length > 0)) as Defenses;
+  return Object.keys(found).length > 0 ? found : undefined;
+}
+
+/** `b`'s defenses added to `a`'s, each kind without repeats. */
+export function addDefenses(a: Defenses, b: Defenses | undefined): Defenses {
+  if (b === undefined) return a;
+  const out: Defenses = { ...a };
+  for (const key of ['resist', 'immune', 'vulnerable', 'conditionImmune'] as const) {
+    const more = b[key];
+    if (more === undefined) continue;
+    out[key] = [...new Set([...(out[key] ?? []), ...more])];
+  }
+  return out;
+}
+
+/** A Fight Club `<roll>`: its dice, and the label its button shows. */
+export interface FileRoll {
+  description?: string;
+  dice: string;
+}
+
+/** Dice alone, as a roll tag holds them: "1d20+8", "2d6", "d8". */
+const PLAIN_DICE = /^(\d{0,3})d(\d{1,3})([+-]\d{1,3})?$/i;
+/** A roll tag in text, its dice in the first group. */
+const ANY_ROLL_TAG = /\{@(?:dice|damage|scaledice|scaledamage) ([^}|]{1,40})/g;
+
+/** "d8" and "1d8" as one roll, without spaces. */
+function sameDice(dice: string): string {
+  return dice.replace(/\s+/g, '').toLowerCase().replace(/^d/, '1d');
+}
+
+/**
+ * The rolls a Fight Club element lists in `<roll>` that its text never shows
+ * as a roll, as one line of roll tags ("{@b Rolls:} Attack Bonus {@dice
+ * 1d20+8}"): the file shows each as a button, and a tag is how a roll reaches
+ * the sheet. Left out: a roll the text already tags (a table's die column
+ * included) or `shown` names (a weapon's damage dice), one without a label to
+ * say what it is for, and one that names the caster's modifier or level
+ * (`1d8+%0`, `SPELL`).
+ */
+export function rollLine(
+  rolls: readonly FileRoll[],
+  entries: readonly Entry[],
+  shown: readonly string[] = [],
+): string | undefined {
+  const tagged = [...JSON.stringify(entries).matchAll(ANY_ROLL_TAG)].map((m) => m[1] ?? '');
+  const known = new Set([...tagged, ...shown].map(sameDice));
+  const parts: string[] = [];
+  for (const roll of rolls) {
+    const dice = roll.dice.replace(/\s+/g, '');
+    const label = (roll.description ?? '').replace(/[{}]/g, '').trim();
+    const core = sameDice(dice).replace(/[+-]\d+$/, '');
+    if (label === '' || !PLAIN_DICE.test(dice) || known.has(sameDice(dice)) || known.has(core)) {
+      continue;
+    }
+    const tag = /\bdamage\b/i.test(label) ? `{@damage ${dice}}` : `{@dice ${dice}}`;
+    // A roll the file lists twice under one label, once.
+    if (!parts.includes(`${label} ${tag}`)) parts.push(`${label} ${tag}`);
+  }
+  return parts.length > 0 ? `{@b Rolls:} ${parts.join('; ')}` : undefined;
+}
+
+/** `entries`, then the {@link rollLine} for the element's own `<roll>`s, if any. */
+export function withRolls(
+  entries: Entry[],
+  el: XmlElement,
+  shown: readonly (string | undefined)[] = [],
+): Entry[] {
+  const rolls = childElements(el, 'roll').map((r) => ({
+    description: r.attrs.description,
+    dice: textContent(r).trim(),
+  }));
+  const line = rollLine(
+    rolls,
+    entries,
+    shown.filter((s): s is string => s !== undefined),
+  );
+  return line === undefined ? entries : [...entries, line];
+}
+
+/** A tag's shown text: `{@dice 1d6}` to `1d6`. */
+const TAG_TEXT = /\{@\w+ ([^|{}]*)(?:\|[^{}]*)?\}/g;
+
+/**
+ * A lead-in to a list whose items all hold: "You gain the following
+ * benefits:", "This is represented by the following:".
+ */
+const FOLLOWING = /\bthe following(?: [a-z]{1,20}){0,3}:$/;
+/** Text that offers a choice: what comes after it is one option, not a given. */
+const OFFERS_CHOICE = /\b(?:choose|chosen|choice|one of|options?)\b/;
+
+/**
+ * The defenses a race trait's or a feat's text grants for good, in the book's
+ * own words ({@link defenseSentence}): the first sentence of each paragraph,
+ * and of each list item after a lead-in that holds for good too ("You gain the
+ * following benefits:", not "While raging, you gain the following benefits:").
+ * A later sentence in a paragraph may hang on an earlier one, so it stays text,
+ * and once the text offers a choice, nothing after it at that level is read. A
+ * named part ("While Raging: …") is read only where its name sets no such
+ * terms, and not after a lead-in that does not hold for good ("Your hide adapts
+ * to where you live:").
+ */
+export function standingDefenses(entries: readonly unknown[]): Defenses {
+  let out: Defenses = {};
+  const lines = (text: string) => sentences(text.replace(TAG_TEXT, '$1'));
+  const read = (text: string) => {
+    out = addDefenses(out, defenseSentence(lines(text)[0] ?? ''));
+  };
+  /**
+   * Walks one level, and says how its last line leads in to what follows it:
+   * a named part's "Choose one of the following options:" leads in to the
+   * list after the part, while a choice the part settles itself ("Increase
+   * one ability score of your choice") leaves the parts beside it alone.
+   */
+  const walk = (list: readonly unknown[]): 'none' | 'stands' | 'not' => {
+    let lead: 'none' | 'stands' | 'not' = 'none';
+    for (const e of list) {
+      if (typeof e === 'string') {
+        read(e);
+        const last = lines(e).at(-1) ?? '';
+        lead = !last.endsWith(':')
+          ? 'none'
+          : FOLLOWING.test(last) && !NOT_STANDING.test(last)
+            ? 'stands'
+            : 'not';
+        if (OFFERS_CHOICE.test(e.toLowerCase())) return lead;
+      } else if (e !== null && typeof e === 'object') {
+        const o = e as Record<string, unknown>;
+        // A lead-in holds over every list after it: Fight Club gives each item its own list.
+        if (Array.isArray(o.items)) {
+          if (lead === 'stands')
+            for (const item of o.items) if (typeof item === 'string') read(item);
+        } else if (Array.isArray(o.entries)) {
+          const name = typeof o.name === 'string' ? o.name.toLowerCase() : '';
+          if (lead === 'not' || NOT_STANDING.test(name) || OFFERS_CHOICE.test(name)) continue;
+          lead = walk(o.entries);
+        }
+      }
+    }
+    return lead;
+  };
+  walk(entries);
+  return out;
+}
+
+/** The names {@link CATEGORY_GROUPS} gives, to check a `choose.from` option. */
+const CATEGORY_GROUPS_BY_NAME: Record<string, true> = {
+  'gaming set': true,
+  "artisan's tools": true,
+  'musical instrument': true,
+};
+
+/** A {@link TOOL_CATEGORIES} key's group name, as a `choose.from` option. */
+const CATEGORY_GROUPS: Record<string, string> = {
+  anyGamingSet: 'gaming set',
+  anyArtisansTool: "artisan's tools",
+  anyMusicalInstrument: 'musical instrument',
+};
 
 /**
  * The edition marker a name carries: `Fireball [5.5e]`, `Alert [2024]`. Files
@@ -295,14 +955,27 @@ export function sourceLineEdition(line: string): RulesVersion | undefined {
 const EXISTING_TAG = /(\{@[^{}]*\})/;
 
 const DICE = /\b(\d+d\d+(?:\s?[+-]\s?\d+(?![\dd]))?)\b/g;
-const DAMAGE_AFTER = new RegExp(`^\\s+(?:${DAMAGE_TYPES.join('|')})\\b`, 'i');
+const TYPE_WORD = `(?:${DAMAGE_TYPES.join('|')})`;
+/**
+ * Dice that deal damage: "3d6 fire", "3d8 damage of the type you chose", "1d4
+ * extra damage", "2d6 additional lightning or thunder damage", and the "1d4
+ * less damage" a shrunken weapon deals, which 5etools tags as damage too.
+ */
+const DAMAGE_AFTER = new RegExp(
+  `^\\s+(?:${TYPE_WORD}\\b|(?:extra |additional |bonus |less )?(?:${TYPE_WORD}(?: or ${TYPE_WORD})? )?damage\\b)`,
+  'i',
+);
+/** "roll a d4", which 5etools tags as `{@dice d4}`. */
+const ROLL_A_DIE = /\b(rolls? an? )(d\d{1,3})\b/gi;
 
 function tagDice(text: string): string {
-  return text.replace(DICE, (match: string, dice: string, offset: number, whole: string) => {
-    const after = whole.slice(offset + match.length, offset + match.length + 16);
-    const expr = dice.replace(/\s+/g, '');
-    return DAMAGE_AFTER.test(after) ? `{@damage ${expr}}` : `{@dice ${expr}}`;
-  });
+  return text
+    .replace(DICE, (match: string, dice: string, offset: number, whole: string) => {
+      const after = whole.slice(offset + match.length, offset + match.length + 48);
+      const expr = dice.replace(/\s+/g, '');
+      return DAMAGE_AFTER.test(after) ? `{@damage ${expr}}` : `{@dice ${expr}}`;
+    })
+    .replace(ROLL_A_DIE, '$1{@dice $2}');
 }
 
 /**
@@ -441,7 +1114,10 @@ export function readText(blocks: readonly string[]): ReadText {
         const width = header.length;
         const table: Record<string, unknown> = {
           type: 'table',
-          colLabels: header.map(inlineText),
+          // A die column's "d10" is a roll, as 5etools tags it.
+          colLabels: header.map((label) =>
+            /^d\d{1,3}$/i.test(label.trim()) ? `{@dice ${label.trim()}}` : inlineText(label),
+          ),
           rows: rows.map((r) => {
             const cells = r.slice(0, width).map(inlineText);
             while (cells.length < width) cells.push('');

@@ -4,8 +4,8 @@
 // load this under plain Bun.
 import type { Entity } from '../data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../data5e/normalize';
-import { editionOf } from '../data5e/rulesVersion';
-import type { ConvertedKind, ConvertOptions, InstalledCheck } from './types';
+import { editionOf, type RulesVersion } from '../data5e/rulesVersion';
+import type { ConvertedKind, ConvertOptions, InstalledCheck, OfficialFeat } from './types';
 
 /**
  * The registry types an entry of each converted kind could already be. Other
@@ -205,15 +205,48 @@ function bookCodes(reg: EntityRegistry): Set<string> {
   return books;
 }
 
+/** The core rules book of each edition, whose printing of a feat a grant prefers. */
+const CORE_BOOK: Record<RulesVersion, string> = { '2014': 'phb', '2024': 'xphb' };
+
+/**
+ * The official feats by `name|edition`, lowercased, each as its registry id
+ * (`alert|xphb`): the core rules book's printing when it has one, else the
+ * first in the data.
+ */
+function featIds(reg: EntityRegistry): [string, string][] {
+  const ids = new Map<string, string>();
+  for (const e of reg.byType('feat').slice(0, reg.officialCount('feat'))) {
+    if (typeof e.name !== 'string' || typeof e.source !== 'string') continue;
+    const edition = editionOf(e);
+    const key = `${e.name.toLowerCase()}|${edition}`;
+    const core = e.source.toLowerCase() === CORE_BOOK[edition];
+    if (!ids.has(key) || core) ids.set(key, `${e.name}|${e.source}`.toLowerCase());
+  }
+  return [...ids];
+}
+
+/** {@link OfficialFeat} over a set of {@link featIds}. */
+function featLookup(ids: Iterable<[string, string]>): OfficialFeat {
+  const byKey = new Map(ids);
+  return (name, edition) => byKey.get(`${name.toLowerCase()}|${edition}`);
+}
+
+/** The installed feat a background's grant names, from the registry. */
+export function officialFeatLookup(reg: EntityRegistry): OfficialFeat {
+  return featLookup(featIds(reg));
+}
+
 /**
  * What the converter asks of the game data ({@link installedCheck},
- * {@link heldBooks} and the books of the 2024 rules), as plain data: built
- * where the registry is, and sent to a worker that converts without it.
+ * {@link heldBooks}, the books of the 2024 rules and {@link featIds}), as
+ * plain data: built where the registry is, and sent to a worker that
+ * converts without it.
  */
 export interface OfficialKeys {
   kinds: Record<ConvertedKind, { byEdition: string[]; byBook: string[] }>;
   books: string[];
   rulesBooks: string[];
+  feats: [string, string][];
 }
 
 export function officialKeys(reg: EntityRegistry): OfficialKeys {
@@ -222,13 +255,18 @@ export function officialKeys(reg: EntityRegistry): OfficialKeys {
     const keys = kindKeys(reg, kind);
     kinds[kind] = { byEdition: [...keys.byEdition], byBook: [...keys.byBook] };
   }
-  return { kinds, books: [...bookCodes(reg)], rulesBooks: [...reg.rulesBooks] };
+  return {
+    kinds,
+    books: [...bookCodes(reg)],
+    rulesBooks: [...reg.rulesBooks],
+    feats: featIds(reg),
+  };
 }
 
 /** The converter's checks from {@link officialKeys}: the same answers the registry gives. */
 export function officialChecks(
   keys: OfficialKeys,
-): Required<Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks'>> {
+): Required<Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks' | 'officialFeat'>> {
   const byKind = new Map<ConvertedKind, KindKeys>();
   for (const kind of Object.keys(OFFICIAL_TYPES) as ConvertedKind[]) {
     const k = keys.kinds[kind];
@@ -242,6 +280,7 @@ export function officialChecks(
     },
     hasBook: (code) => books.has(code.toLowerCase()),
     rulesBooks: new Set(keys.rulesBooks),
+    officialFeat: featLookup(keys.feats),
   };
 }
 

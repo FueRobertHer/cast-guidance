@@ -1,11 +1,27 @@
 /**
  * A Fight Club 5e `<item>` into a 5etools item. The weapon and armor columns
  * map almost one to one (type, damage, properties, AC, strength, stealth);
- * rarity and attunement come from `<detail>`; flat bonuses from `<modifier>`.
+ * rarity and attunement come from `<detail>`; flat bonuses and speed from
+ * `<modifier>`; resistances and immunities from sentences that grant them
+ * while you wear or hold the item ({@link itemDefenses}).
  */
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
 import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
-import { abilityKey, entryName, own, plainText, readText, SKILLS } from './text';
+import {
+  abilityKey,
+  addDefenses,
+  DAMAGE_TYPES,
+  type Defenses,
+  defenseSentence,
+  entryName,
+  NOT_STANDING,
+  own,
+  plainText,
+  readText,
+  SKILLS,
+  sentences,
+  withRolls,
+} from './text';
 
 /** Fight Club type codes the 5etools data shares as they are. */
 const SAME_TYPES = new Set([
@@ -100,6 +116,11 @@ export function readModifiers(el: XmlElement): Bonuses {
         fields[key] = signed(amount);
         continue;
       }
+      // Fight Club keeps one speed, the walking one.
+      if (what === 'speed') {
+        fields.modifySpeed = { bonus: { walk: amount } };
+        continue;
+      }
     }
     reasons.push(`the bonus "${raw}" is kept as text`);
   }
@@ -131,6 +152,51 @@ export function readModifiers(el: XmlElement): Bonuses {
     reasons.push(`skill bonuses (${listed}) are kept as text`);
   }
   return { fields, reasons };
+}
+
+const HOLD = '(?:wear|wearing|hold|holding|carry|carrying|wield|wielding|(?:are )?attuned to)';
+const THE_ITEM = "(?:(?:this|the|these) [a-z'-]{1,20}(?: [a-z'-]{1,20})?|it|them)";
+const WHILE = `while (?:you(?:'re| are)? )?${HOLD} ${THE_ITEM}`;
+/** "While you wear this armor, you …": the rest of the sentence holds while you do. */
+const WHILE_LEAD = new RegExp(`^(?:in addition, )?${WHILE},? (?=you )`);
+/** "You have resistance to cold damage while you wear this armor." */
+const WHILE_TAIL = new RegExp(` ${WHILE}$`);
+/** "While you wear this armor, you gain the following benefits:" over the sentence after it. */
+const LEAD_IN = new RegExp(
+  `^(?:(?:in addition, )?${WHILE},? you gain the following (?:benefits|properties)|you gain the following (?:benefits|properties) ${WHILE})$`,
+);
+const DAMAGE_WORDS = `(?:${DAMAGE_TYPES.join('|')})(?:(?:,| and|, and) (?:${DAMAGE_TYPES.join('|')})){0,12}`;
+/** "resistance to the following damage types: necrotic, poison, and psychic" said in one clause. */
+const FOLLOWING_TYPES = new RegExp(
+  `(resistance|immunity) to the following damage types: (${DAMAGE_WORDS})$`,
+);
+
+/**
+ * The resistances and immunities an item's text gives while you wear, hold or
+ * are attuned to it, in the book's own words ({@link defenseSentence}): a
+ * sentence that says so itself ("you have resistance to cold damage while you
+ * wear this armor"), or one right after "while you wear this armor, you gain
+ * the following benefits". A defense the text gives only at other times (for
+ * an hour, in a dormant state, as one of a choice) stays in the text.
+ */
+export function itemDefenses(prose: string): Defenses {
+  let out: Defenses = {};
+  let leadIn = false;
+  for (const sentence of sentences(prose)) {
+    const parts = sentence.replace(FOLLOWING_TYPES, '$1 to $2 damage').split(': ');
+    for (const [i, raw] of parts.entries()) {
+      const part = raw.replace(/[.:]$/, '');
+      const lead = WHILE_LEAD.exec(part);
+      const rest = lead === null ? part : part.slice(lead[0].length);
+      const tail = WHILE_TAIL.exec(rest);
+      const body = tail === null ? rest : rest.slice(0, tail.index);
+      if (lead !== null || tail !== null || leadIn) out = addDefenses(out, defenseSentence(body));
+      leadIn = LEAD_IN.test(part);
+      // "When you attune to it, choose one of the following: …": what follows hangs on it.
+      if (i < parts.length - 1 && !leadIn && NOT_STANDING.test(part)) break;
+    }
+  }
+  return out;
 }
 
 const MASTERIES = ['Cleave', 'Graze', 'Nick', 'Push', 'Sap', 'Slow', 'Topple', 'Vex'];
@@ -268,8 +334,10 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const bonuses = readModifiers(el);
   Object.assign(item, bonuses.fields);
   reasons.push(...bonuses.reasons);
+  Object.assign(item, itemDefenses(prose));
 
-  item.entries = text.entries;
+  // A weapon's rolls are its damage dice, which `dmg1` and `dmg2` already hold.
+  item.entries = withRolls(text.entries, el, [dmg1, dmg2]);
   const citation = citationEntry(placement);
   if (citation !== undefined) (item.entries as unknown[]).push(citation);
   if ((item.entries as unknown[]).length === 0) delete item.entries;

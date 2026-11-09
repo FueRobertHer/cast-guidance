@@ -1,5 +1,5 @@
 import type { RulesVersion } from '../../data5e/rulesVersion';
-import type { ConvertedKind } from '../types';
+import type { ConvertedKind, OfficialFeat } from '../types';
 import type { Book, HomebrewSource } from './books';
 
 /**
@@ -33,10 +33,14 @@ export interface Fc5Context {
    */
   place(sourceLine: string | undefined, edition: RulesVersion | undefined): Placement;
   /**
-   * Feats this file's converted output holds, by lowercased name, with the
-   * source each carries, so a background's feat can point at one.
+   * Feats this file's converted output holds, by lowercased name and by the
+   * name without the group Fight Club puts before or after it (`Dragonmark,
+   * Mark of Making`, `Mist Walker (Dark Gift)`), so a background's feat can
+   * point at one.
    */
-  featSources: ReadonlyMap<string, string>;
+  featSources: ReadonlyMap<string, readonly FeatRef[]>;
+  /** The installed feat a background's feat stands for, when the file has none. */
+  officialFeat?: OfficialFeat;
   /**
    * Class lists that stub entries add to a spell, by {@link extraClassKey}.
    * Fight Club merges entries that share a name, so a class file lists its
@@ -44,6 +48,13 @@ export interface Fc5Context {
    * starred copy (`Hold Person*`) adds them the same way.
    */
   extraClasses?: ReadonlyMap<string, readonly string[]>;
+}
+
+/** A feat the file's output holds: its name and source as written, and whether it is under another name. */
+export interface FeatRef {
+  name: string;
+  source: string;
+  alias: boolean;
 }
 
 /** One entry converted, with what it lost, or why it was not converted at all. */

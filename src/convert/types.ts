@@ -23,10 +23,18 @@ export type InstalledCheck = (
   book?: string,
 ) => boolean;
 
+/**
+ * The installed feat a name stands for in a rules edition, as its registry id
+ * (`alert|xphb`), or undefined when the game data has none: a background's
+ * feat that the imported file does not hold itself.
+ */
+export type OfficialFeat = (name: string, edition: RulesVersion) => string | undefined;
+
 export interface ConvertOptions {
   /** The imported file's name; it names the homebrew source of entries that cite no book. */
   fileName: string;
   isInstalled?: InstalledCheck;
+  officialFeat?: OfficialFeat;
   /**
    * Whether the installed game data holds a book, by code. An entry from a
    * book it lacks is kept as a printing of its own. Absent, every book the app

@@ -14,6 +14,7 @@ import {
   placeEntity,
 } from './context';
 import {
+  DAMAGE_TYPES,
   type Entry,
   entryName,
   inlineText,
@@ -285,6 +286,118 @@ function upcastTag(el: XmlElement, spellLevel: number): string | undefined {
   return `{@scaledamage ${base}|${spellLevel}-${last}|${step}d${first.sides}}`;
 }
 
+/** A roll tag's dice, by kind, from text: `{@damage 3d6}`, `{@dice 1d8+3}`. */
+const ROLL_TAG = /\{@(damage|dice) (\d{1,3})d(\d{1,3})([+-]\d{1,3})?\}/g;
+
+/**
+ * The one roll of a kind and die in the text, or undefined when there is none
+ * or more than one: the upcast step needs to know which roll it grows.
+ */
+function onlyRoll(text: string, kind: string, sides: string): string | undefined {
+  const found = new Set<string>();
+  for (const m of text.matchAll(ROLL_TAG)) {
+    if (m[1] === kind && m[3] === sides) found.add(`${m[2]}d${m[3]}${m[4] ?? ''}`);
+  }
+  return found.size === 1 ? [...found][0] : undefined;
+}
+
+/** "the damage increases by {@dice 1d6} for each slot level above 1st". */
+const UPCAST_STEP =
+  /\b(damage|healing)\b[^.]{0,80}? increases? by \{@(?:dice|damage) (\d{1,3}d(\d{1,3}))\} for each (?:spell )?slot level above/i;
+
+/**
+ * The upcast tag from the text alone, for a file without a roll per level
+ * ({@link upcastTag}): "the damage increases by 1d6 for each slot level above
+ * 1st" over the spell's one damage roll of that die (`{@scaledamage
+ * 3d6|1-9|1d6}`), or the healing over its one roll (`{@scaledice
+ * 1d8|1-9|1d8}`). A text that caps the increase says nothing reliable about
+ * the top slot, so it stays as it is.
+ */
+function textUpcastTag(entries: Entry[], higher: Entry[], spellLevel: number): string | undefined {
+  const higherText = plainText(higher);
+  if (/\bmaximum\b/i.test(higherText)) return undefined;
+  // Two steps ("the initial damage increases by 1d8 and the later damage by 1d6") are more than one tag holds.
+  if ((higherText.match(/ by \{@(?:dice|damage) /g) ?? []).length > 1) return undefined;
+  const step = UPCAST_STEP.exec(higherText);
+  if (step === null) return undefined;
+  const healing = (step[1] ?? '').toLowerCase() === 'healing';
+  const base = onlyRoll(plainText(entries), healing ? 'dice' : 'damage', step[3] ?? '');
+  if (base === undefined) return undefined;
+  return `{@scale${healing ? 'dice' : 'damage'} ${base}|${spellLevel}-9|${step[2]}}`;
+}
+
+const ROLL = '\\{@(?:dice|damage) (\\d{1,3})d(\\d{1,3})\\}';
+/**
+ * "increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and
+ * 17th level (4d10)", and the 2024 "when you reach levels 5 (2d10), 11 (3d10),
+ * and 17 (4d10)".
+ */
+const CANTRIP_STEPS = new RegExp(
+  `increases by ${ROLL} when you reach (?:5th level|levels? 5) \\(${ROLL}\\), (?:11th level|11) \\(${ROLL}\\),? and (?:17th level|17) \\(${ROLL}\\)`,
+  'i',
+);
+
+/**
+ * A cantrip's damage by character level from its text alone, for a file
+ * without a roll per level ({@link cantripScaling}). The 1st-level dice must
+ * be the text's one damage roll of that die, so the ladder is this spell's.
+ */
+function textCantripScaling(
+  entries: Entry[],
+  higher: Entry[],
+): Record<string, unknown> | undefined {
+  const m = CANTRIP_STEPS.exec(plainText([...entries, ...higher]));
+  if (m === null) return undefined;
+  const sides = m[2];
+  if ([m[4], m[6], m[8]].some((s) => s !== sides)) return undefined;
+  const step = Number(m[1]);
+  const at5 = Number(m[3]);
+  const at11 = Number(m[5]);
+  const at17 = Number(m[7]);
+  const counts = [at5 - step, at5, at11, at17];
+  if (at5 - step !== step || at11 !== at5 + step || at17 !== at11 + step) return undefined;
+  const main = plainText(entries);
+  const base = `${counts[0]}d${sides}`;
+  if (onlyRoll(main, 'damage', sides ?? '') !== base) return undefined;
+  const type = new RegExp(`\\{@damage ${base}\\} (${DAMAGE_TYPES.join('|')}) damage`, 'i')
+    .exec(main)?.[1]
+    ?.toLowerCase();
+  const label = type === undefined ? 'damage' : `${type} damage`;
+  const scaling: Record<string, string> = {};
+  for (const [i, level] of ['1', '5', '11', '17'].entries())
+    scaling[level] = `${counts[i]}d${sides}`;
+  return { label, scaling };
+}
+
+/** "a 15-foot Cone", "a 10-foot Emanation": the 2024 book's area, in its text. */
+const AREA = /\b(\d{1,3})-foot (cone|emanation)\b/gi;
+
+/**
+ * A 2024 spell's area as its range, where Fight Club gives the reach alone:
+ * Burning Hands' range is "15 feet" and its text says "a 15-foot Cone", and
+ * Spirit Guardians' is "Self" with "a 15-foot Emanation"; the 2024 book writes
+ * Self (15-foot Cone) and Self (15-foot Emanation). Read only where every such
+ * area in the text is the same and fits the range given. A cone in a spell of
+ * range Self may be one the spell lets you make later (Draconic
+ * Transformation's breath), so that stays Self.
+ */
+function areaRange(
+  range: Record<string, unknown>,
+  prose: string,
+): Record<string, unknown> | undefined {
+  const areas = new Set(
+    [...prose.matchAll(AREA)].map((m) => `${m[1]} ${(m[2] ?? '').toLowerCase()}`),
+  );
+  if (areas.size !== 1) return undefined;
+  const [size, shape] = ([...areas][0] ?? '').split(' ');
+  const distance = range.distance as { type?: string; amount?: number } | undefined;
+  if (range.type !== 'point' || distance === undefined) return undefined;
+  const fits =
+    (shape === 'emanation' && distance.type === 'self') ||
+    (shape === 'cone' && distance.type === 'feet' && distance.amount === Number(size));
+  return fits ? { type: shape, distance: { type: 'feet', amount: Number(size) } } : undefined;
+}
+
 /** Put the upcast tag where the higher-level text names the step dice. */
 function withUpcastTag(higher: Entry[], tag: string): Entry[] | undefined {
   const step = /\|([^|}]+)\}$/.exec(tag)?.[1];
@@ -416,17 +529,25 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const citation = citationEntry(placement);
   if (citation !== undefined) (spell.entries as Entry[]).push(citation);
 
+  // The file's rolls per level first; its text where it gives no such rolls.
+  const perLevel = levelRolls(el).rolls.length >= 2;
   if (level === 0) {
-    const scaling = cantripScaling(el);
+    const scaling = perLevel ? cantripScaling(el) : textCantripScaling(entries, higher);
     if (scaling !== undefined) spell.scalingLevelDice = scaling;
   } else if (higher.length > 0) {
-    const tag = upcastTag(el, level);
+    const tag = perLevel ? upcastTag(el, level) : textUpcastTag(entries, higher, level);
     const tagged = tag === undefined ? undefined : withUpcastTag(higher, tag);
     if (tagged !== undefined) higher = tagged;
   }
   if (higher.length > 0) spell.entriesHigherLevel = higher;
 
   const prose = plainText(text.entries);
+  if (range !== undefined) {
+    // The spell's own paragraphs: a named part ("Elemental Flux") is an effect of its own.
+    const paragraphs = plainText(text.entries.filter((e) => typeof e === 'string'));
+    const area = areaRange(range, paragraphs);
+    if (area !== undefined) spell.range = area;
+  }
   const saves = [...new Set([...prose.matchAll(SAVE)].map((m) => (m[1] ?? '').toLowerCase()))];
   if (saves.length > 0) spell.savingThrow = saves;
   const attacks = [

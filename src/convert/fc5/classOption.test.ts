@@ -141,6 +141,26 @@ describe('readOptionPrerequisite', () => {
     expect(readOptionPrerequisite(['level 7+'], undefined)).toEqual([{ level: 7 }]);
   });
 
+  it('reads a level of the class the line names, in either order', () => {
+    const warlock = (level: number) => ({
+      level: { level, class: { name: 'Warlock', visible: true } },
+    });
+    expect(
+      readOptionPrerequisite(['Level 2+ Warlock, a Warlock Cantrip That Deals Damage'], undefined),
+    ).toEqual([{ ...warlock(2), other: 'a Warlock Cantrip That Deals Damage' }]);
+    expect(readOptionPrerequisite(['5th-level warlock'], undefined)).toEqual([warlock(5)]);
+    expect(readOptionPrerequisite(['Warlock Level 9+'], undefined)).toEqual([warlock(9)]);
+    expect(readOptionPrerequisite(['Ember Level 3+'], 'Ember')).toEqual([
+      { level: { level: 3, class: { name: 'Ember', visible: true } } },
+    ]);
+  });
+
+  it('keeps a level of a class it does not know as text', () => {
+    expect(readOptionPrerequisite(['5th-level tamer'], undefined)).toEqual([
+      { other: '5th-level tamer' },
+    ]);
+  });
+
   it('reads nothing from no lines', () => {
     expect(readOptionPrerequisite([], 'Warlock')).toBeUndefined();
   });

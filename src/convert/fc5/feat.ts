@@ -2,8 +2,11 @@
  * A Fight Club 5e `<feat>` into a 5etools feat. Feats are mostly prose, which
  * the engine's prose scanner already reads; what is lifted out here is what a
  * picker needs: the 2024 category (from an `Origin:` name prefix), the
- * prerequisite, ability increases and skill proficiencies.
+ * prerequisite, ability increases, and the proficiencies its tags and its
+ * sentences in the book's own words grant ({@link proficiencySentence}), with
+ * the resistances and immunities it states for good ({@link standingDefenses}).
  */
+import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
 import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
 import {
@@ -11,9 +14,18 @@ import {
   type AbilityKey,
   abilityKey,
   entryName,
+  type ProficiencyGrant,
   plainText,
+  proficiencySentence,
+  readArmor,
+  readLanguages,
   readProficiencies,
   readText,
+  readTools,
+  readWeapons,
+  sentences,
+  standingDefenses,
+  withRolls,
 } from './text';
 
 const CATEGORIES: Record<string, string> = {
@@ -82,6 +94,15 @@ export function readPrerequisite(raw: string): Record<string, unknown>[] {
 
 /** "Increase your Strength or Dexterity score by 1" into a 5etools ability block. */
 export function abilityFromProse(prose: string): Record<string, unknown>[] | undefined {
+  // The 2024 Ability Score Improvement: +2 to one, or +1 to two.
+  if (
+    /Increase one ability score of your choice by 2,? or increase two ability scores of your choice by 1/i.test(
+      prose,
+    )
+  ) {
+    const from = Object.values(ABILITIES);
+    return [{ choose: { from, amount: 2 } }, { choose: { from, count: 2 } }];
+  }
   const anyChoice = /Increase one ability score of your choice by (\d)(?!,? or increase two)/i.exec(
     prose,
   );
@@ -107,6 +128,90 @@ export function abilityFromProse(prose: string): Record<string, unknown>[] | und
   const choose: Record<string, unknown> = { from };
   if (amount !== 1) choose.amount = amount;
   return [{ choose }];
+}
+
+/**
+ * Whether a choice in a feat's text covers what its modifiers fix: Fight Club
+ * writes "Increase your Intelligence, Wisdom, or Charisma score by 1" with an
+ * `intelligence +1` modifier, one pick of the choice.
+ */
+function choiceCovers(
+  fixed: Partial<Record<AbilityKey, number>>,
+  prose: Record<string, unknown>[] | undefined,
+): boolean {
+  const choose =
+    prose?.length === 1 ? (prose[0]?.choose as Record<string, unknown> | undefined) : undefined;
+  if (choose === undefined || !Array.isArray(choose.from)) return false;
+  const from = choose.from as string[];
+  const amount = typeof choose.amount === 'number' ? choose.amount : 1;
+  const count = typeof choose.count === 'number' ? choose.count : 1;
+  const keys = Object.keys(fixed) as AbilityKey[];
+  return keys.length <= count && keys.every((k) => from.includes(k) && fixed[k] === amount);
+}
+
+/**
+ * A feat's proficiencies: its tags first, then its sentences. Skills add up
+ * (a skill a choice names is not also fixed: the tag holds Fight Club's pick);
+ * the other kinds come from a tag, or the first sentence that grants one.
+ */
+function featProficiencies(
+  el: XmlElement,
+  grants: ProficiencyGrant[],
+  edition: RulesVersion,
+  reasons: string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const skillEntry: Record<string, unknown> = {};
+  const proficiency = childText(el, 'proficiency');
+  if (proficiency !== undefined) {
+    const { skills, other } = readProficiencies(proficiency);
+    for (const s of skills) skillEntry[s] = true;
+    if (other.length > 0) reasons.push(`proficiency in ${other.join(', ')} is kept as text`);
+  }
+  const lists: Record<string, unknown>[] = [];
+  const chosen = new Set<string>();
+  for (const { skills } of grants) {
+    if (skills === undefined) continue;
+    const choose = skills.choose as { from?: string[] } | undefined;
+    if (choose !== undefined) {
+      lists.push(skills);
+      for (const f of choose.from ?? []) chosen.add(f);
+    } else if (typeof skills.any === 'number') {
+      skillEntry.any = Number(skillEntry.any ?? 0) + skills.any;
+    } else Object.assign(skillEntry, skills);
+  }
+  for (const s of chosen) delete skillEntry[s];
+  if (Object.keys(skillEntry).length > 0) lists.unshift(skillEntry);
+  if (lists.length > 0) out.skillProficiencies = lists;
+
+  const fromProse = {
+    weapons: grants.find((g) => g.weapons !== undefined)?.weapons,
+    armor: grants.find((g) => g.armor !== undefined)?.armor,
+    tools: grants.find((g) => g.tools !== undefined)?.tools,
+  };
+  const tags = [
+    ['weapons', 'weaponProficiencies', (raw: string) => readWeapons(raw, edition)],
+    ['armor', 'armorProficiencies', readArmor],
+    ['tools', 'toolProficiencies', readTools],
+    ['languages', 'languageProficiencies', readLanguages],
+  ] as const;
+  for (const [tag, field, read] of tags) {
+    const raw = childText(el, tag);
+    const fromTag = raw === undefined ? undefined : read(raw);
+    if (raw !== undefined && fromTag === undefined)
+      reasons.push(`its ${tag} "${raw}" are kept as text`);
+    const prose =
+      tag === 'weapons'
+        ? fromProse.weapons === undefined
+          ? undefined
+          : readWeapons(fromProse.weapons, edition)
+        : tag === 'languages'
+          ? undefined
+          : fromProse[tag];
+    const found = fromTag ?? prose;
+    if (found !== undefined) out[field] = [found];
+  }
+  return out;
 }
 
 export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
@@ -135,23 +240,16 @@ export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
     } else reasons.push(`the modifier "${raw}" is kept as text`);
   }
   const prose = plainText(text.entries);
-  if (Object.keys(fixed).length > 0) feat.ability = [fixed];
-  else {
-    const ability = abilityFromProse(prose);
-    if (ability !== undefined) feat.ability = ability;
-  }
+  const proseAbility = abilityFromProse(prose);
+  if (Object.keys(fixed).length > 0 && !choiceCovers(fixed, proseAbility)) feat.ability = [fixed];
+  else if (proseAbility !== undefined) feat.ability = proseAbility;
 
-  const proficiency = childText(el, 'proficiency');
-  if (proficiency !== undefined) {
-    const { skills, other } = readProficiencies(proficiency);
-    if (skills.length > 0) {
-      feat.skillProficiencies = [Object.fromEntries(skills.map((s) => [s, true]))];
-    }
-    if (other.length > 0) reasons.push(`proficiency in ${other.join(', ')} is kept as text`);
-  }
+  const grants = sentences(prose).flatMap((line) => proficiencySentence(line, 'known') ?? []);
+  Object.assign(feat, featProficiencies(el, grants, placement.edition, reasons));
+  Object.assign(feat, standingDefenses(text.entries));
 
   if (/(?:^|\n)Repeatable\b/.test(prose)) feat.repeatable = true;
-  feat.entries = text.entries;
+  feat.entries = withRolls(text.entries, el);
   const citation = citationEntry(placement);
   if (citation !== undefined) (feat.entries as unknown[]).push(citation);
   return { kind: 'feat', name, edition: placement.edition, entity: feat, placement, reasons };
