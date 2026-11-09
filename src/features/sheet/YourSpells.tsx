@@ -62,6 +62,8 @@ interface OwnSpell {
   /** A level from the spell's file: none means it has none, or has not arrived. */
   level: number | undefined;
   always: boolean;
+  /** The class whose spell it is, for what reaches only that class's spells. */
+  className: string | undefined;
 }
 
 /** Whether a class chooses from its spells each day, so a known spell can sit unprepared. */
@@ -315,7 +317,7 @@ function SlotSpellRow({
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={(modifier, label) => ctx.rollAttack(modifier, label, block.className)}
+            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={
@@ -443,7 +445,7 @@ function InnateSpellRow({
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={ctx.rollAttack}
+            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={concentrating || depleted ? undefined : cast}
@@ -521,7 +523,11 @@ function ClassSection({
   };
 
   // Always prepared first: a domain spell also picked by hand is one row.
+  // A grant sits here because it casts with this class's ability, which does
+  // not make it this class's spell: a species' or feat's is no one's, unless
+  // the class picked it too.
   const alwaysNames = new Set(granted.map((g) => g.name.toLowerCase()));
+  const picked = new Set([...state.known, ...state.prepared].map((r) => r.name.toLowerCase()));
   const own = new Map<string, OwnSpell>();
   for (const g of granted) {
     const entity = entityOf(g);
@@ -531,11 +537,18 @@ function ClassSection({
       entity,
       level: typeof entity?.level === 'number' ? entity.level : undefined,
       always: true,
+      className: g.className ?? (picked.has(g.name.toLowerCase()) ? block.className : undefined),
     });
   }
   for (const ref of [...state.known, ...state.prepared]) {
     if (alwaysNames.has(ref.name.toLowerCase()) || own.has(refUid(ref))) continue;
-    own.set(refUid(ref), { ...ref, entity: entityOf(ref), level: levelOf(ref), always: false });
+    own.set(refUid(ref), {
+      ...ref,
+      entity: entityOf(ref),
+      level: levelOf(ref),
+      always: false,
+      className: block.className,
+    });
   }
 
   const preparedUids = new Set(state.prepared.map(refUid));
@@ -806,6 +819,7 @@ export function YourSpells({
                 entity,
                 level: typeof entity?.level === 'number' ? entity.level : undefined,
                 always: false,
+                className: g.className,
               };
               return entity === undefined && spellsSettling ? (
                 <SpellRow

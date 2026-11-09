@@ -125,6 +125,12 @@ export function ConditionStrip({
     clearTimeout(refuseTimer.current);
     setRefused(null);
   };
+  // Every way the picker closes (swiped, Esc, Apply death) leaves it as new.
+  const closePicker = () => {
+    setPickerOpen(false);
+    clearRefused();
+    setAskingSkill(false);
+  };
 
   // Tells the attack chips a change is being made over them (conditionSheet.ts).
   const sheetOpen = infoOpen || pickerOpen;
@@ -260,8 +266,7 @@ export function ConditionStrip({
     // The 0 HP it sets is on the page behind the sheet, so close it to show
     // what was done rather than leave the button looking unpressed.
     setInfoOpen(false);
-    setPickerOpen(false);
-    clearRefused();
+    closePicker();
   };
 
   // Condition/status rules text for the character's edition: Exhaustion in
@@ -544,13 +549,7 @@ export function ConditionStrip({
 
       <Sheet.Root
         open={pickerOpen}
-        onOpenChange={(next) => {
-          setPickerOpen(next);
-          if (!next) {
-            clearRefused();
-            setAskingSkill(false);
-          }
-        }}
+        onOpenChange={(next) => (next ? setPickerOpen(true) : closePicker())}
       >
         <Sheet.Portal>
           <Sheet.Scrim />
@@ -645,7 +644,10 @@ export function ConditionStrip({
                     label="The bard's die, by their level"
                     options={BARDIC_DICE.map((die) => ({ value: die, label: die }))}
                     value={bardicDie}
-                    onChange={(die) => put(bardicEffect(bardic.id, edition, die))}
+                    // Only the die changes: switched off or counting turns, it stays so.
+                    onChange={(die) =>
+                      put({ ...bardic, parts: bardicEffect(bardic.id, edition, die).parts })
+                    }
                     block
                   />
                 </div>

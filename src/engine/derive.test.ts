@@ -584,15 +584,36 @@ describe('deriveSheet: a spell a class or its subclass learns', () => {
     doc.choices[classIds[0] ?? ''] = ['Fake One|TST'];
     doc.choices[subclassId] = ['Fake Two|TST'];
     const one = deriveSheet(doc, world);
+    // Each is a Warrior spell, the subclass's too.
     expect(one.grantedSpells.filter((g) => /^Fake (One|Two)$/.test(g.name))).toMatchObject([
-      { name: 'Fake One', origin: 'Warrior', ability: 'wis', usage: 'prepared' },
-      { name: 'Fake Two', origin: 'Path of Tests', ability: 'wis', usage: 'prepared' },
+      {
+        name: 'Fake One',
+        origin: 'Warrior',
+        ability: 'wis',
+        usage: 'prepared',
+        className: 'Warrior',
+      },
+      {
+        name: 'Fake Two',
+        origin: 'Path of Tests',
+        ability: 'wis',
+        usage: 'prepared',
+        className: 'Warrior',
+      },
     ]);
     expect(one.spellcasting[0]?.spellsKnownMax).toBe(5);
     doc.choices[classIds[1] ?? ''] = ['Fake Three|TST'];
     const reload = deriveSheet(JSON.parse(JSON.stringify(doc)) as CharacterDoc, world);
     expect(reload.spellcasting[0]?.spellsKnownMax).toBe(4);
     expect(reload.pending.filter((p) => p.kind === 'spell')).toEqual([]);
+  });
+
+  it("names no class for a feat's spell", () => {
+    const doc = warriorDoc();
+    doc.feats = [{ ref: { name: 'Mote Sigil', source: 'TST' }, instanceId: 'm1' }];
+    const mote = deriveSheet(doc, world).grantedSpells.find((g) => g.origin === 'Mote Sigil');
+    expect(mote).toMatchObject({ name: 'daze mote', usage: 'prepared' });
+    expect(mote?.className).toBeUndefined();
   });
 
   it('does not take a place twice for a pick already on the known list', () => {

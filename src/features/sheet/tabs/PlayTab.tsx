@@ -181,8 +181,6 @@ const LONG_REST_DETAIL =
   'Full HP, all spell slots and resources restored; regain half your hit dice.';
 /** No effects to end. */
 const NONE: ReadonlySet<string> = new Set();
-/** A spell attack, as an effect's filter reads it (Innate Sorcery's advantage). */
-const SPELL_ATTACK: D20Test = { kind: 'attack', attack: 'spell' };
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
@@ -264,12 +262,6 @@ function rollConcentration(
 }
 
 /**
- * A spell whose file has not arrived. Its level decides what casting it spends,
- * and guessing that spent a slot on a cantrip, so until the file is here the row
- * offers no way to cast it. The name still opens the rules sheet, which says what
- * became of the file and can ask again. The slot pips above still work.
- */
-/**
  * Over each spellcasting block while raging (the buffs canvas, Edges): spells
  * are out. A warning, not a lock: Cast still works.
  */
@@ -282,6 +274,12 @@ function NoSpellsCue() {
   );
 }
 
+/**
+ * A spell whose file has not arrived. Its level decides what casting it spends,
+ * and guessing that spent a slot on a cantrip, so until the file is here the row
+ * offers no way to cast it. The name still opens the rules sheet, which says what
+ * became of the file and can ask again. The slot pips above still work.
+ */
 function PendingSpellRow({
   name,
   source,
@@ -1723,6 +1721,10 @@ export function Component() {
                 stamp();
                 update((d) => void endEffect(d.play, started.id, hpNow), `Ended ${started.name}`);
               };
+              // A named start with no uses left says so, rather than a dead Use.
+              const noneLeft = starts !== undefined && use.disabled;
+              const useWord = noneLeft ? 'None left' : 'Use';
+              const useVerb = noneLeft ? 'None left of' : 'Use';
               // Incapacitating conditions stop actions/bonus actions/reactions.
               // A rider takes none of those.
               const blocked = a.economy === 'none' ? [] : limits.noActions;
@@ -1821,15 +1823,18 @@ export function Component() {
                       <Button
                         variant="outline"
                         size="sm"
+                        // Its name starts with what it shows (WCAG 2.5.3).
                         aria-label={
-                          slot === undefined ? `Use ${a.label}` : `Use ${a.label}, ${economyLabel}`
+                          slot === undefined
+                            ? `${useVerb} ${a.label}`
+                            : `${useVerb} ${a.label}, ${economyLabel}`
                         }
                         onClick={() => void trigger()}
                         disabled={use.disabled}
                         className="-my-1.5"
                         title={use.title}
                       >
-                        {starts !== undefined && use.disabled ? 'None left' : 'Use'}
+                        {useWord}
                       </Button>
                     )}
                     {use.paid !== undefined && (
@@ -2306,7 +2311,11 @@ export function Component() {
                         display={`Atk ${signed(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
-                        roller={rollAttack(attackModifier, `${g.name} spell attack`, SPELL_ATTACK)}
+                        roller={rollAttack(attackModifier, `${g.name} spell attack`, {
+                          kind: 'attack',
+                          attack: 'spell',
+                          className: g.className,
+                        })}
                         wear={attackChipWear}
                         onRolled={depleted || running ? undefined : cast}
                       />

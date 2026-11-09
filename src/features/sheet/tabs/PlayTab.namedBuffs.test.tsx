@@ -6,7 +6,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { innateSorceryEffect } from '@/engine/curated/namedEffects';
+import { innateSorceryEffect, rageEffect } from '@/engine/curated/namedEffects';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
@@ -179,9 +179,28 @@ describe('Rage from its own Use', () => {
     const doc = barbarian('TST', 3);
     doc.play.resources = [{ key: 'rage', used: 3 }];
     await renderSheet(doc, { extra: barbarianWorld('TST') });
-    const none = screen.getByRole('button', { name: 'Use Rage' });
+    // Its name starts with what it shows.
+    const none = screen.getByRole('button', { name: 'None left of Rage' });
     expect(none.textContent).toBe('None left');
     expect((none as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('spells while raging', () => {
+  const warning = 'You cannot cast spells while raging';
+
+  it('warns over the spellcasting block', async () => {
+    const doc = sorcerer();
+    doc.play.activeEffects = [rageEffect('rage', 3, '2014')];
+    await renderSheet(doc);
+    expect(screen.getByText(warning)).toBeTruthy();
+  });
+
+  it('says nothing once Rage is switched off', async () => {
+    const doc = sorcerer();
+    doc.play.activeEffects = [{ ...rageEffect('rage', 3, '2014'), off: true }];
+    await renderSheet(doc);
+    expect(screen.queryByText(warning)).toBeNull();
   });
 });
 
@@ -270,6 +289,40 @@ describe('Innate Sorcery from its own Use', () => {
     // The Spells tab's chip is named by its number alone.
     fireEvent.click(await screen.findByRole('button', { name: '+5' }));
     expect(lastRoll()?.meta?.advantage).toBe('adv');
+  });
+
+  describe("a feat's spell cast with Charisma", () => {
+    // It casts with the Sorcerer's ability and sits in the Sorcerer's list on
+    // the Spells tab, but it is not a Sorcerer spell.
+    const charm: DataEntity = {
+      name: 'Dart Charm',
+      source: 'TST',
+      additionalSpells: [{ ability: 'cha', prepared: { '1': ['spark dart|tst'] } }],
+      entries: ['A charm that throws sparks.'],
+    };
+    const charmed = () => {
+      const doc = sparks();
+      doc.spellcasting = { 'sorcerer|xphb': { known: [], prepared: [] } };
+      doc.feats = [{ ref: { name: 'Dart Charm', source: 'TST' }, instanceId: 'd1' }];
+      doc.play.activeEffects = [innateSorceryEffect('innate')];
+      return doc;
+    };
+    const extra = { ...world, spell: [dart], feat: [charm] };
+
+    it('gets no advantage on Play', async () => {
+      rollLogStore.getState().clear();
+      await renderSheet(charmed(), { extra });
+      fireEvent.click(screen.getByRole('button', { name: 'Atk +5' }));
+      expect(lastRoll()?.label).toBe('spark dart spell attack');
+      expect(lastRoll()?.meta?.advantage).toBeUndefined();
+    });
+
+    it('gets none on the Spells tab either', async () => {
+      rollLogStore.getState().clear();
+      await renderSheet(charmed(), { path: 'spells', extra });
+      fireEvent.click(await screen.findByRole('button', { name: '+5' }));
+      expect(lastRoll()?.meta?.advantage).toBeUndefined();
+    });
   });
 });
 

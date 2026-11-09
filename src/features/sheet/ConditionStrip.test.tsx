@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { bardicEffect } from '@/engine/curated/namedEffects';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -548,5 +549,31 @@ describe('the starter list under Helping you', () => {
     expect(guidance.getAttribute('aria-expanded')).toBe('false');
     expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
     expect(stored()).toEqual([]);
+  });
+
+  it('opens without the skill list after Apply death closed it', async () => {
+    renderStrip([{ id: 'Exhaustion', level: 5 }], { addable: true, edition: '2024' });
+    let picker = await openPicker();
+    fireEvent.click(picker.getByRole('button', { name: '+d4 Guidance' }));
+    expect(picker.getByRole('group', { name: 'Guidance on which skill?' })).toBeTruthy();
+    fireEvent.click(picker.getByRole('button', { name: 'Increase exhaustion' }));
+    fireEvent.click(picker.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    picker = await openPicker();
+    expect(picker.getByRole('button', { name: '+d4 Guidance' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
+  });
+
+  it("changes only the bard's die, leaving a switched-off Bardic Inspiration off", async () => {
+    const bardic = { ...bardicEffect('b1', '2024', 'd8'), off: true, turnsLeft: 2 };
+    renderStrip([], { addable: true, effects: [bardic] });
+    const picker = await openPicker();
+    const dice = within(picker.getByRole('group', { name: "The bard's die, by their level" }));
+    fireEvent.click(dice.getByRole('button', { name: 'd10' }));
+    const { id: _, ...want } = { ...bardicEffect('b1', '2024', 'd10'), off: true, turnsLeft: 2 };
+    expect(stored()).toEqual([want]);
   });
 });

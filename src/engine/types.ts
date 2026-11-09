@@ -860,6 +860,12 @@ export interface DerivedSheet {
     /** The resource holding a limited grant's uses, spent when it is cast. */
     resourceKey?: string;
     origin: string;
+    /**
+     * The class whose spell it is, when its class or subclass grants it (a
+     * Draconic Sorcerer's Chromatic Orb is a Sorcerer spell); none for a
+     * species', feat's or item's.
+     */
+    className?: string;
   }>;
   warnings: string[];
   /**
