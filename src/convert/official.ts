@@ -3,8 +3,9 @@
 // (`compareOfficial.ts`) sets one beside it. Relative imports only: scripts
 // load this under plain Bun.
 import type { Entity } from '../data5e/copyMod';
-import type { EntityType } from '../data5e/normalize';
-import type { ConvertedKind } from './types';
+import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../data5e/normalize';
+import { editionOf } from '../data5e/rulesVersion';
+import type { ConvertedKind, InstalledCheck } from './types';
 
 /**
  * The registry types an entry of each converted kind could already be. Other
@@ -16,6 +17,7 @@ export const OFFICIAL_TYPES: Record<ConvertedKind, readonly EntityType[]> = {
   feat: ['feat'],
   background: ['background'],
   race: ['race', 'subrace'],
+  optionalfeature: ['optionalfeature'],
 };
 
 /**
@@ -31,13 +33,16 @@ export const OFFICIAL_TYPES: Record<ConvertedKind, readonly EntityType[]> = {
 export function officialNames(type: EntityType, e: Entity): string[] {
   if (typeof e.name !== 'string') return [];
   const own = e.name.toLowerCase();
+  if (type === 'background') return backgroundNames(own);
   const raceName =
     type === 'subrace'
       ? e.raceName
       : type === 'race' && typeof e._versionOf === 'string'
         ? e._versionOf.split('|')[0]
         : undefined;
-  if (typeof raceName !== 'string' || raceName === '') return [own];
+  if (typeof raceName !== 'string' || raceName === '') {
+    return type === 'race' ? bracketedRaceNames(own) : [own];
+  }
   const race = raceName.toLowerCase();
   const qualifier = qualifierOf(own, race) ?? (type === 'subrace' ? own : undefined);
   if (qualifier === undefined) return [own];
@@ -50,6 +55,135 @@ export function officialNames(type: EntityType, e: Entity): string[] {
     if (/^[\p{L}' -]+$/u.test(`${q} ${race}`)) names.add(`${q} ${race}`);
   }
   return [...names];
+}
+
+/**
+ * A 2014 background variant answers to the name other apps give it alone:
+ * `Variant Noble (Knight)` is `Knight`, `Variant Sailor (Pirate)` is `Pirate`.
+ */
+function backgroundNames(own: string): string[] {
+  const m = /^variant [^()]+ \(([^()]+)\)$/.exec(own);
+  return m?.[1] === undefined ? [own] : [own, m[1].trim()];
+}
+
+/**
+ * A race whose name brackets its kind, with no race it is a version of:
+ * `Dragonborn (Chromatic)` is `Dragonborn, Chromatic` and `Chromatic
+ * Dragonborn` too.
+ */
+function bracketedRaceNames(own: string): string[] {
+  const m = /^([^()]+) \(([^();]+)\)$/.exec(own);
+  const race = m?.[1]?.trim();
+  const q = m?.[2]?.trim();
+  if (race === undefined || q === undefined || race === '' || q === '') return [own];
+  const names = [own, `${race}, ${q}`];
+  if (/^[\p{L}' -]+$/u.test(`${q} ${race}`)) names.push(`${q} ${race}`);
+  return names;
+}
+
+/**
+ * Registry types whose entries count only within a book: Fight Club files
+ * the fighting styles with the feats (`Archery`, cited to the Player's
+ * Handbook), where 5etools has them as optional features.
+ */
+const BOOK_ONLY_TYPES: Partial<Record<ConvertedKind, readonly EntityType[]>> = {
+  feat: ['optionalfeature'],
+};
+
+/**
+ * Names an official entry answers to only within its book, where other apps
+ * drop the bracket 5etools adds: `Arrows (20)` is `Arrows`, `Cobalt Scholar
+ * (Sage)` is `Cobalt Scholar`, and `Initiate (Dissenter)` is `Dissenter
+ * (Initiate)`.
+ */
+function bookNames(type: EntityType, e: Entity): string[] {
+  if (typeof e.name !== 'string' || !['item', 'baseitem', 'background'].includes(type)) return [];
+  const own = e.name.toLowerCase();
+  const open = own.lastIndexOf(' (');
+  if (!own.endsWith(')') || open <= 0) return [];
+  const base = own.slice(0, open).trim();
+  const inner = own.slice(open + 2, -1).trim();
+  if (base === '' || inner === '' || inner.includes('(')) return [];
+  return type === 'background' ? [base, `${inner} (${base})`] : [base];
+}
+
+/**
+ * A name with only its letters and digits, for a match within one book that
+ * spelling cannot break: `Greenflame Blade` is `Green-Flame Blade`, `Summon
+ * Shadow Spawn` is `Summon Shadowspawn`.
+ */
+function compact(name: string): string {
+  return name.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** The books an official entry is printed in, lowercased: its source and its other sources. */
+function entityBooks(e: Entity): string[] {
+  const books = typeof e.source === 'string' ? [e.source.toLowerCase()] : [];
+  if (Array.isArray(e.otherSources)) {
+    for (const o of e.otherSources) {
+      if (o !== null && typeof o === 'object' && typeof (o as Entity).source === 'string') {
+        books.push(String((o as Entity).source).toLowerCase());
+      }
+    }
+  }
+  return books;
+}
+
+/**
+ * Whether the official part of a registry has an entry, built per kind on
+ * first ask: by name and rules edition, or by name in a book (the entry's
+ * source or one of its other sources, so `Absorb Elements` is in Xanathar's
+ * and in the Elemental Evil Player's Companion). A subrace or lineage is under
+ * the names other apps give it (`Dwarf, Hill`); in a book, an entry is under
+ * the looser names of {@link bookNames} too, and a feat may be a fighting
+ * style.
+ */
+export function installedCheck(reg: EntityRegistry): InstalledCheck {
+  const byKind = new Map<ConvertedKind, { byEdition: Set<string>; byBook: Set<string> }>();
+  return (kind, name, edition, book) => {
+    let keys = byKind.get(kind);
+    if (keys === undefined) {
+      const built = { byEdition: new Set<string>(), byBook: new Set<string>() };
+      const add = (type: EntityType, anyBook: boolean) => {
+        for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+          const ed = editionOf(e);
+          const books = entityBooks(e);
+          const names = officialNames(type, e);
+          if (anyBook) for (const n of names) built.byEdition.add(`${n}|${ed}`);
+          for (const n of [...names, ...bookNames(type, e)]) {
+            for (const b of books) {
+              built.byBook.add(`${n}|${b}`);
+              built.byBook.add(`~${compact(n)}|${b}`);
+            }
+          }
+        }
+      };
+      for (const type of OFFICIAL_TYPES[kind]) add(type, true);
+      for (const type of BOOK_ONLY_TYPES[kind] ?? []) add(type, false);
+      byKind.set(kind, built);
+      keys = built;
+    }
+    const n = name.toLowerCase();
+    if (book === undefined) return keys.byEdition.has(`${n}|${edition}`);
+    const b = book.toLowerCase();
+    return keys.byBook.has(`${n}|${b}`) || keys.byBook.has(`~${compact(n)}|${b}`);
+  };
+}
+
+/** Whether the official part of a registry holds anything from a book, by code. */
+export function heldBooks(reg: EntityRegistry): (code: string) => boolean {
+  let books: Set<string> | undefined;
+  return (code) => {
+    if (books === undefined) {
+      books = new Set();
+      for (const type of ENTITY_TYPES) {
+        for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+          for (const b of entityBooks(e)) books.add(b);
+        }
+      }
+    }
+    return books.has(code.toLowerCase());
+  };
 }
 
 /**
@@ -74,11 +208,13 @@ function qualifierOf(name: string, race: string): string | undefined {
 
 /**
  * `High Elf Lineage` as `high`, `Abyssal Legacy` as `abyssal`, `Cloud Giant
- * Ancestry` as `cloud giant`.
+ * Ancestry` as `cloud giant`, `Variant; Mark of Detection` as `mark of
+ * detection`.
  */
 function shortQualifier(qualifier: string, race: string): string {
-  let q = qualifier;
-  for (const suffix of [' lineage', ' legacy', ' ancestry']) {
+  // `Variant; Drow Descent`, a Sword Coast half-elf, is the drow one.
+  let q = qualifier.startsWith('variant; ') ? qualifier.slice('variant; '.length) : qualifier;
+  for (const suffix of [' lineage', ' legacy', ' ancestry', ' descent']) {
     if (q.endsWith(suffix)) q = q.slice(0, -suffix.length);
   }
   if (q.endsWith(` ${race}`)) q = q.slice(0, -race.length - 1);

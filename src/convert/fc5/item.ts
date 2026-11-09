@@ -4,8 +4,8 @@
  * rarity and attunement come from `<detail>`; flat bonuses from `<modifier>`.
  */
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
-import { abilityKey, own, plainText, readText, SKILLS, sourceLineEdition, splitName } from './text';
+import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
+import { abilityKey, entryName, own, plainText, readText, SKILLS } from './text';
 
 /** Fight Club type codes the 5etools data shares as they are. */
 const SAME_TYPES = new Set([
@@ -164,15 +164,13 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
   if (rawName === undefined) return { skip: 'it has no name' };
   const reasons: string[] = [];
-  const named = splitName(rawName);
+  const named = entryName(rawName);
   const text = readText(childTexts(el, 'text'));
-  const edition =
-    named.edition ??
-    (text.sourceLine === undefined ? undefined : sourceLineEdition(text.sourceLine)) ??
-    ctx.fileEdition;
+  const placement = ctx.place(text.sourceLine, named.edition);
+  const edition = placement.edition;
 
-  const item: Record<string, unknown> = { name: named.name, source: ctx.source };
-  if (edition === '2024') item.edition = 'one';
+  const item: Record<string, unknown> = { name: named.name };
+  placeEntity(item, placement);
 
   const type = (childText(el, 'type') ?? '').toUpperCase();
   const rawDetail = childText(el, 'detail') ?? '';
@@ -272,10 +270,9 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   reasons.push(...bonuses.reasons);
 
   item.entries = text.entries;
-  if (text.sourceLine !== undefined) {
-    (item.entries as unknown[]).push(`{@i Source: ${text.sourceLine}}`);
-  }
+  const citation = citationEntry(placement);
+  if (citation !== undefined) (item.entries as unknown[]).push(citation);
   if ((item.entries as unknown[]).length === 0) delete item.entries;
 
-  return { kind: 'item', name: named.name, edition: edition ?? '2014', entity: item, reasons };
+  return { kind: 'item', name: named.name, edition, entity: item, placement, reasons };
 }

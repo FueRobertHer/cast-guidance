@@ -11,7 +11,13 @@ import { convertFc5Compendium } from './fc5/compendium';
 import type { ConversionResult, ConvertOptions } from './types';
 import { readXml } from './xml';
 
-export type { ConversionReport, ConversionResult, ConvertOptions, EntryNote } from './types';
+export type {
+  ConversionReport,
+  ConversionResult,
+  ConvertedKind,
+  ConvertOptions,
+  EntryNote,
+} from './types';
 export { XmlError } from './xml';
 
 /** A file in a format this app recognizes but cannot import (yet). */

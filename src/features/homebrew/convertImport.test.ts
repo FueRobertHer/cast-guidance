@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { convertXmlText } from '@/convert';
+import { heldBooks, installedCheck } from '@/convert/official';
 import { notesWith } from '@/convert/types';
 import { normalizeDataset } from '@/data5e/normalize';
-import { installedCheck } from './convertImport';
 
 /** A registry with the 2014 Dwarf and its Hill subrace, and the 2024 Elf's lineages. */
 function registry() {
@@ -48,6 +48,69 @@ describe('installedCheck', () => {
     expect(isInstalled('race', 'Elf, Drow', '2014')).toBe(false);
     expect(isInstalled('race', 'Hill', '2014')).toBe(false);
     expect(isInstalled('race', 'Dwarf, Mountain', '2014')).toBe(false);
+  });
+
+  it('finds an entry in its book and in the books it is reprinted in', () => {
+    const reg = normalizeDataset(
+      new Map([
+        [
+          'feats.json',
+          { feat: [{ name: 'Ember Adept', source: 'XGE', otherSources: [{ source: 'EEPC' }] }] },
+        ],
+      ]),
+    );
+    const isInstalled = installedCheck(reg);
+    expect(isInstalled('feat', 'Ember Adept', '2014', 'XGE')).toBe(true);
+    expect(isInstalled('feat', 'Ember Adept', '2014', 'EEPC')).toBe(true);
+    expect(isInstalled('feat', 'Ember Adept', '2014', 'TCE')).toBe(false);
+  });
+
+  it('finds a fighting style filed as a feat, in its book only', () => {
+    const reg = normalizeDataset(
+      new Map([
+        [
+          'optionalfeatures.json',
+          { optionalfeature: [{ name: 'Ember Style', source: 'TCE', featureType: ['FS:F'] }] },
+        ],
+      ]),
+    );
+    const isInstalled = installedCheck(reg);
+    expect(isInstalled('feat', 'Ember Style', '2014', 'TCE')).toBe(true);
+    expect(isInstalled('feat', 'Ember Style', '2014')).toBe(false);
+  });
+
+  it('finds an item or background without the bracket 5etools adds, in its book only', () => {
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        ['items-base.json', { baseitem: [{ name: 'Ember Darts (20)', source: 'PHB', type: 'A' }] }],
+        ['backgrounds.json', { background: [{ name: 'Ash Scholar (Sage)', source: 'EGW' }] }],
+      ]),
+    );
+    const isInstalled = installedCheck(reg);
+    expect(isInstalled('item', 'Ember Darts', '2014', 'PHB')).toBe(true);
+    expect(isInstalled('item', 'Ember Darts', '2014')).toBe(false);
+    expect(isInstalled('background', 'Ash Scholar', '2014', 'EGW')).toBe(true);
+    expect(isInstalled('background', 'Sage (Ash Scholar)', '2014', 'EGW')).toBe(true);
+  });
+
+  it('finds a name spelled with other spaces or hyphens, in its book only', () => {
+    const reg = normalizeDataset(
+      new Map([['feats.json', { feat: [{ name: 'Ember-Flame Adept', source: 'XGE' }] }]]),
+    );
+    const isInstalled = installedCheck(reg);
+    expect(isInstalled('feat', 'Emberflame Adept', '2014', 'XGE')).toBe(true);
+    expect(isInstalled('feat', 'Emberflame Adept', '2014')).toBe(false);
+  });
+
+  it('says which books the data holds anything from', () => {
+    const held = heldBooks(
+      normalizeDataset(
+        new Map([['feats.json', { feat: [{ name: 'Ember Adept', source: 'XGE' }] }]]),
+      ),
+    );
+    expect(held('XGE')).toBe(true);
+    expect(held('xge')).toBe(true);
+    expect(held('TCE')).toBe(false);
   });
 
   it('leaves a Fight Club subrace the game data has out of the import', () => {

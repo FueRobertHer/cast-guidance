@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseXml } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
+import { fc5Context } from './compendium';
+import { extraClassKey, type Fc5Context, type Fc5Result } from './context';
 import {
   convertSpell,
   parseComponents,
@@ -10,7 +11,7 @@ import {
   readClasses,
 } from './spell';
 
-const ctx: Fc5Context = { source: 'FCTest', featNames: new Set() };
+const ctx: Fc5Context = fc5Context('test.xml');
 
 function done(result: Fc5Result) {
   if ('skip' in result) throw new Error(`skipped: ${result.skip}`);
@@ -351,32 +352,32 @@ describe('convertSpell', () => {
       expect(result.edition).toBe('2024');
     });
 
-    it('reads a source line, from its element or from the text', () => {
+    it('reads a source line, from its element or from the text, into its book and page', () => {
       const fromElement = spell(
         `<name>Ember Lance</name>${BASE}<source>Homebrew Codex (2024) p. 7</source><text>Embers fly.</text>`,
       );
       expect(fromElement.edition).toBe('2024');
-      expect(fromElement.entity.entries).toEqual([
-        'Embers fly.',
-        '{@i Source: Homebrew Codex (2024) p. 7}',
-      ]);
+      expect(fromElement.entity).toMatchObject({ source: 'FCHomebrewCodex2024', page: 7 });
+      expect(fromElement.entity.entries).toEqual(['Embers fly.']);
 
       const fromText = spell(
         `<name>Ember Lance</name>${BASE}<text>Embers fly.</text><text>Source: Homebrew Codex p. 7</text>`,
       );
       expect(fromText.edition).toBe('2014');
-      expect(fromText.entity.entries).toEqual(['Embers fly.', '{@i Source: Homebrew Codex p. 7}']);
+      expect(fromText.entity).toMatchObject({ source: 'FCHomebrewCodex', page: 7 });
+      expect(fromText.entity.entries).toEqual(['Embers fly.']);
     });
 
     it('prefers the source element over a Source line in the text', () => {
       const result = spell(
         `<name>Ember Lance</name>${BASE}<source>Element Codex</source><text>Source: Text Codex</text>`,
       );
-      expect(result.entity.entries).toEqual(['{@i Source: Element Codex}']);
+      expect(result.entity.source).toBe('FCElementCodex');
+      expect(result.entity.entries).toEqual([]);
     });
 
     it('falls back to the file edition', () => {
-      const result = spell(`<name>Ember Lance</name>${BASE}`, { ...ctx, fileEdition: '2024' });
+      const result = spell(`<name>Ember Lance</name>${BASE}`, fc5Context('test_5.5e.xml'));
       expect(result.edition).toBe('2024');
       expect(result.entity.edition).toBe('one');
     });
@@ -391,7 +392,9 @@ describe('convertSpell', () => {
   it('adds class lists from the context', () => {
     const result = spell(`<name>Ember Lance</name>${BASE}<classes>Wizard</classes>`, {
       ...ctx,
-      extraClasses: new Map([['ember lance', ['Druid, Ranger (Ash Warden)']]]),
+      extraClasses: new Map([
+        [extraClassKey('Ember Lance', undefined), ['Druid, Ranger (Ash Warden)']],
+      ]),
     });
     expect(result.entity.classes).toEqual({
       fromClassList: [

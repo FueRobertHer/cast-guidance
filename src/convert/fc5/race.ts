@@ -7,19 +7,18 @@
  * installed check finds an official subrace under its name (`officialNames`).
  */
 import { childElements, childText, childTexts, type XmlElement } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
+import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
 import {
   type AbilityKey,
   abilityKey,
   DAMAGE_TYPES,
   type Entry,
+  entryName,
   plainText,
   readLanguages,
   readProficiencies,
   readText,
-  sourceLineEdition,
   splitList,
-  splitName,
 } from './text';
 
 /** "Str 2, Con 1" or "Strength +2, Constitution +1". */
@@ -48,7 +47,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
   if (rawName === undefined) return { skip: 'it has no name' };
   const reasons: string[] = [];
-  const named = splitName(rawName);
+  const named = entryName(rawName);
 
   const entries: Entry[] = [];
   let sourceLine: string | undefined;
@@ -68,12 +67,11 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     }
   }
 
-  const edition =
-    named.edition ??
-    (sourceLine === undefined ? undefined : sourceLineEdition(sourceLine)) ??
-    ctx.fileEdition;
-  const race: Record<string, unknown> = { name: named.name, source: ctx.source };
-  if (edition === '2024') race.edition = 'one';
+  const loose = readText(childTexts(el, 'text'));
+  sourceLine = loose.sourceLine ?? sourceLine;
+  const placement = ctx.place(sourceLine, named.edition);
+  const race: Record<string, unknown> = { name: named.name };
+  placeEntity(race, placement);
 
   const size = (childText(el, 'size') ?? '').toUpperCase();
   if (SIZES.has(size)) race.size = [size];
@@ -122,10 +120,16 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   }
   if (childElements(el, 'modifier').length > 0) reasons.push('its modifiers are kept as text');
 
-  const loose = readText(childTexts(el, 'text'));
   entries.unshift(...loose.entries);
-  sourceLine = loose.sourceLine ?? sourceLine;
   race.entries = entries;
-  if (sourceLine !== undefined) entries.push(`{@i Source: ${sourceLine}}`);
-  return { kind: 'race', name: named.name, edition: edition ?? '2014', entity: race, reasons };
+  const citation = citationEntry(placement);
+  if (citation !== undefined) entries.push(citation);
+  return {
+    kind: 'race',
+    name: named.name,
+    edition: placement.edition,
+    entity: race,
+    placement,
+    reasons,
+  };
 }

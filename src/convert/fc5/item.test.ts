@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseXml } from '../xml';
+import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result } from './context';
 import { convertItem, readDetail, readModifiers } from './item';
 
-const ctx: Fc5Context = { source: 'FCTest', featNames: new Set() };
+const ctx: Fc5Context = fc5Context('test.xml');
 
 function done(result: Fc5Result) {
   if ('skip' in result) throw new Error(`skipped: ${result.skip}`);
@@ -397,11 +398,12 @@ describe('convertItem', () => {
       '<name>Cinder Axe</name><type>M</type><text>Hot.</text><text>Source: Homebrew Codex (2024)</text>',
     );
     expect(sourced.edition).toBe('2024');
-    expect(sourced.entity.entries).toEqual(['Hot.', '{@i Source: Homebrew Codex (2024)}']);
+    expect(sourced.entity.source).toBe('FCHomebrewCodex2024');
+    expect(sourced.entity.entries).toEqual(['Hot.']);
   });
 
   it('falls back to the file edition', () => {
-    expect(item('<name>Rope Coil</name>', { ...ctx, fileEdition: '2024' }).edition).toBe('2024');
+    expect(item('<name>Rope Coil</name>', fc5Context('test_5.5e.xml')).edition).toBe('2024');
   });
 
   it('leaves entries out when there is no text', () => {
