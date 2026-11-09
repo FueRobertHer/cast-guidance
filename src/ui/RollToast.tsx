@@ -68,11 +68,21 @@ export function rollAnnouncement(result: RollResult): string {
         ? ', natural 20'
         : nat === 1
           ? ', natural 1'
-          : '';
+          : critBelow20(result)
+            ? ', critical hit'
+            : result.meta?.critical === true
+              ? ', critical'
+              : '';
   const dice = result.terms.map((t, i) => termSpeech(t, i === 0)).join(', ');
   const rolled = dice === '' ? '' : `. Rolled ${dice}`;
   const cue = result.meta?.cue === undefined ? '' : `. ${result.meta.cue}`;
   return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
+}
+
+/** An attack that crit on less than a 20, inside a crit range a feature or effect lowered. */
+function critBelow20(result: RollResult): boolean {
+  const nat = naturalOf(result);
+  return nat !== undefined && nat !== 20 && result.meta?.attack?.crit === true;
 }
 
 /** "Bless", "Bless and Heroism", "Bless, Heroism and Enlarge". */
@@ -343,7 +353,10 @@ export function RollToast() {
         <span className="flex items-baseline gap-1.5">
           <span className="min-w-0 truncate text-body-strong">{current.label ?? current.expr}</span>
           {nat === 20 && flag('Natural 20!', 'text-heal')}
+          {critBelow20(current) && flag('Critical hit!', 'text-heal')}
           {nat === 1 && flag('Natural 1', 'text-danger')}
+          {/* Damage a crit doubled: why the dice show twice what the chip says. */}
+          {current.meta?.critical === true && flag('Critical', 'text-danger')}
           {autoFail && flag('Fails', 'text-danger')}
         </span>
         <span className="block truncate text-dice-small text-ink-muted tabular-nums">
@@ -462,7 +475,8 @@ export function RollToast() {
           className="flex items-baseline justify-between gap-3"
         >
           <span className="min-w-0 truncate text-dice-small text-ink-muted tabular-nums">
-            {d.label ?? d.expr}: <RollDetail roll={d} />
+            {d.label ?? d.expr}
+            {d.meta?.critical === true ? ', critical' : ''}: <RollDetail roll={d} />
           </span>
           <span className={`shrink-0 text-title-sheet tabular-nums ${ROLL_INK[rollTone(d)]}`}>
             {d.total}

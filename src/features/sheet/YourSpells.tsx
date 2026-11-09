@@ -99,10 +99,14 @@ interface RowContext {
   sheet: DerivedSheet;
   update: DocUpdater;
   choice: ReturnType<typeof useCastChoice>;
-  /** A spell attack chip's roll; `className` is whose spell it is (Innate Sorcery). */
+  /**
+   * A spell attack chip's roll, marked as the attack `of` (the spell's name);
+   * `className` is whose spell it is (Innate Sorcery).
+   */
   rollAttack: (
     modifier: number,
     label: string,
+    of: string,
     className?: string,
   ) => () => ReturnType<typeof rollD20Test>;
   /** The conditions on the attack chips. */
@@ -171,6 +175,7 @@ function EndButton({
  */
 function RollChips({
   name,
+  by,
   attackModifier,
   entity,
   rolls,
@@ -180,10 +185,12 @@ function RollChips({
   onCast,
 }: {
   name: string;
+  /** The character's id: a crit of theirs with this spell doubles its damage dice. */
+  by: string;
   attackModifier: number | undefined;
   entity: Entity | undefined;
   rolls: ReturnType<typeof spellRollActions>;
-  roller: RowContext['rollAttack'];
+  roller: (modifier: number, label: string, of: string) => () => ReturnType<typeof rollD20Test>;
   wear: RowContext['wear'];
   castWear: RowContext['castWear'];
   onCast: (() => void) | undefined;
@@ -197,7 +204,7 @@ function RollChips({
           display={signed(attackModifier)}
           label={`${name} spell attack`}
           variant="d20"
-          roller={roller(attackModifier, `${name} spell attack`)}
+          roller={roller(attackModifier, `${name} spell attack`, name)}
           wear={wear}
           onRolled={onCast}
         />
@@ -208,6 +215,7 @@ function RollChips({
           expr={action.expr}
           label={action.label}
           variant={action.variant}
+          withAttack={hasAttack ? { by, of: name } : undefined}
           onRolled={!hasAttack && index === 0 ? onCast : undefined}
           wear={
             !hasAttack && index === 0 ? (onCast === undefined ? NOT_WORN : castWear) : undefined
@@ -314,10 +322,11 @@ function SlotSpellRow({
           )}
           <RollChips
             name={name}
+            by={doc.id}
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
+            roller={(modifier, label, of) => ctx.rollAttack(modifier, label, of, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={
@@ -442,10 +451,11 @@ function InnateSpellRow({
           )}
           <RollChips
             name={name}
+            by={doc.id}
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
+            roller={(modifier, label, of) => ctx.rollAttack(modifier, label, of, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={concentrating || depleted ? undefined : cast}
@@ -709,7 +719,7 @@ export function YourSpells({
     { kind: 'attack' },
     { immune: sheet.conditionImmunities },
   );
-  const rollAttack = (modifier: number, label: string, className?: string) => () =>
+  const rollAttack = (modifier: number, label: string, of: string, className?: string) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
@@ -720,6 +730,7 @@ export function YourSpells({
         ...(className === undefined ? {} : { className }),
       }),
       settlesOnNatural: true,
+      attack: { by: doc.id, of, critFrom: sheet.critRange?.min },
     });
   const limits = conditionLimits(conditions);
   const entityOf = (ref: { name: string; source: string }) =>

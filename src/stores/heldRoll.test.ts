@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RollOffer, RollResult } from '@/dice/types';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from './announcer';
 import {
+  attackInPlay,
   cancelHeld,
   heldRollStore,
   namedFirst,
@@ -319,5 +320,55 @@ describe('whenLanded', () => {
     const effect = vi.fn();
     whenLanded(effect);
     expect(effect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('attackInPlay', () => {
+  /** An attack roll as `rollD20Test` stamps it: which attack, and whether it crit. */
+  const swing = (crit: boolean, over: Partial<RollResult['meta']> = {}) =>
+    attack(crit ? 20 : 12, {
+      attack: { by: 'c1', of: 'Greataxe', crit },
+      askFirst: undefined,
+      offers: undefined,
+      ...over,
+    });
+
+  it('is the newest roll, past the damage rolled after it', () => {
+    expect(attackInPlay()).toBeUndefined();
+    rollFrom(button(), swing(true));
+    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
+    rollFrom(button(), damage);
+    rollFrom(button(), damage);
+    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
+    // The next attack is the one damage goes with now.
+    rollFrom(button(), swing(false));
+    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: false });
+  });
+
+  it('lets go once another d20 roll or a heal lands', () => {
+    rollFrom(button(), swing(true));
+    rollFrom(button(), d20(9, { askFirst: undefined, offers: undefined }));
+    expect(attackInPlay()).toBeUndefined();
+    rollFrom(button(), swing(true));
+    rollFrom(button(), () => ({ ...damage(), label: 'Cure Wounds', kind: 'heal' }));
+    expect(attackInPlay()).toBeUndefined();
+  });
+
+  it('passes plain dice rolled after it, which may add to its damage', () => {
+    rollFrom(button(), swing(true));
+    const { kind: _, ...bonus } = { ...damage(), label: 'Superiority die' };
+    rollFrom(button(), () => bonus);
+    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
+  });
+
+  it('is the attack that waits, whose natural is not shown yet', () => {
+    rollOffersStore.setState({ before: true });
+    rollFrom(button(), swing(false));
+    rollFrom(button(), swing(true, { askFirst: { offers: [bardic], attack: true } }));
+    expect(logged()).toHaveLength(1);
+    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
+    // A check that waits is no attack: damage then goes with nothing.
+    rollFrom(button(), d20(9));
+    expect(attackInPlay()).toBeUndefined();
   });
 });

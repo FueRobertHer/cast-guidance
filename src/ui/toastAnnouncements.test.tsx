@@ -88,6 +88,51 @@ describe('RollToast', () => {
     expect(screen.queryByText('Natural 20!')).toBeNull();
   });
 
+  it('says a crit inside the crit range, and the damage a crit doubled, in words', () => {
+    render(<RollToast />);
+    const swing: RollResult = {
+      ...roll(24, 19),
+      label: 'Longsword attack',
+      kind: 'd20',
+      meta: { d20: { natural: 19 }, attack: { by: 'c1', of: 'Longsword', crit: true } },
+    };
+    act(() => rollLogStore.getState().append(swing));
+    expect(screen.getByText('Critical hit!')).toBeTruthy();
+    expect(screen.queryByText('Natural 20!')).toBeNull();
+    expect(spoken().at(-1)).toBe('Longsword attack, critical hit: 24. Rolled 19, plus 5');
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    const dealt: RollResult = {
+      expr: '1d8+3',
+      label: 'Longsword slashing damage',
+      kind: 'damage',
+      total: 11,
+      at: 0,
+      terms: [
+        {
+          kind: 'dice',
+          sign: 1,
+          sides: 8,
+          rolls: [
+            { v: 3, kept: true },
+            { v: 5, kept: true },
+          ],
+        },
+        { kind: 'mod', value: 3 },
+      ],
+      meta: { critical: true },
+    };
+    act(() => rollLogStore.getState().append(dealt));
+    expect(screen.getByText('Critical')).toBeTruthy();
+    expect(spoken().at(-1)).toBe('Longsword slashing damage, critical: 11. Rolled 3, 5, plus 3');
+    // Landed with the attack it waited on, under it: it says so there too.
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    act(() => rollLogStore.getState().append({ ...swing, id: 'a1' }));
+    act(() =>
+      rollLogStore.getState().append({ ...dealt, meta: { critical: true, withRoll: 'a1' } }),
+    );
+    expect(screen.getByText(/^Longsword slashing damage, critical:/)).toBeTruthy();
+  });
+
   it('stays four seconds', () => {
     render(<RollToast />);
     act(() => rollLogStore.getState().append(roll(15)));

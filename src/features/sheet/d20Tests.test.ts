@@ -362,6 +362,46 @@ describe('rollD20Test with effects in play', () => {
     ).toBe('d20 [11] + 7 + d4 [3] Bless');
   });
 
+  it('says which attack it is, and that a natural 20 crits', () => {
+    nextFaces(20);
+    const nat20 = rollD20Test('1d20+5', {
+      label: 'Longsword attack',
+      attack: { by: 'c1', of: 'Longsword' },
+      settlesOnNatural: true,
+    });
+    expect(nat20.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: true });
+    nextFaces(19);
+    const nat19 = rollD20Test('1d20+5', {
+      label: 'Longsword attack',
+      attack: { by: 'c1', of: 'Longsword' },
+      settlesOnNatural: true,
+    });
+    expect(nat19.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false });
+    expect(rollTone(nat19)).toBe('d20');
+  });
+
+  it("crits inside the character's range, which settles the roll as a natural 20 does", () => {
+    nextFaces(19);
+    const r = rollD20Test('1d20+5', {
+      label: 'Longsword attack',
+      attack: { by: 'c1', of: 'Longsword', critFrom: 19 },
+      riders: riders({ offers: [bardic] }),
+      settlesOnNatural: true,
+    });
+    expect(r.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: true });
+    expect(r.meta?.offers).toBeUndefined();
+    expect(rollTone(r)).toBe('crit');
+    // The die kept is the one that counts: disadvantage's low 3, not the 20.
+    advModeStore.getState().set('dis');
+    nextFaces(20, 3);
+    const dis = rollD20Test('1d20+5', {
+      label: 'Longsword attack',
+      attack: { by: 'c1', of: 'Longsword', critFrom: 19 },
+      settlesOnNatural: true,
+    });
+    expect(dis.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false });
+  });
+
   it('puts the dice on offer on the result, and no die for them yet', () => {
     nextFaces(9);
     const r = rollD20Test('1d20+2', { label: 'DEX save', riders: riders({ offers: [bardic] }) });

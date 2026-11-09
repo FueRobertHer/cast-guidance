@@ -32,7 +32,8 @@ export function rollTone(result: RollResult): RollTone {
   // the die shows, a natural 20 included.
   if (result.meta?.autoFail === true) return 'fumble';
   const nat = naturalOf(result);
-  if (nat === 20) return 'crit';
+  // An attack that crits below 20 (Hexblade's Curse's 19) is a crit to spot too.
+  if (nat === 20 || (nat !== undefined && result.meta?.attack?.crit === true)) return 'crit';
   if (nat === 1) return 'fumble';
   if (result.kind !== undefined) return result.kind;
   return result.meta?.d20 !== undefined ? 'd20' : 'damage';

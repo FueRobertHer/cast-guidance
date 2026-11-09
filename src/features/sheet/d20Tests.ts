@@ -151,7 +151,10 @@ const NO_EFFECTS: D20Effects = { advantage: [], disadvantage: [], autoFail: [], 
  * feature's do, and the dice they offer after the roll ride on the result for
  * the toast. Nothing is offered where nothing could change the outcome: an
  * automatic failure, or a natural 1 or 20 on a roll the natural settles
- * (`settlesOnNatural`: attacks and death saves).
+ * (`settlesOnNatural`: attacks and death saves), or an attack's crit.
+ *
+ * `attack` marks an attack roll with whose it is and whether it crit (the kept
+ * d20 at `critFrom` or above), which the damage that goes with it reads.
  *
  * The one-use dice among the offers are also marked `askFirst`, read before
  * the d20 is, for a table that names them before the roll (`stores/heldRoll`).
@@ -167,6 +170,7 @@ export function rollD20Test(
     advantageFrom = [],
     riders,
     settlesOnNatural = false,
+    attack,
   }: {
     label: string;
     effects?: D20Effects;
@@ -174,6 +178,11 @@ export function rollD20Test(
     advantageFrom?: readonly string[];
     riders?: RollEffects;
     settlesOnNatural?: boolean;
+    /**
+     * An attack roll: the character's id, the attack's name, and the lowest
+     * natural that crits (20 unless an effect lowers it).
+     */
+    attack?: { by: string; of: string; critFrom?: number | undefined };
   },
 ): RollResult {
   const conditionsApply = effects !== undefined && !noD20Effect(effects);
@@ -197,7 +206,11 @@ export function rollD20Test(
     if (d !== undefined) from.push({ term: i, source: d.source });
   });
   const natural = result.meta?.d20?.natural;
-  const settled = resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20));
+  // A crit is the kept die in the crit range: a 19 under Hexblade's Curse
+  // settles the attack as a natural 20 does.
+  const crit = attack !== undefined && natural !== undefined && natural >= (attack.critFrom ?? 20);
+  const settled =
+    resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20 || crit));
   const offers = settled ? [] : (riders?.offers ?? []);
   // Asked before the roll under the house rule, so read before the d20 is:
   // only an automatic failure, which the cue already says, asks nothing.
@@ -208,11 +221,20 @@ export function rollD20Test(
   ]
     .filter((part) => part !== '')
     .join(' · ');
-  if (cue === '' && from.length === 0 && offers.length === 0 && ask.length === 0) return result;
+  if (
+    cue === '' &&
+    from.length === 0 &&
+    offers.length === 0 &&
+    ask.length === 0 &&
+    attack === undefined
+  ) {
+    return result;
+  }
   return {
     ...result,
     meta: {
       ...result.meta,
+      ...(attack === undefined ? {} : { attack: { by: attack.by, of: attack.of, crit } }),
       ...(cue === '' ? {} : { cue }),
       ...(resolution.autoFail ? { autoFail: true } : {}),
       ...(from.length > 0 ? { from } : {}),

@@ -21,6 +21,9 @@ import { rollOffersStore } from './rollOffers';
 /** What a control does with its roll once it lands: the chip's total, an action spent. */
 export type Landed = (result: RollResult) => void;
 
+/** Which attack a roll was, and whether it crit (`rollD20Test`'s `attack`). */
+export type AttackMark = NonNullable<NonNullable<RollResult['meta']>['attack']>;
+
 /** One-use dice that do not wait for a failure: the ones a table names first. */
 export function namedFirst(offer: RollOffer): boolean {
   return offer.once && !offer.ifFailed;
@@ -78,6 +81,23 @@ let making: Array<() => void> | null = null;
 export function whenLanded(effect: () => void): void {
   if (making === null) effect();
   else making.push(effect);
+}
+
+/**
+ * The attack damage rolled now goes with: the attack that waits, or else the
+ * newest roll in the log past the damage and plain dice rolled after it (a
+ * superiority die may add to that damage). Any other roll (a check, a heal, a
+ * roll that waits and is no attack) lets it go. A crit there
+ * doubles the dice of the damage that goes with it (`RollChip` `withAttack`):
+ * while it waits, it is read at the tap and shown only as it lands.
+ */
+export function attackInPlay(): AttackMark | undefined {
+  const { held } = heldRollStore.getState();
+  if (held !== null) return held.attack ? held.result.meta?.attack : undefined;
+  const last = rollLogStore
+    .getState()
+    .rolls.find((r) => r.kind !== 'damage' && (r.kind !== undefined || r.meta?.d20 !== undefined));
+  return last?.meta?.attack;
 }
 
 /** "Guidance", "Guidance or Bardic Inspiration". */
