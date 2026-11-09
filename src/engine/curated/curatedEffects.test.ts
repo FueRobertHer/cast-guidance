@@ -334,7 +334,8 @@ describe('pools a cost spends', () => {
       stack: true,
       noSlotConversion: 2,
     });
-    expect(resource(font, 'sorcery-points')).toMatchObject({ max: 'level:Sorcerer', stack: true });
+    // The sorcerer's level, read here so a class that reskins the Sorcerer has it too.
+    expect(resource(font, 'sorcery-points')).toMatchObject({ max: 5, stack: true });
     expect(resource(font, 'sorcery-points')?.noSlotConversion).toBeUndefined();
   });
 

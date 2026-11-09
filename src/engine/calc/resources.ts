@@ -54,6 +54,7 @@ export function calcResources(
     } else {
       max = 0;
     }
+    if (e.min !== undefined) max = Math.max(e.min, max);
     if (max <= 0) continue;
     const existingIdx = idxByKey.get(e.key);
     if (existingIdx === undefined) {

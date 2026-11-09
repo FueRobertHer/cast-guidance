@@ -453,6 +453,8 @@ export type EffectInput = { origin: EffectOrigin } & (
         | `abilityMod:${Ability}`
         | `abilityModPlus1:${Ability}`
         | `level:${string}`;
+      /** The least `max` comes to, where the text sets a floor (Death Coil's one die). */
+      min?: number;
       resetOn: 'short' | 'long';
       /**
        * When true, same-key resources from other sources add to the pool

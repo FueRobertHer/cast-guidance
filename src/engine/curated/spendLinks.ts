@@ -145,6 +145,8 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
       uses: { key: 'aspect-of-the-wyrm', max: 1, resetOn: 'long' },
     }),
     'breath of the dragon|way of the ascendant dragon|ftd': restore(2),
+    'redirect attack|warrior of mystic brews|wow': 1,
+    'enhancing a magical beverage|warrior of mystic brews|wow': rider(),
   }),
   ...pool('sorcery-points', {
     'magical guidance|sorcerer|tce': rider(),
@@ -243,6 +245,11 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'trip attack|phb': rider(),
     'trip attack|xphb': rider(),
     'know your enemy|battle master|xphb': restore(1),
+    'battle shout|wow': 1,
+    'demoralizing shout|wow': 1,
+    'heroic leap|wow': 1,
+    'mortal strike|wow': rider(),
+    'warding maneuver|wow': 1,
   }),
   // 2024 Turn Undead and Divine Spark are options of the parent feature and never name the pool.
   ...pool('channel-divinity', {
@@ -284,6 +291,9 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'divine spark|cleric|xphb': on('action'),
     'turn undead|cleric|xphb': on('action'),
     'dispelling recovery|arcana domain|au': restore(1),
+    'holy bolt|discipline domain|wow': 1,
+    'luminous barrier|discipline domain|wow': 1,
+    'shadowform|shadow domain|wow': 1,
   }),
   // Divine Sense, Champion Challenge and Dreadful Aspect never name the pool either.
   ...pool('channel-divinity-paladin', {
@@ -314,6 +324,8 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'divine sense|paladin|xphb': 1,
     'champion challenge|oath of the crown|scag': 1,
     'dreadful aspect|oathbreaker|dmg': on('action'),
+    'beacon of light|oath of the holy|wow': on('action'),
+    'runic power|oath of the ebon blade|wow': rider(),
   }),
   ...pool('psi-warrior-dice', {
     'protective field|psi warrior|tce': 1,
@@ -387,9 +399,15 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'lay on hands|paladin|xphb': 'varies',
     'restoring touch|paladin|xphb': rider('varies'),
   }),
+  // The Death Knight's d8s, where a paladin has Lay on Hands.
+  ...pool('death-coil', {
+    'death coil|death knight|wow': 'varies',
+  }),
   ...pool('rage', {
     'intimidating presence|path of the berserker|xphb': restore(1),
     'zealous presence|path of the zealot|xphb': restore(1),
+    'echo of the elements|path of the elements|wow': on('action'),
+    'totems|shaman|wow': restore(1, { onAction: 'Primal Knowledge Totem' }),
   }),
   ...pool('second-wind', {
     'tactical mind|fighter|xphb': rider(),
@@ -400,19 +418,30 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   ...pool('breath-weapon', {
     'dragon fear|xge': on('action'),
   }),
+  ...pool('soul-fragments', {
+    'double jump|demon hunter|wow': 1,
+    'soul cleave|demon hunter|wow': rider(),
+    'disrupt|demon hunter|wow': on('reaction', 2),
+    'warglaive mastery|demon hunter|wow': 1,
+  }),
 };
 
 /**
  * Hang a feature's cost on the action it already emitted, or add one for a feature
  * that spends a pool with no action row of its own. Runs after the curated entry or
- * the scan, so a table row reaches both.
+ * the scan, so a table row reaches both. Says whether the table has a row for `key`.
  */
-export function linkSpend(col: Collector, key: string, label: string, origin: EffectOrigin): void {
+export function linkSpend(
+  col: Collector,
+  key: string,
+  label: string,
+  origin: EffectOrigin,
+): boolean {
   const link = SPEND_LINKS[key.toLowerCase()];
-  if (link === undefined) return;
+  if (link === undefined) return false;
   if (link.restores !== undefined) {
     linkBuyBack(col, link.resource, link.amount, link.restores, label, origin);
-    return;
+    return true;
   }
   const cost: ActionCost = {
     resource: link.resource,
@@ -424,9 +453,10 @@ export function linkSpend(col: Collector, key: string, label: string, origin: Ef
   if (own?.kind === 'action') {
     own.cost = cost;
     if (link.economy !== undefined) own.economy = link.economy;
-    return;
+    return true;
   }
   col.add({ kind: 'action', economy: link.economy ?? 'none', label, cost, origin });
+  return true;
 }
 
 /**
