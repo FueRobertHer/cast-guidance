@@ -112,7 +112,7 @@ describe('chipFace.css', () => {
   });
 
   it('lets a tap through every piece, the ones past the chip’s edge above all', () => {
-    for (const part of ['cx-mat', 'cx-over', 'cx-p', 'cx-tag', 'cx-strip']) {
+    for (const part of ['cx-mat', 'cx-over', 'cx-p', 'cx-tag', 'cx-strip', 'cx-lift']) {
       const rule = new RegExp(`^\\.${part} \\{[^}]*pointer-events: none;`, 'm');
       expect(CSS, part).toMatch(rule);
     }
@@ -190,12 +190,36 @@ describe('chipFace.css', () => {
     expect(CSS).toMatch(/^\.cx-strip > \.cx-mat > \.cx-layer \{\s*background: none;/m);
   });
 
-  it('keeps a cell’s marks and tags inside it, because the stat strip clips', () => {
+  it('keeps a cell’s marks and tags inside it, and clips what is over it, as the strip does not', () => {
     for (const piece of ['cx-tag', 'cx-star', 'cx-z']) {
       const rule = new RegExp(`^\\.cx-at-cell \\.${piece} \\{\\s*top: ([\\d.]+)`, 'm').exec(CSS);
       expect(rule, piece).not.toBeNull();
       expect(Number(rule?.[1]), piece).toBeGreaterThan(0);
     }
+    expect(CSS).toMatch(/^\.cx-at-cell \.cx-over \{\s*overflow: hidden;/m);
+  });
+
+  it('moves an effect’s ring with the face, stopping and standing up as the face does', () => {
+    // The same box and origin as the face, so the same motion lands the same.
+    expect(CSS).toMatch(/^\.cx-lift \{[^}]*inset: 0;[^}]*transform-origin: 50% 100%;/m);
+    expect(CSS).toMatch(/^\.cx-face \{[^}]*transform-origin: 50% 100%;/m);
+    expect(CSS).toMatch(/\.cx-rm \.cx-lift,[^{]*\{\s*scale: none;\s*animation: none;/);
+    expect(CSS).toMatch(
+      /\.cx-rm \.cx-face\.cx-body-fallen,\s*\.cx-rm \.cx-lift\.cx-body-fallen \{/,
+    );
+    expect(CSS).toMatch(/\.cx-still \.cx-face,\s*\.cx-still \.cx-lift \{\s*animation: none;/);
+  });
+
+  it('draws every mark above every ring, as a cell’s mark reaches over the next cell', () => {
+    const z = (selector: string) =>
+      Number(new RegExp(`^${selector} \\{[^}]*z-index: (\\d+);`, 'm').exec(CSS)?.[1]);
+    expect(z('\\.cx-lift-top')).toBeGreaterThan(z('\\.cx-lift'));
+    expect(z('\\.cx-lift-top')).toBeGreaterThan(z('\\.cx-over'));
+  });
+
+  it('keeps Ignore once’s ring inside a raised cell’s green edge', () => {
+    expect(CSS).toMatch(/^\.cx-at-cell \.fx-lift-ring \{\s*inset: 0;/m);
+    expect(CSS).toMatch(/^\.cx-at-cell\.cx-lifted \.cx-ignore-ring \{\s*inset: 3px;/m);
   });
 
   it('parks Unconscious’s Z’s above a cell’s digits when they hold still', () => {
@@ -246,7 +270,7 @@ describe('chipFace.css', () => {
 
   it('stops every piece and whatever moves when switched off in Settings', () => {
     expect(CSS).toMatch(
-      /\.cx-still \.cx-strip,\s*\.cx-still \.cx-body-cower \.cx-move,\s*\.cx-still \.cx-p,\s*\.cx-still \.cx-liquid::before,\s*\.cx-still \.cx-face \{\s*animation: none;/,
+      /\.cx-still \.cx-strip,\s*\.cx-still \.cx-body-cower \.cx-move,\s*\.cx-still \.cx-p,\s*\.cx-still \.cx-liquid::before,\s*\.cx-still \.cx-face,\s*\.cx-still \.cx-lift \{\s*animation: none;/,
     );
   });
 

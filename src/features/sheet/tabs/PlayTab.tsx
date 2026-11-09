@@ -161,9 +161,11 @@ const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
  */
 const TILE = 'flex min-h-19 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2';
 const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
-/** A tile's number an effect raised: the ring around it, room below for its mark. */
-const STAT_LIFT = 'fx-lift-room rounded-control';
-/** A cell a condition can wear: its `ChipFace` lays it out as `TILE` does the others. */
+/**
+ * A cell a condition can wear or an effect can raise: its `ChipFace` lays it out
+ * as `TILE` does the others. The strip does not clip, so that a raised cell's
+ * mark can sit on its corner, and a cell on the card's corner rounds its own.
+ */
 const WORN_TILE = 'relative flex min-h-19 min-w-0 flex-col';
 /** What a long rest does, said before it is taken. */
 const LONG_REST_DETAIL =
@@ -1047,11 +1049,11 @@ export function Component() {
       )}
 
       {/* Core tiles: one strip, its cells divided by `line` hairlines. */}
-      <section className={`@container overflow-hidden text-center ${FLUSH}`}>
+      <section className={`@container text-center ${FLUSH}`}>
         <div className="grid grid-cols-2 @min-[18rem]:grid-cols-4">
-          {/* A raised number is ringed alone, its label outside the ring and
-              its mark between the two (the buffs canvas). Tap Armor Class or
-              Speed for the sum. */}
+          {/* A raised cell takes a green edge, which a condition on it gives up,
+              and a mark centred on its bottom right corner (the buffs canvas,
+              round 7). Tap Armor Class or Speed for the sum. */}
           <BreakdownSheet
             title={`Armor Class (${sheet.acFormulaLabel})`}
             value={sheet.ac}
@@ -1063,16 +1065,25 @@ export function Component() {
               })
             }
             trigger={
-              <button type="button" className={TILE}>
-                <Lift on={acUp.length > 0} className={STAT_LIFT}>
-                  <span className="text-stat tabular-nums">{sheet.ac.value}</span>
-                </Lift>
-                <div className={TILE_LABEL}>
-                  Armor Class{sheet.ac.overridden ? ' •' : ''}
-                  {acUp.length > 0 && (
-                    <span className="sr-only">, raised by {acUp.join(', ')}</span>
-                  )}
-                </div>
+              <button
+                type="button"
+                className={`${WORN_TILE} rounded-tl-card @min-[18rem]:rounded-bl-card`}
+              >
+                <ChipFace
+                  surface="cell"
+                  wear={NOT_WORN}
+                  rolls={0}
+                  showing={false}
+                  lift={acUp.length > 0}
+                >
+                  <span className="block text-stat tabular-nums">{sheet.ac.value}</span>
+                  <span className={`block ${TILE_LABEL}`}>
+                    Armor Class{sheet.ac.overridden ? ' •' : ''}
+                    {acUp.length > 0 && (
+                      <span className="sr-only">, raised by {acUp.join(', ')}</span>
+                    )}
+                  </span>
+                </ChipFace>
               </button>
             }
           >
@@ -1104,20 +1115,17 @@ export function Component() {
               );
               initiativeRoll.rolled();
             }}
-            className={`${WORN_TILE} border-line border-l`}
+            className={`${WORN_TILE} rounded-tr-card border-line border-l @min-[18rem]:rounded-tr-none`}
           >
             <ChipFace
               surface="cell"
               wear={rollWear(conditions, initiativeEffects, ignore.armed('initiative'))}
               rolls={initiativeRoll.rolls}
               showing={initiativeRoll.showing}
+              lift={initiativeUp.length > 0}
             >
-              <span className="block">
-                <Lift on={initiativeUp.length > 0} className={STAT_LIFT}>
-                  <span className="cx-ink text-roll text-stat tabular-nums">
-                    {signed(sheet.initiative.value)}
-                  </span>
-                </Lift>
+              <span className="cx-ink block text-roll text-stat tabular-nums">
+                {signed(sheet.initiative.value)}
               </span>
               <span className={`cx-ink flex items-center justify-center gap-0.75 ${TILE_LABEL}`}>
                 Initiative <D20Icon size={14} className="shrink-0" />
@@ -1140,21 +1148,20 @@ export function Component() {
             trigger={
               <button
                 type="button"
-                className={`${WORN_TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
+                className={`${WORN_TILE} rounded-bl-card border-line border-t @min-[18rem]:rounded-bl-none @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
               >
                 <ChipFace
                   surface="cell"
                   wear={conditionWear(conditions, speed.sources)}
                   rolls={0}
                   showing={false}
+                  lift={speedUp.length > 0}
                 >
                   <span className="block text-stat tabular-nums">
-                    <Lift on={speedUp.length > 0} className={`${STAT_LIFT} items-baseline`}>
-                      {speed.value}
-                      <small className="cx-ink ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
-                        ft
-                      </small>
-                    </Lift>
+                    {speed.value}
+                    <small className="cx-ink ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
+                      ft
+                    </small>
                     {speed.value < sheet.speedWalk.value && (
                       <span className="cx-ink ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
                         <span className="sr-only">, down from </span>

@@ -42,7 +42,8 @@ export interface RollChipProps {
   wear?: ChipWear | undefined;
   /**
    * The effects in play that raised this roll (Rage on a damage chip): the
-   * chip wears their ring and lift mark, and its name says who raised it.
+   * chip wears their ring and lift mark, and its name says who raised it. On a
+   * chip that wears conditions they are its face's, so they move with it.
    */
   raisedBy?: readonly string[];
 }
@@ -152,7 +153,13 @@ export function RollChip({
       {wear === undefined ? (
         text
       ) : (
-        <ChipFace wear={wear} rolls={rolls} showing={result !== null} tone={FACE_TONE[variant]}>
+        <ChipFace
+          wear={wear}
+          rolls={rolls}
+          showing={result !== null}
+          tone={FACE_TONE[variant]}
+          lift={inline ? undefined : raised}
+        >
           {text}
         </ChipFace>
       )}
@@ -160,8 +167,8 @@ export function RollChip({
     </button>
   );
   // Always wrapped in a row, so the ring can draw in as an effect arrives; a
-  // chip in running text never wears one.
-  return inline ? (
+  // chip in running text never wears one, and a face draws its own.
+  return inline || wear !== undefined ? (
     chip
   ) : (
     <Lift on={raised} className="rounded-chip">
