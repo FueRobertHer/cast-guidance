@@ -55,6 +55,22 @@ Drow Lineage (`src/convert/official.ts`).
 Spell entries that only add class lists merge into a spell the same file
 defines; ones for spells elsewhere are counted in a warning.
 
+An entry kept from a book the app knows names the official entry it prints
+in `printingOf` (`["Lucky|PHB"]`), the way a 5etools class names the class it
+reskins in `reskinOf`. When the installed data lacks that book, or the app
+has no official data at all, the curated mechanics, spend links and prose
+picks written for the official entry reach the copy through it
+(`tableUids` in `src/engine/effects/reskin.ts`). An entry from a free rules
+text names the book that text takes it from, by the edition its name marks,
+else the text's: `PHB` or `XPHB`, `DMG` or `XDMG` for a magic item. An entry
+whose name marks another edition than its book's (`Lucky [5.5e]` from the
+2014 Player's Handbook) names none, where the book's edition is known: a core
+book's always is, a later book's (Heroes of Faerûn) only once official data
+is installed, so without it the book is named whatever the mark.
+The name is Fight Club's, except where `officialName` (`renames.ts`) undoes
+a known rewording: `Fist of Unbroken Air` is `Unbroken Air`, and an
+infusion's `(Level 10)` is Fight Club's addition.
+
 The converted file declares one source named after the file
 (`spells.xml` becomes `FCSpells`, "spells (Fight Club 5e)") and records where
 it came from:
@@ -63,7 +79,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 1, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 3, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

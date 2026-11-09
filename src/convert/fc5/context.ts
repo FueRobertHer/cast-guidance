@@ -1,6 +1,7 @@
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import type { ConvertedKind, OfficialFeat } from '../types';
 import type { Book, HomebrewSource } from './books';
+import { officialName } from './renames';
 
 /**
  * Where an entry belongs: the source it carries, its rules edition, and the
@@ -23,6 +24,12 @@ export interface Placement {
    * printed in".
    */
   citation?: string;
+  /**
+   * The official book the entry is printed in, by the game data's code, when
+   * its book is one the app knows and its edition is that book's. A free rules
+   * text has none: its entries are under the books they come from.
+   */
+  officialBook?: string;
 }
 
 /** What every Fight Club entry converter is handed. */
@@ -85,6 +92,31 @@ export function placeEntity(entity: Record<string, unknown>, placement: Placemen
   entity.source = placement.source.json;
   if (placement.edition === '2024') entity.edition = 'one';
   Object.assign(entity, placement.fields);
+}
+
+/**
+ * The official entry a converted entry prints, as `name|source`, for its
+ * `printingOf`: the curated mechanics and spend links written for that entry
+ * reach the copy through it, with or without the official data installed. An
+ * entry from a book the app knows names that book; one from a free rules text
+ * names the book the text takes it from, by the edition its name marks, else
+ * the text's: the Player's Handbook, or the Dungeon Master's Guide for a magic
+ * item. A name holding `|` would read as another ref, so it names none.
+ */
+export function printingRef(
+  kind: ConvertedKind,
+  entity: Record<string, unknown>,
+  placement: Placement,
+): string | undefined {
+  const name = entity.name;
+  if (typeof name !== 'string' || name === '' || name.includes('|')) return undefined;
+  let book = placement.officialBook;
+  if (book === undefined && placement.book?.reference === true) {
+    const magic = kind === 'item' && entity.rarity !== undefined && entity.rarity !== 'none';
+    const is2024 = placement.edition === '2024';
+    book = magic ? (is2024 ? 'XDMG' : 'DMG') : is2024 ? 'XPHB' : 'PHB';
+  }
+  return book === undefined ? undefined : `${officialName(kind, name)}|${book}`;
 }
 
 /** The citation line some entries keep at the end of their text. */

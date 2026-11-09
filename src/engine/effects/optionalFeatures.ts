@@ -15,6 +15,7 @@ import {
   summarizePrerequisite,
 } from './prerequisites';
 import { proseScanFeature } from './proseScan';
+import { printingOf, tableUids } from './reskin';
 
 /**
  * How many picks a progression gives by `level`: an array indexed by level-1, or
@@ -119,10 +120,14 @@ export function readOptionalFeatures(
             type: origin.type,
           };
           col.features.push({ name: ofOrigin.label, origin: ofOrigin, entries: of.entries });
-          if (!emitCurated(col, uid, ofOrigin)) {
-            proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
-          }
-          linkSpend(col, uid, str(of.name) ?? uid, ofOrigin);
+          // A copy of an official option (`printingOf`) reads that option's rows after its own.
+          const uids = tableUids(of, uid.toLowerCase());
+          const printed = printingOf(of)?.source.toLowerCase();
+          const curated = uids.some((key, i) =>
+            emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
+          );
+          if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+          uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
         }
       },
     );

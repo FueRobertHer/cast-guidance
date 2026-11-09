@@ -13,7 +13,7 @@
  * is the entry `Centaur (Theros)` copies, wherever else a centaur is.
  */
 import type { ConvertedKind } from '../types';
-import { lastGroup } from './text';
+import { lastGroup, own } from './text';
 
 /** No entry is renamed in more ways than this; a name that would be is not read past it. */
 const MAX_VARIANTS = 32;
@@ -132,4 +132,23 @@ export function nameVariants(
     }
   }
   return [...seen];
+}
+
+/** Official class options Fight Club names otherwise, lowercased, to the official name. */
+const OPTION_NAMES: Record<string, string> = {
+  'fist of unbroken air': 'Unbroken Air',
+  'shape of the flowing river': 'Shape the Flowing River',
+};
+
+/** An infusion's level as Fight Club adds it to the name: `Helm of Awareness (Level 10)`. */
+const INFUSION_LEVEL = / \(Level \d{1,2}\)$/;
+
+/**
+ * The official name of an entry, where Fight Club's differs in a way one rule
+ * or a short table can undo, for the entry's `printingOf`: a curated row or
+ * spend link is keyed by the official name. Other names stay as they are.
+ */
+export function officialName(kind: ConvertedKind, name: string): string {
+  if (kind !== 'optionalfeature') return name;
+  return own(OPTION_NAMES, name.toLowerCase()) ?? name.replace(INFUSION_LEVEL, '');
 }

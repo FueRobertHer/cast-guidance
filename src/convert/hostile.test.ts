@@ -94,6 +94,23 @@ describe('hostile input', () => {
     expect(s?.school).toBeUndefined();
   });
 
+  it.each(['constructor', '__proto__'])('names an option %s as itself in printingOf', (name) => {
+    const { json } = convert(
+      `<compendium><spell><name>${name}</name><level>0</level><classes>Monk (Way of the Four Elements)</classes><text>Source: Player's Handbook p. 1</text></spell></compendium>`,
+    );
+    const option = (json.optionalfeature as Record<string, unknown>[])[0];
+    expect(option?.printingOf).toEqual([`${name}|PHB`]);
+  });
+
+  it('reads an option name of many level brackets in linear time', () => {
+    const name = `Helm${' (Level 1)'.repeat(100_000)}`;
+    const { json } = convert(
+      `<compendium><spell><name>${name}</name><level>0</level><classes>Artificer Infusions</classes><text>Source: Tasha's Cauldron of Everything p. 1</text></spell></compendium>`,
+    );
+    const option = (json.optionalfeature as Record<string, unknown>[])[0];
+    expect((option?.printingOf as string[])[0]?.endsWith(' (Level 1)|TCE')).toBe(true);
+  });
+
   it('passes an unknown damage type code through, uppercased like every code', () => {
     const { json } = convert(
       '<compendium><item><name>Odd Blade</name><type>M</type><dmg1>1d8</dmg1><dmgType>constructor</dmgType></item></compendium>',

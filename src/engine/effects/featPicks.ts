@@ -7,6 +7,7 @@ import type { ChoiceOption, ChoicePrompt, DataEntity, EffectOrigin } from '../ty
 import { type Collector, str } from './base';
 import { readOptionalFeatures } from './optionalFeatures';
 import { weaponMasteryOptions } from './readers';
+import { tableUids } from './reskin';
 
 const DAMAGE_TYPES: ChoiceOption[] = ['Acid', 'Cold', 'Fire', 'Lightning', 'Thunder'].map(
   (label) => ({ id: label.toLowerCase(), label }),
@@ -35,7 +36,9 @@ const PREREQUISITES_NEED_CLASS: Record<string, string> = { 'eldritch adept|tce':
 export function isRepeatableFeat(e: DataEntity): boolean {
   return (
     e.repeatable === true ||
-    REPEATABLE_IN_PROSE.has(`${str(e.name)}|${str(e.source)}`.toLowerCase())
+    tableUids(e, `${str(e.name)}|${str(e.source)}`.toLowerCase()).some((uid) =>
+      REPEATABLE_IN_PROSE.has(uid),
+    )
   );
 }
 
@@ -56,17 +59,23 @@ function offerFor(col: Collector, pick: ProsePick, origin: EffectOrigin): Offer 
   }
 }
 
+/** The first of a feat's table keys (`tableUids`) that a table has a row for. */
+function rowFor<T>(table: Readonly<Record<string, T>>, uids: readonly string[]): T | undefined {
+  const uid = uids.find((u) => Object.hasOwn(table, u));
+  return uid === undefined ? undefined : table[uid];
+}
+
 /**
  * The prompt for a pick only the prose asks for, if this feat has one. Returns
  * what was picked, for its card, once it has been.
  */
 export function readProsePick(
   col: Collector,
-  uid: string,
+  uids: readonly string[],
   origin: EffectOrigin,
   idBase: string,
 ): string | undefined {
-  const pick = PROSE_PICKS[uid];
+  const pick = rowFor(PROSE_PICKS, uids);
   if (pick === undefined) return undefined;
   const offer = offerFor(col, pick, origin);
   let shown: string | undefined;
@@ -80,11 +89,11 @@ export function readProsePick(
 export function readFeatOptionalFeatures(
   col: Collector,
   e: DataEntity,
-  uid: string,
+  uids: readonly string[],
   origin: EffectOrigin,
   idBase: string,
 ): void {
-  const needClass = PREREQUISITES_NEED_CLASS[uid];
+  const needClass = rowFor(PREREQUISITES_NEED_CLASS, uids);
   const levels = col.doc.classes.filter(
     (c) => needClass === undefined || c.ref.name.toLowerCase() === needClass,
   );

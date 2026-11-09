@@ -13,7 +13,7 @@ import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
-import { reskinOf } from './reskin';
+import { printingOf, reskinOf } from './reskin';
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
 export interface ClassFeatureRef {
@@ -318,14 +318,23 @@ function collectFeatureWithNested(
   const featureOrigin: EffectOrigin = { ...cardOrigin, label: name };
   const labels = curatedAlias !== undefined ? [curatedLabel, curatedAlias] : [curatedLabel];
   // The feature's own printing as well as its card's: a reskin or a copied subclass
-  // is a book of its own that lends a 2024 class's features.
-  const printing = String(feature.source).toLowerCase();
-  const curated = labels.some((label) =>
-    emitCurated(col, `${name}|${label}`.toLowerCase(), featureOrigin, printing),
+  // is a book of its own that lends a 2024 class's features. A copy of an official
+  // feature (`printingOf`) is that feature as printed, under its name and book.
+  const printed = printingOf(feature);
+  const printing = (printed?.source ?? String(feature.source)).toLowerCase();
+  const names = printed !== undefined && printed.name !== name ? [name, printed.name] : [name];
+  const sources =
+    printed !== undefined ? [String(feature.source), printed.source] : [String(feature.source)];
+  const curated = names.some((n) =>
+    labels.some((label) =>
+      emitCurated(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing),
+    ),
   );
   if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin);
-  labels.some((label) =>
-    linkSpend(col, `${name}|${label}|${String(feature.source)}`, name, featureOrigin),
+  names.some((n) =>
+    labels.some((label) =>
+      sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
+    ),
   );
   const identity = featureIdentity(feature);
   const { refs, picks } = PICK_ONE.has(identity)
