@@ -14,6 +14,7 @@ import {
   concentratingOn,
   dialog,
   HARNESS_TIMEOUT,
+  hp,
   left,
   renderSheet,
   resetSheetHarness,
@@ -164,14 +165,64 @@ describe('Rage from its own Use', () => {
 
   it('follows its 2024 printing', async () => {
     const sheet = await renderSheet(barbarian('XPHB', 3), { extra: barbarianWorld('XPHB') });
+    // Out of heavy armor, nothing to warn of.
+    expect(screen.queryByText(/heavy armor/)).toBeNull();
     press('Use Rage');
     const rage = (await sheet.saved()).play.activeEffects?.[0];
-    expect(rage?.lasts).toEqual({ minutes: 10 });
+    expect(rage?.lasts).toEqual({ minutes: 10, endsWhen: 'incapacitated' });
     expect(rage?.parts).toContainEqual({
       kind: 'damageBonus',
       scope: 'all',
       amount: 2,
       ability: 'str',
+    });
+  });
+
+  it('ends when a hit drops the barbarian to 0 HP', async () => {
+    const doc = barbarian('TST', 3);
+    doc.play.activeEffects = [rageEffect('rage', 3, '2014')];
+    doc.play.currentHp = 4;
+    doc.play.hpInitialized = true;
+    const sheet = await renderSheet(doc, { extra: barbarianWorld('TST') });
+    press('Damage 1 hit point');
+    expect((await sheet.saved()).play.activeEffects).toHaveLength(1);
+    press('Damage 5 hit points');
+    expect(hp().current).toBe(0);
+    expect((await sheet.saved()).play.activeEffects).toBeUndefined();
+    expect(screen.getByRole('button', { name: 'Use Rage' })).toBeTruthy();
+  });
+
+  describe('in heavy armor', () => {
+    const chainMail = (doc: CharacterDoc) => {
+      doc.equipment = [
+        {
+          id: 'armor',
+          ref: { name: 'Chain Mail', source: 'TST' },
+          qty: 1,
+          equipped: true,
+          attuned: false,
+        },
+      ];
+      return doc;
+    };
+
+    it('warns that 2014 Rage gives nothing in it, and still starts', async () => {
+      await renderSheet(chainMail(barbarian('TST', 3)), { extra: barbarianWorld('TST') });
+      expect(
+        screen.getByText("Chain Mail: Rage's benefits need you out of heavy armor"),
+      ).toBeTruthy();
+      press('Use Rage');
+      expect(left('Rage use')).toBe(2);
+      expect(screen.getByRole('button', { name: 'End Rage' })).toBeTruthy();
+    });
+
+    it('warns that 2024 Rage cannot start in it and ends when it goes on', async () => {
+      await renderSheet(chainMail(barbarian('XPHB', 3)), { extra: barbarianWorld('XPHB') });
+      expect(
+        screen.getByText(
+          "Chain Mail: you can't enter Rage in heavy armor, and putting it on ends Rage",
+        ),
+      ).toBeTruthy();
     });
   });
 

@@ -167,6 +167,19 @@ describe('readActiveEffects', () => {
       off: true,
     });
   });
+
+  it('keeps what ends an effect early (Rage), and drops an ending it does not know', () => {
+    const read = readActiveEffects([
+      { id: 'a', name: 'Rage', parts: [], lasts: { minutes: 1, endsWhen: 'unconscious' } },
+      { id: 'b', name: 'Rage', parts: [], lasts: { minutes: 10, endsWhen: 'incapacitated' } },
+      { id: 'c', name: 'Odd', parts: [], lasts: { minutes: 10, endsWhen: 'asleep' } },
+    ]);
+    expect(read.effects.map((e) => e.lasts)).toEqual([
+      { minutes: 1, endsWhen: 'unconscious' },
+      { minutes: 10, endsWhen: 'incapacitated' },
+      { minutes: 10 },
+    ]);
+  });
 });
 
 describe('countingEffects: effects of one name never add up', () => {

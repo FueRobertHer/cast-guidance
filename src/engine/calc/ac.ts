@@ -1,5 +1,12 @@
 import type { Collector } from '../effects/base';
-import { isArmor, isShield, lookupItem, magicWorks, parseBonus } from '../effects/item';
+import {
+  isArmor,
+  isShield,
+  itemTypeCode,
+  lookupItem,
+  magicWorks,
+  parseBonus,
+} from '../effects/item';
 import type {
   Ability,
   CharacterDoc,
@@ -50,7 +57,12 @@ export function calcAc(
   col: Collector,
   effects: readonly EffectInput[],
   abilities: Record<Ability, DerivedAbility>,
-): { ac: DerivedValue; label: string; notCounted: DerivedSheet['acNotCounted'] } {
+): {
+  ac: DerivedValue;
+  label: string;
+  notCounted: DerivedSheet['acNotCounted'];
+  heavyArmor?: string;
+} {
   const dexMod = abilities.dex.mod;
   const override = doc.overrides.ac;
   const notCounted: DerivedSheet['acNotCounted'] = [];
@@ -86,12 +98,14 @@ export function calcAc(
   }
 
   let shield: { label: string; amount: number } | undefined;
+  let heavyArmor: string | undefined;
   for (const entry of doc.equipment) {
     if (!entry.equipped || entry.ref === undefined) continue;
     const e = lookupItem(col, entry.ref.name, entry.ref.source);
     if (e === undefined) continue;
     const label = String(e.name ?? entry.ref.name);
     if (isArmor(e)) {
+      if (itemTypeCode(e) === 'HA') heavyArmor ??= label;
       const c = armorCandidate(e, label, dexMod, entry.attuned);
       if (c !== undefined) candidates.push(c);
     } else if (isShield(e)) {
@@ -149,5 +163,5 @@ export function calcAc(
   for (const f of floors) {
     if (!raised.has(f)) notCounted.push({ label: f.origin.label, value: f.min, why: 'floor' });
   }
-  return { ac, label: best.label, notCounted };
+  return { ac, label: best.label, notCounted, ...(heavyArmor === undefined ? {} : { heavyArmor }) };
 }

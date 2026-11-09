@@ -583,6 +583,23 @@ describe('PlayTab accessible names and states (A11Y-001)', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('warns of a verbal component under 2024 Incapacitated, which leaves you speechless, and not under 2014', () => {
+    const incapacitated = (d: CharacterDoc) => {
+      d.play.conditions = [{ id: 'Incapacitated' }];
+    };
+    renderSorcerer(incapacitated, (d) => {
+      d.rulesVersion = '2024';
+    });
+    expect(
+      screen.getAllByText(/^Incapacitated: you can't speak, and this spell has a verbal component$/)
+        .length,
+    ).toBeGreaterThan(0);
+    cleanup();
+
+    renderSorcerer(incapacitated);
+    expect(screen.queryAllByText(/you can't speak/)).toEqual([]);
+  });
+
   it('reports each toggle as not pressed on a fresh sheet', () => {
     renderPlay();
     expect(screen.getByRole('button', { name: 'Inspiration', pressed: false })).toBeTruthy();

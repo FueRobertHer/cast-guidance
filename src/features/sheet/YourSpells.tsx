@@ -732,7 +732,7 @@ export function YourSpells({
       settlesOnNatural: true,
       attack: { by: doc.id, of, critFrom: sheet.critRange?.min },
     });
-  const limits = conditionLimits(conditions);
+  const limits = conditionLimits(conditions, doc.rulesVersion);
   const entityOf = (ref: { name: string; source: string }) =>
     findSpell(registry, ref.name, ref.source, doc.rulesVersion);
   const ctx: RowContext = {

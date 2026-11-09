@@ -104,6 +104,7 @@ export function deriveSheet(
     ac,
     label: acFormulaLabel,
     notCounted: acNotCounted,
+    heavyArmor,
   } = calcAc(doc, col, effects, abilities);
 
   const initiativeParts = [{ label: 'DEX modifier', amount: abilities.dex.mod }];
@@ -197,6 +198,7 @@ export function deriveSheet(
     ac,
     acFormulaLabel,
     acNotCounted,
+    ...(heavyArmor === undefined ? {} : { heavyArmor }),
     initiative,
     speedWalk,
     speedMultiplier: calcSpeedMultiplier(effects),

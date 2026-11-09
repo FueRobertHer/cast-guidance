@@ -109,6 +109,8 @@ function readDuration(raw: unknown): EffectDuration | undefined {
   if (isNum(raw.minutes) && raw.minutes >= 0) out.minutes = raw.minutes;
   if (raw.rest === 'short' || raw.rest === 'long') out.rest = raw.rest;
   if (typeof raw.concentration === 'boolean') out.concentration = raw.concentration;
+  if (raw.endsWhen === 'unconscious' || raw.endsWhen === 'incapacitated')
+    out.endsWhen = raw.endsWhen;
   return out;
 }
 

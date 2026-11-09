@@ -289,6 +289,31 @@ describe('the HP sheet', () => {
     expect(saves).toHaveLength(1);
   });
 
+  it('sets the concentration save at 10 or half the damage, no more than 30 in 2024', async () => {
+    const saveLabels = () =>
+      rollLogStore
+        .getState()
+        .rolls.filter((r) => /Concentration save/.test(r.label ?? ''))
+        .map((r) => r.label);
+    for (const edition of ['2014', '2024'] as const) {
+      // Temporary hit points take the hit, so it is damage taken and no drop to 0.
+      const doc = warrior(19, 100);
+      doc.rulesVersion = edition;
+      doc.play.concentratingOn = { label: 'Bless' };
+      await renderSheet(doc);
+      rollLogStore.getState().clear();
+      fireEvent.click(cardButton('Damage'));
+      const sheet = await sheetDialog();
+      key(sheet, '70');
+      fireEvent.click(confirm(sheet));
+      await isClosed();
+      expect(saveLabels(), edition).toEqual([
+        `Concentration save (DC ${edition === '2024' ? 30 : 35})`,
+      ]);
+      await resetSheetHarness();
+    }
+  });
+
   it('asks about Relentless Endurance over the sheet, then closes both', async () => {
     const doc = warrior(3);
     doc.race = { name: 'Testfolk', source: 'TST' };

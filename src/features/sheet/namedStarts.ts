@@ -11,6 +11,7 @@ import {
   guidanceEffect,
   innateSorceryEffect,
   rageEffect,
+  rageHeavyArmor,
 } from '@/engine/curated/namedEffects';
 import { applyEffect, type HpLimits } from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
@@ -32,6 +33,8 @@ export interface NamedStart {
   build: (id: string) => ActiveEffect;
   /** It cannot be kept up with concentration (Rage), so starting it ends that. */
   endsConcentration: boolean;
+  /** What heavy armor does to it (Rage), said on its row while heavy armor is worn. */
+  inHeavyArmor?: string;
 }
 
 /** The character's class of this name, in the printing given when one is. */
@@ -56,6 +59,7 @@ export function namedStart(
       name: 'Rage',
       build: (id) => rageEffect(id, barbarian.levels, edition),
       endsConcentration: true,
+      inHeavyArmor: rageHeavyArmor(edition),
     };
   }
   if (label === 'innate sorcery' && lower(action.origin) === 'innate sorcery') {

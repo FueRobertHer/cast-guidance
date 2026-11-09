@@ -95,6 +95,31 @@ describe('deriveSheet — level 5 warrior (hand-checked)', () => {
   it('computes AC: chain mail 16 (no dex) + shield 2 + Defense 1', () => {
     expect(sheet.ac.value).toBe(19);
     expect(sheet.acFormulaLabel).toBe('Chain Mail');
+    // Heavy armor, for what it rules out (Rage).
+    expect(sheet.heavyArmor).toBe('Chain Mail');
+  });
+
+  it('names no heavy armor when the heavy armor is carried, not worn, or the armor is medium', () => {
+    const doc = warriorDoc();
+    doc.equipment = [
+      {
+        id: 'a',
+        ref: { name: 'Chain Mail', source: 'TST' },
+        qty: 1,
+        equipped: false,
+        attuned: false,
+      },
+      {
+        id: 'b',
+        ref: { name: 'Scale Mail', source: 'TST' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const worn = deriveSheet(doc, ctx);
+    expect(worn.acFormulaLabel).toBe('Scale Mail');
+    expect(worn).not.toHaveProperty('heavyArmor');
   });
 
   it('computes initiative with the Alert feat (+5)', () => {

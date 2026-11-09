@@ -22,10 +22,22 @@ export function rageDamage(level: number): number {
 export const RAGE_NO_SPELLS = 'You cannot cast spells or concentrate while raging';
 
 /**
+ * What heavy armor does to Rage in each printing. The sheet says it on Rage's
+ * row while heavy armor is worn, and enforces neither.
+ */
+export function rageHeavyArmor(edition: Edition): string {
+  return edition === '2024'
+    ? "you can't enter Rage in heavy armor, and putting it on ends Rage"
+    : "Rage's benefits need you out of heavy armor";
+}
+
+/**
  * Rage, for a barbarian of this level. 2014: Strength melee weapon attacks
- * (an Unarmed Strike is one), for a minute. 2024: any attack made with
- * Strength, a thrown weapon too, for up to 10 minutes as you keep it going.
- * Both only out of heavy armor, which the sheet does not check.
+ * (an Unarmed Strike is one), for a minute, ending early if you are knocked
+ * unconscious. 2024: any attack made with Strength, a thrown weapon too, for
+ * up to 10 minutes as you keep it going, ending early if you are
+ * Incapacitated. Both only out of heavy armor, which the sheet warns of
+ * (`rageHeavyArmor`) but does not enforce.
  */
 export function rageEffect(id: string, level: number, edition: Edition): ActiveEffect {
   const parts: EffectPart[] = [
@@ -41,7 +53,11 @@ export function rageEffect(id: string, level: number, edition: Edition): ActiveE
     { kind: 'resist', damageType: 'slashing' },
     { kind: 'cue', tone: 'warn', text: RAGE_NO_SPELLS },
   ];
-  return { id, name: 'Rage', parts, lasts: { minutes: edition === '2024' ? 10 : 1 }, mine: true };
+  const lasts =
+    edition === '2024'
+      ? { minutes: 10, endsWhen: 'incapacitated' as const }
+      : { minutes: 1, endsWhen: 'unconscious' as const };
+  return { id, name: 'Rage', parts, lasts, mine: true };
 }
 
 /** 2024 Innate Sorcery: Sorcerer spells' save DC +1 and advantage on their attack rolls. */

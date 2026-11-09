@@ -30,9 +30,11 @@ import {
 import { RAGE_NO_SPELLS } from '@/engine/curated/namedEffects';
 import {
   applyEffect,
+  concentrationDc,
   endEffect,
   endEffects,
   type HpLimits,
+  knockedOut,
   newTurn,
   setConcentration,
 } from '@/engine/effectLife';
@@ -221,9 +223,9 @@ export function hpSpeech(play: Pick<PlayState, 'currentHp' | 'tempHp'>, max: num
 }
 
 /**
- * Damage eats temp HP first; healing caps at max. Dropping to 0 breaks
- * concentration, which the caller ends (`setConcentration`), once it knows the
- * drop sticks (Relentless Endurance).
+ * Damage eats temp HP first; healing caps at max. Dropping to 0 knocks the
+ * character out, which the caller settles (`knockedOut`: concentration, Rage)
+ * once it knows the drop sticks (Relentless Endurance).
  */
 function applyHp(play: PlayState, delta: number, maxHp: number): void {
   // Any manual HP change means the character is in play now: stop auto-tracking
@@ -245,8 +247,9 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
 
 /**
  * A concentrating character who takes damage must make a CON save
- * (DC = max(10, half the damage taken)). Rolls it with `rollSave` (the sheet's
- * d20 test, so War Caster and the character's conditions count), logs it, and
+ * (`concentrationDc`: 10 or half the damage, 30 at most in 2024). Rolls it
+ * with `rollSave` (the sheet's d20 test, so War Caster and the character's
+ * conditions count), logs it, and
  * breaks concentration on a failure. Mutates the draft; returns a notice to
  * show. No-op when not concentrating or already dropped to 0 HP (that breaks
  * it too).
@@ -259,7 +262,7 @@ function rollConcentration(
 ): Notice | null {
   const label = play.concentratingOn?.label;
   if (label === undefined || damageTaken <= 0 || play.currentHp === 0) return null;
-  const dc = Math.max(10, Math.floor(damageTaken / 2));
+  const dc = concentrationDc(damageTaken, hp.edition);
   const r = rollSave(`Concentration save (DC ${dc})`);
   rollLogStore.getState().append(r);
   const held = r.meta?.autoFail !== true && r.total >= dc;
@@ -610,7 +613,7 @@ export function Component() {
   const restoreUse = (restore: ActionRestore) =>
     update((d) => applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
   // What the active conditions stop you doing — shown as warnings, never blocks.
-  const limits = conditionLimits(conditions);
+  const limits = conditionLimits(conditions, doc.rulesVersion);
   /** The conditions on the attack chips, as the cue over them says them. */
   const attackChipWear = rollWear(
     conditions,
@@ -697,8 +700,9 @@ export function Component() {
         if (entry !== undefined) entry.used += 1;
         else d.play.resources.push({ key: 'relentless-endurance', used: 1 });
       }
-      // Dropping to 0 breaks concentration, and ends what it held.
-      if (d.play.currentHp === 0) setConcentration(d.play, undefined, hpNow);
+      // Dropping to 0 knocks the character out: concentration and what it
+      // held end, and Rage with them.
+      if (d.play.currentHp === 0) knockedOut(d.play, hpNow);
       notice = rollConcentration(d.play, -delta, rollConcentrationSave, hpNow);
       after.currentHp = d.play.currentHp;
       after.tempHp = d.play.tempHp;
@@ -1929,6 +1933,13 @@ export function Component() {
                   </span>
                   {mechanics !== '' && (
                     <span className="text-caption text-ink-muted">{mechanics}</span>
+                  )}
+                  {/* Rage in heavy armor: said, never stopped. */}
+                  {starts?.inHeavyArmor !== undefined && sheet.heavyArmor !== undefined && (
+                    <span className="flex items-center gap-1 text-caption text-guide">
+                      <AlertTriangle size={14} className="shrink-0" />
+                      {`${sheet.heavyArmor}: ${starts.inHeavyArmor}`}
+                    </span>
                   )}
                 </span>
               );
