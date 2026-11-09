@@ -135,6 +135,22 @@ describe('partLine', () => {
       }),
     ).toBe('+1 to melee weapon attack rolls made with Strength');
   });
+
+  it('names the weapon a part is on, or says it is gone', () => {
+    const name = (id: string) => (id === 'e1' ? 'Longsword' : undefined);
+    expect(partLine({ kind: 'attackBonus', amount: 2, scope: 'all', weapon: 'e1' }, name)).toBe(
+      '+2 to attack rolls with your Longsword',
+    );
+    expect(partLine({ kind: 'damageBonus', amount: 2, scope: 'all', weapon: 'e1' }, name)).toBe(
+      '+2 damage with your Longsword',
+    );
+    expect(
+      partLine(
+        { kind: 'damageDie', scope: 'all', dice: '1d4', damageType: 'Fire', weapon: 'e9' },
+        name,
+      ),
+    ).toBe('+1d4 fire damage on hits with the weapon it is on');
+  });
 });
 
 describe('lastsLine', () => {

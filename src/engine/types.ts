@@ -315,22 +315,38 @@ export type EffectInput = { origin: EffectOrigin } & (
        * To hit with weapon attacks unless `attack` says otherwise; `spell` reaches
        * spell attacks, which have one modifier for melee and ranged, so only
        * `scope: 'all'` reaches them. `ability` limits it to attacks made with it.
+       * `weapon` limits it to one carried weapon, by its equipment entry's id
+       * (Magic Weapon): no other attack, natural or unarmed, gets it.
        */
       kind: 'attackBonus';
       scope: 'melee' | 'ranged' | 'all';
       amount: number;
       attack?: 'weapon' | 'spell' | 'any';
       ability?: Ability;
+      weapon?: string;
     }
-  /** Weapon damage; `ability` limits it to attacks made with it (Rage: Strength). */
+  /**
+   * Weapon damage; `ability` limits it to attacks made with it (Rage:
+   * Strength), `weapon` to one carried weapon, as for `attackBonus`.
+   */
   | {
       kind: 'damageBonus';
       scope: 'melee' | 'ranged' | 'all';
       amount: number;
       ability?: Ability;
+      weapon?: string;
     }
-  /** A die of extra damage on every weapon hit, rolled apart (Enlarge, Elemental Weapon). */
-  | { kind: 'damageDie'; scope: 'melee' | 'ranged' | 'all'; dice: string; damageType?: string }
+  /**
+   * A die of extra damage on every weapon hit, rolled apart (Enlarge), or on
+   * one carried weapon's when `weapon` names it (Elemental Weapon).
+   */
+  | {
+      kind: 'damageDie';
+      scope: 'melee' | 'ranged' | 'all';
+      dice: string;
+      damageType?: string;
+      weapon?: string;
+    }
   /** Spell save DC; `className` limits it to that class's spells (2024 Innate Sorcery). */
   | { kind: 'spellDcBonus'; amount: number; className?: string }
   /** A flat bonus to saving throws, every one or those of `abilities`. */
@@ -675,6 +691,10 @@ export interface AttackRow {
   ability?: Ability;
   ranged?: boolean;
   origin: string;
+  /** The equipment entry it attacks with, for a carried weapon: what an effect on one weapon names. */
+  weaponId?: string;
+  /** The weapon is a magic item, so Magic Weapon and Elemental Weapon cannot take it. */
+  magical?: true;
 }
 
 export interface FeatureCard {

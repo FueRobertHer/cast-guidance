@@ -103,8 +103,17 @@ const typeWords = (damageType: string) =>
 
 const scopeWords = (scope: 'melee' | 'ranged' | 'all') => (scope === 'all' ? '' : `${scope} `);
 
-/** One part of an effect, as its sheet says it: "+2 to AC", "Half fire damage". */
-export function partLine(p: EffectPart): string {
+/**
+ * One part of an effect, as its sheet says it: "+2 to AC", "Half fire damage".
+ * `weaponName` names the carried weapon a part on one weapon is on (Magic
+ * Weapon), from its equipment entry's id.
+ */
+export function partLine(p: EffectPart, weaponName?: (id: string) => string | undefined): string {
+  const onWeapon = (w: string | undefined) => {
+    if (w === undefined) return '';
+    const name = weaponName?.(w);
+    return name === undefined ? ' with the weapon it is on' : ` with your ${name}`;
+  };
   switch (p.kind) {
     case 'abilityMin':
       return `${ABILITY[p.ability]} is at least ${p.min}`;
@@ -118,9 +127,15 @@ export function partLine(p: EffectPart): string {
     case 'acMin':
       return `AC is at least ${p.min}`;
     case 'attackBonus': {
-      const kind = p.attack === 'spell' ? 'spell ' : p.attack === 'any' ? '' : 'weapon ';
+      // On one weapon, its name says it is a weapon.
+      const kind =
+        p.attack === 'spell'
+          ? 'spell '
+          : p.attack === 'any' || p.weapon !== undefined
+            ? ''
+            : 'weapon ';
       const ability = p.ability === undefined ? '' : ` made with ${ABILITY[p.ability]}`;
-      return `${signed(p.amount)} to ${scopeWords(p.scope)}${kind}attack rolls${ability}`;
+      return `${signed(p.amount)} to ${scopeWords(p.scope)}${kind}attack rolls${ability}${onWeapon(p.weapon)}`;
     }
     case 'checkBonus':
       return 'skills' in p
@@ -134,10 +149,14 @@ export function partLine(p: EffectPart): string {
       return p.text;
     case 'damageBonus': {
       const ability = p.ability === undefined ? '' : `${ABILITY[p.ability]} `;
-      return `${signed(p.amount)} damage on ${scopeWords(p.scope)}${ability}weapon attacks`;
+      return p.weapon === undefined
+        ? `${signed(p.amount)} damage on ${scopeWords(p.scope)}${ability}weapon attacks`
+        : `${signed(p.amount)} damage${onWeapon(p.weapon)}`;
     }
     case 'damageDie':
-      return `+${p.dice} ${p.damageType ? `${lower(p.damageType)} ` : ''}damage on ${scopeWords(p.scope)}weapon hits`;
+      return p.weapon === undefined
+        ? `+${p.dice} ${p.damageType ? `${lower(p.damageType)} ` : ''}damage on ${scopeWords(p.scope)}weapon hits`
+        : `+${p.dice} ${p.damageType ? `${lower(p.damageType)} ` : ''}damage on hits${onWeapon(p.weapon)}`;
     case 'extraAction':
       return p.note ? `${p.label}: ${p.note}` : p.label;
     case 'immune':

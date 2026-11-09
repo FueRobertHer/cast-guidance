@@ -108,6 +108,25 @@ function SheetHeading({ children, aside }: { children: ReactNode; aside?: ReactN
   );
 }
 
+/** A touch screen, where focusing a text box pops the on-screen keyboard up. */
+export function touchScreen(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+}
+
+/**
+ * Where a sheet whose first control is a search box puts focus as it opens
+ * (A11Y-003): Add item, + Effect. The box suits a keyboard; on a touch screen
+ * focusing it pops the on-screen keyboard over the list it filters before
+ * anyone asked to type. There the sheet itself takes focus instead, as a
+ * screen reader expects, and a tap on the box brings the keyboard up. Pass it
+ * as the panel's `onOpenAutoFocus`.
+ */
+export function focusSheetOnTouch(event: Event): void {
+  if (!touchScreen()) return;
+  event.preventDefault();
+  (event.currentTarget as HTMLElement | null)?.focus();
+}
+
 export const Sheet = {
   ...Drawer,
   Root: SheetRoot,

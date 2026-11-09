@@ -1,17 +1,25 @@
-import { AlertTriangle, ChevronsUp, CircleAlert, Plus, ShieldCheck, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AlertTriangle, ChevronsUp, CircleAlert, Plus, Search, ShieldCheck, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
-import { applyEffect, endEffect, setConcentration, setEffectOff } from '@/engine/effectLife';
+import {
+  applyEffect,
+  endEffect,
+  keepHigherTemp,
+  setConcentration,
+  setEffectOff,
+} from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
+import { announce } from '@/stores/announcer';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { SegmentedControl } from '@/ui/SegmentedControl';
-import { Sheet } from '@/ui/sheet';
+import { focusSheetOnTouch, Sheet, touchScreen } from '@/ui/sheet';
+import { fieldClass } from '@/ui/TextField';
 import { ToggleChip } from '@/ui/ToggleChip';
 import { CONDITIONS, conditionEffect } from './conditionEffects';
 import { ExhaustionStepper } from './ExhaustionStepper';
@@ -34,6 +42,13 @@ export function conditionLabel(c: Condition): { name: string; level?: number } {
   if (c.id === 'Exhaustion') return { name: 'Exhausted', level: c.level };
   return { name: c.id, level: c.level };
 }
+
+/**
+ * The search under + Effect, with the table it reads: a chunk of its own,
+ * fetched as the Effects sheet opens, so the sheet's first load stays flat.
+ */
+const loadFinder = () => import('./EffectFinder');
+const EffectFinder = lazy(loadFinder);
 
 /** Where focus lands when nothing nearer is left: the sheet's title, which takes it. */
 const sheetTitle = () => document.getElementById('sheet-title');
@@ -109,6 +124,13 @@ export function ConditionStrip({
   const lastEffect = useRef<ActiveEffect | undefined>(undefined);
   const [infoOpen, setInfoOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // What + Effect's search holds: the words typed, and the result opened.
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<string | null>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const toSearch = useRef(false);
+  const finding = query.trim() !== '' || picked !== null;
   // A removed chip's place: focus goes to the chip now there, the one before
   // it if it was the last, the end of the strip if none is left, then the title.
   const refocus = useRef<number | null>(null);
@@ -126,7 +148,12 @@ export function ConditionStrip({
   const closePicker = () => {
     setPickerOpen(false);
     clearRefused();
+    setQuery('');
+    setPicked(null);
   };
+  useEffect(() => {
+    if (pickerOpen) void loadFinder();
+  }, [pickerOpen]);
 
   // Tells the attack chips a change is being made over them (conditionSheet.ts).
   const sheetOpen = infoOpen || pickerOpen;
@@ -228,6 +255,37 @@ export function ConditionStrip({
     const effect = starterEffect(name, edition);
     if (effect !== undefined) put(effect);
   };
+  /**
+   * A search result lands: your own concentration spell (Blur) is what you
+   * concentrate on now, which ends the last one (`applyEffect` sees to both);
+   * temporary hit points it gives go when it ends. The search starts over,
+   * ready for the next.
+   */
+  const land = (effect: ActiveEffect, tempHp?: number) => {
+    const hp = limits();
+    if (hp === null) return;
+    update((d) => {
+      applyEffect(d.play, effect, hp);
+      if (tempHp !== undefined) keepHigherTemp(d.play, tempHp, effect.id);
+    }, `Added ${effect.name}`);
+    setPicked(null);
+    setQuery('');
+    announce(`${effect.name} added`);
+    toSearch.current = true;
+  };
+  const pick = (id: string | null) => {
+    setPicked(id);
+    // Back from an entry goes to the words that found it.
+    if (id === null) toSearch.current = true;
+  };
+  // The search field comes back once the entry gives way, and focus goes to
+  // it; on a touch screen to the sheet, as when it opened, so no keyboard
+  // rises over the lists unasked.
+  useLayoutEffect(() => {
+    if (!toSearch.current || picked !== null) return;
+    toSearch.current = false;
+    (touchScreen() ? panel.current : search.current)?.focus();
+  });
   const switchEffect = (effect: ActiveEffect, on: boolean) => {
     const hp = limits();
     if (hp === null) return;
@@ -482,6 +540,7 @@ export function ConditionStrip({
                 <EffectInfo
                   effect={shownEffect}
                   insteadOf={countedInstead(effects, shownEffect.id)}
+                  weaponName={(id) => sheet?.attacks.find((a) => a.weaponId === id)?.label}
                   onSwitch={(on) => switchEffect(shownEffect, on)}
                   onEnd={() => {
                     end(shownEffect);
@@ -544,8 +603,10 @@ export function ConditionStrip({
         <Sheet.Portal>
           <Sheet.Scrim />
           <Sheet.Panel
+            ref={panel}
             aria-describedby={undefined}
             className="flex max-h-[85dvh] flex-col"
+            onOpenAutoFocus={focusSheetOnTouch}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               (add.current ?? sheetTitle())?.focus();
@@ -557,107 +618,147 @@ export function ConditionStrip({
                 they overflow the box, and focusing a chip at the right edge
                 scrolls the whole picker sideways. */}
             <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
-              <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
-              {/* Chips pad themselves to 44px with a 6px clear border, so the
-                  row needs no gap of its own. A pressed one is in play;
-                  tapping it ends it. The starters come first, in a fixed
-                  order, so one that lands or ends stays where it was tapped. */}
-              <div className="-mx-1.5 mb-3 flex flex-wrap">
-                {STARTERS.map((st) => {
-                  const held = starterHeld.get(st.name);
-                  const mark = held === undefined ? st.mark : effectMark(held);
-                  return (
-                    <Chip
-                      key={st.name}
-                      pressed={held !== undefined}
-                      onClick={() => (held === undefined ? start(st.name) : end(held))}
-                    >
-                      {mark !== undefined && (
-                        <>
-                          <span className="font-bold tabular-nums">{mark}</span>{' '}
-                        </>
-                      )}
-                      {held?.name ?? st.name}
-                    </Chip>
-                  );
-                })}
-                {effects
-                  .filter((e) => !startersShown.has(e.id))
-                  .map((e) => {
-                    const mark = effectMark(e);
-                    return (
-                      <Chip key={e.id} pressed onClick={() => end(e)}>
-                        {mark !== undefined && (
-                          <>
-                            <span className="font-bold tabular-nums">{mark}</span>{' '}
-                          </>
-                        )}
-                        {e.name}
-                      </Chip>
-                    );
-                  })}
-              </div>
-              {bardicDie !== undefined && bardic !== undefined && (
-                <div className="mb-3 flex flex-col gap-1">
-                  <h3 className="text-caption text-ink-muted font-semibold">
-                    The bard's die, by their level
-                  </h3>
-                  <SegmentedControl
-                    label="The bard's die, by their level"
-                    options={BARDIC_DICE.map((die) => ({ value: die, label: die }))}
-                    value={bardicDie}
-                    // Only the die changes: switched off or counting turns, it stays so.
-                    onChange={(die) =>
-                      put({ ...bardic, parts: bardicEffect(bardic.id, edition, die).parts })
-                    }
-                    block
+              {/* The search, over what the sheet already shows: words typed
+                  swap the lists below for what they find, and an entry
+                  opened takes the search's place until you go back. */}
+              {picked === null && (
+                <div className="relative mb-3">
+                  <Search
+                    size={20}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute top-3.5 left-3.5 text-ink-muted"
+                  />
+                  <input
+                    ref={search}
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Search effects"
+                    placeholder="Search spells, potions, features"
+                    className={`${fieldClass} pl-10.5`}
                   />
                 </div>
               )}
-              <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
-              <div className="-mx-1.5 flex flex-wrap">
-                {CONDITIONS.map((c) => {
-                  const by = immunityTo(c, immune);
-                  const has = conditions.some((x) => x.id === c);
-                  return (
-                    <Chip
-                      key={c}
-                      pressed={has}
-                      aria-label={by.length > 0 && !has ? `${c}, you are immune` : undefined}
-                      aria-describedby={by.length > 0 ? 'immune-why' : undefined}
-                      onClick={() => toggle(c)}
-                    >
-                      {by.length > 0 && (
+              {finding ? (
+                sheet !== null && (
+                  <Suspense
+                    fallback={<p className="text-caption text-ink-muted">Loading effects…</p>}
+                  >
+                    <EffectFinder
+                      doc={doc}
+                      sheet={sheet}
+                      query={query}
+                      picked={picked}
+                      onPick={pick}
+                      onAdd={land}
+                    />
+                  </Suspense>
+                )
+              ) : (
+                <>
+                  <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
+                  {/* Chips pad themselves to 44px with a 6px clear border, so the
+                  row needs no gap of its own. A pressed one is in play;
+                  tapping it ends it. The starters come first, in a fixed
+                  order, so one that lands or ends stays where it was tapped. */}
+                  <div className="-mx-1.5 mb-3 flex flex-wrap">
+                    {STARTERS.map((st) => {
+                      const held = starterHeld.get(st.name);
+                      const mark = held === undefined ? st.mark : effectMark(held);
+                      return (
+                        <Chip
+                          key={st.name}
+                          pressed={held !== undefined}
+                          onClick={() => (held === undefined ? start(st.name) : end(held))}
+                        >
+                          {mark !== undefined && (
+                            <>
+                              <span className="font-bold tabular-nums">{mark}</span>{' '}
+                            </>
+                          )}
+                          {held?.name ?? st.name}
+                        </Chip>
+                      );
+                    })}
+                    {effects
+                      .filter((e) => !startersShown.has(e.id))
+                      .map((e) => {
+                        const mark = effectMark(e);
+                        return (
+                          <Chip key={e.id} pressed onClick={() => end(e)}>
+                            {mark !== undefined && (
+                              <>
+                                <span className="font-bold tabular-nums">{mark}</span>{' '}
+                              </>
+                            )}
+                            {e.name}
+                          </Chip>
+                        );
+                      })}
+                  </div>
+                  {bardicDie !== undefined && bardic !== undefined && (
+                    <div className="mb-3 flex flex-col gap-1">
+                      <h3 className="text-caption text-ink-muted font-semibold">
+                        The bard's die, by their level
+                      </h3>
+                      <SegmentedControl
+                        label="The bard's die, by their level"
+                        options={BARDIC_DICE.map((die) => ({ value: die, label: die }))}
+                        value={bardicDie}
+                        // Only the die changes: switched off or counting turns, it stays so.
+                        onChange={(die) =>
+                          put({ ...bardic, parts: bardicEffect(bardic.id, edition, die).parts })
+                        }
+                        block
+                      />
+                    </div>
+                  )}
+                  <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
+                  <div className="-mx-1.5 flex flex-wrap">
+                    {CONDITIONS.map((c) => {
+                      const by = immunityTo(c, immune);
+                      const has = conditions.some((x) => x.id === c);
+                      return (
+                        <Chip
+                          key={c}
+                          pressed={has}
+                          aria-label={by.length > 0 && !has ? `${c}, you are immune` : undefined}
+                          aria-describedby={by.length > 0 ? 'immune-why' : undefined}
+                          onClick={() => toggle(c)}
+                        >
+                          {by.length > 0 && (
+                            <ShieldCheck
+                              size={16}
+                              aria-hidden="true"
+                              className={has ? 'shrink-0' : 'shrink-0 text-ward'}
+                            />
+                          )}
+                          {c}
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                  {/* Mounted from the start, so the status region exists before the
+                  first tap; empty, it takes no room. */}
+                  <p
+                    id="immune-why"
+                    role="status"
+                    className={`flex gap-1.5 text-caption text-ink ${refused === null ? '' : 'mt-1'}`}
+                  >
+                    {refused !== null && (
+                      <>
                         <ShieldCheck
                           size={16}
                           aria-hidden="true"
-                          className={has ? 'shrink-0' : 'shrink-0 text-ward'}
+                          className="mt-px shrink-0 text-ward"
                         />
-                      )}
-                      {c}
-                    </Chip>
-                  );
-                })}
-              </div>
-              {/* Mounted from the start, so the status region exists before the
-                  first tap; empty, it takes no room. */}
-              <p
-                id="immune-why"
-                role="status"
-                className={`flex gap-1.5 text-caption text-ink ${refused === null ? '' : 'mt-1'}`}
-              >
-                {refused !== null && (
-                  <>
-                    <ShieldCheck
-                      size={16}
-                      aria-hidden="true"
-                      className="mt-px shrink-0 text-ward"
-                    />
-                    <span>{refused} Nothing was added.</span>
-                  </>
-                )}
-              </p>
-              <div className="mt-2 border-line border-t pt-3">{exhaustion}</div>
+                        <span>{refused} Nothing was added.</span>
+                      </>
+                    )}
+                  </p>
+                  <div className="mt-2 border-line border-t pt-3">{exhaustion}</div>
+                </>
+              )}
             </div>
           </Sheet.Panel>
         </Sheet.Portal>
@@ -678,12 +779,15 @@ function bardicDieOf(effect: ActiveEffect | undefined): BardicDie | undefined {
 function EffectInfo({
   effect,
   insteadOf,
+  weaponName,
   onSwitch,
   onEnd,
 }: {
   effect: ActiveEffect;
   /** The effect of the same name that counts instead, when this one counts for nothing. */
   insteadOf: string | undefined;
+  /** A carried weapon's name by its equipment id, for a part on one weapon (Magic Weapon). */
+  weaponName: (id: string) => string | undefined;
   onSwitch: (on: boolean) => void;
   onEnd: () => void;
 }) {
@@ -695,7 +799,7 @@ function EffectInfo({
           // biome-ignore lint/suspicious/noArrayIndexKey: the stored parts have no id, and their order is the effect's own
           <li key={i} className="flex gap-1.5">
             <ChevronsUp size={16} aria-hidden="true" className="mt-0.75 shrink-0 text-heal" />
-            {partLine(p)}
+            {partLine(p, weaponName)}
           </li>
         ))}
       </ul>

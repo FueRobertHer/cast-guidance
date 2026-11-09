@@ -43,7 +43,7 @@ function answersTo(e: ActiveEffect, label: string): boolean {
 }
 
 /** Cast by this character and held by their concentration. */
-const heldByMe = (e: ActiveEffect) => e.mine === true && e.lasts?.concentration === true;
+export const heldByMe = (e: ActiveEffect) => e.mine === true && e.lasts?.concentration === true;
 
 /** What the effects in play add to the HP maximum, under the rule that one name counts once. */
 export function maxHpFrom(effects: unknown): number {
