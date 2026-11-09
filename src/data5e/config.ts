@@ -18,7 +18,8 @@ export const FETCH_TIMEOUT_MS = 20_000;
 /**
  * The most bytes one data file may decode to before it is refused unparsed.
  * Measured against v2.41.0: the largest file, items.json, is 3,003,174 bytes
- * uncompressed, and nothing else passes 740 KB. Eight MiB is about 2.8 times
+ * uncompressed, and nothing else passes 820 KB (the spell source lookup is
+ * 817,398). Eight MiB is about 2.8 times
  * that, room for several releases of growth while still refusing a mirror that
  * answers with something absurd. `bun run data:audit` fails once any file
  * passes half of this, so a bump is planned rather than discovered.

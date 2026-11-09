@@ -23,8 +23,8 @@ const saves = (ability: Ability): ItemTags => ({ save: { amount: 1, abilities: [
 /**
  * The data tags an item with every defense and save bonus its text names, as
  * search filters do: a deck with what its cards give, a shield with what it
- * gives for a minute after a bonus action. These are the items in the pinned
- * release (v2.39.1) whose tags are not what wearing them gives, by
+ * gives for a minute after a bonus action. These are the items in the release
+ * this was read against (v2.39.1) whose tags are not what wearing them gives, by
  * `name|source` in lower case. A field given replaces that tag; one left out
  * keeps it. What the sheet cannot know (an alignment, a slain elemental, a ruby
  * left in the helm) is read as met, and the item's own text says when.
