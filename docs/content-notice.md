@@ -61,18 +61,27 @@ decision even though the compendium does not ship:
 - **Book titles.** `src/data5e/sourceNames.ts` maps about 190 5etools source codes
   to full book titles and a category (for example "Player's Handbook (2014)"), so
   source badges can render before any data has downloaded. Its header says it was
-  generated from the mirror's `js/parser.js` at v2.40.0. That is not a mismatch
-  with `DATA_TAG`: the app installs the newest compatible release, and an unknown
-  code falls back to the bare abbreviation.
+  generated from the data's own source table (`js/parser.js` at v2.40.0). That is
+  not a mismatch with `DATA_TAG`: the app installs the newest compatible release,
+  and an unknown code falls back to the bare abbreviation. Owner's decision
+  (2026-11-08): keep the table, with comments that do not name the dataset.
+  Taking titles from the data the user loads, and shipping no table, is a
+  possible later change.
 - **Curated mechanics.** `src/engine/curated/curatedEffects.ts` hand-codes the
   numbers of 46 common features whose values exist only in prose (for example
   Alert's +5 initiative, Lay on Hands as 5 times paladin level, Rage uses by
   level), with short notes that paraphrase what each feature grants. Some refer
   to non-SRD books by source code (for example TCE and XPHB). The file's own
   comment calls these "facts of the game rules"; that is the author's view, to be
-  confirmed in review.
+  confirmed in review. Owner's decision (2026-11-08): keep them as they are for
+  now. Shipping only the SRD ones, with the rest in a separate rules file loaded
+  beside the user's own data, is a possible later change; it waits until the app
+  can load data the user brings, since until then it would only switch those
+  mechanics off.
 - **Descriptions.** The web app manifest and the README describe the app as a
-  "D&D 5e character creator and play sheet".
+  "character creator and play sheet, compatible with fifth edition", the usual
+  wording for products that are not official. The trademarks are named only in
+  the disclaimer below (owner's decision, 2026-11-08).
 - **Test fixtures** in `tests-fixtures/` are synthetic entities that only mimic
   the JSON schema; they contain no book text.
 
@@ -125,8 +134,9 @@ Open on #111 until the owner signs off:
       which is marked as draft wording until then.
 - [ ] Choose the content approach: Fan Content Policy, SRD only, or the mirror as
       it is (or a combination).
-- [ ] Decide whether the shipped book titles (`sourceNames.ts`) and curated
-      mechanics (`curatedEffects.ts`) are acceptable.
+- [x] Decide whether the shipped book titles (`sourceNames.ts`) and curated
+      mechanics (`curatedEffects.ts`) are acceptable. Both kept for now
+      (2026-11-08); see "What does ship with the app".
 - [ ] Settings says "Nothing ships with the app itself" under the game data
       section, but the book titles and curated mechanics do ship. Decide whether
       to reword it. (Not changed in this draft.)

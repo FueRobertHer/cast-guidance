@@ -13,7 +13,7 @@ export const pwaManifest: Partial<ManifestOptions> = {
   id: '/',
   name: 'Cast Guidance',
   short_name: 'Cast Guidance',
-  description: 'Mobile-first D&D 5e character creator and play sheet',
+  description: 'Mobile-first character creator and play sheet, compatible with fifth edition',
   start_url: '/',
   scope: '/',
   // The dark theme's `bg` (DS-001): the default theme, and what the splash

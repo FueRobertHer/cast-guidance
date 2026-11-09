@@ -1,14 +1,14 @@
 /**
- * Human-readable names for 5etools source abbreviations.
+ * Human-readable names for the game data's source abbreviations.
  *
- * A badge reading "PHB" only helps someone who already reads 5etools
+ * A badge reading "PHB" only helps someone who already reads the data's
  * shorthand, so every surface that shows one can ask here for "Player's
  * Handbook (2014)". This is bibliographic metadata (the titles and categories
  * of published books), not game content, so unlike the compendium it ships
  * with the app: badges have to render before any pack has downloaded, and the
  * app never fetches the files these titles would otherwise come from.
  *
- * Generated from the 5etools mirror's own source table (js/parser.js at
+ * Generated from the game data's own source table (its js/parser.js at
  * v2.40.0). A book's group in books.json decides its category, then the
  * parser's adventure set; Unearthed Arcana is "playtest" and anything else is
  * "other". Anything added to the dataset after that falls back to the bare
