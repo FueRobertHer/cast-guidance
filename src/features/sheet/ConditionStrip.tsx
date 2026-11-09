@@ -562,7 +562,11 @@ export function ConditionStrip({
             }}
           >
             <Sheet.Heading>Effects</Sheet.Heading>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* Its padding holds the chip rows, which reach 6px past the text
+                column so a chip's clear border sits outside it. Without it
+                they overflow the box, and focusing a chip at the right edge
+                scrolls the whole picker sideways. */}
+            <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
               <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
               {/* Chips pad themselves to 44px with a 6px clear border, so the
                   row needs no gap of its own. A pressed one is in play;
