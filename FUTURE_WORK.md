@@ -258,6 +258,17 @@ work:
 - Add regression fixtures that exercise the documented export-format
   compatibility matrix (the format itself is documented in
   `docs/export-format.md`).
+- Fight Club 5e imports working like official data. Copies of official
+  entries name the entry they print (`printingOf`), so curated rows, spend
+  links and prose picks reach them without the official data. Remaining:
+  granted spells as `additionalSpells`; choices that only the prose states
+  (Dragonborn resistance, Skilled, background picks); item attacks, AC and
+  "following benefits" defenses; spell captions, prose race speeds and
+  language oddities; `<class>` and subclass conversion. `printingOf` does not
+  reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
+  a name Fight Club words its own way beyond what `officialName` undoes
+  names no official entry (about 45% of marked items resolve, mostly magic
+  variants such as `Battleaxe +1`).
 
 ### Maintainability and diagnostics
 

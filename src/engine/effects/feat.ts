@@ -17,6 +17,7 @@ import {
   toolOptions,
   weaponOptions,
 } from './readers';
+import { printingOf, tableUids } from './reskin';
 
 /**
  * The name in a prerequisite's feat ref ("name|source", maybe "|display text").
@@ -113,8 +114,10 @@ export function collectFeatEntity(
   );
   readSkillOrToolChoice(col, e.skillToolLanguageProficiencies, origin, `${idBase}:skillTool`);
   readDefenses(col, e, origin, idBase);
-  readFeatOptionalFeatures(col, e, uid, origin, idBase);
-  const picked = readProsePick(col, uid, origin, idBase);
+  // A copy of an official feat (`printingOf`) reads that feat's rows after its own.
+  const uids = tableUids(e, uid);
+  readFeatOptionalFeatures(col, e, uids, origin, idBase);
+  const picked = readProsePick(col, uids, origin, idBase);
 
   // expertise: [{ anyProficientSkill: 1 }] — options limited at prompt-render
   // time is complex; offer all skills and validate visually via prof dots.
@@ -165,10 +168,12 @@ export function collectFeatEntity(
     origin,
     entries: e.entries,
   });
-  if (!emitCuratedEffects(col, uid, origin)) {
-    proseScanFeature(col, origin.label, e.entries, origin);
-  }
-  linkSpend(col, uid, origin.label, origin);
+  const printed = printingOf(e)?.source.toLowerCase();
+  const curated = uids.some((key) =>
+    emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
+  );
+  if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
+  uids.some((key) => linkSpend(col, key, origin.label, origin));
 }
 
 export function collectFeats(col: Collector): void {

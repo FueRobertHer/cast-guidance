@@ -82,7 +82,9 @@ const KINDS = Object.keys(OFFICIAL_TYPES) as ConvertedKind[];
  * it, its pictures and sound, loot tables, cross-links, display flags, and a
  * race's height and weight. `entries`, `additionalEntries` and `sizeEntry` are
  * text, which a converted entry keeps in its own wording. Keys that start
- * with `_` are 5etools' own bookkeeping. The app reads none of these.
+ * with `_` are 5etools' own bookkeeping. The app reads none of these but
+ * `printingOf`, which names the official entry a copy prints: the entry it is
+ * set beside, so there is nothing to compare it with.
  */
 const NOT_COMPARED = new Set([
   'name',
@@ -99,6 +101,7 @@ const NOT_COMPARED = new Set([
   'additionalSources',
   'referenceSources',
   'reprintedAs',
+  'printingOf',
   'hasFluff',
   'hasFluffImages',
   'fluff',

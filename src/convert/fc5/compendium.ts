@@ -50,6 +50,7 @@ import {
   type Fc5Result,
   type FeatRef,
   type Placement,
+  printingRef,
 } from './context';
 import { convertFeat } from './feat';
 import { convertItem } from './item';
@@ -61,7 +62,7 @@ import { abilityKey, entryName, lastGroup, sourceLineEdition, splitName } from '
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 2;
+export const FC5_CONVERTER_VERSION = 3;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -181,9 +182,21 @@ function placer(
       books,
       fields: first.page === undefined ? {} : { page: first.page },
     };
+    if (first.code !== undefined && edition === bookEdition) placement.officialBook = first.code;
     if (books.length > 1) placement.citation = line;
     return placement;
   };
+}
+
+/** A kept entry with the official entry it prints, if any (see {@link printingRef}). */
+function withPrinting(
+  kind: ConvertedKind,
+  entity: Record<string, unknown>,
+  placement: Placement,
+): Record<string, unknown> {
+  const ref = printingRef(kind, entity, placement);
+  if (ref !== undefined) entity.printingOf = [ref];
+  return entity;
 }
 
 /** One converted entry, before the checks decide whether it is kept. */
@@ -521,7 +534,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         featNotes.get(at)?.();
         const c = decided.get(at);
         if (c === undefined) return;
-        out.feat.push(c.result.entity);
+        out.feat.push(withPrinting('feat', c.result.entity, c.result.placement));
         sources.set(c.result.placement.source.json, c.result.placement.source);
         const reasons = [...new Set(c.result.reasons)];
         if (reasons.length > 0) {
@@ -584,7 +597,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       leave(c, 'installed', WHY.installed);
       return;
     }
-    out[kind].push(result.entity);
+    out[kind].push(withPrinting(kind, result.entity, placement));
     sources.set(placement.source.json, placement.source);
     if (kind === 'optionalfeature' && !isOnOfficialList(result.entity)) {
       unoffered += 1;
