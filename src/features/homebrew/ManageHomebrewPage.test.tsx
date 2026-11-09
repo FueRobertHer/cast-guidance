@@ -14,7 +14,7 @@ const { read, remove, prepare } = vi.hoisted(() => ({
 }));
 
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => read.current }));
-vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { delete: remove, prepare } }));
+vi.mock('@/db/homebrewRepo', () => ({ homebrewRepo: { deleteMany: remove, prepare } }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true), askText: vi.fn() }));
 vi.mock('@/data5e/registry', () => ({ invalidateRegistry: vi.fn() }));
 vi.mock('@/data5e/sourceFilter', () => ({ ensureSourcesVisible: vi.fn() }));
@@ -80,7 +80,7 @@ describe('ManageHomebrewPage read errors', () => {
     expect(screen.getByText('content is not a JSON object')).toBeTruthy();
 
     fireEvent.click(screen.getByTitle('Delete'));
-    await waitFor(() => expect(remove).toHaveBeenCalledWith('b'));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(['b']));
   });
 
   it('says so instead of offering a delete it cannot perform', () => {
@@ -303,5 +303,63 @@ describe('ManageHomebrewPage refusal announcements', () => {
     const refusals = () => heard.lines.filter((line) => !line.startsWith('Checking'));
     await waitFor(() => expect(refusals()).toHaveLength(2));
     expect(refusals()[0]).toBe(refusals()[1]);
+  });
+});
+
+describe('ManageHomebrewPage books of one file', () => {
+  it('shows them in one card by name, each with its own switch, and removes them together', async () => {
+    read.current = {
+      files: [
+        file({ id: 'e', fileName: 'all.xml', book: 'Ember Codex', sourceIds: ['FCEmber'] }),
+        file({ id: 'g', fileName: 'one.xml', book: 'Lone Book', sourceIds: ['FCLone'] }),
+        file({
+          id: 'f',
+          fileName: 'all.xml',
+          book: 'Ashen Tome',
+          sourceIds: ['FCAsh'],
+          enabled: false,
+          counts: { feat: 1 },
+        }),
+      ],
+      errors: [],
+    };
+    renderPage();
+
+    expect(namelessControls()).toEqual([]);
+    // The group stands where its newest book falls, its books by name; a
+    // file of one book is shown as the file it is.
+    expect(
+      screen.getAllByRole('button', { name: /^Enable / }).map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Enable Ashen Tome', 'Enable Ember Codex', 'Enable one.xml']);
+    expect(screen.getByRole('button', { name: 'Enable Ember Codex', pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Enable Ashen Tome', pressed: false })).toBeTruthy();
+    expect(screen.getByText('2 books')).toBeTruthy();
+    expect(screen.getByText('1 turned on')).toBeTruthy();
+    expect(screen.getByText('1 feat · 2 spell')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download Ashen Tome' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all.xml, all 2 books' }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(['f', 'e']));
+  });
+
+  it('keeps a second download of a file in its group, and names the other files with a book', () => {
+    const book = (id: string, fileName: string, name: string, sourceId: string) =>
+      file({ id, fileName, book: name, sourceIds: [sourceId] });
+    read.current = {
+      files: [
+        book('e2', 'all (1).xml', 'Ember Codex', 'FCEmber'),
+        book('a1', 'all.xml', 'Ashen Tome', 'FCAsh'),
+        book('e5', 'five.xml', 'Ember Codex', 'FCEmber'),
+        book('s5', 'five.xml', 'Stone Book', 'FCStone'),
+      ],
+      errors: [],
+    };
+    renderPage();
+    // One group for all.xml and its second download, under the newest name.
+    expect(screen.getByRole('button', { name: 'Delete all (1).xml, all 2 books' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete five.xml, all 2 books' })).toBeTruthy();
+    expect(screen.getByText('2 spell · also in "five.xml"')).toBeTruthy();
+    expect(screen.getByText('2 spell · also in "all (1).xml"')).toBeTruthy();
+    expect(screen.getAllByText('2 spell')).toHaveLength(2);
   });
 });

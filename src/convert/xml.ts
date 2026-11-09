@@ -51,6 +51,17 @@ export const XML_LIMITS: XmlLimits = {
   maxDepth: IMPORT_LIMITS.maxDepth,
 };
 
+/**
+ * The bounds for a file read as it arrives (`xmlStream.ts`), which never holds
+ * the whole text or tree: room for the largest community compendiums
+ * measured, 56 MB and 572,000 elements, with the depth unchanged.
+ */
+export const XML_FILE_LIMITS: XmlLimits = {
+  maxLength: IMPORT_LIMITS.maxXmlImportBytes,
+  maxElements: 1_000_000,
+  maxDepth: IMPORT_LIMITS.maxDepth,
+};
+
 /** The entities XML predefines, plus a few HTML ones hand-written files use. */
 const NAMED_ENTITIES: Record<string, string> = {
   lt: '<',
@@ -104,11 +115,11 @@ function isSpace(ch: string): boolean {
   return ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r';
 }
 
-function newElement(name: string): XmlElement {
+export function newElement(name: string): XmlElement {
   return { name, attrs: Object.create(null) as Record<string, string>, children: [] };
 }
 
-function appendText(parent: XmlElement, text: string): void {
+export function appendText(parent: XmlElement, text: string): void {
   if (text === '') return;
   const last = parent.children.length - 1;
   const prev = parent.children[last];
@@ -132,42 +143,73 @@ export function parseXml(text: string, limits: XmlLimits = XML_LIMITS): XmlEleme
   return readXml(text, limits).root;
 }
 
+/** What {@link scanXml} reads, in document order. */
+export interface XmlSink {
+  /** Text, entities decoded; a CDATA section as written; a lone `<` as itself. */
+  text(text: string): void;
+  /** An opening tag, read whole: its element has its attributes and no children yet. */
+  open(el: XmlElement, selfClosing: boolean): void;
+  /** A closing tag's name, lowercased. */
+  close(name: string): void;
+}
+
+export interface XmlScan {
+  /** Where reading stopped: the end, or the start of what the text may cut short. */
+  next: number;
+  /** For the end of a file: what the file is cut off inside, if anything. */
+  cutInside?: string;
+}
+
+/** The longest opening (`<![CDATA[`) a construct can be told by, which text can end inside. */
+const LONGEST_OPENING = 9;
+
 /**
- * Parse `text` into its root element and the problems it recovered from.
- * Throws {@link XmlError} for a refused declaration, a file past the limits,
- * or one with no element at all.
+ * Read `text` from `from`, telling `sink` what it finds.
+ *
+ * With `final` set, the text runs to the end of the file: it is read to its
+ * end, recovering from whatever the file cuts short. Without it, more may
+ * follow: reading stops at the start of anything the text might cut short (a
+ * tag, a comment, text whose end is not yet in sight), and `next` says where
+ * to go on from once more has come. Read either way, a file gives the sink the
+ * same calls.
  */
-export function readXml(text: string, limits: XmlLimits = XML_LIMITS): XmlRead {
-  if (text.length > limits.maxLength) throw new XmlError('The file is too large to read.');
-  const doc = newElement('#document');
-  const stack: XmlElement[] = [doc];
-  const top = (): XmlElement => stack[stack.length - 1] ?? doc;
-  let elements = 0;
+export function scanXml(text: string, from: number, final: boolean, sink: XmlSink): XmlScan {
   const n = text.length;
-  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  let i = from;
   /** What the file was cut off inside, if it ends mid-construct. */
   let cutInside: string | undefined;
-  /** Closing tags that matched nothing open, or closed over open elements. */
-  let mismatched = 0;
 
   while (i < n) {
     const lt = text.indexOf('<', i);
-    const textEnd = lt === -1 ? n : lt;
-    if (textEnd > i) appendText(top(), decodeEntities(text.slice(i, textEnd)));
-    if (lt === -1) break;
+    if (lt === -1) {
+      // Text to the end, whole only when nothing follows it: an entity can
+      // be cut in two.
+      if (!final) return { next: i };
+      sink.text(decodeEntities(text.slice(i)));
+      i = n;
+      break;
+    }
+    if (lt > i) sink.text(decodeEntities(text.slice(i, lt)));
     i = lt;
+    if (!final && n - i < LONGEST_OPENING) return { next: i };
     const next = text.charAt(i + 1);
 
     if (text.startsWith('<!--', i)) {
       const close = text.indexOf('-->', i + 4);
-      if (close === -1) cutInside = 'a comment';
+      if (close === -1) {
+        if (!final) return { next: i };
+        cutInside = 'a comment';
+      }
       i = close === -1 ? n : close + 3;
       continue;
     }
     if (text.startsWith('<![CDATA[', i)) {
       const close = text.indexOf(']]>', i + 9);
-      if (close === -1) cutInside = 'a CDATA section';
-      appendText(top(), text.slice(i + 9, close === -1 ? n : close));
+      if (close === -1) {
+        if (!final) return { next: i };
+        cutInside = 'a CDATA section';
+      }
+      sink.text(text.slice(i + 9, close === -1 ? n : close));
       i = close === -1 ? n : close + 3;
       continue;
     }
@@ -178,31 +220,29 @@ export function readXml(text: string, limits: XmlLimits = XML_LIMITS): XmlRead {
     }
     if (next === '?') {
       const close = text.indexOf('?>', i + 2);
+      if (close === -1 && !final) return { next: i };
       i = close === -1 ? n : close + 2;
       continue;
     }
     if (next === '/') {
       const close = text.indexOf('>', i + 2);
       if (close === -1) {
+        if (!final) return { next: i };
         cutInside = 'a tag';
         break;
       }
-      const name = text
-        .slice(i + 2, close)
-        .trim()
-        .toLowerCase();
-      // Close the nearest open element of that name and everything inside
-      // it; a closing tag that matches nothing open is ignored.
-      let k = stack.length - 1;
-      while (k > 0 && stack[k]?.name !== name) k -= 1;
-      if (k !== stack.length - 1) mismatched += 1;
-      if (k > 0) stack.length = k;
+      sink.close(
+        text
+          .slice(i + 2, close)
+          .trim()
+          .toLowerCase(),
+      );
       i = close + 1;
       continue;
     }
     if (!isNameStart(next)) {
       // A lone `<` in text ("AC < 15"): keep it as text.
-      appendText(top(), '<');
+      sink.text('<');
       i += 1;
       continue;
     }
@@ -255,34 +295,44 @@ export function readXml(text: string, limits: XmlLimits = XML_LIMITS): XmlRead {
       if (j === nameStart) j += 1;
     }
     if (!closed) {
+      if (!final) return { next: i };
       // A tag cut off at the end of the file, or an attribute quote never
       // closed, which runs to the end.
       cutInside = 'a tag';
       break;
     }
-
-    elements += 1;
-    if (elements > limits.maxElements) {
-      throw new XmlError('The file has too many elements to read.');
-    }
-    top().children.push(el);
-    if (!selfClosing) {
-      if (stack.length > limits.maxDepth) throw new XmlError('The file is nested too deeply.');
-      stack.push(el);
-    }
+    sink.open(el, selfClosing);
     i = j;
   }
+  return cutInside === undefined ? { next: i } : { next: i, cutInside };
+}
 
-  const root = doc.children.find((c): c is XmlElement => typeof c !== 'string');
-  if (root === undefined) throw new XmlError('The file has no XML elements.');
+/**
+ * The open elements, the document first, as a closing tag finds them: it
+ * closes the nearest open element of its name and everything inside that, and
+ * one that matches nothing open is ignored. Whether it closed over anything,
+ * which is a sign the file is not well formed, is the result.
+ */
+export function closeOpen(stack: XmlElement[], name: string): boolean {
+  let k = stack.length - 1;
+  while (k > 0 && stack[k]?.name !== name) k -= 1;
+  const mismatched = k !== stack.length - 1;
+  if (k > 0) stack.length = k;
+  return mismatched;
+}
 
+/** What a reader recovered from, in words: see {@link XmlRead.problems}. */
+export function xmlProblems(
+  cutInside: string | undefined,
+  unclosed: string | undefined,
+  mismatched: number,
+): string[] {
   const problems: string[] = [];
-  const unclosed = stack[1];
   if (cutInside !== undefined || unclosed !== undefined) {
     const where =
       cutInside !== undefined
         ? `inside ${cutInside}`
-        : `before its <${unclosed?.name ?? root.name}> element is closed`;
+        : `before its <${unclosed}> element is closed`;
     problems.push(
       `The file ends ${where}, so it may be cut off: entries near the end can be missing or incomplete.`,
     );
@@ -292,7 +342,49 @@ export function readXml(text: string, limits: XmlLimits = XML_LIMITS): XmlRead {
       `${mismatched} closing ${mismatched === 1 ? 'tag does not match the tag it closes' : 'tags do not match the tags they close'}, so some entries may be read wrong.`,
     );
   }
-  return { root, problems };
+  return problems;
+}
+
+/** Counts an element against the limits, as it opens. */
+export function countElement(
+  count: number,
+  depth: number,
+  selfClosing: boolean,
+  limits: XmlLimits,
+) {
+  if (count > limits.maxElements) throw new XmlError('The file has too many elements to read.');
+  if (!selfClosing && depth > limits.maxDepth) throw new XmlError('The file is nested too deeply.');
+}
+
+/**
+ * Parse `text` into its root element and the problems it recovered from.
+ * Throws {@link XmlError} for a refused declaration, a file past the limits,
+ * or one with no element at all.
+ */
+export function readXml(text: string, limits: XmlLimits = XML_LIMITS): XmlRead {
+  if (text.length > limits.maxLength) throw new XmlError('The file is too large to read.');
+  const doc = newElement('#document');
+  const stack: XmlElement[] = [doc];
+  const top = (): XmlElement => stack[stack.length - 1] ?? doc;
+  let elements = 0;
+  /** Closing tags that matched nothing open, or closed over open elements. */
+  let mismatched = 0;
+  const { cutInside } = scanXml(text, text.charCodeAt(0) === 0xfeff ? 1 : 0, true, {
+    text: (t) => appendText(top(), t),
+    open: (el, selfClosing) => {
+      elements += 1;
+      countElement(elements, stack.length, selfClosing, limits);
+      top().children.push(el);
+      if (!selfClosing) stack.push(el);
+    },
+    close: (name) => {
+      if (closeOpen(stack, name)) mismatched += 1;
+    },
+  });
+
+  const root = doc.children.find((c): c is XmlElement => typeof c !== 'string');
+  if (root === undefined) throw new XmlError('The file has no XML elements.');
+  return { root, problems: xmlProblems(cutInside, stack[1]?.name, mismatched) };
 }
 
 /** Child elements, all of them or those named `name` (lowercase). */

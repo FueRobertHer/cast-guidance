@@ -562,3 +562,174 @@ describe('collision copy', () => {
     expect(WINNER_POLICY).toContain('the one imported first wins');
   });
 });
+
+describe('previewHomebrewImport for a file stored a book at a time', () => {
+  /** One book's row, as `prepareBooks` makes it. */
+  function bookRow(
+    id: string,
+    source: string,
+    names: string[],
+    fileName = 'all.xml',
+  ): HomebrewFile {
+    const json = { _meta: meta([source]), spell: names.map((n) => spell(n, source)) };
+    return { ...row(json, id), fileName, book: `${source} Book`, json };
+  }
+  const EMB = bookRow('emb-2', 'EMB', ['Ember Lance']);
+  const ASH = bookRow('ash-2', 'ASH', ['Ash Bolt', 'Ash Veil']);
+  const NEW = bookRow('new-2', 'NEW', ['Zap']);
+  const whole = row(
+    {
+      _meta: meta(['EMB', 'ASH', 'NEW']),
+      spell: [
+        spell('Ember Lance', 'EMB'),
+        spell('Ash Bolt', 'ASH'),
+        spell('Ash Veil', 'ASH'),
+        spell('Zap', 'NEW'),
+      ],
+    },
+    '',
+  );
+
+  function previewBooks(
+    existing: HomebrewFile[],
+    characters: ReturnType<typeof newCharacterDoc>[] = [],
+  ) {
+    return previewHomebrewImport({
+      row: { ...whole, fileName: 'all.xml' },
+      books: [EMB, ASH, NEW],
+      bytes: 1234,
+      limitBytes: IMPORT_LIMITS.maxXmlImportBytes,
+      existing,
+      official: NO_OFFICIAL,
+      characters,
+    });
+  }
+
+  it('says what each book would do, and checks no clash against its own older copy', () => {
+    const p = previewBooks([
+      // The same Ember Codex, already here.
+      { ...EMB, addedAt: 3 },
+      // An older Ashen Tome from this file (a second download of it), which this one replaces.
+      { ...bookRow('ash-1', 'ASH', ['Ash Bolt'], 'All (1).xml'), addedAt: 2 },
+      // Another file entirely, which does clash.
+      local('other', { _meta: meta(['OTH']), spell: [spell('Zap', 'NEW')] }),
+    ]);
+    expect(p.books).toEqual([
+      { id: 'emb-2', full: 'EMB Book', counts: { spell: 1 }, status: 'same' },
+      {
+        id: 'ash-2',
+        full: 'ASH Book',
+        counts: { spell: 2 },
+        status: 'replaces',
+        replacesFrom: 'All (1).xml',
+      },
+      { id: 'new-2', full: 'NEW Book', counts: { spell: 1 }, status: 'new' },
+    ]);
+    expect(p.limitBytes).toBe(IMPORT_LIMITS.maxXmlImportBytes);
+    expect(p.duplicateOf).toBeUndefined();
+    expect(p.sourceCollisions).toEqual([]);
+    expect(p.entityCollisions.map((c) => [c.name, c.against])).toEqual([
+      ['Zap', { id: 'other', fileName: 'other.json' }],
+    ]);
+  });
+
+  it('keeps another file`s copy of a book, names it under the book, and notes its clashes once', () => {
+    const p = previewBooks([
+      { ...bookRow('ash-5e', 'ASH', ['Ash Bolt', 'Ash Storm'], 'five.xml'), addedAt: 1 },
+      { ...bookRow('new-5e', 'NEW', ['Zap'], 'five.xml'), addedAt: 1 },
+    ]);
+    expect(p.books?.map((b) => [b.full, b.status, b.alsoIn])).toEqual([
+      ['EMB Book', 'new', undefined],
+      ['ASH Book', 'new', ['five.xml']],
+      ['NEW Book', 'new', ['five.xml']],
+    ]);
+    // Named under the book, not again as a file declaring the same source.
+    expect(p.sourceCollisions).toEqual([]);
+    expect(p.entityCollisions.map((c) => c.name)).toEqual(['Ash Bolt', 'Zap']);
+    expect(p.notes.filter((n) => n.includes('five.xml'))).toEqual([
+      expect.stringContaining('match entries in "five.xml"'),
+    ]);
+  });
+
+  it('names only files ahead of a book that keeps its own copy`s place', () => {
+    // This file's ASH copy came first (1), five.xml's copy later (3). The new
+    // ASH replaces the old copy and keeps its place, so five.xml does not win.
+    const later = (enabled: boolean) =>
+      previewBooks([
+        { ...bookRow('ash-1', 'ASH', ['Ash Bolt']), addedAt: 1 },
+        { ...bookRow('ash-5e', 'ASH', ['Ash Bolt', 'Ash Veil'], 'five.xml'), addedAt: 3, enabled },
+      ]);
+    expect(later(true).books?.find((b) => b.full === 'ASH Book')?.status).toBe('replaces');
+    expect(later(true).entityCollisions).toEqual([]);
+    expect(later(true).notes.filter((n) => n.includes('five.xml'))).toEqual([]);
+    expect(later(false).disabledClashes).toEqual([]);
+    // Imported before this file's copy, five.xml wins, on or off.
+    const earlier = (enabled: boolean) =>
+      previewBooks([
+        { ...bookRow('ash-1', 'ASH', ['Ash Bolt']), addedAt: 3 },
+        { ...bookRow('ash-5e', 'ASH', ['Ash Bolt', 'Ash Veil'], 'five.xml'), addedAt: 1, enabled },
+      ]);
+    expect(earlier(true).entityCollisions.map((c) => c.name)).toEqual(['Ash Bolt', 'Ash Veil']);
+    expect(earlier(false).disabledClashes.map((c) => c.name)).toEqual(['Ash Bolt', 'Ash Veil']);
+  });
+
+  it('replaces the file imported whole before it was stored a book at a time', () => {
+    // Under the source named after the file, as the file's own book (of the
+    // entries citing none) is now: the same entries, so they would clash.
+    const legacy = (id: string, fileName: string): HomebrewFile => {
+      const json = {
+        _meta: {
+          ...meta(['NEW']),
+          convertedFrom: { format: 'fc5-compendium', fileName },
+        },
+        spell: [spell('Zap', 'NEW'), spell('Gone', 'NEW')],
+      };
+      return { ...row(json, id), fileName, json };
+    };
+    // Aria picked an entry the file no longer brings under that source; Brin
+    // picked one it brings again, so Brin loses nothing.
+    const aria = newCharacterDoc('hero', 'Aria', 'tag');
+    aria.feats = [{ ref: { name: 'Gone', source: 'NEW' }, instanceId: 'f1' }];
+    const brin = newCharacterDoc('kept', 'Brin', 'tag');
+    brin.feats = [{ ref: { name: 'Zap', source: 'NEW' }, instanceId: 'f1' }];
+    const p = previewBooks([legacy('old', 'all.xml')], [aria, brin]);
+    expect(p.replacesOldImport).toEqual([{ id: 'old', fileName: 'all.xml', sourceIds: ['NEW'] }]);
+    expect(p.oldImportCharacters).toEqual([{ id: 'hero', name: 'Aria' }]);
+    // What it replaces is no file to clash with.
+    expect(p.entityCollisions).toEqual([]);
+    expect(p.sourceCollisions).toEqual([]);
+    // Another file stored whole is not this one.
+    const other = previewBooks([legacy('elsewhere', 'other.xml')]);
+    expect(other.replacesOldImport).toBeUndefined();
+    expect(other.entityCollisions.map((c) => c.name)).toEqual(['Zap']);
+  });
+
+  it('is already here when every book is', () => {
+    const p = previewBooks([
+      { ...EMB, addedAt: 5 },
+      { ...ASH, addedAt: 4, enabled: false },
+      { ...NEW, addedAt: 6 },
+    ]);
+    expect(p.duplicateOf).toEqual({
+      id: 'emb-2',
+      fileName: 'all.xml',
+      addedAt: 4,
+      enabled: false,
+      booksOff: 1,
+    });
+    expect(p.books?.every((b) => b.status === 'same')).toBe(true);
+  });
+
+  it('names a stored book by its book, not the file it came from', () => {
+    const p = preview(
+      { _meta: meta(['HB']), spell: [spell('Ember Lance', 'HB')] },
+      {
+        existing: [bookRow('emb', 'EMB', ['Ember Lance'])].map((b) => ({
+          ...b,
+          json: { ...b.json, spell: [spell('Ember Lance', 'HB')] },
+        })),
+      },
+    );
+    expect(p.entityCollisions[0]?.against).toEqual({ id: 'emb', fileName: 'EMB Book' });
+  });
+});

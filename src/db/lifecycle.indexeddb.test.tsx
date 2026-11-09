@@ -22,6 +22,8 @@ import { historyRepo } from './historyRepo';
 import { DB_INSTANCE_KEY } from './lifecycle';
 
 const NAME = 'cast-guidance';
+/** A schema version past the app's own, as a newer copy of the app would open. */
+const NEWER = db.verno + 1;
 
 function openSession() {
   return createCharacterSessionStore({
@@ -166,13 +168,13 @@ describe('another tab upgrades the database', () => {
     expect(await db.characters.count()).toBe(1);
 
     const other = new Dexie(NAME);
-    other.version(5).stores({ characters: 'id, name, updatedAt', probe: 'id' });
+    other.version(NEWER).stores({ characters: 'id, name, updatedAt', probe: 'id' });
     const blocked = vi.fn();
     other.on('blocked', blocked);
     await within(other.open(), 5_000);
 
     expect(blocked).not.toHaveBeenCalled();
-    expect(other.verno).toBe(5);
+    expect(other.verno).toBe(NEWER);
     expect(dbLifecycleStore.getState().state).toBe('superseded');
     // Older code must not write under the newer schema.
     await expect(db.characters.put(newCharacterDoc('c2', 'Ash', 'tag'))).rejects.toMatchObject({
@@ -251,7 +253,7 @@ describe('a tab coming back from the back/forward cache', () => {
     pageTransition('pagehide');
 
     const other = new Dexie(NAME);
-    other.version(5).stores({ characters: 'id, name, updatedAt', probe: 'id' });
+    other.version(NEWER).stores({ characters: 'id, name, updatedAt', probe: 'id' });
     await other.open();
     other.close();
     pageTransition('pageshow');
@@ -260,7 +262,7 @@ describe('a tab coming back from the back/forward cache', () => {
       name: 'DatabaseClosedError',
     });
     expect(dbLifecycleStore.getState().state).toBe('superseded');
-    // Without the version check Dexie retries at version 5 and the write lands.
+    // Without the version check Dexie retries at the newer version and the write lands.
     await other.open();
     expect(await other.table('characters').count()).toBe(1);
     other.close();
@@ -281,7 +283,7 @@ describe('a copy of the app older than the saved data', () => {
     render(<StorageBanners />);
     db.close();
     const newer = new Dexie(NAME);
-    newer.version(5).stores({ characters: 'id, name, updatedAt', probe: 'id' });
+    newer.version(NEWER).stores({ characters: 'id, name, updatedAt', probe: 'id' });
     await newer.open();
     newer.close();
 

@@ -8,11 +8,29 @@
  * saved without its extension, or a URL that names neither, still imports.
  * The converter is its own chunk, loaded only for XML, so a JSON import never
  * downloads it.
+ *
+ * A picked XML file is read by the converter's worker as it streams, so it may
+ * be far larger than a JSON one (`maxXmlImportBytes` against `maxImportBytes`):
+ * the page holds neither its text nor its tree.
  */
 
 import { looksLikeXml } from '@/convert/sniff';
 import type { ConversionReport } from '@/convert/types';
 import { convertedTotal } from '@/convert/types';
+import { ResponseTooLargeError, readFileTextBounded } from '@/lib/boundedRead';
+import { IMPORT_LIMITS } from '@/lib/guards';
+import type { ImportProgress } from './convertImport';
+
+/** How much of a picked file is read to tell XML from JSON. */
+const SNIFF_BYTES = 64 * 1024;
+
+/** Progress and cancelling, for a conversion. */
+export interface ImportOptions {
+  /** How far the conversion has read. Not called for JSON, which is read at once. */
+  onProgress?: ImportProgress;
+  /** Aborting it stops the conversion and rejects with `ImportCancelledError`. */
+  signal?: AbortSignal;
+}
 
 export interface ParsedImport {
   /** The homebrew JSON. `homebrewRepo.prepare` validates it. */
@@ -58,15 +76,65 @@ function nothingText(report: ConversionReport, installed: number, allInstalled: 
   return [`Nothing in ${file} could be converted.`, ...why].join(' ');
 }
 
+/** What a read rejects with once its `signal` is aborted. */
+export class ImportCancelledError extends Error {
+  override name = 'ImportCancelledError';
+  constructor() {
+    super('The import was cancelled.');
+  }
+}
+
+function stopIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw new ImportCancelledError();
+}
+
 /**
  * Read an import's text into homebrew JSON. Throws `SyntaxError` for JSON that
  * does not parse, and for XML: `XmlError`, `UnsupportedFormatError` or
  * {@link NothingToImportError}, each with a message for the player.
  */
-export async function parseImportText(text: string, fileName: string): Promise<ParsedImport> {
+export async function parseImportText(
+  text: string,
+  fileName: string,
+  options: ImportOptions = {},
+): Promise<ParsedImport> {
   if (!looksLikeXml(text)) return { raw: JSON.parse(text) as unknown };
+  return convertXml(text, fileName, options);
+}
+
+/**
+ * Read a picked file into homebrew JSON, as {@link parseImportText} does, and
+ * throw `ResponseTooLargeError` for one over its kind's limit. Which kind it
+ * is comes from its first characters, so an XML file is never read whole.
+ */
+export async function parseImportFile(
+  file: File,
+  options: ImportOptions = {},
+): Promise<ParsedImport> {
+  // A character cut at the end of the slice decodes as a replacement, which
+  // is not space, so it is never taken for the first character after space.
+  const head = await file.slice(0, SNIFF_BYTES).text();
+  stopIfCancelled(options.signal);
+  if (!looksLikeXml(head)) {
+    const text = await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes);
+    stopIfCancelled(options.signal);
+    return { raw: JSON.parse(text) as unknown };
+  }
+  const limit = IMPORT_LIMITS.maxXmlImportBytes;
+  if (file.size > limit) throw new ResponseTooLargeError(limit, file.size, 'file');
+  const parsed = await convertXml(file, file.name, options);
+  // A Cancel pressed as the conversion finished still cancels.
+  stopIfCancelled(options.signal);
+  return parsed;
+}
+
+async function convertXml(
+  source: Blob | string,
+  fileName: string,
+  options: ImportOptions,
+): Promise<ParsedImport> {
   const { convertImportXml } = await import('./convertImport');
-  const { result, coverage } = await convertImportXml(text, fileName);
+  const { result, coverage } = await convertImportXml(source, fileName, options);
   const { json, report } = result;
   if (convertedTotal(report) === 0) throw new NothingToImportError(report);
   if (coverage !== undefined) report.warnings.push(coverage);

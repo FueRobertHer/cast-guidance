@@ -111,6 +111,12 @@ export const IMPORT_LIMITS = {
    * for a body large enough to exhaust memory on the way in.
    */
   maxImportBytes: 8 * 1024 * 1024,
+  /**
+   * The same for an XML file from another app. Such a file is read as it
+   * arrives, an entry at a time, off the main thread, and never held whole,
+   * so it can be as large as a full community compendium (56 MB measured).
+   */
+  maxXmlImportBytes: 64 * 1024 * 1024,
 } as const;
 
 /**

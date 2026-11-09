@@ -9,6 +9,8 @@
  * the answer in between, and the commit's summary is the one that counts.
  */
 import type { PreparedCharacterImport } from '@/db/characterRepo';
+import { bookHolders, mergeBook, sameBookCopy } from '@/db/homebrewBooks';
+import { compareMergeOrder } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   type OfficialCoverage,
@@ -33,7 +35,18 @@ export type EmbeddedFileStatus =
    * listed in `localFiles` with `enabled: false`, because it wins again if
    * it is turned back on.
    */
-  | 'other-version';
+  | 'other-version'
+  /**
+   * A book (often only the part the character uses) whose every entry is in
+   * the copies of it here; importing skips it.
+   */
+  | 'book-here'
+  /**
+   * A book with a copy here from the same file that lacks some of its
+   * entries: importing adds those to that copy (`adds` of them), so the
+   * book is still stored once.
+   */
+  | 'adds-to-book';
 
 export interface EmbeddedFilePreview {
   fileName: string;
@@ -41,16 +54,22 @@ export interface EmbeddedFilePreview {
   counts: Record<string, number>;
   sourceIds: string[];
   /**
-   * Local files (different content) declaring one of this file's sources.
+   * Local files (different content) declaring one of this file's sources that
+   * win over what this import stores: every one, for a file that comes in on
+   * its own; for `adds-to-book`, those ahead of the copy taking the entries.
    * Enabled ones keep precedence now; disabled ones regain it if turned on.
+   * Empty where nothing is stored (`already-here`, `book-here`).
    */
   localFiles: { id: string; fileName: string; enabled: boolean }[];
   /**
-   * For `already-here`: whether the copy here is turned on. A turned-off copy
-   * is skipped like any other, but its entries are not in use until it is
-   * turned back on.
+   * For `already-here`: whether the copy here is turned on; for `book-here`,
+   * whether a file holding the book is; for `adds-to-book`, whether the copy
+   * taking the entries in is. A turned-off copy is skipped like any other,
+   * but its entries are not in use until it is turned back on.
    */
   existingEnabled?: boolean;
+  /** For `adds-to-book`: how many entries the copy here takes in. */
+  adds?: number;
 }
 
 export interface CharacterPreview {
@@ -94,23 +113,61 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
     if (seen.has(row.id)) continue;
     seen.add(row.id);
     const own = new Set(row.sourceIds.map(lower));
-    const localFiles = existingIds.has(row.id)
-      ? []
-      : existing
-          .filter((f) => f.sourceIds.some((s) => own.has(lower(s))))
-          .map((f) => ({ id: f.id, fileName: f.fileName, enabled: f.enabled }));
-    files.push({
-      fileName: row.fileName,
-      status: existingIds.has(row.id)
-        ? 'already-here'
-        : localFiles.some((f) => f.enabled)
-          ? 'other-version'
-          : 'new',
+    const sharing = existing.filter((f) => f.sourceIds.some((s) => own.has(lower(s))));
+    const listed = (local: readonly HomebrewFile[]) =>
+      local.map((f) => ({ id: f.id, fileName: f.book ?? f.fileName, enabled: f.enabled }));
+    const holders = existingIds.has(row.id) ? [] : bookHolders(row, existing);
+    const copy =
+      existingIds.has(row.id) || holders.length > 0 || row.book === undefined
+        ? undefined
+        : existing.find((f) => sameBookCopy(f, row));
+    const base = {
+      // A book of a converted file goes by the book's name: every book shares the file's.
+      fileName: row.book ?? row.fileName,
       counts: row.counts,
       sourceIds: row.sourceIds,
-      localFiles,
-      ...(existingIds.has(row.id) ? { existingEnabled: existingById.get(row.id)?.enabled } : {}),
-    });
+      localFiles: listed(sharing),
+    };
+    if (existingIds.has(row.id)) {
+      files.push({
+        ...base,
+        status: 'already-here',
+        localFiles: [],
+        existingEnabled: existingById.get(row.id)?.enabled,
+      });
+    } else if (holders.length > 0) {
+      files.push({
+        ...base,
+        status: 'book-here',
+        localFiles: [],
+        // On only if what is turned on holds the part by itself.
+        existingEnabled:
+          bookHolders(
+            row,
+            holders.filter((f) => f.enabled),
+          ).length > 0,
+      });
+    } else if (copy !== undefined && isObject(row.json)) {
+      const adds = mergeBook(copy.json, row.json).added;
+      // Nothing to add when only another book's entries were missing.
+      files.push(
+        adds === 0
+          ? { ...base, status: 'book-here', localFiles: [], existingEnabled: copy.enabled }
+          : {
+              ...base,
+              status: 'adds-to-book',
+              // The entries take the copy's place in merge order, not a new file's.
+              localFiles: listed(
+                sharing.filter((f) => f.id !== copy.id && compareMergeOrder(f, copy) < 0),
+              ),
+              existingEnabled: copy.enabled,
+              adds,
+            },
+      );
+    } else {
+      const status = sharing.some((f) => f.enabled) ? 'other-version' : 'new';
+      files.push({ ...base, status });
+    }
   }
 
   const embedded = new Set(prepared.homebrew.flatMap((r) => r.sourceIds.map(lower)));
@@ -167,4 +224,8 @@ function classLabelOf(classes: unknown): string {
       return typeof c?.levels === 'number' ? `${name} ${c.levels}` : name;
     })
     .join(' / ');
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

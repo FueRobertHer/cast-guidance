@@ -43,8 +43,13 @@ describe('homebrew precedence', () => {
 
     const reg = await getRegistry();
     expect(reg.get('spell', 'Fire Bolt', 'HB')?.level).toBe(firstLevel);
-    // Lists still hold both.
-    expect(reg.byType('spell').filter((s) => s.name === 'Fire Bolt')).toHaveLength(2);
+    // Lists hold it once, as the winner: a second copy showed twice in pickers and counts.
+    expect(
+      reg
+        .byType('spell')
+        .filter((s) => s.name === 'Fire Bolt')
+        .map((s) => s.level),
+    ).toEqual([firstLevel]);
   });
 });
 
