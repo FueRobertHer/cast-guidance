@@ -76,6 +76,14 @@ const ODDKIN: DataEntity = {
   entries: [trait('Knack')],
 };
 
+// PHB-Human-shaped: the race's own scores live on its nameless subrace.
+const BASEKIN: DataEntity = {
+  name: 'Basekin',
+  source: 'TST',
+  speed: 30,
+  entries: [trait('Versatility')],
+};
+
 const sub = (name: string, fields: DataEntity, race = FIENDKIN): DataEntity => ({
   name,
   source: 'TST',
@@ -170,12 +178,28 @@ const SUBRACES: DataEntity[] = [
   sub('Twin', { speed: 40, entries: [trait('Late Twin')] }, HALFKIN),
   sub('Late Arrangement', { ability: [{}, weighted([1], ['cha'])] }, ARRKIN),
   sub('Odd Pick', { ability: [{ choose: { from: ['cha'] } }, {}] }, ODDKIN),
+  // Nameless subraces, each its race's base entry. Another book's printing's
+  // comes first, so a lookup by race name alone would find it.
+  { source: 'XTST', raceName: 'Basekin', raceSource: 'XTST', ability: [{ cha: 2 }] },
+  {
+    source: 'TST',
+    raceName: 'Basekin',
+    raceSource: 'TST',
+    ability: [{ str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }],
+    speed: 35,
+    entries: [trait('Base Gift')],
+  },
+  sub(
+    'Varied',
+    { ability: [{ choose: { from: ['str', 'dex', 'con', 'int', 'wis', 'cha'], count: 2 } }] },
+    BASEKIN,
+  ),
 ];
 
 function ctx(): EngineContext {
   const base = makeTestContext();
   const extra: Record<string, DataEntity[]> = {
-    race: [FIENDKIN, HALFKIN, PICKKIN, ARRKIN, ODDKIN],
+    race: [FIENDKIN, HALFKIN, PICKKIN, ARRKIN, ODDKIN, BASEKIN],
     subrace: SUBRACES,
   };
   return {
@@ -387,6 +411,28 @@ describe('the rest of the 5etools subrace merge', () => {
 
   it('counts only the ability picks the ability reader asks', () => {
     expect(racePicks(derive('Odd Pick', 'Oddkin'), 'oddkin')).toEqual([]);
+  });
+});
+
+describe("a race's nameless subrace", () => {
+  it('gives a race with no subrace taken its scores, under the race name', () => {
+    const sheet = derive(undefined, 'Basekin');
+    for (const ability of ['int', 'cha', 'dex', 'wis'] as const) {
+      expect(bonus(sheet, ability)).toEqual([{ label: 'Basekin', amount: 1 }]);
+    }
+  });
+
+  it("puts its traits on the race's card and its speed under the race name", () => {
+    const sheet = derive(undefined, 'Basekin');
+    expect(traitNames(raceCard(sheet, 'Basekin'))).toEqual(['Versatility', 'Base Gift']);
+    expect(sheet.speedWalk.parts).toEqual([{ label: 'Basekin', amount: 35 }]);
+  });
+
+  it('gives way to a named subrace, as 5etools merges one or the other', () => {
+    const sheet = derive('Varied', 'Basekin');
+    expect(bonus(sheet, 'cha')).toEqual([]);
+    expect(traitNames(raceCard(sheet, 'Basekin'))).toEqual(['Versatility']);
+    expect(sheet.speedWalk.parts).toEqual([{ label: 'Basekin', amount: 30 }]);
   });
 });
 

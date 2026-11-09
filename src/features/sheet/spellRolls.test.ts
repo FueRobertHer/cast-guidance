@@ -275,6 +275,60 @@ describe('spellRollActions: the spellcasting modifier template', () => {
   });
 });
 
+describe('spellRollActions with a higher slot', () => {
+  // Shaped like Acid Arrow: one tag grows both the initial and the later
+  // damage, its base rolls separated by a semicolon.
+  const acidArrow: Entity = {
+    name: 'Acid Dart',
+    level: 2,
+    entries: [
+      'On a hit, the target takes {@damage 4d4} acid damage now and {@damage 2d4} acid damage later.',
+    ],
+    entriesHigherLevel: ['Both increase by {@scaledamage 4d4;2d4|2-9|1d4} per slot level above 2.'],
+  };
+
+  it.each([
+    [2, '4d4', '2d4'],
+    [3, '5d4', '3d4'],
+    [9, '11d4', '9d4'],
+  ])('grows each base roll a tag lists, at slot %i', (slotLevel, initial, later) => {
+    expect(
+      spellRollActions(acidArrow, { characterLevel: 5, slotLevel }).map((r) => r.expr),
+    ).toEqual([initial, later]);
+  });
+
+  // Shaped like the 2014 Spiritual Weapon: the tag lists every other level.
+  const everyOther: Entity = {
+    name: 'Floating Blade',
+    level: 2,
+    entries: ['The target takes {@damage 1d8} force damage.'],
+    entriesHigherLevel: ['It increases by {@scaledamage 1d8|2,4,6,8|1d8} every two levels.'],
+  };
+
+  it.each([
+    [2, '1d8'],
+    [3, '1d8'],
+    [4, '2d8'],
+    [5, '2d8'],
+    [8, '4d8'],
+    [9, '4d8'],
+  ])('grows only at the levels a tag lists, at slot %i', (slotLevel, expr) => {
+    expect(spellRollActions(everyOther, { characterLevel: 5, slotLevel })[0]?.expr).toBe(expr);
+  });
+
+  it("keeps the printed roll at the spell's own level when a tag lists lower ones", () => {
+    const early: Entity = {
+      name: 'Early Tag',
+      level: 3,
+      entries: ['Each creature takes {@damage 8d6} fire damage.'],
+      entriesHigherLevel: ['It increases by {@scaledamage 8d6|1-9|1d6} per slot level.'],
+    };
+    const at = (slotLevel: number) =>
+      spellRollActions(early, { characterLevel: 5, slotLevel })[0]?.expr;
+    expect([at(3), at(4), at(9)]).toEqual(['8d6', '9d6', '14d6']);
+  });
+});
+
 describe('spellRollActions on hostile text', () => {
   it('still reads a slot-scaled roll through the bounded patterns', () => {
     const fireball: Entity = {

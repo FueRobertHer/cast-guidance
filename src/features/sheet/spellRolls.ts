@@ -47,8 +47,9 @@ const TAGGED_ROLL = new RegExp(
   'gi',
 );
 
+/** `{@scaledamage <base rolls>|<slot levels>|<step>}`, any later arguments aside. */
 const SCALE_TAG = new RegExp(
-  `{@scale(?:damage|dice) ([^}|]{1,${MAX_TAG_PART}})\\|[^}|]{1,${MAX_TAG_PART}}\\|([^}|]{1,${MAX_TAG_PART}})(?:\\|[^}]{0,${MAX_TAG_PART}})?}`,
+  `{@scale(?:damage|dice) ([^}|]{1,${MAX_TAG_PART}})\\|([^}|]{1,${MAX_TAG_PART}})\\|([^}|]{1,${MAX_TAG_PART}})(?:\\|[^}]{0,${MAX_TAG_PART}})?}`,
   'gi',
 );
 
@@ -189,6 +190,31 @@ function addRepeated(base: string, increment: string, times: number): string {
   return [base, ...Array.from({ length: times }, () => increment)].join('+');
 }
 
+/**
+ * The slot levels an upcast tag lists: single levels and ranges, comma
+ * separated ("2-9", or "2,4,6,8" for a spell that grows every two levels).
+ * Undefined for any other shape.
+ */
+function tagLevels(list: string): number[] | undefined {
+  const levels = new Set<number>();
+  for (const part of list.split(',')) {
+    const range = part.trim().match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+    if (range === null) return undefined;
+    const from = Number(range[1]);
+    const to = Number(range[2] ?? range[1]);
+    for (let level = from; level <= to; level++) levels.add(level);
+  }
+  return levels.size > 0 ? [...levels] : undefined;
+}
+
+/**
+ * The roll as cast with a higher slot. An upcast tag grows each of its base
+ * rolls, which a semicolon separates ("4d4;2d4": Acid Arrow's initial and
+ * later damage), by its step once for each level it lists above its lowest
+ * (and above the spell's own), up to the slot used: so "2,4,6,8" adds nothing
+ * at 3rd level and one step at 4th. A list of another shape counts every
+ * level above the spell's.
+ */
 function applySlotScaling(
   roll: TaggedRoll,
   entity: Entity,
@@ -197,11 +223,17 @@ function applySlotScaling(
 ): TaggedRoll {
   const higher = stringsIn(entity.entriesHigherLevel).join(' ');
   for (const match of higher.matchAll(SCALE_TAG)) {
-    const base = match[1]?.replaceAll(' ', '');
-    const increment = match[2]?.replaceAll(' ', '');
-    if (base === roll.expr && increment !== undefined) {
-      return { ...roll, expr: addRepeated(roll.expr, increment, slotLevel - baseLevel) };
-    }
+    const bases = (match[1] ?? '').split(';').map((base) => base.replaceAll(' ', ''));
+    const increment = match[3]?.replaceAll(' ', '');
+    if (!bases.includes(roll.expr) || increment === undefined) continue;
+    const levels = tagLevels(match[2] ?? '');
+    // The printed roll is the spell's own level's, whatever lower level a tag lists.
+    const lowest = levels === undefined ? baseLevel : Math.max(baseLevel, Math.min(...levels));
+    const steps =
+      levels === undefined
+        ? slotLevel - baseLevel
+        : levels.filter((level) => level > lowest && level <= slotLevel).length;
+    return { ...roll, expr: addRepeated(roll.expr, increment, steps) };
   }
   return roll;
 }

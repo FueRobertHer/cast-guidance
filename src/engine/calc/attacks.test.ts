@@ -112,9 +112,47 @@ const WEAPONS: Record<string, DataEntity> = {
     reqAttune: true,
     extraDamage: [{ dmg: '2d6', dmgType: 'F' }],
   },
+  // Shaped like the DMG and XDMG firearms: "AF" is a property the common ones lack.
+  Revolver: {
+    name: 'Revolver',
+    type: 'R',
+    weaponCategory: 'martial',
+    dmg1: '2d8',
+    dmgType: 'P',
+    property: ['AF|DMG', 'RLD'],
+    mastery: ['Sap|XPHB'],
+  },
+  // Shaped like Psychic Blade: a mastery with a note is an object.
+  'Mind Blade': {
+    name: 'Mind Blade',
+    type: 'M',
+    weaponCategory: 'simple',
+    dmg1: '1d6',
+    dmgType: 'Y',
+    property: ['F|XPHB', 'T|XPHB'],
+    mastery: [{ uid: 'Vex|XPHB', note: 'Placeholder note.' }],
+  },
+  Relic: {
+    name: 'Relic',
+    type: 'M',
+    weaponCategory: 'simple',
+    dmg1: '1d4',
+    dmgType: 'B',
+    property: ['Dup|TST', 'Zz'],
+  },
 };
 
-const ctx: EngineContext = { byType: () => [], get: (_t, name) => WEAPONS[name] };
+// The data's own property list: a name in `name` or in the first entry.
+const ITEM_PROPERTIES: DataEntity[] = [
+  { abbreviation: 'AF', source: 'DMG', entries: [{ type: 'entries', name: 'Ammunition' }] },
+  { abbreviation: 'Dup', source: 'XTST', name: 'Other Book' },
+  { abbreviation: 'Dup', source: 'TST', name: 'This Book' },
+];
+
+const ctx: EngineContext = {
+  byType: (type) => (type === 'itemProperty' ? ITEM_PROPERTIES : []),
+  get: (_t, name) => WEAPONS[name],
+};
 
 function abilities(str: number, dex: number): Record<Ability, DerivedAbility> {
   const out = {} as Record<Ability, DerivedAbility>;
@@ -179,6 +217,21 @@ describe('calcAttacks', () => {
     expect(row(attacks(docWith('Longsword'), abilities(3, 1)), 'Longsword')?.extraDamage).toEqual(
       [],
     );
+  });
+
+  it("names a property the common ones lack from the data's own list", () => {
+    const r = row(attacks(docWith('Revolver'), abilities(0, 2)), 'Revolver');
+    expect(r?.properties).toEqual(['ammunition', 'reload', 'mastery: sap']);
+  });
+
+  it("takes a property's name from the weapon's book, and shows a code nothing names", () => {
+    const r = row(attacks(docWith('Relic'), abilities(0, 0)), 'Relic');
+    expect(r?.properties).toEqual(['this book', 'Zz']);
+  });
+
+  it('names a mastery written as an object with a note', () => {
+    const r = row(attacks(docWith('Mind Blade'), abilities(0, 3)), 'Mind Blade');
+    expect(r?.properties).toEqual(['finesse', 'thrown', 'mastery: vex']);
   });
 
   it('a finesse weapon uses the higher of STR/DEX', () => {

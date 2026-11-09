@@ -86,6 +86,16 @@ const weapons: DataEntity[] = [
     dmgType: 'S',
     mastery: ['Nick|XPHB'],
   },
+  // A mastery with a note is an object (Psychic Blade's).
+  {
+    name: 'Fake Mind Blade',
+    source: 'XPHB',
+    type: 'M',
+    weaponCategory: 'simple',
+    dmg1: '1d6',
+    dmgType: 'Y',
+    mastery: [{ uid: 'Vex|XPHB', note: 'Placeholder note.' }],
+  },
   // An older printing with no mastery, then a firearm that has one.
   { name: 'Old Blade', source: 'PHB', type: 'M', weaponCategory: 'martial', dmg1: '1d8' },
   {
@@ -242,8 +252,9 @@ describe('a weapon mastery only the prose asks for', () => {
     const prompt = deriveSheet(docWith([masterNew, 'i1']), ctx).pending.find(
       (p) => p.id === promptId,
     );
-    expect(prompt?.options.map((o) => o.id)).toEqual(['Fake Blade']);
+    expect(prompt?.options.map((o) => o.id)).toEqual(['Fake Blade', 'Fake Mind Blade']);
     expect(prompt?.options[0]?.description).toBe('Nick. Martial melee · 1d8 slashing');
+    expect(prompt?.options[1]?.description).toMatch(/^Vex\. Simple melee/);
   });
 
   it('shows the pick on the card', () => {
