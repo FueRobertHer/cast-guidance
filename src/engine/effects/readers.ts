@@ -295,6 +295,25 @@ export function weaponOptions(
 }
 
 /**
+ * A weapon's mastery properties by name. Each is a reference ("Sap|XPHB"), or
+ * an object holding one in `uid` when the item adds a note (Psychic Blade's
+ * Vex, usable without Weapon Mastery).
+ */
+export function masteryNames(e: DataEntity): string[] {
+  if (!Array.isArray(e.mastery)) return [];
+  return e.mastery.flatMap((m: unknown) => {
+    const ref =
+      typeof m === 'string'
+        ? m
+        : typeof m === 'object' && m !== null
+          ? str((m as DataEntity).uid)
+          : undefined;
+    const name = ref?.split('|')[0]?.trim();
+    return name === undefined || name === '' ? [] : [name];
+  });
+}
+
+/**
  * The kinds of weapon with a mastery property. The DMG's firearms stay out, as in
  * a weapon filter, and a kind printed in more than one book is offered once.
  */
@@ -305,11 +324,12 @@ export function weaponMasteryOptions(ctx: EngineContext): ChoiceOption[] {
     const name = str(e.name);
     const category = str(e.weaponCategory)?.toLowerCase();
     if (name === undefined || category === undefined || e.age !== undefined) continue;
-    if (!Array.isArray(e.mastery) || e.mastery.length === 0) continue;
+    const masteries = masteryNames(e);
+    if (masteries.length === 0) continue;
     if (seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const code = String(e.type ?? '').split('|')[0];
-    const mastery = e.mastery.map((m) => String(m).split('|')[0]).join(', ');
+    const mastery = masteries.join(', ');
     const summary = weaponSummary(e, category, code === 'R' || code === 'AF');
     options.push({ id: name, label: name, description: `${mastery}. ${summary}` });
   }

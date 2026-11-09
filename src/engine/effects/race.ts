@@ -42,6 +42,22 @@ export function subraceFor(
   return ctx.byType('subrace').find((s) => sameRef(s) && subraceBelongsTo(s, race)) ?? first;
 }
 
+/**
+ * The race's nameless subrace, when the character takes no named one. A
+ * nameless subrace is the race's own base entry: 5etools lists a race with
+ * subraces only merged with each of them (`Renderer.race._getMergedSubraces`),
+ * so "Human" on its site is the race merged with this one, and the PHB Human's
+ * +1 to every score lives here. A named subrace is merged instead, never both.
+ */
+export function baseSubraceFor(
+  ctx: EngineContext,
+  doc: Pick<CharacterDoc, 'race' | 'subrace'>,
+): DataEntity | undefined {
+  const race = doc.race;
+  if (race === undefined || doc.subrace !== undefined) return undefined;
+  return ctx.byType('subrace').find((s) => typeof s.name !== 'string' && subraceBelongsTo(s, race));
+}
+
 function raceEntity(col: Collector): { race?: DataEntity; subrace?: DataEntity } {
   const doc = col.doc;
   const race = doc.race ? col.ctx.get('race', doc.race.name, doc.race.source) : undefined;
@@ -317,16 +333,22 @@ export function collectRace(col: Collector): void {
     };
     // A Dragonborn ancestry's fixed resistance replaces the race's choice here.
     // Only a subrace of this race reshapes it, not a pick another race's
-    // subrace still holds.
-    const own =
-      subrace !== undefined && subraceBelongsTo(subrace, col.doc.race)
-        ? raceUnderSubrace(race, subrace)
-        : race;
+    // subrace still holds. With no subrace taken, the race's nameless one
+    // reshapes it the same way, and is part of the race: its effects carry
+    // the race's name and its traits go on the race's card.
+    const base = baseSubraceFor(col.ctx, col.doc);
+    const over = subrace !== undefined && subraceBelongsTo(subrace, col.doc.race) ? subrace : base;
+    const own = over !== undefined ? raceUnderSubrace(race, over) : race;
     collectFrom(col, own, origin, `race:${origin.uid}`);
+    if (base !== undefined) collectFrom(col, base, origin, `race:${origin.uid}:base`);
+    const entries =
+      base !== undefined && Array.isArray(base.entries)
+        ? [...(Array.isArray(own.entries) ? own.entries : []), ...base.entries]
+        : own.entries;
     // A subrace that replaces every trait (Keldon's Human) leaves no card.
-    const listsTraits = (e: DataEntity) => Array.isArray(e.entries) && e.entries.length > 0;
-    const emptied = listsTraits(race) && !listsTraits(own);
-    if (!emptied) col.features.push({ name: origin.label, origin, entries: own.entries });
+    const listsTraits = (list: unknown) => Array.isArray(list) && list.length > 0;
+    const emptied = listsTraits(race.entries) && !listsTraits(entries);
+    if (!emptied) col.features.push({ name: origin.label, origin, entries });
   }
   if (subrace !== undefined && col.doc.subrace !== undefined) {
     const origin: EffectOrigin = {

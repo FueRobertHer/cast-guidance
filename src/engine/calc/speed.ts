@@ -1,6 +1,6 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
-import { subraceFor } from '../effects/race';
+import { baseSubraceFor, subraceFor } from '../effects/race';
 import type { CharacterDoc, DerivedSheet, DerivedValue, EffectInput } from '../types';
 import { atLeast, dv, effectsOf, inPlay, onTop, withOverride } from './core';
 
@@ -12,14 +12,15 @@ export function calcWalkSpeed(
   let raceSpeed = 30;
   let label = 'Base';
   const race = doc.race ? col.ctx.get('race', doc.race.name, doc.race.source) : undefined;
-  const subrace = subraceFor(col.ctx, doc);
+  // With no subrace taken, the race's nameless one is part of the race.
+  const subrace = subraceFor(col.ctx, doc) ?? baseSubraceFor(col.ctx, doc);
   for (const e of [race, subrace]) {
     if (e === undefined) continue;
     const speed = e.speed;
     const walk = typeof speed === 'number' ? speed : num((speed as { walk?: unknown })?.walk);
     if (walk !== undefined) {
       raceSpeed = walk;
-      label = String(e.name ?? 'Species');
+      label = String(e.name ?? race?.name ?? 'Species');
     }
   }
   const parts = [{ label, amount: raceSpeed }];

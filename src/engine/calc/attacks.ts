@@ -1,7 +1,7 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
 import { lookupItem, magicWorks, parseBonus } from '../effects/item';
-import { weaponFitsTypes } from '../effects/readers';
+import { masteryNames, weaponFitsTypes } from '../effects/readers';
 import type {
   Ability,
   AttackRow,
@@ -10,6 +10,7 @@ import type {
   DataEntity,
   DerivedAbility,
   EffectInput,
+  EngineContext,
 } from '../types';
 import { dv, effectsOf } from './core';
 
@@ -44,12 +45,42 @@ const DMG_TYPE_LABELS: Record<string, string> = {
   T: 'thunder',
 };
 
-function propertyCodes(e: DataEntity): string[] {
+/** A weapon's properties as written: a code and, after a bar, its book ("AF|DMG"). */
+function propertyRefs(e: DataEntity): Array<{ code: string; source?: string }> {
   if (!Array.isArray(e.property)) return [];
-  return e.property
-    .map((p) => (typeof p === 'string' ? p : (str((p as DataEntity).uid) ?? '')))
-    .map((p) => p.split('|')[0] ?? '')
-    .filter((p) => p !== '');
+  return e.property.flatMap((p) => {
+    const ref = typeof p === 'string' ? p : (str((p as DataEntity).uid) ?? '');
+    const [code = '', source] = ref.split('|');
+    return code === '' ? [] : [{ code, source }];
+  });
+}
+
+function propertyCodes(e: DataEntity): string[] {
+  return propertyRefs(e).map((r) => r.code);
+}
+
+/**
+ * A property's name as the sheet shows it. The common ones are named above;
+ * any other comes from the data's own `itemProperty` list, which names each
+ * one in `name` or its first entry (the DMG firearms' "AF" is Ammunition,
+ * EGW's "Vst" Vestige of Divergence), from the book the weapon gives when
+ * there is one. A code the data does not name either is shown as written.
+ */
+function propertyName(ctx: EngineContext, code: string, source: string | undefined): string {
+  const known = PROPERTY_LABELS[code];
+  if (known !== undefined) return known;
+  const lower = (v: unknown) => str(v)?.toLowerCase();
+  const all = ctx
+    .byType('itemProperty')
+    .filter((p) => lower(p.abbreviation) === code.toLowerCase());
+  const entry =
+    all.find((p) => source !== undefined && lower(p.source) === source.toLowerCase()) ?? all[0];
+  const entries = entry?.entries ?? entry?.entriesTemplate;
+  const first: unknown = Array.isArray(entries) ? entries[0] : undefined;
+  const name =
+    str(entry?.name) ??
+    (typeof first === 'object' && first !== null ? str((first as DataEntity).name) : undefined);
+  return name?.toLowerCase() ?? code;
 }
 
 /**
@@ -266,11 +297,9 @@ export function calcAttacks(
           : undefined,
         str(e.dmg2),
         [
-          ...props.map((p) => PROPERTY_LABELS[p] ?? p),
+          ...propertyRefs(e).map((p) => propertyName(col.ctx, p.code, p.source)),
           // 2024 weapon mastery, e.g. "Sap|XPHB" -> "mastery: sap"
-          ...(Array.isArray(e.mastery)
-            ? e.mastery.map((m) => `mastery: ${String(m).split('|')[0]?.toLowerCase()}`)
-            : []),
+          ...masteryNames(e).map((m) => `mastery: ${m.toLowerCase()}`),
         ],
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',
