@@ -216,6 +216,14 @@ describe('endEffect', () => {
     expect(p).not.toHaveProperty('concentratingOn');
   });
 
+  it("leaves concentration alone when an ally's effect of the same name ends", () => {
+    const p = play();
+    p.concentratingOn = { label: 'Bless', level: 1 };
+    applyEffect(p, bless('ally', false), limits(p));
+    endEffect(p, 'ally', limits(p));
+    expect(p.concentratingOn).toEqual({ label: 'Bless', level: 1 });
+  });
+
   it('ends nothing for an id not in play, and leaves entries it cannot read', () => {
     const p = play();
     const odd = { id: 'odd', name: 'Future', parts: [{ kind: 'timeStop' }] };
@@ -319,6 +327,18 @@ describe('restEndings', () => {
     q.activeEffects = [aid(5)];
     expect(restEndings(q, 'long', limits(q)).maxHpChange).toBe(-5);
   });
+
+  it("ends the caster's concentration with their own effect, and not with an ally's", () => {
+    const p = play();
+    p.concentratingOn = { label: 'Bless', level: 1 };
+    p.activeEffects = [bless('ally', false)];
+    expect(restEndings(p, 'short', limits(p)).ended).toEqual(['Bless']);
+    expect(p.concentratingOn).toEqual({ label: 'Bless', level: 1 });
+
+    p.activeEffects = [bless()];
+    expect(restEndings(p, 'short', limits(p)).ended).toEqual(['Bless']);
+    expect(p).not.toHaveProperty('concentratingOn');
+  });
 });
 
 describe('endsAtRest and endEffects', () => {
@@ -348,6 +368,19 @@ describe('endsAtRest and endEffects', () => {
     const change = endEffects(p, new Set(['aid5', 'big']), limits(p));
     expect(change).toEqual({ ended: ['Aid', 'Aid'], maxHpChange: -10 });
     expect(p.activeEffects).toBeUndefined();
+  });
+
+  it("ends the caster's concentration with their own ticked effect, and not with an ally's", () => {
+    const p = play();
+    // Cast on others only: the Bless on this character is an ally's.
+    p.concentratingOn = { label: 'Bless', level: 1 };
+    p.activeEffects = [bless('ally', false)];
+    endEffects(p, new Set(['ally']), limits(p));
+    expect(p.concentratingOn).toEqual({ label: 'Bless', level: 1 });
+
+    p.activeEffects = [bless()];
+    endEffects(p, new Set(['bless']), limits(p));
+    expect(p).not.toHaveProperty('concentratingOn');
   });
 });
 
