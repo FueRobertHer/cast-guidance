@@ -196,6 +196,117 @@ describe('compareWithOfficial', () => {
     expect(field(result, 'item', 'weight')).toMatchObject({ same: 1 });
   });
 
+  it('sets a subrace beside its race, merged as 5etools shows it', () => {
+    const official = officialOf({
+      race: [
+        // First, so a subrace found by its race's name alone would get it.
+        { name: 'Dwarf', source: 'OTHER', speed: 99 },
+        { name: 'Dwarf', source: 'PHB', speed: 25, ability: [{ con: 2 }], resist: ['poison'] },
+        {
+          name: 'Elf',
+          source: 'PHB',
+          ability: [{ dex: 2 }],
+          languageProficiencies: [{ common: true, elvish: true }],
+          skillProficiencies: [{ perception: true }],
+        },
+        { name: 'Gnome', source: 'PHB', languageProficiencies: [{ common: true, gnomish: true }] },
+      ],
+      subrace: [
+        {
+          name: 'Hill',
+          source: 'PHB',
+          raceName: 'Dwarf',
+          raceSource: 'PHB',
+          ability: [{ wis: 1 }],
+        },
+        {
+          name: 'High',
+          source: 'PHB',
+          raceName: 'Elf',
+          raceSource: 'PHB',
+          ability: [{ int: 1 }],
+          languageProficiencies: [{ common: true, elvish: true, anyStandard: 1 }],
+          skillProficiencies: [{ arcana: true }],
+          overwrite: { languageProficiencies: true },
+        },
+        {
+          name: 'Deep',
+          source: 'PHB',
+          raceName: 'Gnome',
+          raceSource: 'PHB',
+          languageProficiencies: [{ undercommon: true }],
+        },
+      ],
+    });
+    const result = compareWithOfficial(
+      {
+        race: [
+          { name: 'Dwarf, Hill', speed: 25, ability: [{ con: 2, wis: 1 }], resist: ['poison'] },
+          {
+            name: 'Elf (High)',
+            ability: [{ dex: 2, int: 1 }],
+            languageProficiencies: [{ common: true, elvish: true, anyStandard: 1 }],
+            skillProficiencies: [{ perception: true, arcana: true }],
+          },
+          {
+            name: 'Deep Gnome',
+            languageProficiencies: [{ common: true, gnomish: true }, { undercommon: true }],
+          },
+          { name: 'Hill' },
+        ],
+      },
+      official,
+    );
+    expect(result[0]).toMatchObject({ converted: 4, matched: 3, unmatched: ['Hill'] });
+    for (const name of ['speed', 'ability', 'resist', 'languageProficiencies']) {
+      expect(field(result, 'race', name), name).toMatchObject({ differs: 0, missing: 0, extra: 0 });
+    }
+    expect(field(result, 'race', 'skillProficiencies')).toMatchObject({ same: 1 });
+    for (const name of ['raceName', 'raceSource', 'overwrite']) {
+      expect(field(result, 'race', name), name).toBeUndefined();
+    }
+  });
+
+  it('finds a 2024 lineage under the name other apps give it, in its own edition', () => {
+    const official = officialOf({
+      race: [
+        { name: 'Elf', source: 'XPHB', edition: 'one', darkvision: 60 },
+        {
+          name: 'Elf; Drow Lineage',
+          source: 'XPHB',
+          edition: 'one',
+          _versionOf: 'elf|xphb',
+          darkvision: 120,
+        },
+      ],
+    });
+    const result = compareWithOfficial(
+      { race: [{ name: 'Elf, Drow', edition: 'one', darkvision: 120 }, { name: 'Elf, Drow' }] },
+      official,
+    );
+    expect(result[0]).toMatchObject({ matched: 1, unmatched: ['Elf, Drow'] });
+    expect(field(result, 'race', 'darkvision')).toMatchObject({ same: 1 });
+  });
+
+  it('merges a race`s nameless subrace, its base entry, into the race', () => {
+    const scores = [{ str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }];
+    const official = officialOf({
+      race: [
+        { name: 'Human', source: 'PHB', speed: 30 },
+        { name: 'Human', source: 'OTHER', speed: 30 },
+      ],
+      subrace: [
+        { source: 'OTHER', raceName: 'Human', raceSource: 'OTHER', ability: [{ str: 2 }] },
+        { source: 'PHB', raceName: 'Human', raceSource: 'PHB', srd: true, ability: scores },
+      ],
+    });
+    const result = compareWithOfficial(
+      { race: [{ name: 'Human', speed: 30, ability: scores }] },
+      official,
+    );
+    expect(field(result, 'race', 'ability')).toMatchObject({ same: 1, extra: 0 });
+  });
+
   it('counts each value a list lacks or adds, across entries, most first', () => {
     const official = officialOf({
       spell: ['A', 'B', 'C'].map((name) => ({

@@ -3,7 +3,8 @@
  * Size, speed, ability bonuses and skills have fields of their own; traits
  * become named entries, which is where the engine looks for its curated trait
  * mechanics and its prose scan. Darkvision is read from a trait of that name.
- * Fight Club has no subraces: each one is a race of its own here too.
+ * Fight Club has no subraces: each one is a race of its own here too, and the
+ * installed check finds an official subrace under its name (`officialNames`).
  */
 import { childElements, childText, childTexts, type XmlElement } from '../xml';
 import type { Fc5Context, Fc5Result } from './context';

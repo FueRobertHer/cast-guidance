@@ -11,7 +11,7 @@
 import type { Entity } from '../data5e/copyMod';
 import type { EntityType } from '../data5e/normalize';
 import { editionOf } from '../data5e/rulesVersion';
-import { OFFICIAL_TYPES } from './official';
+import { OFFICIAL_TYPES, officialNames } from './official';
 import type { ConvertedKind } from './types';
 
 export interface OfficialData {
@@ -156,7 +156,8 @@ const NO_NAME = '(no name)';
 /**
  * Set every converted entry in `json` beside the official entry of the same
  * kind, name and rules edition, and tally each field. An official entry also
- * answers to the name the SRD prints it under (`srd: "Hideous Laughter"`).
+ * answers to the name the SRD prints it under (`srd: "Hideous Laughter"`), and
+ * a subrace or lineage to the names other apps give it (`Dwarf, Hill`).
  */
 export function compareWithOfficial(
   json: Readonly<Record<string, unknown>>,
@@ -246,7 +247,12 @@ export function compareValues(
 
 const keyOf = (name: string, edition: string) => `${name.toLowerCase()}|${edition}`;
 
-/** Official entries of a kind by `name|edition`, under their SRD names too. */
+/**
+ * Official entries of a kind by `name|edition`, under their SRD names too, and
+ * a subrace or lineage under the names other apps give it (`officialNames`).
+ * A subrace is merged into its race first, as the 5etools site shows it, and
+ * so is a race's nameless subrace, its base entry (the PHB Human's scores).
+ */
 function officialIndex(kind: ConvertedKind, official: OfficialData): Map<string, Entity[]> {
   const index = new Map<string, Entity[]>();
   const add = (key: string, e: Entity) => {
@@ -255,17 +261,121 @@ function officialIndex(kind: ConvertedKind, official: OfficialData): Map<string,
     else if (!list.includes(e)) list.push(e);
   };
   for (const type of OFFICIAL_TYPES[kind]) {
+    const raceOf = type === 'subrace' ? raceFinder(official.byType('race')) : undefined;
+    const baseOf = type === 'race' ? baseSubraces(official.byType('subrace')) : undefined;
     for (const e of official.byType(type)) {
       if (typeof e.name !== 'string') continue;
       const edition = editionOf(e);
-      add(keyOf(e.name, edition), e);
+      const base = baseOf?.get(uidKey(e.name, e.source));
+      const entry =
+        raceOf !== undefined
+          ? mergedSubrace(raceOf(e), e)
+          : base !== undefined
+            ? mergedSubrace(e, base)
+            : e;
+      for (const name of officialNames(type, e)) add(keyOf(name, edition), entry);
       for (const flag of ['srd', 'srd52'] as const) {
         const srdName = e[flag];
-        if (typeof srdName === 'string') add(keyOf(srdName, edition), e);
+        if (typeof srdName === 'string') add(keyOf(srdName, edition), entry);
       }
     }
   }
   return index;
+}
+
+const uidKey = (name: unknown, source: unknown) =>
+  `${String(name)}|${String(source)}`.toLowerCase();
+
+/** Nameless subraces, each its race's base entry, by the race's `name|source`. */
+function baseSubraces(subraces: readonly Entity[]): Map<string, Entity> {
+  const out = new Map<string, Entity>();
+  for (const s of subraces) {
+    if (s.name !== undefined || typeof s.raceName !== 'string') continue;
+    if (typeof s.raceSource !== 'string') continue;
+    const key = uidKey(s.raceName, s.raceSource);
+    if (!out.has(key)) out.set(key, s);
+  }
+  return out;
+}
+
+/** A subrace's race, by `raceName` and `raceSource` (by name alone without one). */
+function raceFinder(races: readonly Entity[]): (subrace: Entity) => Entity | undefined {
+  const byUid = new Map<string, Entity>();
+  const byName = new Map<string, Entity>();
+  for (const race of races) {
+    if (typeof race.name !== 'string' || typeof race.source !== 'string') continue;
+    const name = race.name.toLowerCase();
+    if (!byUid.has(`${name}|${race.source.toLowerCase()}`)) {
+      byUid.set(`${name}|${race.source.toLowerCase()}`, race);
+    }
+    if (!byName.has(name)) byName.set(name, race);
+  }
+  return (subrace) => {
+    if (typeof subrace.raceName !== 'string') return undefined;
+    const name = subrace.raceName.toLowerCase();
+    return typeof subrace.raceSource === 'string'
+      ? byUid.get(`${name}|${subrace.raceSource.toLowerCase()}`)
+      : byName.get(name);
+  };
+}
+
+/**
+ * A subrace laid over its race, as the 5etools site merges "Dwarf (Hill)"
+ * (`Renderer.race._getMergedSubrace`): ability scores merge entry by entry;
+ * languages and trait tags add to the race's, and a skill list merges into
+ * the race's single one, unless the subrace's `overwrite` names the field;
+ * any other field of the subrace replaces the race's, and a null removes it.
+ * Where 5etools would stop with an error (lists of different lengths), the
+ * subrace's own list stands.
+ */
+function mergedSubrace(race: Entity | undefined, subrace: Entity): Entity {
+  const sr: Entity = { ...subrace };
+  const overwrite = sr.overwrite;
+  // Which race it belongs to, and how to merge: not rules to compare.
+  delete sr.raceName;
+  delete sr.raceSource;
+  delete sr.overwrite;
+  const out: Entity = { ...race };
+  // The race's free-rules flags are not the subrace's.
+  for (const flag of FREE_RULES) delete out[flag];
+  const replaces = (field: string) => isRecord(overwrite) && Boolean(overwrite[field]);
+  const merged: Entity = {};
+
+  if (Array.isArray(sr.ability)) {
+    const base = out.ability;
+    const sameShape =
+      !replaces('ability') && Array.isArray(base) && base.length === sr.ability.length;
+    merged.ability = sr.ability.map((scores, i) => ({
+      ...(sameShape && isRecord(base[i]) ? base[i] : {}),
+      ...(isRecord(scores) ? scores : {}),
+    }));
+  }
+  for (const field of ['languageProficiencies', 'traitTags']) {
+    const own = sr[field];
+    const base = out[field];
+    if (Array.isArray(own) && Array.isArray(base) && !replaces(field)) {
+      merged[field] = [...base, ...own];
+    }
+  }
+  const skills = sr.skillProficiencies;
+  const baseSkills = out.skillProficiencies;
+  if (
+    Array.isArray(skills) &&
+    Array.isArray(baseSkills) &&
+    !replaces('skillProficiencies') &&
+    skills.length === 1 &&
+    baseSkills.length === 1 &&
+    isRecord(skills[0]) &&
+    isRecord(baseSkills[0])
+  ) {
+    merged.skillProficiencies = [{ ...baseSkills[0], ...skills[0] }];
+  }
+
+  const result: Entity = { ...out, ...sr, ...merged };
+  for (const [key, value] of Object.entries(result)) {
+    if (value === null || value === undefined) delete result[key];
+  }
+  return result;
 }
 
 /** Of several printings with one name and edition, the free-rules one. */

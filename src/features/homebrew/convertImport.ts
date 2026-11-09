@@ -9,14 +9,17 @@
  * by name and rules edition.
  */
 import { type ConversionResult, convertXmlText } from '@/convert';
-import { OFFICIAL_TYPES } from '@/convert/official';
+import { OFFICIAL_TYPES, officialNames } from '@/convert/official';
 import type { ConvertedKind, InstalledCheck } from '@/convert/types';
 import type { EntityRegistry } from '@/data5e/normalize';
 import { getRegistry } from '@/data5e/registry';
 import { editionOf } from '@/data5e/rulesVersion';
 import { dataStatusStore } from '@/stores/dataStatus';
 
-/** Official entries by `kind|name|edition`, lowercased, built per kind on first ask. */
+/**
+ * Official entries by `name|edition`, lowercased, built per kind on first ask.
+ * A subrace or lineage is under the names other apps give it (`Dwarf, Hill`).
+ */
 export function installedCheck(reg: EntityRegistry): InstalledCheck {
   const byKind = new Map<ConvertedKind, Set<string>>();
   return (kind, name, edition) => {
@@ -25,7 +28,8 @@ export function installedCheck(reg: EntityRegistry): InstalledCheck {
       keys = new Set();
       for (const type of OFFICIAL_TYPES[kind]) {
         for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
-          if (typeof e.name === 'string') keys.add(`${e.name.toLowerCase()}|${editionOf(e)}`);
+          const ed = editionOf(e);
+          for (const n of officialNames(type, e)) keys.add(`${n}|${ed}`);
         }
       }
       byKind.set(kind, keys);

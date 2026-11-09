@@ -44,6 +44,10 @@ silently drops it.
 
 Entries the installed game data already has (same kind, name and rules
 edition) are left out: the installed copy carries the app's curated mechanics.
+Other apps have no subraces, so a race also matches an official subrace or
+2024 lineage under the names they give it: `Dwarf, Hill`, `Dwarf (Hill)` or
+`Hill Dwarf` for the Hill subrace of the Dwarf, `Elf, Drow` for the 2024 Elf's
+Drow Lineage (`src/convert/official.ts`).
 Spell entries that only add class lists merge into a spell the same file
 defines; ones for spells elsewhere are counted in a warning.
 
@@ -87,7 +91,9 @@ bun scripts/convert-fc5.ts path/to/srd/*.xml --compare
 
 `--compare` fetches a 5etools release (the pinned one, or `--tag`) and sets
 each converted entry beside the official entry of the same kind, name and
-edition (`src/convert/compareOfficial.ts`). Fight Club's SRD files hold
+edition, matched as the import's installed check matches them
+(`src/convert/compareOfficial.ts`). A subrace is set beside it merged into
+its race, as the 5etools site shows "Dwarf (Hill)". Fight Club's SRD files hold
 entries 5etools has too, so this is an answer key for the converter, free and
 exact. Per field it counts entries that agree, differ, are missing the field
 (the official entry has it, the converted one does not: a rule left as text)
@@ -110,6 +116,6 @@ them.
 
 A difference is not always the converter's: the Fight Club SRD files have
 their own errors (Flail marked simple, Divine Smite as transmutation), so check
-the raw entry before changing a reader. Fight Club names a subrace as a race
-(`Dwarf, Hill`), and 5etools builds specific magic items (`Battleaxe +1`) from
-generic variants, so neither finds a match.
+the raw entry before changing a reader. 5etools builds specific magic items
+(`Battleaxe +1`) from generic variants, which the app does not expand, so
+those find no match.
