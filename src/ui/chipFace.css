@@ -198,6 +198,22 @@
   pointer-events: none;
   transition: opacity 120ms ease-out;
 }
+/*
+ * An effect's ring and mark (ChipFace's `lift`, drawn in lift.css): layers the
+ * size of the face that take the face's motion, so they move as one. The mark's
+ * is above every ring's, so a raised neighbour's ring never crosses a mark.
+ */
+.cx-lift {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+.cx-lift-top {
+  z-index: 3;
+}
 .cx-layer {
   position: absolute;
   inset: 0;
@@ -1065,6 +1081,7 @@
   animation: none;
 }
 .cx-rm .cx-strip,
+.cx-rm .cx-lift,
 .cx-rm .cx-body-cower .cx-move {
   scale: none;
   animation: none;
@@ -1076,7 +1093,8 @@
 .cx-rm .cx-over {
   animation: cx-fade 200ms ease-out both;
 }
-.cx-rm .cx-face.cx-body-fallen {
+.cx-rm .cx-face.cx-body-fallen,
+.cx-rm .cx-lift.cx-body-fallen {
   animation: cx-rise 200ms ease-out both;
 }
 @keyframes cx-fade {
@@ -1145,7 +1163,10 @@
   bottom: 29px;
 }
 
-/* A cell of the stat strip, which clips: its marks and tags stay inside it. */
+/*
+ * A cell of the stat strip. Its tags stay inside it, and it clips the pieces
+ * over it itself, so a raised cell's mark can sit on its corner past the strip.
+ */
 .cx-at-cell {
   --cx-cower: 0.97;
   --cx-flinch: 0.93;
@@ -1170,6 +1191,25 @@
   align-items: center;
   gap: 0.125rem;
   max-width: 100%;
+}
+.cx-at-cell .cx-over {
+  overflow: hidden;
+  border-radius: inherit;
+}
+/*
+ * Raised (the buffs canvas, Cells B): the green is the cell's own edge, which a
+ * condition gives up while it keeps its tint and motion. The mark keeps a
+ * chip's place, centred on the bottom right corner, over the next cell.
+ */
+.cx-at-cell .fx-lift-ring {
+  inset: 0;
+}
+.cx-at-cell.cx-lifted .cx-ring {
+  opacity: 0;
+}
+/* Ignore once's dashed ring sits inside the green, as it does on a chip. */
+.cx-at-cell.cx-lifted .cx-ignore-ring {
+  inset: 3px;
 }
 .cx-at-cell .cx-tag {
   top: 0.25rem;
@@ -1312,6 +1352,7 @@
 .cx-still .cx-body-cower .cx-move,
 .cx-still .cx-p,
 .cx-still .cx-liquid::before,
-.cx-still .cx-face {
+.cx-still .cx-face,
+.cx-still .cx-lift {
   animation: none;
 }

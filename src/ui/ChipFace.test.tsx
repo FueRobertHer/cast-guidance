@@ -545,6 +545,60 @@ describe('useRollMoment, for a control whose total lands in the toast', () => {
   });
 });
 
+describe('ChipFace, raised by an effect in play', () => {
+  const raised = (wear: ChipWear, lift?: boolean, surface: WearSurface = 'chip') => (
+    <ChipFace wear={wear} rolls={0} showing={false} surface={surface} lift={lift}>
+      +5
+    </ChipFace>
+  );
+
+  it('draws the ring and, above it, the mark on layers that take the face’s motion', () => {
+    const { container } = render(raised(worn('Prone'), true));
+    expect(container.querySelector('.cx')?.classList.contains('cx-lifted')).toBe(true);
+    expect(container.querySelector('.cx-face')?.className).toContain('cx-body-fallen');
+    const [ring, mark] = [...container.querySelectorAll<HTMLElement>('.cx-lift')];
+    for (const layer of [ring, mark]) {
+      expect(layer?.className).toContain('cx-body-fallen');
+      expect(layer?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(ring?.querySelector('.fx-lift-ring')).not.toBeNull();
+    expect(ring?.querySelector('.fx-lift-mark')).toBeNull();
+    // Its own layer, so a raised neighbour's ring is drawn under it.
+    expect(mark?.classList.contains('cx-lift-top')).toBe(true);
+    expect(mark?.querySelector('.fx-lift-mark')).not.toBeNull();
+  });
+
+  it('keeps the layers while not raised, so a ring that comes later keeps time', () => {
+    const { container, rerender } = render(raised(worn('Frightened'), false));
+    const layers = () => [...container.querySelectorAll<HTMLElement>('.cx-lift')];
+    expect(layers()).toHaveLength(2);
+    for (const layer of layers()) {
+      expect(layer.className).toContain('cx-body-cower');
+      expect(layer.childElementCount).toBe(0);
+    }
+    expect(container.querySelector('.cx')?.classList.contains('cx-lifted')).toBe(false);
+    rerender(raised(worn('Frightened'), true));
+    expect(container.querySelector('.fx-lift-ring')).not.toBeNull();
+    expect(container.querySelector('.fx-lift-mark')).not.toBeNull();
+    for (const layer of layers()) expect(layer.classList.contains('fx-lift-arrive')).toBe(true);
+    advance(480);
+    expect(container.querySelector('.fx-lift-arrive')).toBeNull();
+  });
+
+  it('draws the ring in at once with condition motion off', () => {
+    act(() => setAnimateConditions(false));
+    const { container, rerender } = render(raised(PLAIN, false));
+    rerender(raised(PLAIN, true));
+    expect(container.querySelector('.fx-lift-ring')).not.toBeNull();
+    expect(container.querySelector('.fx-lift-arrive')).toBeNull();
+  });
+
+  it('draws no layer for a control nothing raises', () => {
+    const { container } = render(raised(worn('Prone')));
+    expect(container.querySelector('.cx-lift')).toBeNull();
+  });
+});
+
 describe('RollChip, wearing conditions', () => {
   const props = {
     expr: '1d20+5',
@@ -585,6 +639,17 @@ describe('RollChip, wearing conditions', () => {
     const { container } = render(<RollChip {...props} wear={PLAIN} />);
     expect(container.querySelector('.cx-face')).not.toBeNull();
     expect(screen.getByRole('button').className).not.toContain('bg-roll-soft');
+  });
+
+  it('wears a raised ring on its face, which moves, and a still frame without one', () => {
+    const { container } = render(<RollChip {...props} wear={worn('Prone')} raisedBy={['Rage']} />);
+    expect(screen.getByRole('button').textContent).toBe('+5, raised by Rage');
+    expect(container.querySelector('.fx-lift')).toBeNull();
+    expect(container.querySelector('.cx-lift .fx-lift-ring')).not.toBeNull();
+    cleanup();
+    const plain = render(<RollChip expr="1d8+3" variant="damage" raisedBy={['Rage']} />);
+    expect(plain.container.querySelector('.fx-lift-on')).not.toBeNull();
+    expect(plain.container.querySelector('.cx-lift')).toBeNull();
   });
 
   it('keeps a casting chip’s damage or healing tone on the face', () => {

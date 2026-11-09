@@ -161,26 +161,31 @@ function SaveButton({
   onRoll: () => void;
 }) {
   const moment = useRollMoment();
+  // Its ring is the face's, so it moves as Paralyzed or Petrified moves the face.
   return (
-    <Lift on={lifted.length > 0} className="flex min-w-0 rounded-control">
-      <button
-        type="button"
-        onClick={() => {
-          onRoll();
-          moment.rolled();
-        }}
-        className={`relative flex min-h-tap flex-1 rounded-control text-ink ${TILE} ${ROLLS}`}
+    <button
+      type="button"
+      onClick={() => {
+        onRoll();
+        moment.rolled();
+      }}
+      className={`relative flex min-h-tap min-w-0 flex-1 rounded-control text-ink ${TILE} ${ROLLS}`}
+    >
+      <ChipFace
+        surface="save"
+        wear={wear}
+        rolls={moment.rolls}
+        showing={moment.showing}
+        lift={lifted.length > 0}
       >
-        <ChipFace surface="save" wear={wear} rolls={moment.rolls} showing={moment.showing}>
-          <span className="inline-flex items-center gap-2 text-label">
-            <ProfDot level={save.prof ? 1 : 0} decorative />
-            <span className="cx-ink text-ink-muted">{name.toUpperCase()}</span>
-          </span>{' '}
-          <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
-          {lifted.length > 0 && <span className="sr-only">, raised by {lifted.join(', ')}</span>}
-        </ChipFace>
-      </button>
-    </Lift>
+        <span className="inline-flex items-center gap-2 text-label">
+          <ProfDot level={save.prof ? 1 : 0} decorative />
+          <span className="cx-ink text-ink-muted">{name.toUpperCase()}</span>
+        </span>{' '}
+        <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
+        {lifted.length > 0 && <span className="sr-only">, raised by {lifted.join(', ')}</span>}
+      </ChipFace>
+    </button>
   );
 }
 

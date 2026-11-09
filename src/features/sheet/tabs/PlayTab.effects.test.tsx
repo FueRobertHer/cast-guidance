@@ -67,20 +67,20 @@ function warrior(effects: ActiveEffect[]) {
   return doc;
 }
 
-/** The ring around a tile's number, inside its button. */
-const lift = (el: HTMLElement) => el.querySelector('.fx-lift');
+/** A cell wears an effect's ring: its face is raised. */
+const raised = (el: HTMLElement) => el.querySelector('.cx-lifted') !== null;
 
 describe('a number an effect in play raised', () => {
   it('is ringed and names what raised it, and one nothing raised is not', async () => {
     await renderSheet(warrior([shieldOfFaith, longstrider]));
     const ac = screen.getByRole('button', { name: /Armor Class/ });
     expect(ac.textContent).toContain(', raised by Shield of Faith');
-    expect(lift(ac)?.classList.contains('fx-lift-on')).toBe(true);
+    expect(raised(ac)).toBe(true);
     const speed = screen.getByRole('button', { name: /^\d+\s*ft\s*Speed/ });
     expect(speed.textContent).toContain(', raised by Longstrider');
-    expect(lift(speed)?.classList.contains('fx-lift-on')).toBe(true);
+    expect(raised(speed)).toBe(true);
     const initiative = screen.getByRole('button', { name: /Initiative/ });
-    expect(lift(initiative)?.classList.contains('fx-lift-on')).toBe(false);
+    expect(raised(initiative)).toBe(false);
   });
 
   it('opens the sum from AC and from Speed, each naming the effect', async () => {
@@ -107,7 +107,16 @@ describe('a number an effect in play raised', () => {
     await renderSheet(doc);
     const speed = screen.getByRole('button', { name: /^\d+\s*ft\s*Speed/ });
     expect(speed.textContent).toContain(', raised by Freedom of Movement');
-    expect(lift(speed)?.classList.contains('fx-lift-on')).toBe(true);
+    expect(raised(speed)).toBe(true);
+  });
+
+  it('is not ringed when a condition sets it to 0, which no effect raises', async () => {
+    const doc = warrior([longstrider]);
+    doc.play.conditions = [{ id: 'Grappled' }];
+    await renderSheet(doc);
+    const speed = screen.getByRole('button', { name: /^0\s*ft/ });
+    expect(speed.textContent).not.toContain('raised by');
+    expect(raised(speed)).toBe(false);
   });
 
   it("names what raised the maximum after the hit points, in the HP button's name", async () => {
@@ -126,7 +135,7 @@ describe('a number an effect in play raised', () => {
     await renderSheet(warrior([{ ...shieldOfFaith, off: true }]));
     const ac = screen.getByRole('button', { name: /Armor Class/ });
     expect(ac.textContent).not.toContain('raised by');
-    expect(lift(ac)?.classList.contains('fx-lift-on')).toBe(false);
+    expect(raised(ac)).toBe(false);
   });
 });
 

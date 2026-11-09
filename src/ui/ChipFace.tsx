@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useAnimateConditions } from '@/lib/conditionMotion';
 import { useConditionSheetOpen } from '@/stores/conditionSheet';
 import './chipFace.css';
+import { LiftMark, useLiftArrival } from './Lift';
 
 export type ChipLook =
   | 'Poisoned'
@@ -216,6 +217,12 @@ function Part({ className }: { className: string }) {
  * effect pieces are hidden from assistive tech and take no taps, so what the
  * control means is still said by its text and its cue (`RollEffectCue`), and the
  * control never moves under a finger.
+ *
+ * A control an effect in play can raise passes `lift`: its heal-green ring and
+ * lift mark (`Lift.tsx`) are drawn on a layer that a condition moves with the
+ * face, so Prone tips all three as one (the buffs canvas, round 7). The layer is
+ * there whenever `lift` is given, so its motion keeps time with the face's from
+ * the moment a condition arrives, and a ring that comes later only draws in.
  */
 export function ChipFace({
   wear,
@@ -223,6 +230,7 @@ export function ChipFace({
   showing,
   surface = 'chip',
   tone,
+  lift,
   children,
 }: {
   wear: ChipWear;
@@ -232,10 +240,13 @@ export function ChipFace({
   surface?: WearSurface;
   /** A chip's plain colour, when it is not the roll blue. */
   tone?: 'danger' | 'heal' | undefined;
+  /** An effect in play raised it; left out for a control nothing raises. */
+  lift?: boolean | undefined;
   children: ReactNode;
 }) {
   const animate = useAnimateConditions();
   const held = useConditionSheetOpen();
+  const liftArriving = useLiftArrival(lift === true);
   const [state, setState] = useState(() => restingMoments(wear, rolls));
   // Worked out in render, as the control draws: from an effect, the new look
   // would paint for a frame before its arrival started.
@@ -275,6 +286,7 @@ export function ChipFace({
     leaving !== null && 'cx-rm',
     ignored && 'cx-ig',
     !animate && 'cx-still',
+    lift === true && 'cx-lifted',
   ]
     .filter(Boolean)
     .join(' ');
@@ -345,6 +357,18 @@ export function ChipFace({
           ))}
         </span>
       )}
+      {/* The mark is a layer of its own, above every ring, so a raised
+          neighbour's ring cannot cross it where it reaches over that neighbour. */}
+      {lift !== undefined &&
+        ['cx-lift', 'cx-lift cx-lift-top'].map((layer) => (
+          <span
+            key={layer}
+            className={`${card ? layer : moved(layer)}${liftArriving ? ' fx-lift-arrive' : ''}`}
+            aria-hidden="true"
+          >
+            {lift && (layer === 'cx-lift' ? <i className="fx-lift-ring" /> : <LiftMark />)}
+          </span>
+        ))}
       {!card && tags}
     </span>
   );

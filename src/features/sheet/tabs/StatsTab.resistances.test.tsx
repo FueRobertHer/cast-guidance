@@ -71,6 +71,6 @@ it('rings every save an effect in play raised, naming it, and says when there ar
     'WIS',
     'CHA',
   ]);
-  for (const save of saves) expect(save.closest('.fx-lift-on')).not.toBeNull();
+  for (const save of saves) expect(save.querySelector('.cx-lifted')).not.toBeNull();
   expect(screen.getByText('None yet.')).toBeTruthy();
 });
