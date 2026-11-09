@@ -11,6 +11,7 @@
  * the entry chunk.
  */
 import type { ReactNode } from 'react';
+import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
@@ -128,6 +129,81 @@ function dependencyLine(status: Dependency['status'], coverage: OfficialCoverage
   };
 }
 
+/** How many converted entries the preview names one by one, per list. */
+export const MAX_LISTED_NOTES = 10;
+
+const entries = (n: number) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+
+/** Notes keyed by kind and name, counted, since a name can repeat across editions. */
+function keyedNotes(notes: EntryNote[]): { key: string; note: EntryNote }[] {
+  const seen = new Map<string, number>();
+  return notes.map((note) => {
+    const base = `${note.kind}:${note.name}`;
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    return { key: `${base}#${count}`, note };
+  });
+}
+
+/** One list of converted entries with what each lost, capped. */
+function NoteList({ notes, intro }: { notes: EntryNote[]; intro: string }) {
+  if (notes.length === 0) return null;
+  return (
+    <>
+      <p className="text-ink-muted">{intro}</p>
+      <PreviewList>
+        {keyedNotes(notes.slice(0, MAX_LISTED_NOTES)).map(({ key, note }) => (
+          <StatusItem key={key} tone="info" status={`${note.name}:`}>
+            {note.reasons.join('; ')}.
+          </StatusItem>
+        ))}
+      </PreviewList>
+      {notes.length > MAX_LISTED_NOTES && (
+        <p className="text-ink-muted">And {notes.length - MAX_LISTED_NOTES} more.</p>
+      )}
+    </>
+  );
+}
+
+/**
+ * What carried over from another app's file. Every entry keeps its full
+ * text; the lists say what the sheet will not apply for the player, so a
+ * partial conversion is never silent.
+ */
+function ConversionSection({ report }: { report: ConversionReport }) {
+  const installed = notesWith(report, 'installed').length;
+  const duplicate = notesWith(report, 'duplicate').length;
+  return (
+    <PreviewSection heading={`Converted from ${report.formatName}`}>
+      <PreviewList>
+        <StatusItem tone="good" status="Converted:">
+          {entries(convertedTotal(report))}, each with its full text.
+        </StatusItem>
+        {installed > 0 && (
+          <StatusItem tone="info" status="Left out:">
+            {entries(installed)} your game data already has. Its copy is the one used.
+          </StatusItem>
+        )}
+        {duplicate > 0 && (
+          <StatusItem tone="info" status="Left out:">
+            {entries(duplicate)} the file has more than once. The first of each is kept.
+          </StatusItem>
+        )}
+        {report.warnings.map((w) => (
+          <StatusItem key={w} tone="warn">
+            {w}
+          </StatusItem>
+        ))}
+      </PreviewList>
+      <NoteList
+        notes={notesWith(report, 'partial')}
+        intro="Parts of these entries are kept as text only, so the sheet will not apply them for you:"
+      />
+      <NoteList notes={notesWith(report, 'skipped')} intro="These entries were left out:" />
+    </PreviewSection>
+  );
+}
+
 /** "And 3 more", for a list the preview capped. */
 function more(total: number, shown: number, what: string): ReactNode {
   return total > shown ? (
@@ -139,11 +215,14 @@ function more(total: number, shown: number, what: string): ReactNode {
 
 export default function HomebrewImportPreview({
   preview,
+  conversion,
   onImport,
   onCancel,
   onKeepExisting,
 }: {
   preview: HomebrewPreview;
+  /** Set for a file converted from another app: what carried over. */
+  conversion?: ConversionReport;
   onImport: () => void;
   onCancel: () => void;
   /** For an exact duplicate: close and leave the file already here as it is. */
@@ -183,6 +262,8 @@ export default function HomebrewImportPreview({
           ],
         ]}
       />
+
+      {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
 
       {dup !== undefined && (
         <PreviewSection heading="Already on this device">

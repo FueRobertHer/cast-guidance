@@ -514,3 +514,132 @@ describe('homebrew import from a URL', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+describe('importing a Fight Club 5e compendium', () => {
+  /** Made-up entries in the shape Fight Club writes, one of them official here. */
+  const COMPENDIUM = `<?xml version="1.0" encoding="UTF-8"?>
+<compendium version="5">
+  <spell>
+    <name>Ember Lance</name><level>1</level><school>EV</school><time>1 action</time>
+    <range>60 feet</range><components>V, S</components><duration>Instantaneous</duration>
+    <classes>School: Evocation, Wizard</classes>
+    <text>Make a ranged spell attack. On a hit, the target takes 2d8 fire damage.</text>
+  </spell>
+  <spell>
+    <name>Ashen Veil</name><level>2</level><school>C</school><time>1 action</time>
+    <range>Self</range><components>V</components><classes>Sorcerer</classes>
+    <text>Grey ash swirls around you.</text>
+  </spell>
+  <spell>
+    <name>Fire Bolt</name><level>0</level><school>EV</school><time>1 action</time>
+    <range>120 feet</range><components>V, S</components><duration>Instantaneous</duration>
+    <classes>Wizard</classes><text>A mote of fire.</text>
+  </spell>
+  <class><name>Ember Knight</name></class>
+</compendium>`;
+
+  it('previews what carried over, and Import stores the converted file', async () => {
+    renderPage();
+    chooseFile('embers.xml', COMPENDIUM);
+
+    const dialog = await findDialog('Import "embers.xml"?');
+    expect(
+      within(dialog).getByRole('heading', { name: 'Converted from Fight Club 5e' }),
+    ).toBeTruthy();
+    expect(dialog.textContent).toContain('2 spell');
+    expect(dialog.textContent).toContain('Converted: 2 entries, each with its full text.');
+    // The official Fire Bolt is the one used, so the file's copy is left out.
+    expect(dialog.textContent).toContain('Left out: 1 entry your game data already has.');
+    expect(dialog.textContent).toContain('1 class left out: classes cannot be converted yet.');
+    expect(dialog.textContent).toContain('Ashen Veil: the file gives no duration.');
+    expect(dialog.textContent).toContain('embers (Fight Club 5e) (FCEmbers)');
+    expect(await fileCount()).toBe(0);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(outcome()).toBe('Imported "embers.xml" (2 spell)'));
+    const [stored] = await db.homebrewFiles.toArray();
+    expect(stored?.fileName).toBe('embers.xml');
+    const json = stored?.json as { _meta: Json; spell: Json[] };
+    expect(json._meta.convertedFrom).toEqual({
+      format: 'fc5-compendium',
+      converterVersion: 1,
+      fileName: 'embers.xml',
+    });
+    expect(json.spell.map((s) => s.name)).toEqual(['Ember Lance', 'Ashen Veil']);
+    expect(ensureSourcesVisible).toHaveBeenCalledWith(['FCEmbers']);
+  });
+
+  it('says when every entry is already in the game data, without a preview', async () => {
+    renderPage();
+    chooseFile(
+      'bolts.xml',
+      `<compendium><spell><name>Fire Bolt</name><level>0</level><school>EV</school>
+        <time>1 action</time><range>120 feet</range><components>V, S</components>
+        <duration>Instantaneous</duration><text>A mote of fire.</text></spell></compendium>`,
+    );
+
+    await waitFor(() =>
+      expect(outcome()).toBe(
+        '"bolts.xml": Every entry in this Fight Club 5e file is already in your game data, so there is nothing to add. Nothing was added.',
+      ),
+    );
+    // Not a failure: the line is in the muted colour, not `danger`.
+    expect(importLine().querySelector('p')?.className).toContain('text-ink-muted');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await fileCount()).toBe(0);
+  });
+
+  it('converts entries the game data already has while it cannot be read, and says so', async () => {
+    registry.fail = true;
+    renderPage();
+    chooseFile('embers.xml', COMPENDIUM);
+
+    const dialog = await findDialog('Import "embers.xml"?');
+    expect(dialog.textContent).toContain('3 spell');
+    expect(dialog.textContent).toContain(
+      'Game data could not be read, so entries it already has were converted as well.',
+    );
+  });
+
+  it('names a file it recognizes but cannot import', async () => {
+    renderPage();
+    chooseFile('aurora.xml', '<elements><element name="Ember Knight" type="Class"/></elements>');
+
+    await waitFor(() =>
+      expect(outcome()).toBe(
+        'Import failed: This looks like Aurora Builder content, which cannot be imported yet. Fight Club 5e compendiums (XML) and 5etools homebrew (JSON) can be imported.',
+      ),
+    );
+    expect(importLine().querySelector('p')?.className).toContain('text-danger');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('refuses XML that declares entities', async () => {
+    renderPage();
+    chooseFile(
+      'entities.xml',
+      '<!DOCTYPE compendium [<!ENTITY x "y">]><compendium><spell><name>&x;</name></spell></compendium>',
+    );
+
+    await waitFor(() => expect(outcome()).toMatch(/^Import failed: The file declares a DOCTYPE/));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await fileCount()).toBe(0);
+  });
+
+  it('converts a compendium fetched from a URL', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(COMPENDIUM));
+    renderPage();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Homebrew JSON URL' }), {
+      target: { value: 'https://raw.githubusercontent.com/me/brews/main/embers.xml' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import from URL' }));
+
+    const dialog = await findDialog('Import "embers.xml"?');
+    expect(
+      within(dialog).getByRole('heading', { name: 'Converted from Fight Club 5e' }),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(outcome()).toBe('Imported "embers.xml" (2 spell)'));
+  });
+});
