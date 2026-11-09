@@ -208,7 +208,6 @@ describe('a critical hit doubles the damage dice', () => {
     expect(dice(newest())).toEqual(['d6 [1, 2, 3]']);
   });
 
-
   it("doubles a spell attack's damage on the Spells tab too", async () => {
     const sheet = await renderSheet(raySorcerer(), { extra: { spell: [ray] } });
     await sheet.tab('Spells');
@@ -245,7 +244,7 @@ describe('Improved Critical and Superior Critical', () => {
       d.feats = [{ ref: { name, source: 'TST' }, instanceId: 'f1' }];
     });
 
-  it("crits a weapon attack on a 19 with Improved Critical, and its damage doubles", async () => {
+  it('crits a weapon attack on a 19 with Improved Critical, and its damage doubles', async () => {
     await renderSheet(champion('Improved Critical'), {
       extra: { feat: [featNamed('Improved Critical')] },
     });

@@ -127,7 +127,9 @@ describe('RollToast', () => {
     // Landed with the attack it waited on, under it: it says so there too.
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     act(() => rollLogStore.getState().append({ ...swing, id: 'a1' }));
-    act(() => rollLogStore.getState().append({ ...dealt, meta: { critical: true, withRoll: 'a1' } }));
+    act(() =>
+      rollLogStore.getState().append({ ...dealt, meta: { critical: true, withRoll: 'a1' } }),
+    );
     expect(screen.getByText(/^Longsword slashing damage, critical:/)).toBeTruthy();
   });
 
