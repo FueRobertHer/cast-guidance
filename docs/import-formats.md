@@ -119,3 +119,23 @@ their own errors (Flail marked simple, Divine Smite as transmutation), so check
 the raw entry before changing a reader. 5etools builds specific magic items
 (`Battleaxe +1`) from generic variants, which the app does not expand, so
 those find no match.
+
+```bash
+bun --tsconfig-override=tsconfig.app.json scripts/fc5-sheet-compare.ts --set srd=path/to/srd/a.xml,path/to/srd/b.xml --out dir
+```
+
+`fc5-sheet-compare.ts` checks the sheet rather than the JSON. It converts each
+set, gives every converted entry a source of its own so it sits beside the
+official one, then swaps it into an otherwise official character at levels 1,
+5, 11 and 20 and derives both characters through the engine the sheet uses. A
+race, background, feat or equipped item goes on a Fighter; a class option goes
+on the class or subclass whose data offers it, compared only at the levels
+where either side was offered it. It tallies, field by field, where the two
+sheets part: scores, saves, skills, AC, HP, speed, senses, defenses, languages,
+proficiencies, attacks, spellcasting, resources, actions, features, choices and
+warnings. Spells are compared as the Spells tab reads them (caption, save,
+attack, rolls at each slot, class lists). Races, backgrounds, feats, items and
+spells with no official counterpart are read alone, to show they work at all;
+class options without one are not. The header lists the options; `--release`
+and `--lookup` name files that cache the fetched data, so later runs stay
+offline.
