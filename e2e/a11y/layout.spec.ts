@@ -22,7 +22,7 @@ import {
   sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
-import { getCharacter } from '../support/idb.ts';
+import { getCharacter, putCharacterRow } from '../support/idb.ts';
 import { expect, test } from '../support/test.ts';
 
 /**
@@ -531,6 +531,69 @@ test.describe('the dice tray and the roll toast', () => {
       const toast = page.getByRole('button', { name: /^d6: \d+\. .*Open roll history$/ });
       await expect(toast).toBeInViewport({ ratio: 1 });
       expect(await pastRightEdge(toast), 'the toast: past its edge').toEqual([]);
+    });
+  }
+});
+
+test.describe('the Effects picker', () => {
+  for (const [when, viewport, extra] of [
+    ['at 320 CSS px', { width: 320, height: 640 }, ''],
+    ['at 375 CSS px', { width: 375, height: 812 }, ''],
+    ['with text at 200%', undefined, 'html { font-size: 200% !important; }'],
+  ] as const) {
+    test(`scrolls only up and down, its chips focused at the edge ${when}`, async ({ page }) => {
+      if (viewport !== undefined) await page.setViewportSize(viewport);
+      // A 2024 character, so Guidance asks which skill and every chip row is
+      // drawn.
+      const id = await setUp(page);
+      const blank = await getCharacter(page, id);
+      if (blank === undefined) throw new Error('The blank character was not stored');
+      await putCharacterRow(page, { ...blank, rulesVersion: '2024' });
+      await gotoSheetTab(page, id, 'Play');
+      await applyMeasuredFont(page, extra);
+      await stripEnd(page).click();
+      const picker = page.getByRole('dialog', { name: 'Effects' });
+      await expect(picker).toBeVisible();
+      await picker.getByRole('button', { name: 'Guidance' }).click();
+      const skills = picker.getByRole('group', { name: 'Guidance on which skill?' });
+      await expect(skills).toBeVisible();
+      await animationsSettled(page);
+
+      const scroll = picker.getByRole('heading', { name: 'Helping you' }).locator('..');
+      const width = () =>
+        scroll.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          scrollLeft: el.scrollLeft,
+        }));
+      const before = await width();
+      expect(before.scrollWidth, 'the picker scrolls sideways').toBe(before.clientWidth);
+      expect(await pastRightEdge(scroll), 'past the picker').toEqual([]);
+
+      // Every chip focused in turn, as a keyboard or a tap would: none may
+      // scroll the picker sideways to bring its clear border in.
+      for (const chip of await scroll.getByRole('button').all()) {
+        await chip.focus();
+        expect((await width()).scrollLeft, `focusing ${chip}`).toBe(0);
+      }
+
+      // Each row's first chip still lines its face up with the headings:
+      // only its clear border sits outside the column.
+      const heading = await box(picker.getByRole('heading', { name: 'Helping you' }));
+      // Helping you, Guidance's skills and Conditions.
+      const rows = scroll.locator('h3 + div');
+      await expect(rows).toHaveCount(3);
+      for (const row of await rows.all()) {
+        const face = await row
+          .getByRole('button')
+          .first()
+          .evaluate(
+            (el) =>
+              el.getBoundingClientRect().x +
+              Number.parseFloat(getComputedStyle(el).borderLeftWidth),
+          );
+        expect(Math.abs(face - heading.x), 'a chip face off the headings').toBeLessThan(0.5);
+      }
     });
   }
 });
