@@ -1,10 +1,10 @@
 # Cast Guidance
 
-Mobile-first D&D 5e character creator and play sheet. Local-first PWA: pick race, class,
-background, feats, and equipment, and the sheet derives everything (proficiencies, AC, HP,
-initiative, attacks, spell slots) with manual overrides on top. Tracks a live session
-(HP, conditions, slots, resources), rolls dice, and supports 5etools-format homebrew
-(import, share, and an in-app builder).
+Mobile-first character creator and play sheet, compatible with fifth edition. Local-first
+PWA: pick race, class, background, feats, and equipment, and the sheet derives everything
+(proficiencies, AC, HP, initiative, attacks, spell slots) with manual overrides on top.
+Tracks a live session (HP, conditions, slots, resources), rolls dice, and supports
+5etools-format homebrew (import, share, and an in-app builder).
 
 ## Stack
 

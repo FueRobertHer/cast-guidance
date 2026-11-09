@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { AlertTriangle, Download, FileUp, Hammer, LinkIcon, Pencil, Trash2 } from 'lucide-react';
 import { lazy, Suspense, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import type { ConversionReport } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import type { HomebrewFileRow } from '@/db/db';
@@ -20,6 +21,7 @@ import { askConfirm, askText } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import { REFUSED_HOST_REASON } from './homebrewUrl';
 import type { HomebrewPreview } from './importPreview';
+import { NothingToImportError, parseImportText } from './importText';
 import { fetchHomebrewFromUrl, HomebrewUrlRefusedError } from './importUrl';
 
 /** One file: a card of its own, as a character on the roster is (DS-001). */
@@ -58,6 +60,8 @@ interface PendingImport {
   row: HomebrewFileRow;
   preview: HomebrewPreview;
   source: 'file' | 'url';
+  /** What carried over, for a file converted from another app. */
+  conversion?: ConversionReport;
 }
 
 export function Component() {
@@ -121,13 +125,23 @@ export function Component() {
     row: HomebrewFileRow,
     bytes: number,
     source: 'file' | 'url',
+    conversion: ConversionReport | undefined,
   ) => {
     const preview = await (await loadImportFlow()).buildHomebrewPreview(row, bytes);
     if (request !== latest.current) return;
     setStatus(undefined);
     // The dialog's title answers the check.
     cancelAnnouncement('import-check');
-    setPending({ row, preview, source });
+    setPending({ row, preview, source, ...(conversion === undefined ? {} : { conversion }) });
+  };
+
+  /**
+   * A converted file with nothing to add says why. Everything already in the
+   * game data is not a failure; a file of only what cannot be converted is.
+   */
+  const nothingToImport = (err: NothingToImportError, fileName?: string) => {
+    const lead = fileName === undefined ? '' : `"${fileName}": `;
+    setStatus(`${lead}${err.message} Nothing was added.`, { failed: !err.allInstalled });
   };
 
   // Validation and the preview write nothing, so a failure before Import is
@@ -135,14 +149,14 @@ export function Component() {
   const importFile = async (file: File) => {
     const request = begin(`Checking "${file.name}"…`);
     try {
-      const raw: unknown = JSON.parse(
-        await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes),
-      );
+      const text = await readFileTextBounded(file, IMPORT_LIMITS.maxImportBytes);
+      const { raw, conversion } = await parseImportText(text, file.name);
       const row = await homebrewRepo.prepare(raw, file.name);
-      await showPreview(request, row, file.size, 'file');
+      await showPreview(request, row, file.size, 'file', conversion);
     } catch (err) {
-      if (request === latest.current)
-        setStatus(`Import failed: ${errorText(err)}`, { failed: true });
+      if (request !== latest.current) return;
+      if (err instanceof NothingToImportError) nothingToImport(err, file.name);
+      else setStatus(`Import failed: ${errorText(err)}`, { failed: true });
     } finally {
       finish(request);
     }
@@ -153,9 +167,13 @@ export function Component() {
     try {
       const fetched = await fetchHomebrewFromUrl(url);
       const row = await homebrewRepo.prepare(fetched.raw, fetched.fileName, fetched.url);
-      await showPreview(request, row, fetched.bytes, 'url');
+      await showPreview(request, row, fetched.bytes, 'url', fetched.conversion);
     } catch (err) {
       if (request !== latest.current) return;
+      if (err instanceof NothingToImportError) {
+        nothingToImport(err);
+        return;
+      }
       if (err instanceof HomebrewUrlRefusedError) {
         // Refused before any request: say why and offer the way that works.
         setStatus(undefined);
@@ -249,9 +267,9 @@ export function Component() {
       </header>
 
       <p className="text-body text-ink-muted">
-        Import 5etools-format homebrew JSON. Imported content appears alongside official content
-        everywhere: in the creator, the library and search. You see what a file adds before it is
-        imported.
+        Import 5etools-format homebrew JSON, or a Fight Club 5e compendium (XML), which is converted
+        as it comes in. Imported content appears alongside official content everywhere: in the
+        creator, the library and search. You see what a file adds before it is imported.
       </p>
 
       <div className="flex flex-col gap-2">
@@ -298,7 +316,7 @@ export function Component() {
         <input
           ref={fileInput}
           type="file"
-          accept=".json,application/json"
+          accept=".json,application/json,.xml,text/xml,application/xml"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -317,7 +335,7 @@ export function Component() {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             aria-label="Homebrew JSON URL"
-            placeholder="…or paste a GitHub, gist, or jsDelivr JSON URL"
+            placeholder="…or paste a GitHub, gist, or jsDelivr file URL"
             className={`${fieldClass} min-w-0 flex-1`}
           />
           <Button
@@ -361,6 +379,7 @@ export function Component() {
         <Suspense fallback={null}>
           <HomebrewImportPreview
             preview={pending.preview}
+            {...(pending.conversion === undefined ? {} : { conversion: pending.conversion })}
             onImport={() => void confirmImport()}
             onCancel={cancelImport}
             onKeepExisting={keepExisting}

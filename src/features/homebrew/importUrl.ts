@@ -1,8 +1,10 @@
+import type { ConversionReport } from '@/convert/types';
 import type { HomebrewFileRow } from '@/db/db';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { readTextBoundedSized } from '@/lib/boundedRead';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import { checkHomebrewUrl } from './homebrewUrl';
+import { parseImportText } from './importText';
 
 /** How long a homebrew URL gets to answer before the import gives up. */
 const IMPORT_URL_TIMEOUT_MS = 20_000;
@@ -30,6 +32,8 @@ export interface FetchedHomebrew {
   url: string;
   /** UTF-8 size of the body that was read. */
   bytes: number;
+  /** Set when the body was another app's XML, converted to homebrew JSON. */
+  conversion?: ConversionReport;
 }
 
 /**
@@ -55,13 +59,14 @@ export async function fetchHomebrewFromUrl(
   const res = await fetchImpl(target, { signal: AbortSignal.timeout(IMPORT_URL_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const { text, bytes } = await readTextBoundedSized(res, maxBytes);
-  const raw = JSON.parse(text) as unknown;
-  const name = target.split('/').pop() ?? 'homebrew.json';
+  const fileName = decodeURIComponent(target.split('/').pop() ?? 'homebrew.json');
+  const { raw, conversion } = await parseImportText(text, fileName);
   return {
     raw,
-    fileName: decodeURIComponent(name),
+    fileName,
     url: target,
     bytes,
+    ...(conversion === undefined ? {} : { conversion }),
   };
 }
 

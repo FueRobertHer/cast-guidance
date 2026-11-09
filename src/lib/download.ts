@@ -5,9 +5,13 @@
  * (an immediate revoke cancels the download in some browsers).
  */
 
-/** Ensure a filename ends in `.json` exactly once. */
+/**
+ * Ensure a filename ends in `.json` exactly once. A homebrew file converted
+ * from another app's XML keeps that file's name, and downloads as the JSON it
+ * now is (`spells.xml` as `spells.json`).
+ */
 export function jsonFilename(name: string): string {
-  const trimmed = name.trim() || 'download';
+  const trimmed = (name.trim() || 'download').replace(/\.xml$/i, '');
   return trimmed.toLowerCase().endsWith('.json') ? trimmed : `${trimmed}.json`;
 }
 
