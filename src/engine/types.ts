@@ -162,6 +162,8 @@ export interface RollFilter {
   skills?: string[];
   attack?: 'weapon' | 'spell';
   range?: 'melee' | 'ranged';
+  /** Attacks with this class's spells (2024 Innate Sorcery: Sorcerer). */
+  className?: string;
 }
 
 export interface CharacterDoc {

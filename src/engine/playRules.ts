@@ -40,7 +40,7 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /**
  * Does an effect's filter reach this test? Initiative is a Dexterity check, a
  * death save a save with no ability. Abilities narrow every roll; skills narrow
- * checks, and attack type and range narrow attacks. A filter that asks what the
+ * checks, and attack type, range and a spell's class narrow attacks. A filter that asks what the
  * test does not say (a skill, an attack's range) does not reach it.
  */
 export function filterReaches(on: RollFilter, test: D20Test): boolean {
@@ -57,6 +57,10 @@ export function filterReaches(on: RollFilter, test: D20Test): boolean {
   if (test.kind === 'attack') {
     if (on.attack !== undefined && test.attack !== on.attack) return false;
     if (on.range !== undefined && test.range !== on.range) return false;
+  }
+  if (on.className !== undefined) {
+    const className = test.kind === 'attack' ? test.className : undefined;
+    if (className === undefined || !same(className, on.className)) return false;
   }
   return true;
 }

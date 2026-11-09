@@ -40,7 +40,8 @@ function isFilter(x: unknown): boolean {
     (x.abilities === undefined || listOf(x.abilities, isAbility)) &&
     (x.skills === undefined || listOf(x.skills, isStr)) &&
     (x.attack === undefined || oneOf('weapon', 'spell')(x.attack)) &&
-    (x.range === undefined || oneOf('melee', 'ranged')(x.range))
+    (x.range === undefined || oneOf('melee', 'ranged')(x.range)) &&
+    optStr(x.className)
   );
 }
 

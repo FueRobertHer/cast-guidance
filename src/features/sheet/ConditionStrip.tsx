@@ -3,12 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
-import { endEffect, setConcentration, setEffectOff } from '@/engine/effectLife';
-import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
+import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
+import { applyEffect, endEffect, setConcentration, setEffectOff } from '@/engine/effectLife';
+import { type ActiveEffect, type CharacterDoc, type DerivedSheet, SKILLS } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/sheet';
 import { ToggleChip } from '@/ui/ToggleChip';
 import { CONDITIONS, conditionEffect } from './conditionEffects';
@@ -23,6 +25,7 @@ import {
   partLine,
 } from './effectsInPlay';
 import { exhaustionLevel, setExhaustionLevel } from './exhaustion';
+import { answersTo, STARTERS, starterEffect } from './namedStarts';
 
 type Condition = CharacterDoc['play']['conditions'][number];
 
@@ -106,6 +109,9 @@ export function ConditionStrip({
   const lastEffect = useRef<ActiveEffect | undefined>(undefined);
   const [infoOpen, setInfoOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 2024 Guidance asks which skill before it lands.
+  const [askingSkill, setAskingSkill] = useState(false);
+  const guidanceChip = useRef<HTMLButtonElement>(null);
   // A removed chip's place: focus goes to the chip now there, the one before
   // it if it was the last, the end of the strip if none is left, then the title.
   const refocus = useRef<number | null>(null);
@@ -131,6 +137,15 @@ export function ConditionStrip({
     return () => clearTimeout(timer);
   }, [sheetOpen]);
   useEffect(() => () => conditionSheetStore.setState({ open: false }), []);
+
+  const starterHeld = new Map<string, ActiveEffect>();
+  for (const st of STARTERS) {
+    const held = effects.find((e) => answersTo(e, st.name));
+    if (held !== undefined) starterHeld.set(st.name, held);
+  }
+  const startersShown = new Set([...starterHeld.values()].map((e) => e.id));
+  const bardic = starterHeld.get('Bardic Inspiration');
+  const bardicDie = bardicDieOf(bardic);
 
   const chipCount = conditions.length + effects.length;
   const stripShown = chipCount > 0 || addable;
@@ -199,6 +214,23 @@ export function ConditionStrip({
     if (hp === null) return;
     if (index !== undefined) refocus.current = index;
     update((d) => void endEffect(d.play, effect.id, hp), `Ended ${effect.name}`);
+  };
+  /** Put an effect in play, or change one already there (the bard's die). */
+  const put = (effect: ActiveEffect) => {
+    const hp = limits();
+    if (hp === null) return;
+    update((d) => void applyEffect(d.play, effect, hp));
+  };
+  /** A starter's chip, not yet in play: add it, or ask what it needs first. */
+  const start = (name: string, skill?: string) => {
+    if (name === 'Guidance' && edition === '2024' && skill === undefined) {
+      setAskingSkill((was) => !was);
+      return;
+    }
+    const effect = starterEffect(name, edition, skill === undefined ? {} : { skill });
+    if (effect === undefined) return;
+    setAskingSkill(false);
+    put(effect);
   };
   const switchEffect = (effect: ActiveEffect, on: boolean) => {
     const hp = limits();
@@ -514,7 +546,10 @@ export function ConditionStrip({
         open={pickerOpen}
         onOpenChange={(next) => {
           setPickerOpen(next);
-          if (!next) clearRefused();
+          if (!next) {
+            clearRefused();
+            setAskingSkill(false);
+          }
         }}
       >
         <Sheet.Portal>
@@ -529,28 +564,91 @@ export function ConditionStrip({
           >
             <Sheet.Heading>Effects</Sheet.Heading>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {effects.length > 0 && (
+              <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
+              {/* Chips pad themselves to 44px with a 6px clear border, so the
+                  row needs no gap of its own. A pressed one is in play;
+                  tapping it ends it. The starters come first, in a fixed
+                  order, so one that lands or ends stays where it was tapped. */}
+              <div className="-mx-1.5 mb-3 flex flex-wrap">
+                {STARTERS.map((st) => {
+                  const held = starterHeld.get(st.name);
+                  const asks = st.name === 'Guidance' && edition === '2024' && held === undefined;
+                  const mark = held === undefined ? st.mark : effectMark(held);
+                  return (
+                    <Chip
+                      key={st.name}
+                      ref={st.name === 'Guidance' ? guidanceChip : undefined}
+                      pressed={held !== undefined}
+                      aria-expanded={asks ? askingSkill : undefined}
+                      onClick={() => (held === undefined ? start(st.name) : end(held))}
+                    >
+                      {mark !== undefined && (
+                        <>
+                          <span className="font-bold tabular-nums">{mark}</span>{' '}
+                        </>
+                      )}
+                      {held?.name ?? st.name}
+                    </Chip>
+                  );
+                })}
+                {effects
+                  .filter((e) => !startersShown.has(e.id))
+                  .map((e) => {
+                    const mark = effectMark(e);
+                    return (
+                      <Chip key={e.id} pressed onClick={() => end(e)}>
+                        {mark !== undefined && (
+                          <>
+                            <span className="font-bold tabular-nums">{mark}</span>{' '}
+                          </>
+                        )}
+                        {e.name}
+                      </Chip>
+                    );
+                  })}
+              </div>
+              {askingSkill && starterHeld.get('Guidance') === undefined && (
                 <>
-                  <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
-                  {/* Chips pad themselves to 44px with a 6px clear border, so
-                      the row needs no gap of its own. A pressed one is in
-                      play; tapping it ends it. */}
-                  <div className="-mx-1.5 mb-3 flex flex-wrap">
-                    {effects.map((e) => {
-                      const mark = effectMark(e);
-                      return (
-                        <Chip key={e.id} pressed onClick={() => end(e)}>
-                          {mark !== undefined && (
-                            <>
-                              <span className="font-bold tabular-nums">{mark}</span>{' '}
-                            </>
-                          )}
-                          {e.name}
-                        </Chip>
-                      );
-                    })}
+                  <h3
+                    id="guidance-skill"
+                    className="mb-1 text-caption text-ink-muted font-semibold"
+                  >
+                    Guidance on which skill?
+                  </h3>
+                  {/* 2024 Guidance adds its d4 to every check with one skill. */}
+                  {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
+                  <div
+                    role="group"
+                    aria-labelledby="guidance-skill"
+                    className="-mx-1.5 mb-3 flex flex-wrap"
+                  >
+                    {SKILLS.map((sk) => (
+                      <Chip
+                        key={sk.name}
+                        onClick={() => {
+                          start('Guidance', sk.name);
+                          guidanceChip.current?.focus();
+                        }}
+                      >
+                        {sk.name}
+                      </Chip>
+                    ))}
                   </div>
                 </>
+              )}
+              {bardicDie !== undefined && bardic !== undefined && (
+                <div className="mb-3 flex flex-col gap-1">
+                  <h3 className="text-caption text-ink-muted font-semibold">
+                    The bard's die, by their level
+                  </h3>
+                  <SegmentedControl
+                    label="The bard's die, by their level"
+                    options={BARDIC_DICE.map((die) => ({ value: die, label: die }))}
+                    value={bardicDie}
+                    onChange={(die) => put(bardicEffect(bardic.id, edition, die))}
+                    block
+                  />
+                </div>
               )}
               <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
               <div className="-mx-1.5 flex flex-wrap">
@@ -602,6 +700,14 @@ export function ConditionStrip({
       </Sheet.Root>
     </>
   );
+}
+
+/** The bard's die a Bardic Inspiration in play offers, when it is one of the four. */
+function bardicDieOf(effect: ActiveEffect | undefined): BardicDie | undefined {
+  const offer = effect?.parts.find((p) => p.kind === 'rollOffer');
+  if (offer?.kind !== 'rollOffer') return undefined;
+  const die = offer.dice.replace(/^1d/i, 'd');
+  return BARDIC_DICE.find((d) => d === die);
 }
 
 /** An effect's sheet: what it does, how long it lasts, and its switch. */

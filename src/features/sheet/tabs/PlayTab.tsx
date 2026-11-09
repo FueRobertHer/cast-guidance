@@ -26,15 +26,25 @@ import {
   type D20Test,
   d20Effects,
 } from '@/engine/conditions';
-import { endEffects, type HpLimits, newTurn, setConcentration } from '@/engine/effectLife';
+import { RAGE_NO_SPELLS } from '@/engine/curated/namedEffects';
+import {
+  applyEffect,
+  endEffect,
+  endEffects,
+  type HpLimits,
+  newTurn,
+  setConcentration,
+} from '@/engine/effectLife';
 import { defensesInForce, rollEffects } from '@/engine/playRules';
 import type {
   ActionEconomy,
   AttackRow,
+  CharacterDoc,
   DerivedSheet,
   PlayState,
   SpellcastingBlock,
 } from '@/engine/types';
+import { randomId } from '@/lib/randomId';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
@@ -45,7 +55,7 @@ import { BreakdownSheet } from '@/ui/BreakdownSheet';
 import { Button, buttonClass } from '@/ui/Button';
 import { ChipFace, NOT_WORN, useRollMoment } from '@/ui/ChipFace';
 import { D20Icon } from '@/ui/D20Icon';
-import { askConfirm, askText } from '@/ui/dialogs';
+import { askChoice, askConfirm, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Tip, useTip } from '@/ui/Hint';
 import { Lift } from '@/ui/Lift';
@@ -64,10 +74,8 @@ import { CastButton } from '../CastButton';
 import { CastResourcePicker } from '../CastResourcePicker';
 import {
   type CastResource,
-  castGranted,
   castingEconomy,
   castResourceLabel,
-  castSpell,
   isConcentratingOn,
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
@@ -95,6 +103,7 @@ import {
   raisedBy,
 } from '../effectsInPlay';
 import { type HpMode, HpSheet } from '../HpSheet';
+import { answersTo, castGrantedAsking, castSpellAsking, namedStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
@@ -260,6 +269,19 @@ function rollConcentration(
  * offers no way to cast it. The name still opens the rules sheet, which says what
  * became of the file and can ask again. The slot pips above still work.
  */
+/**
+ * Over each spellcasting block while raging (the buffs canvas, Edges): spells
+ * are out. A warning, not a lock: Cast still works.
+ */
+function NoSpellsCue() {
+  return (
+    <p className="mb-2 flex gap-1.5 text-caption text-guide">
+      <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+      You cannot cast spells while raging
+    </p>
+  );
+}
+
 function PendingSpellRow({
   name,
   source,
@@ -322,6 +344,10 @@ export function Component() {
     mode: 'damage',
   });
   const hpSheetFrom = useRef<HTMLElement>(null);
+  // When a Use that starts an effect last turned into End, or back: the
+  // button changes under the finger, so a second tap within a second is the
+  // same tap, not an undo.
+  const startedAt = useRef(new Map<string, number>());
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   const spellEntity = (name: string, source: string) =>
@@ -454,6 +480,12 @@ export function Component() {
       riders: rollEffects(sheet, test),
       settlesOnNatural: true,
     });
+  /** What raised a casting class's save DC (Innate Sorcery), by name. */
+  const dcRaisedBy = (sc: SpellcastingBlock) =>
+    raisedBy(sc.saveDc, built.spellcasting.find((b) => b.classUid === sc.classUid)?.saveDc);
+  // Rage says it: spells and concentration are out while it lasts. A warning,
+  // never a lock, as the conditions' cues are: the table has the last word.
+  const raging = sheet.cues.some((c) => c.text === RAGE_NO_SPELLS);
   /** What a weapon row's attack is, as an effect's filter reads it. */
   const weaponTest = (a: AttackRow): D20Test => ({
     kind: 'attack',
@@ -503,6 +535,7 @@ export function Component() {
     spends: readonly ActionSpend[],
     label?: string,
     regains?: ActionUse['regains'],
+    then?: (d: CharacterDoc) => void,
   ) =>
     update(
       (d) => {
@@ -525,6 +558,7 @@ export function Component() {
         if (regains !== undefined && refilled !== undefined) {
           giveBack(refilled, regains.max, regains.amount);
         }
+        then?.(d);
       },
       label !== undefined ? `Used ${label}` : undefined,
     );
@@ -1647,8 +1681,48 @@ export function Component() {
               // What it spends: a use of the pool sharing its name, and the pool
               // its cost names. See `actionUse`.
               const use = actionUse(a, sheet.resources, usedOf);
-              // Using it marks the right slice of the turn and spends the pips.
-              const trigger = () => triggerAction(a.economy, use.spends, a.label, use.regains);
+              // What its Use puts in play (Rage, Innate Sorcery), and that
+              // effect while it lasts, when the Use button becomes End.
+              const starts = namedStart(a, doc);
+              const started =
+                starts === undefined
+                  ? undefined
+                  : inPlay.find((e) => e.mine === true && answersTo(e, starts.name));
+              const rowKey = `${a.origin}:${a.label}:${a.economy}`;
+              const recent = () => Date.now() - (startedAt.current.get(rowKey) ?? 0) < 1000;
+              const stamp = () => startedAt.current.set(rowKey, Date.now());
+              // Using it marks the right slice of the turn and spends the pips,
+              // and puts in play what it starts, in the same update.
+              const trigger = async () => {
+                if (starts === undefined) {
+                  triggerAction(a.economy, use.spends, a.label, use.regains);
+                  return;
+                }
+                if (recent()) return;
+                const focus = play.concentratingOn?.label;
+                if (starts.endsConcentration && focus !== undefined) {
+                  // It names what you would lose, and only asks when there is something.
+                  const pick = await askChoice({
+                    title: `Start ${a.label}?`,
+                    detail: `You cannot concentrate while raging, so this ends ${focus}.`,
+                    options: [
+                      { id: 'start', label: `${a.label} and end ${focus}` },
+                      { id: 'keep', label: 'Keep concentrating' },
+                    ],
+                  });
+                  if (pick !== 'start') return;
+                }
+                stamp();
+                triggerAction(a.economy, use.spends, a.label, use.regains, (d) => {
+                  if (starts.endsConcentration) setConcentration(d.play, undefined, hpNow);
+                  applyEffect(d.play, starts.build(randomId()), hpNow);
+                });
+              };
+              const end = () => {
+                if (started === undefined || recent()) return;
+                stamp();
+                update((d) => void endEffect(d.play, started.id, hpNow), `Ended ${started.name}`);
+              };
               // Incapacitating conditions stop actions/bonus actions/reactions.
               // A rider takes none of those.
               const blocked = a.economy === 'none' ? [] : limits.noActions;
@@ -1696,7 +1770,7 @@ export function Component() {
                 );
               return (
                 <span
-                  key={`${a.origin}:${a.label}:${a.economy}`}
+                  key={rowKey}
                   // Ink, whatever the economy: green and blue outlines read as
                   // statuses, and colour alone is no way to say which slot an
                   // action spends (DS-001 TurnTracker). The Use button's
@@ -1730,8 +1804,19 @@ export function Component() {
                           a.heals === true ? 'heal' : a.plainDice === true ? 'dice' : 'damage'
                         }
                         // The dice still roll; only a use it can pay for is recorded.
-                        onRolled={use.noButton || use.disabled ? undefined : trigger}
+                        onRolled={use.noButton || use.disabled ? undefined : () => void trigger()}
                       />
+                    ) : started !== undefined ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`End ${a.label}`}
+                        onClick={end}
+                        className="-my-1.5"
+                        title={`End ${started.name}: what it does stops, and the use stays spent`}
+                      >
+                        End
+                      </Button>
                     ) : use.noButton ? null : (
                       <Button
                         variant="outline"
@@ -1739,12 +1824,12 @@ export function Component() {
                         aria-label={
                           slot === undefined ? `Use ${a.label}` : `Use ${a.label}, ${economyLabel}`
                         }
-                        onClick={trigger}
+                        onClick={() => void trigger()}
                         disabled={use.disabled}
                         className="-my-1.5"
                         title={use.title}
                       >
-                        Use
+                        {starts !== undefined && use.disabled ? 'None left' : 'Use'}
                       </Button>
                     )}
                     {use.paid !== undefined && (
@@ -1834,14 +1919,21 @@ export function Component() {
             <span className="text-heading">{sc.className} spellcasting</span>
             {/* Spell DC in `arcane`, the colour of what spellcasting spends. */}
             <span className="flex flex-wrap gap-1">
-              <Badge tone="arcane">
-                Save DC <strong>{sc.saveDc.value}</strong>
-              </Badge>
+              {/* Rung when an effect raised it: Innate Sorcery's +1. */}
+              <Lift on={dcRaisedBy(sc).length > 0} className="rounded-chip">
+                <Badge tone="arcane">
+                  Save DC <strong>{sc.saveDc.value}</strong>
+                  {dcRaisedBy(sc).length > 0 && (
+                    <span className="sr-only">, raised by {dcRaisedBy(sc).join(', ')}</span>
+                  )}
+                </Badge>
+              </Lift>
               <Badge tone="arcane">
                 Attack <strong>{signed(sc.attackMod.value)}</strong>
               </Badge>
             </span>
           </div>
+          {raging && <NoSpellsCue />}
           <SpellSlots
             block={sc}
             play={play}
@@ -1899,7 +1991,7 @@ export function Component() {
                   });
                   const hasAttack = hasSpellAttack(entity);
                   const cast = () => {
-                    castSpell(
+                    castSpellAsking(
                       update,
                       hpNow,
                       sc,
@@ -1989,11 +2081,11 @@ export function Component() {
                             display={`Atk ${signed(sc.attackMod.value)}`}
                             label={`${ref.name} spell attack`}
                             variant="d20"
-                            roller={rollAttack(
-                              sc.attackMod.value,
-                              `${ref.name} spell attack`,
-                              SPELL_ATTACK,
-                            )}
+                            roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`, {
+                              kind: 'attack',
+                              attack: 'spell',
+                              className: sc.className,
+                            })}
                             wear={attackChipWear}
                             onRolled={running ? undefined : cast}
                           />
@@ -2100,7 +2192,7 @@ export function Component() {
               const depleted = remaining !== undefined && remaining <= 0;
               const cast = () => {
                 if (g.usage === 'prepared' && block !== undefined) {
-                  castSpell(
+                  castSpellAsking(
                     update,
                     hpNow,
                     block,
@@ -2114,7 +2206,7 @@ export function Component() {
                     resource,
                   );
                 } else {
-                  castGranted(
+                  castGrantedAsking(
                     update,
                     hpNow,
                     {
