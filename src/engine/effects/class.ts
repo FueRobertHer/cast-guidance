@@ -13,6 +13,7 @@ import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
+import { reskinOf } from './reskin';
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
 export interface ClassFeatureRef {
@@ -237,6 +238,12 @@ interface FeatureWalk {
   col: Collector;
   cardOrigin: EffectOrigin;
   curatedLabel: string;
+  /**
+   * The class a reskinned class stands for (`reskinOf`), whose curated rows and
+   * spend links reach the features it lends: a Warrior's Second Wind is the
+   * Fighter's. Tried after `curatedLabel`, on a class's own walk only.
+   */
+  curatedAlias?: string;
   classLevel: number;
   ledger: FeatureLedger;
 }
@@ -304,15 +311,22 @@ function collectFeatureWithNested(
   key: string,
   choicePrefix: string,
 ): void {
-  const { col, cardOrigin, curatedLabel, ledger } = walk;
+  const { col, cardOrigin, curatedLabel, curatedAlias, ledger } = walk;
   if (ledger.collected.has(key)) return;
   ledger.collected.add(key);
   col.features.push({ name, level, origin: cardOrigin, entries: feature.entries });
   const featureOrigin: EffectOrigin = { ...cardOrigin, label: name };
-  if (!emitCurated(col, `${name}|${curatedLabel}`.toLowerCase(), featureOrigin)) {
-    proseScanFeature(col, name, feature.entries, featureOrigin);
-  }
-  linkSpend(col, `${name}|${curatedLabel}|${String(feature.source)}`, name, featureOrigin);
+  const labels = curatedAlias !== undefined ? [curatedLabel, curatedAlias] : [curatedLabel];
+  // The feature's own printing as well as its card's: a reskin or a copied subclass
+  // is a book of its own that lends a 2024 class's features.
+  const printing = String(feature.source).toLowerCase();
+  const curated = labels.some((label) =>
+    emitCurated(col, `${name}|${label}`.toLowerCase(), featureOrigin, printing),
+  );
+  if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin);
+  labels.some((label) =>
+    linkSpend(col, `${name}|${label}|${String(feature.source)}`, name, featureOrigin),
+  );
   const identity = featureIdentity(feature);
   const { refs, picks } = PICK_ONE.has(identity)
     ? { refs: [], picks: [{ count: 1, branches: featureBranches(feature.entries) }] }
@@ -631,10 +645,12 @@ export function collectClasses(col: Collector): void {
     // front so a nested ref can't collect a feature this loop will handle.
     const featureRefs = Array.isArray(cls.classFeatures) ? cls.classFeatures : [];
     const ledger: FeatureLedger = { claimed: new Set(), collected: new Set(), picked: new Map() };
+    const reskin = reskinOf(cls);
     const classWalk: FeatureWalk = {
       col,
       cardOrigin: origin,
       curatedLabel: origin.label,
+      ...(reskin !== undefined ? { curatedAlias: reskin.name } : {}),
       classLevel,
       ledger,
     };
@@ -736,8 +752,11 @@ export function collectClasses(col: Collector): void {
           `subclass:${subOrigin.uid}`,
           classLevel,
         );
+        // A subclass keeps its own name under a reskin (a Warrior's Champion), so
+        // its rows are found by that alone.
+        const { curatedAlias: _classOnly, ...walked } = classWalk;
         const subWalk: FeatureWalk = {
-          ...classWalk,
+          ...walked,
           cardOrigin: subOrigin,
           curatedLabel: subOrigin.label,
         };

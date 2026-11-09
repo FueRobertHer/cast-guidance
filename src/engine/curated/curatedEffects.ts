@@ -14,6 +14,7 @@ import {
   toolOptions,
   weaponOptions,
 } from '../effects/readers';
+import { reskinOf } from '../effects/reskin';
 import {
   type Ability,
   type ChoiceOption,
@@ -22,7 +23,11 @@ import {
   SKILLS,
 } from '../types';
 
-type CuratedFn = (col: Collector, origin: EffectOrigin) => void;
+/**
+ * `from` is the printing of the feature itself, lowercase, where it can differ from
+ * the card's: a class or subclass feature (see `printedIn`).
+ */
+type CuratedFn = (col: Collector, origin: EffectOrigin, from?: string) => void;
 
 const proficient = (col: Collector, skill: string, origin: EffectOrigin) =>
   col.add({ kind: 'skillProf', skill, level: 1, origin });
@@ -215,8 +220,19 @@ const skillPick =
   (col, origin) =>
     featureSkillPick(col, origin, count, from);
 
-const classEntry = (col: Collector, className: string) =>
-  col.doc.classes.find((c) => c.ref.name.toLowerCase() === className.toLowerCase());
+/**
+ * The character's class of this name, or else the class reskinning it (a Warrior
+ * for "Fighter"), whose features are that class's and read its level as theirs.
+ */
+function classEntry(col: Collector, className: string) {
+  const name = className.toLowerCase();
+  return (
+    col.doc.classes.find((c) => c.ref.name.toLowerCase() === name) ??
+    col.doc.classes.find(
+      (c) => reskinOf(col.ctx.get('class', c.ref.name, c.ref.source))?.name.toLowerCase() === name,
+    )
+  );
+}
 
 function classLevel(col: Collector, className: string): number {
   return classEntry(col, className)?.levels ?? 0;
@@ -236,18 +252,21 @@ function classSkillList(col: Collector, className: string): string[] {
 /**
  * Whether a class or subclass feature comes from the printing in `source`. Its
  * origin uid is the class's or subclass's (`bard|xphb`, `champion|phb`), and a
- * 2014 subclass kept under a 2024 class still carries its own 2014 source.
+ * 2014 subclass kept under a 2024 class still carries its own 2014 source. `from`
+ * is the feature's own printing, which says it for a book that lends another's
+ * features: a reskinned class (`warrior|wow`) or a subclass copied from a 2024 one
+ * (`champion|wow`) holds the 2024 features as printed.
  */
-function printedIn(origin: EffectOrigin, source: string): boolean {
-  return origin.uid.endsWith(`|${source}`);
+function printedIn(origin: EffectOrigin, source: string, from?: string): boolean {
+  return origin.uid.endsWith(`|${source}`) || from === source;
 }
 
 /**
  * The 2014 and FRHoF printings share this pick. FRHoF adds a kind of artisan's
  * tools; the 2014 printing's two languages stay in the card's prose.
  */
-const blessingsOfKnowledge: CuratedFn = (col, origin) => {
-  if (printedIn(origin, 'frhof')) featureToolPick(col, origin, 1, ["artisan's tools"]);
+const blessingsOfKnowledge: CuratedFn = (col, origin, from) => {
+  if (printedIn(origin, 'frhof', from)) featureToolPick(col, origin, 1, ["artisan's tools"]);
   featureSkillPick(
     col,
     origin,
@@ -306,10 +325,16 @@ function recovery(is2024: boolean) {
  * action, once per short or long rest. A 2014 character with both subclasses gets one
  * shared chip, which refills the first pool: the other is a pip tap.
  */
-function psionicEnergyDice(col: Collector, origin: EffectOrigin, key: string, cls: string): void {
+function psionicEnergyDice(
+  col: Collector,
+  origin: EffectOrigin,
+  key: string,
+  cls: string,
+  from?: string,
+): void {
   const level = classLevel(col, cls);
   const die = level >= 17 ? 12 : level >= 11 ? 10 : level >= 5 ? 8 : 6;
-  const printed2024 = printedIn(origin, 'xphb');
+  const printed2024 = printedIn(origin, 'xphb', from);
   const count2024 = level >= 17 ? 12 : level >= 13 ? 10 : level >= 9 ? 8 : level >= 5 ? 6 : 4;
   col.add({
     kind: 'resource',
@@ -439,6 +464,18 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
   'superior technique|tce': superiorTechnique,
+  // A maneuver that forces a save the scanner did not read. The maneuver DC lives in
+  // Combat Superiority, so the chip names the save alone. Its die is in `SPEND_LINKS`.
+  'heroic leap|wow': (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Heroic Leap',
+      note: 'bludgeoning, the die rolled · creatures within 5 feet of where you land',
+      save: { targetAbility: 'str' },
+      origin,
+    });
+  },
   'healer|phb': (col, origin) => {
     col.add({
       kind: 'action',
@@ -561,8 +598,8 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'rage|barbarian': (col, origin) => {
-    const printed2024 = printedIn(origin, 'xphb');
+  'rage|barbarian': (col, origin, from) => {
+    const printed2024 = printedIn(origin, 'xphb', from);
     col.add({
       kind: 'resource',
       key: 'rage',
@@ -642,8 +679,8 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   // 2024 says "you can use Wild Shape twice" in a table the scanner cannot see, so
   // it gave that printing no pool and nothing could spend one.
-  'wild shape|druid': (col, origin) => {
-    const printed2024 = printedIn(origin, 'xphb');
+  'wild shape|druid': (col, origin, from) => {
+    const printed2024 = printedIn(origin, 'xphb', from);
     const lvl = classLevel(col, 'Druid');
     col.add({
       kind: 'resource',
@@ -660,10 +697,10 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
-  'psionic power|psi warrior': (col, origin) =>
-    psionicEnergyDice(col, origin, 'psi-warrior-dice', 'Fighter'),
-  'psionic power|soulknife': (col, origin) =>
-    psionicEnergyDice(col, origin, 'soulknife-dice', 'Rogue'),
+  'psionic power|psi warrior': (col, origin, from) =>
+    psionicEnergyDice(col, origin, 'psi-warrior-dice', 'Fighter', from),
+  'psionic power|soulknife': (col, origin, from) =>
+    psionicEnergyDice(col, origin, 'soulknife-dice', 'Rogue', from),
   'channel divinity|cleric': (col, origin) => {
     // Scales with cleric level; the prose scanner can't see level gates.
     const lvl = classLevel(col, 'Cleric');
@@ -681,8 +718,8 @@ export const CURATED: Record<string, CuratedFn> = {
   // 2014 is a flat 4 points on every short rest. 2024 is a choice of up to half the
   // level, once per long rest, so its row counts that one use and the player taps
   // the points back.
-  'sorcerous restoration|sorcerer': (col, origin) => {
-    if (printedIn(origin, 'xphb')) {
+  'sorcerous restoration|sorcerer': (col, origin, from) => {
+    if (printedIn(origin, 'xphb', from)) {
       col.add({
         kind: 'resource',
         key: 'sorcerous-restoration',
@@ -706,7 +743,7 @@ export const CURATED: Record<string, CuratedFn> = {
       kind: 'resource',
       key: 'sorcery-points',
       label: 'Sorcery Points',
-      max: 'level:Sorcerer',
+      max: classLevel(col, 'Sorcerer'),
       resetOn: 'long',
       // Adds to Metamagic Adept's two, whichever comes first.
       stack: true,
@@ -765,12 +802,13 @@ export const CURATED: Record<string, CuratedFn> = {
     // "each time you use THIS CLASS'S Channel Divinity", and the 2014 pools are
     // separate features with separate uses. A shared key would also make the
     // max depend on which class the player happened to add first.
+    // A Death Knight's pool is this one, named for the class that has it.
     const is2024 = col.doc.rulesVersion === '2024';
     const uses = is2024 ? (classLevel(col, 'Paladin') >= 11 ? 3 : 2) : 1;
     col.add({
       kind: 'resource',
       key: 'channel-divinity-paladin',
-      label: 'Channel Divinity (Paladin)',
+      label: `Channel Divinity (${classEntry(col, 'Paladin')?.ref.name ?? 'Paladin'})`,
       max: uses,
       ...recovery(is2024),
       origin,
@@ -802,16 +840,16 @@ export const CURATED: Record<string, CuratedFn> = {
   // Half proficiency where it is not already added. The 2014 wording reaches
   // every check, plain ability checks and initiative included; the 2024 one
   // reaches only skills the bard lacks.
-  'jack of all trades|bard': (col, origin) => {
+  'jack of all trades|bard': (col, origin, from) => {
     col.add(
-      printedIn(origin, 'xphb')
+      printedIn(origin, 'xphb', from)
         ? { kind: 'halfProf', round: 'down', skillsOnly: true, origin }
         : { kind: 'halfProf', round: 'down', origin },
     );
   },
   // TCE's optional feature (under the 2014 class) picks again at barbarian 10.
-  'primal knowledge|barbarian': (col, origin) => {
-    const count = printedIn(origin, 'phb') && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
+  'primal knowledge|barbarian': (col, origin, from) => {
+    const count = printedIn(origin, 'phb', from) && classLevel(col, 'Barbarian') >= 10 ? 2 : 1;
     featureSkillPick(col, origin, count, classSkillList(col, 'Barbarian'));
   },
   // The sidekick classes' saving throw stays in the card, and so do the weapons,
@@ -862,20 +900,56 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // The Death Knight's d8s in place of Lay on Hands: one plus the Charisma modifier,
+  // at least one, back on a long rest. A use spends as many as the player picks.
+  'death coil|death knight': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'death-coil',
+      label: 'Death Coil (d8 pool)',
+      max: 'abilityModPlus1:cha',
+      min: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Death Coil',
+      note: 'necrotic, or hit points to an Undead · 60 feet',
+      save: { targetAbility: 'con' },
+      origin,
+    });
+  },
+  // A totem a bonus action, as often as the Shaman likes. Only the Primal Knowledge
+  // Totem waits for a long rest, and a use of Rage buys it back. The scanner read
+  // that one limit as every totem's.
+  'totems|shaman': (col, origin) => {
+    col.add({ kind: 'action', economy: 'bonus', label: 'Totems', origin });
+    col.add({
+      kind: 'resource',
+      key: 'primal-knowledge-totem',
+      label: 'Primal Knowledge Totem',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label: 'Primal Knowledge Totem', origin });
+  },
 
   // --- Subclass features (keyed by the subclass's full name) ---------------
   // 2014 only: half proficiency rounded up on STR, DEX and CON checks. The
   // 2024 feature of the same name grants advantage, which is no sheet number.
-  'remarkable athlete|champion': (col, origin) => {
-    if (printedIn(origin, 'xphb')) return;
+  'remarkable athlete|champion': (col, origin, from) => {
+    if (printedIn(origin, 'xphb', from)) return;
     col.add({ kind: 'halfProf', round: 'up', abilities: ['str', 'dex', 'con'], origin });
   },
   // These four say "you can", so a negative modifier stays off the roll.
-  'dread ambusher|gloom stalker': (col, origin) => {
+  'dread ambusher|gloom stalker': (col, origin, from) => {
     col.add({ kind: 'initiativeBonus', amount: 'abilityModMin0:wis', origin });
     // A curated entry turns off the prose scan, which is what found the 2024
     // Dreadful Strike's uses ("equal to your Wisdom modifier"); keep them.
-    if (printedIn(origin, 'xphb')) {
+    if (printedIn(origin, 'xphb', from)) {
       col.add({
         kind: 'resource',
         key: 'dread-ambusher',
@@ -941,8 +1015,9 @@ export const CURATED: Record<string, CuratedFn> = {
   // and cantrips beside them stay in the card.
   // XGE picks one. AU grants both, and each one already held turns into a pick
   // from the fighter's list; like Royal Envoy, only what is collected so far counts.
-  'arcane archer lore|arcane archer': (col, origin) => {
-    if (!printedIn(origin, 'au')) return featureSkillPick(col, origin, 1, ['Arcana', 'Nature']);
+  'arcane archer lore|arcane archer': (col, origin, from) => {
+    if (!printedIn(origin, 'au', from))
+      return featureSkillPick(col, origin, 1, ['Arcana', 'Nature']);
     const held = col.proficientSkills().map((s) => s.toLowerCase());
     const known = ['Arcana', 'Nature'].filter((s) => held.includes(s.toLowerCase()));
     for (const skill of ['Arcana', 'Nature']) {
@@ -969,9 +1044,9 @@ export const CURATED: Record<string, CuratedFn> = {
   'bonus proficiency|samurai': skillOrLanguage(['History', 'Insight', 'Performance', 'Persuasion']),
   'knightly envoy|banneret': skillPick(1, ['Insight', 'Intimidation', 'Persuasion', 'Performance']),
   // An artisan's tool in both printings; 2024 adds a skill.
-  'student of war|battle master': (col, origin) => {
+  'student of war|battle master': (col, origin, from) => {
     featureToolPick(col, origin, 1, ["artisan's tools"]);
-    if (printedIn(origin, 'xphb')) {
+    if (printedIn(origin, 'xphb', from)) {
       featureSkillPick(col, origin, 1, classSkillList(col, 'Fighter'));
     }
   },
@@ -1099,6 +1174,85 @@ export const CURATED: Record<string, CuratedFn> = {
     { tools: ["Brewer's Supplies"] },
     skills('Performance'),
   ),
+  // Performance, or a Monk skill in its place when it is held already. Like Royal
+  // Envoy, only what is collected so far can say so.
+  'bonus proficiencies|warrior of mystic brews': kit(
+    { tools: ["Brewer's Supplies"] },
+    (col, origin) => {
+      if (col.proficientSkills().some((s) => s.toLowerCase() === 'performance')) {
+        featureSkillPick(
+          col,
+          origin,
+          1,
+          classSkillList(col, 'Monk'),
+          undefined,
+          'Skill in place of Performance',
+        );
+      } else {
+        proficient(col, 'Performance', origin);
+      }
+    },
+  ),
+  // Fragments gathered on a long rest: the Wisdom modifier's worth (at least one),
+  // one more from level 13 and two from 17. A reaction when an enemy dies takes one
+  // back without spending any; what spends them is in `SPEND_LINKS`.
+  'soul fragments|demon hunter': (col, origin) => {
+    const level = classLevel(col, 'Ranger');
+    const fragments = { key: 'soul-fragments', label: 'Soul Fragments', resetOn: 'long' } as const;
+    col.add({ kind: 'resource', ...fragments, max: 'abilityMod:wis', origin });
+    if (level >= 13) {
+      col.add({ kind: 'resource', ...fragments, max: level >= 17 ? 2 : 1, stack: true, origin });
+    }
+    col.add({
+      kind: 'action',
+      economy: 'reaction',
+      label: 'Soul Fragments',
+      note: 'regain one when an enemy you can see within 30 feet dies',
+      regains: { resource: 'soul-fragments', amount: 1 },
+      spendsNoUse: true,
+      origin,
+    });
+  },
+  // One use a long rest, of the rune on the weapon: Blood's reaction, Frost's breath
+  // in place of an attack (a Dexterity save against the spell save DC, which the
+  // scanner missed) or Unholy's Summon Undead. Each chip spends that one use.
+  'runic mastery|oath of the ebon blade': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'runic-mastery',
+      label: 'Runic Mastery',
+      max: 1,
+      resetOn: 'long',
+      origin,
+    });
+    const cost = { resource: 'runic-mastery', amount: 1 } as const;
+    col.add({
+      kind: 'action',
+      economy: 'reaction',
+      label: 'Runic Mastery: Blood',
+      note: 'an ally hit within 10 feet takes less damage, and you lose as much',
+      cost,
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: 'none',
+      label: 'Runic Mastery: Frost',
+      roll: '8d6',
+      note: 'cold · 30-foot cone, in place of one attack',
+      save: { targetAbility: 'dex', dcAbility: 'spell' },
+      cost,
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: 'none',
+      label: 'Runic Mastery: Unholy',
+      note: 'Summon Undead with no concentration',
+      cost,
+      origin,
+    });
+  },
   "genie's splendor|oath of the noble genies": all(
     unarmored(10, 'dex', 'cha'),
     skillPick(1, ['Acrobatics', 'Intimidation', 'Performance', 'Persuasion']),
@@ -1159,8 +1313,13 @@ export function emitCuratedTrait(col: Collector, traitName: string, origin: Effe
 }
 
 /** Returns whether a curated entry handled the key (callers fall back to prose scan). */
-export function emitCuratedEffects(col: Collector, key: string, origin: EffectOrigin): boolean {
+export function emitCuratedEffects(
+  col: Collector,
+  key: string,
+  origin: EffectOrigin,
+  from?: string,
+): boolean {
   const fn = CURATED[key];
-  fn?.(col, origin);
+  fn?.(col, origin, from);
   return fn !== undefined;
 }
