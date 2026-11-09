@@ -397,6 +397,34 @@ export function mergeHomebrew(
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
 }
 
+/**
+ * Types where many entries share a name and source on purpose: each class has
+ * its own "Ability Score Improvement", and two races can each have a subrace
+ * of one name. For these `name|source` is not an entry's identity, so two
+ * files' entries are never folded by it.
+ */
+const SHARED_UID_TYPES = new Set<EntityType>([
+  'subrace',
+  'subclass',
+  'classFeature',
+  'subclassFeature',
+]);
+
+/**
+ * `entities` (one homebrew file's, of one type) without those an earlier file
+ * already brought, by `name|source`; `seen` then gains this file's. Two files
+ * holding one book (two compendiums that both carry it) would otherwise list
+ * each of its entries twice, in pickers and source counts, while `get`
+ * resolves only the first: the one imported first wins, as the import
+ * preview says. Repeats within one file stay as they were.
+ */
+function laterCopiesOut(entities: Entity[], seen: Set<string>): Entity[] {
+  const named = (e: Entity) => typeof e.name === 'string' && typeof e.source === 'string';
+  const kept = entities.filter((e) => !named(e) || !seen.has(uidOf(e)));
+  for (const e of kept) if (named(e)) seen.add(uidOf(e));
+  return kept;
+}
+
 /** Finds the entity a lowercased `name|source` names in one list, or undefined. */
 type CopyIndex = (uid: string) => Entity | undefined;
 
@@ -484,7 +512,9 @@ function mergeHomebrewFiles(
         `homebrew ${type}`,
       ),
     );
-    for (const entities of perFile) {
+    const seen = SHARED_UID_TYPES.has(type) ? undefined : new Set<string>();
+    for (const listed of perFile) {
+      const entities = seen === undefined ? listed : laterCopiesOut(listed, seen);
       if (entities.length === 0) continue;
       if (type === 'race' || type === 'subrace') {
         const versions = entities.flatMap((e) => expandVersions(e, reg.warnings));

@@ -181,3 +181,132 @@ describe('previewCharacterImport', () => {
     expect(none.notes).toEqual([expect.stringContaining('not checked')]);
   });
 });
+
+describe('previewCharacterImport of part of a book', () => {
+  const lance = { name: 'Ember Lance', source: 'FCEmber' };
+  const withSpells = <T extends { json: unknown }>(f: T, spell: unknown[]): T => ({
+    ...f,
+    json: { ...(f.json as object), spell },
+  });
+  const part = withSpells(
+    { ...brew('part', ['FCEmber']), book: 'Ember Codex', subset: true as const },
+    [lance],
+  );
+  const preview = (existing: HomebrewFile[]) =>
+    previewCharacterImport({
+      prepared: prepared([part]),
+      existing,
+      official: officialPhb(),
+      characterExists: false,
+    }).files[0];
+  const p = (existing: HomebrewFile[]) => preview(existing)?.status;
+
+  it('says the book is here when what is here holds every entry of it', () => {
+    expect(p([withSpells(local('whole', ['FCEmber']), [lance])])).toBe('book-here');
+    // Another part of the book with the same entries holds it too.
+    expect(p([withSpells({ ...local('other-part', ['FCEmber']), subset: true }, [lance])])).toBe(
+      'book-here',
+    );
+    expect(p([])).toBe('new');
+  });
+
+  it('adds what the copy here from the same file lacks, and says how much', () => {
+    const ward = { name: 'Ember Ward', source: 'FCEmber' };
+    const here = (enabled: boolean, fileName = 'part.json') =>
+      withSpells(
+        {
+          ...local('here', ['FCEmber'], enabled),
+          fileName,
+          book: 'Ember Codex',
+          subset: true as const,
+        },
+        [ward],
+      );
+    expect(preview([here(true)])).toMatchObject({
+      status: 'adds-to-book',
+      adds: 1,
+      existingEnabled: true,
+    });
+    expect(preview([here(false)])).toMatchObject({
+      status: 'adds-to-book',
+      existingEnabled: false,
+    });
+    // A copy another file brought is that file's: this one comes in beside it.
+    expect(preview([here(true, 'other.xml')])?.status).toBe('other-version');
+  });
+
+  it('says the book is here when it lacks only another book`s entry', () => {
+    const zap = { name: 'Zap', source: 'OTHER' };
+    const stray = withSpells(
+      { ...brew('part', ['FCEmber']), book: 'Ember Codex', subset: true as const },
+      [lance, zap],
+    );
+    const here = withSpells(
+      { ...local('here', ['FCEmber']), fileName: 'part.json', book: 'Ember Codex' },
+      [lance],
+    );
+    const [file] = previewCharacterImport({
+      prepared: prepared([stray]),
+      existing: [here],
+      official: officialPhb(),
+      characterExists: false,
+    }).files;
+    expect(file).toMatchObject({ status: 'book-here', existingEnabled: true, localFiles: [] });
+  });
+
+  it('names the turned-off copies that would win over what it stores, and only those', () => {
+    const ward = { name: 'Ember Ward', source: 'FCEmber' };
+    const copy = (id: string, fileName: string, addedAt: number, enabled = false) =>
+      withSpells({ ...local(id, ['FCEmber'], enabled), fileName, book: 'Ember Codex', addedAt }, [
+        ward,
+      ]);
+    const names = (existing: HomebrewFile[]) => preview(existing)?.localFiles.map((f) => f.id);
+    // Entries added to the copy here keep its place: an older copy wins, a newer one does not.
+    const here = copy('here', 'part.json', 5, true);
+    expect(names([here, copy('older', 'a.xml', 4), copy('newer', 'b.xml', 6)])).toEqual(['older']);
+    // A file that comes in on its own is the newest: every copy here wins over it.
+    expect(names([copy('older', 'a.xml', 4), copy('newer', 'b.xml', 6)])).toEqual([
+      'older',
+      'newer',
+    ]);
+    // Nothing is stored for a book here, so nothing is named.
+    const whole = withSpells(local('whole', ['FCEmber']), [lance]);
+    expect(names([whole, copy('older', 'a.xml', 0)])).toEqual([]);
+  });
+
+  it('says so when the book here is turned off', () => {
+    const off = preview([withSpells(local('whole', ['FCEmber'], false), [lance])]);
+    expect(off).toMatchObject({ status: 'book-here', existingEnabled: false });
+    const on = preview([withSpells(local('whole', ['FCEmber']), [lance])]);
+    expect(on).toMatchObject({ status: 'book-here', existingEnabled: true });
+    // The entry is only in the file that is off: what is on does not hold it.
+    const split = preview([
+      withSpells(local('on', ['FCEmber']), [{ name: 'Ember Ward', source: 'FCEmber' }]),
+      withSpells(local('off', ['FCEmber'], false), [lance]),
+    ]);
+    expect(split).toMatchObject({ status: 'book-here', existingEnabled: false });
+  });
+
+  it('brings the part in when the book here lacks one of its entries', () => {
+    const older = withSpells(local('whole', ['FCEmber']), [
+      { name: 'Ember Ward', source: 'FCEmber' },
+    ]);
+    expect(p([older])).toBe('other-version');
+  });
+
+  it('names a book, here and in the file, by the book rather than the file it came from', () => {
+    const part = withSpells(
+      { ...brew('part', ['FCEmber']), book: 'Ember Codex', subset: true as const },
+      [lance],
+    );
+    const here = { ...local('here', ['FCEmber']), book: 'Ember Codex', subset: true as const };
+    const [file] = previewCharacterImport({
+      prepared: prepared([part]),
+      existing: [here],
+      official: officialPhb(),
+      characterExists: false,
+    }).files;
+    expect(file?.fileName).toBe('Ember Codex');
+    expect(file?.localFiles.map((f) => f.fileName)).toEqual(['Ember Codex']);
+  });
+});

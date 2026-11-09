@@ -60,6 +60,17 @@ describe('registry rebuild on editable-homebrew edit', () => {
     const second = await getRegistry();
     expect(second).toBe(first); // same instance — no needless rebuild
   });
+
+  it('tells it is current from metadata, without reading any content', async () => {
+    const brew = await homebrewRepo.createEditable('Brew', 'BRW');
+    await homebrewRepo.saveEditable(brew.id, brewJson('Zap'));
+    const first = await getRegistry();
+    const reads = vi.spyOn(db.homebrewJson, 'bulkGet');
+
+    expect(await getRegistry()).toBe(first);
+    expect(reads).not.toHaveBeenCalled();
+    reads.mockRestore();
+  });
 });
 
 describe('a homebrew row the app cannot read', () => {

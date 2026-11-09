@@ -6,12 +6,27 @@ import { sameContent } from '@/lib/docDiff';
 import {
   assertCharacterExport,
   type CharacterExport,
+  homebrewEntityCounts,
   IMPORT_LIMITS,
   ValidationError,
 } from '@/lib/guards';
 import { randomId } from '@/lib/randomId';
 import { type CharacterRow, db, type HomebrewFileRow } from './db';
-import { buildHomebrewRow } from './homebrewRepo';
+import {
+  type BookFile,
+  bookHolders,
+  bookKey,
+  bookOf,
+  mergeBook,
+  sameBookCopy,
+} from './homebrewBooks';
+import {
+  buildHomebrewRow,
+  type HomebrewFileMeta,
+  partitionHomebrewMeta,
+  putHomebrewRow,
+  withContent,
+} from './homebrewRepo';
 
 /**
  * What a save expects the stored row to be (REL-007, #98): the revision this
@@ -230,27 +245,50 @@ export const characterRepo = {
    */
   async commitImport(prepared: PreparedCharacterImport): Promise<ImportSummary> {
     const { doc, homebrew } = prepared;
-    const summary = await db.transaction('rw', db.characters, db.homebrewFiles, async () => {
-      const existingHomebrewIds = new Set(
-        await db.homebrewFiles
-          .where('id')
-          .anyOf(homebrew.map((r) => r.id))
-          .primaryKeys(),
-      );
-      const characterExists = (await db.characters.get(doc.id)) !== undefined;
-      const addedAt = Date.now();
-      const plan = planCharacterImport(doc, homebrew, {
-        characterExists,
-        existingHomebrewIds,
-        newId: () => crypto.randomUUID(),
-        now: () => new Date().toISOString(),
-      });
-      // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
-      // an import from when it lands.
-      for (const row of plan.homebrewToAdd) await db.homebrewFiles.add({ ...row, addedAt });
-      await db.characters.put({ ...plan.finalDoc, revision: randomId() });
-      return plan.summary;
-    });
+    const summary = await db.transaction(
+      'rw',
+      db.characters,
+      db.homebrewFiles,
+      db.homebrewJson,
+      async () => {
+        const existingHomebrewIds = new Set(
+          await db.homebrewFiles
+            .where('id')
+            .anyOf(homebrew.map((r) => r.id))
+            .primaryKeys(),
+        );
+        const characterExists = (await db.characters.get(doc.id)) !== undefined;
+        const stored = await storedBookFiles(homebrew);
+        const addedAt = Date.now();
+        const plan = planCharacterImport(doc, homebrew, {
+          characterExists,
+          existingHomebrewIds,
+          stored,
+          newId: () => crypto.randomUUID(),
+          now: () => new Date().toISOString(),
+        });
+        // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
+        // an import from when it lands.
+        for (const row of plan.homebrewToAdd) await putHomebrewRow({ ...row, addedAt }, 'add');
+        // A copy taken into the one here keeps that copy's id, switch and place.
+        for (const merge of plan.homebrewToMerge) {
+          const here = await db.homebrewFiles.get(merge.id);
+          if (here === undefined) continue;
+          const { subset: _, json: __, ...meta } = here as HomebrewFileRow & { subset?: true };
+          await putHomebrewRow({
+            ...meta,
+            // A new rev, as an edit gets: the id stays, so only this tells the
+            // registry and search signature that the content changed.
+            rev: (meta.rev ?? 0) + 1,
+            json: merge.json,
+            counts: homebrewEntityCounts(merge.json),
+            ...bookOf(merge.json),
+          });
+        }
+        await db.characters.put({ ...plan.finalDoc, revision: randomId() });
+        return plan.summary;
+      },
+    );
 
     if (homebrew.length > 0) invalidateRegistry();
     return summary;
@@ -264,6 +302,50 @@ export const characterRepo = {
     return characterRepo.commitImport(await characterRepo.prepareImport(text));
   },
 };
+
+/**
+ * Every stored file declaring the source of a book coming in (its copies
+ * from any file, parts included), with its content: what {@link bookHolders} checks a book against
+ * and what {@link mergeBook} takes a copy into. Read only when a book comes
+ * in. Runs inside the caller's transaction over both homebrew tables.
+ */
+async function storedBookFiles(incoming: readonly HomebrewFileRow[]): Promise<StoredBook[]> {
+  const keys = new Set<string>();
+  for (const row of incoming) {
+    const key = row.book === undefined ? undefined : bookKey(row);
+    if (key !== undefined) keys.add(key);
+  }
+  if (keys.size === 0) return [];
+  const rows = await db.homebrewFiles.toArray();
+  const meta = new Map<string, HomebrewFileMeta>();
+  for (const f of partitionHomebrewMeta(rows).files) {
+    if (f.sourceIds.some((s) => keys.has(s.toLowerCase()))) {
+      meta.set(f.id, f);
+    }
+  }
+  // Content as the readers take it, so the commit decides as the preview did,
+  // a row that still carries its own content included.
+  const out: StoredBook[] = [];
+  for (const r of await withContent(rows.filter((r) => meta.has(r.id)))) {
+    const row = r as { id: string; json?: unknown };
+    const m = meta.get(row.id);
+    if (m === undefined) continue;
+    out.push({
+      id: m.id,
+      sourceIds: m.sourceIds,
+      fileName: m.fileName,
+      ...(m.book === undefined ? {} : { book: m.book }),
+      ...(m.subset === true ? { subset: true as const } : {}),
+      json: row.json,
+    });
+  }
+  return out;
+}
+
+/** A stored copy of a book, as the import plan reads it. */
+export interface StoredBook extends BookFile {
+  id: string;
+}
 
 /** A validated character import, ready to preview or commit; nothing written yet. */
 export interface PreparedCharacterImport {
@@ -338,13 +420,27 @@ export interface ImportSummary {
   /** True when the character id collided locally and a fresh id was assigned. */
   renamed: boolean;
   homebrewAdded: number;
-  /** Embedded files already present locally (by content hash) or duplicated in the file. */
+  /** Books here that took in what a copy from the same file had and they lacked. */
+  homebrewMerged: number;
+  /**
+   * Embedded files already present locally (by content hash), books whose
+   * every entry is here, or files duplicated in the export.
+   */
   homebrewSkipped: number;
+}
+
+/** A stored copy of a book, with what it holds once it takes in a copy coming in. */
+export interface HomebrewMerge {
+  id: string;
+  json: Record<string, unknown>;
+  /** How many entries it took in. */
+  added: number;
 }
 
 export interface ImportPlan {
   finalDoc: CharacterDoc;
   homebrewToAdd: HomebrewFileRow[];
+  homebrewToMerge: HomebrewMerge[];
   summary: ImportSummary;
 }
 
@@ -360,6 +456,12 @@ export function planCharacterImport(
   opts: {
     characterExists: boolean;
     existingHomebrewIds: ReadonlySet<string>;
+    /**
+     * Stored copies of the books coming in, with their content. A book they
+     * hold every entry of is skipped ({@link bookHolders}); otherwise the
+     * copy from the same file takes in what it lacks ({@link mergeBook}).
+     */
+    stored?: readonly StoredBook[];
     newId: () => string;
     now: () => string;
   },
@@ -370,25 +472,71 @@ export function planCharacterImport(
   // Skip files already stored (same content hash) and de-dupe within the batch.
   const seen = new Set(opts.existingHomebrewIds);
   const homebrewToAdd: HomebrewFileRow[] = [];
+  const homebrewToMerge = new Map<string, HomebrewMerge>();
   let homebrewSkipped = 0;
+  // One stored copy per book per file: a copy coming in goes into the one
+  // here, or into one this batch adds, so a book never lands twice.
+  const books: (StoredBook & { pending?: number })[] = [...(opts.stored ?? [])];
   for (const row of preparedHomebrew) {
-    if (seen.has(row.id)) {
+    if (seen.has(row.id) || bookHolders(row, books).length > 0) {
       homebrewSkipped += 1;
       continue;
     }
     seen.add(row.id);
+    const at = row.book === undefined ? -1 : books.findIndex((f) => sameBookCopy(f, row));
+    const own = books[at];
+    if (own !== undefined && isObject(own.json) && isObject(row.json)) {
+      const { json, added } = mergeBook(own.json, row.json);
+      if (added === 0) {
+        // Only entries of other books were missing, which a book takes no part of.
+        homebrewSkipped += 1;
+        continue;
+      }
+      books[at] = { ...own, json };
+      const pending = own.pending === undefined ? undefined : homebrewToAdd[own.pending];
+      if (own.pending !== undefined && pending !== undefined) {
+        const { subset: _, ...rest } = pending;
+        homebrewToAdd[own.pending] = {
+          ...rest,
+          json,
+          counts: homebrewEntityCounts(json),
+          ...bookOf(json),
+        };
+      } else {
+        const before = homebrewToMerge.get(own.id)?.added ?? 0;
+        homebrewToMerge.set(own.id, { id: own.id, json, added: before + added });
+      }
+      continue;
+    }
+    if (row.book !== undefined) {
+      books.push({
+        id: row.id,
+        sourceIds: row.sourceIds,
+        fileName: row.fileName,
+        book: row.book,
+        ...(row.subset === true ? { subset: true as const } : {}),
+        json: row.json,
+        pending: homebrewToAdd.length,
+      });
+    }
     homebrewToAdd.push(row);
   }
 
   return {
     finalDoc,
     homebrewToAdd,
+    homebrewToMerge: [...homebrewToMerge.values()],
     summary: {
       name: finalDoc.name,
       id: finalId,
       renamed: opts.characterExists,
       homebrewAdded: homebrewToAdd.length,
+      homebrewMerged: homebrewToMerge.size,
       homebrewSkipped,
     },
   };
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

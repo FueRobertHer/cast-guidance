@@ -174,6 +174,49 @@ describe('concentration on the Play tab', () => {
     expect(saved.play.activeEffects?.map((e) => e.id)).toEqual(['ally']);
   });
 
+  /** Concentrating on Bless, with these Blesses on the character. */
+  const blessed = (effects: ActiveEffect[]) => {
+    const doc = warrior(effects);
+    doc.play.concentratingOn = { label: 'Bless', level: 1 };
+    return doc;
+  };
+  // Cast on others only, the Bless on the character is an ally's.
+  const allys: ActiveEffect = { ...bless, id: 'ally', mine: undefined };
+
+  it('turns the toggle off when you remove your own Bless from the strip, and not an ally’s', async () => {
+    let sheet = await renderSheet(blessed([allys]));
+    press('Remove Bless');
+    expect(concentratingOn()).toBe('Bless');
+    expect((await sheet.saved()).play.concentratingOn).toEqual({ label: 'Bless', level: 1 });
+
+    await resetSheetHarness();
+    sheet = await renderSheet(blessed([bless]));
+    press('Remove Bless');
+    expect(concentratingOn()).toBeUndefined();
+    const saved = await sheet.saved();
+    expect(saved.play.concentratingOn).toBeUndefined();
+    expect(saved.play.activeEffects).toBeUndefined();
+  });
+
+  it('turns the toggle off when a rest ends your own Bless, and not an ally’s', async () => {
+    let sheet = await renderSheet(blessed([allys]));
+    press('Short rest');
+    await (await dialog('Short rest')).press('Take the short rest');
+    expect(concentratingOn()).toBe('Bless');
+    let saved = await sheet.saved();
+    expect(saved.play.concentratingOn).toEqual({ label: 'Bless', level: 1 });
+    expect(saved.play.activeEffects).toBeUndefined();
+
+    await resetSheetHarness();
+    sheet = await renderSheet(blessed([bless]));
+    press('Short rest');
+    await (await dialog('Short rest')).press('Take the short rest');
+    expect(concentratingOn()).toBeUndefined();
+    saved = await sheet.saved();
+    expect(saved.play.concentratingOn).toBeUndefined();
+    expect(saved.play.activeEffects).toBeUndefined();
+  });
+
   it('ends your own Bless at 0 HP', async () => {
     const doc = warrior([bless], { currentHp: 4 });
     doc.play.concentratingOn = { label: 'Bless', level: 1 };

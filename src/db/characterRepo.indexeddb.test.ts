@@ -5,6 +5,7 @@ import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newCharacterDoc } from '@/engine/types';
+import { homebrewForExport } from '@/features/characters/homebrewExport';
 import { CHARACTER_EXPORT_FORMAT } from '@/lib/guards';
 import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
@@ -446,5 +447,172 @@ describe('characterRepo revisions (IndexedDB-backed)', () => {
     >[0]);
     stop();
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a character export carrying part of a book', () => {
+  const META = {
+    sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+    convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+  };
+  const BOOK = {
+    _meta: META,
+    spell: [
+      { name: 'Ember Lance', source: 'FCEmber', level: 1 },
+      { name: 'Ember Ward', source: 'FCEmber', level: 1 },
+    ],
+  };
+  const PART = {
+    _meta: { ...META, convertedFrom: { ...META.convertedFrom, subset: true } },
+    spell: [BOOK.spell[0]],
+  };
+  const hero = () => {
+    const doc = newCharacterDoc('hero', 'Aria', 'tag');
+    doc.spellcasting = {
+      wizard: { known: [{ name: 'Ember Lance', source: 'FCEmber' }], prepared: [] },
+    };
+    return doc;
+  };
+
+  it('is skipped where the book is here in a row that still carries its content', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    const [row] = books;
+    if (row === undefined) throw new Error('no book');
+    // Written as rows were before the content had a table of its own.
+    await db.homebrewFiles.put(row);
+    expect(await db.homebrewJson.get(row.id)).toBeUndefined();
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewSkipped: 1 });
+  });
+
+  it('is skipped where the book is here', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewSkipped: 1 });
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.subset)).toEqual([undefined]);
+  });
+
+  it('adds what the book here from the same file lacks, keeping one copy', async () => {
+    const older = { ...BOOK, spell: [BOOK.spell[1]] };
+    const { books } = await homebrewRepo.prepareBooks(older, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const [before] = (await homebrewRepo.listMetaSafe()).files;
+    await homebrewRepo.setEnabled(before?.id ?? '', false);
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all (1).xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewMerged: 1, homebrewSkipped: 0 });
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored).toHaveLength(1);
+    // The same copy, its switch and place kept, now holding both spells.
+    expect(stored[0]).toMatchObject({
+      id: before?.id,
+      enabled: false,
+      addedAt: before?.addedAt,
+      counts: { spell: 2 },
+    });
+    expect(stored[0]?.subset).toBeUndefined();
+    // A new rev, so the registry and search signature see the new content.
+    expect(stored[0]?.rev).toBe((before?.rev ?? 0) + 1);
+    const { file } = await homebrewRepo.getSafe(before?.id ?? '');
+    expect((file?.json.spell as { name: string }[]).map((e) => e.name)).toEqual([
+      'Ember Ward',
+      'Ember Lance',
+    ]);
+  });
+
+  it('takes no entry of another book into the copy here, and skips a part with nothing else', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const [before] = (await homebrewRepo.listMetaSafe()).files;
+    // A hand-edited part carrying an entry of another book.
+    const stray = { ...PART, spell: [...PART.spell, { name: 'Zap', source: 'OTHER', level: 1 }] };
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: stray }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewMerged: 0, homebrewSkipped: 1 });
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored).toEqual([before]);
+  });
+
+  it('comes in beside the copy another file brought when that copy lacks an entry', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      { ...BOOK, spell: [BOOK.spell[1]] },
+      'other.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 1, homebrewMerged: 0 });
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((f) => [f.fileName, f.subset ?? false]).sort()).toEqual([
+      ['all.xml', true],
+      ['other.xml', false],
+    ]);
+  });
+
+  it('keeps one part of a book however many characters bring parts of it', async () => {
+    const ward = { ...PART, spell: [BOOK.spell[1]] };
+    await characterRepo.importFromText(exportText(hero(), [{ fileName: 'all.xml', json: PART }]));
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: ward }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewMerged: 1 });
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ subset: true, counts: { spell: 2 } });
+    // Two parts in one export become one copy too.
+    await db.homebrewFiles.clear();
+    await db.homebrewJson.clear();
+    const both = await characterRepo.importFromText(
+      exportText(hero(), [
+        { fileName: 'all.xml', json: PART },
+        { fileName: 'all.xml', json: ward },
+      ]),
+    );
+    expect(both).toMatchObject({ homebrewAdded: 1, homebrewMerged: 0 });
+    expect((await homebrewRepo.listMetaSafe()).files).toMatchObject([
+      { subset: true, counts: { spell: 2 } },
+    ]);
+  });
+
+  it('round-trips: a character exported here and imported here again adds no homebrew', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const doc = hero();
+    await characterRepo.importFromText(exportText(doc, []));
+    const exported = homebrewForExport(doc, (await homebrewRepo.enabledSafe()).files);
+    const summary = await characterRepo.importFromText(exportText(doc, exported));
+    expect(summary).toMatchObject({ renamed: true, homebrewAdded: 0, homebrewMerged: 0 });
+    expect((await homebrewRepo.listMetaSafe()).files).toHaveLength(1);
+
+    // And on a device with only a part of the book, the part it exports comes back the same way.
+    await db.homebrewFiles.clear();
+    await db.homebrewJson.clear();
+    await characterRepo.importFromText(exportText(doc, exported));
+    const fromPart = homebrewForExport(doc, (await homebrewRepo.enabledSafe()).files);
+    const again = await characterRepo.importFromText(exportText(doc, fromPart));
+    expect(again).toMatchObject({ homebrewAdded: 0, homebrewMerged: 0, homebrewSkipped: 1 });
+    expect((await homebrewRepo.listMetaSafe()).files).toHaveLength(1);
+  });
+
+  it('comes in as a part where it is not, and the whole book replaces it, switch and all', async () => {
+    await characterRepo.importFromText(exportText(hero(), [{ fileName: 'all.xml', json: PART }]));
+    const [part] = (await homebrewRepo.listMetaSafe()).files;
+    expect(part).toMatchObject({ book: 'Ember Codex', subset: true, counts: { spell: 1 } });
+    await homebrewRepo.setEnabled(part?.id ?? '', false);
+
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    expect((await homebrewRepo.commitBooks(books)).replaced).toBe(1);
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ counts: { spell: 2 }, enabled: false });
+    expect(stored[0]?.subset).toBeUndefined();
   });
 });

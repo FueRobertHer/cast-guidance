@@ -148,16 +148,16 @@ async function readRegistry(): Promise<EntityRegistry> {
     // One tag for the whole read: the paths, the bodies and the build are all
     // of the same release even if an install or a rollback moves it meanwhile.
     const tag = getActiveTag();
-    const [paths, { files: brews }] = await Promise.all([
+    // Metadata only: whether the registry is current is told from ids and
+    // revisions, and the content is read only for a build.
+    const [paths, { files: brewMeta }] = await Promise.all([
       dataCacheRepo.cachedPaths(tag),
-      // `mergeHomebrew` reaches into `json` directly, so an unreadable row used
-      // to throw out of here, and every view needs the compendium.
-      homebrewRepo.enabledSafe(),
+      homebrewRepo.enabledMetaSafe(),
     ]);
-    const signature = computeRegistrySignature(tag, paths, brews);
+    const signature = computeRegistrySignature(tag, paths, brewMeta);
     if (current !== null && signature === currentSignature) return current;
     const reg = await singleFlight(rebuilds, `${startedAt}|${signature}`, () =>
-      rebuild({ startedAt, tag, paths, brews, signature }),
+      rebuild({ startedAt, tag, paths }),
     );
     // Undefined means the active tag moved under the build (a rollback, or an
     // install), so every caller that shared it reads again, from the top, each
@@ -171,8 +171,6 @@ interface RebuildInput {
   startedAt: number;
   tag: string;
   paths: ReadonlySet<string>;
-  brews: Awaited<ReturnType<typeof homebrewRepo.enabledSafe>>['files'];
-  signature: string;
 }
 
 /**
@@ -183,15 +181,21 @@ async function rebuild({
   startedAt,
   tag,
   paths,
-  brews,
-  signature,
 }: RebuildInput): Promise<EntityRegistry | undefined> {
   // A release on probation counts this build as started before it begins,
   // so one that never finishes is on record; one that has already used up
   // its starts goes back instead, and this builds the restored release.
   if (await noteRegistryBuildStarting(tag)) return undefined;
-  // Only a real rebuild pays for the file bodies.
-  const files = await cachedFilesMap(tag);
+  // Only a real rebuild pays for the file bodies, the homebrew ones too.
+  // `mergeHomebrew` reaches into `json` directly, so an unreadable row used to
+  // throw out of here, and every view needs the compendium. The signature is
+  // the one of what is read here: a file imported since the caller's check is
+  // in this build, and the next check sees the registry current.
+  const [files, { files: brews }] = await Promise.all([
+    cachedFilesMap(tag),
+    homebrewRepo.enabledSafe(),
+  ]);
+  const signature = computeRegistrySignature(tag, paths, brews);
   // Before the registry is published, so the first render that can show a
   // brew's badge already has its title.
   setHomebrewSourceNames(homebrewSourceNames(brews));

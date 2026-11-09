@@ -64,6 +64,14 @@ const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result>
   race: convertRace,
 };
 
+/**
+ * Whether the converter reads an entry of this kind. One it does not is only
+ * counted, so a reader that goes entry by entry need not build it.
+ */
+export function fc5Converts(name: string): boolean {
+  return Object.hasOwn(CONVERTERS, name);
+}
+
 /** Kinds the format has that are left out on purpose, and why, in words. */
 const LEFT_OUT: Record<string, { plural: string; why: string }> = {
   class: { plural: 'classes', why: 'classes cannot be converted yet' },
@@ -173,7 +181,8 @@ function placer(
 
 /** One converted entry, before the checks decide whether it is kept. */
 interface Converted {
-  el: XmlElement;
+  /** The element's name, for the report. */
+  tag: string;
   result: Extract<Fc5Result, { kind: ConvertedKind }>;
 }
 
@@ -228,10 +237,7 @@ function mergeChoices(group: readonly Converted[], base: string): Converted {
     reasons.push(`what differs per choice (${choices.join(', ')}) is kept as text`);
   }
   if (!sameJson('entries')) reasons.push('the copies per choice differ in text; the first is kept');
-  return {
-    el: first.el,
-    result: { ...first.result, name: base, entity: merged, reasons },
-  };
+  return { ...first, result: { ...first.result, name: base, entity: merged, reasons } };
 }
 
 /** A context for converting entries one at a time, as the compendium does. */
@@ -251,59 +257,42 @@ export function fc5Context(
   return ctx;
 }
 
-export function convertFc5Compendium(root: XmlElement, opts: ConvertOptions): ConversionResult {
+/** Whether the first pass reads an entry of this kind: spells and feats. */
+export function fc5Indexes(name: string): boolean {
+  return name === 'spell' || name === 'feat';
+}
+
+/**
+ * A compendium converted in two passes over its entries, in file order both
+ * times. The first ({@link Fc5Converter.index}) reads what converting any
+ * entry depends on from the rest of the file: the spells it defines in full,
+ * the class lists stubs and starred copies add to them, and its feats,
+ * converted and decided. The second ({@link Fc5Converter.convert}) converts
+ * each entry, so a reader that goes entry by entry can let each go once
+ * converted. Every entry of the first pass comes before any of the second.
+ */
+export interface Fc5Converter {
+  /** First pass. Reads spells and feats ({@link fc5Indexes}); other entries may come as stubs. */
+  index(el: XmlElement): void;
+  /** Second pass: every entry, whole. */
+  convert(el: XmlElement): void;
+  /** The file and its report. */
+  finish(): ConversionResult;
+}
+
+/** A starred copy or a stub, for the class lists it adds to a spell. */
+interface SpellCopy {
+  name: string;
+  edition: RulesVersion | undefined;
+  classes: string | undefined;
+  stub: boolean;
+}
+
+export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   const fileSource = sourceFor(opts.fileName);
-  const elements = childElements(root);
-
-  // Spells first: the names the file defines in full, and the class lists that
-  // stubs and starred copies add to them.
-  const spells = elements.filter((el) => el.name === 'spell');
-  const isFull = (el: XmlElement) =>
-    !isSpellStub(el) &&
-    !isStarred(el) &&
-    !isClassOption(el) &&
-    ritualBase(entryName(childText(el, 'name') ?? '').name) === undefined;
-  // The editions each full spell's name marks ('' for none), by name.
-  const fullEditions = new Map<string, Set<RulesVersion | undefined>>();
-  for (const el of spells) {
-    if (!isFull(el)) continue;
-    const named = entryName(childText(el, 'name') ?? '');
-    const key = named.name.toLowerCase();
-    const editions = fullEditions.get(key);
-    if (editions === undefined) fullEditions.set(key, new Set([named.edition]));
-    else editions.add(named.edition);
-  }
-  const fullSpells = new Set(fullEditions.keys());
+  // The class lists that stubs and starred copies add to spells, filled in
+  // between the passes; the context hands them to the spells it converts.
   const extra = new Map<string, string[]>();
-  let unmatchedStubs = 0;
-  for (const el of spells) {
-    const stub = isSpellStub(el);
-    if (!stub && !isStarred(el)) continue;
-    const named = entryName(childText(el, 'name') ?? '');
-    const editions = fullEditions.get(named.name.toLowerCase());
-    const classes = childText(el, 'classes');
-    if (editions === undefined) {
-      if (stub) unmatchedStubs += 1;
-      continue;
-    }
-    if (classes === undefined) continue;
-    // To the spell of the edition its name or class list marks; else to the
-    // spell whose name marks none, as the other editions are marked; else,
-    // when it cannot be told, to every one.
-    const own = named.edition ?? readClasses(classes).edition;
-    const targets = editions.has(own)
-      ? [own]
-      : editions.has(undefined)
-        ? [undefined]
-        : [...editions];
-    for (const target of targets) {
-      const key = extraClassKey(named.name, target);
-      const list = extra.get(key);
-      if (list === undefined) extra.set(key, [classes]);
-      else list.push(classes);
-    }
-  }
-
   const featSources = new Map<string, string>();
   const ctx = fc5Context(
     opts.fileName,
@@ -336,97 +325,168 @@ export function convertFc5Compendium(root: XmlElement, opts: ConvertOptions): Co
 
   const notes: EntryNote[] = [];
   const leave = (c: Converted, status: EntryNote['status'], why: string) =>
-    notes.push({ kind: c.el.name, name: c.result.name, status, reasons: [why] });
+    notes.push({ kind: c.tag, name: c.result.name, status, reasons: [why] });
 
+  // First pass. The editions each full spell's name marks (undefined for
+  // none), by name, and the copies that add lists to them.
+  const isFull = (el: XmlElement) =>
+    !isSpellStub(el) &&
+    !isStarred(el) &&
+    !isClassOption(el) &&
+    ritualBase(entryName(childText(el, 'name') ?? '').name) === undefined;
+  const fullEditions = new Map<string, Set<RulesVersion | undefined>>();
+  const spellCopies: SpellCopy[] = [];
   // Feats before the rest: a background's feat grant names this file's source
-  // only for a feat the converted file will hold.
-  const allFeats: Converted[] = [];
-  for (const el of elements) {
-    if (el.name !== 'feat') continue;
-    const result = convertFeat(el, ctx);
-    if (!('skip' in result)) allFeats.push({ el, result });
-  }
-  const featKey = (name: string, c: Converted) =>
-    `${name.toLowerCase()}|${c.result.placement.source.json}|${c.result.edition}`;
-  // A bracket is a choice when it names an ability, or when the book has the
-  // feat with more than one: `Ember Fear (Strength)`, but not a lone
-  // `Grappler (Revised)`, however often the file repeats it.
-  const bracketed = new Map<string, Set<string>>();
-  for (const c of allFeats) {
-    const group = lastGroup(c.result.name);
-    if (group !== undefined) {
-      const key = featKey(group.base, c);
-      const inners = bracketed.get(key);
-      const inner = group.inner.toLowerCase();
-      if (inners === undefined) bracketed.set(key, new Set([inner]));
-      else inners.add(inner);
+  // only for a feat the converted file will hold. Each by its place among the
+  // file's feats, which both passes count alike.
+  const allFeats: (Converted & { at: number })[] = [];
+  let featsIndexed = 0;
+
+  const index = (el: XmlElement): void => {
+    if (el.name === 'spell') {
+      const named = entryName(childText(el, 'name') ?? '');
+      if (isFull(el)) {
+        const key = named.name.toLowerCase();
+        const editions = fullEditions.get(key);
+        if (editions === undefined) fullEditions.set(key, new Set([named.edition]));
+        else editions.add(named.edition);
+        return;
+      }
+      const stub = isSpellStub(el);
+      if (stub || isStarred(el)) {
+        spellCopies.push({
+          name: named.name,
+          edition: named.edition,
+          classes: childText(el, 'classes'),
+          stub,
+        });
+      }
+    } else if (el.name === 'feat') {
+      const at = featsIndexed;
+      featsIndexed += 1;
+      const result = convertFeat(el, ctx);
+      if (!('skip' in result)) allFeats.push({ tag: el.name, result, at });
     }
-  }
-  const choiceOf = (c: Converted) => {
-    const group = lastGroup(c.result.name);
-    if (group === undefined) return undefined;
-    const isChoice =
-      abilityKey(group.inner) !== undefined ||
-      (bracketed.get(featKey(group.base, c))?.size ?? 0) > 1;
-    return isChoice ? group : undefined;
   };
 
-  const feats: Converted[] = [];
-  const decided = new Map<XmlElement, Converted | undefined>();
-  const featNotes = new Map<XmlElement, () => void>();
-  const seenFeat = new Set<string>();
-  for (const c of allFeats) {
-    const { el, result } = c;
-    const key = featKey(result.name, c);
-    if (seenFeat.has(key)) {
-      featNotes.set(el, () => leave(c, 'duplicate', WHY.repeated));
-      decided.set(el, undefined);
-      continue;
+  // Between the passes.
+  let fullSpells = new Set<string>();
+  let unmatchedStubs = 0;
+  const decided = new Map<number, Converted | undefined>();
+  const featNotes = new Map<number, () => void>();
+  let prepared = false;
+
+  const prepare = (): void => {
+    prepared = true;
+    fullSpells = new Set(fullEditions.keys());
+    for (const copy of spellCopies) {
+      const editions = fullEditions.get(copy.name.toLowerCase());
+      if (editions === undefined) {
+        if (copy.stub) unmatchedStubs += 1;
+        continue;
+      }
+      const { classes } = copy;
+      if (classes === undefined) continue;
+      // To the spell of the edition its name or class list marks; else to the
+      // spell whose name marks none, as the other editions are marked; else,
+      // when it cannot be told, to every one.
+      const own = copy.edition ?? readClasses(classes).edition;
+      const targets = editions.has(own)
+        ? [own]
+        : editions.has(undefined)
+          ? [undefined]
+          : [...editions];
+      for (const target of targets) {
+        const key = extraClassKey(copy.name, target);
+        const list = extra.get(key);
+        if (list === undefined) extra.set(key, [classes]);
+        else list.push(classes);
+      }
     }
-    seenFeat.add(key);
-    if (installed('feat', result.name, result.placement)) {
-      featNotes.set(el, () => leave(c, 'installed', WHY.installed));
-      decided.set(el, undefined);
-      continue;
+
+    const featKey = (name: string, c: Converted) =>
+      `${name.toLowerCase()}|${c.result.placement.source.json}|${c.result.edition}`;
+    // A bracket is a choice when it names an ability, or when the book has the
+    // feat with more than one: `Ember Fear (Strength)`, but not a lone
+    // `Grappler (Revised)`, however often the file repeats it.
+    const bracketed = new Map<string, Set<string>>();
+    for (const c of allFeats) {
+      const group = lastGroup(c.result.name);
+      if (group !== undefined) {
+        const key = featKey(group.base, c);
+        const inners = bracketed.get(key);
+        const inner = group.inner.toLowerCase();
+        if (inners === undefined) bracketed.set(key, new Set([inner]));
+        else inners.add(inner);
+      }
     }
-    const choice = choiceOf(c);
-    if (choice !== undefined && installed('feat', choice.base, result.placement)) {
-      featNotes.set(el, () => leave(c, 'installed', WHY.choiceOfficial));
-      decided.set(el, undefined);
-      continue;
+    const choiceOf = (c: Converted) => {
+      const group = lastGroup(c.result.name);
+      if (group === undefined) return undefined;
+      const isChoice =
+        abilityKey(group.inner) !== undefined ||
+        (bracketed.get(featKey(group.base, c))?.size ?? 0) > 1;
+      return isChoice ? group : undefined;
+    };
+
+    const feats: (Converted & { at: number })[] = [];
+    const seenFeat = new Set<string>();
+    for (const c of allFeats) {
+      const key = featKey(c.result.name, c);
+      if (seenFeat.has(key)) {
+        featNotes.set(c.at, () => leave(c, 'duplicate', WHY.repeated));
+        decided.set(c.at, undefined);
+        continue;
+      }
+      seenFeat.add(key);
+      if (installed('feat', c.result.name, c.result.placement)) {
+        featNotes.set(c.at, () => leave(c, 'installed', WHY.installed));
+        decided.set(c.at, undefined);
+        continue;
+      }
+      const choice = choiceOf(c);
+      if (choice !== undefined && installed('feat', choice.base, c.result.placement)) {
+        featNotes.set(c.at, () => leave(c, 'installed', WHY.choiceOfficial));
+        decided.set(c.at, undefined);
+        continue;
+      }
+      feats.push(c);
     }
-    feats.push(c);
-  }
-  // Homebrew copies per choice, grouped by the feat they split and its book.
-  // Where the book has the feat whole too, the copies are left out for it.
-  const groups = new Map<string, Converted[]>();
-  for (const c of feats) {
-    const choice = choiceOf(c);
-    if (choice === undefined) continue;
-    const key = featKey(choice.base, c);
-    const group = groups.get(key);
-    if (group === undefined) groups.set(key, [c]);
-    else group.push(c);
-  }
-  for (const c of feats) {
-    const choice = choiceOf(c);
-    const key = choice === undefined ? undefined : featKey(choice.base, c);
-    const group = key === undefined ? undefined : groups.get(key);
-    if (key !== undefined && seenFeat.has(key)) {
-      featNotes.set(c.el, () => leave(c, 'duplicate', WHY.choiceWhole));
-      decided.set(c.el, undefined);
-    } else if (choice === undefined || group === undefined || group.length < 2) {
-      decided.set(c.el, c);
-      featSources.set(c.result.name.toLowerCase(), c.result.placement.source.json);
-    } else if (group[0] === c) {
-      const merged = mergeChoices(group, choice.base);
-      decided.set(c.el, merged);
-      featSources.set(choice.base.toLowerCase(), c.result.placement.source.json);
-    } else {
-      featNotes.set(c.el, () => leave(c, 'duplicate', WHY.choice));
-      decided.set(c.el, undefined);
+    // Homebrew copies per choice, grouped by the feat they split and its book.
+    // Where the book has the feat whole too, the copies are left out for it.
+    const groups = new Map<string, Converted[]>();
+    for (const c of feats) {
+      const choice = choiceOf(c);
+      if (choice === undefined) continue;
+      const key = featKey(choice.base, c);
+      const group = groups.get(key);
+      if (group === undefined) groups.set(key, [c]);
+      else group.push(c);
     }
-  }
+    for (const c of feats) {
+      const choice = choiceOf(c);
+      const key = choice === undefined ? undefined : featKey(choice.base, c);
+      const group = key === undefined ? undefined : groups.get(key);
+      if (key !== undefined && seenFeat.has(key)) {
+        featNotes.set(c.at, () => leave(c, 'duplicate', WHY.choiceWhole));
+        decided.set(c.at, undefined);
+      } else if (choice === undefined || group === undefined || group.length < 2) {
+        decided.set(c.at, c);
+        featSources.set(c.result.name.toLowerCase(), c.result.placement.source.json);
+      } else if (group[0] === c) {
+        decided.set(c.at, mergeChoices(group, choice.base));
+        featSources.set(choice.base.toLowerCase(), c.result.placement.source.json);
+      } else {
+        featNotes.set(c.at, () => leave(c, 'duplicate', WHY.choice));
+        decided.set(c.at, undefined);
+      }
+    }
+    // Decided: nothing more is read from them.
+    allFeats.length = 0;
+    spellCopies.length = 0;
+  };
+
+  // Second pass.
   const out: Record<ConvertedKind, Record<string, unknown>[]> = {
     spell: [],
     item: [],
@@ -441,73 +501,79 @@ export function convertFc5Compendium(root: XmlElement, opts: ConvertOptions): Co
   const unknown = new Map<string, number>();
   const unofferedLists = new Set<string>();
   let unoffered = 0;
+  let featsConverted = 0;
 
-  for (const el of elements) {
-    if (el.name === 'feat' && decided.has(el)) {
-      featNotes.get(el)?.();
-      const c = decided.get(el);
-      if (c === undefined) continue;
-      out.feat.push(c.result.entity);
-      sources.set(c.result.placement.source.json, c.result.placement.source);
-      const reasons = [...new Set(c.result.reasons)];
-      if (reasons.length > 0) {
-        notes.push({ kind: 'feat', name: c.result.name, status: 'partial', reasons });
+  const convert = (el: XmlElement): void => {
+    if (!prepared) prepare();
+    if (el.name === 'feat') {
+      const at = featsConverted;
+      featsConverted += 1;
+      if (decided.has(at)) {
+        featNotes.get(at)?.();
+        const c = decided.get(at);
+        if (c === undefined) return;
+        out.feat.push(c.result.entity);
+        sources.set(c.result.placement.source.json, c.result.placement.source);
+        const reasons = [...new Set(c.result.reasons)];
+        if (reasons.length > 0) {
+          notes.push({ kind: 'feat', name: c.result.name, status: 'partial', reasons });
+        }
+        return;
       }
-      continue;
     }
-    if (isSpellStub(el)) continue;
+    if (isSpellStub(el)) return;
     const option = isClassOption(el);
     // Element names come from the file, so `constructor` is not a converter.
-    const convert = option
+    const converter = option
       ? convertClassOption
       : Object.hasOwn(CONVERTERS, el.name)
         ? CONVERTERS[el.name]
         : undefined;
-    if (convert === undefined) {
+    if (converter === undefined) {
       const counts = Object.hasOwn(LEFT_OUT, el.name) ? leftOut : unknown;
       counts.set(el.name, (counts.get(el.name) ?? 0) + 1);
-      continue;
+      return;
     }
-    const result = convert(el, ctx);
+    const result = converter(el, ctx);
     if ('skip' in result) {
       const name = childText(el, 'name') ?? '(no name)';
       notes.push({ kind: el.name, name, status: 'skipped', reasons: [result.skip] });
-      continue;
+      return;
     }
-    const c: Converted = { el, result };
+    const c: Converted = { tag: el.name, result };
     const { kind, name, placement } = result;
 
     if (kind === 'spell' && isStarred(el)) {
       if (fullSpells.has(name.toLowerCase())) {
         leave(c, 'duplicate', WHY.starred);
-        continue;
+        return;
       }
       if (installed('spell', name, placement)) {
         leave(c, 'installed', WHY.starredOfficial);
-        continue;
+        return;
       }
     }
     const ritual = kind === 'spell' ? ritualBase(name) : undefined;
     if (ritual !== undefined) {
       if (fullSpells.has(ritual.toLowerCase())) {
         leave(c, 'duplicate', WHY.ritual);
-        continue;
+        return;
       }
       if (installed('spell', ritual, placement)) {
         leave(c, 'installed', WHY.ritualOfficial);
-        continue;
+        return;
       }
     }
 
     const key = `${kind}|${name.toLowerCase()}|${placement.source.json}|${result.edition}`;
     if (seen.has(key)) {
       leave(c, 'duplicate', WHY.repeated);
-      continue;
+      return;
     }
     seen.add(key);
     if (installed(kind, name, placement)) {
       leave(c, 'installed', WHY.installed);
-      continue;
+      return;
     }
     out[kind].push(result.entity);
     sources.set(placement.source.json, placement.source);
@@ -519,59 +585,72 @@ export function convertFc5Compendium(root: XmlElement, opts: ConvertOptions): Co
     if (reasons.length > 0) {
       notes.push({ kind: el.name, name, status: 'partial', reasons });
     }
-  }
+  };
 
-  const warnings: string[] = [];
-  if (unmatchedStubs > 0) {
-    warnings.push(
-      `${unmatchedStubs} spell ${unmatchedStubs === 1 ? 'entry' : 'entries'} left out: ${unmatchedStubs === 1 ? 'it only adds' : 'they only add'} class lists to spells this file does not include.`,
-    );
-  }
-  if (unoffered > 0) {
-    const total = unoffered;
-    const lists = [...unofferedLists];
-    const named = lists.slice(0, 3).join('; ');
-    warnings.push(
-      `${total} class ${total === 1 ? 'option is' : 'options are'} for ${lists.length === 1 ? 'a class' : 'classes'} this app cannot convert yet (${named}${lists.length > 3 ? `, and ${lists.length - 3} more lists` : ''}). ${total === 1 ? 'It is' : 'They are'} in the Library under Optional features, but no character can pick ${total === 1 ? 'it' : 'them'} yet.`,
-    );
-  }
-  for (const [name, count] of leftOut) {
-    const what = LEFT_OUT[name];
-    if (what !== undefined) {
-      warnings.push(`${count} ${count === 1 ? name : what.plural} left out: ${what.why}.`);
+  const finish = (): ConversionResult => {
+    if (!prepared) prepare();
+    const warnings: string[] = [];
+    if (unmatchedStubs > 0) {
+      warnings.push(
+        `${unmatchedStubs} spell ${unmatchedStubs === 1 ? 'entry' : 'entries'} left out: ${unmatchedStubs === 1 ? 'it only adds' : 'they only add'} class lists to spells this file does not include.`,
+      );
     }
-  }
-  for (const [name, count] of unknown) {
-    warnings.push(
-      `${count} <${name}> ${count === 1 ? 'element' : 'elements'} left out: not part of this format.`,
-    );
-  }
+    if (unoffered > 0) {
+      const total = unoffered;
+      const lists = [...unofferedLists];
+      const named = lists.slice(0, 3).join('; ');
+      warnings.push(
+        `${total} class ${total === 1 ? 'option is' : 'options are'} for ${lists.length === 1 ? 'a class' : 'classes'} this app cannot convert yet (${named}${lists.length > 3 ? `, and ${lists.length - 3} more lists` : ''}). ${total === 1 ? 'It is' : 'They are'} in the Library under Optional features, but no character can pick ${total === 1 ? 'it' : 'them'} yet.`,
+      );
+    }
+    for (const [name, count] of leftOut) {
+      const what = LEFT_OUT[name];
+      if (what !== undefined) {
+        warnings.push(`${count} ${count === 1 ? name : what.plural} left out: ${what.why}.`);
+      }
+    }
+    for (const [name, count] of unknown) {
+      warnings.push(
+        `${count} <${name}> ${count === 1 ? 'element' : 'elements'} left out: not part of this format.`,
+      );
+    }
 
-  const converted: Partial<Record<ConvertedKind, number>> = {};
-  const json: Record<string, unknown> = {
-    _meta: {
-      // A homebrew file needs a source even when nothing in it is kept.
-      sources: sources.size > 0 ? [...sources.values()] : [fileSource],
-      convertedFrom: {
-        format: FC5_FORMAT,
-        converterVersion: FC5_CONVERTER_VERSION,
-        fileName: opts.fileName,
+    const converted: Partial<Record<ConvertedKind, number>> = {};
+    const json: Record<string, unknown> = {
+      _meta: {
+        // A homebrew file needs a source even when nothing in it is kept.
+        sources: sources.size > 0 ? [...sources.values()] : [fileSource],
+        convertedFrom: {
+          format: FC5_FORMAT,
+          converterVersion: FC5_CONVERTER_VERSION,
+          fileName: opts.fileName,
+        },
       },
-    },
-  };
-  for (const kind of KIND_ORDER) {
-    if (out[kind].length === 0) continue;
-    json[kind] = out[kind];
-    converted[kind] = out[kind].length;
-  }
+    };
+    for (const kind of KIND_ORDER) {
+      if (out[kind].length === 0) continue;
+      json[kind] = out[kind];
+      converted[kind] = out[kind].length;
+    }
 
-  const report: ConversionReport = {
-    format: FC5_FORMAT,
-    formatName: FC5_FORMAT_NAME,
-    converterVersion: FC5_CONVERTER_VERSION,
-    converted,
-    notes,
-    warnings,
+    const report: ConversionReport = {
+      format: FC5_FORMAT,
+      formatName: FC5_FORMAT_NAME,
+      converterVersion: FC5_CONVERTER_VERSION,
+      converted,
+      notes,
+      warnings,
+    };
+    return { json, report };
   };
-  return { json, report };
+
+  return { index, convert, finish };
+}
+
+export function convertFc5Compendium(root: XmlElement, opts: ConvertOptions): ConversionResult {
+  const elements = childElements(root);
+  const converter = fc5Converter(opts);
+  for (const el of elements) converter.index(el);
+  for (const el of elements) converter.convert(el);
+  return converter.finish();
 }

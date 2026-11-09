@@ -38,6 +38,8 @@ export interface PreviewAction {
   label: string;
   onClick: () => void;
   primary?: boolean;
+  /** Not available now: said by `aria-disabled`, so the button keeps focus, and a press does nothing. */
+  disabled?: boolean;
 }
 
 /**
@@ -85,7 +87,8 @@ export function ImportPreviewDialog({
               key={a.label}
               size="lg"
               variant={a.primary === true ? 'brand' : 'secondary'}
-              onClick={a.onClick}
+              onClick={a.disabled === true ? undefined : a.onClick}
+              aria-disabled={a.disabled === true ? true : undefined}
               className="flex-1"
             >
               {a.label}

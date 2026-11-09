@@ -7,9 +7,10 @@
  * Encounter+). Aurora Builder content and other apps' character files are
  * recognized, so the player hears what the file is rather than "invalid".
  */
-import { convertFc5Compendium } from './fc5/compendium';
+import { convertFc5Compendium, fc5Converter, fc5Converts, fc5Indexes } from './fc5/compendium';
 import type { ConversionResult, ConvertOptions } from './types';
-import { readXml } from './xml';
+import { readXml, XML_FILE_LIMITS, type XmlElement } from './xml';
+import { readXmlEntries } from './xmlStream';
 
 export type {
   ConversionReport,
@@ -32,19 +33,91 @@ const WEB_PAGE = /^(?:<!doctype\s+html|<html[\s>])/i;
 
 /** Convert an XML file. Throws `XmlError` or {@link UnsupportedFormatError} with words for the player. */
 export function convertXmlText(text: string, opts: ConvertOptions): ConversionResult {
+  assertNotWebPage(text);
+  const { root, problems } = readXml(text);
+  assertConvertible(root);
+  const result = convertFc5Compendium(root, opts);
+  result.report.warnings.unshift(...problems);
+  return result;
+}
+
+/**
+ * Convert an XML file from its text in chunks, as it is read: a file too
+ * large to hold whole, on a worker. `open` reads the file from its start, and
+ * is called twice: the first read takes what converting any entry depends on
+ * from the rest of the file (its spells and feats), the second converts each
+ * entry and lets it go. Entries the converter does not read (creatures,
+ * classes) are only counted. The result is the one {@link convertXmlText}
+ * gives, without ever holding the file; its bounds are {@link XML_FILE_LIMITS}.
+ */
+export async function convertXmlChunks(
+  open: () => AsyncIterable<string>,
+  opts: ConvertOptions,
+): Promise<ConversionResult> {
+  const converter = fc5Converter(opts);
+  await readXmlEntries(webPageChecked(open()), {
+    limits: XML_FILE_LIMITS,
+    keep: fc5Indexes,
+    // A file the app cannot convert is refused before the rest is read.
+    onRoot: assertConvertible,
+    onEntry: (entry) => converter.index(entry),
+  });
+  const { problems } = await readXmlEntries(open(), {
+    limits: XML_FILE_LIMITS,
+    keep: fc5Converts,
+    onEntry: (entry) => converter.convert(entry),
+  });
+  const result = converter.finish();
+  result.report.warnings.unshift(...problems);
+  return result;
+}
+
+/** How much of a file's start {@link assertNotWebPage} looks at. */
+const START = 32;
+
+function assertNotWebPage(text: string): void {
   const start = text.search(/\S/);
-  if (start !== -1 && WEB_PAGE.test(text.slice(start, start + 32))) {
+  if (start !== -1 && WEB_PAGE.test(text.slice(start, start + START))) {
     throw new UnsupportedFormatError(
       `This is a web page, not a file the app can import. Open it, find the file it links to, and import that. ${CAN_IMPORT}`,
     );
   }
-  const { root, problems } = readXml(text);
-  switch (root.name) {
-    case 'compendium': {
-      const result = convertFc5Compendium(root, opts);
-      result.report.warnings.unshift(...problems);
-      return result;
+}
+
+/** The chunks as they are, once their start has been checked for a web page. */
+async function* webPageChecked(chunks: AsyncIterable<string>): AsyncGenerator<string> {
+  let head = '';
+  let checked = false;
+  // Where the first non-space falls in `head`. Only each new chunk is
+  // searched, so a file of leading spaces costs one pass, not one per chunk.
+  let start = -1;
+  for await (const chunk of chunks) {
+    if (!checked) {
+      if (start === -1) {
+        const at = chunk.search(/\S/);
+        if (at !== -1) start = head.length + at;
+      }
+      head += chunk;
+      if (start === -1 || head.length < start + START) continue;
+      assertNotWebPage(head);
+      checked = true;
+      yield head;
+      head = '';
+      continue;
     }
+    yield chunk;
+  }
+  if (!checked) {
+    assertNotWebPage(head);
+    yield head;
+  }
+}
+
+/** Throws {@link UnsupportedFormatError} for a root element this app cannot convert. */
+function assertConvertible(root: XmlElement): void {
+  switch (root.name) {
+    case 'compendium':
+      return;
     case 'elements':
       throw new UnsupportedFormatError(
         `This looks like Aurora Builder content, which cannot be imported yet. ${CAN_IMPORT}`,

@@ -40,6 +40,33 @@ export interface HomebrewFileRow {
    * signature notice their content changed. Optional; absent means 0.
    */
   rev?: number;
+  /**
+   * Set for one book of a file stored a book at a time (a converted
+   * compendium, see `homebrewBooks.ts`): the book's full name. `fileName` is
+   * then the file it came from, which its other books share.
+   */
+  book?: string;
+  /**
+   * Set for a book that holds only the part of it one character uses: what a
+   * character export carries of a book, not all of it. Importing the whole
+   * book replaces it.
+   */
+  subset?: true;
+}
+
+/**
+ * A homebrew file as `homebrewFiles` stores it: everything but the content,
+ * which sits in `homebrewJson` under the same id. A list, a toggle or the
+ * registry's signature reads these alone, so none of them deserializes every
+ * file's content (a Fight Club compendium converts to tens of megabytes).
+ * A row written before version 5 may still carry its `json`.
+ */
+export type HomebrewMetaRow = Omit<HomebrewFileRow, 'json'> & { json?: unknown };
+
+/** A homebrew file's content, keyed by the file's id. */
+export interface HomebrewJsonRow {
+  id: string;
+  json: unknown;
 }
 
 export interface SearchIndexRow {
@@ -85,7 +112,8 @@ export const db = new Dexie('cast-guidance') as Dexie & {
   dataFiles: EntityTable<DataFileRow, 'key'>;
   dataMeta: EntityTable<DataMetaRow, 'id'>;
   characters: EntityTable<CharacterRow, 'id'>;
-  homebrewFiles: EntityTable<HomebrewFileRow, 'id'>;
+  homebrewFiles: EntityTable<HomebrewMetaRow, 'id'>;
+  homebrewJson: EntityTable<HomebrewJsonRow, 'id'>;
   searchIndexes: EntityTable<SearchIndexRow, 'key'>;
   settings: EntityTable<SettingRow, 'key'>;
   rollLog: EntityTable<RollLogRow, 'id'>;
@@ -134,6 +162,29 @@ db.version(3)
  * step.
  */
 db.version(4).stores({ characterHistory: 'id, charId, at, [charId+at]' });
+
+/**
+ * Homebrew content apart from its metadata, for the reason version 3 indexed
+ * `bytes`: the registry checked its signature, and the homebrew list and the
+ * Sources settings rendered, by reading every file whole. The upgrade moves
+ * each row's `json` into `homebrewJson` once; the readers still take a `json`
+ * left on a row, so a row this misses is read as it was.
+ */
+db.version(5)
+  .stores({ homebrewJson: 'id' })
+  .upgrade(async (tx) => {
+    const rows = await tx.table<HomebrewMetaRow>('homebrewFiles').toArray();
+    const moved = rows.filter((row) => row.json !== undefined);
+    await tx
+      .table<HomebrewJsonRow>('homebrewJson')
+      .bulkPut(moved.map((row) => ({ id: row.id, json: row.json })));
+    await tx
+      .table<HomebrewMetaRow>('homebrewFiles')
+      .toCollection()
+      .modify((row) => {
+        delete row.json;
+      });
+  });
 
 // Here rather than in the shell: every write to this database, including the
 // data loader's drain that runs before and outside it, must stop once another

@@ -550,6 +550,74 @@ describe('mergeHomebrew', () => {
     expect(reg.get('feat', 'Child', 'U')?.tag).toBe('older');
   });
 
+  it('lists an entry two files both have once, from the earlier file', () => {
+    const reg = normalizeDataset(new Map());
+    mergeHomebrew(
+      reg,
+      new Map([
+        [
+          'older',
+          {
+            spell: [{ name: 'Ember Lance', source: 'HB', tag: 'older' }],
+            race: [{ name: 'Emberkin', source: 'HB', tag: 'older' }],
+          },
+        ],
+        [
+          'newer',
+          {
+            spell: [
+              { name: 'ember lance', source: 'hb', tag: 'newer' },
+              { name: 'Ember Ward', source: 'HB', tag: 'newer' },
+            ],
+            race: [
+              {
+                name: 'Emberkin',
+                source: 'HB',
+                _versions: [{ name: 'Emberkin; Ashen', source: 'HB' }],
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.byType('spell').map((e) => `${String(e.name)} ${String(e.tag)}`)).toEqual([
+      'Ember Lance older',
+      'Ember Ward newer',
+    ]);
+    // The later copy is gone whole: no versions of it either.
+    expect(reg.byType('race').map((e) => e.name)).toEqual(['Emberkin']);
+    expect(reg.sourceCounts().get('HB')).toBe(3);
+  });
+
+  it('keeps entries that share a name and source on purpose, and repeats within a file', () => {
+    const reg = normalizeDataset(new Map());
+    const asi = (className: string, level: number) => ({
+      name: 'Ability Score Improvement',
+      source: 'HB',
+      className,
+      classSource: 'HB',
+      level,
+    });
+    mergeHomebrew(
+      reg,
+      new Map([
+        ['older', { classFeature: [asi('Warden', 4)] }],
+        [
+          'newer',
+          {
+            classFeature: [asi('Warden', 4), asi('Seer', 4)],
+            feat: [
+              { name: 'Twice', source: 'HB', tag: 1 },
+              { name: 'Twice', source: 'HB', tag: 2 },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(reg.byType('classFeature')).toHaveLength(3);
+    expect(reg.byType('feat')).toHaveLength(2);
+  });
+
   it('finds an entry that took its name from its own copy', () => {
     const reg = normalizeDataset(
       new Map([['feats.json', { feat: [{ name: 'Alert', source: 'PHB', tag: 'official' }] }]]),

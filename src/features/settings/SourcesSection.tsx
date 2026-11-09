@@ -60,7 +60,7 @@ export function SourcesSection() {
   const registry = useRegistry();
   const policy = useSourcePolicy();
   const brewSources = useLiveQuery(
-    async () => new Set((await homebrewRepo.listSafe()).files.flatMap((r) => r.sourceIds)),
+    async () => new Set((await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds)),
     [],
   );
 
