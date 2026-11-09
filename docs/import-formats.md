@@ -61,9 +61,12 @@ reskins in `reskinOf`. When the installed data lacks that book, or the app
 has no official data at all, the curated mechanics, spend links and prose
 picks written for the official entry reach the copy through it
 (`tableUids` in `src/engine/effects/reskin.ts`). An entry from a free rules
-text names the book that text takes it from, by edition: `PHB` or `XPHB`,
-`DMG` or `XDMG` for a magic item. An entry whose name marks another edition
-than its book's (`Lucky [5.5e]` from the 2014 Player's Handbook) names none.
+text names the book that text takes it from, by the edition its name marks,
+else the text's: `PHB` or `XPHB`, `DMG` or `XDMG` for a magic item. An entry
+whose name marks another edition than its book's (`Lucky [5.5e]` from the
+2014 Player's Handbook) names none, where the book's edition is known: a core
+book's always is, a later book's (Heroes of Faerûn) only once official data
+is installed, so without it the book is named whatever the mark.
 The name is Fight Club's, except where `officialName` (`renames.ts`) undoes
 a known rewording: `Fist of Unbroken Air` is `Unbroken Air`, and an
 infusion's `(Level 10)` is Fight Club's addition.

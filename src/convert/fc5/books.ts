@@ -13,7 +13,7 @@
  * citation becomes the fields 5etools uses: `source`, `page` and
  * `otherSources`.
  */
-import { type RulesVersion, sourceEdition } from '../../data5e/rulesVersion';
+import { type RulesVersion, SOURCES_2024, sourceEdition } from '../../data5e/rulesVersion';
 import { knownSources, sourceName } from '../../data5e/sourceNames';
 
 export interface Book {
@@ -201,6 +201,19 @@ export function codeEdition(
   rulesBooks: ReadonlySet<string> | undefined,
 ): RulesVersion {
   return rulesBooks?.has(code) === true ? '2024' : sourceEdition(code);
+}
+
+/** The 2014 core books, whose 2024 revisions have codes of their own. */
+const CORE_2014 = new Set(['PHB', 'DMG', 'MM']);
+
+/**
+ * Whether {@link codeEdition} knows a book's edition rather than guessing it:
+ * a core book's is known, and any book's once the installed data has said
+ * which books are 2024 rules. Without that data a later 2024 book (Heroes of
+ * Faerûn) reads as 2014.
+ */
+export function editionKnown(code: string, rulesBooks: ReadonlySet<string> | undefined): boolean {
+  return rulesBooks !== undefined || SOURCES_2024.has(code) || CORE_2014.has(code);
 }
 
 const MAX_ID = 40;

@@ -99,8 +99,9 @@ export function placeEntity(entity: Record<string, unknown>, placement: Placemen
  * `printingOf`: the curated mechanics and spend links written for that entry
  * reach the copy through it, with or without the official data installed. An
  * entry from a book the app knows names that book; one from a free rules text
- * names the book the text takes it from, by edition: the Player's Handbook,
- * or the Dungeon Master's Guide for a magic item.
+ * names the book the text takes it from, by the edition its name marks, else
+ * the text's: the Player's Handbook, or the Dungeon Master's Guide for a magic
+ * item. A name holding `|` would read as another ref, so it names none.
  */
 export function printingRef(
   kind: ConvertedKind,
@@ -108,7 +109,7 @@ export function printingRef(
   placement: Placement,
 ): string | undefined {
   const name = entity.name;
-  if (typeof name !== 'string' || name === '') return undefined;
+  if (typeof name !== 'string' || name === '' || name.includes('|')) return undefined;
   let book = placement.officialBook;
   if (book === undefined && placement.book?.reference === true) {
     const magic = kind === 'item' && entity.rarity !== undefined && entity.rarity !== 'none';

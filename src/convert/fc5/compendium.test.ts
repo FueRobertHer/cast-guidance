@@ -521,6 +521,44 @@ Source: ${line}</text>`;
     ]);
   });
 
+  it("takes a free rules text's book from the edition the name marks", () => {
+    const { json } = convert(`
+      <feat><name>Alert [2024]</name>${at('System Reference Document 5.1')}</feat>
+      <feat><name>Grappler [2014]</name>${at('System Reference Document v5.2.1')}</feat>
+    `);
+    expect(printing(json, 'feat')).toEqual([
+      ['Alert', ['Alert|XPHB']],
+      ['Grappler', ['Grappler|PHB']],
+    ]);
+  });
+
+  it("names a later book whatever the mark until the data says the book's edition", () => {
+    const body = `
+      <feat><name>Spellfire Spark [5.5e]</name>${at('Forgotten Realms: Heroes of Faerûn p. 50')}</feat>
+      <feat><name>Purple Dragon Rook</name>${at('Forgotten Realms: Heroes of Faerûn p. 51')}</feat>
+    `;
+    const expected = [
+      ['Spellfire Spark', ['Spellfire Spark|FRHoF']],
+      ['Purple Dragon Rook', ['Purple Dragon Rook|FRHoF']],
+    ];
+    expect(printing(convert(body).json, 'feat')).toEqual(expected);
+    const known = convert(body, { fileName: FILE, rulesBooks: new Set(['FRHoF']) });
+    expect(printing(known.json, 'feat')).toEqual(expected);
+    // Data that reads the book as 2014 rules settles it the other way.
+    const older = convert(body, { fileName: FILE, rulesBooks: new Set(['EFA']) });
+    expect(printing(older.json, 'feat')).toEqual([
+      ['Spellfire Spark', undefined],
+      ['Purple Dragon Rook', ['Purple Dragon Rook|FRHoF']],
+    ]);
+  });
+
+  it('names none for a name holding the ref separator', () => {
+    const { json } = convert(
+      `<feat><name>Lucky|XPHB</name>${at("Player's Handbook (2014) p. 167")}</feat>`,
+    );
+    expect(printing(json, 'feat')).toEqual([['Lucky|XPHB', undefined]]);
+  });
+
   it('names none for a book the app does not know, no book, or another edition', () => {
     const { json } = convert(`
       <feat><name>Ember Adept</name>${at('Ember Codex p. 3')}</feat>

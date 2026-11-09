@@ -42,7 +42,13 @@ import type {
 } from '../types';
 import { childElements, childText, type XmlElement } from '../xml';
 import { addFeatSource, convertBackground } from './background';
-import { bookSource, codeEdition, type HomebrewSource, readSourceLine } from './books';
+import {
+  bookSource,
+  codeEdition,
+  editionKnown,
+  type HomebrewSource,
+  readSourceLine,
+} from './books';
 import { convertClassOption, isClassOption, isOnOfficialList } from './classOption';
 import {
   extraClassKey,
@@ -182,7 +188,14 @@ function placer(
       books,
       fields: first.page === undefined ? {} : { page: first.page },
     };
-    if (first.code !== undefined && edition === bookEdition) placement.officialBook = first.code;
+    // A name that marks the other edition than its book's is not the book's entry,
+    // where the book's edition is known and not guessed.
+    if (
+      first.code !== undefined &&
+      (edition === bookEdition || !editionKnown(first.code, rulesBooks))
+    ) {
+      placement.officialBook = first.code;
+    }
     if (books.length > 1) placement.citation = line;
     return placement;
   };

@@ -59,7 +59,14 @@ const WORLD: Record<string, DataEntity[]> = {
       source: 'TEST',
       hd: { number: 1, faces: 8 },
       // Ki is keyed by the class's name alone, so it opens the pool Flurry spends.
-      classFeatures: ['Ki|Monk|TEST|2', 'Flurry of Blows|Monk|TEST|2'],
+      classFeatures: [
+        'Ki|Monk|TEST|2',
+        'Flurry of Blows|Monk|TEST|2',
+        'Patient Defence|Monk|TEST|2',
+      ],
+      optionalfeatureProgression: [
+        { name: 'Elemental Disciplines', featureType: ['ED'], progression: { 2: 1 } },
+      ],
     },
   ],
   classFeature: [
@@ -81,11 +88,27 @@ const WORLD: Record<string, DataEntity[]> = {
       entries: PROSE,
       printingOf: ['Flurry of Blows|PHB'],
     },
+    {
+      // Fight Club's spelling; the printing is the official one.
+      name: 'Patient Defence',
+      source: 'TEST',
+      className: 'Monk',
+      classSource: 'TEST',
+      level: 2,
+      entries: PROSE,
+      printingOf: ['Patient Defense|PHB'],
+    },
   ],
   feat: [
     feat('Lucky', { printingOf: ['Lucky|PHB'] }),
     { name: 'Lucky', source: 'TEST', entries: PROSE },
     feat('Elemental Adept', { printingOf: ['Elemental Adept|PHB'] }),
+    feat('Eldritch Adept', {
+      printingOf: ['Eldritch Adept|TCE'],
+      optionalfeatureProgression: [
+        { name: 'Eldritch Invocations', featureType: ['EI'], progression: { '*': 1 } },
+      ],
+    }),
   ],
   optionalfeature: [
     {
@@ -94,6 +117,21 @@ const WORLD: Record<string, DataEntity[]> = {
       featureType: ['FS:F'],
       entries: PROSE,
       printingOf: ['Superior Technique|TCE'],
+    },
+    {
+      name: 'Fist of Unbroken Air',
+      source: BOOK,
+      featureType: ['ED'],
+      entries: PROSE,
+      printingOf: ['Unbroken Air|PHB'],
+    },
+    { name: 'Open Secret', source: 'TEST', featureType: ['EI'], entries: PROSE },
+    {
+      name: 'Late Secret',
+      source: 'TEST',
+      featureType: ['EI'],
+      prerequisite: [{ level: { level: 5, class: { name: 'Warlock' } } }],
+      entries: PROSE,
     },
   ],
 };
@@ -129,6 +167,7 @@ function build(
 const derive = (doc: CharacterDoc) => deriveSheet(doc, ctx);
 const pool = (sheet: DerivedSheet, key: string) => sheet.resources.find((r) => r.key === key);
 const FIGHTER = { name: 'Fighter', source: 'TEST' };
+const MONK = { name: 'Monk', source: 'TEST' };
 
 describe('a copy of an official entry reads its rows', () => {
   it("gives a copied feat the official feat's curated row", () => {
@@ -156,10 +195,32 @@ describe('a copy of an official entry reads its rows', () => {
   });
 
   it("hangs the official feature's spend link on a copied class feature", () => {
-    const sheet = derive(build({ name: 'Monk', source: 'TEST' }, 2));
+    const sheet = derive(build(MONK, 2));
     const flurry = sheet.actions.find((a) => a.label === 'Flurry of Blows');
     // The row spends Focus, which the sheet finds as a 2014 monk's ki.
     expect(flurry?.cost).toMatchObject({ resource: 'ki', amount: 1 });
+    // A copy under another spelling reaches the row by the printed name.
+    const patient = sheet.actions.find((a) => a.label === 'Patient Defence');
+    expect(patient?.cost).toMatchObject({ resource: 'ki', amount: 1 });
+  });
+
+  it("hangs the official option's spend link on a copied option", () => {
+    const pick = 'class:monk|test:optfeature:ED';
+    const sheet = derive(
+      build(MONK, 2, [], { [pick]: [`fist of unbroken air|${BOOK.toLowerCase()}`] }),
+    );
+    const fist = sheet.actions.find((a) => a.label === 'Fist of Unbroken Air');
+    expect(fist?.cost).toMatchObject({ resource: 'ki' });
+  });
+
+  it("holds a copied feat's options to the official feat's class prerequisite", () => {
+    const doc = build(FIGHTER, 1, [{ name: 'Eldritch Adept', source: BOOK }]);
+    const id = `feat:eldritch adept|${BOOK.toLowerCase()}:f0:optfeature:EI`;
+    const prompt = derive(doc).pending.find((p) => p.id === id);
+    expect(prompt?.options.find((o) => o.id === 'open secret|test')?.disabled).toBeUndefined();
+    expect(prompt?.options.find((o) => o.id === 'late secret|test')?.disabled?.reason).toBe(
+      'Has a prerequisite, so only a warlock who meets it can take this',
+    );
   });
 
   it('reads a row that depends on the printing as the official printing', () => {
@@ -172,6 +233,32 @@ describe('a copy of an official entry reads its rows', () => {
       expect(derive(build(bard, 2)).initiative.value).toBe(2);
     } finally {
       delete JACK.printingOf;
+    }
+  });
+
+  it('reads nothing from a printingOf that names no entry', () => {
+    const odd: unknown[] = [
+      [123],
+      [null],
+      '|',
+      [' | '],
+      ['__proto__'],
+      ['constructor|'],
+      ['hasOwnProperty'],
+      ['toString|x|y'],
+      [],
+    ];
+    for (const printingOf of odd) {
+      const copy = WORLD.feat?.[0];
+      if (copy === undefined) throw new Error('no Lucky copy');
+      const kept = copy.printingOf;
+      copy.printingOf = printingOf;
+      try {
+        const sheet = derive(build(FIGHTER, 1, [{ name: 'Lucky', source: BOOK }]));
+        expect(pool(sheet, 'luck')).toBeUndefined();
+      } finally {
+        copy.printingOf = kept;
+      }
     }
   });
 });
