@@ -23,7 +23,7 @@ import {
 import { heldByMe } from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, EffectPart } from '@/engine/types';
 import { randomId } from '@/lib/randomId';
-import { announce } from '@/stores/announcer';
+import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -181,7 +181,9 @@ export default function EffectFinder({
   const trimmed = query.trim();
   const who = doc.name || 'you';
   // What the words found, said once typing settles: a count for the word, not
-  // one per letter. A repeat, since a new query with the same count is a new answer.
+  // one per letter. A repeat, since a new query with the same count is a new
+  // answer. A count still settling is dropped when an entry opens, the words
+  // change or the search goes away: it is about results nobody is on any more.
   useEffect(() => {
     if (picked !== null || trimmed === '') return;
     announce(
@@ -190,6 +192,7 @@ export default function EffectFinder({
         : `${found.length} found`,
       { key: 'effect-search', settleMs: SEARCH_SETTLE_MS, repeat: true },
     );
+    return () => cancelAnnouncement('effect-search');
   }, [picked, trimmed, found.length, who]);
   if (entry !== undefined) {
     return (
@@ -296,11 +299,12 @@ function EntryDetail({
     heldByMe(landed.effect) &&
     effects.find((e) => heldByMe(e) && lower(e.name) === lower(landed.effect.name));
   // Another of the same name already on counts instead: they never add up.
-  // One switched off blocks nothing, and one on another weapon is on another target.
+  // One switched off blocks nothing, one on another weapon is on another
+  // target, and the one a recast replaces is gone.
   const groups = countsAs(landed.effect);
-  const twin = recast
-    ? undefined
-    : effects.find((e) => e.off !== true && [...countsAs(e)].some((g) => groups.has(g)));
+  const twin = effects.find(
+    (e) => e !== recast && e.off !== true && [...countsAs(e)].some((g) => groups.has(g)),
+  );
   const focus = doc.play.concentratingOn?.label;
   const endsFocus =
     entry.self === true &&

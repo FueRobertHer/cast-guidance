@@ -310,6 +310,34 @@ describe('the search under + Effect', () => {
     expect(picker.getByRole('button', { name: 'Add to Hero' })).toBeTruthy();
   });
 
+  it('a recast replaces only your own: another of the name still warns', async () => {
+    const blur = {
+      name: 'Blur',
+      parts: [
+        {
+          kind: 'cue' as const,
+          tone: 'ward' as const,
+          text: 'Attacks against you have disadvantage',
+        },
+      ],
+      lasts: { minutes: 1, concentration: true },
+    };
+    renderStrip((d) => {
+      d.spellcasting = { wizard: { known: [{ name: 'Blur', source: 'XPHB' }], prepared: [] } };
+      d.play.concentratingOn = { label: 'Blur' };
+      d.play.activeEffects = [
+        { id: 'mine', ...blur, mine: true },
+        { id: 'theirs', ...blur },
+      ];
+    });
+    const picker = await openPicker();
+    await open(picker, 'blur', 'Blur');
+    expect(picker.getByText('Casting it again ends the Blur already on Hero')).toBeTruthy();
+    expect(
+      picker.getByText('Blur is already on Hero: effects of one name count once'),
+    ).toBeTruthy();
+  });
+
   it('says what the words found once typing rests', async () => {
     resetAnnouncer();
     renderStrip();
@@ -321,6 +349,26 @@ describe('the search under + Effect', () => {
     await waitFor(() => expect(said()).toContain('Nothing called zzz that can land on Hero'), {
       timeout: 3000,
     });
+  });
+
+  it('drops a count still settling when an entry opens or the search goes', async () => {
+    resetAnnouncer();
+    renderStrip();
+    const picker = await openPicker();
+    const counts = () =>
+      getAnnouncerState()
+        .messages.map((m) => m.text)
+        .filter((t) => t.endsWith(' found'));
+    const rest = () => new Promise((done) => setTimeout(done, 1200));
+    // Opened before typing rests: the count is about results no longer shown.
+    await open(picker, 'fly', 'Fly');
+    await rest();
+    expect(counts()).toEqual([]);
+    // Back, then the words cleared before typing rests.
+    fireEvent.click(picker.getByRole('button', { name: 'All effects' }));
+    type(picker, '');
+    await rest();
+    expect(counts()).toEqual([]);
   });
 
   it('on a touch screen, gives focus to the sheet rather than raise the keyboard', async () => {
