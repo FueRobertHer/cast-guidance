@@ -12,6 +12,7 @@ import {
   type ActiveEffect,
   type CharacterDoc,
   type EntityRef,
+  type KeptEffect,
   type PlayState,
 } from '@/engine/types';
 
@@ -201,6 +202,8 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
   };
   // None in play reads as absent, so a document from before effects keeps its key.
   if (effectsInPlay(doc).length === 0) delete (clone.play as Record<string, unknown>).activeEffects;
+  // None kept reads as absent too.
+  if (keptOf(doc).length === 0) delete clone.keptEffects;
   clone.hpMethod = doc.hpMethod ?? 'average';
   return sortedJson(clone);
 }
@@ -235,6 +238,36 @@ export function effectsInPlay(doc: CharacterDoc): ActiveEffect[] {
 }
 
 const effectName = (e: ActiveEffect) => (typeof e.name === 'string' ? e.name : 'effect');
+
+/** The effects described and kept, none when absent; taken as stored, as effects in play are. */
+function keptOf(doc: CharacterDoc): KeptEffect[] {
+  const list: unknown = doc.keptEffects;
+  return Array.isArray(list)
+    ? list.filter((e): e is KeptEffect => e !== null && typeof e === 'object')
+    : [];
+}
+
+/**
+ * What changed among the effects kept for next time, by name, since keeping
+ * one again under its name replaces it: kept, forgotten, and kept again.
+ */
+export function keptChanges(
+  from: CharacterDoc,
+  to: CharacterDoc,
+): { kept: string[]; forgot: string[]; again: string[] } {
+  const byName = (doc: CharacterDoc) =>
+    new Map(keptOf(doc).map((k) => [effectName(k as ActiveEffect).toLowerCase(), k]));
+  const was = byName(from);
+  const now = byName(to);
+  const out = { kept: [] as string[], forgot: [] as string[], again: [] as string[] };
+  for (const [key, k] of now) {
+    const before = was.get(key);
+    if (before === undefined) out.kept.push(effectName(k as ActiveEffect));
+    else if (!same(before, k)) out.again.push(effectName(k as ActiveEffect));
+  }
+  for (const [key, k] of was) if (!now.has(key)) out.forgot.push(effectName(k as ActiveEffect));
+  return out;
+}
 
 /**
  * What changed among the effects in play, by id: added and ended by name, then
@@ -434,6 +467,10 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
     push('effects', `Effects: ${signedNames(fx.added, fx.ended)}`);
   for (const line of fx.toggled) push('effects', line);
   for (const name of fx.edited) push('effects', `${name} edited`);
+  const kept = keptChanges(from, to);
+  if (kept.kept.length > 0 || kept.forgot.length > 0)
+    push('effects', `Kept: ${signedNames(kept.kept, kept.forgot)}`);
+  for (const name of kept.again) push('effects', `${name} kept again`);
 
   for (let i = 0; i < Math.max(p.slotsSpent.length, n.slotsSpent.length); i++) {
     const was = p.slotsSpent[i] ?? 0;

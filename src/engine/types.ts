@@ -140,6 +140,18 @@ export interface ActiveEffect {
   off?: boolean;
 }
 
+/**
+ * An effect the player described and kept to add again: what it does and how
+ * long it lasts, and the temporary hit points it gives as it lands.
+ */
+export interface KeptEffect {
+  id: string;
+  name: string;
+  parts: EffectPart[];
+  lasts?: EffectDuration;
+  tempHp?: number;
+}
+
 /** How long an effect lasts, for what a rest ends. The app counts neither rounds nor hours. */
 export interface EffectDuration {
   /** Its longest duration: a short rest ends an hour or less, a long rest 8 hours or less. */
@@ -194,6 +206,12 @@ export interface CharacterDoc {
    * Optional; absent follows the app's choice in Settings (`lib/oneUseDice`).
    */
   oneUseDice?: 'after' | 'before';
+  /**
+   * Effects the player described and kept, found by + Effect's search for
+   * next time. Optional; absent is none. Stored as effects are, so a kept one
+   * lands as a copy with an id of its own.
+   */
+  keptEffects?: KeptEffect[];
   race?: EntityRef;
   subrace?: EntityRef;
   background?: EntityRef;
@@ -374,6 +392,8 @@ export type EffectInput = { origin: EffectOrigin } & (
       | { skills: string[] }
       /** Every check of the ability: its skills, the plain check, and initiative for DEX. */
       | { ability: Ability }
+      /** Every ability check, initiative too: a described "+1 to checks". */
+      | { every: true }
     ))
   | { kind: 'passivePerceptionBonus'; amount: number }
   | { kind: 'sense'; sense: string; range: number }

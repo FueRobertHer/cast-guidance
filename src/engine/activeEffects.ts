@@ -65,7 +65,11 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
     optStr(p.weapon),
   checkBonus: (p) =>
     isNum(p.amount) &&
-    ('ability' in p ? isAbility(p.ability) && !('skills' in p) : listOf(p.skills, isStr)),
+    ('every' in p
+      ? p.every === true && !('ability' in p) && !('skills' in p)
+      : 'ability' in p
+        ? isAbility(p.ability) && !('skills' in p)
+        : listOf(p.skills, isStr)),
   conditionImmune: (p) => isStr(p.condition) && optStr(p.note),
   critRange: (p) => Number.isInteger(p.min) && (p.min as number) >= 2 && (p.min as number) <= 20,
   cue: (p) => oneOf('help', 'ward', 'warn', 'info')(p.tone) && isStr(p.text),

@@ -5,6 +5,7 @@ import {
   effectChanges,
   firstWithMore,
   humanKey,
+  keptChanges,
   nameDiff,
   spellNames,
 } from './docDiff';
@@ -272,6 +273,10 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
   if (cond !== undefined) labels.push(cond);
   const fx = effectsLabel(prev, next);
   if (fx !== undefined) labels.push(fx);
+  const kept = keptChanges(prev, next);
+  if (kept.kept.length > 0) labels.push(`Kept ${firstWithMore(kept.kept)}`);
+  else if (kept.again.length > 0) labels.push(`Kept ${firstWithMore(kept.again)} again`);
+  if (kept.forgot.length > 0) labels.push(`Forgot ${firstWithMore(kept.forgot)}`);
   const named = playLabels(prev, next);
   labels.push(...named);
   // Something moved that nothing above could name: still better than 'Edited'.

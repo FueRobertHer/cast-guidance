@@ -1,4 +1,13 @@
-import { AlertTriangle, ChevronsUp, CircleAlert, Plus, Search, ShieldCheck, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronsUp,
+  CircleAlert,
+  PencilLine,
+  Plus,
+  Search,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
@@ -11,7 +20,7 @@ import {
   setConcentration,
   setEffectOff,
 } from '@/engine/effectLife';
-import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
+import type { ActiveEffect, CharacterDoc, DerivedSheet, KeptEffect } from '@/engine/types';
 import { announce } from '@/stores/announcer';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
@@ -33,6 +42,7 @@ import {
   partLine,
 } from './effectsInPlay';
 import { exhaustionLevel, setExhaustionLevel } from './exhaustion';
+import { forget, keepOn } from './keptList';
 import { answersTo, STARTERS, starterEffect } from './namedStarts';
 
 type Condition = CharacterDoc['play']['conditions'][number];
@@ -127,10 +137,12 @@ export function ConditionStrip({
   // What + Effect's search holds: the words typed, and the result opened.
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
+  // A description being made, by the name it started with; none otherwise.
+  const [describing, setDescribing] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const toSearch = useRef(false);
-  const finding = query.trim() !== '' || picked !== null;
+  const finding = query.trim() !== '' || picked !== null || describing !== null;
   // A removed chip's place: focus goes to the chip now there, the one before
   // it if it was the last, the end of the strip if none is left, then the title.
   const refocus = useRef<number | null>(null);
@@ -150,6 +162,7 @@ export function ConditionStrip({
     clearRefused();
     setQuery('');
     setPicked(null);
+    setDescribing(null);
   };
   useEffect(() => {
     if (pickerOpen) void loadFinder();
@@ -258,17 +271,20 @@ export function ConditionStrip({
   /**
    * A search result lands: your own concentration spell (Blur) is what you
    * concentrate on now, which ends the last one (`applyEffect` sees to both);
-   * temporary hit points it gives go when it ends. The search starts over,
+   * temporary hit points it gives go when it ends. A description kept goes on
+   * the character's list for its search next time. The search starts over,
    * ready for the next.
    */
-  const land = (effect: ActiveEffect, tempHp?: number) => {
+  const land = (effect: ActiveEffect, tempHp?: number, kept?: KeptEffect) => {
     const hp = limits();
     if (hp === null) return;
     update((d) => {
       applyEffect(d.play, effect, hp);
       if (tempHp !== undefined) keepHigherTemp(d.play, tempHp, effect.id);
+      if (kept !== undefined) d.keptEffects = keepOn(d.keptEffects, kept);
     }, `Added ${effect.name}`);
     setPicked(null);
+    setDescribing(null);
     setQuery('');
     announce(`${effect.name} added`);
     toSearch.current = true;
@@ -278,11 +294,28 @@ export function ConditionStrip({
     // Back from an entry goes to the words that found it.
     if (id === null) toSearch.current = true;
   };
+  const describe = (name: string | null) => {
+    setDescribing(name);
+    // Back from a description goes to the words, as from an entry.
+    if (name === null) toSearch.current = true;
+  };
+  /** A kept description, taken off the list: the search no longer finds it. */
+  // The name is the one the search showed, not read again from the stored list.
+  const forgetKept = (id: string, name: string) => {
+    update((d) => {
+      const left = forget(d.keptEffects, id);
+      if (left === undefined) delete d.keptEffects;
+      else d.keptEffects = left;
+    }, `Forgot ${name}`);
+    setPicked(null);
+    toSearch.current = true;
+    announce(`${name} forgotten`);
+  };
   // The search field comes back once the entry gives way, and focus goes to
   // it; on a touch screen to the sheet, as when it opened, so no keyboard
   // rises over the lists unasked.
   useLayoutEffect(() => {
-    if (!toSearch.current || picked !== null) return;
+    if (!toSearch.current || picked !== null || describing !== null) return;
     toSearch.current = false;
     (touchScreen() ? panel.current : search.current)?.focus();
   });
@@ -621,7 +654,7 @@ export function ConditionStrip({
               {/* The search, over what the sheet already shows: words typed
                   swap the lists below for what they find, and an entry
                   opened takes the search's place until you go back. */}
-              {picked === null && (
+              {picked === null && describing === null && (
                 <div className="relative mb-3">
                   <Search
                     size={20}
@@ -651,6 +684,9 @@ export function ConditionStrip({
                       picked={picked}
                       onPick={pick}
                       onAdd={land}
+                      describing={describing}
+                      onDescribe={describe}
+                      onForget={forgetKept}
                     />
                   </Suspense>
                 )
@@ -696,6 +732,19 @@ export function ConditionStrip({
                         );
                       })}
                   </div>
+                  {/* Not among these and not in the search: say what it does. */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mb-3"
+                    onClick={() => {
+                      void loadFinder();
+                      describe('');
+                    }}
+                  >
+                    <PencilLine size={16} aria-hidden="true" />
+                    Describe an effect
+                  </Button>
                   {bardicDie !== undefined && bardic !== undefined && (
                     <div className="mb-3 flex flex-col gap-1">
                       <h3 className="text-caption text-ink-muted font-semibold">

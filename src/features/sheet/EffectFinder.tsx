@@ -4,7 +4,7 @@
  * asks before it lands and what it will do on this character. It and the
  * table it reads load in a chunk of their own when the Effects sheet opens.
  */
-import { AlertTriangle, ArrowLeft, ChevronsUp, Dices, Info, ShieldHalf } from 'lucide-react';
+import { ArrowLeft, Dices, PencilLine } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { roll } from '@/dice/roll';
 import { countsAs } from '@/engine/activeEffects';
@@ -21,14 +21,17 @@ import {
   unanswered,
 } from '@/engine/curated/effectCatalog';
 import { heldByMe } from '@/engine/effectLife';
-import type { ActiveEffect, CharacterDoc, DerivedSheet, EffectPart } from '@/engine/types';
+import type { ActiveEffect, CharacterDoc, DerivedSheet, KeptEffect } from '@/engine/types';
 import { randomId } from '@/lib/randomId';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { fieldClass } from '@/ui/TextField';
-import { effectsInPlay, partLine } from './effectsInPlay';
+import { keptEffects } from './describedEffect';
+import { EffectBuilder } from './EffectBuilder';
+import { Line, toneOf } from './effectLines';
+import { effectsInPlay, partLine, restLasts } from './effectsInPlay';
 import { namedStart } from './namedStarts';
 
 /** At most this many results show; typing more narrows the rest. */
@@ -99,45 +102,36 @@ function spellsOf(doc: CharacterDoc, sheet: DerivedSheet): Set<string> {
   return names;
 }
 
-/** How a part reads on the detail: what helps, protects, warns or only informs. */
-function toneOf(p: EffectPart): 'help' | 'ward' | 'warn' | 'info' {
-  switch (p.kind) {
-    case 'cue':
-      return p.tone;
-    case 'resist':
-    case 'immune':
-    case 'conditionImmune':
-      return 'ward';
-    case 'vulnerable':
-      return 'warn';
-    case 'rollAdvantage':
-      return p.mode === 'dis' ? 'warn' : 'help';
-    default:
-      return 'help';
-  }
-}
-
-function Line({ tone, children }: { tone: 'help' | 'ward' | 'warn' | 'info'; children: string }) {
-  const icon =
-    tone === 'ward' ? (
-      <ShieldHalf size={16} aria-hidden="true" className="mt-px shrink-0 text-ward" />
-    ) : tone === 'warn' ? (
-      <AlertTriangle size={16} aria-hidden="true" className="mt-px shrink-0 text-guide" />
-    ) : tone === 'info' ? (
-      <Info size={16} aria-hidden="true" className="mt-px shrink-0 text-ink-muted" />
-    ) : (
-      <ChevronsUp size={16} aria-hidden="true" className="mt-px shrink-0 text-heal" />
-    );
-  return (
-    <li className={`flex gap-1.5 text-caption ${tone === 'info' ? 'text-ink-muted' : 'text-ink'}`}>
-      {icon}
-      <span>{children}</span>
-    </li>
-  );
-}
-
 /** "Spell, 2nd level. Concentration, up to 1 hour." */
 const metaOf = (e: CatalogEntry) => (e.own === true ? e.what : `${e.what}. ${e.lastsSay}.`);
+
+/** A kept description's id in the search, apart from the catalog's. */
+const KEPT = 'kept:';
+
+/** A description the character kept, as the search lists it beside the catalog's entries. */
+export function keptEntry(k: KeptEffect, who: string): CatalogEntry {
+  const lines = k.parts.map((p) => partLine(p));
+  if (k.tempHp !== undefined) lines.push(`${k.tempHp} temporary hit points`);
+  const sum =
+    lines.slice(0, 2).join(', ') + (lines.length > 2 ? `, and ${lines.length - 2} more` : '');
+  return {
+    id: `${KEPT}${k.id}`,
+    name: k.name,
+    what: `Described for ${who}`,
+    keywords: 'described kept homebrew',
+    sum: sum === '' ? 'Nothing it changes' : sum,
+    lastsSay: restLasts(
+      { id: k.id, name: k.name, parts: k.parts, ...(k.lasts ? { lasts: k.lasts } : {}) },
+      true,
+    ),
+    lasts: k.lasts ?? {},
+    asks: [],
+    build: () => ({
+      parts: structuredClone(k.parts),
+      ...(k.tempHp !== undefined ? { tempHp: k.tempHp } : {}),
+    }),
+  };
+}
 
 export interface EffectFinderProps {
   doc: CharacterDoc;
@@ -146,8 +140,13 @@ export interface EffectFinderProps {
   /** The entry being looked at, by id; none while the results show. */
   picked: string | null;
   onPick: (id: string | null) => void;
-  /** Put it on the character, with any temporary hit points it gives. */
-  onAdd: (effect: ActiveEffect, tempHp?: number) => void;
+  /** Put it on the character, with any temporary hit points it gives and, described, what to keep. */
+  onAdd: (effect: ActiveEffect, tempHp?: number, kept?: KeptEffect) => void;
+  /** The name a description starts with while one is being made; none otherwise. */
+  describing: string | null;
+  onDescribe: (name: string | null) => void;
+  /** Takes a kept description off the character, by its id; its name is the one shown. */
+  onForget: (id: string, name: string) => void;
 }
 
 export default function EffectFinder({
@@ -157,6 +156,9 @@ export default function EffectFinder({
   picked,
   onPick,
   onAdd,
+  describing,
+  onDescribe,
+  onForget,
 }: EffectFinderProps) {
   const edition = doc.rulesVersion;
   const entries = useMemo(() => catalogFor(edition), [edition]);
@@ -171,21 +173,26 @@ export default function EffectFinder({
       ),
     [sheet.actions, doc],
   );
-  // A feature that is not the character's own never lands on them, so it is not found.
+  const who = doc.name || 'you';
+  // What the character described and kept is found first, then the catalog. A
+  // feature that is not the character's own never lands on them, so it is not found.
+  const kept = useMemo(() => keptEffects(doc.keptEffects), [doc.keptEffects]);
   const findable = useMemo(
-    () => entries.filter((e) => e.own !== true || ownNames.has(lower(e.name))),
-    [entries, ownNames],
+    () => [
+      ...kept.map((k) => keptEntry(k, who)),
+      ...entries.filter((e) => e.own !== true || ownNames.has(lower(e.name))),
+    ],
+    [kept, who, entries, ownNames],
   );
   const entry = picked === null ? undefined : findable.find((e) => e.id === picked);
   const found = useMemo(() => searchCatalog(findable, query), [findable, query]);
   const trimmed = query.trim();
-  const who = doc.name || 'you';
   // What the words found, said once typing settles: a count for the word, not
   // one per letter. A repeat, since a new query with the same count is a new
   // answer. A count still settling is dropped when an entry opens, the words
   // change or the search goes away: it is about results nobody is on any more.
   useEffect(() => {
-    if (picked !== null || trimmed === '') return;
+    if (picked !== null || describing !== null || trimmed === '') return;
     announce(
       found.length === 0
         ? `Nothing called ${trimmed} that can land on ${who}`
@@ -193,7 +200,18 @@ export default function EffectFinder({
       { key: 'effect-search', settleMs: SEARCH_SETTLE_MS, repeat: true },
     );
     return () => cancelAnnouncement('effect-search');
-  }, [picked, trimmed, found.length, who]);
+  }, [picked, describing, trimmed, found.length, who]);
+  if (describing !== null) {
+    return (
+      <EffectBuilder
+        name={describing}
+        who={who}
+        effects={effects}
+        onBack={() => onDescribe(null)}
+        onAdd={onAdd}
+      />
+    );
+  }
   if (entry !== undefined) {
     return (
       <EntryDetail
@@ -205,6 +223,11 @@ export default function EffectFinder({
         effects={effects}
         onBack={() => onPick(null)}
         onAdd={onAdd}
+        onForget={
+          entry.id.startsWith(KEPT)
+            ? () => onForget(entry.id.slice(KEPT.length), entry.name)
+            : undefined
+        }
       />
     );
   }
@@ -242,6 +265,11 @@ export default function EffectFinder({
       {more > 0 && (
         <p className="text-caption text-ink-muted">{more} more. Keep typing to narrow them.</p>
       )}
+      {/* Not in the books, or not as your table plays it: describe it. */}
+      <Button variant="outline" block onClick={() => onDescribe(trimmed)}>
+        <PencilLine size={18} aria-hidden="true" />
+        Describe “{trimmed}”
+      </Button>
     </div>
   );
 }
@@ -257,6 +285,7 @@ function EntryDetail({
   effects,
   onBack,
   onAdd,
+  onForget,
 }: {
   entry: CatalogEntry;
   entries: readonly CatalogEntry[];
@@ -265,6 +294,8 @@ function EntryDetail({
   effects: readonly ActiveEffect[];
   onBack: () => void;
   onAdd: (effect: ActiveEffect, tempHp?: number) => void;
+  /** Takes it off the character's kept list, when it is a description kept there. */
+  onForget?: () => void;
 }) {
   const ids = useId();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -409,6 +440,11 @@ function EntryDetail({
               : twin !== undefined
                 ? `Add another to ${who}`
                 : `Add to ${who}`}
+        </Button>
+      )}
+      {onForget !== undefined && (
+        <Button variant="ghost" block onClick={onForget}>
+          Forget it
         </Button>
       )}
     </div>

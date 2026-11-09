@@ -49,9 +49,11 @@ export function checkBonusParts(
   const out: Part[] = [];
   for (const e of effectsOf(effects, 'checkBonus')) {
     const reaches =
-      'ability' in e
-        ? e.ability === ability
-        : skill !== undefined && e.skills.some((s) => s.toLowerCase() === skill.toLowerCase());
+      'every' in e
+        ? true
+        : 'ability' in e
+          ? e.ability === ability
+          : skill !== undefined && e.skills.some((s) => s.toLowerCase() === skill.toLowerCase());
     if (reaches) {
       out.push({ label: e.origin.label, amount: bonusAmount(e.amount, abilities, profBonus) });
     }

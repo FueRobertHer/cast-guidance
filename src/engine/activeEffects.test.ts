@@ -644,6 +644,32 @@ describe('deriveSheet with effects in play', () => {
     expect(sheet.skills.Athletics?.total.value).toBe(6);
   });
 
+  it('adds a bonus to every check to each skill, each plain check and initiative, once', () => {
+    const before = derive(warrior());
+    const sheet = derive(
+      withEffects(
+        warrior(),
+        fx('Ember blessing', [{ kind: 'checkBonus', amount: 2, every: true }]),
+      ),
+    );
+    expect(sheet.skills.Athletics?.total.value).toBe(
+      (before.skills.Athletics?.total.value ?? 0) + 2,
+    );
+    expect(sheet.skills.Arcana?.total.value).toBe((before.skills.Arcana?.total.value ?? 0) + 2);
+    expect(sheet.checks.wis.total.value).toBe(before.checks.wis.total.value + 2);
+    expect(sheet.initiative.value).toBe(before.initiative.value + 2);
+  });
+
+  it('reads a bonus to every check only when it names nothing else', () => {
+    const read = (part: unknown) =>
+      readActiveEffects([{ id: 'a', name: 'A', parts: [part] }]).effects[0]?.parts;
+    expect(read({ kind: 'checkBonus', amount: 1, every: true })).toEqual([
+      { kind: 'checkBonus', amount: 1, every: true },
+    ]);
+    expect(read({ kind: 'checkBonus', amount: 1, every: true, ability: 'str' })).toEqual([]);
+    expect(read({ kind: 'checkBonus', amount: 1, every: false })).toEqual([]);
+  });
+
   it('says on Build what it could not read, and leaves the document alone', () => {
     const doc = warrior();
     const stored = [{ id: 'z', name: 'Future Buff', parts: [{ kind: 'timeStop' }] }];
