@@ -158,12 +158,14 @@ test.describe('touch target sizes', () => {
     await expectTargets(button(page, /^Channel Divinity use \d$/), 1, PIP);
     await expectFloor(page);
 
-    // The picker holds each condition's toggle and exhaustion's stepper.
+    // The picker holds the three starters (Bless, Guidance, Bardic
+    // Inspiration), each of the 14 conditions' toggles and exhaustion's
+    // stepper.
     await button(page, 'Add an effect').click();
     const picker = page.getByRole('dialog', { name: 'Effects' });
     await expect(picker).toBeVisible();
     await animationsSettled(page);
-    await expectTargets(picker.locator('button[aria-pressed]'), 14);
+    await expectTargets(picker.locator('button[aria-pressed]'), 17);
     await expectTargets(
       picker.getByRole('button', { name: /^(Decrease|Increase) exhaustion$/ }),
       2,

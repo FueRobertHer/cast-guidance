@@ -24,10 +24,8 @@ import { CastButton } from './CastButton';
 import { askCastResource, CastResourcePicker } from './CastResourcePicker';
 import {
   type CastSpellInfo,
-  castGranted,
   castingEconomy,
   castResourceLabel,
-  castSpell,
   isConcentratingOn,
   needsCastChoice,
 } from './castResources';
@@ -41,6 +39,7 @@ import {
   useIgnoreOnce,
 } from './d20Tests';
 import { conditionsInForce, hpLimits } from './effectsInPlay';
+import { castGrantedAsking, castSpellAsking } from './namedStarts';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -63,6 +62,8 @@ interface OwnSpell {
   /** A level from the spell's file: none means it has none, or has not arrived. */
   level: number | undefined;
   always: boolean;
+  /** The class whose spell it is, for what reaches only that class's spells. */
+  className: string | undefined;
 }
 
 /** Whether a class chooses from its spells each day, so a known spell can sit unprepared. */
@@ -98,7 +99,12 @@ interface RowContext {
   sheet: DerivedSheet;
   update: DocUpdater;
   choice: ReturnType<typeof useCastChoice>;
-  rollAttack: (modifier: number, label: string) => () => ReturnType<typeof rollD20Test>;
+  /** A spell attack chip's roll; `className` is whose spell it is (Innate Sorcery). */
+  rollAttack: (
+    modifier: number,
+    label: string,
+    className?: string,
+  ) => () => ReturnType<typeof rollD20Test>;
   /** The conditions on the attack chips. */
   wear: ChipWear;
   /** On Cast and the dice chip that casts: only what stops casting. */
@@ -266,12 +272,12 @@ function SlotSpellRow({
   // an answer, so a rolling spell's picker settles the slot before the roll.
   const castAsking = async () => {
     if (!choosing) {
-      castSpell(update, hpLimits(sheet, doc.rulesVersion), block, level, info, options[0]);
+      castSpellAsking(update, hpLimits(sheet, doc.rulesVersion), block, level, info, options[0]);
       return;
     }
     const picked = await askCastResource(castContext);
     if (picked !== null)
-      castSpell(update, hpLimits(sheet, doc.rulesVersion), block, level, info, picked);
+      castSpellAsking(update, hpLimits(sheet, doc.rulesVersion), block, level, info, picked);
   };
   const locked =
     block.learnable !== undefined &&
@@ -311,14 +317,14 @@ function SlotSpellRow({
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={ctx.rollAttack}
+            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={
               concentrating
                 ? undefined
                 : () =>
-                    castSpell(
+                    castSpellAsking(
                       update,
                       hpLimits(sheet, doc.rulesVersion),
                       block,
@@ -391,7 +397,7 @@ function InnateSpellRow({
   // action and your concentration.
   const depleted = remaining !== undefined && remaining <= 0;
   const cast = () =>
-    castGranted(
+    castGrantedAsking(
       update,
       hpLimits(sheet, doc.rulesVersion),
       {
@@ -439,7 +445,7 @@ function InnateSpellRow({
             attackModifier={attackModifier}
             entity={entity}
             rolls={rolls}
-            roller={ctx.rollAttack}
+            roller={(modifier, label) => ctx.rollAttack(modifier, label, spell.className)}
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={concentrating || depleted ? undefined : cast}
@@ -517,7 +523,11 @@ function ClassSection({
   };
 
   // Always prepared first: a domain spell also picked by hand is one row.
+  // A grant sits here because it casts with this class's ability, which does
+  // not make it this class's spell: a species' or feat's is no one's, unless
+  // the class picked it too.
   const alwaysNames = new Set(granted.map((g) => g.name.toLowerCase()));
+  const picked = new Set([...state.known, ...state.prepared].map((r) => r.name.toLowerCase()));
   const own = new Map<string, OwnSpell>();
   for (const g of granted) {
     const entity = entityOf(g);
@@ -527,11 +537,18 @@ function ClassSection({
       entity,
       level: typeof entity?.level === 'number' ? entity.level : undefined,
       always: true,
+      className: g.className ?? (picked.has(g.name.toLowerCase()) ? block.className : undefined),
     });
   }
   for (const ref of [...state.known, ...state.prepared]) {
     if (alwaysNames.has(ref.name.toLowerCase()) || own.has(refUid(ref))) continue;
-    own.set(refUid(ref), { ...ref, entity: entityOf(ref), level: levelOf(ref), always: false });
+    own.set(refUid(ref), {
+      ...ref,
+      entity: entityOf(ref),
+      level: levelOf(ref),
+      always: false,
+      className: block.className,
+    });
   }
 
   const preparedUids = new Set(state.prepared.map(refUid));
@@ -692,12 +709,16 @@ export function YourSpells({
     { kind: 'attack' },
     { immune: sheet.conditionImmunities },
   );
-  const rollAttack = (modifier: number, label: string) => () =>
+  const rollAttack = (modifier: number, label: string, className?: string) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
-      riders: rollEffects(sheet, { kind: 'attack', attack: 'spell' }),
+      riders: rollEffects(sheet, {
+        kind: 'attack',
+        attack: 'spell',
+        ...(className === undefined ? {} : { className }),
+      }),
       settlesOnNatural: true,
     });
   const limits = conditionLimits(conditions);
@@ -798,6 +819,7 @@ export function YourSpells({
                 entity,
                 level: typeof entity?.level === 'number' ? entity.level : undefined,
                 always: false,
+                className: g.className,
               };
               return entity === undefined && spellsSettling ? (
                 <SpellRow

@@ -30,7 +30,14 @@ export interface ActiveCondition {
  * without it.
  */
 export type D20Test =
-  | { kind: 'attack'; attack?: 'weapon' | 'spell'; range?: 'melee' | 'ranged'; ability?: Ability }
+  | {
+      kind: 'attack';
+      attack?: 'weapon' | 'spell';
+      range?: 'melee' | 'ranged';
+      ability?: Ability;
+      /** The class whose spell this is, for a spell attack. */
+      className?: string;
+    }
   | { kind: 'check'; ability?: Ability; skill?: string }
   | { kind: 'initiative' }
   | { kind: 'save'; ability?: Ability };

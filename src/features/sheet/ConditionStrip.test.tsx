@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { bardicEffect } from '@/engine/curated/namedEffects';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -63,16 +64,18 @@ function renderStrip(
     addable = false,
     effects,
     immune = [],
+    edition = '2024',
   }: {
     addable?: boolean;
     effects?: ActiveEffect[];
     immune?: DerivedSheet['conditionImmunities'];
+    edition?: CharacterDoc['rulesVersion'];
   } = {},
 ) {
   function Harness() {
     const [doc, setDoc] = useState(() => {
       const d = newCharacterDoc('c1', 'Hero', 't');
-      d.rulesVersion = '2024';
+      d.rulesVersion = edition;
       d.play.conditions = conditions;
       if (effects !== undefined) d.play.activeEffects = effects;
       return d;
@@ -93,6 +96,7 @@ function renderStrip(
           Effects{' '}
           {(doc.play.activeEffects ?? []).map((e) => `${e.name}${e.off ? ' off' : ''}`).join(', ')}
         </p>
+        <output data-testid="stored">{JSON.stringify(doc.play.activeEffects ?? [])}</output>
         <ConditionStrip doc={doc} sheet={sheetWith(immune)} update={update} addable={addable} />
       </>
     );
@@ -101,6 +105,11 @@ function renderStrip(
 }
 
 const button = (name: string) => screen.getByRole('button', { name });
+/** The effects in play as stored, without their ids (each a fresh random one). */
+const stored = (): Array<Omit<ActiveEffect, 'id'>> =>
+  (JSON.parse(screen.getByTestId('stored').textContent ?? '[]') as ActiveEffect[]).map(
+    ({ id: _, ...rest }) => rest,
+  );
 const strip = () => within(screen.getByRole('list', { name: 'Active effects' }));
 const closeSheet = async () => {
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
@@ -273,7 +282,9 @@ describe('the condition picker', () => {
     renderStrip([{ id: 'Poisoned' }], { addable: true });
     fireEvent.click(button('Add an effect'));
     const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
-    expect(picker.getAllByRole('button', { pressed: false })).toHaveLength(13);
+    // The 13 conditions besides Poisoned, and the three starters (Bless,
+    // Guidance, Bardic Inspiration).
+    expect(picker.getAllByRole('button', { pressed: false })).toHaveLength(16);
     expect(picker.getByRole('button', { name: 'Poisoned', pressed: true })).toBeTruthy();
     expect(picker.getByRole('button', { name: 'Blinded', pressed: false })).toBeTruthy();
 
@@ -378,7 +389,10 @@ describe('effects in play on the strip', () => {
     expect(picker.getByRole('heading', { name: 'Helping you' })).toBeTruthy();
     fireEvent.click(picker.getByRole('button', { name: '+d4 Bless', pressed: true }));
     expect(effectsLine()).toBe('Effects Shield of Faith');
-    expect(picker.queryByRole('button', { name: '+d4 Bless' })).toBeNull();
+    // Bless is a starter, so its chip stays where it was, ready to add again.
+    expect(picker.getByRole('button', { name: '+d4 Bless', pressed: false })).toBeTruthy();
+    fireEvent.click(picker.getByRole('button', { name: 'Shield of Faith', pressed: true }));
+    expect(picker.queryByRole('button', { name: 'Shield of Faith' })).toBeNull();
   });
 
   it('counts the chips out of sight on its end, which still opens the Effects sheet', async () => {
@@ -440,5 +454,126 @@ describe('a condition the character is immune to', () => {
     expect(
       sheet.getByText(/^Off while you are immune: Periapt of Proof against Poison\./),
     ).toBeTruthy();
+  });
+});
+
+describe('the starter list under Helping you', () => {
+  const openPicker = async () => {
+    fireEvent.click(button('Add an effect'));
+    return within(await screen.findByRole('dialog', { name: 'Effects' }));
+  };
+
+  it("adds an ally's Bless, Guidance and Bardic Inspiration in 2014, and asks the bard's die", async () => {
+    renderStrip([], { addable: true, edition: '2014' });
+    const picker = await openPicker();
+
+    fireEvent.click(picker.getByRole('button', { name: '+d4 Bless', pressed: false }));
+    fireEvent.click(picker.getByRole('button', { name: '+d4 Guidance', pressed: false }));
+    expect(stored()).toEqual([
+      {
+        name: 'Bless',
+        parts: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'save'] } }],
+        lasts: { minutes: 1, concentration: true },
+      },
+      {
+        name: 'Guidance',
+        parts: [{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true }],
+        lasts: { minutes: 1, concentration: true },
+      },
+    ]);
+    expect(picker.getByRole('button', { name: '+d4 Bless', pressed: true })).toBeTruthy();
+    expect(picker.queryByRole('group', { name: "The bard's die, by their level" })).toBeNull();
+
+    // A bard's die depends on their level: it lands as a d8 and asks.
+    fireEvent.click(picker.getByRole('button', { name: '+d8 Bardic Inspiration', pressed: false }));
+    const die = within(picker.getByRole('group', { name: "The bard's die, by their level" }));
+    expect(die.getByRole('button', { name: 'd8', pressed: true })).toBeTruthy();
+    fireEvent.click(die.getByRole('button', { name: 'd12' }));
+    expect(stored()[2]).toEqual({
+      name: 'Bardic Inspiration',
+      parts: [
+        { kind: 'rollOffer', dice: '1d12', on: { rolls: ['attack', 'save', 'check'] }, once: true },
+      ],
+      lasts: { minutes: 10 },
+    });
+    expect(
+      picker.getByRole('button', { name: '+d12 Bardic Inspiration', pressed: true }),
+    ).toBeTruthy();
+
+    // Tapping one in play ends it, and its chip stays to add again.
+    fireEvent.click(picker.getByRole('button', { name: '+d12 Bardic Inspiration' }));
+    expect(effectsLine()).toBe('Effects Bless, Guidance');
+    expect(
+      picker.getByRole('button', { name: '+d8 Bardic Inspiration', pressed: false }),
+    ).toBeTruthy();
+    expect(picker.queryByRole('group', { name: "The bard's die, by their level" })).toBeNull();
+  });
+
+  it('asks 2024 Guidance its skill before it lands, and waits for a failed roll with Bardic', async () => {
+    renderStrip([], { addable: true, edition: '2024' });
+    const picker = await openPicker();
+    const guidance = picker.getByRole('button', { name: '+d4 Guidance' });
+    fireEvent.click(guidance);
+    expect(guidance.getAttribute('aria-expanded')).toBe('true');
+    expect(stored()).toEqual([]);
+
+    const skills = within(picker.getByRole('group', { name: 'Guidance on which skill?' }));
+    expect(skills.getAllByRole('button')).toHaveLength(18);
+    fireEvent.click(skills.getByRole('button', { name: 'Athletics' }));
+    expect(stored()).toEqual([
+      {
+        name: 'Guidance: Athletics',
+        same: 'Guidance',
+        parts: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], skills: ['Athletics'] } }],
+        lasts: { minutes: 1, concentration: true },
+      },
+    ]);
+    const held = picker.getByRole('button', { name: '+d4 Guidance: Athletics', pressed: true });
+    expect(document.activeElement).toBe(held);
+    expect(held.getAttribute('aria-expanded')).toBeNull();
+    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
+
+    fireEvent.click(picker.getByRole('button', { name: '+d8 Bardic Inspiration' }));
+    expect(stored()[1]).toMatchObject({
+      parts: [{ dice: '1d8', once: true, ifFailed: true }],
+      lasts: { minutes: 60 },
+    });
+  });
+
+  it('asks again, rather than adding, when the skill list is closed with another tap', async () => {
+    renderStrip([], { addable: true, edition: '2024' });
+    const picker = await openPicker();
+    const guidance = picker.getByRole('button', { name: '+d4 Guidance' });
+    fireEvent.click(guidance);
+    fireEvent.click(guidance);
+    expect(guidance.getAttribute('aria-expanded')).toBe('false');
+    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
+    expect(stored()).toEqual([]);
+  });
+
+  it('opens without the skill list after Apply death closed it', async () => {
+    renderStrip([{ id: 'Exhaustion', level: 5 }], { addable: true, edition: '2024' });
+    let picker = await openPicker();
+    fireEvent.click(picker.getByRole('button', { name: '+d4 Guidance' }));
+    expect(picker.getByRole('group', { name: 'Guidance on which skill?' })).toBeTruthy();
+    fireEvent.click(picker.getByRole('button', { name: 'Increase exhaustion' }));
+    fireEvent.click(picker.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    picker = await openPicker();
+    expect(picker.getByRole('button', { name: '+d4 Guidance' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
+  });
+
+  it("changes only the bard's die, leaving a switched-off Bardic Inspiration off", async () => {
+    const bardic = { ...bardicEffect('b1', '2024', 'd8'), off: true, turnsLeft: 2 };
+    renderStrip([], { addable: true, effects: [bardic] });
+    const picker = await openPicker();
+    const dice = within(picker.getByRole('group', { name: "The bard's die, by their level" }));
+    fireEvent.click(dice.getByRole('button', { name: 'd10' }));
+    const { id: _, ...want } = { ...bardicEffect('b1', '2024', 'd10'), off: true, turnsLeft: 2 };
+    expect(stored()).toEqual([want]);
   });
 });

@@ -421,7 +421,8 @@ export function isConcentratingOn(play: PlayState, name: string): boolean {
  * becomes the active concentration (dropping any prior one: one at a time),
  * along with the level it was cast at: its dice on a later turn are that slot's.
  * The character's own effects held by the old concentration end with it
- * (casting Haste ends Bless), within `hp`.
+ * (casting Haste ends Bless), within `hp`. The sheet casts through
+ * `castSpellAsking`, which then asks Bless's caster about themself.
  */
 export function castSpell(
   update: DocUpdater,

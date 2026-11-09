@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 
 /**
  * A pill-shaped control for a short value (DS-001): a filter or preset to
@@ -30,6 +30,8 @@ export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   tone?: ChipTone;
   /** Makes the chip a toggle, drawn filled while true. */
   pressed?: boolean;
+  /** The button, for focus to come back to (React 19 passes it as a prop). */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Chip({ tone, pressed, className, type = 'button', ...props }: ChipProps) {

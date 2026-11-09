@@ -85,7 +85,7 @@ export function rollsWords(on: RollFilter): string {
   const abilities = on.abilities?.map((a) => ABILITY[a]).join(' or ');
   const words = on.rolls.map((r) => {
     if (r === 'attack') {
-      const kind = [on.range, on.attack].filter((w) => w !== undefined).join(' ');
+      const kind = [on.range, on.className, on.attack].filter((w) => w !== undefined).join(' ');
       return `${kind === '' ? '' : `${kind} `}attack rolls${abilities ? ` made with ${abilities}` : ''}`;
     }
     if (r === 'check') {

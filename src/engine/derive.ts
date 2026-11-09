@@ -40,6 +40,7 @@ import type {
   NotCounted,
   RollRider,
 } from './types';
+import { refUid } from './types';
 
 export interface DeriveOptions {
   /**
@@ -265,6 +266,7 @@ export function deriveSheet(
     grantedSpells: dedupeGrantedSpells(
       effects,
       spellcasting.some((sc) => sc.pactSlots !== undefined || sc.slots.some((n) => n > 0)),
+      doc.classes,
     ),
     warnings: dedupeWarnings(col.warnings),
     classDataMissing: doc.classes.some(
@@ -348,7 +350,14 @@ function richness(e: {
 function dedupeGrantedSpells(
   effects: readonly EffectInput[],
   hasSlots: boolean,
+  classes: CharacterDoc['classes'],
 ): DerivedSheet['grantedSpells'] {
+  // A class's and its subclass's grants are that class's spells.
+  const classOf = new Map<string, string>();
+  for (const c of classes) {
+    classOf.set(`class:${refUid(c.ref)}`, c.ref.name);
+    if (c.subclass !== undefined) classOf.set(`subclass:${refUid(c.subclass)}`, c.ref.name);
+  }
   const seen = new Set<string>();
   const out: DerivedSheet['grantedSpells'] = [];
   for (const e of effectsOf(effects, 'grantSpell')) {
@@ -366,6 +375,7 @@ function dedupeGrantedSpells(
       usage: e.usage,
       resourceKey: e.resourceKey,
       origin: e.origin.label,
+      className: classOf.get(`${e.origin.type}:${e.origin.uid}`),
     });
   }
   return out;
