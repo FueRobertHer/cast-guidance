@@ -3,7 +3,7 @@
  * buff gets on"): Rage and Innate Sorcery from their own Use, and the starter
  * list under + Effect (Bless, Guidance, Bardic Inspiration). Each is built in
  * the character's rules version with its questions already answered (the
- * barbarian's level, the bard's die, Guidance's skill), as an effect in play is
+ * barbarian's level, the bard's die), as an effect in play is
  * stored: never a pointer into this table, so a later change here leaves the
  * effects already on a character as they were.
  */
@@ -78,28 +78,21 @@ export function blessEffect(id: string, mine: boolean): ActiveEffect {
 }
 
 /**
- * Guidance. 2014: a d4 on one check, offered after the roll, then it ends.
- * 2024: a d4 on every check with the chosen skill until it ends, so it rolls
- * in, and its name carries the skill ("Guidance: Athletics").
+ * Guidance, a d4 offered after the roll. 2014: on one ability check, then it
+ * ends. 2024: on skill checks until it ends. 2024 has the caster choose one
+ * skill, but the sheet offers the die on every skill check and leaves which
+ * one to the player, rather than asking up front.
  */
-export function guidanceEffect(id: string, edition: '2014'): ActiveEffect;
-export function guidanceEffect(id: string, edition: '2024', skill: string): ActiveEffect;
-export function guidanceEffect(id: string, edition: Edition, skill?: string): ActiveEffect {
-  const lasts = { minutes: 1, concentration: true };
-  if (edition === '2024' && skill !== undefined) {
-    return {
-      id,
-      name: `Guidance: ${skill}`,
-      same: 'Guidance',
-      parts: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], skills: [skill] } }],
-      lasts,
-    };
-  }
+export function guidanceEffect(id: string, edition: Edition): ActiveEffect {
   return {
     id,
     name: 'Guidance',
-    parts: [{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true }],
-    lasts,
+    parts: [
+      edition === '2024'
+        ? { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], skilled: true } }
+        : { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true },
+    ],
+    lasts: { minutes: 1, concentration: true },
   };
 }
 

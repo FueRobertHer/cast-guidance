@@ -120,22 +120,18 @@ export const STARTERS: readonly Starter[] = [
 /** The bard's die when nothing has said otherwise: a 5th to 9th level bard's. */
 export const BARDIC_DEFAULT: BardicDie = 'd8';
 
-/**
- * An ally's effect from the starter list, in the character's rules version.
- * 2024 Guidance needs its skill, and is not built without one.
- */
+/** An ally's effect from the starter list, in the character's rules version. */
 export function starterEffect(
   name: string,
   edition: '2014' | '2024',
-  answers: { die?: BardicDie; skill?: string } = {},
+  answers: { die?: BardicDie } = {},
 ): ActiveEffect | undefined {
   const id = randomId();
   switch (name) {
     case 'Bless':
       return blessEffect(id, false);
     case 'Guidance':
-      if (edition === '2014') return guidanceEffect(id, '2014');
-      return answers.skill === undefined ? undefined : guidanceEffect(id, '2024', answers.skill);
+      return guidanceEffect(id, edition);
     case 'Bardic Inspiration':
       return bardicEffect(id, edition, answers.die ?? BARDIC_DEFAULT);
     default:

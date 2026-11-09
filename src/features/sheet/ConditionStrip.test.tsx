@@ -509,62 +509,27 @@ describe('the starter list under Helping you', () => {
     expect(picker.queryByRole('group', { name: "The bard's die, by their level" })).toBeNull();
   });
 
-  it('asks 2024 Guidance its skill before it lands, and waits for a failed roll with Bardic', async () => {
+  it('adds 2024 Guidance at once, offered on skill checks, and waits for a failed roll with Bardic', async () => {
     renderStrip([], { addable: true, edition: '2024' });
     const picker = await openPicker();
     const guidance = picker.getByRole('button', { name: '+d4 Guidance' });
+    expect(guidance.getAttribute('aria-expanded')).toBeNull();
     fireEvent.click(guidance);
-    expect(guidance.getAttribute('aria-expanded')).toBe('true');
-    expect(stored()).toEqual([]);
-
-    const skills = within(picker.getByRole('group', { name: 'Guidance on which skill?' }));
-    expect(skills.getAllByRole('button')).toHaveLength(18);
-    fireEvent.click(skills.getByRole('button', { name: 'Athletics' }));
+    // No skill asked for: the die is offered on each skill check instead.
     expect(stored()).toEqual([
       {
-        name: 'Guidance: Athletics',
-        same: 'Guidance',
-        parts: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], skills: ['Athletics'] } }],
+        name: 'Guidance',
+        parts: [{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], skilled: true } }],
         lasts: { minutes: 1, concentration: true },
       },
     ]);
-    const held = picker.getByRole('button', { name: '+d4 Guidance: Athletics', pressed: true });
-    expect(document.activeElement).toBe(held);
-    expect(held.getAttribute('aria-expanded')).toBeNull();
-    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
+    expect(picker.getByRole('button', { name: '+d4 Guidance', pressed: true })).toBeTruthy();
 
     fireEvent.click(picker.getByRole('button', { name: '+d8 Bardic Inspiration' }));
     expect(stored()[1]).toMatchObject({
       parts: [{ dice: '1d8', once: true, ifFailed: true }],
       lasts: { minutes: 60 },
     });
-  });
-
-  it('asks again, rather than adding, when the skill list is closed with another tap', async () => {
-    renderStrip([], { addable: true, edition: '2024' });
-    const picker = await openPicker();
-    const guidance = picker.getByRole('button', { name: '+d4 Guidance' });
-    fireEvent.click(guidance);
-    fireEvent.click(guidance);
-    expect(guidance.getAttribute('aria-expanded')).toBe('false');
-    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
-    expect(stored()).toEqual([]);
-  });
-
-  it('opens without the skill list after Apply death closed it', async () => {
-    renderStrip([{ id: 'Exhaustion', level: 5 }], { addable: true, edition: '2024' });
-    let picker = await openPicker();
-    fireEvent.click(picker.getByRole('button', { name: '+d4 Guidance' }));
-    expect(picker.getByRole('group', { name: 'Guidance on which skill?' })).toBeTruthy();
-    fireEvent.click(picker.getByRole('button', { name: 'Increase exhaustion' }));
-    fireEvent.click(picker.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-
-    picker = await openPicker();
-    expect(picker.getByRole('button', { name: '+d4 Guidance' }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
-    expect(picker.queryByRole('group', { name: 'Guidance on which skill?' })).toBeNull();
   });
 
   it("changes only the bard's die, leaving a switched-off Bardic Inspiration off", async () => {
