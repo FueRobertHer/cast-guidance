@@ -7,7 +7,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
-import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { type CharacterDoc, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { setOneUseDice } from '@/lib/oneUseDice';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -36,23 +36,26 @@ const classPacks = vi.hoisted(() => ({
 vi.mock('@/data5e/hooks', () => ({
   useRegistryRefreshing: () => false,
   useTypePacks: () => ({ ...classPacks.current, retry: classPacks.retry, repair: () => undefined }),
-  useRegistry: () => {
-    const base = makeTestContext();
-    return {
-      get: (type: string, name: string, source?: string) =>
-        extra.current.find(
-          ([t, e]) =>
-            t === type &&
-            String(e.name).toLowerCase() === name.toLowerCase() &&
-            (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
-        )?.[1] ?? base.get(type as never, name, source),
-      byType: (type: string) => [
-        ...extra.current.filter(([t]) => t === type).map(([, e]) => e),
-        ...base.byType(type as never),
-      ],
-    };
-  },
+  useRegistry: () => layeredWorld(),
 }));
+
+/** The shared test world with this test's extras over it, for the page and its sheet alike. */
+function layeredWorld() {
+  const base = makeTestContext();
+  return {
+    get: (type: string, name: string, source?: string) =>
+      extra.current.find(
+        ([t, e]) =>
+          t === type &&
+          String(e.name).toLowerCase() === name.toLowerCase() &&
+          (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+      )?.[1] ?? base.get(type as never, name, source),
+    byType: (type: string) => [
+      ...extra.current.filter(([t]) => t === type).map(([, e]) => e),
+      ...base.byType(type as never),
+    ],
+  };
+}
 vi.mock('@/data5e/loader', () => ({ ensureTypePacks: () => Promise.resolve() }));
 
 const dialogs = vi.hoisted(() => ({
@@ -121,7 +124,10 @@ function renderBuild(build?: (doc: CharacterDoc) => void) {
   };
   function Shell() {
     const live = useSyncExternalStore(subscribe, () => current);
-    const sheet = useMemo(() => deriveSheet(live, makeTestContext()), [live]);
+    const sheet = useMemo(
+      () => deriveSheet(live, layeredWorld() as unknown as EngineContext),
+      [live],
+    );
     // The app's HP sync (useCharacterSheet): while a character is still being
     // built, current HP follows the derived maximum with a write of its own.
     useEffect(() => {
@@ -255,6 +261,63 @@ describe('BuildPage one-use dice rule (the buffs canvas, Dice B)', () => {
     fireEvent.click(within(group).getByRole('button', { name: 'As in Settings' }));
     expect('oneUseDice' in getDoc()).toBe(false);
     expect(pressed()).toEqual(['As in Settings']);
+  });
+});
+
+describe('BuildPage optional class features', () => {
+  /** The Warrior with an optional feature beside Grit, as Favored Foe sits beside Favored Enemy. */
+  function withOptionalGrit() {
+    const warrior = makeTestContext().get('class', 'Warrior', 'TST') as Record<string, unknown>;
+    extra.current = [
+      [
+        'class',
+        {
+          ...warrior,
+          classFeatures: ['Grit|Warrior|TST|1', 'Steady Grit|Warrior|TST|1|XTST'],
+        },
+      ],
+      [
+        'classFeature',
+        {
+          name: 'Steady Grit',
+          source: 'XTST',
+          className: 'Warrior',
+          classSource: 'TST',
+          level: 1,
+          isClassFeatureVariant: true,
+          entries: ['{@i Optional feature, which replaces the Grit feature}', 'You stay gritty.'],
+        },
+      ],
+    ];
+  }
+  const group = () => screen.getByRole('group', { name: /Optional class features/ });
+
+  it('is not offered to a class without any', () => {
+    renderBuild();
+    expect(screen.queryByRole('group', { name: /Optional class features/ })).toBeNull();
+  });
+
+  it('turns the rule on, which asks for the pick, and off again, leaving no field', () => {
+    withOptionalGrit();
+    const { getDoc } = renderBuild();
+    const pressed = () =>
+      within(group())
+        .getAllByRole('button')
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.textContent);
+    expect(pressed()).toEqual(['Off']);
+    expect(group().textContent).toContain('The classes as printed');
+    expect(screen.queryByText('Level 1: Grit or Steady Grit')).toBeNull();
+
+    fireEvent.click(within(group()).getByRole('button', { name: 'On' }));
+    expect(getDoc().optionalClassFeatures).toBe(true);
+    expect(pressed()).toEqual(['On']);
+    expect(group().textContent).toContain('Each one is a pick under its class');
+    expect(screen.getAllByText('Level 1: Grit or Steady Grit').length).toBeGreaterThan(0);
+
+    fireEvent.click(within(group()).getByRole('button', { name: 'Off' }));
+    expect('optionalClassFeatures' in getDoc()).toBe(false);
+    expect(screen.queryByText('Level 1: Grit or Steady Grit')).toBeNull();
   });
 });
 

@@ -38,6 +38,13 @@ describe('historyLabel', () => {
     expect(historyLabel(before, base())).toBe('One-use dice: as in Settings');
   });
 
+  it('names the optional class features rule', () => {
+    const on = base();
+    on.optionalClassFeatures = true;
+    expect(historyLabel(base(), on)).toBe('Optional class features: on');
+    expect(historyLabel(on, base())).toBe('Optional class features: off');
+  });
+
   it('labels an HP change specifically', () => {
     const next = base();
     next.play.currentHp = 3;

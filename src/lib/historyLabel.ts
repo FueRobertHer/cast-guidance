@@ -8,6 +8,7 @@ import {
   keptChanges,
   nameDiff,
   spellNames,
+  variantRuleWords,
 } from './docDiff';
 
 function equipmentLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
@@ -250,6 +251,8 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
     labels.push(`HP rule: ${next.hpMethod ?? 'average'}`);
   if (prev.oneUseDice !== next.oneUseDice)
     labels.push(`One-use dice: ${diceRuleWords(next.oneUseDice)}`);
+  if (variantRuleWords(prev) !== variantRuleWords(next))
+    labels.push(`Optional class features: ${variantRuleWords(next)}`);
 
   if (JSON.stringify(prev.abilities) !== JSON.stringify(next.abilities))
     labels.push('Ability scores');

@@ -17,6 +17,8 @@ export class Collector {
   readonly resolved: Array<{ prompt: ChoicePrompt; selected: string[] }> = [];
   readonly features: FeatureCard[] = [];
   readonly warnings: string[] = [];
+  /** Optional class features met at the character's levels, taken or not (see `VariantGate`). */
+  readonly classVariants = new Set<string>();
   /** uids of non-repeatable feats already collected, to prevent double-apply. */
   readonly collectedFeats = new Set<string>();
   /**

@@ -263,6 +263,7 @@ export function Component() {
   // The house rule for one-use dice: the app's, and the id of what it means here.
   const appDiceRule = useOneUseDice();
   const diceRuleWhy = useId();
+  const variantRuleWhy = useId();
 
   if (sheet === null || doc === null || registry === null) {
     return <p className="text-body text-ink-muted">Loading…</p>;
@@ -610,6 +611,43 @@ export function Component() {
             ))}
           </div>
         </fieldset>
+
+        {/* Only where a class has some at its level, or the rule is on already. */}
+        {(sheet.classVariantCount > 0 || doc.optionalClassFeatures === true) && (
+          <fieldset className="min-w-0" aria-describedby={variantRuleWhy}>
+            <legend className="mb-1.5 text-caption text-ink-muted">
+              Optional class features, such as Tasha's: your table's choice
+            </legend>
+            <div className={SEGMENTS}>
+              {(
+                [
+                  [false, 'Off'],
+                  [true, 'On'],
+                ] as const
+              ).map(([on, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={(doc.optionalClassFeatures === true) === on}
+                  onClick={() =>
+                    update((d) => {
+                      if (on) d.optionalClassFeatures = true;
+                      else delete d.optionalClassFeatures;
+                    })
+                  }
+                  className={SEGMENT}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p id={variantRuleWhy} className="mt-1.5 text-caption text-ink-muted">
+              {doc.optionalClassFeatures === true
+                ? 'Each one is a pick under its class. Until you pick, the class stays as printed.'
+                : 'The classes as printed, without their optional class features.'}
+            </p>
+          </fieldset>
+        )}
 
         {doc.classes.map((entry, idx) => {
           const faces = hdFacesOf(entry.ref);
