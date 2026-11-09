@@ -213,6 +213,22 @@ describe('diffDocs', () => {
     expect(changes.every((c) => c.structural)).toBe(true);
   });
 
+  it("names a character's own rule for one-use dice, apart from following Settings", () => {
+    const own = edited((d) => {
+      d.oneUseDice = 'before';
+    });
+    const changes = diffDocs(base(), own);
+    expect(changes.map((c) => c.line)).toEqual(['One-use dice: as in Settings → before the roll']);
+    expect(changes.every((c) => c.kind === 'diceRule' && c.structural)).toBe(true);
+    // An explicit "after" is a choice of its own: Settings may say before.
+    const after = edited((d) => {
+      d.oneUseDice = 'after';
+    });
+    expect(lines(own, after)).toEqual(['One-use dice: before the roll → after the roll']);
+    expect(lines(after, base())).toEqual(['One-use dice: after the roll → as in Settings']);
+    expect(sameContent(after, base())).toBe(false);
+  });
+
   it('shows the source when only the edition of a species changed', () => {
     const from = edited((d) => {
       d.race = { name: 'Elf', source: 'PHB' };

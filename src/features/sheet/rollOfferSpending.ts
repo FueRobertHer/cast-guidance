@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { endEffect } from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, PlayState } from '@/engine/types';
+import { useOneUseDice } from '@/lib/oneUseDice';
 import type { DocUpdater } from '@/stores/characterSession';
+import { cancelHeld } from '@/stores/heldRoll';
 import { rollOffersStore } from '@/stores/rollOffers';
 import { hpLimits } from './effectsInPlay';
 
@@ -12,6 +14,10 @@ import { hpLimits } from './effectsInPlay';
  * the entry chunk, so it reaches the sheet through the store, never by import.
  * Any change to hit points stops the toast's dice waiting: a roll made before
  * a hit is no longer the moment to add to.
+ *
+ * It also says when the open character's one-use dice are named: its own
+ * rule on Build, else the app's in Settings. A roll still waiting for them
+ * when the sheet closes, or the rule changes, is let go unseen.
  */
 export function useRollOfferSpending(
   doc: CharacterDoc | null,
@@ -66,6 +72,16 @@ export function useRollOfferSpending(
       if (rollOffersStore.getState().spend === spend) rollOffersStore.getState().setSpend(null);
     };
   }, []);
+
+  const app = useOneUseDice();
+  const before = doc !== null && (doc.oneUseDice ?? app) === 'before';
+  useEffect(() => {
+    rollOffersStore.getState().setBefore(before);
+    return () => {
+      rollOffersStore.getState().setBefore(false);
+      cancelHeld();
+    };
+  }, [before]);
 
   const hp = doc === null ? undefined : `${doc.play.currentHp}/${doc.play.tempHp}`;
   const seen = useRef(hp);

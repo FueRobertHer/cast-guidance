@@ -17,6 +17,7 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   block = false,
+  describedBy,
 }: {
   /** The group's accessible name ("Score method"). */
   label: string;
@@ -29,12 +30,15 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void;
   /** Stretch to the container's width, the segments sharing it equally. */
   block?: boolean;
+  /** The id of the words that say what the choice means. */
+  describedBy?: string;
 }) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: a group of toggle buttons, not a fieldset of inputs
     <div
       role="group"
       aria-label={label}
+      aria-describedby={describedBy}
       className={`${block ? 'flex flex-wrap' : 'inline-flex'} gap-0.5 rounded-control bg-surface-raised p-0.75`}
     >
       {options.map((option) => (

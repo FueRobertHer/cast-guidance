@@ -24,6 +24,7 @@ export type ChangeKind =
   | 'species'
   | 'background'
   | 'hpRule'
+  | 'diceRule'
   | 'feats'
   | 'abilities'
   | 'choices'
@@ -91,6 +92,7 @@ const FAMILY: Record<ChangeKind, string | undefined> = {
   species: undefined,
   background: undefined,
   hpRule: undefined,
+  diceRule: undefined,
   feats: undefined,
   other: undefined,
 };
@@ -259,6 +261,11 @@ export function effectChanges(
   }
   for (const [id, e] of was) if (!now.has(id)) out.ended.push(effectName(e));
   return out;
+}
+
+/** When a character's one-use dice are offered, in words: its own rule, or the app's. */
+export function diceRuleWords(rule: CharacterDoc['oneUseDice']): string {
+  return rule === undefined ? 'as in Settings' : `${rule} the roll`;
 }
 
 /** "+Shield, +Rope, −Longsword", at most three names then a count. */
@@ -508,6 +515,12 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
     out.push({
       kind: 'hpRule',
       line: `HP rule: ${hpRule(from)} → ${hpRule(to)}`,
+      structural: true,
+    });
+  if (from.oneUseDice !== to.oneUseDice)
+    out.push({
+      kind: 'diceRule',
+      line: `One-use dice: ${diceRuleWords(from.oneUseDice)} → ${diceRuleWords(to.oneUseDice)}`,
       structural: true,
     });
   if (!same(from.feats, to.feats)) {

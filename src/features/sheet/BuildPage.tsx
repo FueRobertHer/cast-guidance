@@ -1,5 +1,5 @@
 import { Check, ChevronRight, ChevronUp, Dices, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
 import { describeSwitch, editionFitChip } from '@/data5e/editionCompat';
@@ -33,6 +33,7 @@ import {
 } from '@/features/creator/pickerHints';
 import { classRemovalParts, firstClassShift, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
+import { ONE_USE_DICE_WHY, useOneUseDice } from '@/lib/oneUseDice';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { signed } from '@/lib/signed';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -259,6 +260,9 @@ export function Component() {
   // Everything below picks from the class files; a download that cannot
   // happen says so beside the list it leaves empty.
   const classPacks = useTypePacks('class');
+  // The house rule for one-use dice: the app's, and the id of what it means here.
+  const appDiceRule = useOneUseDice();
+  const diceRuleWhy = useId();
 
   if (sheet === null || doc === null || registry === null) {
     return <p className="text-body text-ink-muted">Loading…</p>;
@@ -525,6 +529,40 @@ export function Component() {
               </button>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="min-w-0" aria-describedby={diceRuleWhy}>
+          <legend className="mb-1.5 text-caption text-ink-muted">
+            Guidance and Bardic Inspiration: when this character adds a one-use die.
+          </legend>
+          <div className={SEGMENTS}>
+            {(
+              [
+                [undefined, 'As in Settings'],
+                ['after', 'After the roll'],
+                ['before', 'Before the roll'],
+              ] as const
+            ).map(([rule, label]) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={doc.oneUseDice === rule}
+                onClick={() =>
+                  update((d) => {
+                    if (rule === undefined) delete d.oneUseDice;
+                    else d.oneUseDice = rule;
+                  })
+                }
+                className={SEGMENT}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p id={diceRuleWhy} className="mt-1.5 text-caption text-ink-muted">
+            {doc.oneUseDice === undefined
+              ? `Settings says ${appDiceRule} the roll, for every character without its own.`
+              : ONE_USE_DICE_WHY[doc.oneUseDice]}
+          </p>
         </fieldset>
         {cueNotes.length > 0 && (
           <div className="flex flex-col gap-1 rounded-control p-3 ring-1 ring-line ring-inset">

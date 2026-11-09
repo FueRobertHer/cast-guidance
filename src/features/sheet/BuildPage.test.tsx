@@ -8,6 +8,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { setOneUseDice } from '@/lib/oneUseDice';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
@@ -220,6 +221,40 @@ describe('BuildPage rules-version switch (GAME-003)', () => {
     expect(detail).toContain('has a 2024 reprint you can switch to afterwards');
     expect(detail).toContain('Testfolk → Testfolk');
     expect(detail).toContain('carry over with no 2024 reprint');
+  });
+});
+
+describe('BuildPage one-use dice rule (the buffs canvas, Dice B)', () => {
+  afterEach(() => {
+    act(() => setOneUseDice('after'));
+  });
+
+  it('follows Settings until the character keeps its own, and says what each means', () => {
+    const { getDoc } = renderBuild();
+    const group = screen.getByRole('group', { name: /when this character adds a one-use die/ });
+    const pressed = () =>
+      within(group)
+        .getAllByRole('button')
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.textContent);
+    expect(pressed()).toEqual(['As in Settings']);
+    expect(group.textContent).toContain('Settings says after the roll');
+    act(() => setOneUseDice('before'));
+    expect(group.textContent).toContain('Settings says before the roll');
+
+    fireEvent.click(within(group).getByRole('button', { name: 'After the roll' }));
+    expect(getDoc().oneUseDice).toBe('after');
+    expect(pressed()).toEqual(['After the roll']);
+    expect(group.textContent).toContain('As written: both let you wait');
+
+    fireEvent.click(within(group).getByRole('button', { name: 'Before the roll' }));
+    expect(getDoc().oneUseDice).toBe('before');
+    expect(group.textContent).toContain('House rule: you name the die before you roll');
+
+    // Back to Settings leaves no field behind, as a character that never chose.
+    fireEvent.click(within(group).getByRole('button', { name: 'As in Settings' }));
+    expect('oneUseDice' in getDoc()).toBe(false);
+    expect(pressed()).toEqual(['As in Settings']);
   });
 });
 
