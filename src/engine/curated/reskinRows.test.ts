@@ -131,6 +131,7 @@ const WORLD: Record<string, DataEntity[]> = {
         gain('Death Knight Subclass|Death Knight|WoW|3'),
       ],
     },
+    { name: 'Ranger', source: 'XPHB', hd: { number: 1, faces: 10 }, classFeatures: [] },
     {
       name: 'Demon Hunter',
       source: 'WoW',
@@ -281,6 +282,7 @@ const BARBARIAN = { name: 'Barbarian', source: 'XPHB' };
 const SHAMAN = { name: 'Shaman', source: 'WoW' };
 const DEATH_KNIGHT = { name: 'Death Knight', source: 'WoW' };
 const DH = { name: 'Demon Hunter', source: 'WoW' };
+const RANGER = { name: 'Ranger', source: 'XPHB' };
 const MONK = { name: 'Monk', source: 'XPHB' };
 const PRIEST = { name: 'Priest', source: 'WoW' };
 const wow = (name: string) => ({ name, source: 'WoW' });
@@ -297,6 +299,8 @@ function build(
     background?: string;
     choices?: CharacterDoc['choices'];
     scores?: Partial<CharacterDoc['abilities']['base']>;
+    /** A class taken first, at these levels, before `cls`. */
+    after?: { cls: EntityRef; levels: number };
   } = {},
 ): CharacterDoc {
   const doc = newCharacterDoc('r', 'Reskin', 't');
@@ -305,7 +309,11 @@ function build(
     method: 'manual',
     base: { str: 14, dex: 14, con: 14, int: 10, wis: 16, cha: 16, ...opts.scores },
   };
+  const first = opts.after;
   doc.classes = [
+    ...(first !== undefined
+      ? [{ ref: first.cls, levels: first.levels, hp: Array<'avg'>(first.levels).fill('avg') }]
+      : []),
     { ref: cls, subclass: opts.subclass, levels, hp: Array<'avg'>(levels).fill('avg') },
   ];
   if (opts.background !== undefined) doc.background = { name: opts.background, source: 'TEST' };
@@ -357,9 +365,12 @@ describe('a class that reskins another', () => {
     });
   });
 
-  it('leaves a class it does not reskin alone', () => {
-    // Fighter rows read the Fighter's level: none for a Shaman.
-    expect(pool(derive(build(SHAMAN, 17)), 'action-surge')).toBeUndefined();
+  it('reads the level of the class that reskins, not of another class beside it', () => {
+    const sheet = derive(build(SHAMAN, 3, { after: { cls: WARRIOR, levels: 10 } }));
+    // Rage at Shaman 3, not at the Warrior's 10; Action Surge at the Warrior's 10.
+    expect(pool(sheet, 'rage')?.max).toBe(3);
+    expect(pool(sheet, 'second-wind')?.max).toBe(4);
+    expect(action(sheet, 'Second Wind')?.roll).toBe('1d10+10');
   });
 });
 
@@ -441,6 +452,13 @@ describe('Demon Hunter Soul Fragments', () => {
     expect(pool(at(3, 8), 'soul-fragments')?.max).toBe(1);
   });
 
+  it("counts the Demon Hunter's levels, not a Ranger's beside them", () => {
+    const sheet = derive(
+      build(DH, 3, { subclass: wow('Demon Hunter'), after: { cls: RANGER, levels: 17 } }),
+    );
+    expect(pool(sheet, 'soul-fragments')?.max).toBe(3);
+  });
+
   it('regains one by reaction without spending one', () => {
     expect(action(at(3), 'Soul Fragments')).toMatchObject({
       economy: 'reaction',
@@ -498,8 +516,9 @@ describe('Warrior of Mystic Brews', () => {
 
 describe('the WoW cleric and fighter options', () => {
   it("spends the Priest's Channel Divinity on Holy Bolt", () => {
-    const sheet = derive(build(PRIEST, 3, { subclass: wow('Discipline Domain') }));
-    expect(pool(sheet, 'channel-divinity')?.max).toBe(2);
+    // Three uses from level 6: the Priest's level is the Cleric's.
+    const sheet = derive(build(PRIEST, 6, { subclass: wow('Discipline Domain') }));
+    expect(pool(sheet, 'channel-divinity')?.max).toBe(3);
     expect(action(sheet, 'Holy Bolt')?.cost).toEqual({ resource: 'channel-divinity', amount: 1 });
   });
 

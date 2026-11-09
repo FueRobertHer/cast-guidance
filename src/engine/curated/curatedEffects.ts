@@ -1195,9 +1195,10 @@ export const CURATED: Record<string, CuratedFn> = {
   ),
   // Fragments gathered on a long rest: the Wisdom modifier's worth (at least one),
   // one more from level 13 and two from 17. A reaction when an enemy dies takes one
-  // back without spending any; what spends them is in `SPEND_LINKS`.
+  // back without spending any; what spends them is in `SPEND_LINKS`. The levels are
+  // the Demon Hunter's own, not a Ranger's or a Hunter's beside them.
   'soul fragments|demon hunter': (col, origin) => {
-    const level = classLevel(col, 'Ranger');
+    const level = classLevel(col, 'Demon Hunter');
     const fragments = { key: 'soul-fragments', label: 'Soul Fragments', resetOn: 'long' } as const;
     col.add({ kind: 'resource', ...fragments, max: 'abilityMod:wis', origin });
     if (level >= 13) {
