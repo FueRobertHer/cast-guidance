@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
-// The condition strip (DS "Conditions"): the active conditions under the sheet
-// header, each opening what it does and removable, and the picker behind
-// "+ Condition". Focus never drops to the page when a chip it was on goes.
+// The effect strip (the buffs canvas, Strip A): the conditions and the effects
+// in play under the sheet header, each opening what it does and removable, and
+// the Effects sheet behind the strip's end. Focus never drops to the page when
+// a chip it was on goes.
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import {
+  type ActiveEffect,
+  type CharacterDoc,
+  type DerivedSheet,
+  newCharacterDoc,
+} from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -43,13 +49,32 @@ afterEach(cleanup);
 
 type Conditions = CharacterDoc['play']['conditions'];
 
+/** What the strip reads of the sheet: immunities, and the HP maximum effects move. */
+const sheetWith = (immune: DerivedSheet['conditionImmunities']) =>
+  ({
+    conditionImmunities: immune,
+    maxHp: { value: 20, base: 20, parts: [], overridden: false },
+  }) as unknown as DerivedSheet;
+
 /** The strip over a character held in state, as the session store holds it. */
-function renderStrip(conditions: Conditions, { addable = false } = {}) {
+function renderStrip(
+  conditions: Conditions,
+  {
+    addable = false,
+    effects,
+    immune = [],
+  }: {
+    addable?: boolean;
+    effects?: ActiveEffect[];
+    immune?: DerivedSheet['conditionImmunities'];
+  } = {},
+) {
   function Harness() {
     const [doc, setDoc] = useState(() => {
       const d = newCharacterDoc('c1', 'Hero', 't');
       d.rulesVersion = '2024';
       d.play.conditions = conditions;
+      if (effects !== undefined) d.play.activeEffects = effects;
       return d;
     });
     const update = ((recipe: (draft: CharacterDoc) => void) =>
@@ -64,7 +89,11 @@ function renderStrip(conditions: Conditions, { addable = false } = {}) {
           Hero
         </h1>
         <p>HP {doc.play.currentHp ?? 'unset'}</p>
-        <ConditionStrip doc={doc} update={update} addable={addable} />
+        <p>
+          Effects{' '}
+          {(doc.play.activeEffects ?? []).map((e) => `${e.name}${e.off ? ' off' : ''}`).join(', ')}
+        </p>
+        <ConditionStrip doc={doc} sheet={sheetWith(immune)} update={update} addable={addable} />
       </>
     );
   }
@@ -72,7 +101,7 @@ function renderStrip(conditions: Conditions, { addable = false } = {}) {
 }
 
 const button = (name: string) => screen.getByRole('button', { name });
-const strip = () => within(screen.getByRole('list', { name: 'Active conditions' }));
+const strip = () => within(screen.getByRole('list', { name: 'Active effects' }));
 const closeSheet = async () => {
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -82,12 +111,12 @@ describe('the condition strip', () => {
   it('is not there with nothing active, except for the add chip on Play', () => {
     renderStrip([]);
     expect(screen.queryByRole('list')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Condition' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add an effect' })).toBeNull();
     cleanup();
 
     renderStrip([], { addable: true });
     expect(screen.queryByRole('list')).toBeNull();
-    expect(button('Condition').getAttribute('aria-haspopup')).toBe('dialog');
+    expect(button('Add an effect').getAttribute('aria-haspopup')).toBe('dialog');
   });
 
   it('lists what is active, exhaustion at its level, with the add chip after the list', () => {
@@ -97,8 +126,8 @@ describe('the condition strip', () => {
       .map((b) => b.textContent || b.getAttribute('aria-label'));
     expect(names).toEqual(['Poisoned', 'Remove Poisoned', 'Exhausted 2', 'Remove Exhaustion']);
     // The add chip is no active condition, so it is outside the list.
-    expect(strip().queryByRole('button', { name: 'Condition' })).toBeNull();
-    expect(button('Condition')).toBeTruthy();
+    expect(strip().queryByRole('button', { name: 'Add an effect' })).toBeNull();
+    expect(button('Add an effect')).toBeTruthy();
   });
 
   it('removes a condition, focus going to the chip in its place, then the one before, then the title', () => {
@@ -116,7 +145,7 @@ describe('the condition strip', () => {
   it('puts focus on the add chip once the last condition goes, on Play', () => {
     renderStrip([{ id: 'Poisoned' }], { addable: true });
     fireEvent.click(button('Remove Poisoned'));
-    expect(document.activeElement).toBe(button('Condition'));
+    expect(document.activeElement).toBe(button('Add an effect'));
   });
 
   it("switches a condition's effects off and back on from its sheet, keeping it listed", async () => {
@@ -160,15 +189,15 @@ describe('the condition strip', () => {
     expect(sheet.getByText('0 / 6')).toBeTruthy();
     await closeSheet();
     // Its chip is gone, so focus goes to the add chip.
-    await waitFor(() => expect(document.activeElement).toBe(button('Condition')));
+    await waitFor(() => expect(document.activeElement).toBe(button('Add an effect')));
   });
 });
 
 describe('exhaustion at its limits', () => {
   it('keeps its stepper buttons focusable at 0 and 6, saying they go no further', async () => {
     renderStrip([{ id: 'Exhaustion', level: 5 }], { addable: true });
-    fireEvent.click(button('Condition'));
-    const picker = within(await screen.findByRole('dialog', { name: 'Conditions' }));
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     const up = picker.getByRole('button', { name: 'Increase exhaustion' });
     fireEvent.click(up);
     // Not `disabled`, which in a browser takes focus off the button pressed
@@ -199,8 +228,8 @@ describe('while a condition sheet is over the attack chips', () => {
     renderStrip([{ id: 'Poisoned' }], { addable: true });
     expect(held()).toBe(false);
 
-    fireEvent.click(button('Condition'));
-    await screen.findByRole('dialog', { name: 'Conditions' });
+    fireEvent.click(button('Add an effect'));
+    await screen.findByRole('dialog', { name: 'Effects' });
     expect(held()).toBe(true);
 
     const closing = Date.now();
@@ -213,8 +242,8 @@ describe('while a condition sheet is over the attack chips', () => {
 
   it('keeps holding across one sheet closing and another opening', async () => {
     renderStrip([{ id: 'Poisoned' }], { addable: true });
-    fireEvent.click(button('Condition'));
-    await screen.findByRole('dialog', { name: 'Conditions' });
+    fireEvent.click(button('Add an effect'));
+    await screen.findByRole('dialog', { name: 'Effects' });
     await closeSheet();
     fireEvent.click(button('Poisoned'));
     await screen.findByRole('dialog', { name: 'Poisoned' });
@@ -242,8 +271,8 @@ describe('while a condition sheet is over the attack chips', () => {
 describe('the condition picker', () => {
   it('holds every condition as a toggle that says whether it is on, and the exhaustion stepper', async () => {
     renderStrip([{ id: 'Poisoned' }], { addable: true });
-    fireEvent.click(button('Condition'));
-    const picker = within(await screen.findByRole('dialog', { name: 'Conditions' }));
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     expect(picker.getAllByRole('button', { pressed: false })).toHaveLength(13);
     expect(picker.getByRole('button', { name: 'Poisoned', pressed: true })).toBeTruthy();
     expect(picker.getByRole('button', { name: 'Blinded', pressed: false })).toBeTruthy();
@@ -254,7 +283,7 @@ describe('the condition picker', () => {
     fireEvent.click(picker.getByRole('button', { name: 'Increase exhaustion' }));
     // The strip follows at once, behind the sheet (which hides it from the
     // accessibility tree while it is open, hence `hidden`).
-    const behind = within(screen.getByRole('list', { name: 'Active conditions', hidden: true }));
+    const behind = within(screen.getByRole('list', { name: 'Active effects', hidden: true }));
     expect(
       behind
         .getAllByRole('button', { name: /^Remove /, hidden: true })
@@ -263,7 +292,7 @@ describe('the condition picker', () => {
     expect(behind.getByRole('button', { name: 'Exhausted 1', hidden: true })).toBeTruthy();
 
     await closeSheet();
-    await waitFor(() => expect(document.activeElement).toBe(button('Condition')));
+    await waitFor(() => expect(document.activeElement).toBe(button('Add an effect')));
   });
 
   it("names every control, Stunned's included, on the strip and in the picker", async () => {
@@ -271,8 +300,145 @@ describe('the condition picker', () => {
     expect(namelessControls()).toEqual([]);
     expect(button('Stunned').getAttribute('aria-haspopup')).toBe('dialog');
     expect(button('Remove Stunned')).toBeTruthy();
-    fireEvent.click(button('Condition'));
-    await screen.findByRole('dialog', { name: 'Conditions' });
+    fireEvent.click(button('Add an effect'));
+    await screen.findByRole('dialog', { name: 'Effects' });
     expect(namelessControls()).toEqual([]);
+  });
+});
+
+const bless: ActiveEffect = {
+  id: 'bless',
+  name: 'Bless',
+  parts: [{ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'save'] } }],
+  lasts: { minutes: 1, concentration: true },
+};
+const shield: ActiveEffect = {
+  id: 'sof',
+  name: 'Shield of Faith',
+  parts: [{ kind: 'acBonus', amount: 2 }],
+  lasts: { minutes: 10, concentration: true },
+};
+const effectsLine = () => screen.getByText(/^Effects/, { selector: 'p' }).textContent;
+
+describe('effects in play on the strip', () => {
+  it('lists them after the conditions, each with its die, and ends one from its x', () => {
+    renderStrip([{ id: 'Poisoned' }], { effects: [bless, shield] });
+    expect(
+      strip()
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label') ?? b.textContent),
+    ).toEqual([
+      'Poisoned',
+      'Remove Poisoned',
+      '+d4 Bless',
+      'Remove Bless',
+      'Shield of Faith',
+      'Remove Shield of Faith',
+    ]);
+    fireEvent.click(button('Remove Bless'));
+    expect(effectsLine()).toBe('Effects Shield of Faith');
+    // Focus goes to the chip now in its place.
+    expect(document.activeElement).toBe(button('Remove Shield of Faith'));
+  });
+
+  it('says what one does and how long it lasts, switches it off, and removes it', async () => {
+    renderStrip([], { effects: [bless] });
+    fireEvent.click(button('+d4 Bless'));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Bless' }));
+    expect(sheet.getByText('Add 1d4 to attack rolls and saving throws')).toBeTruthy();
+    expect(sheet.getByText('Lasts up to 1 minute, while its caster concentrates.')).toBeTruthy();
+    const apply = sheet.getByRole('button', { name: /^Apply its effects/ });
+    fireEvent.click(apply);
+    expect(apply.getAttribute('aria-pressed')).toBe('false');
+    expect(effectsLine()).toBe('Effects Bless off');
+    await closeSheet();
+    expect(strip().getByRole('button', { name: '+d4 Bless off' })).toBeTruthy();
+
+    fireEvent.click(button('+d4 Bless off'));
+    const again = within(await screen.findByRole('dialog', { name: 'Bless' }));
+    fireEvent.click(again.getByRole('button', { name: 'Remove it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(effectsLine()).toBe('Effects ');
+    expect(screen.queryByRole('list')).toBeNull();
+  });
+
+  it('says when another of the same name counts instead', async () => {
+    renderStrip([], { effects: [bless, { ...bless, id: 'bless2' }] });
+    fireEvent.click(strip().getAllByRole('button', { name: '+d4 Bless' })[1] as HTMLElement);
+    const sheet = within(await screen.findByRole('dialog', { name: 'Bless' }));
+    expect(
+      sheet.getByText('Another Bless counts instead: effects of one name never add up.'),
+    ).toBeTruthy();
+  });
+
+  it('lists them under Helping you in the Effects sheet, where a tap ends one', async () => {
+    renderStrip([], { effects: [bless, shield], addable: true });
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
+    expect(picker.getByRole('heading', { name: 'Helping you' })).toBeTruthy();
+    fireEvent.click(picker.getByRole('button', { name: '+d4 Bless', pressed: true }));
+    expect(effectsLine()).toBe('Effects Shield of Faith');
+    expect(picker.queryByRole('button', { name: '+d4 Bless' })).toBeNull();
+  });
+
+  it('counts the chips out of sight on its end, which still opens the Effects sheet', async () => {
+    // A 300px strip whose end starts at 250px: chips 120px wide every 128px,
+    // so the third and fourth are past the end.
+    const rect = (left: number, width: number) =>
+      ({ left, right: left + width, top: 0, bottom: 32, width, height: 32 }) as DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === 'LI') {
+          const at = [...(this.parentElement?.children ?? [])].indexOf(this);
+          return rect(at * 128, 120);
+        }
+        if (this.getAttribute('aria-haspopup') === 'dialog' && this.closest('li') === null) {
+          return rect(250, 50);
+        }
+        return rect(0, 300);
+      });
+    try {
+      renderStrip([{ id: 'Poisoned' }, { id: 'Prone' }], { effects: [bless, shield] });
+      const end = button('Effects, 2 more not shown');
+      expect(end.textContent).toBe('2 more');
+      fireEvent.click(end);
+      expect(await screen.findByRole('dialog', { name: 'Effects' })).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('a condition the character is immune to', () => {
+  const periapt = [{ condition: 'Poisoned', origin: 'Periapt of Proof against Poison' }];
+
+  it('is refused in the picker with the reason, and nothing is added', async () => {
+    renderStrip([], { addable: true, immune: periapt });
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
+    const chip = picker.getByRole('button', { name: 'Poisoned, you are immune' });
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(chip);
+    await waitFor(() =>
+      expect(picker.getByRole('status').textContent).toMatch(
+        /^You cannot be poisoned: Periapt of Proof against Poison\..* Nothing was added\.$/,
+      ),
+    );
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByRole('list', { hidden: true })).toBeNull();
+  });
+
+  it('shows one already on as held off, with the reason in place of the switch', async () => {
+    renderStrip([{ id: 'Poisoned' }], { immune: periapt });
+    const chip = strip().getByRole('button', {
+      name: 'Poisoned off, held off by Periapt of Proof against Poison',
+    });
+    fireEvent.click(chip);
+    const sheet = within(await screen.findByRole('dialog', { name: 'Poisoned' }));
+    expect(sheet.queryByRole('button', { name: /^Apply its effects/ })).toBeNull();
+    expect(
+      sheet.getByText(/^Off while you are immune: Periapt of Proof against Poison\./),
+    ).toBeTruthy();
   });
 });

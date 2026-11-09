@@ -367,7 +367,12 @@ export function Component() {
             the height the header publishes. Not on Build, which edits the
             character rather than plays it. */}
         {doc !== null && !onBuild && (
-          <ConditionStrip doc={doc} update={state.update} addable={tab === ''} />
+          <ConditionStrip
+            doc={doc}
+            sheet={state.sheet}
+            update={state.update}
+            addable={tab === ''}
+          />
         )}
         {id !== undefined && (
           <HistoryDrawer

@@ -14,6 +14,12 @@ export interface BreakdownSheetProps {
   onOverride?: (value: number | null) => void;
   /** Extra controls for this value, shown under the breakdown. */
   children?: ReactNode;
+  /**
+   * The value the build alone makes, without the effects in play. An override
+   * replaces that, and the effects still count on top, so it is what the
+   * override field offers: typing the total with Bless in it would count it twice.
+   */
+  built?: DerivedValue;
 }
 
 /** The labeled amounts behind a derived number. `children` adds rows to the same list. */
@@ -56,8 +62,10 @@ function BreakdownSheetContent({
   trigger,
   onOverride,
   children,
+  built,
 }: BreakdownSheetProps) {
   const [draft, setDraft] = useState('');
+  const computed = (built ?? value).base;
 
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
@@ -78,7 +86,7 @@ function BreakdownSheetContent({
           <BreakdownParts parts={value.parts}>
             {value.overridden && (
               <div className="mt-1 flex justify-between gap-3 border-line border-t pt-2 text-guide">
-                <dt>Manual override (computed: {value.base})</dt>
+                <dt>Manual override (computed: {computed})</dt>
                 <dd className="font-semibold tabular-nums">= {value.value}</dd>
               </div>
             )}
@@ -103,7 +111,7 @@ function BreakdownSheetContent({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={`Override ${title}`}
-                placeholder={`Override (${value.base})`}
+                placeholder={`Override (${computed})`}
                 className={`${fieldClass} min-w-0 flex-1`}
               />
               <Button type="submit" variant="brand">

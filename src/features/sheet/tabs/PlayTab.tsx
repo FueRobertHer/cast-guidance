@@ -1,14 +1,17 @@
 import {
   AlertTriangle,
   Brain,
+  ChevronsUp,
   HeartCrack,
   HeartPlus,
   Hourglass,
+  Info,
   Minus,
   Moon,
   Plus,
   RefreshCw,
   Shield,
+  ShieldCheck,
   Star,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -17,7 +20,8 @@ import type { RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
-import type { ActionEconomy, PlayState, SpellcastingBlock } from '@/engine/types';
+import { defensesInForce } from '@/engine/playRules';
+import type { ActionEconomy, DerivedSheet, PlayState, SpellcastingBlock } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
@@ -31,6 +35,7 @@ import { D20Icon } from '@/ui/D20Icon';
 import { askConfirm, askText } from '@/ui/dialogs';
 import { FeatureInfoSheet, findFeatureInfo } from '@/ui/FeatureInfoSheet';
 import { Tip, useTip } from '@/ui/Hint';
+import { Lift } from '@/ui/Lift';
 import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
@@ -54,6 +59,7 @@ import {
 } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
+import { DefensesChip } from '../Defenses';
 import {
   conditionWear,
   effectLines,
@@ -62,6 +68,15 @@ import {
   rollWear,
   useIgnoreOnce,
 } from '../d20Tests';
+import {
+  attackLift,
+  conditionsInForce,
+  defendedTypes,
+  defensesRaisedBy,
+  defenseView,
+  immunityTo,
+  raisedBy,
+} from '../effectsInPlay';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RollEffectCue } from '../RollEffectCue';
@@ -128,11 +143,24 @@ const FLUSH = 'rounded-card bg-surface shadow-card ring-1 ring-line ring-inset';
  */
 const TILE = 'flex min-h-19 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2';
 const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
+/** A tile's number an effect raised: the ring around it, room below for its mark. */
+const STAT_LIFT = 'fx-lift-room rounded-control';
 /** A cell a condition can wear: its `ChipFace` lays it out as `TILE` does the others. */
 const WORN_TILE = 'relative flex min-h-19 min-w-0 flex-col';
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
+
+/** A cue line's look for an effect's own line (`DerivedSheet.cues`), by tone. */
+const CUE_TONE: Record<
+  DerivedSheet['cues'][number]['tone'],
+  { Icon: typeof Info; className: string }
+> = {
+  help: { Icon: ChevronsUp, className: 'text-heal' },
+  ward: { Icon: ShieldCheck, className: 'text-ward' },
+  warn: { Icon: AlertTriangle, className: 'text-guide' },
+  info: { Icon: Info, className: 'text-ink-muted' },
+};
 
 /**
  * How long HP has to stay put before it is said (A11Y-002). A run of taps on
@@ -155,6 +183,8 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
     let dmg = -delta;
     const fromTemp = Math.min(play.tempHp, dmg);
     play.tempHp -= fromTemp;
+    // Spent, they belong to no effect: ending Heroism later takes nobody's.
+    if (play.tempHp === 0) delete play.tempHpFrom;
     dmg -= fromTemp;
     play.currentHp = Math.max(0, play.currentHp - dmg);
     if (play.currentHp === 0) play.concentratingOn = undefined; // dropping to 0 breaks concentration
@@ -237,7 +267,7 @@ function PendingSpellRow({
 }
 
 export function Component() {
-  const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
+  const { sheet, built: builtSheet, doc, update } = useOutletContext<CharacterSheetState>();
   const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
   // Keyed by character, so a settling HP line is only ever about the one it
   // was for; leaving the tab or the character drops one still settling.
@@ -272,16 +302,73 @@ export function Component() {
 
   // What the character's conditions do to their own rolls, speed and hit
   // point maximum (engine/conditions.ts): applied, said in a cue where each
-  // roll starts, and never more than guidance (see RollEffectCue).
-  const conditions = play.conditions;
+  // roll starts, and never more than guidance (see RollEffectCue). One the
+  // character is immune to is held off, as one switched off is.
+  const immune = { immune: sheet.conditionImmunities };
+  const conditions = conditionsInForce(play.conditions, sheet.conditionImmunities);
   const effectsFor = (test: Parameters<typeof d20Effects>[2]) =>
-    d20Effects(conditions, doc.rulesVersion, test);
-  const maxHp = conditionMaxHp(sheet.maxHp.value, conditions, doc.rulesVersion);
-  const speed = conditionSpeed(sheet.speedWalk.value, conditions, doc.rulesVersion);
+    d20Effects(conditions, doc.rulesVersion, test, immune);
+  const maxHp = conditionMaxHp(sheet.maxHp.value, conditions, doc.rulesVersion, immune);
+  // Haste doubles what is left once exhaustion has taken its share.
+  const speed = conditionSpeed(sheet.speedWalk.value, conditions, doc.rulesVersion, {
+    ...immune,
+    multiplier: sheet.speedMultiplier,
+  });
   const attackEffects = effectsFor({ kind: 'attack' });
   const initiativeEffects = effectsFor({ kind: 'initiative' });
   const deathEffects = effectsFor({ kind: 'save' });
-  const against = attacksAgainst(conditions, doc.rulesVersion);
+  const against = attacksAgainst(conditions, doc.rulesVersion, immune);
+
+  // The same numbers for the build alone, without the effects in play, so the
+  // ones an effect raised wear its ring (the buffs canvas, Wear A).
+  const built = builtSheet ?? sheet;
+  const builtImmune = { immune: built.conditionImmunities };
+  const builtConditions = conditionsInForce(play.conditions, built.conditionImmunities);
+  const builtSpeed = conditionSpeed(built.speedWalk.value, builtConditions, doc.rulesVersion, {
+    ...builtImmune,
+    multiplier: built.speedMultiplier,
+  });
+  const builtMaxHp = conditionMaxHp(
+    built.maxHp.value,
+    builtConditions,
+    doc.rulesVersion,
+    builtImmune,
+  );
+  const acUp = raisedBy(sheet.ac, built.ac);
+  const initiativeUp = raisedBy(sheet.initiative, built.initiative);
+  // A condition on that only an effect holds off (Freedom of Movement while
+  // grappled): what raised the number when no part of it says so.
+  const heldOffBy = [
+    ...new Set(
+      play.conditions
+        .filter((c) => c.ignored !== true)
+        .flatMap((c) =>
+          immunityTo(c.id, built.conditionImmunities).length > 0
+            ? []
+            : immunityTo(c.id, sheet.conditionImmunities),
+        ),
+    ),
+  ];
+  const orHeldOff = (names: string[]) => (names.length > 0 ? names : heldOffBy);
+  const speedUp =
+    speed.value > builtSpeed.value
+      ? orHeldOff(
+          raisedBy(sheet.speedWalk, built.speedWalk).concat(
+            sheet.speedMultiplier.factor > 1 ? sheet.speedMultiplier.sources : [],
+          ),
+        )
+      : [];
+  const maxHpUp =
+    maxHp.value > builtMaxHp.value ? orHeldOff(raisedBy(sheet.maxHp, built.maxHp)) : [];
+  // What could change the damage the character takes: theirs, and their conditions'.
+  const defenses = defensesInForce(sheet, conditions, doc.rulesVersion);
+  const builtDefenses = defensesInForce(built, builtConditions, doc.rulesVersion);
+  const defensesUp = defensesRaisedBy(
+    defenses,
+    builtDefenses,
+    sheet.conditionImmunities,
+    built.conditionImmunities,
+  );
   /** A d20 test in the attack group: the weapon and spell attack chips. */
   const rollAttack = (modifier: number, label: string) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
@@ -360,7 +447,7 @@ export function Component() {
   const restoreUse = (restore: ActionRestore) =>
     update((d) => applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
   // What the active conditions stop you doing — shown as warnings, never blocks.
-  const limits = conditionLimits(play.conditions);
+  const limits = conditionLimits(conditions);
   /** The conditions on the attack chips, as the cue over them says them. */
   const attackChipWear = rollWear(
     conditions,
@@ -469,8 +556,11 @@ export function Component() {
   const applyFromHpSheet = (mode: HpMode, amount: number) => {
     if (mode === 'damage') return hpDelta(-amount);
     if (mode === 'heal') return hpDelta(amount);
-    // Temp HP doesn't stack: the new value replaces the old.
-    update((d) => void (d.play.tempHp = amount));
+    // Temp HP doesn't stack: the new value replaces the old, and is nobody's effect's.
+    update((d) => {
+      d.play.tempHp = amount;
+      delete d.play.tempHpFrom;
+    });
     sayHp({ currentHp: play.currentHp, tempHp: amount });
   };
   const setUsed = (key: string, used: number) =>
@@ -517,21 +607,25 @@ export function Component() {
             "+5 temp" had no room and wrapped at 375px. */}
         <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
           <span className="text-ink-muted text-overline uppercase">Hit points</span>
-          <button
-            type="button"
-            aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
-            aria-haspopup="dialog"
-            title="Temporary hit points"
-            className={`-my-2 -mr-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
-              play.tempHp > 0
-                ? 'bg-ward-soft font-bold text-ward'
-                : 'font-semibold text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
-            }`}
-            onClick={(event) => openHpSheet('temp', event.currentTarget)}
-          >
-            <Shield size={14} aria-hidden="true" />
-            {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
-          </button>
+          {/* Defenses sit with what they protect, in Temp HP's own shape. */}
+          <span className="-mr-2 flex flex-wrap items-center justify-end">
+            <DefensesChip view={defenseView(sheet, defenses)} raisedBy={defensesUp} />
+            <button
+              type="button"
+              aria-label={play.tempHp > 0 ? `+${play.tempHp} temporary hit points` : undefined}
+              aria-haspopup="dialog"
+              title="Temporary hit points"
+              className={`-my-2 inline-flex min-h-tap items-center gap-1 whitespace-nowrap rounded-full border-8 border-transparent bg-clip-padding [--tap-inset:0.5rem] px-2 text-caption tabular-nums transition-colors duration-120 ${
+                play.tempHp > 0
+                  ? 'bg-ward-soft font-bold text-ward'
+                  : 'font-semibold text-ink-muted ring-1 ring-line-strong ring-inset hover:text-ink'
+              }`}
+              onClick={(event) => openHpSheet('temp', event.currentTarget)}
+            >
+              <Shield size={14} aria-hidden="true" />
+              {play.tempHp > 0 ? `+${play.tempHp} temp` : 'Temp HP'}
+            </button>
+          </span>
         </div>
         {/* Wraps where the row cannot fit (large text), the heal pair kept
             at the right, rather than push the page sideways (A11Y-003). */}
@@ -591,12 +685,20 @@ export function Component() {
                 push the heal pair onto a line of its own at 320px. */}
             <div className="text-stat tabular-nums min-[360px]:text-stat-hero">
               {play.currentHp}{' '}
-              <span className="whitespace-nowrap text-title-sheet text-ink-muted">
-                / {maxHp.value}
-                {sheet.maxHp.overridden ? ' •' : ''}
-              </span>
+              <Lift
+                on={maxHpUp.length > 0}
+                className={`rounded-chip ${maxHpUp.length > 0 ? 'px-1' : ''}`}
+              >
+                <span className="whitespace-nowrap text-title-sheet text-ink-muted">
+                  / {maxHp.value}
+                  {sheet.maxHp.overridden ? ' •' : ''}
+                </span>
+              </Lift>
               {/* Spaced in the text, as a name drops one at a span's edge. */}{' '}
-              <span className="sr-only">hit points</span>
+              <span className="sr-only">
+                hit points
+                {maxHpUp.length > 0 && `, maximum raised by ${maxHpUp.join(', ')}`}
+              </span>
             </div>
             {maxHp.source !== undefined && (
               <div className="text-caption text-guide">max halved</div>
@@ -687,6 +789,8 @@ export function Component() {
           open={hpSheet.open}
           mode={hpSheet.mode}
           hp={{ currentHp: play.currentHp, tempHp: play.tempHp, maxHp: maxHp.value }}
+          defenses={defenses}
+          types={defendedTypes(defenses)}
           onApply={applyFromHpSheet}
           onOpenChange={(open) => setHpSheet((s) => ({ ...s, open }))}
           openedFrom={hpSheetFrom}
@@ -744,6 +848,7 @@ export function Component() {
           <BreakdownSheet
             title="Max HP"
             value={sheet.maxHp}
+            built={built.maxHp}
             onOverride={(v) =>
               update((d) => {
                 if (v === null) delete d.overrides.maxHp;
@@ -856,9 +961,13 @@ export function Component() {
       {/* Core tiles: one strip, its cells divided by `line` hairlines. */}
       <section className={`@container overflow-hidden text-center ${FLUSH}`}>
         <div className="grid grid-cols-2 @min-[18rem]:grid-cols-4">
+          {/* A raised number is ringed alone, its label outside the ring and
+              its mark between the two (the buffs canvas). Tap Armor Class or
+              Speed for the sum. */}
           <BreakdownSheet
             title={`Armor Class (${sheet.acFormulaLabel})`}
             value={sheet.ac}
+            built={built.ac}
             onOverride={(v) =>
               update((d) => {
                 if (v === null) delete d.overrides.ac;
@@ -867,11 +976,33 @@ export function Component() {
             }
             trigger={
               <button type="button" className={TILE}>
-                <div className="text-stat tabular-nums">{sheet.ac.value}</div>
-                <div className={TILE_LABEL}>Armor Class{sheet.ac.overridden ? ' •' : ''}</div>
+                <Lift on={acUp.length > 0} className={STAT_LIFT}>
+                  <span className="text-stat tabular-nums">{sheet.ac.value}</span>
+                </Lift>
+                <div className={TILE_LABEL}>
+                  Armor Class{sheet.ac.overridden ? ' •' : ''}
+                  {acUp.length > 0 && (
+                    <span className="sr-only">, raised by {acUp.join(', ')}</span>
+                  )}
+                </div>
               </button>
             }
-          />
+          >
+            {sheet.acNotCounted.length > 0 ? (
+              <ul aria-label="Not counted" className="flex flex-col gap-1 text-caption">
+                {sheet.acNotCounted.map((n) => (
+                  <li key={`${n.label}:${n.why}`} className="text-ink-muted">
+                    Not counted: {n.label} ({n.value}),{' '}
+                    {n.why === 'lower'
+                      ? 'lower than the AC that counts'
+                      : n.why === 'floor'
+                        ? 'a floor under an AC already higher'
+                        : 'the override stands in for it'}
+                  </li>
+                ))}
+              </ul>
+            ) : undefined}
+          </BreakdownSheet>
           <button
             type="button"
             onClick={() => {
@@ -892,43 +1023,90 @@ export function Component() {
               rolls={initiativeRoll.rolls}
               showing={initiativeRoll.showing}
             >
-              <span className="cx-ink block text-roll text-stat tabular-nums">
-                {signed(sheet.initiative.value)}
+              <span className="block">
+                <Lift on={initiativeUp.length > 0} className={STAT_LIFT}>
+                  <span className="cx-ink text-roll text-stat tabular-nums">
+                    {signed(sheet.initiative.value)}
+                  </span>
+                </Lift>
               </span>
               <span className={`cx-ink flex items-center justify-center gap-0.75 ${TILE_LABEL}`}>
                 Initiative <D20Icon size={14} className="shrink-0" />
+                {initiativeUp.length > 0 && (
+                  <span className="sr-only">, raised by {initiativeUp.join(', ')}</span>
+                )}
               </span>
             </ChipFace>
           </button>
-          <div
-            className={`${WORN_TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
-          >
-            <ChipFace
-              surface="cell"
-              wear={conditionWear(conditions, speed.sources)}
-              rolls={0}
-              showing={false}
-            >
-              <span className="block text-stat tabular-nums">
-                {speed.value}
-                <small className="cx-ink ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
-                  ft
-                </small>
-                {speed.value !== sheet.speedWalk.value && (
-                  <span className="cx-ink ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
-                    <span className="sr-only">, down from </span>
-                    {sheet.speedWalk.value}
+          <BreakdownSheet
+            title="Speed"
+            value={{ ...sheet.speedWalk, value: speed.value }}
+            built={built.speedWalk}
+            onOverride={(v) =>
+              update((d) => {
+                if (v === null) delete d.overrides['speed.walk'];
+                else d.overrides['speed.walk'] = { value: v };
+              })
+            }
+            trigger={
+              <button
+                type="button"
+                className={`${WORN_TILE} border-line border-t @min-[18rem]:border-t-0 @min-[18rem]:border-l`}
+              >
+                <ChipFace
+                  surface="cell"
+                  wear={conditionWear(conditions, speed.sources)}
+                  rolls={0}
+                  showing={false}
+                >
+                  <span className="block text-stat tabular-nums">
+                    <Lift on={speedUp.length > 0} className={`${STAT_LIFT} items-baseline`}>
+                      {speed.value}
+                      <small className="cx-ink ml-0.5 font-semibold text-[0.875rem] text-ink-muted tracking-normal">
+                        ft
+                      </small>
+                    </Lift>
+                    {speed.value < sheet.speedWalk.value && (
+                      <span className="cx-ink ml-1.5 align-middle font-normal text-body text-ink-muted line-through">
+                        <span className="sr-only">, down from </span>
+                        {sheet.speedWalk.value}
+                      </span>
+                    )}
                   </span>
+                  <span className={`cx-ink block ${TILE_LABEL}`}>
+                    Speed{sheet.speedWalk.overridden ? ' •' : ''}
+                    {speed.sources.length > 0 && (
+                      <span
+                        className={`cx-ink ${speed.value < sheet.speedWalk.value ? 'text-guide' : ''}`}
+                      >
+                        {' '}
+                        · {speed.sources.join(', ')}
+                      </span>
+                    )}
+                    {speedUp.length > 0 && (
+                      <span className="sr-only">, raised by {speedUp.join(', ')}</span>
+                    )}
+                  </span>
+                </ChipFace>
+              </button>
+            }
+          >
+            {speed.value !== sheet.speedWalk.value || sheet.otherSpeeds.length > 0 ? (
+              <div className="flex flex-col gap-1 text-caption">
+                {speed.value !== sheet.speedWalk.value && (
+                  <p>
+                    Walking {sheet.speedWalk.value} ft., then {speed.sources.join(', ')}:{' '}
+                    <strong className="tabular-nums">{speed.value} ft.</strong>
+                  </p>
                 )}
-              </span>
-              <span className={`cx-ink block ${TILE_LABEL}`}>
-                Speed
-                {speed.sources.length > 0 && (
-                  <span className="cx-ink text-guide"> · {speed.sources.join(', ')}</span>
-                )}
-              </span>
-            </ChipFace>
-          </div>
+                {sheet.otherSpeeds.map((o) => (
+                  <p key={o.mode} className="text-ink-muted">
+                    <span className="capitalize">{o.mode}</span> {o.value} ft.: {o.origin}
+                  </p>
+                ))}
+              </div>
+            ) : undefined}
+          </BreakdownSheet>
           <div className={`${TILE} border-line border-t border-l @min-[18rem]:border-t-0`}>
             <div className="text-stat tabular-nums">{signed(sheet.profBonus.value)}</div>
             <div className={TILE_LABEL}>Proficiency</div>
@@ -941,8 +1119,29 @@ export function Component() {
           only states. */}
       {(effectLines(initiativeEffects).length > 0 ||
         noteLines(initiativeEffects).length > 0 ||
-        against.length > 0) && (
+        against.length > 0 ||
+        sheet.cues.length > 0) && (
         <section className="-mt-2 flex flex-col gap-1">
+          {/* What the effects in play say with nothing to work out: a help, a
+              ward, a cost, a fact. Each names what says it. */}
+          {sheet.cues.length > 0 && (
+            <ul aria-label="From effects in play" className="flex flex-col gap-0.5 px-1">
+              {sheet.cues.map((cue) => {
+                const { Icon, className } = CUE_TONE[cue.tone];
+                return (
+                  <li
+                    key={`${cue.origin}:${cue.text}`}
+                    className={`flex gap-1.5 text-caption ${className}`}
+                  >
+                    <Icon size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+                    <span>
+                      {cue.text}: {cue.origin}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <RollEffectCue
             heading="Initiative"
             lines={effectLines(initiativeEffects)}
@@ -1209,75 +1408,85 @@ export function Component() {
           {limitWarning("Can't take actions", limits.noActions)}
           {attackCue()}
           <div className={`@container ${openListClass}`}>
-            {sheet.attacks.map((a) => (
-              <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
-                <div className="min-w-0 flex-1 basis-18">
-                  {(() => {
-                    const info = weaponInfoEntries(
-                      registry,
-                      a.label,
-                      a.properties,
-                      doc.rulesVersion,
-                    );
-                    return info !== undefined ? (
-                      <FeatureInfoSheet
-                        title={a.label}
-                        entries={info}
-                        trigger={
-                          <button
-                            type="button"
-                            className={`min-h-6 max-w-full text-left text-body-strong ${NAME} ${RULES} underline-offset-4`}
-                          >
-                            {a.label}
-                          </button>
-                        }
-                      />
-                    ) : (
-                      <div className={`text-body-strong ${NAME}`}>{a.label}</div>
-                    );
-                  })()}
-                  <div className={`text-caption text-ink-muted ${NAME}`}>{attackSubtitle(a)}</div>
-                </div>
-                {/* Drops under the name rather than squeezing it: a versatile
+            {sheet.attacks.map((a) => {
+              const before = built.attacks.find((b) => b.label === a.label);
+              const lift = attackLift(a, before);
+              return (
+                <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
+                  <div className="min-w-0 flex-1 basis-18">
+                    {(() => {
+                      const info = weaponInfoEntries(
+                        registry,
+                        a.label,
+                        a.properties,
+                        doc.rulesVersion,
+                      );
+                      return info !== undefined ? (
+                        <FeatureInfoSheet
+                          title={a.label}
+                          entries={info}
+                          trigger={
+                            <button
+                              type="button"
+                              className={`min-h-6 max-w-full text-left text-body-strong ${NAME} ${RULES} underline-offset-4`}
+                            >
+                              {a.label}
+                            </button>
+                          }
+                        />
+                      ) : (
+                        <div className={`text-body-strong ${NAME}`}>{a.label}</div>
+                      );
+                    })()}
+                    <div className={`text-caption text-ink-muted ${NAME}`}>{attackSubtitle(a)}</div>
+                  </div>
+                  {/* Drops under the name rather than squeezing it: a versatile
                     weapon with a damage rider carries four chips, which is one
                     more than a narrow phone fits on a line. */}
-                <div className={`${ROW_ACTIONS} gap-1.5`}>
-                  <RollChip
-                    expr={`1d20${fmt(a.toHit.value)}`}
-                    display={signed(a.toHit.value)}
-                    label={`${a.label} attack`}
-                    variant="d20"
-                    roller={rollAttack(a.toHit.value, `${a.label} attack`)}
-                    wear={attackChipWear}
-                    onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
-                  />
-                  <RollChip
-                    expr={a.damage}
-                    label={damageLabel(a.label, a.damageType)}
-                    variant="damage"
-                  />
-                  {a.versatileDamage !== undefined && (
+                  <div className={`${ROW_ACTIONS} gap-1.5`}>
                     <RollChip
-                      expr={a.versatileDamage}
-                      label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
-                      variant="damage"
+                      expr={`1d20${fmt(a.toHit.value)}`}
+                      display={signed(a.toHit.value)}
+                      label={`${a.label} attack`}
+                      variant="d20"
+                      roller={rollAttack(a.toHit.value, `${a.label} attack`)}
+                      wear={attackChipWear}
+                      raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
+                      onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                     />
-                  )}
-                  {/* Each rider rolls on its own: the totals are resisted
+                    <RollChip
+                      expr={a.damage}
+                      label={damageLabel(a.label, a.damageType)}
+                      variant="damage"
+                      raisedBy={lift.damage ? lift.damageBy : []}
+                    />
+                    {a.versatileDamage !== undefined && (
+                      <RollChip
+                        expr={a.versatileDamage}
+                        label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
+                        variant="damage"
+                        raisedBy={lift.versatile ? lift.damageBy : []}
+                      />
+                    )}
+                    {/* Each rider rolls on its own: the totals are resisted
                       separately, so one combined number would be a lie the
                       moment the target is immune to fire. */}
-                  {a.extraDamage.map((x) => (
-                    <RollChip
-                      key={`${x.dice}:${x.damageType ?? ''}`}
-                      expr={x.dice}
-                      display={`+${x.dice}`}
-                      label={damageLabel(a.label, x.damageType)}
-                      variant="damage"
-                    />
-                  ))}
+                    {/* Keyed by what adds it too: Enlarge's d4 beside another
+                      effect's d4 are two chips. */}
+                    {a.extraDamage.map((x, i) => (
+                      <RollChip
+                        key={`${x.dice}:${x.damageType ?? ''}:${x.label ?? ''}`}
+                        expr={x.dice}
+                        display={`+${x.dice}`}
+                        label={damageLabel(a.label, x.damageType)}
+                        variant="damage"
+                        raisedBy={lift.riders[i] === true ? [x.label ?? 'an effect in play'] : []}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

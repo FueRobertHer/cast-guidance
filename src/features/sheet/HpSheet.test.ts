@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { type AmountTap, addTap, amountOf, hpSheetCopy, typeDigit } from './HpSheet';
+import {
+  type AmountTap,
+  addTap,
+  amountOf,
+  askedFor,
+  damageAfter,
+  hpSheetCopy,
+  splitDefenses,
+  typeDigit,
+  withHolding,
+} from './HpSheet';
 
 const hp = { currentHp: 19, tempHp: 5, maxHp: 27 };
 
@@ -167,5 +177,78 @@ describe('hpSheetCopy: temp HP', () => {
     const none = { ...hp, tempHp: 0 };
     expect(hpSheetCopy('temp', '0', none).ready).toBe(false);
     expect(hpSheetCopy('temp', '', none).line).toMatch(/absorbs damage first/);
+  });
+});
+
+describe('damageAfter', () => {
+  const none = { resist: [], immune: [], vulnerable: [] };
+  const defenses = {
+    resist: [{ damageType: 'fire', origin: 'Ring of Fire Resistance' }],
+    immune: [{ damageType: 'poison', origin: 'Periapt' }],
+    vulnerable: [{ damageType: 'radiant', origin: 'Curse' }],
+  };
+
+  it('takes the amount as it is, with nothing to say, when no defense reaches it', () => {
+    expect(damageAfter(15, null, false, none)).toEqual({ taken: 15, why: '' });
+    expect(damageAfter(15, 'cold', false, defenses)).toEqual({ taken: 15, why: '' });
+    expect(damageAfter(0, 'fire', true, defenses)).toEqual({ taken: 0, why: '' });
+  });
+
+  it('halves for a save first, then resistance, rounding down each time', () => {
+    expect(damageAfter(15, null, true, none)).toEqual({ taken: 7, why: '15 damage: half is 7.' });
+    expect(damageAfter(15, 'fire', true, defenses)).toEqual({
+      taken: 3,
+      why: '15 fire: half is 7, then Ring of Fire Resistance halves it to 3.',
+    });
+  });
+
+  it('doubles for a vulnerability, and stops all of it for an immunity', () => {
+    expect(damageAfter(7, 'radiant', false, defenses)).toEqual({
+      taken: 14,
+      why: '7 radiant: Curse doubles it to 14.',
+    });
+    expect(damageAfter(20, 'poison', true, defenses)).toEqual({
+      taken: 0,
+      why: '20 poison: Periapt stops all of it.',
+    });
+  });
+});
+
+describe('a defense with a note', () => {
+  const defenses = {
+    resist: [
+      { damageType: 'Slashing', origin: 'Stoneskin', note: 'nonmagical' },
+      { damageType: 'fire', origin: 'Tiefling' },
+    ],
+    immune: [{ damageType: 'all', origin: 'Wish', note: 'once' }],
+    vulnerable: [{ damageType: 'radiant', origin: 'Curse' }],
+  };
+  const { held, asked } = splitDefenses(defenses);
+
+  it('is kept out of what the keypad applies by itself', () => {
+    expect(held).toEqual({
+      resist: [{ damageType: 'fire', origin: 'Tiefling' }],
+      immune: [],
+      vulnerable: defenses.vulnerable,
+    });
+    expect(asked.map((a) => [a.kind, a.damageType, a.origin, a.note])).toEqual([
+      ['resist', 'slashing', 'Stoneskin', 'nonmagical'],
+      ['immune', 'all', 'Wish', 'once'],
+    ]);
+  });
+
+  it('is asked about for a hit of its type, or any for one that covers all', () => {
+    expect(askedFor(asked, 'slashing').map((a) => a.origin)).toEqual(['Stoneskin', 'Wish']);
+    expect(askedFor(asked, 'fire').map((a) => a.origin)).toEqual(['Wish']);
+    expect(askedFor(asked, null).map((a) => a.origin)).toEqual(['Wish']);
+  });
+
+  it('halves a hit only once the player says it holds', () => {
+    const now = askedFor(asked, 'slashing');
+    const stoneskin = now.find((a) => a.origin === 'Stoneskin')?.key ?? '';
+    expect(damageAfter(10, 'slashing', false, withHolding(held, now, new Set())).taken).toBe(10);
+    expect(
+      damageAfter(10, 'slashing', false, withHolding(held, now, new Set([stoneskin]))),
+    ).toEqual({ taken: 5, why: '10 slashing: Stoneskin halves it to 5.' });
   });
 });

@@ -5,6 +5,7 @@ import type { RollKind, RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
+import { Lift } from './Lift';
 
 export interface RollChipProps {
   /** Dice expression, e.g. "2d6+3". Invalid expressions render as plain text. */
@@ -39,6 +40,11 @@ export interface RollChipProps {
    * tone; every other chip has no use for one.
    */
   wear?: ChipWear | undefined;
+  /**
+   * The effects in play that raised this roll (Rage on a damage chip): the
+   * chip wears their ring and lift mark, and its name says who raised it.
+   */
+  raisedBy?: readonly string[];
 }
 
 /**
@@ -82,6 +88,7 @@ export function RollChip({
   roller,
   inline,
   wear,
+  raisedBy = [],
 }: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
   const [rolls, setRolls] = useState(0);
@@ -125,7 +132,8 @@ export function RollChip({
       (display ?? expr)
     );
 
-  return (
+  const raised = raisedBy.length > 0;
+  const chip = (
     <button
       type="button"
       onClick={onRoll}
@@ -148,6 +156,16 @@ export function RollChip({
           {text}
         </ChipFace>
       )}
+      {raised && <span className="sr-only">, raised by {raisedBy.join(', ')}</span>}
     </button>
+  );
+  // Always wrapped in a row, so the ring can draw in as an effect arrives; a
+  // chip in running text never wears one.
+  return inline ? (
+    chip
+  ) : (
+    <Lift on={raised} className="rounded-chip">
+      {chip}
+    </Lift>
   );
 }

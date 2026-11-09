@@ -99,8 +99,8 @@ async function afflictAChip(page: Page) {
   const id = await createBlankCharacter(page);
   await gotoSheetTab(page, id, 'Play');
 
-  await page.getByRole('button', { name: 'Condition', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await page.getByRole('button', { name: 'Add an effect', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Effects' });
   await picker.getByRole('button', { name: 'Poisoned', exact: true }).click();
   await picker.getByRole('button', { name: 'Paralyzed', exact: true }).click();
   await page.keyboard.press('Escape');
@@ -120,8 +120,8 @@ async function afflictTheOtherRolls(page: Page) {
   const id = await createBlankCharacter(page);
   await gotoSheetTab(page, id, 'Play');
 
-  await page.getByRole('button', { name: 'Condition', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await page.getByRole('button', { name: 'Add an effect', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Effects' });
   await picker.getByRole('button', { name: 'Grappled', exact: true }).click();
   await picker.getByRole('button', { name: 'Frightened', exact: true }).click();
   await page.keyboard.press('Escape');

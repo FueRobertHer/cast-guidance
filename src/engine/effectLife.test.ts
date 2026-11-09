@@ -8,6 +8,7 @@ import {
   newTurn,
   restEndings,
   setConcentration,
+  setEffectOff,
 } from './effectLife';
 import { type ActiveEffect, newCharacterDoc, type PlayState } from './types';
 
@@ -220,6 +221,35 @@ describe('endEffect', () => {
     expect(endEffect(p, 'missing', limits(p))).toEqual({ ended: [], maxHpChange: 0 });
     endEffect(p, 'aid5', limits(p));
     expect(p.activeEffects).toEqual([null, odd]);
+  });
+});
+
+describe('setEffectOff', () => {
+  it('brings current HP under the maximum when Aid goes off, and heals nothing when it comes back', () => {
+    const p = play();
+    applyEffect(p, aid(5), limits(p));
+    expect(p.currentHp).toBe(35);
+    p.currentHp = 45;
+    expect(setEffectOff(p, 'aid5', true, limits(p))).toEqual({ ended: [], maxHpChange: -5 });
+    expect(p.currentHp).toBe(40);
+    expect(p.activeEffects?.[0]?.off).toBe(true);
+    expect(setEffectOff(p, 'aid5', false, limits(p))).toEqual({ ended: [], maxHpChange: 5 });
+    expect(p.currentHp).toBe(40);
+    // Back on, the flag is deleted rather than stored as false.
+    expect(p.activeEffects?.[0]).not.toHaveProperty('off');
+    expect(names(p)).toEqual(['Aid']);
+  });
+
+  it('changes nothing for an effect already that way, or one not in play', () => {
+    const p = play();
+    applyEffect(p, bless(), limits(p));
+    expect(setEffectOff(p, 'bless', false, limits(p))).toEqual({ ended: [], maxHpChange: 0 });
+    expect(p.activeEffects?.[0]).not.toHaveProperty('off');
+    expect(setEffectOff(p, 'missing', true, limits(p))).toEqual({ ended: [], maxHpChange: 0 });
+    setEffectOff(p, 'bless', true, limits(p));
+    expect(setEffectOff(p, 'bless', true, limits(p))).toEqual({ ended: [], maxHpChange: 0 });
+    // Off is not ended: the concentration it holds stays.
+    expect(p.concentratingOn?.label).toBe('Bless');
   });
 });
 

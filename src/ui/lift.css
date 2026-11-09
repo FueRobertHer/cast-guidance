@@ -1,0 +1,79 @@
+/*
+ * A number an effect in play raised (Lift.tsx): a heal-green ring around its
+ * control and a lift mark at the bottom right, where a condition's own mark
+ * (top right) never goes. Whole pixels on every side of the mark's icon, so it
+ * cannot land half a pixel off.
+ */
+.fx-lift {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.fx-lift-on::after {
+  content: "";
+  position: absolute;
+  inset: var(--lift-inset, -3px);
+  border: 1.5px solid var(--cg-heal);
+  border-radius: inherit;
+  pointer-events: none;
+}
+/*
+ * A number over its label (a stat tile): room inside the ring around the
+ * number, and under it for the mark, so the mark sits between the two and
+ * never on the label. Only while ringed, so a sheet with nothing in play is
+ * laid out as it always was.
+ */
+.fx-lift-room.fx-lift-on {
+  margin-bottom: 6px;
+  padding-inline: 6px;
+}
+.fx-lift-mark {
+  position: absolute;
+  /* 5px past the ring, wherever a control puts it (--lift-inset). */
+  right: calc(var(--lift-inset, -3px) - 5px);
+  bottom: calc(var(--lift-inset, -3px) - 5px);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--cg-heal);
+  color: var(--cg-surface);
+  pointer-events: none;
+}
+.fx-lift-on :focus-visible {
+  outline-offset: 5px;
+}
+.fx-lift-arrive::after {
+  animation: fx-ring-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fx-lift-arrive .fx-lift-mark {
+  animation: fx-mark-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes fx-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes fx-mark-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-lift-arrive::after,
+  .fx-lift-arrive .fx-lift-mark {
+    animation: none;
+  }
+}

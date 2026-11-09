@@ -215,8 +215,8 @@ test.describe('axe: pages and overlays', () => {
     const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Play');
-    await page.getByRole('button', { name: 'Condition', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await page.getByRole('button', { name: 'Add an effect', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Effects' });
     await opened(page, picker);
     await picker.getByRole('button', { name: 'Poisoned', exact: true }).click();
     await picker.getByRole('button', { name: 'Increase exhaustion' }).click();
@@ -227,7 +227,7 @@ test.describe('axe: pages and overlays', () => {
     await scanState(page, 'condition-picker');
     await closeWithEscape(page, picker);
 
-    const strip = page.getByRole('list', { name: 'Active conditions' });
+    const strip = page.getByRole('list', { name: 'Active effects' });
     await expect(strip.getByRole('button', { name: 'Exhausted 1' })).toBeVisible();
     await animationsSettled(page);
     await scanState(page, 'sheet-conditions');
@@ -255,8 +255,8 @@ test.describe('axe: pages and overlays', () => {
     const id = await importCaster(page, { filled: true });
 
     await gotoSheetTab(page, id, 'Play');
-    await page.getByRole('button', { name: 'Condition', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await page.getByRole('button', { name: 'Add an effect', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Effects' });
     await opened(page, picker);
     for (const name of ['Poisoned', 'Prone', 'Restrained']) {
       const toggle = picker.getByRole('button', { name, exact: true });

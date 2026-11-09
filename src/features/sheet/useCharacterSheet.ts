@@ -16,6 +16,13 @@ import { type CharacterDataState, useCharacterData } from './useCharacterData';
 export interface CharacterSheetState {
   doc: CharacterDoc | null;
   sheet: DerivedSheet | null;
+  /**
+   * The sheet without the effects in play (Bless, Rage): what the build alone
+   * makes, for telling which numbers an effect raised. The same object as
+   * `sheet` while none are in play; absent where a test leaves it out, which
+   * reads as the same.
+   */
+  built?: DerivedSheet | null;
   loadStatus: CharacterLoadStatus;
   missing: boolean;
   error: string | null;
@@ -71,10 +78,14 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   const dataReady = characterData.status === 'ready';
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
-  const sheet = useMemo(() => {
+  const sheets = useMemo(() => {
     if (doc === null || registry === null || !dataReady) return null;
-    return deriveSheet(doc, engineContextFor(registry));
+    const context = engineContextFor(registry);
+    const sheet = deriveSheet(doc, context);
+    const inPlay = (doc.play.activeEffects ?? []).length > 0;
+    return { sheet, built: inPlay ? deriveSheet(doc, context, { active: false }) : sheet };
   }, [doc, registry, rev, dataReady]);
+  const sheet = sheets?.sheet ?? null;
 
   // While a character is still being built (HP never manually touched),
   // currentHp tracks the derived max — so leveling up keeps you at full.
@@ -99,6 +110,7 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
   return {
     doc,
     sheet,
+    built: sheets?.built ?? null,
     loadStatus: routeLoadStatus,
     missing: routeLoadStatus === 'missing',
     error: requestedId === id ? error : null,

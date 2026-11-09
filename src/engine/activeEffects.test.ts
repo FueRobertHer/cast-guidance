@@ -444,6 +444,10 @@ describe('deriveSheet with effects in play', () => {
     expect(row(base, 'Longsword').damage).toBe('1d8+3');
     expect(row(sheet, 'Longsword').damage).toBe('1d8+5');
     expect(row(sheet, 'Shortbow').damage).toBe(row(base, 'Shortbow').damage);
+    // The row names what added to its damage, for the sheet to say.
+    expect(row(sheet, 'Longsword').damageFrom).toEqual(['Rage']);
+    expect(row(base, 'Longsword')).not.toHaveProperty('damageFrom');
+    expect(row(sheet, 'Shortbow')).not.toHaveProperty('damageFrom');
   });
 
   it('adds a weapon bonus to weapons, never to spell attacks, and a spell bonus the other way', () => {

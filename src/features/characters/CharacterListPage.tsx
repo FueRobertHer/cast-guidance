@@ -352,7 +352,9 @@ export function Component() {
         if (phase !== 'done' && hasMissingData(missingCharacterData(c, ctx))) continue;
         const sheet = deriveSheet(c, ctx);
         // The maximum in play, as the sheet shows it (2014 exhaustion halves it).
-        const maxHp = conditionMaxHp(sheet.maxHp.value, c.play.conditions, c.rulesVersion).value;
+        const maxHp = conditionMaxHp(sheet.maxHp.value, c.play.conditions, c.rulesVersion, {
+          immune: sheet.conditionImmunities,
+        }).value;
         map.set(c.id, { hp: c.play.currentHp, maxHp });
       } catch {
         // skip a character that can't derive (e.g. missing homebrew)

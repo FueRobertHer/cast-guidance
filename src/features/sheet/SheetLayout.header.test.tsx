@@ -364,8 +364,8 @@ describe('SheetLayout header (design system)', () => {
 });
 
 describe('SheetLayout condition strip (design system)', () => {
-  const activeList = () => screen.queryByRole('list', { name: 'Active conditions' });
-  const addChip = () => screen.queryByRole('button', { name: 'Condition' });
+  const activeList = () => screen.queryByRole('list', { name: 'Active effects' });
+  const addChip = () => screen.queryByRole('button', { name: 'Add an effect' });
 
   it('keeps active conditions in the header on every tab, and off Build', () => {
     sheetState.set({ conditions: [{ id: 'Poisoned' }] });
