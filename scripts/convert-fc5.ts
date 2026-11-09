@@ -7,27 +7,78 @@
  *   bun scripts/convert-fc5.ts spells.xml items.xml
  *   bun scripts/convert-fc5.ts compendium.xml --out converted/   # also write the JSON
  *   bun scripts/convert-fc5.ts compendium.xml --notes            # every note, not just counts
+ *   bun scripts/convert-fc5.ts srd/*.xml --compare               # field by field against 5etools
+ *   bun scripts/convert-fc5.ts srd/*.xml --compare --tag latest  # against the newest release
  *
- * Nothing here checks against installed game data, so no entry is left out as
- * "already installed". Game data never lands in the repo: point it at files
- * outside it.
+ * `--compare` fetches a 5etools release (the pinned one unless `--tag` says
+ * otherwise) and sets each converted entry beside the official entry of the
+ * same name and edition (`src/convert/compareOfficial.ts`). For an SRD file
+ * that shows which fields the converter leaves as text, and which it reads
+ * differently. Nothing is cached or written.
+ *
+ * Nothing here leaves an entry out as "already installed", so every entry
+ * converts. Game data never lands in the repo: point it at files outside it.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  compareWithOfficial,
+  type FieldTally,
+  type KindComparison,
+  type OfficialData,
+  spellClassesFromLookup,
+} from '../src/convert/compareOfficial';
 import { convertXmlText } from '../src/convert/index';
+import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
+import { normalizeDataset } from '../src/data5e/normalize';
+import { GithubTagSource } from '../src/data5e/source';
+import { fetchRelease, resolveLatestTag } from './data-release';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     out: { type: 'string' },
     notes: { type: 'boolean', default: false },
+    compare: { type: 'boolean', default: false },
+    tag: { type: 'string' },
   },
 });
 
-if (positionals.length === 0) {
-  console.error('Usage: bun scripts/convert-fc5.ts <file.xml>... [--out dir] [--notes]');
+function die(message: string): never {
+  console.error(`convert-fc5: ${message}`);
   process.exit(2);
+}
+
+if (positionals.length === 0) {
+  die(
+    'usage: bun scripts/convert-fc5.ts <file.xml>... [--out dir] [--notes] [--compare [--tag t]]',
+  );
+}
+if (values.tag !== undefined && !values.compare) die('--tag only applies with --compare');
+
+/** Examples printed per field and outcome. */
+const EXAMPLES = 3;
+
+let official: OfficialData | undefined;
+if (values.compare) {
+  let tag = values.tag ?? DATA_TAG;
+  try {
+    if (tag === 'latest') tag = await resolveLatestTag();
+    if (!isCompatibleTag(tag)) die(`${tag} is not compatible with this build (pinned ${DATA_TAG})`);
+    const [release, lookup] = await Promise.all([
+      fetchRelease(tag),
+      new GithubTagSource(tag).fetchFile('generated/gendata-spell-source-lookup.json'),
+    ]);
+    const registry = normalizeDataset(release.files);
+    official = {
+      byType: (type) => registry.byType(type),
+      spellClasses: spellClassesFromLookup(lookup),
+    };
+    console.log(`Comparing with 5etools ${tag}.`);
+  } catch (err) {
+    die(`could not fetch 5etools ${tag}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 let failed = false;
@@ -81,6 +132,10 @@ for (const file of positionals) {
       console.log(`    [${n.status}] ${n.kind} ${n.name}: ${n.reasons.join('; ')}`);
   }
 
+  if (official !== undefined) {
+    for (const kind of compareWithOfficial(json, official, EXAMPLES)) printComparison(kind);
+  }
+
   if (values.out !== undefined) {
     mkdirSync(values.out, { recursive: true });
     const target = path.join(values.out, `${path.parse(fileName).name}.json`);
@@ -89,3 +144,44 @@ for (const file of positionals) {
   }
 }
 process.exit(failed ? 1 : 0);
+
+function printComparison(c: KindComparison): void {
+  console.log(`\n  ${c.kind}: ${c.matched} of ${c.converted} have an official entry`);
+  if (c.unmatched.length > 0) {
+    console.log(`    none for, e.g.: ${c.unmatched.join(', ')}`);
+  }
+  const off = (f: FieldTally) => f.source + f.differs + f.missing + f.extra;
+  const rules = c.fields.filter((f) => !f.searchTag && off(f) > 0);
+  if (rules.length > 0) {
+    console.log(`    ${row('field', 'same', 'source', 'differs', 'missing', 'extra')}`);
+  }
+  for (const f of rules) {
+    console.log(`    ${row(f.field, f.same, f.source, f.differs, f.missing, f.extra)}`);
+    for (const [label, counts] of [
+      ['lacks', f.lacks],
+      ['adds', f.adds],
+    ] as const) {
+      if (counts.length === 0) continue;
+      const shown = counts.slice(0, 6).map((v) => `${v.value} ×${v.count}`);
+      console.log(`        ${label}: ${shown.join(', ')}${counts.length > 6 ? ', …' : ''}`);
+    }
+    for (const outcome of ['missing', 'differs', 'source', 'extra'] as const) {
+      for (const line of f.examples[outcome]) console.log(`        ${outcome}: ${line}`);
+    }
+  }
+  const agree = c.fields.filter((f) => !f.searchTag && off(f) === 0);
+  if (agree.length > 0) {
+    console.log(`    same on every match: ${agree.map((f) => f.field).join(', ')}`);
+  }
+  const tags = c.fields.filter((f) => f.searchTag);
+  if (tags.length > 0) {
+    const tally = (f: FieldTally) =>
+      `${f.field} ${f.same} same, ${f.source + f.differs} differ, ${f.missing} missing, ${f.extra} extra`;
+    console.log(`    search tags, not read by the app: ${tags.map(tally).join('; ')}`);
+  }
+}
+
+function row(field: string, ...counts: Array<string | number>): string {
+  const widths = [6, 8, 9, 9, 7];
+  return `${field.padEnd(24)}${counts.map((n, i) => String(n).padStart(widths[i] ?? 7)).join('')}`;
+}

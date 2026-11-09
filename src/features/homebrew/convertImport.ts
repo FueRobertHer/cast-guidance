@@ -9,20 +9,12 @@
  * by name and rules edition.
  */
 import { type ConversionResult, convertXmlText } from '@/convert';
+import { OFFICIAL_TYPES } from '@/convert/official';
 import type { ConvertedKind, InstalledCheck } from '@/convert/types';
-import type { EntityRegistry, EntityType } from '@/data5e/normalize';
+import type { EntityRegistry } from '@/data5e/normalize';
 import { getRegistry } from '@/data5e/registry';
 import { editionOf } from '@/data5e/rulesVersion';
 import { dataStatusStore } from '@/stores/dataStatus';
-
-/** The registry types an entry of each converted kind could already be. */
-const INSTALLED_TYPES: Record<ConvertedKind, readonly EntityType[]> = {
-  spell: ['spell'],
-  item: ['item', 'baseitem', 'itemGroup'],
-  feat: ['feat'],
-  background: ['background'],
-  race: ['race'],
-};
 
 /** Official entries by `kind|name|edition`, lowercased, built per kind on first ask. */
 export function installedCheck(reg: EntityRegistry): InstalledCheck {
@@ -31,7 +23,7 @@ export function installedCheck(reg: EntityRegistry): InstalledCheck {
     let keys = byKind.get(kind);
     if (keys === undefined) {
       keys = new Set();
-      for (const type of INSTALLED_TYPES[kind]) {
+      for (const type of OFFICIAL_TYPES[kind]) {
         for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
           if (typeof e.name === 'string') keys.add(`${e.name.toLowerCase()}|${editionOf(e)}`);
         }

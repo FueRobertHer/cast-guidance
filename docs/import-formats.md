@@ -80,3 +80,36 @@ bun scripts/convert-fc5.ts path/to/file.xml --notes
 
 It prints the counts, the grouped reasons and the warnings; `--out dir` writes
 the converted JSON. Real files stay outside the repo.
+
+```bash
+bun scripts/convert-fc5.ts path/to/srd/*.xml --compare
+```
+
+`--compare` fetches a 5etools release (the pinned one, or `--tag`) and sets
+each converted entry beside the official entry of the same kind, name and
+edition (`src/convert/compareOfficial.ts`). Fight Club's SRD files hold
+entries 5etools has too, so this is an answer key for the converter, free and
+exact. Per field it counts entries that agree, differ, are missing the field
+(the official entry has it, the converted one does not: a rule left as text)
+or have it extra. A list that differs is also counted by value, so one class
+missing from 70 spells reads as one line.
+
+Read alike before comparing: key order and the order of plain lists do not
+count, nor does case in text with a space in it; a code or a single word keeps
+its case (`V` is not `v`). A value that would agree but for the book a
+reference names, or for naming none (`M` against `M|XPHB`), counts as
+`source`, apart from both agreeing and differing, since the engine reads some
+references with their book. Higher-level text is compared by presence only.
+
+Not compared: fields about the printing or the 5etools site (pages, sources,
+loot tables, sound, cross-links, display flags), the text itself (`entries`,
+`additionalEntries`, `sizeEntry`), and a race's lore (`age`,
+`heightAndWeight`). 5etools' search tags (`miscTags`, a spell's
+`damageInflict` and so on) are tallied apart, since the app reads none of
+them.
+
+A difference is not always the converter's: the Fight Club SRD files have
+their own errors (Flail marked simple, Divine Smite as transmutation), so check
+the raw entry before changing a reader. Fight Club names a subrace as a race
+(`Dwarf, Hill`), and 5etools builds specific magic items (`Battleaxe +1`) from
+generic variants, so neither finds a match.
