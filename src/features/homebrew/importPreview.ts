@@ -18,6 +18,7 @@
 import { type Entity, uidOf } from '@/data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
 import type { HomebrewFileRow } from '@/db/db';
+import { bookKey } from '@/db/homebrewBooks';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import type { CharacterDoc } from '@/engine/types';
@@ -232,16 +233,77 @@ export interface HomebrewPreview {
   affectedCharacters: { id: string; name: string }[];
   officialCoverage: OfficialCoverage;
   notes: string[];
+  /** For a file stored a book at a time: each book, in the file's order. */
+  books?: BookChoice[];
+}
+
+/** One book of a file stored a book at a time, and what importing it would do. */
+export interface BookChoice {
+  /** The prepared row's id. */
+  id: string;
+  full: string;
+  counts: Record<string, number>;
+  /**
+   * `new`: not here yet. `same`: here exactly as it is, so nothing is stored.
+   * `replaces`: a copy stored before, which this one replaces.
+   */
+  status: 'new' | 'same' | 'replaces';
+  /** For `replaces`: the file the stored copy came from. */
+  replacesFrom?: string;
 }
 
 export interface HomebrewPreviewInput {
+  /** The file, or for one stored a book at a time, the whole of it. */
   row: HomebrewFileRow;
+  /** For a file stored a book at a time: one row per book. */
+  books?: readonly HomebrewFileRow[];
   bytes: number;
+  /** The largest file of its kind the import takes. Defaults to the JSON limit. */
+  limitBytes?: number;
   /** Every homebrew file here, enabled or not (`homebrewRepo.listSafe().files`). */
   existing: readonly HomebrewFile[];
   /** Null when the registry could not be read (no game data yet). */
   official: OfficialIndex | null;
   characters: readonly CharacterDoc[];
+}
+
+/** How a file here is named to the player: one book of a file goes by the book. */
+function fileLabel(f: { fileName: string; book?: string }): string {
+  return f.book ?? f.fileName;
+}
+
+/**
+ * What each book would do, and the files here that are copies of the
+ * import's own books (stored before, or the same). Those are not other files
+ * to clash with: importing replaces them, or they are this file already.
+ */
+function bookChoices(
+  books: readonly HomebrewFileRow[],
+  existing: readonly HomebrewFile[],
+): { choices: BookChoice[]; ownCopies: Set<string> } {
+  const byBook = new Map<string, HomebrewFile[]>();
+  for (const f of existing) {
+    const key = f.book === undefined ? undefined : bookKey(f);
+    if (key === undefined) continue;
+    const copies = byBook.get(key);
+    if (copies === undefined) byBook.set(key, [f]);
+    else copies.push(f);
+  }
+  const ownCopies = new Set<string>();
+  const existingIds = new Set(existing.map((f) => f.id));
+  const choices = books.map((b): BookChoice => {
+    const copies = byBook.get(bookKey(b) ?? '') ?? [];
+    for (const c of copies) ownCopies.add(c.id);
+    const same = existingIds.has(b.id);
+    if (same) ownCopies.add(b.id);
+    const replaced = copies.find((c) => c.id !== b.id);
+    const base = { id: b.id, full: b.book ?? fileLabel(b), counts: b.counts };
+    if (same) return { ...base, status: 'same' };
+    if (replaced !== undefined)
+      return { ...base, status: 'replaces', replacesFrom: replaced.fileName };
+    return { ...base, status: 'new' };
+  });
+  return { choices, ownCopies };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -314,7 +376,7 @@ function firstFileBy(
         const key = keyOf(type, e);
         if (key === undefined) continue;
         const k = `${type}:${key}`;
-        if (!out.has(k)) out.set(k, { id: f.id, fileName: f.fileName });
+        if (!out.has(k)) out.set(k, { id: f.id, fileName: fileLabel(f) });
       }
     }
   }
@@ -326,24 +388,43 @@ const uidKey = (_: EntityType, e: Entity) => (named(e) === undefined ? undefined
 export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPreview {
   const { row, existing, official } = input;
   const ownSources = new Set(row.sourceIds.map(lower));
-  const others = existing.filter((f) => f.id !== row.id);
+  const books = input.books === undefined ? undefined : bookChoices(input.books, existing);
+  const others = existing.filter((f) => f.id !== row.id && books?.ownCopies.has(f.id) !== true);
   // Merge order, so the first file found for an identity is the one that wins it.
   const enabled = others.filter((f) => f.enabled).sort(compareMergeOrder);
   const disabled = others.filter((f) => !f.enabled).sort(compareMergeOrder);
   const notes: string[] = [];
 
-  const dup = existing.find((f) => f.id === row.id);
-  const duplicateOf =
-    dup === undefined
-      ? undefined
-      : { id: dup.id, fileName: dup.fileName, addedAt: dup.addedAt, enabled: dup.enabled };
+  let duplicateOf: HomebrewPreview['duplicateOf'];
+  if (books === undefined) {
+    const dup = existing.find((f) => f.id === row.id);
+    if (dup !== undefined) {
+      duplicateOf = {
+        id: dup.id,
+        fileName: fileLabel(dup),
+        addedAt: dup.addedAt,
+        enabled: dup.enabled,
+      };
+    }
+  } else if (books.choices.length > 0 && books.choices.every((b) => b.status === 'same')) {
+    // Every book is here as it is: the file is, a book at a time.
+    const chosenIds = new Set(books.choices.map((b) => b.id));
+    const stored = existing.filter((f) => chosenIds.has(f.id));
+    duplicateOf = {
+      id: stored[0]?.id ?? '',
+      fileName: row.fileName,
+      // A fold, not a spread: one argument per book.
+      addedAt: stored.reduce((min, f) => Math.min(min, f.addedAt), Number.POSITIVE_INFINITY),
+      enabled: stored.every((f) => f.enabled),
+    };
+  }
 
   const sourceCollisions = row.sourceIds
     .map((sourceId) => ({
       sourceId,
       files: others
         .filter((f) => f.sourceIds.some((s) => lower(s) === lower(sourceId)))
-        .map((f) => ({ id: f.id, fileName: f.fileName, enabled: f.enabled })),
+        .map((f) => ({ id: f.id, fileName: fileLabel(f), enabled: f.enabled })),
     }))
     .filter((c) => c.files.length > 0);
 
@@ -453,7 +534,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
         }
       }
       if (entries.length > 0)
-        satisfiesCopies.push({ file: { id: f.id, fileName: f.fileName }, entries });
+        satisfiesCopies.push({ file: { id: f.id, fileName: fileLabel(f) }, entries });
     }
   }
 
@@ -501,7 +582,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     fileName: row.fileName,
     counts: row.counts,
     bytes: input.bytes,
-    limitBytes: IMPORT_LIMITS.maxImportBytes,
+    limitBytes: input.limitBytes ?? IMPORT_LIMITS.maxImportBytes,
     sources: metaSources(row.json),
     duplicateOf,
     sourceCollisions,
@@ -515,6 +596,7 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     affectedCharacters,
     officialCoverage: coverage,
     notes,
+    ...(books === undefined ? {} : { books: books.choices }),
   };
 }
 

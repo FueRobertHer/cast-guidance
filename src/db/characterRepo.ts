@@ -11,7 +11,13 @@ import {
 } from '@/lib/guards';
 import { randomId } from '@/lib/randomId';
 import { type CharacterRow, db, type HomebrewFileRow } from './db';
-import { buildHomebrewRow, putHomebrewRow } from './homebrewRepo';
+import { type BookFile, bookHolders, bookKey } from './homebrewBooks';
+import {
+  buildHomebrewRow,
+  partitionHomebrewMeta,
+  putHomebrewRow,
+  withContent,
+} from './homebrewRepo';
 
 /**
  * What a save expects the stored row to be (REL-007, #98): the revision this
@@ -243,10 +249,12 @@ export const characterRepo = {
             .primaryKeys(),
         );
         const characterExists = (await db.characters.get(doc.id)) !== undefined;
+        const stored = await storedBookFiles(homebrew);
         const addedAt = Date.now();
         const plan = planCharacterImport(doc, homebrew, {
           characterExists,
           existingHomebrewIds,
+          stored,
           newId: () => crypto.randomUUID(),
           now: () => new Date().toISOString(),
         });
@@ -270,6 +278,34 @@ export const characterRepo = {
     return characterRepo.commitImport(await characterRepo.prepareImport(text));
   },
 };
+
+/**
+ * The stored files, other than parts, that declare the source of a part of a
+ * book coming in, with their content: what {@link bookHolders} checks the
+ * part against. Read only when a part comes in. Runs inside the caller's
+ * transaction over both homebrew tables.
+ */
+async function storedBookFiles(incoming: readonly HomebrewFileRow[]): Promise<BookFile[]> {
+  const keys = new Set<string>();
+  for (const row of incoming) {
+    const key = row.subset === true ? bookKey(row) : undefined;
+    if (key !== undefined) keys.add(key);
+  }
+  if (keys.size === 0) return [];
+  const rows = await db.homebrewFiles.toArray();
+  const whole = new Set(
+    partitionHomebrewMeta(rows)
+      .files.filter((f) => f.subset !== true && f.sourceIds.some((s) => keys.has(s.toLowerCase())))
+      .map((f) => f.id),
+  );
+  // Content as the readers take it, so the commit decides as the preview did,
+  // a row that still carries its own content included.
+  const stored = await withContent(rows.filter((r) => whole.has(r.id)));
+  return stored.map((r) => {
+    const { sourceIds, json } = r as { sourceIds: string[]; json: unknown };
+    return { sourceIds, json };
+  });
+}
 
 /** A validated character import, ready to preview or commit; nothing written yet. */
 export interface PreparedCharacterImport {
@@ -366,6 +402,11 @@ export function planCharacterImport(
   opts: {
     characterExists: boolean;
     existingHomebrewIds: ReadonlySet<string>;
+    /**
+     * Files here, with their content, that may hold a part of a book coming
+     * in. A part they hold every entry of is skipped ({@link bookHolders}).
+     */
+    stored?: readonly BookFile[];
     newId: () => string;
     now: () => string;
   },
@@ -378,7 +419,7 @@ export function planCharacterImport(
   const homebrewToAdd: HomebrewFileRow[] = [];
   let homebrewSkipped = 0;
   for (const row of preparedHomebrew) {
-    if (seen.has(row.id)) {
+    if (seen.has(row.id) || bookHolders(row, opts.stored ?? []).length > 0) {
       homebrewSkipped += 1;
       continue;
     }

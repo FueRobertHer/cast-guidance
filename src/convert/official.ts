@@ -5,7 +5,7 @@
 import type { Entity } from '../data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../data5e/normalize';
 import { editionOf } from '../data5e/rulesVersion';
-import type { ConvertedKind, InstalledCheck } from './types';
+import type { ConvertedKind, ConvertOptions, InstalledCheck } from './types';
 
 /**
  * The registry types an entry of each converted kind could already be. Other
@@ -139,50 +139,109 @@ function entityBooks(e: Entity): string[] {
  * style.
  */
 export function installedCheck(reg: EntityRegistry): InstalledCheck {
-  const byKind = new Map<ConvertedKind, { byEdition: Set<string>; byBook: Set<string> }>();
+  const byKind = new Map<ConvertedKind, KindKeys>();
   return (kind, name, edition, book) => {
     let keys = byKind.get(kind);
     if (keys === undefined) {
-      const built = { byEdition: new Set<string>(), byBook: new Set<string>() };
-      const add = (type: EntityType, anyBook: boolean) => {
-        for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
-          const ed = editionOf(e);
-          const books = entityBooks(e);
-          const names = officialNames(type, e);
-          if (anyBook) for (const n of names) built.byEdition.add(`${n}|${ed}`);
-          for (const n of [...names, ...bookNames(type, e)]) {
-            for (const b of books) {
-              built.byBook.add(`${n}|${b}`);
-              built.byBook.add(`~${compact(n)}|${b}`);
-            }
-          }
-        }
-      };
-      for (const type of OFFICIAL_TYPES[kind]) add(type, true);
-      for (const type of BOOK_ONLY_TYPES[kind] ?? []) add(type, false);
-      byKind.set(kind, built);
-      keys = built;
+      keys = kindKeys(reg, kind);
+      byKind.set(kind, keys);
     }
-    const n = name.toLowerCase();
-    if (book === undefined) return keys.byEdition.has(`${n}|${edition}`);
-    const b = book.toLowerCase();
-    return keys.byBook.has(`${n}|${b}`) || keys.byBook.has(`~${compact(n)}|${b}`);
+    return hasKey(keys, name, edition, book);
   };
+}
+
+/** The keys {@link installedCheck} asks about one kind. */
+interface KindKeys {
+  /** `name|edition` of every official entry, under each name it answers to. */
+  byEdition: Set<string>;
+  /** `name|book`, and `~compact|book`, under its looser names too. */
+  byBook: Set<string>;
+}
+
+function kindKeys(reg: EntityRegistry, kind: ConvertedKind): KindKeys {
+  const built: KindKeys = { byEdition: new Set<string>(), byBook: new Set<string>() };
+  const add = (type: EntityType, anyBook: boolean) => {
+    for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+      const ed = editionOf(e);
+      const books = entityBooks(e);
+      const names = officialNames(type, e);
+      if (anyBook) for (const n of names) built.byEdition.add(`${n}|${ed}`);
+      for (const n of [...names, ...bookNames(type, e)]) {
+        for (const b of books) {
+          built.byBook.add(`${n}|${b}`);
+          built.byBook.add(`~${compact(n)}|${b}`);
+        }
+      }
+    }
+  };
+  for (const type of OFFICIAL_TYPES[kind]) add(type, true);
+  for (const type of BOOK_ONLY_TYPES[kind] ?? []) add(type, false);
+  return built;
+}
+
+function hasKey(keys: KindKeys, name: string, edition: string, book: string | undefined): boolean {
+  const n = name.toLowerCase();
+  if (book === undefined) return keys.byEdition.has(`${n}|${edition}`);
+  const b = book.toLowerCase();
+  return keys.byBook.has(`${n}|${b}`) || keys.byBook.has(`~${compact(n)}|${b}`);
 }
 
 /** Whether the official part of a registry holds anything from a book, by code. */
 export function heldBooks(reg: EntityRegistry): (code: string) => boolean {
   let books: Set<string> | undefined;
   return (code) => {
-    if (books === undefined) {
-      books = new Set();
-      for (const type of ENTITY_TYPES) {
-        for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
-          for (const b of entityBooks(e)) books.add(b);
-        }
-      }
-    }
+    books ??= bookCodes(reg);
     return books.has(code.toLowerCase());
+  };
+}
+
+function bookCodes(reg: EntityRegistry): Set<string> {
+  const books = new Set<string>();
+  for (const type of ENTITY_TYPES) {
+    for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
+      for (const b of entityBooks(e)) books.add(b);
+    }
+  }
+  return books;
+}
+
+/**
+ * What the converter asks of the game data ({@link installedCheck},
+ * {@link heldBooks} and the books of the 2024 rules), as plain data: built
+ * where the registry is, and sent to a worker that converts without it.
+ */
+export interface OfficialKeys {
+  kinds: Record<ConvertedKind, { byEdition: string[]; byBook: string[] }>;
+  books: string[];
+  rulesBooks: string[];
+}
+
+export function officialKeys(reg: EntityRegistry): OfficialKeys {
+  const kinds = {} as OfficialKeys['kinds'];
+  for (const kind of Object.keys(OFFICIAL_TYPES) as ConvertedKind[]) {
+    const keys = kindKeys(reg, kind);
+    kinds[kind] = { byEdition: [...keys.byEdition], byBook: [...keys.byBook] };
+  }
+  return { kinds, books: [...bookCodes(reg)], rulesBooks: [...reg.rulesBooks] };
+}
+
+/** The converter's checks from {@link officialKeys}: the same answers the registry gives. */
+export function officialChecks(
+  keys: OfficialKeys,
+): Required<Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks'>> {
+  const byKind = new Map<ConvertedKind, KindKeys>();
+  for (const kind of Object.keys(OFFICIAL_TYPES) as ConvertedKind[]) {
+    const k = keys.kinds[kind];
+    byKind.set(kind, { byEdition: new Set(k?.byEdition), byBook: new Set(k?.byBook) });
+  }
+  const books = new Set(keys.books);
+  return {
+    isInstalled: (kind, name, edition, book) => {
+      const k = byKind.get(kind);
+      return k !== undefined && hasKey(k, name, edition, book);
+    },
+    hasBook: (code) => books.has(code.toLowerCase()),
+    rulesBooks: new Set(keys.rulesBooks),
   };
 }
 

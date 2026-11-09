@@ -9,6 +9,7 @@
  * the answer in between, and the commit's summary is the one that counts.
  */
 import type { PreparedCharacterImport } from '@/db/characterRepo';
+import { bookHolders } from '@/db/homebrewBooks';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
   type OfficialCoverage,
@@ -33,7 +34,13 @@ export type EmbeddedFileStatus =
    * listed in `localFiles` with `enabled: false`, because it wins again if
    * it is turned back on.
    */
-  | 'other-version';
+  | 'other-version'
+  /**
+   * The part of a book the character uses, and the whole book (or another
+   * file declaring its source) is here with every entry of the part;
+   * importing skips it.
+   */
+  | 'book-here';
 
 export interface EmbeddedFilePreview {
   fileName: string;
@@ -46,9 +53,9 @@ export interface EmbeddedFilePreview {
    */
   localFiles: { id: string; fileName: string; enabled: boolean }[];
   /**
-   * For `already-here`: whether the copy here is turned on. A turned-off copy
-   * is skipped like any other, but its entries are not in use until it is
-   * turned back on.
+   * For `already-here`: whether the copy here is turned on; for `book-here`,
+   * whether a file holding the book is. A turned-off copy is skipped like any
+   * other, but its entries are not in use until it is turned back on.
    */
   existingEnabled?: boolean;
 }
@@ -98,19 +105,35 @@ export function previewCharacterImport(input: CharacterPreviewInput): CharacterP
       ? []
       : existing
           .filter((f) => f.sourceIds.some((s) => own.has(lower(s))))
-          .map((f) => ({ id: f.id, fileName: f.fileName, enabled: f.enabled }));
-    files.push({
-      fileName: row.fileName,
-      status: existingIds.has(row.id)
-        ? 'already-here'
-        : localFiles.some((f) => f.enabled)
-          ? 'other-version'
-          : 'new',
+          .map((f) => ({ id: f.id, fileName: f.book ?? f.fileName, enabled: f.enabled }));
+    const holders = existingIds.has(row.id) ? [] : bookHolders(row, existing);
+    const base = {
+      // A book of a converted file goes by the book's name: every book shares the file's.
+      fileName: row.book ?? row.fileName,
       counts: row.counts,
       sourceIds: row.sourceIds,
       localFiles,
-      ...(existingIds.has(row.id) ? { existingEnabled: existingById.get(row.id)?.enabled } : {}),
-    });
+    };
+    if (existingIds.has(row.id)) {
+      files.push({
+        ...base,
+        status: 'already-here',
+        existingEnabled: existingById.get(row.id)?.enabled,
+      });
+    } else if (holders.length > 0) {
+      files.push({
+        ...base,
+        status: 'book-here',
+        // On only if what is turned on holds the part by itself.
+        existingEnabled:
+          bookHolders(
+            row,
+            holders.filter((f) => f.enabled),
+          ).length > 0,
+      });
+    } else {
+      files.push({ ...base, status: localFiles.some((f) => f.enabled) ? 'other-version' : 'new' });
+    }
   }
 
   const embedded = new Set(prepared.homebrew.flatMap((r) => r.sourceIds.map(lower)));

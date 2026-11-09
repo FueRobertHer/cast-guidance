@@ -25,8 +25,18 @@ vi.mock('@/data5e/registry', async () => {
   };
 });
 
+import { ResponseTooLargeError } from '@/lib/boundedRead';
+import { IMPORT_LIMITS } from '@/lib/guards';
 import { dataStatusStore } from '@/stores/dataStatus';
-import { NothingToImportError, parseImportText } from './importText';
+import { InlineImportWorker } from '../../../tests-fixtures/importWorker';
+import {
+  ImportCancelledError,
+  NothingToImportError,
+  parseImportFile,
+  parseImportText,
+} from './importText';
+
+vi.stubGlobal('Worker', InlineImportWorker);
 
 beforeEach(() => {
   registry.fail = false;
@@ -160,5 +170,118 @@ describe('coverage while game data is incomplete', () => {
     await expect(
       parseImportText(`<compendium>${spell('Fire Bolt')}</compendium>`, 'a.xml'),
     ).rejects.toMatchObject({ allInstalled: true });
+  });
+});
+
+describe('parseImportFile', () => {
+  /** A file of `size` bytes that begins with `head`, nothing past the head ever read. */
+  const sized = (head: string, size: number) =>
+    ({
+      name: 'big',
+      size,
+      slice: () => new Blob([head]),
+      text: () => Promise.reject(new Error('read whole')),
+      stream: () => {
+        throw new Error('streamed');
+      },
+    }) as unknown as File;
+
+  it('reads a JSON file whole, and converts an XML one on the worker', async () => {
+    const json = new File(['{"_meta":{"sources":[]}}'], 'brew.json');
+    expect(await parseImportFile(json)).toEqual({ raw: { _meta: { sources: [] } } });
+
+    const started = InlineImportWorker.started.length;
+    const xml = new File([`﻿\n<compendium>${spell('Ember Lance')}</compendium>`], 'embers');
+    const parsed = await parseImportFile(xml);
+    expect(parsed.conversion?.converted).toEqual({ spell: 1 });
+    expect(InlineImportWorker.started.length).toBe(started + 1);
+  });
+
+  it('takes an XML file past the JSON limit, and refuses one past its own unread', async () => {
+    const padding = ' '.repeat(IMPORT_LIMITS.maxImportBytes);
+    const big = new File([`<compendium>${padding}${spell('Ember Lance')}</compendium>`], 'big.xml');
+    expect((await parseImportFile(big)).conversion?.converted).toEqual({ spell: 1 });
+
+    const started = InlineImportWorker.started.length;
+    const over = sized('<compendium>', IMPORT_LIMITS.maxXmlImportBytes + 1);
+    await expect(parseImportFile(over)).rejects.toBeInstanceOf(ResponseTooLargeError);
+    expect(InlineImportWorker.started.length).toBe(started);
+  });
+
+  it('keeps the JSON limit for JSON', async () => {
+    const over = sized('{"_meta":', IMPORT_LIMITS.maxImportBytes + 1);
+    await expect(parseImportFile(over)).rejects.toBeInstanceOf(ResponseTooLargeError);
+  });
+
+  it('stops when cancelled, before or during the conversion', async () => {
+    const xml = new File([`<compendium>${spell('Ember Lance')}</compendium>`], 'a.xml');
+    const before = new AbortController();
+    before.abort();
+    await expect(parseImportFile(xml, { signal: before.signal })).rejects.toBeInstanceOf(
+      ImportCancelledError,
+    );
+
+    // A worker that never answers, cancelled while it works.
+    const silent: { terminated: boolean }[] = [];
+    vi.stubGlobal(
+      'Worker',
+      class {
+        terminated = false;
+        constructor() {
+          silent.push(this);
+        }
+        postMessage() {}
+        terminate() {
+          this.terminated = true;
+        }
+      },
+    );
+    try {
+      const during = new AbortController();
+      const parsed = parseImportFile(xml, { signal: during.signal });
+      await vi.waitFor(() => expect(silent).toHaveLength(1));
+      during.abort();
+      await expect(parsed).rejects.toBeInstanceOf(ImportCancelledError);
+      expect(silent[0]?.terminated).toBe(true);
+    } finally {
+      vi.stubGlobal('Worker', InlineImportWorker);
+    }
+  });
+
+  it('says a converter that stopped most likely ran out of memory', async () => {
+    vi.stubGlobal(
+      'Worker',
+      class {
+        onerror: ((ev: { preventDefault(): void }) => void) | null = null;
+        postMessage() {
+          setTimeout(() => this.onerror?.({ preventDefault: () => undefined }));
+        }
+        terminate() {}
+      },
+    );
+    try {
+      const xml = new File([`<compendium>${spell('Ember Lance')}</compendium>`], 'a.xml');
+      await expect(parseImportFile(xml)).rejects.toThrow(/ran out of memory/);
+    } finally {
+      vi.stubGlobal('Worker', InlineImportWorker);
+    }
+  });
+
+  it('says how far the conversion has read, across both of its reads', async () => {
+    const padding = ' '.repeat(3 * 1024 * 1024);
+    const text = `<compendium>${padding}${spell('Ember Lance')}</compendium>`;
+    const seen: [number, number][] = [];
+    await parseImportText(text, 'a.xml', { onProgress: (done, total) => seen.push([done, total]) });
+    expect(seen.length).toBeGreaterThanOrEqual(6);
+    expect(seen.every(([, total]) => total === text.length * 2)).toBe(true);
+    const done = seen.map(([d]) => d);
+    expect(done).toEqual([...done].sort((a, b) => a - b));
+    expect(done.at(-1)).toBeLessThanOrEqual(text.length * 2);
+  });
+
+  it('reports the converter`s own refusal by name and message', async () => {
+    await expect(
+      parseImportFile(new File(['<elements><element/></elements>'], 'aurora.xml')),
+    ).rejects.toMatchObject({ name: 'UnsupportedFormatError' });
   });
 });

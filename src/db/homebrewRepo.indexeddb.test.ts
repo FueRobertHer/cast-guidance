@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ValidationError } from '@/lib/guards';
+import { assertJsonWithinLimits, IMPORT_LIMITS, ValidationError } from '@/lib/guards';
 import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { db } from './db';
@@ -307,5 +307,111 @@ describe('the version 5 upgrade', () => {
     expect(await db.homebrewFiles.get(stored.id)).toEqual(meta);
     expect(await db.homebrewJson.get(stored.id)).toEqual({ id: stored.id, json });
     expect((await homebrewRepo.listSafe()).files).toEqual([{ ...stored, rev: undefined }]);
+  });
+});
+
+describe('a file stored a book at a time', () => {
+  /** A converted compendium: one source per book, each with its spells. */
+  function compendium(books: Record<string, string[]>) {
+    return {
+      _meta: {
+        sources: Object.keys(books).map((id) => ({ json: id, full: `${id} Book` })),
+        convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+      },
+      spell: Object.entries(books).flatMap(([id, names]) =>
+        names.map((name) => ({ name, source: id, level: 1 })),
+      ),
+    };
+  }
+
+  it('prepares one row per book, each named and hashed on its own', async () => {
+    const { whole, books } = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance', 'Ember Ward'], ASH: ['Ash Bolt'] }),
+      'all.xml',
+    );
+    expect(books.map((b) => [b.book, b.fileName, b.sourceIds, b.counts])).toEqual([
+      ['EMB Book', 'all.xml', ['EMB'], { spell: 2 }],
+      ['ASH Book', 'all.xml', ['ASH'], { spell: 1 }],
+    ]);
+    expect(books[0]?.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(books[0]?.id).not.toBe(books[1]?.id);
+    expect(whole.sourceIds).toEqual(['EMB', 'ASH']);
+    expect(whole.counts).toEqual({ spell: 3 });
+    expect(await db.homebrewFiles.count()).toBe(0);
+  });
+
+  it('holds each book to the limits of one file, and not the whole', async () => {
+    const per = Math.floor(IMPORT_LIMITS.maxNodes / 4 / 5);
+    const names = (book: string) => Array.from({ length: per }, (_, i) => `${book} ${i}`);
+    // Each book is about a quarter of the limit; the whole is past it.
+    const raw = compendium({
+      A: names('A'),
+      B: names('B'),
+      C: names('C'),
+      D: names('D'),
+      E: names('E'),
+    });
+    expect(() => assertJsonWithinLimits(raw)).toThrow(ValidationError);
+    const { books } = await homebrewRepo.prepareBooks(raw, 'all.xml');
+    expect(books).toHaveLength(5);
+  });
+
+  it('stores the books, leaves one already here alone, and replaces an older copy', async () => {
+    const first = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt'] }),
+      'old.xml',
+    );
+    await homebrewRepo.commitBooks(first.books);
+    const oldAsh = first.books[1] as (typeof first.books)[number];
+    await homebrewRepo.setEnabled(oldAsh.id, false);
+    // A file stored whole that declares a book's source is no book: it stays.
+    const whole = await homebrewRepo.importJson(file('ASH', ['Ash Storm']), 'ash.json');
+
+    const second = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt', 'Ash Veil'], NEW: ['Zap'] }),
+      'new.xml',
+    );
+    const committed = await homebrewRepo.commitBooks(second.books);
+    expect(committed.added.map((r) => r.book)).toEqual(['ASH Book', 'NEW Book']);
+    expect(committed.replaced).toBe(1);
+    expect(committed.same).toBe(1);
+
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    const byBook = new Map(stored.map((r) => [r.book ?? r.fileName, r]));
+    expect(stored).toHaveLength(4);
+    // The same Ember Codex as before, untouched.
+    expect(byBook.get('EMB Book')?.fileName).toBe('old.xml');
+    // The new Ashen copy, turned off as the old one was.
+    expect(byBook.get('ASH Book')).toMatchObject({
+      fileName: 'new.xml',
+      enabled: false,
+      counts: { spell: 2 },
+    });
+    expect(byBook.get('NEW Book')?.enabled).toBe(true);
+    expect(byBook.get('ash.json')?.id).toBe(whole.id);
+    expect(await db.homebrewJson.get(oldAsh.id)).toBeUndefined();
+  });
+
+  it('removes every book of a file at once', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt'] }),
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    await homebrewRepo.deleteMany(books.map((b) => b.id));
+    expect(await db.homebrewFiles.count()).toBe(0);
+    expect(await db.homebrewJson.count()).toBe(0);
+  });
+
+  it('reads a stored book back with its name', async () => {
+    const { books } = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance'] }),
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const [meta] = (await homebrewRepo.listMetaSafe()).files;
+    expect(meta?.book).toBe('EMB Book');
+    const { file: read } = await homebrewRepo.getSafe(books[0]?.id ?? '');
+    expect(read?.book).toBe('EMB Book');
   });
 });

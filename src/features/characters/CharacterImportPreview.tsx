@@ -154,6 +154,22 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
           'they match. The matching entries in this file are not used until ' +
           `${many ? 'those files are' : 'that file is'} turned off or deleted.`,
       };
+    case 'book-here':
+      return f.existingEnabled === false
+        ? {
+            tone: 'warn',
+            status: 'The book is here, turned off.',
+            detail:
+              'This is the part of a book the character uses, and this device has the book, so it ' +
+              'is skipped, but the book is turned off, so its entries are not used. Turn it on in ' +
+              'Homebrew to use them.',
+          }
+        : {
+            tone: 'good',
+            status: 'The book is here.',
+            detail:
+              'This is the part of a book the character uses, and this device has the book, so it is skipped.',
+          };
     default:
       return { tone: 'new', status: 'New.', detail: 'Importing adds it to your homebrew.' };
   }

@@ -562,3 +562,94 @@ describe('collision copy', () => {
     expect(WINNER_POLICY).toContain('the one imported first wins');
   });
 });
+
+describe('previewHomebrewImport for a file stored a book at a time', () => {
+  /** One book's row, as `prepareBooks` makes it. */
+  function bookRow(
+    id: string,
+    source: string,
+    names: string[],
+    fileName = 'all.xml',
+  ): HomebrewFile {
+    const json = { _meta: meta([source]), spell: names.map((n) => spell(n, source)) };
+    return { ...row(json, id), fileName, book: `${source} Book`, json };
+  }
+  const EMB = bookRow('emb-2', 'EMB', ['Ember Lance']);
+  const ASH = bookRow('ash-2', 'ASH', ['Ash Bolt', 'Ash Veil']);
+  const NEW = bookRow('new-2', 'NEW', ['Zap']);
+  const whole = row(
+    {
+      _meta: meta(['EMB', 'ASH', 'NEW']),
+      spell: [
+        spell('Ember Lance', 'EMB'),
+        spell('Ash Bolt', 'ASH'),
+        spell('Ash Veil', 'ASH'),
+        spell('Zap', 'NEW'),
+      ],
+    },
+    '',
+  );
+
+  function previewBooks(existing: HomebrewFile[]) {
+    return previewHomebrewImport({
+      row: { ...whole, fileName: 'all.xml' },
+      books: [EMB, ASH, NEW],
+      bytes: 1234,
+      limitBytes: IMPORT_LIMITS.maxXmlImportBytes,
+      existing,
+      official: NO_OFFICIAL,
+      characters: [],
+    });
+  }
+
+  it('says what each book would do, and checks no clash against its own older copy', () => {
+    const p = previewBooks([
+      // The same Ember Codex, already here.
+      { ...EMB, addedAt: 3 },
+      // An older Ashen Tome from another file, which this one replaces.
+      { ...bookRow('ash-1', 'ASH', ['Ash Bolt'], 'old.xml'), addedAt: 2 },
+      // Another file entirely, which does clash.
+      local('other', { _meta: meta(['OTH']), spell: [spell('Zap', 'NEW')] }),
+    ]);
+    expect(p.books).toEqual([
+      { id: 'emb-2', full: 'EMB Book', counts: { spell: 1 }, status: 'same' },
+      {
+        id: 'ash-2',
+        full: 'ASH Book',
+        counts: { spell: 2 },
+        status: 'replaces',
+        replacesFrom: 'old.xml',
+      },
+      { id: 'new-2', full: 'NEW Book', counts: { spell: 1 }, status: 'new' },
+    ]);
+    expect(p.limitBytes).toBe(IMPORT_LIMITS.maxXmlImportBytes);
+    expect(p.duplicateOf).toBeUndefined();
+    expect(p.sourceCollisions).toEqual([]);
+    expect(p.entityCollisions.map((c) => [c.name, c.against])).toEqual([
+      ['Zap', { id: 'other', fileName: 'other.json' }],
+    ]);
+  });
+
+  it('is already here when every book is', () => {
+    const p = previewBooks([
+      { ...EMB, addedAt: 5 },
+      { ...ASH, addedAt: 4, enabled: false },
+      { ...NEW, addedAt: 6 },
+    ]);
+    expect(p.duplicateOf).toEqual({ id: 'emb-2', fileName: 'all.xml', addedAt: 4, enabled: false });
+    expect(p.books?.every((b) => b.status === 'same')).toBe(true);
+  });
+
+  it('names a stored book by its book, not the file it came from', () => {
+    const p = preview(
+      { _meta: meta(['HB']), spell: [spell('Ember Lance', 'HB')] },
+      {
+        existing: [bookRow('emb', 'EMB', ['Ember Lance'])].map((b) => ({
+          ...b,
+          json: { ...b.json, spell: [spell('Ember Lance', 'HB')] },
+        })),
+      },
+    );
+    expect(p.entityCollisions[0]?.against).toEqual({ id: 'emb', fileName: 'EMB Book' });
+  });
+});

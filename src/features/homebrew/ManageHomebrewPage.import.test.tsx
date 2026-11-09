@@ -52,6 +52,7 @@ import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { recordAnnouncer } from '../../../tests-fixtures/announcements';
+import { InlineImportWorker } from '../../../tests-fixtures/importWorker';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
 
 /** Everything the announcer says in a test; see `outcome`. */
@@ -66,8 +67,10 @@ afterEach(() => {
   resetAnnouncer();
 });
 
-// jsdom has no matchMedia and the sheet asks for one on mount.
+// jsdom has no matchMedia and the sheet asks for one on mount, and no Worker
+// for the XML converter.
 beforeAll(() => {
+  vi.stubGlobal('Worker', InlineImportWorker);
   window.matchMedia = (query: string) =>
     ({
       matches: false,
@@ -571,6 +574,111 @@ describe('importing a Fight Club 5e compendium', () => {
     expect(ensureSourcesVisible).toHaveBeenCalledWith(['FCEmbers']);
   });
 
+  /** Made-up spells from two made-up books, as their Source lines say. */
+  const LIBRARY = (ashen: string[]) => `<compendium version="5">
+  <spell>
+    <name>Ember Lance</name><level>1</level><school>EV</school><time>1 action</time>
+    <range>60 feet</range><components>V</components><duration>Instantaneous</duration>
+    <classes>Wizard</classes><text>A lance of fire.\nSource: Ember Codex p. 3</text>
+  </spell>${ashen
+    .map(
+      (name, i) => `
+  <spell>
+    <name>${name}</name><level>2</level><school>C</school><time>1 action</time>
+    <range>Self</range><components>V</components><duration>1 minute</duration>
+    <classes>Sorcerer</classes><text>Grey ash.\nSource: Ashen Tome p. ${i + 4}</text>
+  </spell>`,
+    )
+    .join('')}
+</compendium>`;
+
+  it('stores a compendium a book at a time, the books the player picks', async () => {
+    renderPage();
+    chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
+
+    let dialog = await findDialog('Import "library.xml"?');
+    const books = within(dialog).getByRole('region', { name: 'Books' });
+    const ember = within(books).getByRole('checkbox', { name: /Ember Codex/ }) as HTMLInputElement;
+    const ashen = within(books).getByRole('checkbox', { name: /Ashen Tome/ }) as HTMLInputElement;
+    expect([ember.checked, ashen.checked]).toEqual([true, true]);
+    expect(within(dialog).getByRole('button', { name: 'Import 2 books' })).toBeTruthy();
+
+    fireEvent.click(ember);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+    await waitFor(() => expect(outcome()).toBe('Imported 1 book from "library.xml" (2 spell)'));
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.book)).toEqual(['Ashen Tome']);
+
+    // Again, with the Ashen Tome grown: the stored copy is replaced, and the
+    // Ember Codex comes in now that it is ticked.
+    chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil', 'Ash Storm']));
+    dialog = await findDialog('Import "library.xml"?');
+    expect(dialog.textContent).toContain('Replaces the copy from "library.xml".');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+    await waitFor(() =>
+      expect(outcome()).toBe(
+        'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
+      ),
+    );
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((f) => [f.book, f.counts]).sort()).toEqual([
+      ['Ashen Tome', { spell: 3 }],
+      ['Ember Codex', { spell: 1 }],
+    ]);
+
+    // The list keeps them together, under the file's name.
+    expect(
+      await screen.findByRole('button', { name: 'Delete library.xml, all 2 books' }),
+    ).toBeTruthy();
+  });
+
+  it('refuses books the browser clearly has no room for, before writing any', async () => {
+    let room = 100;
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: { estimate: async () => ({ usage: 1000, quota: 1000 + room }) },
+    });
+    try {
+      renderPage();
+      chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+      let dialog = await findDialog('Import "library.xml"?');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+      await waitFor(() =>
+        expect(outcome()).toMatch(
+          /^Import failed: It needs about \d+ KB, and the browser has 100 bytes left for the app\. This device is out of storage space/,
+        ),
+      );
+      expect(await fileCount()).toBe(0);
+
+      // With room, they come in; a book that takes the place of its own
+      // older copy then needs no more room than it had.
+      room = 10_000_000;
+      chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+      dialog = await findDialog('Import "library.xml"?');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+      await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/));
+      room = 100;
+      chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
+      dialog = await findDialog('Import "library.xml"?');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
+      await waitFor(() => expect(outcome()).toMatch(/^Imported 1 book .*replacing 1 book/));
+    } finally {
+      Reflect.deleteProperty(navigator, 'storage');
+    }
+  });
+
+  it('turns Import off while no book that is new is ticked', async () => {
+    renderPage();
+    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    const dialog = await findDialog('Import "library.xml"?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Select none' }));
+    const importButton = within(dialog).getByRole('button', { name: 'Import' });
+    expect(importButton.getAttribute('aria-disabled')).toBe('true');
+    expect(dialog.textContent).toContain('Tick a book that is not already on this device');
+    fireEvent.click(importButton);
+    expect(screen.queryByRole('dialog', { name: 'Import "library.xml"?' })).toBeTruthy();
+    expect(await fileCount()).toBe(0);
+  });
+
   it('says when every entry is already in the game data, without a preview', async () => {
     renderPage();
     chooseFile(
@@ -601,6 +709,50 @@ describe('importing a Fight Club 5e compendium', () => {
     expect(dialog.textContent).toContain(
       'Game data could not be read, so entries it already has were converted as well.',
     );
+  });
+
+  it('cancels a file while it is read, and nothing is added', async () => {
+    let release: () => void = () => undefined;
+    registry.gates.push(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const started = InlineImportWorker.started.length;
+    renderPage();
+    const opener = chooseFile('embers.xml', COMPENDIUM);
+    await waitFor(() => expect(registry.calls).toBe(1));
+
+    fireEvent.click(within(importLine()).getByRole('button', { name: 'Cancel import' }));
+    release();
+    await waitFor(() => expect(outcome()).toBe('Import canceled. Nothing was added.'));
+    // Cancel went with the read, so focus is back where the import started.
+    expect(document.activeElement).toBe(opener);
+    expect(opener.getAttribute('aria-disabled')).toBe('false');
+    expect(InlineImportWorker.started.length).toBe(started);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await fileCount()).toBe(0);
+  });
+
+  it('puts focus back on Import file when a read ends while Cancel has it', async () => {
+    let release: () => void = () => undefined;
+    registry.gates.push(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPage();
+    const opener = chooseFile(
+      'aurora.xml',
+      '<elements><element name="Ember Knight" type="Class"/></elements>',
+    );
+    await waitFor(() => expect(registry.calls).toBe(1));
+    within(importLine()).getByRole('button', { name: 'Cancel import' }).focus();
+
+    release();
+    await waitFor(() => expect(outcome()).toMatch(/^Import failed/));
+    expect(within(importLine()).queryByRole('button', { name: 'Cancel import' })).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 
   it('names a file it recognizes but cannot import', async () => {

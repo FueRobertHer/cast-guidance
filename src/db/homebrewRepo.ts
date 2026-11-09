@@ -5,7 +5,29 @@ import {
   sha256Hex,
 } from '@/lib/guards';
 import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
+import { bookKey, bookOf, splitBooks } from './homebrewBooks';
 import { compareMergeOrder } from './homebrewOrder';
+
+/** A file to be stored a book at a time, as {@link homebrewRepo.prepareBooks} gives it. */
+export interface PreparedBooks {
+  /**
+   * The whole file, for the preview alone. It is never stored, so it is held
+   * to no size limit of its own: each book is.
+   */
+  whole: HomebrewFileRow;
+  /** One row per book, each checked and hashed as a file of its own. */
+  books: HomebrewFileRow[];
+}
+
+/** What storing a file's books did. */
+export interface CommittedBooks {
+  /** The books stored, as stored. */
+  added: HomebrewFileRow[];
+  /** Books stored before from another copy, which those replaced. */
+  replaced: number;
+  /** Books already here exactly as they are, so left alone. */
+  same: number;
+}
 
 /**
  * Build a content-hashed homebrew row from a raw 5etools homebrew file object.
@@ -33,6 +55,9 @@ export async function buildHomebrewRow(
     sourceIds: meta.sources.map((s) => s.json),
     counts: homebrewEntityCounts(json),
     addedAt: Date.now(),
+    // One book of a converted compendium says so in its `_meta`, wherever
+    // it comes from: an import, a download of it, or a character's export.
+    ...bookOf(json),
   };
 }
 
@@ -121,6 +146,8 @@ function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
     ),
     addedAt: numberOr(row.addedAt, 0),
     rev: typeof row.rev === 'number' && Number.isFinite(row.rev) ? row.rev : undefined,
+    ...(typeof row.book === 'string' && row.book !== '' ? { book: row.book } : {}),
+    ...(row.subset === true ? { subset: true as const } : {}),
   };
 }
 
@@ -161,7 +188,7 @@ export function partitionHomebrewMeta(rows: readonly unknown[]): HomebrewMetaLis
  * `json` still on the row (written before the content had a table of its
  * own) is used when the content table has none.
  */
-async function withContent(rows: readonly HomebrewMetaRow[]): Promise<unknown[]> {
+export async function withContent(rows: readonly HomebrewMetaRow[]): Promise<unknown[]> {
   const bodies = await db.homebrewJson.bulkGet(rows.map((row) => row.id));
   return rows.map((row, i) => ({ ...row, json: bodies[i]?.json ?? row.json }));
 }
@@ -280,6 +307,70 @@ export const homebrewRepo = {
     });
   },
 
+  /**
+   * Validate a homebrew file into one row per book, writing nothing: the
+   * first half of importing a converted compendium, as {@link prepare} is for
+   * a file stored whole. Each book is held to the limits of one file.
+   */
+  async prepareBooks(raw: unknown, fileName: string, url?: string): Promise<PreparedBooks> {
+    const { json } = assertHomebrewFile(raw);
+    const books: HomebrewFileRow[] = [];
+    for (const part of splitBooks(json)) {
+      books.push({ ...(await buildHomebrewRow(part.json, fileName, url)), book: part.full });
+    }
+    const whole: HomebrewFileRow = {
+      id: '',
+      fileName,
+      url,
+      json,
+      enabled: true,
+      editable: false,
+      sourceIds: books.flatMap((b) => b.sourceIds),
+      counts: homebrewEntityCounts(json),
+      addedAt: Date.now(),
+    };
+    return { whole, books };
+  },
+
+  /**
+   * Store prepared books in one transaction. A book already here exactly is
+   * left alone; one stored before from another copy (a book row with the
+   * same source) is replaced, and the new copy keeps its switch, on or off.
+   * A file stored whole that declares the same source is not a book, so it
+   * stays. All the books land at one time, as one import.
+   */
+  async commitBooks(books: readonly HomebrewFileRow[]): Promise<CommittedBooks> {
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const stored = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+      const ids = new Set(stored.map((r) => r.id));
+      const addedAt = Date.now();
+      const added: HomebrewFileRow[] = [];
+      let replaced = 0;
+      for (const book of books) {
+        if (ids.has(book.id)) continue;
+        const key = bookKey(book);
+        const old = stored.filter(
+          (r) => r.book !== undefined && key !== undefined && bookKey(r) === key && ids.has(r.id),
+        );
+        for (const r of old) {
+          await db.homebrewFiles.delete(r.id);
+          await db.homebrewJson.delete(r.id);
+          ids.delete(r.id);
+        }
+        replaced += old.length;
+        const row: HomebrewFileRow = {
+          ...book,
+          enabled: old.length === 0 ? book.enabled : old.some((r) => r.enabled),
+          addedAt,
+        };
+        await putHomebrewRow(row);
+        ids.add(row.id);
+        added.push(row);
+      }
+      return { added, replaced, same: books.length - added.length };
+    });
+  },
+
   /** Validate + store a homebrew JSON file; content-hash keyed (idempotent). */
   async importJson(raw: unknown, fileName: string, url?: string): Promise<HomebrewFileRow> {
     return (await homebrewRepo.commit(await homebrewRepo.prepare(raw, fileName, url))).row;
@@ -295,9 +386,14 @@ export const homebrewRepo = {
   },
 
   async delete(id: string): Promise<void> {
+    await homebrewRepo.deleteMany([id]);
+  },
+
+  /** Remove several files at once, as one change: all of a file's books, say. */
+  async deleteMany(ids: readonly string[]): Promise<void> {
     await db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
-      await db.homebrewFiles.delete(id);
-      await db.homebrewJson.delete(id);
+      await db.homebrewFiles.bulkDelete([...ids]);
+      await db.homebrewJson.bulkDelete([...ids]);
     });
   },
 

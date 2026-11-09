@@ -40,6 +40,18 @@ export interface HomebrewFileRow {
    * signature notice their content changed. Optional; absent means 0.
    */
   rev?: number;
+  /**
+   * Set for one book of a file stored a book at a time (a converted
+   * compendium, see `homebrewBooks.ts`): the book's full name. `fileName` is
+   * then the file it came from, which its other books share.
+   */
+  book?: string;
+  /**
+   * Set for a book that holds only the part of it one character uses: what a
+   * character export carries of a book, not all of it. Importing the whole
+   * book replaces it.
+   */
+  subset?: true;
 }
 
 /**

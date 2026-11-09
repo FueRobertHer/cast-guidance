@@ -10,17 +10,21 @@
  * its gathering and its commit stay out of the page's first load and out of
  * the entry chunk.
  */
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
+import { bookKey } from '@/db/homebrewBooks';
 import { homebrewRepo } from '@/db/homebrewRepo';
-import { storageErrorText } from '@/lib/storageErrors';
+import { jsonByteSize } from '@/lib/byteSize';
+import { QUOTA_GUIDANCE, storageErrorText } from '@/lib/storageErrors';
+import { freeStorage } from '@/lib/storageRoom';
 import { notifyFailure } from '@/stores/notices';
 import {
   countsText,
+  formatBytes,
   ImportPreviewDialog,
   PreviewFacts,
   PreviewList,
@@ -30,6 +34,7 @@ import {
   type Tone,
 } from '@/ui/ImportPreview';
 import {
+  type BookChoice,
   type Dependency,
   describeCollision,
   type HomebrewPreview,
@@ -46,8 +51,9 @@ import { loadOfficialIndex } from './loadOfficialIndex';
  * at all gives a note in the preview, not a failure.
  */
 export async function buildHomebrewPreview(
-  row: HomebrewFileRow,
+  prepared: PreparedImport,
   bytes: number,
+  limitBytes?: number,
 ): Promise<HomebrewPreview> {
   const [here, official, roster] = await Promise.all([
     homebrewRepo.listSafe(),
@@ -55,8 +61,10 @@ export async function buildHomebrewPreview(
     characterRepo.listSafe().catch(() => ({ characters: [] })),
   ]);
   return previewHomebrewImport({
-    row,
+    row: prepared.row,
+    ...(prepared.books === undefined ? {} : { books: prepared.books }),
     bytes,
+    ...(limitBytes === undefined ? {} : { limitBytes }),
     existing: here.files,
     official,
     characters: roster.characters,
@@ -64,16 +72,103 @@ export async function buildHomebrewPreview(
 }
 
 /**
+ * What an import would store: a file whole, or (a converted compendium) a
+ * book at a time, `row` then being the whole file for the preview alone.
+ */
+export interface PreparedImport {
+  row: HomebrewFileRow;
+  books?: HomebrewFileRow[];
+}
+
+/** A count of books, in words. */
+const booksText = (n: number) => `${n} ${n === 1 ? 'book' : 'books'}`;
+
+/** Every count in `rows`, added up. */
+function totalCounts(rows: readonly HomebrewFileRow[]): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const r of rows)
+    for (const [k, n] of Object.entries(r.counts)) total[k] = (total[k] ?? 0) + n;
+  return total;
+}
+
+/**
+ * Why the browser clearly has no room for `rows`, or undefined. Asked before
+ * writing a byte: a compendium runs to tens of megabytes, and a write that
+ * fails part way costs the wait for nothing. "Clearly": only what comes in
+ * new is counted, not a file already here or a book that takes the place of
+ * its own older copy, and a browser that cannot say how much room it has is
+ * never refused.
+ */
+async function roomProblem(rows: readonly HomebrewFileRow[]): Promise<string | undefined> {
+  const free = await freeStorage();
+  if (free === undefined) return undefined;
+  const stored = (await homebrewRepo.listMetaSafe()).files;
+  const ids = new Set(stored.map((r) => r.id));
+  const books = new Set(stored.flatMap((r) => (r.book === undefined ? [] : [bookKey(r)])));
+  let need = 0;
+  for (const r of rows) {
+    if (ids.has(r.id) || (r.book !== undefined && books.has(bookKey(r)))) continue;
+    need += jsonByteSize(r.json);
+  }
+  if (need <= free) return undefined;
+  return `It needs about ${formatBytes(need)}, and the browser has ${formatBytes(free)} left for the app. ${QUOTA_GUIDANCE}`;
+}
+
+/**
+ * Store the books the player chose, and say what happened. A file of one
+ * book is named as a file is; of several, by how many books came in.
+ */
+async function commitBooks(
+  prepared: PreparedImport & { books: HomebrewFileRow[] },
+  chosen: ReadonlySet<string> | undefined,
+): Promise<{ ok: boolean; message: string }> {
+  const books = prepared.books.filter((b) => chosen?.has(b.id) ?? true);
+  const { fileName } = prepared.row;
+  let committed: Awaited<ReturnType<typeof homebrewRepo.commitBooks>>;
+  try {
+    const noRoom = await roomProblem(books);
+    if (noRoom !== undefined) return { ok: false, message: `Import failed: ${noRoom}` };
+    committed = await homebrewRepo.commitBooks(books);
+  } catch (err) {
+    return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
+  }
+  const { added, replaced } = committed;
+  if (added.length > 0) invalidateRegistry();
+  await ensureSourcesVisible(books.flatMap((b) => b.sourceIds)).catch((err: unknown) =>
+    notifyFailure('Show sources', err),
+  );
+  if (added.length === 0) {
+    return {
+      ok: true,
+      message:
+        prepared.books.length === 1
+          ? `"${fileName}" was already on this device, so nothing was added.`
+          : `Those books from "${fileName}" were already on this device, so nothing was added.`,
+    };
+  }
+  const what =
+    prepared.books.length === 1 ? `"${fileName}"` : `${booksText(added.length)} from "${fileName}"`;
+  const replacing = replaced > 0 ? `, replacing ${booksText(replaced)} imported before` : '';
+  return { ok: true, message: `Imported ${what} (${countsText(totalCounts(added))})${replacing}` };
+}
+
+/**
  * Import pressed: store the file the preview described, and say what
  * happened. The commit decides again inside its transaction, so a copy another
- * tab imported meanwhile is reported rather than written twice.
+ * tab imported meanwhile is reported rather than written twice. For a file
+ * stored a book at a time, `chosen` holds the books ticked; left out, all.
  */
 export async function commitHomebrewImport(
-  prepared: HomebrewFileRow,
+  prepared: PreparedImport,
+  chosen?: ReadonlySet<string>,
 ): Promise<{ ok: boolean; message: string }> {
+  if (prepared.books !== undefined)
+    return commitBooks({ ...prepared, books: prepared.books }, chosen);
   let committed: Awaited<ReturnType<typeof homebrewRepo.commit>>;
   try {
-    committed = await homebrewRepo.commit(prepared);
+    const noRoom = await roomProblem([prepared.row]);
+    if (noRoom !== undefined) return { ok: false, message: `Import failed: ${noRoom}` };
+    committed = await homebrewRepo.commit(prepared.row);
   } catch (err) {
     return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
   }
@@ -222,6 +317,81 @@ function more(total: number, shown: number, what: string): ReactNode {
   ) : null;
 }
 
+/** What a book would do, under its name in the picker. */
+function bookStatus(b: BookChoice): string {
+  const counts = countsText(b.counts);
+  if (b.status === 'same') return `${counts}. Already on this device.`;
+  if (b.status === 'replaces') return `${counts}. Replaces the copy from "${b.replacesFrom}".`;
+  return counts;
+}
+
+/**
+ * The books of a file stored a book at a time, each ticked to come in. All
+ * are ticked to begin with; a book left out can be imported later by
+ * importing the file again.
+ */
+function BookPicker({
+  books,
+  chosen,
+  onChange,
+}: {
+  books: BookChoice[];
+  chosen: ReadonlySet<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const toggle = (id: string, on: boolean) => {
+    const next = new Set(chosen);
+    if (on) next.add(id);
+    else next.delete(id);
+    onChange(next);
+  };
+  return (
+    <PreviewSection heading="Books">
+      <p className="text-ink-muted">
+        Each book is kept on its own, with its own switch. Untick the ones you do not want.
+      </p>
+      <div className="flex flex-col overflow-hidden rounded-control bg-surface ring-1 ring-line ring-inset">
+        <div className="flex gap-1 border-line border-b px-2 py-1 text-caption">
+          <button
+            type="button"
+            onClick={() => onChange(new Set(books.map((b) => b.id)))}
+            className="inline-flex min-h-tap items-center px-1 text-ink-muted underline underline-offset-3 hover:text-ink"
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange(new Set())}
+            className="inline-flex min-h-tap items-center px-1 text-ink-muted underline underline-offset-3 hover:text-ink"
+          >
+            Select none
+          </button>
+          <span className="ml-auto inline-flex items-center px-1 text-ink-muted">
+            {chosen.size} of {books.length}
+          </span>
+        </div>
+        {books.map((b) => (
+          <label
+            key={b.id}
+            className="flex min-h-tap items-start gap-2.5 px-3 py-2 hover:bg-surface-raised"
+          >
+            <input
+              type="checkbox"
+              checked={chosen.has(b.id)}
+              onChange={(e) => toggle(b.id, e.target.checked)}
+              className="mt-1 size-4 shrink-0 accent-ink"
+            />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className={chosen.has(b.id) ? '' : 'text-ink-muted'}>{b.full}</span>
+              <span className="text-caption text-ink-muted">{bookStatus(b)}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </PreviewSection>
+  );
+}
+
 export default function HomebrewImportPreview({
   preview,
   conversion,
@@ -232,7 +402,8 @@ export default function HomebrewImportPreview({
   preview: HomebrewPreview;
   /** Set for a file converted from another app: what carried over. */
   conversion?: ConversionReport;
-  onImport: () => void;
+  /** Import pressed. For a file stored a book at a time, with the books ticked. */
+  onImport: (chosen?: ReadonlySet<string>) => void;
   onCancel: () => void;
   /** For an exact duplicate: close and leave the file already here as it is. */
   onKeepExisting: () => void;
@@ -240,6 +411,22 @@ export default function HomebrewImportPreview({
   const p = preview;
   const dup = p.duplicateOf;
   const hasClashes = p.entityCollisions.length > 0 || p.sourceCollisions.length > 0;
+  const books = p.books;
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(
+    () => new Set(books?.map((b) => b.id) ?? []),
+  );
+  // What Import would store: ticked books not already here.
+  const storing = books?.filter((b) => chosen.has(b.id) && b.status !== 'same').length;
+  const picking = books !== undefined && books.length > 1;
+  const importAction =
+    books === undefined || !picking
+      ? { label: 'Import', onClick: () => onImport(), primary: true }
+      : {
+          label: storing === 0 ? 'Import' : `Import ${booksText(storing ?? 0)}`,
+          onClick: () => onImport(chosen),
+          primary: true,
+          disabled: storing === 0,
+        };
 
   return (
     <ImportPreviewDialog
@@ -253,26 +440,38 @@ export default function HomebrewImportPreview({
       actions={
         dup !== undefined
           ? [{ label: 'Keep the existing file', onClick: onKeepExisting, primary: true }]
-          : [
-              { label: 'Cancel', onClick: onCancel },
-              { label: 'Import', onClick: onImport, primary: true },
-            ]
+          : [{ label: 'Cancel', onClick: onCancel }, importAction]
       }
     >
       <PreviewFacts
         facts={[
           ['Contents', countsText(p.counts)],
           ['Size', sizeText(p.bytes, p.limitBytes)],
-          [
-            p.sources.length === 1 ? 'Source' : 'Sources',
-            p.sources.length === 0
-              ? 'None declared'
-              : p.sources.map((s) => (s.full === s.id ? s.id : `${s.full} (${s.id})`)).join(', '),
-          ],
+          picking
+            ? ['Books', `${books.length}, each kept on its own`]
+            : [
+                p.sources.length === 1 ? 'Source' : 'Sources',
+                p.sources.length === 0
+                  ? 'None declared'
+                  : p.sources
+                      .map((s) => (s.full === s.id ? s.id : `${s.full} (${s.id})`))
+                      .join(', '),
+              ],
         ]}
       />
 
       {conversion !== undefined && dup === undefined && <ConversionSection report={conversion} />}
+
+      {picking && dup === undefined && (
+        <>
+          <BookPicker books={books} chosen={chosen} onChange={setChosen} />
+          {storing === 0 && (
+            <p className="text-ink-muted">
+              Tick a book that is not already on this device to import it.
+            </p>
+          )}
+        </>
+      )}
 
       {dup !== undefined && (
         <PreviewSection heading="Already on this device">

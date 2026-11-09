@@ -448,3 +448,77 @@ describe('characterRepo revisions (IndexedDB-backed)', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a character export carrying part of a book', () => {
+  const META = {
+    sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+    convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+  };
+  const BOOK = {
+    _meta: META,
+    spell: [
+      { name: 'Ember Lance', source: 'FCEmber', level: 1 },
+      { name: 'Ember Ward', source: 'FCEmber', level: 1 },
+    ],
+  };
+  const PART = {
+    _meta: { ...META, convertedFrom: { ...META.convertedFrom, subset: true } },
+    spell: [BOOK.spell[0]],
+  };
+  const hero = () => {
+    const doc = newCharacterDoc('hero', 'Aria', 'tag');
+    doc.spellcasting = {
+      wizard: { known: [{ name: 'Ember Lance', source: 'FCEmber' }], prepared: [] },
+    };
+    return doc;
+  };
+
+  it('is skipped where the book is here in a row that still carries its content', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    const [row] = books;
+    if (row === undefined) throw new Error('no book');
+    // Written as rows were before the content had a table of its own.
+    await db.homebrewFiles.put(row);
+    expect(await db.homebrewJson.get(row.id)).toBeUndefined();
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewSkipped: 1 });
+  });
+
+  it('is skipped where the book is here', async () => {
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 0, homebrewSkipped: 1 });
+    expect((await homebrewRepo.listMetaSafe()).files.map((f) => f.subset)).toEqual([undefined]);
+  });
+
+  it('comes in beside a stored book that lacks one of its entries', async () => {
+    const older = { ...BOOK, spell: [BOOK.spell[1]] };
+    const { books } = await homebrewRepo.prepareBooks(older, 'all.xml');
+    await homebrewRepo.commitBooks(books);
+    const summary = await characterRepo.importFromText(
+      exportText(hero(), [{ fileName: 'all.xml', json: PART }]),
+    );
+    expect(summary).toMatchObject({ homebrewAdded: 1, homebrewSkipped: 0 });
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((f) => f.subset ?? false).sort()).toEqual([false, true]);
+  });
+
+  it('comes in as a part where it is not, and the whole book replaces it, switch and all', async () => {
+    await characterRepo.importFromText(exportText(hero(), [{ fileName: 'all.xml', json: PART }]));
+    const [part] = (await homebrewRepo.listMetaSafe()).files;
+    expect(part).toMatchObject({ book: 'Ember Codex', subset: true, counts: { spell: 1 } });
+    await homebrewRepo.setEnabled(part?.id ?? '', false);
+
+    const { books } = await homebrewRepo.prepareBooks(BOOK, 'all.xml');
+    expect((await homebrewRepo.commitBooks(books)).replaced).toBe(1);
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ counts: { spell: 2 }, enabled: false });
+    expect(stored[0]?.subset).toBeUndefined();
+  });
+});

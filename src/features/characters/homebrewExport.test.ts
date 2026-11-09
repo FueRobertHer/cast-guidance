@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { collectCharacterSources, homebrewForExport } from './homebrewExport';
+import { collectCharacterRefs, collectCharacterSources, homebrewForExport } from './homebrewExport';
 
 function brew(id: string, sourceIds: string[]): HomebrewFile {
   return {
@@ -84,5 +84,86 @@ describe('homebrewForExport', () => {
   it('ships nothing when the character uses no homebrew', () => {
     const plain = newCharacterDoc('c2', 'Plain', 'tag');
     expect(homebrewForExport(plain, [brew('a', ['MyBrew'])])).toEqual([]);
+  });
+});
+
+describe('homebrewForExport of a book', () => {
+  /** One book of a converted compendium, as it is stored. */
+  function book(json: Record<string, unknown>): HomebrewFile {
+    return { ...brew('book', ['FCEmber']), fileName: 'all.xml', book: 'Ember Codex', json };
+  }
+  const META = {
+    sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+    convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+  };
+  const JSON_ = {
+    _meta: META,
+    spell: [
+      { name: 'Ember Lance', source: 'FCEmber' },
+      { name: 'Ember Ward', source: 'FCEmber' },
+    ],
+    optionalfeature: [
+      { name: 'Ember Style', source: 'FCEmber' },
+      { name: 'Ash Style', source: 'FCEmber' },
+    ],
+  };
+
+  it('carries the part the character uses, its choices included, marked as a part', () => {
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.spellcasting = {
+      wizard: { known: [{ name: 'Ember Lance', source: 'FCEmber' }], prepared: [] },
+    };
+    d.choices = { 'class:fighter|phb:style': ['ember style|fcember'], 'skill:pick': 'Arcana' };
+    const [out] = homebrewForExport(d, [book(JSON_)]);
+    expect(out).toEqual({
+      fileName: 'all.xml',
+      json: {
+        _meta: { ...META, convertedFrom: { ...META.convertedFrom, subset: true } },
+        spell: [JSON_.spell[0]],
+        optionalfeature: [JSON_.optionalfeature[0]],
+      },
+    });
+  });
+
+  it('carries the whole book when the character names only its source', () => {
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.homebrewDeps = ['FCEmber'];
+    expect(homebrewForExport(d, [book(JSON_)])).toEqual([{ fileName: 'all.xml', json: JSON_ }]);
+  });
+
+  it('counts a choice that names an entry toward the sources it uses', () => {
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.choices = { 'class:fighter|phb:style': ['Ember Style|FCEmber'], other: 3 };
+    expect(collectCharacterSources(d)).toEqual(new Set(['fcember']));
+  });
+
+  it('carries what a part needs from another book, though the character never names it', () => {
+    const ash: HomebrewFile = {
+      ...brew('ash', ['FCAsh']),
+      fileName: 'all.xml',
+      book: 'Ashen Tome',
+      json: {
+        _meta: { ...META, sources: [{ json: 'FCAsh', full: 'Ashen Tome' }] },
+        background: [
+          { name: 'Ash Walker', source: 'FCAsh', feats: [{ 'ember feat|fcember': true }] },
+        ],
+      },
+    };
+    const ember = book({ ...JSON_, feat: [{ name: 'Ember Feat', source: 'FCEmber' }] });
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.background = { name: 'Ash Walker', source: 'FCAsh' };
+    const out = homebrewForExport(d, [ember, ash]);
+    expect(out.map((o) => Object.keys(o.json as object).filter((k) => k !== '_meta'))).toEqual([
+      ['feat'],
+      ['background'],
+    ]);
+  });
+
+  it('reads a spell list too long to spread into a call', () => {
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.spellcasting = {
+      wizard: { known: Array.from({ length: 200_000 }, () => 0) as never, prepared: [] },
+    };
+    expect(collectCharacterRefs(d)).toEqual([]);
   });
 });
