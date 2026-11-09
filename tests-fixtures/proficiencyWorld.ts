@@ -1,6 +1,6 @@
 /**
  * Class and species proficiency lists, shaped as the pinned 5etools release
- * (v2.39.1) has them: the strings are copied from it, tags and all. The rest of
+ * (v2.41.0) has them: the strings are copied from it, tags and all. The rest of
  * each entity is cut down to what the tests reach, and everything else comes
  * from the test world (its Longsword and Dagger, its Warrior and Mage).
  */

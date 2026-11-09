@@ -1,6 +1,6 @@
 /**
  * Pick-one class and subclass features, shaped as the pinned 5etools release
- * (v2.39.1) has them: names, levels, ref strings, `options` nodes and their
+ * (v2.41.0) has them: names, levels, ref strings, `options` nodes and their
  * `count` are copied from it. The prose is placeholder (no book text lives in
  * this repo), written only to trip the prose scan where a test wants an effect,
  * and each class's feature list is cut down to what the tests reach.

@@ -48,7 +48,7 @@ import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
 import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
-import { resetAnnouncer } from '@/stores/announcer';
+import { resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import { noticeStore } from '@/stores/notices';
 import { recordAnnouncer } from '../../../tests-fixtures/announcements';
@@ -146,6 +146,14 @@ function outcome(): string {
   expect(heard.lines.at(-1)).toBe(message);
   return shown;
 }
+/**
+ * The wait for an outcome that follows another in the same test. Each line on
+ * the import key waits out the announcer's throttle after the one before
+ * (THROTTLE_MS), and an import that is slow under load adds its own time to
+ * that, so the default second could run out with the line still to come.
+ */
+const afterAnother = { timeout: THROTTLE_MS + 2000 };
+
 /** The first preview also waits for its chunk to load, so it gets longer. */
 const findDialog = (name: string) => screen.findByRole('dialog', { name }, { timeout: 5000 });
 const fileCount = () => db.homebrewFiles.count();
@@ -614,10 +622,12 @@ describe('importing a Fight Club 5e compendium', () => {
     dialog = await findDialog('Import "library.xml"?');
     expect(dialog.textContent).toContain('Replaces the copy from "library.xml".');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-    await waitFor(() =>
-      expect(outcome()).toBe(
-        'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
-      ),
+    await waitFor(
+      () =>
+        expect(outcome()).toBe(
+          'Imported 2 books from "library.xml" (4 spell), replacing 1 book imported before',
+        ),
+      afterAnother,
     );
     const stored = (await homebrewRepo.listMetaSafe()).files;
     expect(stored.map((f) => [f.book, f.counts]).sort()).toEqual([
@@ -655,12 +665,15 @@ describe('importing a Fight Club 5e compendium', () => {
       chooseFile('library.xml', LIBRARY(['Ash Bolt']));
       dialog = await findDialog('Import "library.xml"?');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
-      await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/));
+      await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/), afterAnother);
       room = 100;
       chooseFile('library.xml', LIBRARY(['Ash Bolt', 'Ash Veil']));
       dialog = await findDialog('Import "library.xml"?');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Import 1 book' }));
-      await waitFor(() => expect(outcome()).toMatch(/^Imported 1 book .*replacing 1 book/));
+      await waitFor(
+        () => expect(outcome()).toMatch(/^Imported 1 book .*replacing 1 book/),
+        afterAnother,
+      );
     } finally {
       Reflect.deleteProperty(navigator, 'storage');
     }
