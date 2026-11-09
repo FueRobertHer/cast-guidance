@@ -61,15 +61,17 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
     isScope(p.scope) &&
     isNum(p.amount) &&
     (p.attack === undefined || oneOf('weapon', 'spell', 'any')(p.attack)) &&
-    optAbility(p.ability),
+    optAbility(p.ability) &&
+    optStr(p.weapon),
   checkBonus: (p) =>
     isNum(p.amount) &&
     ('ability' in p ? isAbility(p.ability) && !('skills' in p) : listOf(p.skills, isStr)),
   conditionImmune: (p) => isStr(p.condition) && optStr(p.note),
   critRange: (p) => Number.isInteger(p.min) && (p.min as number) >= 2 && (p.min as number) <= 20,
   cue: (p) => oneOf('help', 'ward', 'warn', 'info')(p.tone) && isStr(p.text),
-  damageBonus: (p) => isScope(p.scope) && isNum(p.amount) && optAbility(p.ability),
-  damageDie: (p) => isScope(p.scope) && isDice(p.dice) && optStr(p.damageType),
+  damageBonus: (p) =>
+    isScope(p.scope) && isNum(p.amount) && optAbility(p.ability) && optStr(p.weapon),
+  damageDie: (p) => isScope(p.scope) && isDice(p.dice) && optStr(p.damageType) && optStr(p.weapon),
   extraAction: (p) => isStr(p.label) && optStr(p.note),
   immune: (p) => isStr(p.damageType) && optStr(p.note),
   initiativeBonus: (p) => isNum(p.amount),
@@ -172,6 +174,25 @@ export function namedEffect(effect: ActiveEffect, part: EffectPart): string {
 const groupKey = (name: string) => name.trim().toLowerCase();
 
 /**
+ * The group a part counts in: its named effect, and the weapon it is on when
+ * it is on one. The rule is per target, and two weapons are two targets: two
+ * Magic Weapons on two swords both count.
+ */
+function partGroup(effect: ActiveEffect, part: EffectPart): string {
+  const weapon = 'weapon' in part ? part.weapon : undefined;
+  const name = groupKey(namedEffect(effect, part));
+  return weapon === undefined ? name : `${name}\u0000${weapon}`;
+}
+
+/**
+ * The groups an effect's parts count in, for asking whether another already
+ * on would count instead (a Potion of Heroism's d4 meets Bless).
+ */
+export function countsAs(effect: ActiveEffect): Set<string> {
+  return new Set(effect.parts.map((p) => partGroup(effect, p)));
+}
+
+/**
  * The field that says how strong a part of each kind is, where two castings of
  * one effect can differ by a number or a die (Aid at two slot levels). Kinds
  * not listed have no strength: two of them are the same or different things.
@@ -264,7 +285,8 @@ export interface CountingEffects {
  * What the effects in play add, under the rule both editions state once:
  * effects of the same name do not combine, the most potent one counts. Parts
  * are grouped by the named effect they are (`namedEffect`), so a Potion of
- * Speed's parts meet Haste's and a Potion of Heroism's d4 meets Bless's. In a
+ * Speed's parts meet Haste's and a Potion of Heroism's d4 meets Bless's, and
+ * by the weapon a part is on (`partGroup`), since the rule is per target. In a
  * group one effect counts: the strongest when every effect there does the same
  * things by different amounts (Aid at two slot levels), otherwise the first
  * added. The rest stay in play, counting for nothing until it ends. An effect
@@ -275,7 +297,7 @@ export function countingEffects(effects: readonly ActiveEffect[]): CountingEffec
   for (const effect of effects) {
     if (effect.off === true) continue;
     for (const part of effect.parts) {
-      const key = groupKey(namedEffect(effect, part));
+      const key = partGroup(effect, part);
       const entries = groups.get(key) ?? [];
       if (entries.length === 0) groups.set(key, entries);
       const entry = entries.find((x) => x.effect === effect);

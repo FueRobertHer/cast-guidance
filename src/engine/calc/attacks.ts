@@ -144,14 +144,19 @@ export function calcAttacks(
   const damageBonuses = effectsOf(effects, 'damageBonus');
   const riderDice = effectsOf(effects, 'damageDie');
   const profFilters = effectsOf(effects, 'weaponProfFilter').map((f) => f.filter);
-  /** A bonus's scope reaches this attack, and so does its ability, when it names one. */
+  /**
+   * A bonus's scope reaches this attack, and so do its ability and its weapon,
+   * when it names them: one on a weapon reaches only that carried weapon.
+   */
   const reaches = (
-    b: { scope: 'melee' | 'ranged' | 'all'; ability?: Ability },
+    b: { scope: 'melee' | 'ranged' | 'all'; ability?: Ability; weapon?: string },
     ranged: boolean,
     ability: Ability,
+    weaponId: string | undefined,
   ) =>
     (b.scope === 'all' || (b.scope === 'ranged') === ranged) &&
-    (b.ability === undefined || b.ability === ability);
+    (b.ability === undefined || b.ability === ability) &&
+    (b.weapon === undefined || b.weapon === weaponId);
 
   const buildRow = (
     label: string,
@@ -166,26 +171,29 @@ export function calcAttacks(
     range: string | undefined,
     origin: string,
     extraDamage: DamageRider[] = [],
+    weapon?: { id: string; magical: boolean },
   ): AttackRow => {
+    const weaponId = weapon?.id;
     const mod = abilities[ability].mod;
     const parts = [{ label: `${ability.toUpperCase()} modifier`, amount: mod }];
     if (proficient) parts.push({ label: 'Proficiency', amount: profBonus });
     if (magicBonus !== 0) parts.push({ label: 'Magic bonus', amount: magicBonus });
     for (const b of attackBonuses) {
-      if (reaches(b, ranged, ability)) parts.push({ label: b.origin.label, amount: b.amount });
+      if (reaches(b, ranged, ability, weaponId))
+        parts.push({ label: b.origin.label, amount: b.amount });
     }
 
     let dmgMod = mod + magicBonus;
     const damageFrom: string[] = [];
     for (const b of damageBonuses) {
-      if (!reaches(b, ranged, ability)) continue;
+      if (!reaches(b, ranged, ability, weaponId)) continue;
       dmgMod += b.amount;
       if (b.amount !== 0 && !damageFrom.includes(b.origin.label)) damageFrom.push(b.origin.label);
     }
     const riders = [
       ...extraDamage,
       ...riderDice
-        .filter((d) => reaches(d, ranged, ability))
+        .filter((d) => reaches(d, ranged, ability, weaponId))
         .map((d) => ({
           dice: d.dice,
           ...(d.damageType !== undefined ? { damageType: d.damageType } : {}),
@@ -208,6 +216,8 @@ export function calcAttacks(
       ability,
       ranged,
       origin,
+      ...(weapon === undefined ? {} : { weaponId: weapon.id }),
+      ...(weapon?.magical === true ? { magical: true } : {}),
     };
   };
 
@@ -265,6 +275,8 @@ export function calcAttacks(
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',
         magic ? extraDamageOf(e) : [],
+        // A magic item's rarity is set; a mundane weapon's is none.
+        { id: entry.id, magical: typeof e.rarity === 'string' && e.rarity !== 'none' },
       ),
     );
   }

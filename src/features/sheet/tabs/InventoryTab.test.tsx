@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { focusSheetOnTouch } from '@/ui/sheet';
 import { namelessControls } from '../../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import type { CharacterSheetState } from '../useCharacterSheet';
@@ -55,11 +56,7 @@ vi.mock('vaul', async () => {
   };
 });
 
-const {
-  AddItemDrawer,
-  Component: InventoryTab,
-  focusSheetOnTouch,
-} = await import('./InventoryTab');
+const { AddItemDrawer, Component: InventoryTab } = await import('./InventoryTab');
 
 const items = (...names: string[]): Entity[] =>
   names.map((name) => ({ name, source: 'PHB' }) as Entity);

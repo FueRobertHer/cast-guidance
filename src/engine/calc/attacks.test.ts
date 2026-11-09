@@ -93,6 +93,15 @@ const WEAPONS: Record<string, DataEntity> = {
     dmgType: 'S',
     extraDamage: { dmg: '1d6', dmgType: 'cold' },
   },
+  // A magic item: its rarity is set, where a mundane weapon's is none.
+  'Moon Blade': {
+    name: 'Moon Blade',
+    type: 'M',
+    weaponCategory: 'martial',
+    dmg1: '1d8',
+    dmgType: 'S',
+    rarity: 'legendary',
+  },
   // A homebrew rider weapon that asks for attunement.
   'Bound Flame Sword': {
     name: 'Bound Flame Sword',
@@ -264,6 +273,46 @@ describe('calcAttacks', () => {
         'Longsword',
       )?.toHit.value,
     ).toBe(6);
+  });
+
+  it('gives a bonus on one weapon to that weapon alone', () => {
+    const d = newCharacterDoc('c', 'H', 't');
+    d.equipment = [
+      { id: 'e1', ref: { name: 'Longsword', source: 'T' }, qty: 1, equipped: true, attuned: false },
+      { id: 'e2', ref: { name: 'Rapier', source: 'T' }, qty: 1, equipped: true, attuned: false },
+      {
+        id: 'e3',
+        ref: { name: 'Moon Blade', source: 'T' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const spell: EffectOrigin = { label: 'Elemental Weapon', uid: 'a', type: 'active' };
+    const rows = attacks(d, abilities(3, 1), 2, undefined, [
+      { kind: 'attackBonus', scope: 'all', amount: 2, weapon: 'e1', origin: spell },
+      {
+        kind: 'damageDie',
+        scope: 'all',
+        dice: '2d4',
+        damageType: 'cold',
+        weapon: 'e1',
+        origin: spell,
+      },
+    ]);
+    expect(row(rows, 'Longsword')?.toHit.value).toBe(7);
+    expect(row(rows, 'Longsword')?.extraDamage).toEqual([
+      { dice: '2d4', damageType: 'cold', label: 'Elemental Weapon' },
+    ]);
+    expect(row(rows, 'Longsword')).toMatchObject({ weaponId: 'e1' });
+    for (const other of ['Rapier', 'Unarmed Strike']) {
+      expect(row(rows, other)?.toHit.value, other).toBe(5);
+      expect(row(rows, other)?.extraDamage, other).toEqual([]);
+    }
+    // A magic item says so, for a spell that needs a nonmagical weapon.
+    expect(row(rows, 'Moon Blade')?.magical).toBe(true);
+    expect(row(rows, 'Longsword')?.magical).toBeUndefined();
+    expect(row(rows, 'Unarmed Strike')?.weaponId).toBeUndefined();
   });
 
   it('always includes an unarmed strike', () => {

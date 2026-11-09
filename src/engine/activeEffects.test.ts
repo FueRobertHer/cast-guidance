@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../tests-fixtures/testWorld';
-import { countingEffects, readActiveEffects } from './activeEffects';
+import { countingEffects, countsAs, readActiveEffects } from './activeEffects';
 import { deriveSheet } from './derive';
 import {
   type ActiveEffect,
@@ -275,6 +275,36 @@ describe('countingEffects: effects of one name never add up', () => {
   it('stores no `same` on what it hands to derive', () => {
     const potion = fx('Potion', [{ kind: 'acBonus', amount: 1, same: 'Ward' }]);
     expect(countingEffects([potion]).inputs[0]).not.toHaveProperty('same');
+  });
+
+  it('counts one of a name per weapon: two weapons are two targets', () => {
+    const magicWeapon = (weapon: string, amount: number) =>
+      fx('Magic Weapon', [
+        { kind: 'attackBonus', scope: 'all', amount, weapon },
+        { kind: 'damageBonus', scope: 'all', amount, weapon },
+      ]);
+    const sword = magicWeapon('e1', 1);
+    const axe = magicWeapon('e2', 1);
+    const both = countingEffects([sword, axe]);
+    expect(both.inputs.map((e) => e.origin.uid)).toEqual([sword.id, sword.id, axe.id, axe.id]);
+    expect(both.notCounted).toEqual([]);
+    // On one weapon twice, the stronger casting counts.
+    const stronger = magicWeapon('e1', 2);
+    const one = countingEffects([sword, stronger]);
+    expect(one.inputs.map((e) => e.origin.uid)).toEqual([stronger.id, stronger.id]);
+    expect(one.notCounted.map((n) => n.effectId)).toEqual([sword.id]);
+  });
+
+  it('says which groups an effect counts in, by name, the name a part is, and weapon', () => {
+    const potion = fx('Potion of Heroism', [
+      { kind: 'rollDie', dice: '1d4', on: { rolls: ['attack', 'save'] }, same: 'Bless' },
+      { kind: 'cue', tone: 'help', text: 'Ten temporary hit points' },
+    ]);
+    expect(countsAs(potion)).toEqual(new Set(['bless', 'potion of heroism']));
+    const onSword = fx('Magic Weapon', [
+      { kind: 'attackBonus', scope: 'all', amount: 1, weapon: 'e1' },
+    ]);
+    expect(countsAs(onSword)).toEqual(new Set(['magic weapon\u0000e1']));
   });
 });
 

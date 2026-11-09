@@ -19,7 +19,7 @@ import { Button, buttonClass } from '@/ui/Button';
 import { chipClass } from '@/ui/Chip';
 import { EntityInfoSheet } from '@/ui/EntityInfoSheet';
 import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
-import { Sheet } from '@/ui/sheet';
+import { focusSheetOnTouch, Sheet } from '@/ui/sheet';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
@@ -38,19 +38,6 @@ const OFFER =
 
 /** A section heading inside a screen, as Settings has them. */
 const H2 = 'px-1 text-heading';
-
-/**
- * Where Add item puts focus as it opens (A11Y-003). The sheet's first control
- * is its search box, which suits a keyboard; on a touch screen focusing it
- * pops the on-screen keyboard over the list it filters before anyone asked
- * to type. There the sheet itself takes focus instead, as a screen reader
- * expects, and a tap on the box brings the keyboard up. Exported for tests.
- */
-export function focusSheetOnTouch(event: Event): void {
-  if (!matchMedia('(pointer: coarse)').matches) return;
-  event.preventDefault();
-  (event.currentTarget as HTMLElement | null)?.focus();
-}
 
 export function AddItemDrawer({
   onAdd,
