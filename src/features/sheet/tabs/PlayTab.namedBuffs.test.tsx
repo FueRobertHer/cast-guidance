@@ -317,4 +317,23 @@ describe('casting Bless', () => {
     expect(saved.play.activeEffects).toBeUndefined();
     expect(saved.play.concentratingOn).toEqual({ label: 'Bless', level: 1 });
   });
+
+  it('asks the same when Bless is cast from a daily grant', async () => {
+    // A feat's free cast goes through `castGranted`, not the slot path.
+    const charm: DataEntity = {
+      name: 'Blessing Charm',
+      source: 'TST',
+      additionalSpells: [{ ability: 'cha', innate: { _: { daily: { '1': ['bless|tst'] } } } }],
+      entries: ['A charm that blesses once a day.'],
+    };
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Blessing Charm', source: 'TST' }, instanceId: 'c1' }];
+    const sheet = await renderSheet(doc, { extra: { spell: [bless], feat: [charm] } });
+    // A grant's row is named as the feat lists it.
+    press('Cast bless');
+    await (await dialog('Bless yourself too?')).press('Yes, add +d4');
+    const saved = await sheet.saved();
+    expect(saved.play.activeEffects?.[0]).toMatchObject({ name: 'Bless', mine: true });
+    expect(saved.play.resources).toContainEqual({ key: expect.stringContaining('bless'), used: 1 });
+  });
 });
