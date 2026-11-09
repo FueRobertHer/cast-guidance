@@ -11,6 +11,7 @@ import {
 import type { RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
+import { namedFirst, whenLanded } from '@/stores/heldRoll';
 import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
 
 /**
@@ -151,6 +152,11 @@ const NO_EFFECTS: D20Effects = { advantage: [], disadvantage: [], autoFail: [], 
  * the toast. Nothing is offered where nothing could change the outcome: an
  * automatic failure, or a natural 1 or 20 on a roll the natural settles
  * (`settlesOnNatural`: attacks and death saves).
+ *
+ * The one-use dice among the offers are also marked `askFirst`, read before
+ * the d20 is, for a table that names them before the roll (`stores/heldRoll`).
+ * A roll that passes `settlesOnNatural` and asks is an attack: a death save
+ * offers nothing.
  */
 export function rollD20Test(
   expr: string,
@@ -193,13 +199,16 @@ export function rollD20Test(
   const natural = result.meta?.d20?.natural;
   const settled = resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20));
   const offers = settled ? [] : (riders?.offers ?? []);
+  // Asked before the roll under the house rule, so read before the d20 is:
+  // only an automatic failure, which the cue already says, asks nothing.
+  const ask = resolution.autoFail ? [] : (riders?.offers ?? []).filter(namedFirst);
   const cue = [
     ignored && conditionsApply ? 'Conditions ignored for this roll' : '',
     rollCue(used, resolution),
   ]
     .filter((part) => part !== '')
     .join(' · ');
-  if (cue === '' && from.length === 0 && offers.length === 0) return result;
+  if (cue === '' && from.length === 0 && offers.length === 0 && ask.length === 0) return result;
   return {
     ...result,
     meta: {
@@ -208,6 +217,7 @@ export function rollD20Test(
       ...(resolution.autoFail ? { autoFail: true } : {}),
       ...(from.length > 0 ? { from } : {}),
       ...(offers.length > 0 ? { offers } : {}),
+      ...(ask.length > 0 ? { askFirst: { offers: ask, attack: settlesOnNatural } } : {}),
     },
   };
 }
@@ -292,13 +302,21 @@ export function useIgnoreOnce(conditionsKey: string) {
         armed: armed.has(group) ? without(group) : new Set(armed).add(group),
       }),
     /**
-     * Whether the group was armed, disarming it: call as its roll is made.
+     * Whether the group was armed, disarming it once the roll lands (at once
+     * outside `rollFrom`): call as its roll is made.
      * A roll no condition reaches (a WIS save under Restrained) leaves it
      * armed for the one that is.
      */
     take: (group: RollGroup, effects: D20Effects): boolean => {
       if (!armed.has(group) || noD20Effect(effects)) return false;
-      setState({ key: conditionsKey, armed: without(group) });
+      // Spent once the roll lands: one that waits and is cancelled spends nothing.
+      whenLanded(() =>
+        setState((s) => {
+          const now = new Set(s.key === conditionsKey ? s.armed : []);
+          now.delete(group);
+          return { key: conditionsKey, armed: now };
+        }),
+      );
       return true;
     },
   };

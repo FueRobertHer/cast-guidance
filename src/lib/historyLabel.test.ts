@@ -31,6 +31,13 @@ describe('historyLabel', () => {
     expect(historyLabel(added, base())).toBe('Removed Cleric');
   });
 
+  it("names the character's rule for one-use dice", () => {
+    const before = base();
+    before.oneUseDice = 'before';
+    expect(historyLabel(base(), before)).toBe('One-use dice: before the roll');
+    expect(historyLabel(before, base())).toBe('One-use dice: as in Settings');
+  });
+
   it('labels an HP change specifically', () => {
     const next = base();
     next.play.currentHp = 3;

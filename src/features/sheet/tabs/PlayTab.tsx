@@ -47,6 +47,7 @@ import type {
 import { randomId } from '@/lib/randomId';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
+import { rollFrom } from '@/stores/heldRoll';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { Badge, badgeClass } from '@/ui/Badge';
@@ -1136,17 +1137,19 @@ export function Component() {
           </BreakdownSheet>
           <button
             type="button"
-            onClick={() => {
-              rollLogStore.getState().append(
-                rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
-                  label: 'Initiative',
-                  effects: initiativeEffects,
-                  ignored: ignore.take('initiative', initiativeEffects),
-                  riders: rollEffects(sheet, { kind: 'initiative' }),
-                }),
-              );
-              initiativeRoll.rolled();
-            }}
+            onClick={(event) =>
+              rollFrom(
+                event.currentTarget,
+                () =>
+                  rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
+                    label: 'Initiative',
+                    effects: initiativeEffects,
+                    ignored: ignore.take('initiative', initiativeEffects),
+                    riders: rollEffects(sheet, { kind: 'initiative' }),
+                  }),
+                initiativeRoll.rolled,
+              )
+            }
             className={`${WORN_TILE} rounded-tr-card border-line border-l @min-[18rem]:rounded-tr-none`}
           >
             <ChipFace

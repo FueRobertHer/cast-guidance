@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { type MouseEvent, useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
-import { rollLogStore } from '@/stores/rollLog';
+import { rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
 
@@ -19,7 +19,11 @@ export interface RollChipProps {
    * `danger` for damage, `heal` for healing.
    */
   variant?: 'dice' | 'damage' | 'd20' | 'heal';
-  /** Fires after a successful roll (e.g. to spend a limited-use resource). */
+  /**
+   * Fires after a successful roll (e.g. to spend a limited-use resource), once
+   * it lands: a roll that waits for a one-use die to be named fires it then,
+   * and one cancelled never does.
+   */
   onRolled?: (total: number) => void;
   /**
    * Makes the roll in place of the chip's own: a sheet's d20 test, which the
@@ -109,22 +113,27 @@ export function RollChip({
 
   if (!valid.current) return <span>{display ?? expr}</span>;
 
-  const onRoll = () => {
-    // d20-style chips honor the global advantage toggle.
-    const r =
-      roller?.() ??
-      roll(expr, {
-        label,
-        advantage: variant === 'd20' ? currentAdvantage() : undefined,
-        kind: KIND[variant],
-      });
-    rollLogStore.getState().append(r);
-    onRolled?.(r.total);
-    setResult(r.total);
-    setRolls((n) => n + 1);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setResult(null), TOTAL_MS);
-  };
+  // The roll lands through `rollFrom`, which may hold it for a one-use die
+  // to be named first (the house rule): the total and `onRolled` wait for it.
+  const onRoll = (event: MouseEvent<HTMLButtonElement>) =>
+    rollFrom(
+      event.currentTarget,
+      () =>
+        roller?.() ??
+        // d20-style chips honor the global advantage toggle.
+        roll(expr, {
+          label,
+          advantage: variant === 'd20' ? currentAdvantage() : undefined,
+          kind: KIND[variant],
+        }),
+      (r) => {
+        onRolled?.(r.total);
+        setResult(r.total);
+        setRolls((n) => n + 1);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setResult(null), TOTAL_MS);
+      },
+    );
 
   const text =
     result !== null ? (

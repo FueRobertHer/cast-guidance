@@ -3,7 +3,7 @@ import { type D20Effects, type D20Test, d20Effects } from '@/engine/conditions';
 import { defensesInForce, rollEffects } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
-import { rollLogStore } from '@/stores/rollLog';
+import { rollFrom } from '@/stores/heldRoll';
 import { BreakdownParts, BreakdownSheet } from '@/ui/BreakdownSheet';
 import { ChipFace, type ChipWear, useRollMoment } from '@/ui/ChipFace';
 import { D20Icon } from '@/ui/D20Icon';
@@ -74,7 +74,8 @@ function AbilityTile({
   wear: ChipWear;
   /** The effects in play that raised its score or its check. */
   lifted: readonly string[];
-  onRoll: () => void;
+  /** Rolls from this control; `landed` plays the face's moment once the roll lands. */
+  onRoll: (from: HTMLElement, landed: () => void) => void;
 }) {
   const moment = useRollMoment();
   return (
@@ -91,10 +92,7 @@ function AbilityTile({
           </span>
           <button
             type="button"
-            onClick={() => {
-              onRoll();
-              moment.rolled();
-            }}
+            onClick={(event) => onRoll(event.currentTarget, moment.rolled)}
             aria-label={`Roll ${name.toUpperCase()} check (${signed(check.total.value)})${
               lifted.length > 0 ? `, raised by ${lifted.join(', ')}` : ''
             }`}
@@ -158,17 +156,15 @@ function SaveButton({
   wear: ChipWear;
   /** The effects in play that raised it. */
   lifted: readonly string[];
-  onRoll: () => void;
+  /** Rolls from this control; `landed` plays the face's moment once the roll lands. */
+  onRoll: (from: HTMLElement, landed: () => void) => void;
 }) {
   const moment = useRollMoment();
   // Its ring is the face's, so it moves as Paralyzed or Petrified moves the face.
   return (
     <button
       type="button"
-      onClick={() => {
-        onRoll();
-        moment.rolled();
-      }}
+      onClick={(event) => onRoll(event.currentTarget, moment.rolled)}
       className={`relative flex min-h-tap min-w-0 flex-1 rounded-control text-ink ${TILE} ${ROLLS}`}
     >
       <ChipFace
@@ -202,7 +198,13 @@ function SkillsCard({
 }: {
   skills: Sheet['skills'];
   wear: ChipWear;
-  onRoll: (name: string, skill: Sheet['skills'][string]) => void;
+  /** Rolls from the row; `landed` plays the card's moment once the roll lands. */
+  onRoll: (
+    from: HTMLElement,
+    landed: () => void,
+    name: string,
+    skill: Sheet['skills'][string],
+  ) => void;
 }) {
   const moment = useRollMoment();
   return (
@@ -213,10 +215,7 @@ function SkillsCard({
             <button
               key={name}
               type="button"
-              onClick={() => {
-                onRoll(name, s);
-                moment.rolled();
-              }}
+              onClick={(event) => onRoll(event.currentTarget, moment.rolled, name, s)}
               className={`flex min-h-tap items-center gap-3 pr-3 pl-4 text-left text-ink ${ROLLS}`}
             >
               <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -274,22 +273,25 @@ export function Component() {
       onIgnore={() => ignore.toggle('check')}
     />
   );
-  /** A check or save, with what the effects in play bring to it (Bless, Guidance). */
-  const rollTest = (
-    label: string,
-    modifier: number,
-    group: RollGroup,
-    effects: D20Effects,
-    test: D20Test,
-  ) =>
-    rollLogStore.getState().append(
-      rollD20Test(`1d20${fmt(modifier)}`, {
-        label,
-        effects,
-        ignored: ignore.take(group, effects),
-        riders: rollEffects(sheet, test),
-      }),
-    );
+  /**
+   * A check or save, with what the effects in play bring to it (Bless,
+   * Guidance), from the control that rolled it (`rollFrom`: under the house
+   * rule it may wait for a one-use die to be named first).
+   */
+  const rollTest =
+    (label: string, modifier: number, group: RollGroup, effects: D20Effects, test: D20Test) =>
+    (from: HTMLElement, landed: () => void) =>
+      rollFrom(
+        from,
+        () =>
+          rollD20Test(`1d20${fmt(modifier)}`, {
+            label,
+            effects,
+            ignored: ignore.take(group, effects),
+            riders: rollEffects(sheet, test),
+          }),
+        landed,
+      );
 
   return (
     <div className="flex flex-col gap-6">
@@ -311,15 +313,13 @@ export function Component() {
               check={sheet.checks[a]}
               wear={rollWear(conditions, checkEffects(a), ignore.armed('check'))}
               lifted={abilityLift(a)}
-              onRoll={() =>
-                rollTest(
-                  `${a.toUpperCase()} check`,
-                  sheet.checks[a].total.value,
-                  'check',
-                  checkEffects(a),
-                  { kind: 'check', ability: a },
-                )
-              }
+              onRoll={rollTest(
+                `${a.toUpperCase()} check`,
+                sheet.checks[a].total.value,
+                'check',
+                checkEffects(a),
+                { kind: 'check', ability: a },
+              )}
             />
           ))}
         </section>
@@ -341,15 +341,13 @@ export function Component() {
               save={sheet.saves[a]}
               wear={rollWear(conditions, saveEffects[a], ignore.armed('save'))}
               lifted={raisedBy(sheet.saves[a].total, built.saves[a].total)}
-              onRoll={() =>
-                rollTest(
-                  `${a.toUpperCase()} save`,
-                  sheet.saves[a].total.value,
-                  'save',
-                  saveEffects[a],
-                  { kind: 'save', ability: a },
-                )
-              }
+              onRoll={rollTest(
+                `${a.toUpperCase()} save`,
+                sheet.saves[a].total.value,
+                'save',
+                saveEffects[a],
+                { kind: 'save', ability: a },
+              )}
             />
           ))}
         </div>
@@ -361,12 +359,12 @@ export function Component() {
         <SkillsCard
           skills={sheet.skills}
           wear={rollWear(conditions, checkEffects('str'), ignore.armed('check'))}
-          onRoll={(name, s) =>
+          onRoll={(from, landed, name, s) =>
             rollTest(`${name} check`, s.total.value, 'check', checkEffects(s.ability), {
               kind: 'check',
               ability: s.ability,
               skill: name,
-            })
+            })(from, landed)
           }
         />
       </section>

@@ -400,6 +400,50 @@ describe('rollD20Test with effects in play', () => {
     expect(fails.meta?.offers).toBeUndefined();
   });
 
+  it('marks the one-use dice to ask about first, whatever the d20 shows', () => {
+    const guidance = {
+      dice: '1d4',
+      source: 'Guidance',
+      effectId: 'g1',
+      once: true,
+      ifFailed: false,
+    };
+    // 2024 Bardic waits for a failure, and a die that is not one use waits for nothing.
+    const failed = { ...bardic, effectId: 'b2', ifFailed: true };
+    const every = { dice: '1d4', source: 'Guidance', once: false, ifFailed: false };
+    nextFaces(20);
+    const nat20 = rollD20Test('1d20+7', {
+      label: 'Attack',
+      riders: riders({ offers: [bardic, failed, every] }),
+      settlesOnNatural: true,
+    });
+    // Settled after the roll, but asked about before it: a natural 20 must
+    // not be told by a roll that does not wait.
+    expect(nat20.meta?.offers).toBeUndefined();
+    expect(nat20.meta?.askFirst).toEqual({ offers: [bardic], attack: true });
+    nextFaces(1);
+    const nat1 = rollD20Test('1d20+3', {
+      label: 'Athletics check',
+      riders: riders({ offers: [guidance, bardic] }),
+    });
+    expect(nat1.meta?.askFirst).toEqual({ offers: [guidance, bardic], attack: false });
+    nextFaces(15);
+    const plain = rollD20Test('1d20+3', {
+      label: 'Athletics check',
+      riders: riders({ offers: [every, failed] }),
+    });
+    expect(plain.meta?.askFirst).toBeUndefined();
+    // An automatic failure is on the cue before the roll: nothing to ask.
+    nextFaces(15);
+    const paralyzed = effects([{ id: 'Paralyzed' }], '2014', { kind: 'save', ability: 'dex' });
+    const fails = rollD20Test('1d20+2', {
+      label: 'DEX save',
+      effects: paralyzed,
+      riders: riders({ offers: [bardic] }),
+    });
+    expect(fails.meta?.askFirst).toBeUndefined();
+  });
+
   it("rolls an effect's advantage and disadvantage as a feature's", () => {
     nextFaces(15, 4);
     const r = rollD20Test('1d20+3', {

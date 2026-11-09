@@ -93,6 +93,16 @@ export interface RollResult {
     from?: Array<{ term: number; source: string }>;
     /** Dice effects offer after the roll; absent when nothing could change it (a natural 20 attack). */
     offers?: RollOffer[];
+    /**
+     * The one-use dice a table that names them before the roll is asked about
+     * (`lib/oneUseDice`, `stores/heldRoll`): offers that spend their effect and
+     * do not wait for a failure, whatever the d20 shows, so a roll that waits
+     * never hints at a natural. `attack` marks an attack roll, which damage
+     * tapped while it waits joins. Only the hold reads it; the log never sees it.
+     */
+    askFirst?: { offers: RollOffer[]; attack: boolean };
+    /** The roll this one went with: damage tapped while its attack waited. */
+    withRoll?: string;
   };
 }
 

@@ -188,6 +188,12 @@ export interface CharacterDoc {
    * 'max' (table rule: full die every level). Optional; default 'average'.
    */
   hpMethod?: 'average' | 'rolled' | 'max';
+  /**
+   * When this character's one-use dice (2014 Guidance and Bardic Inspiration)
+   * are offered: after the roll, as written, or before it, a house rule.
+   * Optional; absent follows the app's choice in Settings (`lib/oneUseDice`).
+   */
+  oneUseDice?: 'after' | 'before';
   race?: EntityRef;
   subrace?: EntityRef;
   background?: EntityRef;

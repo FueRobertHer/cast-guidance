@@ -1,6 +1,13 @@
 /** Short human labels for character history snapshots. */
 import type { CharacterDoc } from '@/engine/types';
-import { effectChanges, firstWithMore, humanKey, nameDiff, spellNames } from './docDiff';
+import {
+  diceRuleWords,
+  effectChanges,
+  firstWithMore,
+  humanKey,
+  nameDiff,
+  spellNames,
+} from './docDiff';
 
 function equipmentLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
   const nameOf = (e: CharacterDoc['equipment'][number]) => e.ref?.name ?? e.custom?.name ?? 'item';
@@ -240,6 +247,8 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
     labels.push(`Background: ${next.background?.name ?? 'none'}`);
   if ((prev.hpMethod ?? 'average') !== (next.hpMethod ?? 'average'))
     labels.push(`HP rule: ${next.hpMethod ?? 'average'}`);
+  if (prev.oneUseDice !== next.oneUseDice)
+    labels.push(`One-use dice: ${diceRuleWords(next.oneUseDice)}`);
 
   if (JSON.stringify(prev.abilities) !== JSON.stringify(next.abilities))
     labels.push('Ability scores');
