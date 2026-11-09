@@ -5,34 +5,50 @@ const ids = (list: string[]) => list.map((id) => ({ id }));
 
 describe('conditionLimits', () => {
   it('is all-empty with no conditions', () => {
-    expect(conditionLimits([])).toEqual({ noActions: [], noVerbal: [] });
+    expect(conditionLimits([], '2014')).toEqual({ noActions: [], noVerbal: [] });
   });
 
   it('Paralyzed stops actions and speech', () => {
-    const l = conditionLimits(ids(['Paralyzed']));
+    const l = conditionLimits(ids(['Paralyzed']), '2014');
     expect(l.noActions).toEqual(['Paralyzed']);
     expect(l.noVerbal).toEqual(['Paralyzed']);
   });
 
-  it('Incapacitated stops actions only', () => {
-    const l = conditionLimits(ids(['Incapacitated']));
+  it('Incapacitated stops actions only in 2014, and speech too in 2024', () => {
+    const l = conditionLimits(ids(['Incapacitated']), '2014');
     expect(l.noActions).toEqual(['Incapacitated']);
     expect(l.noVerbal).toEqual([]);
+    // 2024 Incapacitated: "Speechless. You can't speak."
+    expect(conditionLimits(ids(['Incapacitated']), '2024')).toEqual({
+      noActions: ['Incapacitated'],
+      noVerbal: ['Incapacitated'],
+    });
+  });
+
+  it('2024 Stunned is speechless through Incapacitated, as every condition that brings it is', () => {
+    const all = ['Paralyzed', 'Petrified', 'Stunned', 'Unconscious'];
+    expect(conditionLimits(ids(all), '2024').noVerbal).toEqual(all);
+    expect(conditionLimits(ids(all), '2014').noVerbal).toEqual(all);
   });
 
   it('Blinded/Prone block neither actions nor speech', () => {
-    expect(conditionLimits(ids(['Blinded', 'Prone']))).toEqual({ noActions: [], noVerbal: [] });
+    expect(conditionLimits(ids(['Blinded', 'Prone']), '2014')).toEqual({
+      noActions: [],
+      noVerbal: [],
+    });
   });
 
   it('leaves out a condition whose effects are switched off', () => {
-    expect(conditionLimits([{ id: 'Stunned', ignored: true }, { id: 'Paralyzed' }])).toEqual({
+    expect(
+      conditionLimits([{ id: 'Stunned', ignored: true }, { id: 'Paralyzed' }], '2024'),
+    ).toEqual({
       noActions: ['Paralyzed'],
       noVerbal: ['Paralyzed'],
     });
   });
 
   it('accumulates every responsible condition', () => {
-    const l = conditionLimits(ids(['Stunned', 'Poisoned', 'Unconscious']));
+    const l = conditionLimits(ids(['Stunned', 'Poisoned', 'Unconscious']), '2014');
     expect(l.noActions).toEqual(['Stunned', 'Unconscious']);
     expect(l.noVerbal).toEqual(['Stunned', 'Unconscious']);
   });

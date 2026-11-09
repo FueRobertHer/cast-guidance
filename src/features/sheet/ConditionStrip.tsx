@@ -15,15 +15,18 @@ import { pickForVersion } from '@/data5e/rulesVersion';
 import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
 import {
   applyEffect,
+  conditionEndings,
   endEffect,
+  type HpLimits,
   keepHigherTemp,
-  setConcentration,
+  knockedOut,
   setEffectOff,
 } from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, KeptEffect } from '@/engine/types';
 import { announce } from '@/stores/announcer';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
+import { type Notice, notify } from '@/stores/notices';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -33,6 +36,7 @@ import { ToggleChip } from '@/ui/ToggleChip';
 import { CONDITIONS, conditionEffect } from './conditionEffects';
 import { ExhaustionStepper } from './ExhaustionStepper';
 import {
+  andList,
   countedInstead,
   effectMark,
   effectsInPlay,
@@ -76,6 +80,27 @@ const CHIP_NAME =
   '-my-1.5 flex min-h-tap items-center gap-1.5 whitespace-nowrap rounded-l-full pl-3 text-ink text-label underline-offset-2 [--tap-inset:0.375rem] hover:underline';
 const CHIP_X =
   'tap -my-1.5 -mr-1.5 rounded-full text-ink-muted [--tap-inset:0.625rem] hover:text-ink';
+
+/**
+ * The condition `id` just came on in this draft: what it ends goes
+ * (concentration, Rage; see `conditionEndings`), and the notice says so. Null
+ * when nothing ended.
+ */
+function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Notice | null {
+  if (hp === null) return null;
+  const focus = d.play.concentratingOn?.label;
+  const { ended } = conditionEndings(d.play, id, hp);
+  const gone = ended.length === 0 ? [] : [`Ended ${andList(ended)}`];
+  if (focus !== undefined && d.play.concentratingOn === undefined) {
+    return {
+      title: 'Concentration broken',
+      detail: [focus, id, ...gone].join(' · '),
+      tone: 'warn',
+    };
+  }
+  if (ended.length === 0) return null;
+  return { title: `Ended ${andList(ended)}`, detail: id, tone: 'warn' };
+}
 
 /** "You cannot be poisoned: Periapt of Proof against Poison." */
 const cannotBe = (id: string, by: readonly string[]) =>
@@ -239,11 +264,16 @@ export function ConditionStrip({
       return;
     }
     clearRefused();
+    const hp = limits();
+    let notice: Notice | null = null;
     update((d) => {
       const idx = d.play.conditions.findIndex((x) => x.id === id);
-      if (idx === -1) d.play.conditions.push({ id });
-      else d.play.conditions.splice(idx, 1);
+      if (idx === -1) {
+        d.play.conditions.push({ id });
+        notice = settleCondition(d, id, hp);
+      } else d.play.conditions.splice(idx, 1);
     });
+    if (notice !== null) notify(notice);
   };
   const remove = (id: string, index: number) => {
     refocus.current = index;
@@ -326,13 +356,19 @@ export function ConditionStrip({
   };
   const setExhaustion = (level: number) =>
     update((d) => setExhaustionLevel(d.play.conditions, level));
-  const setApplied = (id: string, applied: boolean) =>
+  const setApplied = (id: string, applied: boolean) => {
+    const hp = limits();
+    let notice: Notice | null = null;
     update((d) => {
       const c = d.play.conditions.find((x) => x.id === id);
       if (c === undefined) return;
-      if (applied) delete c.ignored;
-      else c.ignored = true;
+      if (applied) {
+        delete c.ignored;
+        notice = settleCondition(d, id, hp);
+      } else c.ignored = true;
     });
+    if (notice !== null) notify(notice);
+  };
   const applyDeath = () => {
     const hp = limits();
     update((d) => {
@@ -340,9 +376,9 @@ export function ConditionStrip({
       d.play.currentHp = 0;
       d.play.tempHp = 0;
       delete d.play.tempHpFrom;
-      // Death ends concentration, and the character's own effects it held.
+      // Death ends concentration, the character's own effects it held, and Rage.
       if (hp === null) delete d.play.concentratingOn;
-      else setConcentration(d.play, undefined, hp);
+      else knockedOut(d.play, hp);
     });
     // The 0 HP it sets is on the page behind the sheet, so close it to show
     // what was done rather than leave the button looking unpressed.

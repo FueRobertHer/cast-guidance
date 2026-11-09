@@ -1,15 +1,16 @@
 /**
  * How effects in play begin and end: added (Aid lifts current hit points with
  * the maximum), ended by hand, by a rest or by the turn count, by a new
- * concentration, and the temporary hit points one gives each turn. Like the
- * rest rules, each function changes the play state it is given (a draft) and
- * says what it did, so the sheet can show it. Nothing calls these yet.
+ * concentration, by a condition or a drop to 0 HP, and the temporary hit
+ * points one gives each turn. Like the rest rules, each function changes the
+ * play state it is given (a draft) and says what it did, so the sheet can show
+ * it. Nothing calls these yet.
  *
  * Entries the app cannot read (written by a newer version) are left exactly as
  * stored, unless ended by id.
  */
 import { countingEffects, readActiveEffects } from './activeEffects';
-import { type ConditionImmunity, conditionMaxHp, type Edition } from './conditions';
+import { type ConditionImmunity, conditionMaxHp, type Edition, outOfAction } from './conditions';
 import type { ActiveEffect, PlayState } from './types';
 
 /** What changing effects needs to know of the sheet, to keep current HP within the maximum. */
@@ -203,6 +204,73 @@ export function setConcentration(
     (e) => heldByMe(e) && (next === undefined || !answersTo(e, next.label)),
     hp,
   );
+}
+
+/**
+ * The DC of the Constitution save to keep concentrating through damage: 10 or
+ * half the damage taken, rounded down, whichever is higher. 2024 caps it at 30.
+ */
+export function concentrationDc(damage: number, edition: Edition): number {
+  const dc = Math.max(10, Math.floor(damage / 2));
+  return edition === '2024' ? Math.min(30, dc) : dc;
+}
+
+/** What ends an effect early, read as the reader does: anything else ends it never. */
+function endsWhen(e: ActiveEffect): 'unconscious' | 'incapacitated' | undefined {
+  const lasts: unknown = e.lasts;
+  if (lasts === null || typeof lasts !== 'object') return undefined;
+  const when = (lasts as Record<string, unknown>).endsWhen;
+  return when === 'unconscious' || when === 'incapacitated' ? when : undefined;
+}
+
+/**
+ * The character is out of action: Incapacitated breaks their concentration
+ * (2014 PHB "Concentration", 2024 Incapacitated) and ends what it held, and
+ * ends an effect that lasts only until then (2024 Rage); Unconscious also ends
+ * one that lasts until they are knocked out (2014 Rage). Settled once.
+ */
+function endOutOfAction(
+  play: PlayState,
+  out: { incapacitated: boolean; unconscious: boolean },
+  hp: HpLimits,
+): EffectChange {
+  if (!out.incapacitated && !out.unconscious) return { ended: [], maxHpChange: 0 };
+  if (out.incapacitated) delete play.concentratingOn;
+  return endWhere(
+    play,
+    (e) => {
+      const when = endsWhen(e);
+      if (out.incapacitated && (heldByMe(e) || when === 'incapacitated')) return true;
+      return out.unconscious && when === 'unconscious';
+    },
+    hp,
+  );
+}
+
+/**
+ * What the condition `id` ends as it comes on (added, or switched back on):
+ * Incapacitated, or a condition that brings it (Paralyzed, Petrified, Stunned,
+ * Unconscious), breaks concentration in both rules versions and ends what it
+ * held and 2024 Rage; Unconscious ends 2014 Rage too. One switched off or held
+ * off ends nothing. Only `id` counts: what the player kept up under a
+ * condition already on (the sheet warns, never blocks) stays.
+ */
+export function conditionEndings(play: PlayState, id: string, hp: HpLimits): EffectChange {
+  const came = play.conditions.filter((c) => c.id === id);
+  const out = outOfAction(came, hp.edition, { immune: hp.immune });
+  return endOutOfAction(
+    play,
+    { incapacitated: out.incapacitated.length > 0, unconscious: out.unconscious },
+    hp,
+  );
+}
+
+/**
+ * Dropping to 0 hit points, or dying: the character falls unconscious in both
+ * rules versions, so their concentration and Rage end as Unconscious ends them.
+ */
+export function knockedOut(play: PlayState, hp: HpLimits): EffectChange {
+  return endOutOfAction(play, { incapacitated: true, unconscious: true }, hp);
 }
 
 /**

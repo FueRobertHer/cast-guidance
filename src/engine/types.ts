@@ -159,6 +159,11 @@ export interface EffectDuration {
   /** It lasts until you finish a rest of this kind. */
   rest?: 'short' | 'long';
   concentration?: boolean;
+  /**
+   * It ends early when the character is knocked unconscious (2014 Rage) or
+   * Incapacitated (2024 Rage). Dropping to 0 HP does both.
+   */
+  endsWhen?: 'unconscious' | 'incapacitated';
 }
 
 /**
@@ -844,6 +849,8 @@ export interface DerivedSheet {
    * the AC is already over (Barkskin's 16 under 18).
    */
   acNotCounted: Array<{ label: string; value: number; why: 'lower' | 'override' | 'floor' }>;
+  /** The heavy armor worn, by name, for what it rules out (Rage). */
+  heavyArmor?: string;
   initiative: DerivedValue;
   speedWalk: DerivedValue;
   /**

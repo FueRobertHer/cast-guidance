@@ -119,7 +119,8 @@ describe('conditionWear: what a control with no cue of its own wears', () => {
     conditionWear(conditions, conditionSpeed(30, conditions, edition).sources);
 
   it('wears Cast only for what stops casting', () => {
-    const cast = (id: string) => conditionWear([{ id }], conditionLimits([{ id }]).noActions).looks;
+    const cast = (id: string) =>
+      conditionWear([{ id }], conditionLimits([{ id }], '2014').noActions).looks;
     for (const id of ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious']) {
       expect(cast(id), id).toEqual([id]);
     }
@@ -153,7 +154,7 @@ describe('rollWear on an attack chip', () => {
       conditions,
       effects(conditions, edition, { kind: 'attack' }),
       armed,
-      conditionLimits(conditions).noActions,
+      conditionLimits(conditions, '2014').noActions,
     );
   const looks = (...ids: string[]) => wear(ids.map((id) => ({ id }))).looks;
 

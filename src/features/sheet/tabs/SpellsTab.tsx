@@ -18,7 +18,7 @@ const VIEWS = [
  * as long as it is open, as a list's search is.
  */
 export function Component() {
-  const { sheet, doc, update } = useOutletContext<CharacterSheetState>();
+  const { sheet, built, doc, update } = useOutletContext<CharacterSheetState>();
   const [view, setView] = useState<View>('yours');
   if (sheet === null || doc === null) return <p className="text-body text-ink-muted">Deriving…</p>;
   if (sheet.spellcasting.length === 0) {
@@ -35,7 +35,7 @@ export function Component() {
         block
       />
       {view === 'yours' ? (
-        <YourSpells doc={doc} sheet={sheet} update={update} />
+        <YourSpells doc={doc} sheet={sheet} built={built} update={update} />
       ) : (
         <SpellManager doc={doc} sheet={sheet} update={update} />
       )}

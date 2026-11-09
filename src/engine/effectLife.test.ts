@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { rageEffect } from './curated/namedEffects';
 import {
   applyEffect,
+  concentrationDc,
+  conditionEndings,
   endEffect,
   endEffects,
   endsAtRest,
   type HpLimits,
   keepHigherTemp,
+  knockedOut,
   maxHpFrom,
   newTurn,
   restEndings,
@@ -288,6 +292,141 @@ describe('setConcentration', () => {
     expect(p.concentratingOn).toEqual({ label: 'Bless', level: 2 });
     setConcentration(p, { label: 'Bless', level: 4 }, limits(p));
     expect(p.concentratingOn).toEqual({ label: 'Bless', level: 4 });
+  });
+});
+
+describe('concentrationDc', () => {
+  it('is 10 or half the damage, rounded down, and no more than 30 in 2024', () => {
+    expect([1, 21, 25, 100].map((n) => concentrationDc(n, '2014'))).toEqual([10, 10, 12, 50]);
+    expect([1, 21, 25, 61, 100].map((n) => concentrationDc(n, '2024'))).toEqual([
+      10, 10, 12, 30, 30,
+    ]);
+  });
+});
+
+describe('conditionEndings', () => {
+  const INCAPACITATING = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious'];
+
+  it('ends concentration and what it held under Incapacitated or a condition that brings it, in both rules versions', () => {
+    for (const edition of ['2014', '2024'] as const) {
+      for (const id of INCAPACITATING) {
+        const p = play();
+        applyEffect(p, bless(), limits(p, edition));
+        p.conditions.push({ id });
+        expect(conditionEndings(p, id, limits(p, edition)), `${id} ${edition}`).toEqual({
+          ended: ['Bless'],
+          maxHpChange: 0,
+        });
+        expect(p, `${id} ${edition}`).not.toHaveProperty('concentratingOn');
+        expect(p, `${id} ${edition}`).not.toHaveProperty('activeEffects');
+      }
+    }
+  });
+
+  it('ends concentration on a spell that put nothing on the character', () => {
+    const p = play();
+    p.concentratingOn = { label: 'Hold Person', level: 2 };
+    p.conditions.push({ id: 'Stunned' });
+    expect(conditionEndings(p, 'Stunned', limits(p))).toEqual({ ended: [], maxHpChange: 0 });
+    expect(p).not.toHaveProperty('concentratingOn');
+  });
+
+  it("keeps an ally's concentration effect, which their concentration holds", () => {
+    const p = play();
+    p.activeEffects = [bless('ally', false)];
+    p.concentratingOn = { label: 'Haste' };
+    p.conditions.push({ id: 'Paralyzed' });
+    conditionEndings(p, 'Paralyzed', limits(p));
+    expect(names(p)).toEqual(['Bless']);
+    expect(p).not.toHaveProperty('concentratingOn');
+  });
+
+  it('ends nothing for a condition that does not incapacitate, one switched off, or one held off', () => {
+    const cases: Array<[PlayState['conditions'][number], HpLimits['immune']]> = [
+      [{ id: 'Poisoned' }, undefined],
+      [{ id: 'Prone' }, undefined],
+      [{ id: 'Exhaustion', level: 5 }, undefined],
+      [{ id: 'Stunned', ignored: true }, undefined],
+      [{ id: 'Stunned' }, [{ condition: 'stunned', origin: 'Mind Blank' }]],
+      // Held off however it comes: immune to Incapacitated, a Paralyzed character is not.
+      [{ id: 'Paralyzed' }, [{ condition: 'incapacitated', origin: 'Homebrew' }]],
+    ];
+    for (const [condition, immune] of cases) {
+      const p = play();
+      applyEffect(p, bless(), limits(p));
+      p.conditions = [condition];
+      expect(conditionEndings(p, condition.id, { ...limits(p), immune }).ended).toEqual([]);
+      expect(p.concentratingOn, condition.id).toEqual({ label: 'Bless' });
+    }
+  });
+
+  it('leaves alone what the player kept up under a condition already on, when another comes on', () => {
+    // Stunned is on and the player concentrates anyway (the sheet warns, never blocks).
+    const p = play();
+    p.conditions = [{ id: 'Stunned' }];
+    applyEffect(p, bless(), limits(p, '2024'));
+    applyEffect(p, rageEffect('rage', 5, '2024'), limits(p, '2024'));
+    p.conditions.push({ id: 'Prone' });
+    expect(conditionEndings(p, 'Prone', limits(p, '2024')).ended).toEqual([]);
+    expect(p.concentratingOn).toEqual({ label: 'Bless' });
+    expect(names(p)).toEqual(['Bless', 'Rage']);
+  });
+
+  it('ends 2024 Rage with Incapacitated, and 2014 Rage only when knocked unconscious', () => {
+    for (const id of INCAPACITATING) {
+      const p = play();
+      applyEffect(p, rageEffect('rage', 5, '2024'), limits(p, '2024'));
+      p.conditions.push({ id });
+      expect(conditionEndings(p, id, limits(p, '2024')).ended, id).toEqual(['Rage']);
+    }
+    const p = play();
+    applyEffect(p, rageEffect('rage', 5, '2014'), limits(p));
+    p.conditions.push({ id: 'Stunned' });
+    expect(conditionEndings(p, 'Stunned', limits(p)).ended).toEqual([]);
+    p.conditions.push({ id: 'Unconscious' });
+    expect(conditionEndings(p, 'Unconscious', limits(p)).ended).toEqual(['Rage']);
+  });
+
+  it('leaves an ending it cannot read, or an effect with none, in play', () => {
+    const p = play();
+    const odd = [
+      { id: 'a', name: 'A', parts: [], lasts: { endsWhen: 'asleep' } },
+      { id: 'b', name: 'B', parts: [], lasts: { minutes: 1 } },
+    ];
+    p.activeEffects = structuredClone(odd) as unknown as ActiveEffect[];
+    p.conditions.push({ id: 'Unconscious' });
+    expect(conditionEndings(p, 'Unconscious', limits(p)).ended).toEqual([]);
+    expect(p.activeEffects).toEqual(odd);
+  });
+});
+
+describe('knockedOut', () => {
+  it('ends concentration and what it held, and Rage in either rules version, at 0 HP', () => {
+    for (const edition of ['2014', '2024'] as const) {
+      const p = play();
+      p.activeEffects = [rageEffect('rage', 3, edition), bless('ally', false)];
+      p.concentratingOn = { label: 'Hold Person' };
+      p.currentHp = 0;
+      expect(knockedOut(p, limits(p, edition)), edition).toEqual({
+        ended: ['Rage'],
+        maxHpChange: 0,
+      });
+      expect(names(p)).toEqual(['Bless']);
+      expect(p).not.toHaveProperty('concentratingOn');
+    }
+  });
+
+  it('ends what it held with the concentration, and Aid with the maximum it raised', () => {
+    const p = play();
+    const held: ActiveEffect = {
+      ...aid(5),
+      mine: true,
+      lasts: { minutes: 1, concentration: true },
+    };
+    applyEffect(p, held, limits(p));
+    p.currentHp = 0;
+    expect(knockedOut(p, limits(p))).toEqual({ ended: ['Aid'], maxHpChange: -5 });
+    expect(p.currentHp).toBe(0);
   });
 });
 

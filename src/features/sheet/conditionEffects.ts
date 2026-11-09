@@ -20,8 +20,10 @@ const INCAPACITATING = new Set([
   'Stunned',
   'Unconscious',
 ]);
-// Conditions under which you can't speak (Stunned speaks "only falteringly").
-const CANT_SPEAK = new Set(['Paralyzed', 'Petrified', 'Stunned', 'Unconscious']);
+// Conditions under which you can't speak in 2014 (Stunned speaks "only
+// falteringly"). In 2024 Incapacitated is Speechless, so every one that
+// makes you Incapacitated does.
+const CANT_SPEAK_2014 = new Set(['Paralyzed', 'Petrified', 'Stunned', 'Unconscious']);
 
 /**
  * The conditions a character can be put under, in the picker's order.
@@ -103,14 +105,16 @@ export function conditionEffect(id: string, edition: Edition): string | undefine
 
 export function conditionLimits(
   conditions: ReadonlyArray<{ id: string; ignored?: boolean }>,
+  edition: Edition,
 ): ConditionLimits {
   const noActions: string[] = [];
   const noVerbal: string[] = [];
+  const cantSpeak = edition === '2024' ? INCAPACITATING : CANT_SPEAK_2014;
   // A condition switched off on its sheet warns of nothing either.
   for (const { id, ignored } of conditions) {
     if (ignored === true) continue;
     if (INCAPACITATING.has(id)) noActions.push(id);
-    if (CANT_SPEAK.has(id)) noVerbal.push(id);
+    if (cantSpeak.has(id)) noVerbal.push(id);
   }
   return { noActions, noVerbal };
 }

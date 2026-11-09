@@ -225,6 +225,29 @@ export function heldOff(
 }
 
 /**
+ * The conditions in force that leave the character Incapacitated, by the chip
+ * that does it (Incapacitated, or Paralyzed, Petrified, Stunned or
+ * Unconscious, which bring it), and whether they are Unconscious. One
+ * switched off or held off counts for nothing, and an immunity to
+ * Incapacitated holds it off however it comes.
+ */
+export function outOfAction(
+  conditions: ReadonlyArray<ActiveCondition>,
+  edition: Edition,
+  options: ConditionOptions = {},
+): { incapacitated: string[]; unconscious: boolean } {
+  const held = heldNames(options);
+  const active = conditions.filter((c) => applies(c, held));
+  const table = RULES[edition];
+  const incapacitated = held.has('incapacitated')
+    ? []
+    : active
+        .filter((c) => c.id === 'Incapacitated' || table[c.id]?.includes?.includes('Incapacitated'))
+        .map((c) => c.id);
+  return { incapacitated, unconscious: active.some((c) => c.id === 'Unconscious') };
+}
+
+/**
  * Exhaustion's roll rules at a level. 2014 is the cumulative table (level 1
  * checks, level 3 attacks and saves); 2024 has none of these and takes 2 per
  * level off every d20 test instead (see `d20Effects`).

@@ -14,6 +14,7 @@ import {
   concentratingOn,
   dialog,
   HARNESS_TIMEOUT,
+  hp,
   left,
   renderSheet,
   resetSheetHarness,
@@ -164,14 +165,64 @@ describe('Rage from its own Use', () => {
 
   it('follows its 2024 printing', async () => {
     const sheet = await renderSheet(barbarian('XPHB', 3), { extra: barbarianWorld('XPHB') });
+    // Out of heavy armor, nothing to warn of.
+    expect(screen.queryByText(/heavy armor/)).toBeNull();
     press('Use Rage');
     const rage = (await sheet.saved()).play.activeEffects?.[0];
-    expect(rage?.lasts).toEqual({ minutes: 10 });
+    expect(rage?.lasts).toEqual({ minutes: 10, endsWhen: 'incapacitated' });
     expect(rage?.parts).toContainEqual({
       kind: 'damageBonus',
       scope: 'all',
       amount: 2,
       ability: 'str',
+    });
+  });
+
+  it('ends when a hit drops the barbarian to 0 HP', async () => {
+    const doc = barbarian('TST', 3);
+    doc.play.activeEffects = [rageEffect('rage', 3, '2014')];
+    doc.play.currentHp = 4;
+    doc.play.hpInitialized = true;
+    const sheet = await renderSheet(doc, { extra: barbarianWorld('TST') });
+    press('Damage 1 hit point');
+    expect((await sheet.saved()).play.activeEffects).toHaveLength(1);
+    press('Damage 5 hit points');
+    expect(hp().current).toBe(0);
+    expect((await sheet.saved()).play.activeEffects).toBeUndefined();
+    expect(screen.getByRole('button', { name: 'Use Rage' })).toBeTruthy();
+  });
+
+  describe('in heavy armor', () => {
+    const chainMail = (doc: CharacterDoc) => {
+      doc.equipment = [
+        {
+          id: 'armor',
+          ref: { name: 'Chain Mail', source: 'TST' },
+          qty: 1,
+          equipped: true,
+          attuned: false,
+        },
+      ];
+      return doc;
+    };
+
+    it('warns that 2014 Rage gives nothing in it, and still starts', async () => {
+      await renderSheet(chainMail(barbarian('TST', 3)), { extra: barbarianWorld('TST') });
+      expect(
+        screen.getByText("Chain Mail: Rage's benefits need you out of heavy armor"),
+      ).toBeTruthy();
+      press('Use Rage');
+      expect(left('Rage use')).toBe(2);
+      expect(screen.getByRole('button', { name: 'End Rage' })).toBeTruthy();
+    });
+
+    it('warns that 2024 Rage cannot start in it and ends when it goes on', async () => {
+      await renderSheet(chainMail(barbarian('XPHB', 3)), { extra: barbarianWorld('XPHB') });
+      expect(
+        screen.getByText(
+          "Chain Mail: you can't enter Rage in heavy armor, and putting it on ends Rage",
+        ),
+      ).toBeTruthy();
     });
   });
 
@@ -200,6 +251,18 @@ describe('spells while raging', () => {
     const doc = sorcerer();
     doc.play.activeEffects = [{ ...rageEffect('rage', 3, '2014'), off: true }];
     await renderSheet(doc);
+    expect(screen.queryByText(warning)).toBeNull();
+  });
+
+  it('warns on the Spells tab too, and not once Rage is off', async () => {
+    const doc = sorcerer();
+    doc.play.activeEffects = [rageEffect('rage', 3, '2014')];
+    await renderSheet(doc, { path: 'spells' });
+    expect(await screen.findByText(warning)).toBeTruthy();
+    await resetSheetHarness();
+
+    doc.play.activeEffects = [{ ...rageEffect('rage', 3, '2014'), off: true }];
+    await renderSheet(doc, { path: 'spells' });
     expect(screen.queryByText(warning)).toBeNull();
   });
 });
@@ -279,6 +342,30 @@ describe('Innate Sorcery from its own Use', () => {
     expect(lastRoll()?.label).toBe('Spark Dart spell attack');
     expect(lastRoll()?.meta?.advantage).toBe('adv');
     expect(lastRoll()?.meta?.cue).toBe('Advantage: Innate Sorcery');
+  });
+
+  it("rings the Spells tab's save DCs too, the class's and a save spell's", async () => {
+    const puff: DataEntity = {
+      name: 'Frost Puff',
+      source: 'TST',
+      level: 0,
+      school: 'V',
+      time: [{ number: 1, unit: 'action' }],
+      savingThrow: ['constitution'],
+      entries: ['A creature must succeed on a Constitution saving throw.'],
+    };
+    const doc = sparks();
+    const ref = { name: 'Frost Puff', source: 'TST' };
+    doc.spellcasting = { 'sorcerer|xphb': { known: [ref], prepared: [ref] } };
+    doc.play.activeEffects = [innateSorceryEffect('innate')];
+    await renderSheet(doc, { path: 'spells', extra: { ...world, spell: [puff] } });
+    const badge = async (text: RegExp) => (await screen.findByText(text)).closest('span');
+    const block = await badge(/^Save DC/);
+    expect(block?.textContent).toBe('Save DC 14, raised by Innate Sorcery');
+    expect(block?.closest('.fx-lift-on')).not.toBeNull();
+    const row = await badge(/^DC 14/);
+    expect(row?.textContent).toBe('DC 14, raised by Innate Sorcery');
+    expect(row?.closest('.fx-lift-on')).not.toBeNull();
   });
 
   it('reaches the same spell attack from the Spells tab', async () => {

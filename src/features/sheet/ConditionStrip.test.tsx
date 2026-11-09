@@ -4,9 +4,9 @@
 // the Effects sheet behind the strip's end. Focus never drops to the page when
 // a chip it was on goes.
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { bardicEffect } from '@/engine/curated/namedEffects';
+import { bardicEffect, blessEffect, rageEffect } from '@/engine/curated/namedEffects';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -15,6 +15,7 @@ import {
 } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
+import { noticeStore } from '@/stores/notices';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { ConditionStrip } from './ConditionStrip';
 
@@ -65,11 +66,13 @@ function renderStrip(
     effects,
     immune = [],
     edition = '2024',
+    concentrating,
   }: {
     addable?: boolean;
     effects?: ActiveEffect[];
     immune?: DerivedSheet['conditionImmunities'];
     edition?: CharacterDoc['rulesVersion'];
+    concentrating?: string;
   } = {},
 ) {
   function Harness() {
@@ -78,20 +81,24 @@ function renderStrip(
       d.rulesVersion = edition;
       d.play.conditions = conditions;
       if (effects !== undefined) d.play.activeEffects = effects;
+      if (concentrating !== undefined) d.play.concentratingOn = { label: concentrating };
       return d;
     });
-    const update = ((recipe: (draft: CharacterDoc) => void) =>
-      setDoc((current) => {
-        const next = structuredClone(current);
-        recipe(next);
-        return next;
-      })) as DocUpdater;
+    // The recipe runs at once, as the session store runs it.
+    const current = useRef(doc);
+    const update = ((recipe: (draft: CharacterDoc) => void) => {
+      const next = structuredClone(current.current);
+      recipe(next);
+      current.current = next;
+      setDoc(next);
+    }) as DocUpdater;
     return (
       <>
         <h1 id="sheet-title" tabIndex={-1}>
           Hero
         </h1>
         <p>HP {doc.play.currentHp ?? 'unset'}</p>
+        <p>Concentrating on {doc.play.concentratingOn?.label ?? 'nothing'}</p>
         <p>
           Effects{' '}
           {(doc.play.activeEffects ?? []).map((e) => `${e.name}${e.off ? ' off' : ''}`).join(', ')}
@@ -274,6 +281,91 @@ describe('while a condition sheet is over the attack chips', () => {
     expect(held()).toBe(true);
     cleanup();
     expect(held()).toBe(false);
+  });
+});
+
+describe('what a condition coming on ends', () => {
+  const concentrating = () => screen.getByText(/^Concentrating on/, { selector: 'p' }).textContent;
+  const effectsNow = () => screen.getByText(/^Effects/, { selector: 'p' }).textContent;
+  const pickCondition = async (name: string) => {
+    fireEvent.click(button('Add an effect'));
+    const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
+    fireEvent.click(picker.getByRole('button', { name }));
+  };
+  afterEach(() => noticeStore.getState().clear());
+
+  it('breaks concentration under Stunned, ending what it held, and says so', async () => {
+    renderStrip([], {
+      addable: true,
+      edition: '2014',
+      effects: [blessEffect('mine', true), blessEffect('ally', false)],
+      concentrating: 'Bless',
+    });
+    await pickCondition('Stunned');
+    expect(concentrating()).toBe('Concentrating on nothing');
+    // The ally's Bless is held by their concentration, not this character's.
+    expect(effectsNow()).toBe('Effects Bless');
+    expect(noticeStore.getState().notice).toEqual({
+      title: 'Concentration broken',
+      detail: 'Bless · Stunned · Ended Bless',
+      tone: 'warn',
+    });
+  });
+
+  it('ends nothing under a condition that does not incapacitate', async () => {
+    renderStrip([], { addable: true, concentrating: 'Hold Person' });
+    await pickCondition('Poisoned');
+    expect(concentrating()).toBe('Concentrating on Hold Person');
+    expect(noticeStore.getState().notice).toBeNull();
+  });
+
+  it('leaves concentration kept up under Stunned alone when another condition comes on', async () => {
+    // The sheet warns and never blocks, so the player may concentrate while stunned.
+    renderStrip([{ id: 'Stunned' }], { addable: true, concentrating: 'Hold Person' });
+    await pickCondition('Prone');
+    expect(concentrating()).toBe('Concentrating on Hold Person');
+    expect(noticeStore.getState().notice).toBeNull();
+  });
+
+  it('breaks it when a switched-off Paralyzed is switched back on', async () => {
+    renderStrip([{ id: 'Paralyzed', ignored: true }], { concentrating: 'Hold Person' });
+    expect(concentrating()).toBe('Concentrating on Hold Person');
+    fireEvent.click(button('Paralyzed off'));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Paralyzed' }));
+    fireEvent.click(sheet.getByRole('button', { name: /^Apply its effects/ }));
+    expect(concentrating()).toBe('Concentrating on nothing');
+    expect(noticeStore.getState().notice).toMatchObject({ detail: 'Hold Person · Paralyzed' });
+  });
+
+  it('ends 2024 Rage under Incapacitated, and 2014 Rage only when knocked unconscious', async () => {
+    renderStrip([], { addable: true, effects: [rageEffect('r', 3, '2024')] });
+    await pickCondition('Incapacitated');
+    expect(effectsNow()).toBe('Effects ');
+    expect(noticeStore.getState().notice).toEqual({
+      title: 'Ended Rage',
+      detail: 'Incapacitated',
+      tone: 'warn',
+    });
+    cleanup();
+
+    renderStrip([], { addable: true, edition: '2014', effects: [rageEffect('r', 3, '2014')] });
+    await pickCondition('Stunned');
+    expect(effectsNow()).toBe('Effects Rage');
+    const picker = within(screen.getByRole('dialog', { name: 'Effects' }));
+    fireEvent.click(picker.getByRole('button', { name: 'Unconscious' }));
+    expect(effectsNow()).toBe('Effects ');
+  });
+
+  it('ends Rage and concentration with Apply death', async () => {
+    renderStrip([{ id: 'Exhaustion', level: 6 }], {
+      effects: [rageEffect('r', 3, '2014')],
+      concentrating: 'Hold Person',
+    });
+    fireEvent.click(button('Exhausted 6'));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Exhaustion' }));
+    fireEvent.click(sheet.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
+    expect(effectsNow()).toBe('Effects ');
+    expect(concentrating()).toBe('Concentrating on nothing');
   });
 });
 

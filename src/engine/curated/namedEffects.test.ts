@@ -42,7 +42,8 @@ describe('the named effects', () => {
       amount: 4,
       ability: 'str',
     });
-    expect(old.lasts).toEqual({ minutes: 1 });
+    // 2014 ends when you are knocked unconscious; 2024 when you are Incapacitated.
+    expect(old.lasts).toEqual({ minutes: 1, endsWhen: 'unconscious' });
     const now = rageEffect('r', 2, '2024');
     expect(now.parts).toContainEqual({
       kind: 'damageBonus',
@@ -50,7 +51,7 @@ describe('the named effects', () => {
       amount: 2,
       ability: 'str',
     });
-    expect(now.lasts).toEqual({ minutes: 10 });
+    expect(now.lasts).toEqual({ minutes: 10, endsWhen: 'incapacitated' });
     expect(now.mine).toBe(true);
     expect(now.lasts?.concentration).toBeUndefined();
   });
