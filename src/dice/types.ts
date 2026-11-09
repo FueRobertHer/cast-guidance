@@ -103,6 +103,13 @@ export interface RollResult {
     askFirst?: { offers: RollOffer[]; attack: boolean };
     /** The roll this one went with: damage tapped while its attack waited. */
     withRoll?: string;
+    /**
+     * An attack roll: whose (the character's id), which attack (a weapon's or
+     * a spell's name), and whether its d20 landed in the character's crit
+     * range. Damage that goes with it reads this (`stores/heldRoll`
+     * `attackInPlay`) to roll its dice twice.
+     */
+    attack?: { by: string; of: string; crit: boolean };
   };
 }
 

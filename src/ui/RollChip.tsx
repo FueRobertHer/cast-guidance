@@ -3,7 +3,7 @@ import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { currentAdvantage } from '@/stores/advMode';
-import { rollFrom } from '@/stores/heldRoll';
+import { attackInPlay, rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
 
@@ -50,6 +50,43 @@ export interface RollChipProps {
    * chip that wears conditions they are its face's, so they move with it.
    */
   raisedBy?: readonly string[];
+  /**
+   * The attack a damage chip's roll goes with: the character's (`by`) attack
+   * named `of` (a weapon's or a spell's), or any of theirs when `of` is absent
+   * (Sneak Attack). When the attack in play (`attackInPlay`) is that one and
+   * it crit, the dice roll twice and the modifiers once, and `critDice` roll
+   * in after them, named (Savage Attacks' extra weapon die).
+   */
+  withAttack?: { by: string; of?: string; critDice?: { dice: string; source: string } };
+}
+
+/** Did the attack this damage goes with crit? */
+function critFor(withAttack: NonNullable<RollChipProps['withAttack']>): boolean {
+  const attack = attackInPlay();
+  return (
+    attack?.crit === true &&
+    attack.by === withAttack.by &&
+    (withAttack.of === undefined || attack.of === withAttack.of)
+  );
+}
+
+/** A roll with dice of its own added after its terms, named for what adds them. */
+function withDice(result: RollResult, dice: string, source: string): RollResult {
+  const added = roll(dice);
+  return {
+    ...result,
+    total: result.total + added.total,
+    terms: [...result.terms, ...added.terms],
+    meta: {
+      ...result.meta,
+      from: [
+        ...(result.meta?.from ?? []),
+        ...added.terms.flatMap((t, i) =>
+          t.kind === 'dice' ? [{ term: result.terms.length + i, source }] : [],
+        ),
+      ],
+    },
+  };
 }
 
 /**
@@ -94,6 +131,7 @@ export function RollChip({
   inline,
   wear,
   raisedBy = [],
+  withAttack,
 }: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
   const [rolls, setRolls] = useState(0);
@@ -113,19 +151,28 @@ export function RollChip({
 
   if (!valid.current) return <span>{display ?? expr}</span>;
 
+  /** The chip's own roll: damage that goes with an attack that crit rolls its dice twice. */
+  const own = (): RollResult => {
+    const crit = variant === 'damage' && withAttack !== undefined && critFor(withAttack);
+    const result = roll(expr, {
+      label,
+      // d20-style chips honor the global advantage toggle.
+      advantage: variant === 'd20' ? currentAdvantage() : undefined,
+      kind: KIND[variant],
+      ...(crit ? { critical: true } : {}),
+    });
+    const extra = crit ? withAttack?.critDice : undefined;
+    return extra === undefined ? result : withDice(result, extra.dice, extra.source);
+  };
+
   // The roll lands through `rollFrom`, which may hold it for a one-use die
   // to be named first (the house rule): the total and `onRolled` wait for it.
+  // Damage tapped while an attack waits is made here too, at the tap, so a
+  // crit it goes with is read then and shown only as it lands.
   const onRoll = (event: MouseEvent<HTMLButtonElement>) =>
     rollFrom(
       event.currentTarget,
-      () =>
-        roller?.() ??
-        // d20-style chips honor the global advantage toggle.
-        roll(expr, {
-          label,
-          advantage: variant === 'd20' ? currentAdvantage() : undefined,
-          kind: KIND[variant],
-        }),
+      () => roller?.() ?? own(),
       (r) => {
         onRolled?.(r.total);
         setResult(r.total);

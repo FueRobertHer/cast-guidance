@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { RulesVersion } from '@/data5e/rulesVersion';
+import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
 import {
@@ -121,6 +122,16 @@ import { attackSubtitle, damageLabel, weaponInfoEntries } from '../weaponInfo';
 
 /** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
+
+/** The sides of the first die a damage expression adds ("1d8+3" is 8), if it has one. */
+function firstDieSides(expr: string): number | undefined {
+  try {
+    const die = parseDice(expr).terms.find((t) => t.kind === 'dice' && t.sign > 0);
+    return die?.kind === 'dice' ? die.sides : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** A section's heading and the helper line under it (DS-001 `heading`, `caption`). */
 const H2 = 'px-1 text-heading';
@@ -467,18 +478,46 @@ export function Component() {
     sheet.conditionImmunities,
     built.conditionImmunities,
   );
+  // Features whose crit rules live in prose, found as the capability cards
+  // find them. Savage Attacks (the 2014 half-orc's): a melee crit with a
+  // weapon rolls one of its damage dice once more. The Champion's Improved and
+  // Superior Critical: weapon attacks crit on 19, then 18.
+  const capabilities = new Set(collectCapabilityCards(sheet.features).map((c) => c.key));
+  const savage = capabilities.has('savage attacks');
+  const weaponCritFrom = capabilities.has('superior critical')
+    ? 18
+    : capabilities.has('improved critical')
+      ? 19
+      : 20;
   /**
    * A d20 test in the attack group: the weapon and spell attack chips, with
    * what the effects in play bring to that attack (Bless, Bardic Inspiration).
+   * It is marked as the attack `of` (a weapon's or a spell's name) and whether
+   * it crit, inside the character's crit range: the damage that goes with it
+   * (`attackDamage`) reads that to roll its dice twice.
    */
-  const rollAttack = (modifier: number, label: string, test: D20Test) => () =>
+  const rollAttack = (modifier: number, label: string, test: D20Test, of: string) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
       riders: rollEffects(sheet, test),
       settlesOnNatural: true,
+      attack: {
+        by: doc.id,
+        of,
+        critFrom: Math.min(
+          sheet.critRange?.min ?? 20,
+          test.kind === 'attack' && test.attack === 'weapon' ? weaponCritFrom : 20,
+        ),
+      },
     });
+  /** Damage that goes with the attack `of`, or with any of this character's attacks. */
+  const attackDamage = (of?: string, critDice?: { dice: string; source: string }) => ({
+    by: doc.id,
+    ...(of === undefined ? {} : { of }),
+    ...(critDice === undefined ? {} : { critDice }),
+  });
   /** What raised a casting class's save DC (Innate Sorcery), by name. */
   const dcRaisedBy = (sc: SpellcastingBlock) =>
     raisedBy(sc.saveDc, built.spellcasting.find((b) => b.classUid === sc.classUid)?.saveDc);
@@ -492,6 +531,12 @@ export function Component() {
     ...(a.ranged === undefined ? {} : { range: a.ranged ? 'ranged' : 'melee' }),
     ...(a.ability === undefined ? {} : { ability: a.ability }),
   });
+  /** Savage Attacks' die for a carried melee weapon's damage `expr`: its first die, once. */
+  const savageDie = (a: AttackRow, expr: string) => {
+    if (!savage || a.ranged !== false || a.weaponId === undefined) return undefined;
+    const sides = firstDieSides(expr);
+    return sides === undefined ? undefined : { dice: `1d${sides}`, source: 'Savage Attacks' };
+  };
   /** The attack rolls' cue: over the attack list, and again over spells with attack rolls. */
   const attackCue = (heading?: string) => (
     <RollEffectCue
@@ -1626,7 +1671,12 @@ export function Component() {
                       display={signed(a.toHit.value)}
                       label={`${a.label} attack`}
                       variant="d20"
-                      roller={rollAttack(a.toHit.value, `${a.label} attack`, weaponTest(a))}
+                      roller={rollAttack(
+                        a.toHit.value,
+                        `${a.label} attack`,
+                        weaponTest(a),
+                        a.label,
+                      )}
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
                       onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
@@ -1636,6 +1686,7 @@ export function Component() {
                       label={damageLabel(a.label, a.damageType)}
                       variant="damage"
                       raisedBy={lift.damage ? lift.damageBy : []}
+                      withAttack={attackDamage(a.label, savageDie(a, a.damage))}
                     />
                     {a.versatileDamage !== undefined && (
                       <RollChip
@@ -1643,6 +1694,7 @@ export function Component() {
                         label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
                         variant="damage"
                         raisedBy={lift.versatile ? lift.damageBy : []}
+                        withAttack={attackDamage(a.label, savageDie(a, a.versatileDamage))}
                       />
                     )}
                     {/* Each rider rolls on its own: the totals are resisted
@@ -1658,6 +1710,7 @@ export function Component() {
                         label={damageLabel(a.label, x.damageType)}
                         variant="damage"
                         raisedBy={lift.riders[i] === true ? [x.label ?? 'an effect in play'] : []}
+                        withAttack={attackDamage(a.label)}
                       />
                     ))}
                   </div>
@@ -1810,6 +1863,10 @@ export function Component() {
                         }
                         // The dice still roll; only a use it can pay for is recorded.
                         onRolled={use.noButton || use.disabled ? undefined : () => void trigger()}
+                        // Damage with no save is added to a hit (Sneak Attack, a
+                        // smite), so a crit doubles it; a save's (Breath Weapon)
+                        // is no attack's.
+                        withAttack={a.save === undefined ? attackDamage() : undefined}
                       />
                     ) : started !== undefined ? (
                       <Button
@@ -2089,11 +2146,12 @@ export function Component() {
                             display={`Atk ${signed(sc.attackMod.value)}`}
                             label={`${ref.name} spell attack`}
                             variant="d20"
-                            roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`, {
-                              kind: 'attack',
-                              attack: 'spell',
-                              className: sc.className,
-                            })}
+                            roller={rollAttack(
+                              sc.attackMod.value,
+                              `${ref.name} spell attack`,
+                              { kind: 'attack', attack: 'spell', className: sc.className },
+                              ref.name,
+                            )}
                             wear={attackChipWear}
                             onRolled={running ? undefined : cast}
                           />
@@ -2104,6 +2162,7 @@ export function Component() {
                             expr={action.expr}
                             label={action.label}
                             variant={action.variant}
+                            withAttack={hasAttack ? attackDamage(ref.name) : undefined}
                             onRolled={!running && !hasAttack && index === 0 ? cast : undefined}
                             wear={
                               !hasAttack && index === 0
@@ -2314,11 +2373,12 @@ export function Component() {
                         display={`Atk ${signed(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
-                        roller={rollAttack(attackModifier, `${g.name} spell attack`, {
-                          kind: 'attack',
-                          attack: 'spell',
-                          className: g.className,
-                        })}
+                        roller={rollAttack(
+                          attackModifier,
+                          `${g.name} spell attack`,
+                          { kind: 'attack', attack: 'spell', className: g.className },
+                          g.name,
+                        )}
                         wear={attackChipWear}
                         onRolled={depleted || running ? undefined : cast}
                       />
@@ -2329,6 +2389,7 @@ export function Component() {
                         expr={action.expr}
                         label={action.label}
                         variant={action.variant}
+                        withAttack={hasAttack ? attackDamage(g.name) : undefined}
                         onRolled={
                           !hasAttack && index === 0 && !depleted && !running ? cast : undefined
                         }
