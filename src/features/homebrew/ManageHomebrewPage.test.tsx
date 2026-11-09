@@ -341,4 +341,25 @@ describe('ManageHomebrewPage books of one file', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete all.xml, all 2 books' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(['f', 'e']));
   });
+
+  it('keeps a second download of a file in its group, and names the other files with a book', () => {
+    const book = (id: string, fileName: string, name: string, sourceId: string) =>
+      file({ id, fileName, book: name, sourceIds: [sourceId] });
+    read.current = {
+      files: [
+        book('e2', 'all (1).xml', 'Ember Codex', 'FCEmber'),
+        book('a1', 'all.xml', 'Ashen Tome', 'FCAsh'),
+        book('e5', 'five.xml', 'Ember Codex', 'FCEmber'),
+        book('s5', 'five.xml', 'Stone Book', 'FCStone'),
+      ],
+      errors: [],
+    };
+    renderPage();
+    // One group for all.xml and its second download, under the newest name.
+    expect(screen.getByRole('button', { name: 'Delete all (1).xml, all 2 books' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete five.xml, all 2 books' })).toBeTruthy();
+    expect(screen.getByText('2 spell · also in "five.xml"')).toBeTruthy();
+    expect(screen.getByText('2 spell · also in "all (1).xml"')).toBeTruthy();
+    expect(screen.getAllByText('2 spell')).toHaveLength(2);
+  });
 });

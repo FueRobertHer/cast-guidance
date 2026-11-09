@@ -90,6 +90,9 @@ export function importSummaryMessage(s: ImportSummary): string {
   let text = `Imported ${s.name}`;
   if (s.renamed) text += ' as a copy, since a character with the same id was already here';
   if (s.homebrewAdded > 0) text += `. Added ${files(s.homebrewAdded)}`;
+  if (s.homebrewMerged > 0) {
+    text += `. Added entries to ${s.homebrewMerged} book${s.homebrewMerged === 1 ? '' : 's'} already here`;
+  }
   if (s.homebrewSkipped > 0) text += `. ${files(s.homebrewSkipped)} already here`;
   return text;
 }
@@ -160,16 +163,34 @@ function fileStatus(f: EmbeddedFilePreview): { tone: Tone; status: string; detai
             tone: 'warn',
             status: 'The book is here, turned off.',
             detail:
-              'This is the part of a book the character uses, and this device has the book, so it ' +
-              'is skipped, but the book is turned off, so its entries are not used. Turn it on in ' +
-              'Homebrew to use them.',
+              'This device has every entry of this book the file brings, so it is skipped, but ' +
+              'the book is turned off, so its entries are not used. Turn it on in Homebrew to use them.',
           }
         : {
             tone: 'good',
             status: 'The book is here.',
-            detail:
-              'This is the part of a book the character uses, and this device has the book, so it is skipped.',
+            detail: 'This device has every entry of this book the file brings, so it is skipped.',
           };
+    case 'adds-to-book': {
+      const n = f.adds ?? 0;
+      const entries = `${n} ${n === 1 ? 'entry' : 'entries'}`;
+      return f.existingEnabled === false
+        ? {
+            tone: 'warn',
+            status: `Adds ${entries} to the book here, turned off.`,
+            detail:
+              `The book here, from the same file, lacks ${entries} the character uses, so ` +
+              'importing adds them to it, but the book is turned off, so its entries are not ' +
+              'used. Turn it on in Homebrew to use them.',
+          }
+        : {
+            tone: 'good',
+            status: `Adds ${entries} to the book here.`,
+            detail:
+              `The book here, from the same file, lacks ${entries} the character uses, so ` +
+              'importing adds them to it. The book stays one copy.',
+          };
+    }
     default:
       return { tone: 'new', status: 'New.', detail: 'Importing adds it to your homebrew.' };
   }

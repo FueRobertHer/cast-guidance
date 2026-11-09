@@ -18,11 +18,14 @@
 import { type Entity, uidOf } from '@/data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
 import type { HomebrewFileRow } from '@/db/db';
-import { bookKey } from '@/db/homebrewBooks';
-import { compareMergeOrder } from '@/db/homebrewOrder';
+import { bookKey, oldWholeImports, sameBookCopy } from '@/db/homebrewBooks';
+import { compareMergeOrder, type MergeOrderKey } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import type { CharacterDoc } from '@/engine/types';
-import { collectCharacterSources } from '@/features/characters/homebrewExport';
+import {
+  collectCharacterRefs,
+  collectCharacterSources,
+} from '@/features/characters/homebrewExport';
 import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS } from '@/lib/guards';
 
 /**
@@ -32,8 +35,8 @@ import { HOMEBREW_ENTITY_KEYS, IMPORT_LIMITS } from '@/lib/guards';
  */
 export const WINNER_POLICY =
   'Official content wins over homebrew with the same name and source. Between homebrew files, ' +
-  'the one imported first wins. Entries with the same name and source count as one, so a ' +
-  'character that picks either gets the winning version.';
+  'the one imported first wins, and only its version is listed. Entries with the same name and ' +
+  'source count as one, so a character that picks either gets the winning version.';
 
 /** The most clashes a preview lists per kind; the totals keep the full counts. */
 export const MAX_LISTED_COLLISIONS = 50;
@@ -218,7 +221,12 @@ export interface HomebrewPreview {
   limitBytes: number;
   sources: { id: string; full: string }[];
   /** The same content is already here, so importing writes nothing. */
-  duplicateOf?: FileRef & { addedAt: number; enabled: boolean };
+  duplicateOf?: FileRef & {
+    addedAt: number;
+    enabled: boolean;
+    /** For a file of books: how many of its books here are turned off. */
+    booksOff?: number;
+  };
   /** Files here that declare a source id this file also declares. */
   sourceCollisions: { sourceId: string; files: (FileRef & { enabled: boolean })[] }[];
   /** At most {@link MAX_LISTED_COLLISIONS}; `collisionTotal` is the real count. */
@@ -235,6 +243,16 @@ export interface HomebrewPreview {
   notes: string[];
   /** For a file stored a book at a time: each book, in the file's order. */
   books?: BookChoice[];
+  /**
+   * This file imported whole before it was stored a book at a time, with the
+   * sources it declared. Importing replaces it, so no entry shows twice.
+   */
+  replacesOldImport?: (FileRef & { sourceIds: string[] })[];
+  /**
+   * Characters that use an entry of {@link replacesOldImport} this file does
+   * not bring under the same name and source, so it goes missing.
+   */
+  oldImportCharacters?: { id: string; name: string }[];
 }
 
 /** One book of a file stored a book at a time, and what importing it would do. */
@@ -250,6 +268,11 @@ export interface BookChoice {
   status: 'new' | 'same' | 'replaces';
   /** For `replaces`: the file the stored copy came from. */
   replacesFrom?: string;
+  /**
+   * Other files here with a copy of this book. Each file keeps its own, and
+   * an entry two copies both have is used once, from the one imported first.
+   */
+  alsoIn?: string[];
 }
 
 export interface HomebrewPreviewInput {
@@ -273,14 +296,25 @@ function fileLabel(f: { fileName: string; book?: string }): string {
 }
 
 /**
- * What each book would do, and the files here that are copies of the
- * import's own books (stored before, or the same). Those are not other files
- * to clash with: importing replaces them, or they are this file already.
+ * What each book would do; the files here that are this file's own copies
+ * of its books (stored before, or the same), which are not other files to
+ * clash with, since importing replaces them or they are this file already;
+ * and the copies of its books from other files, which stay.
  */
 function bookChoices(
   books: readonly HomebrewFileRow[],
   existing: readonly HomebrewFile[],
-): { choices: BookChoice[]; ownCopies: Set<string> } {
+): {
+  choices: BookChoice[];
+  ownCopies: Set<string>;
+  sharedCopies: Set<string>;
+  /**
+   * Where each book coming in lands in merge order, by its source: a copy
+   * that replaces this file's own keeps the earliest place of those copies
+   * (`homebrewRepo.commitBooks`). A book new here comes after every file.
+   */
+  places: Map<string, MergeOrderKey>;
+} {
   const byBook = new Map<string, HomebrewFile[]>();
   for (const f of existing) {
     const key = f.book === undefined ? undefined : bookKey(f);
@@ -290,20 +324,41 @@ function bookChoices(
     else copies.push(f);
   }
   const ownCopies = new Set<string>();
+  const sharedCopies = new Set<string>();
+  const places = new Map<string, MergeOrderKey>();
   const existingIds = new Set(existing.map((f) => f.id));
   const choices = books.map((b): BookChoice => {
     const copies = byBook.get(bookKey(b) ?? '') ?? [];
-    for (const c of copies) ownCopies.add(c.id);
+    const alsoIn = new Set<string>();
+    let addedAt = Number.POSITIVE_INFINITY;
+    for (const c of copies) {
+      if (c.id === b.id || sameBookCopy(c, b)) {
+        ownCopies.add(c.id);
+        addedAt = Math.min(addedAt, c.addedAt);
+      } else {
+        sharedCopies.add(c.id);
+        alsoIn.add(c.fileName);
+      }
+    }
+    const key = bookKey(b);
+    if (key !== undefined && addedAt !== Number.POSITIVE_INFINITY) {
+      places.set(key, { addedAt, id: b.id });
+    }
     const same = existingIds.has(b.id);
     if (same) ownCopies.add(b.id);
-    const replaced = copies.find((c) => c.id !== b.id);
-    const base = { id: b.id, full: b.book ?? fileLabel(b), counts: b.counts };
+    const replaced = copies.find((c) => c.id !== b.id && sameBookCopy(c, b));
+    const base = {
+      id: b.id,
+      full: b.book ?? fileLabel(b),
+      counts: b.counts,
+      ...(alsoIn.size === 0 ? {} : { alsoIn: [...alsoIn] }),
+    };
     if (same) return { ...base, status: 'same' };
     if (replaced !== undefined)
       return { ...base, status: 'replaces', replacesFrom: replaced.fileName };
     return { ...base, status: 'new' };
   });
-  return { choices, ownCopies };
+  return { choices, ownCopies, sharedCopies, places };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -389,11 +444,24 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   const { row, existing, official } = input;
   const ownSources = new Set(row.sourceIds.map(lower));
   const books = input.books === undefined ? undefined : bookChoices(input.books, existing);
-  const others = existing.filter((f) => f.id !== row.id && books?.ownCopies.has(f.id) !== true);
+  const oldImports = books === undefined ? [] : oldWholeImports(row.fileName, existing);
+  const replaced = new Set(oldImports.map((f) => f.id));
+  const others = existing.filter(
+    (f) => f.id !== row.id && books?.ownCopies.has(f.id) !== true && !replaced.has(f.id),
+  );
   // Merge order, so the first file found for an identity is the one that wins it.
   const enabled = others.filter((f) => f.enabled).sort(compareMergeOrder);
   const disabled = others.filter((f) => !f.enabled).sort(compareMergeOrder);
   const notes: string[] = [];
+  const byId = new Map(existing.map((f) => [f.id, f]));
+  // Whether `ref`, the first file here with an entry, comes ahead of where
+  // `e` lands: always for a file coming in, which is the newest; for a book
+  // taking its own copy's place, only a file imported before that copy.
+  const ahead = (ref: FileRef, e: Entity) => {
+    const place = typeof e.source === 'string' ? books?.places.get(lower(e.source)) : undefined;
+    const f = byId.get(ref.id);
+    return place === undefined || f === undefined || compareMergeOrder(f, place) < 0;
+  };
 
   let duplicateOf: HomebrewPreview['duplicateOf'];
   if (books === undefined) {
@@ -416,13 +484,16 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
       // A fold, not a spread: one argument per book.
       addedAt: stored.reduce((min, f) => Math.min(min, f.addedAt), Number.POSITIVE_INFINITY),
       enabled: stored.every((f) => f.enabled),
+      booksOff: stored.filter((f) => !f.enabled).length,
     };
   }
 
+  // Another file's copy of a book is named under that book in the picker.
   const sourceCollisions = row.sourceIds
     .map((sourceId) => ({
       sourceId,
       files: others
+        .filter((f) => books?.sharedCopies.has(f.id) !== true)
         .filter((f) => f.sourceIds.some((s) => lower(s) === lower(sourceId)))
         .map((f) => ({ id: f.id, fileName: fileLabel(f), enabled: f.enabled })),
     }))
@@ -459,12 +530,12 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
         continue;
       }
       const file = enabledClashes.get(`${type}:${key}`);
-      if (file !== undefined) {
+      if (file !== undefined && ahead(file, e)) {
         collisions.push({ ...what, against: file, winner: 'existing' });
         continue;
       }
       const off = disabledClashMap.get(`${type}:${key}`);
-      if (off !== undefined) disabledClashes.push({ ...what, against: off });
+      if (off !== undefined && ahead(off, e)) disabledClashes.push({ ...what, against: off });
     }
   }
 
@@ -541,12 +612,27 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
   // One character the roster cannot read must not stop every import, so each
   // is read on its own and a bad one is left out of the list.
   const affectedCharacters: { id: string; name: string }[] = [];
+  const oldImportCharacters: { id: string; name: string }[] = [];
+  const oldSources = new Set(oldImports.flatMap((f) => f.sourceIds.map(lower)));
+  // What this file brings, by name and source: an entry of the old import it
+  // brings again under the same identity is not lost.
+  const brought = new Set<string>();
+  if (oldSources.size > 0) {
+    for (const type of HOMEBREW_ENTITY_KEYS) {
+      for (const e of entitiesOf(row.json, type)) if (named(e) !== undefined) brought.add(uidOf(e));
+    }
+  }
+  const loses = (doc: CharacterDoc) =>
+    oldSources.size > 0 &&
+    collectCharacterRefs(doc).some(
+      (r) => oldSources.has(lower(r.source)) && !brought.has(targetUid(r)),
+    );
   for (const doc of input.characters) {
     try {
       const used = collectCharacterSources(doc);
-      if ([...ownSources].some((s) => used.has(s))) {
-        affectedCharacters.push({ id: String(doc.id), name: String(doc.name) });
-      }
+      const who = { id: String(doc.id), name: String(doc.name) };
+      if ([...ownSources].some((s) => used.has(s))) affectedCharacters.push(who);
+      if (loses(doc)) oldImportCharacters.push(who);
     } catch {
       // Unreadable: the roster reports it; the preview just cannot list it.
     }
@@ -560,18 +646,24 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
       'Not all game data is on this device yet, so clashes with official content may be incomplete.',
     );
   }
-  const clashingFiles = new Map<string, string>();
+  // A book here is named by the file it came from, so a compendium that
+  // shares many books with this one makes one note, not one per book.
+  const noteLabel = (ref: FileRef) => {
+    const f = byId.get(ref.id);
+    return f?.book === undefined ? ref.fileName : f.fileName;
+  };
+  const clashingFiles = new Set<string>();
   for (const c of collisions) {
-    if (c.against !== 'official') clashingFiles.set(c.against.id, c.against.fileName);
+    if (c.against !== 'official') clashingFiles.add(noteLabel(c.against));
   }
-  for (const fileName of clashingFiles.values()) {
+  for (const fileName of clashingFiles) {
     notes.push(
       `Entries in this file that match entries in "${fileName}" are not used: ` +
         `"${fileName}" was imported first, so it wins until it is disabled or deleted.`,
     );
   }
-  const dormantFiles = new Map(disabledClashes.map((c) => [c.against.id, c.against.fileName]));
-  for (const fileName of dormantFiles.values()) {
+  const dormantFiles = new Set(disabledClashes.map((c) => noteLabel(c.against)));
+  for (const fileName of dormantFiles) {
     notes.push(
       `Some entries in this file match entries in "${fileName}", which is turned off. ` +
         `This file's entries are used for now; "${fileName}" wins again if it is turned back on.`,
@@ -597,6 +689,16 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     officialCoverage: coverage,
     notes,
     ...(books === undefined ? {} : { books: books.choices }),
+    ...(oldImports.length === 0
+      ? {}
+      : {
+          replacesOldImport: oldImports.map((f) => ({
+            id: f.id,
+            fileName: f.fileName,
+            sourceIds: f.sourceIds,
+          })),
+          oldImportCharacters,
+        }),
   };
 }
 

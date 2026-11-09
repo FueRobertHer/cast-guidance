@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ValidationError } from '@/lib/guards';
-import { bookHolders, bookKey, bookOf, bookParts, MAX_BOOKS, splitBooks } from './homebrewBooks';
+import {
+  bookHolders,
+  bookKey,
+  bookOf,
+  bookParts,
+  fileKey,
+  MAX_BOOKS,
+  mergeBook,
+  oldWholeImports,
+  sameBookCopy,
+  splitBooks,
+} from './homebrewBooks';
 
 const META = {
   sources: [
@@ -164,16 +175,29 @@ describe('bookParts', () => {
     expect(stonePart).toBeUndefined();
   });
 
-  it('finds many entries of one name, each naming that name, without going back over them', () => {
-    const same = Array.from({ length: 50_000 }, () => ({
-      name: 'Echo',
+  it('finds many entries all naming one entry without going back over it', () => {
+    const many = Array.from({ length: 50_000 }, (_, i) => ({
+      name: `Echo ${i}`,
       source: 'FCEmber',
-      entries: ['{@feat Echo|FCEmber}'],
+      entries: ['{@feat Echo 0|FCEmber}', `{@feat Echo ${i + 1}|FCEmber}`],
     }));
-    const part = bookSubset({ _meta: BOOK._meta, feat: same }, [
-      { name: 'Echo', source: 'FCEmber' },
+    const part = bookSubset({ _meta: BOOK._meta, feat: many }, [
+      { name: 'Echo 0', source: 'FCEmber' },
     ]);
     expect((part?.feat as unknown[]).length).toBe(50_000);
+  });
+
+  it('takes an entry two copies of a book hold from the first copy only, as the app uses it', () => {
+    const copy = (fileName: string, text: string) => ({
+      _meta: { ...BOOK._meta, convertedFrom: { fileName } },
+      spell: [{ name: 'Ember Lance', source: 'FCEmber', entries: [text] }],
+    });
+    const [first, second] = bookParts(
+      [copy('five.xml', 'first'), copy('six.xml', 'second')],
+      [{ name: 'Ember Lance', source: 'FCEmber' }],
+    );
+    expect(first?.spell).toEqual([{ name: 'Ember Lance', source: 'FCEmber', entries: ['first'] }]);
+    expect(second).toBeUndefined();
   });
 });
 
@@ -212,32 +236,163 @@ describe('bookOf', () => {
   });
 });
 
-describe('a part of a book, against what is here', () => {
+describe('a book coming in, against what is here', () => {
   const lance = { name: 'Ember Lance', source: 'FCEmber' };
   const ward = { name: 'Ember Ward', source: 'FCEmber' };
   const part = (spell: unknown[], sourceIds = ['FCEmber']) => ({
     sourceIds,
+    fileName: 'all.xml',
+    book: 'Ember Codex',
     subset: true as const,
     json: { _meta: {}, spell },
   });
-  const whole = { id: 'whole', sourceIds: ['FCEmber'], json: { spell: [lance, ward] } };
+  const whole = {
+    id: 'whole',
+    sourceIds: ['FCEmber'],
+    fileName: 'other.xml',
+    book: 'Ember Codex',
+    json: { spell: [lance, ward] },
+  };
   const stoneLance = { name: 'Ember Lance', source: 'FCStone' };
-  const other = { id: 'other', sourceIds: ['Other', 'FCStone'], json: { spell: [stoneLance] } };
-  const otherPart = { id: 'part', sourceIds: ['FCAsh'], subset: true as const, json: {} };
+  const other = {
+    id: 'other',
+    sourceIds: ['Other', 'FCStone'],
+    fileName: 'other.json',
+    json: { spell: [stoneLance] },
+  };
 
-  it('defers to a whole book or any file declaring its source, never to another part', () => {
-    const here = [whole, other, otherPart];
+  it('defers to every copy of the book here, from any file, and any file declaring its source', () => {
+    const here = [whole, other];
     expect(bookHolders(part([lance]), here)).toEqual([whole]);
     expect(bookHolders(part([stoneLance], ['FCStone']), here)).toEqual([other]);
-    expect(bookHolders(part([], ['FCAsh']), here)).toEqual([]);
-    // A whole book is never skipped for what is here.
-    expect(bookHolders({ ...part([lance]), subset: undefined }, here)).toEqual([]);
+    // A whole book whose every entry is here adds nothing either.
+    expect(bookHolders({ ...part([lance]), subset: undefined }, here)).toEqual([whole]);
+    // Two parts here hold between them what a third needs.
+    const lancePart = { ...part([lance]), id: 'a' };
+    const wardPart = { ...part([ward]), id: 'b' };
+    expect(bookHolders(part([lance, ward]), [lancePart, wardPart])).toEqual([lancePart, wardPart]);
+    // A file that is no book is never skipped for what is here.
+    expect(bookHolders({ ...part([lance]), book: undefined }, here)).toEqual([]);
   });
 
-  it('is not here when the stored book lacks an entry of the part', () => {
+  it('is not here when the stored book lacks an entry of it', () => {
     const older = { ...whole, json: { spell: [ward] } };
     expect(bookHolders(part([lance]), [older])).toEqual([]);
     // The same name in another kind of entry is not the entry.
     expect(bookHolders(part([lance]), [{ ...whole, json: { feat: [lance] } }])).toEqual([]);
+  });
+});
+
+describe('fileKey and sameBookCopy', () => {
+  it('names a file the same however it was saved', () => {
+    expect(fileKey('Complete.xml')).toBe('complete');
+    expect(fileKey('C:\\Downloads\\Complete (1).xml')).toBe('complete');
+    expect(fileKey('complete.json')).toBe('complete');
+    expect(fileKey('Complete (Fight Club 5e)')).toBe('complete (fight club 5e)');
+    expect(fileKey('Complete_Compendium_5.5e.xml')).toBe('complete_compendium_5.5e');
+  });
+
+  it('is one copy for one book from one file', () => {
+    const copy = { sourceIds: ['FCEmber'], fileName: 'all.xml', book: 'Ember Codex' };
+    expect(sameBookCopy(copy, { ...copy, fileName: 'All (2).xml', subset: true })).toBe(true);
+    expect(sameBookCopy(copy, { ...copy, fileName: 'other.xml' })).toBe(false);
+    expect(sameBookCopy(copy, { ...copy, sourceIds: ['FCAsh'] })).toBe(false);
+    expect(sameBookCopy(copy, { ...copy, book: undefined })).toBe(false);
+  });
+});
+
+describe('mergeBook', () => {
+  const meta = (subset?: true) => ({
+    sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+    convertedFrom: { fileName: 'all.xml', ...(subset ? { subset } : {}) },
+  });
+  const lance = (text: string) => ({ name: 'Ember Lance', source: 'FCEmber', entries: [text] });
+  const heart = { name: 'Ember Heart', source: 'FCEmber' };
+
+  it('keeps what is stored and takes in what it lacks, once', () => {
+    const { json, added } = mergeBook(
+      { _meta: meta(true), feat: [heart] },
+      { _meta: meta(true), feat: [heart], spell: [lance('incoming')] },
+    );
+    expect(added).toBe(1);
+    expect(json).toEqual({ _meta: meta(true), feat: [heart], spell: [lance('incoming')] });
+  });
+
+  it('lets the stored copy win an entry both hold', () => {
+    const { json, added } = mergeBook(
+      { _meta: meta(true), spell: [lance('stored')] },
+      { _meta: meta(true), spell: [lance('incoming')] },
+    );
+    expect(added).toBe(0);
+    expect(json.spell).toEqual([lance('stored')]);
+  });
+
+  it('makes a part whole when the whole book comes in, and leaves a whole book whole', () => {
+    const whole = mergeBook({ _meta: meta(true), feat: [heart] }, { _meta: meta(), feat: [heart] });
+    expect(bookOf(whole.json)).toEqual({ book: 'Ember Codex' });
+    const still = mergeBook({ _meta: meta(), feat: [heart] }, { _meta: meta(true), feat: [heart] });
+    expect(bookOf(still.json)).toEqual({ book: 'Ember Codex' });
+  });
+
+  it('does not change the stored copy it reads', () => {
+    const stored = { _meta: meta(true), feat: [heart] };
+    mergeBook(stored, {
+      _meta: meta(true),
+      spell: [lance('x')],
+      feat: [{ ...heart, name: 'Other' }],
+    });
+    expect(stored.feat).toEqual([heart]);
+  });
+});
+
+describe('mergeBook and another book`s entries', () => {
+  it('takes in only entries of the book itself', () => {
+    const meta = { sources: [{ json: 'FCEmber', full: 'Ember Codex' }] };
+    const stored = { _meta: meta, spell: [{ name: 'Ember Ward', source: 'FCEmber' }] };
+    const { json, added } = mergeBook(stored, {
+      _meta: meta,
+      spell: [
+        { name: 'Ember Lance', source: 'fcember' },
+        { name: 'Zap', source: 'OTHER' },
+      ],
+    });
+    expect(added).toBe(1);
+    expect((json.spell as { name: string }[]).map((e) => e.name)).toEqual([
+      'Ember Ward',
+      'Ember Lance',
+    ]);
+  });
+});
+
+describe('oldWholeImports', () => {
+  const legacy = (fileName: string, extra: Record<string, unknown> = {}) => ({
+    id: fileName,
+    sourceIds: ['FCComplete'],
+    fileName,
+    json: {
+      _meta: {
+        sources: [{ json: 'FCComplete' }],
+        convertedFrom: { format: 'fc5-compendium', fileName, ...extra },
+      },
+    },
+  });
+
+  it('finds the same file converted whole, however it was saved', () => {
+    const here = [legacy('Complete.xml'), legacy('Other.xml')];
+    expect(oldWholeImports('Complete (1).xml', here).map((f) => f.id)).toEqual(['Complete.xml']);
+  });
+
+  it('finds it stored whole with a source per book, as it was before books were rows', () => {
+    const several = { ...legacy('Complete.xml'), sourceIds: ['FCEmber', 'FCAsh'] };
+    expect(oldWholeImports('Complete.xml', [several]).map((f) => f.id)).toEqual(['Complete.xml']);
+    expect(oldWholeImports('Other.xml', [several])).toEqual([]);
+  });
+
+  it('leaves a book, a part and homebrew written by hand', () => {
+    expect(oldWholeImports('Complete.xml', [{ ...legacy('Complete.xml'), book: 'X' }])).toEqual([]);
+    expect(oldWholeImports('Complete.xml', [legacy('Complete.xml', { subset: true })])).toEqual([]);
+    expect(
+      oldWholeImports('Complete.xml', [{ ...legacy('Complete.xml'), json: { _meta: {} } }]),
+    ).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
-import { bookKey } from '@/db/homebrewBooks';
+import { sameBookCopy } from '@/db/homebrewBooks';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { jsonByteSize } from '@/lib/byteSize';
 import { QUOTA_GUIDANCE, storageErrorText } from '@/lib/storageErrors';
@@ -104,10 +104,9 @@ async function roomProblem(rows: readonly HomebrewFileRow[]): Promise<string | u
   if (free === undefined) return undefined;
   const stored = (await homebrewRepo.listMetaSafe()).files;
   const ids = new Set(stored.map((r) => r.id));
-  const books = new Set(stored.flatMap((r) => (r.book === undefined ? [] : [bookKey(r)])));
   let need = 0;
   for (const r of rows) {
-    if (ids.has(r.id) || (r.book !== undefined && books.has(bookKey(r)))) continue;
+    if (ids.has(r.id) || stored.some((s) => sameBookCopy(s, r))) continue;
     need += jsonByteSize(r.json);
   }
   if (need <= free) return undefined;
@@ -320,9 +319,14 @@ function more(total: number, shown: number, what: string): ReactNode {
 /** What a book would do, under its name in the picker. */
 function bookStatus(b: BookChoice): string {
   const counts = countsText(b.counts);
-  if (b.status === 'same') return `${counts}. Already on this device.`;
-  if (b.status === 'replaces') return `${counts}. Replaces the copy from "${b.replacesFrom}".`;
-  return counts;
+  const also =
+    b.alsoIn === undefined
+      ? ''
+      : ` Also in ${b.alsoIn.map((f) => `"${f}"`).join(', ')}: an entry both have shows once.`;
+  if (b.status === 'same') return `${counts}. Already on this device.${also}`;
+  if (b.status === 'replaces')
+    return `${counts}. Replaces the copy from "${b.replacesFrom}".${also}`;
+  return also === '' ? counts : `${counts}.${also}`;
 }
 
 /**
@@ -480,11 +484,41 @@ export default function HomebrewImportPreview({
               on {new Date(dup.addedAt).toLocaleDateString()}. This is the same file, so importing
               it again would add nothing.
             </StatusItem>
-            {!dup.enabled && (
-              <StatusItem tone="warn" status="Turned off.">
-                It is in your list below. Turn it on there to use it.
+            {!dup.enabled &&
+              (books !== undefined && dup.booksOff !== undefined && dup.booksOff < books.length ? (
+                <StatusItem
+                  tone="warn"
+                  status={`${dup.booksOff} of ${booksText(books.length)} turned off.`}
+                >
+                  They are in your list below. Turn them on there to use them.
+                </StatusItem>
+              ) : (
+                <StatusItem tone="warn" status="Turned off.">
+                  It is in your list below. Turn it on there to use it.
+                </StatusItem>
+              ))}
+          </PreviewList>
+        </PreviewSection>
+      )}
+
+      {p.replacesOldImport !== undefined && dup === undefined && (
+        <PreviewSection heading="Replaces an earlier import">
+          <PreviewList>
+            {p.replacesOldImport.map((f) => (
+              <StatusItem key={f.id} tone="info" status={`"${f.fileName}"`}>
+                {`Imported before as one file${
+                  f.sourceIds.length === 1
+                    ? `, under the source ${f.sourceIds[0]}`
+                    : ` of ${booksText(f.sourceIds.length)}`
+                }. Importing replaces it, so each entry shows once, under its book.`}
               </StatusItem>
-            )}
+            ))}
+            {(p.oldImportCharacters ?? []).map((c) => (
+              <StatusItem key={c.id} tone="warn" status={c.name}>
+                Uses entries from that earlier import. They show as missing until picked again from
+                their books.
+              </StatusItem>
+            ))}
           </PreviewList>
         </PreviewSection>
       )}

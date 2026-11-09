@@ -131,6 +131,33 @@ describe('homebrewForExport of a book', () => {
     expect(homebrewForExport(d, [book(JSON_)])).toEqual([{ fileName: 'all.xml', json: JSON_ }]);
   });
 
+  it('sends one copy of a book two files hold, and not the other whole', () => {
+    // A copy of its own, as rows read from storage are.
+    const other = (json: Record<string, unknown>): HomebrewFile => ({
+      ...book(structuredClone(json)),
+      id: 'other',
+      fileName: 'other.xml',
+    });
+    const picked = newCharacterDoc('c', 'Hero', 'tag');
+    picked.spellcasting = {
+      wizard: { known: [{ name: 'Ember Lance', source: 'FCEmber' }], prepared: [] },
+    };
+    // The second copy lacks the entry, or has it but comes later: either way
+    // the first copy's part is all that goes.
+    for (const second of [other({ ...JSON_, spell: [JSON_.spell[1]] }), other(JSON_)]) {
+      const out = homebrewForExport(picked, [book(JSON_), second]);
+      expect(out.map((o) => [o.fileName, (o.json as { spell: unknown[] }).spell.length])).toEqual([
+        ['all.xml', 1],
+      ]);
+    }
+    // Named only as a dependency, the book goes whole once, as its first copy.
+    const named = newCharacterDoc('c', 'Hero', 'tag');
+    named.homebrewDeps = ['FCEmber'];
+    expect(homebrewForExport(named, [book(JSON_), other(JSON_)])).toEqual([
+      { fileName: 'all.xml', json: JSON_ },
+    ]);
+  });
+
   it('counts a choice that names an entry toward the sources it uses', () => {
     const d = newCharacterDoc('c', 'Hero', 'tag');
     d.choices = { 'class:fighter|phb:style': ['Ember Style|FCEmber'], other: 3 };

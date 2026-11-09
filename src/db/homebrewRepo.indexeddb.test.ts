@@ -6,7 +6,7 @@ import { assertJsonWithinLimits, IMPORT_LIMITS, ValidationError } from '@/lib/gu
 import { isQuotaError } from '@/lib/storageErrors';
 import { injectIdbFault, removeIdbFaults } from '../../tests-fixtures/idbFaults';
 import { db } from './db';
-import { buildHomebrewRow, homebrewRepo } from './homebrewRepo';
+import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from './homebrewRepo';
 
 function file(sourceId: string, spells: string[] = []) {
   return {
@@ -356,20 +356,22 @@ describe('a file stored a book at a time', () => {
     expect(books).toHaveLength(5);
   });
 
-  it('stores the books, leaves one already here alone, and replaces an older copy', async () => {
+  it('stores the books, leaves one already here alone, and replaces its own older copy', async () => {
     const first = await homebrewRepo.prepareBooks(
       compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt'] }),
-      'old.xml',
+      'all.xml',
     );
     await homebrewRepo.commitBooks(first.books);
     const oldAsh = first.books[1] as (typeof first.books)[number];
     await homebrewRepo.setEnabled(oldAsh.id, false);
+    const oldAddedAt = (await db.homebrewFiles.get(oldAsh.id))?.addedAt;
     // A file stored whole that declares a book's source is no book: it stays.
     const whole = await homebrewRepo.importJson(file('ASH', ['Ash Storm']), 'ash.json');
 
+    // The same file again, as a browser names a second download of it.
     const second = await homebrewRepo.prepareBooks(
       compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt', 'Ash Veil'], NEW: ['Zap'] }),
-      'new.xml',
+      'all (1).xml',
     );
     const committed = await homebrewRepo.commitBooks(second.books);
     expect(committed.added.map((r) => r.book)).toEqual(['ASH Book', 'NEW Book']);
@@ -380,16 +382,82 @@ describe('a file stored a book at a time', () => {
     const byBook = new Map(stored.map((r) => [r.book ?? r.fileName, r]));
     expect(stored).toHaveLength(4);
     // The same Ember Codex as before, untouched.
-    expect(byBook.get('EMB Book')?.fileName).toBe('old.xml');
-    // The new Ashen copy, turned off as the old one was.
+    expect(byBook.get('EMB Book')?.fileName).toBe('all.xml');
+    // The new Ashen copy, turned off as the old one was, in its place in the merge order.
     expect(byBook.get('ASH Book')).toMatchObject({
-      fileName: 'new.xml',
+      fileName: 'all (1).xml',
       enabled: false,
       counts: { spell: 2 },
+      addedAt: oldAddedAt,
     });
     expect(byBook.get('NEW Book')?.enabled).toBe(true);
     expect(byBook.get('ash.json')?.id).toBe(whole.id);
     expect(await db.homebrewJson.get(oldAsh.id)).toBeUndefined();
+  });
+
+  it('keeps the copy of a book another file brought, and stores the new one beside it', async () => {
+    const first = await homebrewRepo.prepareBooks(
+      compendium({ ASH: ['Ash Bolt', 'Ash Veil'] }),
+      'five.xml',
+    );
+    await homebrewRepo.commitBooks(first.books);
+    const second = await homebrewRepo.prepareBooks(
+      compendium({ ASH: ['Ash Bolt', 'Cinder Step'] }),
+      'five-and-a-half.xml',
+    );
+    const committed = await homebrewRepo.commitBooks(second.books);
+    expect(committed.replaced).toBe(0);
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((r) => [r.fileName, r.book]).sort()).toEqual([
+      ['five-and-a-half.xml', 'ASH Book'],
+      ['five.xml', 'ASH Book'],
+    ]);
+  });
+
+  it('replaces the same file stored whole before it was stored a book at a time', async () => {
+    // As an import stored a converted file before books: one source named after the file.
+    const legacy = (fileName: string) =>
+      buildHomebrewRow(
+        {
+          _meta: {
+            sources: [{ json: 'FCAll', full: 'all (Fight Club 5e)' }],
+            convertedFrom: { format: 'fc5-compendium', fileName },
+          },
+          spell: [{ name: 'Ash Bolt', source: 'FCAll', level: 1 }],
+        },
+        fileName,
+      ).then(async ({ book: _, ...row }) => {
+        await putHomebrewRow(row);
+        return row;
+      });
+    const old = await legacy('all.xml');
+    const other = await legacy('other.xml');
+
+    const { books } = await homebrewRepo.prepareBooks(compendium({ ASH: ['Ash Bolt'] }), 'all.xml');
+    const committed = await homebrewRepo.commitBooks(books);
+    expect(committed.replaced).toBe(1);
+    expect(await db.homebrewFiles.get(old.id)).toBeUndefined();
+    expect(await db.homebrewJson.get(old.id)).toBeUndefined();
+    // Another file stored whole is not this one: it stays.
+    expect(await db.homebrewFiles.get(other.id)).toBeDefined();
+  });
+
+  it('replaces the same file stored whole with a source per book', async () => {
+    // As an import stored a converted file before its books were rows of their own.
+    const { book: _, ...whole } = await buildHomebrewRow(
+      compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt'] }),
+      'all.xml',
+    );
+    expect(whole.sourceIds).toEqual(['EMB', 'ASH']);
+    await putHomebrewRow(whole);
+
+    const { books } = await homebrewRepo.prepareBooks(
+      compendium({ EMB: ['Ember Lance'], ASH: ['Ash Bolt'] }),
+      'all (1).xml',
+    );
+    expect((await homebrewRepo.commitBooks(books)).replaced).toBe(1);
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((f) => f.book).sort()).toEqual(['ASH Book', 'EMB Book']);
   });
 
   it('removes every book of a file at once', async () => {

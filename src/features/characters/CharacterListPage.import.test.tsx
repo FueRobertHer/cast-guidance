@@ -301,6 +301,40 @@ describe('character import preview', () => {
     );
   });
 
+  it('adds what the book here from the same file lacks, and says so', async () => {
+    const meta = {
+      sources: [{ json: 'FCEmber', full: 'Ember Codex' }],
+      convertedFrom: { format: 'fc5-compendium', fileName: 'all.xml' },
+    };
+    const { books } = await homebrewRepo.prepareBooks(
+      { _meta: meta, spell: [{ name: 'Ember Ward', source: 'FCEmber', level: 1 }] },
+      'all.xml',
+    );
+    await homebrewRepo.commitBooks(books);
+    const doc = hero();
+    doc.spellcasting = {
+      wizard: { known: [{ name: 'Ember Lance', source: 'FCEmber' }], prepared: [] },
+    };
+    const part = {
+      _meta: { ...meta, convertedFrom: { ...meta.convertedFrom, subset: true } },
+      spell: [{ name: 'Ember Lance', source: 'FCEmber', level: 1 }],
+    };
+    renderRoster();
+    chooseFile({ ...exported(doc), homebrew: [{ fileName: 'all.xml', json: part }] });
+
+    const dialog = await findDialog('Import Brin?');
+    expect(
+      within(dialog).getByRole('region', { name: 'Homebrew in this file' }).textContent,
+    ).toContain(
+      'Adds 1 entry to the book here. Ember Codex (1 spell). The book here, from the same file, lacks 1 entry the character uses, so importing adds them to it. The book stays one copy.',
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(outcome()).toBe('Imported Brin. Added entries to 1 book already here'),
+    );
+    expect(await db.homebrewFiles.count()).toBe(1);
+  });
+
   // Shapes the old flow imported: the preview must read them, not throw.
   it.each([
     ['no class list', (d: Json) => delete d.classes, 'ClassNo class yet'],

@@ -14,6 +14,7 @@ import { Link, useNavigate } from 'react-router';
 import type { ConversionReport } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
+import { bookKey, fileKey } from '@/db/homebrewBooks';
 import { type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
 import { downloadJson } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
@@ -72,10 +73,41 @@ function summary(counts: Record<string, number>): string {
   );
 }
 
-/** A file's caption: what it holds, and for the part of a book a character brought, that it is a part. */
-function fileSummary(r: HomebrewFileMeta): string {
+/**
+ * A file's caption: what it holds; for the part of a book a character
+ * brought, that it is a part; and for a book, the other files here with a
+ * copy of it.
+ */
+function fileSummary(r: HomebrewFileMeta, also?: readonly string[]): string {
   const counts = summary(r.counts);
-  return r.subset === true ? `${counts} · only what a character uses` : counts;
+  const part = r.subset === true ? `${counts} · only what a character uses` : counts;
+  return also === undefined ? part : `${part} · also in ${also.map((f) => `"${f}"`).join(', ')}`;
+}
+
+/**
+ * For each book, the other files here with a copy of it. Each file keeps its
+ * own copy, and an entry two copies both have is used once.
+ */
+function alsoIn(rows: readonly HomebrewFileMeta[]): Map<string, string[]> {
+  const byBook = new Map<string, HomebrewFileMeta[]>();
+  for (const r of rows) {
+    const key = r.book === undefined ? undefined : bookKey(r);
+    if (key === undefined) continue;
+    const copies = byBook.get(key);
+    if (copies === undefined) byBook.set(key, [r]);
+    else copies.push(r);
+  }
+  const out = new Map<string, string[]>();
+  for (const copies of byBook.values()) {
+    if (copies.length < 2) continue;
+    for (const r of copies) {
+      const others = new Set<string>();
+      for (const c of copies)
+        if (fileKey(c.fileName) !== fileKey(r.fileName)) others.add(c.fileName);
+      if (others.size > 0) out.set(r.id, [...others]);
+    }
+  }
+  return out;
 }
 
 /**
@@ -103,32 +135,41 @@ async function downloadFile(r: HomebrewFileMeta, name: string): Promise<void> {
 
 /** One entry of the list: a file, or the books one file was stored as. */
 type ListItem =
-  | { kind: 'file'; row: HomebrewFileMeta }
-  | { kind: 'books'; fileName: string; rows: HomebrewFileMeta[] };
+  | { kind: 'file'; row: HomebrewFileMeta; also?: string[] }
+  | {
+      kind: 'books';
+      fileName: string;
+      rows: HomebrewFileMeta[];
+      also: ReadonlyMap<string, string[]>;
+    };
 
 /**
  * The list as shown: each file where it falls, and the books of one file
  * together where the newest of them falls, by name. A file of one book is
- * shown as the file it is.
+ * shown as the file it is. A file downloaded twice (`Complete (1).xml`) is
+ * the same file, so its books stay together under its newest name.
  */
 function listItems(rows: readonly HomebrewFileMeta[]): ListItem[] {
   const books = new Map<string, HomebrewFileMeta[]>();
   for (const r of rows) {
     if (r.book === undefined) continue;
-    const group = books.get(r.fileName);
-    if (group === undefined) books.set(r.fileName, [r]);
+    const key = fileKey(r.fileName);
+    const group = books.get(key);
+    if (group === undefined) books.set(key, [r]);
     else group.push(r);
   }
+  const also = alsoIn(rows);
   const items: ListItem[] = [];
   const placed = new Set<string>();
   for (const r of rows) {
-    const group = r.book === undefined ? undefined : books.get(r.fileName);
+    const key = fileKey(r.fileName);
+    const group = r.book === undefined ? undefined : books.get(key);
     if (group === undefined || group.length < 2) {
-      items.push({ kind: 'file', row: r });
-    } else if (!placed.has(r.fileName)) {
-      placed.add(r.fileName);
+      items.push({ kind: 'file', row: r, also: also.get(r.id) });
+    } else if (!placed.has(key)) {
+      placed.add(key);
       const byName = [...group].sort((a, b) => (a.book ?? '').localeCompare(b.book ?? ''));
-      items.push({ kind: 'books', fileName: r.fileName, rows: byName });
+      items.push({ kind: 'books', fileName: r.fileName, rows: byName, also });
     }
   }
   return items;
@@ -150,10 +191,13 @@ function totalCounts(rows: readonly HomebrewFileMeta[]): Record<string, number> 
 function BookGroup({
   fileName,
   rows,
+  also,
   onRemove,
 }: {
   fileName: string;
   rows: HomebrewFileMeta[];
+  /** For each book, the other files here with a copy of it. */
+  also: ReadonlyMap<string, string[]>;
   onRemove: (ids: string[]) => void;
 }) {
   const on = rows.filter((r) => r.enabled).length;
@@ -201,7 +245,9 @@ function BookGroup({
                   </Chip>
                   <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
                     <div className="truncate text-body">{name}</div>
-                    <div className="truncate text-caption text-ink-muted">{fileSummary(r)}</div>
+                    <div className="truncate text-caption text-ink-muted">
+                      {fileSummary(r, also.get(r.id))}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -662,6 +708,7 @@ export function Component() {
                 key={`books:${item.fileName}`}
                 fileName={item.fileName}
                 rows={item.rows}
+                also={item.also}
                 onRemove={(ids) => void remove(ids, item.fileName, ids.length)}
               />
             );
@@ -689,7 +736,9 @@ export function Component() {
                 </Chip>
                 <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
                   <div className="truncate text-body-strong">{r.fileName}</div>
-                  <div className="truncate text-caption text-ink-muted">{fileSummary(r)}</div>
+                  <div className="truncate text-caption text-ink-muted">
+                    {fileSummary(r, item.also)}
+                  </div>
                 </div>
                 {r.editable && (
                   <Link

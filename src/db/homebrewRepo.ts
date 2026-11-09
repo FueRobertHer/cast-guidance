@@ -5,7 +5,13 @@ import {
   sha256Hex,
 } from '@/lib/guards';
 import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
-import { bookKey, bookOf, splitBooks } from './homebrewBooks';
+import {
+  bookOf,
+  mayBeOldWholeImport,
+  oldWholeImports,
+  sameBookCopy,
+  splitBooks,
+} from './homebrewBooks';
 import { compareMergeOrder } from './homebrewOrder';
 
 /** A file to be stored a book at a time, as {@link homebrewRepo.prepareBooks} gives it. */
@@ -333,25 +339,40 @@ export const homebrewRepo = {
   },
 
   /**
-   * Store prepared books in one transaction. A book already here exactly is
-   * left alone; one stored before from another copy (a book row with the
-   * same source) is replaced, and the new copy keeps its switch, on or off.
-   * A file stored whole that declares the same source is not a book, so it
-   * stays. All the books land at one time, as one import.
+   * Store prepared books in one transaction. A book is stored once per file
+   * it came from: one already here exactly is left alone, and a copy of it
+   * stored before from the same file (a part a character brought included)
+   * is replaced. The new copy keeps that copy's switch and its place in the
+   * merge order. A copy from another file stays: between them, the one
+   * imported first wins an entry both hold. The file imported whole before
+   * it was stored a book at a time ({@link oldWholeImports}) is replaced
+   * too. All the books land at one time, as one import.
    */
   async commitBooks(books: readonly HomebrewFileRow[]): Promise<CommittedBooks> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
-      const stored = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files;
+      const rows = await db.homebrewFiles.toArray();
+      const stored = partitionHomebrewMeta(rows).files;
       const ids = new Set(stored.map((r) => r.id));
       const addedAt = Date.now();
       const added: HomebrewFileRow[] = [];
       let replaced = 0;
+      const first = books[0];
+      if (first !== undefined) {
+        const candidates = new Set(stored.filter(mayBeOldWholeImport).map((r) => r.id));
+        const old = oldWholeImports(
+          first.fileName,
+          (await withContent(rows.filter((r) => candidates.has(r.id)))) as HomebrewFileRow[],
+        );
+        for (const r of old) {
+          await db.homebrewFiles.delete(r.id);
+          await db.homebrewJson.delete(r.id);
+          ids.delete(r.id);
+        }
+        replaced += old.length;
+      }
       for (const book of books) {
         if (ids.has(book.id)) continue;
-        const key = bookKey(book);
-        const old = stored.filter(
-          (r) => r.book !== undefined && key !== undefined && bookKey(r) === key && ids.has(r.id),
-        );
+        const old = stored.filter((r) => ids.has(r.id) && sameBookCopy(r, book));
         for (const r of old) {
           await db.homebrewFiles.delete(r.id);
           await db.homebrewJson.delete(r.id);
@@ -361,7 +382,8 @@ export const homebrewRepo = {
         const row: HomebrewFileRow = {
           ...book,
           enabled: old.length === 0 ? book.enabled : old.some((r) => r.enabled),
-          addedAt,
+          // A fold, not a spread: the copy it replaces keeps its place.
+          addedAt: old.reduce((min, r) => Math.min(min, r.addedAt), addedAt),
         };
         await putHomebrewRow(row);
         ids.add(row.id);

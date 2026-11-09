@@ -112,6 +112,11 @@ export function toHomebrewExportDTO(row: HomebrewFile): HomebrewExportDTO {
  * background's feat from another book of the same compendium); one it names
  * only as a dependency, with none of its entries picked, goes whole, as any
  * other file does.
+ *
+ * Two files can each hold a copy of one book. A part comes from the first
+ * copy in merge order that has each entry (`enabled` is in merge order), so
+ * the other copy, with no part, is not needed and does not go whole. A book
+ * named only as a dependency goes whole once, as its first copy.
  */
 export function homebrewForExport(
   doc: CharacterDoc,
@@ -123,12 +128,26 @@ export function homebrewForExport(
     collectCharacterRefs(doc),
   );
   const partOf = new Map(books.map((row, i) => [row, parts[i]]));
+  // The books some copy already goes for, by their one source id.
+  const sent = new Set<string>();
+  for (const [row, part] of partOf) {
+    if (part !== undefined) for (const s of row.sourceIds) sent.add(s.toLowerCase());
+  }
   const sources = collectCharacterSources(doc);
   const out: HomebrewExportDTO[] = [];
   for (const row of enabled) {
     const part = partOf.get(row);
     if (part !== undefined) out.push({ fileName: row.fileName, json: part });
-    else if (row.sourceIds.some((s) => sources.has(s.toLowerCase()))) {
+    else if (row.book === undefined) {
+      if (row.sourceIds.some((s) => sources.has(s.toLowerCase()))) {
+        out.push(toHomebrewExportDTO(row));
+      }
+    } else {
+      const needed = row.sourceIds.filter(
+        (s) => sources.has(s.toLowerCase()) && !sent.has(s.toLowerCase()),
+      );
+      if (needed.length === 0) continue;
+      for (const s of row.sourceIds) sent.add(s.toLowerCase());
       out.push(toHomebrewExportDTO(row));
     }
   }

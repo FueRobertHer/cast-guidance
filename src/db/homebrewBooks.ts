@@ -173,15 +173,21 @@ function* entriesOf(
  * is marked in `_meta.convertedFrom.subset`, so the device that imports it
  * knows it is not the whole book. Undefined, at a book's index, where the
  * character uses none of that book's entries.
+ *
+ * `books` go in merge order: where two copies of a book (from two files)
+ * hold the same entry, only the first one's is used, so only it goes.
  */
 export function bookParts(
   books: readonly Record<string, unknown>[],
   refs: readonly { name: string; source: string }[],
 ): (Record<string, unknown> | undefined)[] {
   const byUid = new Map<string, Record<string, unknown>[]>();
+  const first = new Set<string>();
   for (const json of books) {
-    for (const [, entry, name, source] of entriesOf(json)) {
+    for (const [kind, entry, name, source] of entriesOf(json)) {
       const uid = uidOf(name, source);
+      if (first.has(`${kind}:${uid}`)) continue;
+      first.add(`${kind}:${uid}`);
       const same = byUid.get(uid);
       if (same === undefined) byUid.set(uid, [entry]);
       else same.push(entry);
@@ -248,35 +254,136 @@ export function bookOf(json: Record<string, unknown>): { book?: string; subset?:
   return meta.convertedFrom.subset === true ? { book, subset: true } : { book };
 }
 
-/** The shape {@link bookHolders} reads of a file: its sources, whether a part, and its content. */
-export interface BookFile {
+/**
+ * The compendium file a book came from, as a key: the file's name without
+ * its folder, its extension or the ` (1)` a browser adds to a second
+ * download, lowercased. A book is stored once per file it came from, so
+ * importing that file again replaces its copy and leaves another file's.
+ */
+export function fileKey(fileName: string): string {
+  const base = fileName.replace(/^.*[\\/]/, '').toLowerCase();
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 && base.length - dot <= 9 ? base.slice(0, dot) : base;
+  return stem.replace(/ \(\d{1,4}\)$/, '').trim();
+}
+
+/** What the book checks read of a file's metadata: what it holds and where it came from. */
+export interface BookMeta {
   sourceIds: readonly string[];
+  fileName: string;
+  /** Set on a book of a converted compendium (see {@link bookOf}). */
+  book?: string;
   subset?: true;
+}
+
+/** {@link BookMeta} with the file's content. */
+export interface BookFile extends BookMeta {
   json: unknown;
 }
 
+/** Whether `a` and `b` are copies of one book from one file: what one stored copy stands for. */
+export function sameBookCopy(a: BookMeta, b: BookMeta): boolean {
+  if (a.book === undefined || b.book === undefined) return false;
+  const key = bookKey(a);
+  return key !== undefined && key === bookKey(b) && fileKey(a.fileName) === fileKey(b.fileName);
+}
+
+/** By its metadata alone, a file {@link oldWholeImports} may name: no book. */
+export function mayBeOldWholeImport(f: BookMeta): boolean {
+  return f.book === undefined;
+}
+
 /**
- * The stored files that make a part of a book (`row`) unneeded: those, other
- * than parts, that declare its source, when between them they hold every
- * entry the part has. Empty when `row` is not a part, or when an entry of it
- * is missing here (an older conversion of the book, say), so the part is
- * still worth storing.
+ * The stored files that hold the compendium `fileName` converted whole: how a
+ * compendium was stored before it was stored a book at a time, first as one
+ * source named after the file, later as one file declaring each book's
+ * source. Importing the file again replaces them, or every entry would show
+ * twice, once from the old file and once from its book.
+ */
+export function oldWholeImports<T extends BookFile>(fileName: string, stored: readonly T[]): T[] {
+  const key = fileKey(fileName);
+  return stored.filter((f) => {
+    if (!mayBeOldWholeImport(f) || !isRecord(f.json)) return false;
+    const meta = isRecord(f.json._meta) ? f.json._meta : {};
+    const from = meta.convertedFrom;
+    if (!isRecord(from) || from.subset === true) return false;
+    const origin = typeof from.fileName === 'string' ? from.fileName : f.fileName;
+    return fileKey(origin) === key || fileKey(f.fileName) === key;
+  });
+}
+
+/** `kind:name|source` of every entry: an entry's identity within one kind. */
+function entryKeys(json: unknown): Set<string> {
+  const out = new Set<string>();
+  if (!isRecord(json)) return out;
+  for (const [kind, , name, source] of entriesOf(json)) out.add(`${kind}:${uidOf(name, source)}`);
+  return out;
+}
+
+/**
+ * The stored files that make a book coming in (`row`, whole or a part)
+ * unneeded: every stored file declaring its source (a copy of the book from
+ * any file, a part included), when between them they hold every entry it has. Empty when `row` is no book, or when an entry
+ * of it is missing here (an older conversion of the book, say), so it still
+ * has something to add.
  */
 export function bookHolders<T extends BookFile>(row: BookFile, stored: readonly T[]): T[] {
   const key = bookKey(row);
-  if (row.subset !== true || key === undefined || !isRecord(row.json)) return [];
-  const holders = stored.filter(
-    (f) => f.subset !== true && f.sourceIds.some((s) => s.toLowerCase() === key),
-  );
+  if (row.book === undefined || key === undefined || !isRecord(row.json)) return [];
+  const holders = stored.filter((f) => f.sourceIds.some((s) => s.toLowerCase() === key));
   if (holders.length === 0) return [];
   const have = new Set<string>();
-  for (const f of holders) {
-    if (!isRecord(f.json)) continue;
-    for (const [kind, , name, source] of entriesOf(f.json))
-      have.add(`${kind}:${uidOf(name, source)}`);
-  }
+  for (const f of holders) for (const k of entryKeys(f.json)) have.add(k);
   for (const [kind, , name, source] of entriesOf(row.json)) {
     if (!have.has(`${kind}:${uidOf(name, source)}`)) return [];
   }
   return holders;
+}
+
+/**
+ * One copy of a book from what is stored and what comes in: the stored
+ * entries as they are, then each entry coming in that the stored copy lacks.
+ * The stored copy wins an entry both hold, as the copy imported first wins
+ * between files. A part stays a part only while both are parts; a whole
+ * book coming in makes the copy whole. `added` counts the entries taken in.
+ */
+export function mergeBook(
+  stored: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): { json: Record<string, unknown>; added: number } {
+  const have = entryKeys(stored);
+  // Only entries of the book itself: a part carrying another book's entry (a
+  // hand-edited export, say) must not give that entry this copy's place.
+  const meta = isRecord(stored._meta) ? stored._meta : {};
+  const own = new Set(
+    (Array.isArray(meta.sources) ? meta.sources : [])
+      .map((s) => (isRecord(s) && typeof s.json === 'string' ? s.json.toLowerCase() : undefined))
+      .filter((s) => s !== undefined),
+  );
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    out[key] = Array.isArray(value) ? [...value] : value;
+  }
+  let added = 0;
+  for (const [kind, entry, name, source] of entriesOf(incoming)) {
+    const k = `${kind}:${uidOf(name, source)}`;
+    if (have.has(k) || !own.has(source.toLowerCase())) continue;
+    have.add(k);
+    const list = out[kind];
+    if (Array.isArray(list)) list.push(entry);
+    else out[kind] = [entry];
+    added += 1;
+  }
+  const part = (json: Record<string, unknown>) => {
+    const meta = isRecord(json._meta) ? json._meta : {};
+    return isRecord(meta.convertedFrom) && meta.convertedFrom.subset === true;
+  };
+  if (part(stored) && !part(incoming)) {
+    const from = isRecord(meta.convertedFrom) ? meta.convertedFrom : {};
+    out._meta = {
+      ...meta,
+      convertedFrom: Object.fromEntries(Object.entries(from).filter(([k]) => k !== 'subset')),
+    };
+  }
+  return { json: out, added };
 }

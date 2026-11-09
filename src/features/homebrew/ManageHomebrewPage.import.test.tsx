@@ -46,7 +46,7 @@ import { FC5_CONVERTER_VERSION } from '@/convert/fc5/compendium';
 import { getRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
-import { homebrewRepo } from '@/db/homebrewRepo';
+import { buildHomebrewRow, homebrewRepo, putHomebrewRow } from '@/db/homebrewRepo';
 import { newCharacterDoc } from '@/engine/types';
 import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
@@ -664,6 +664,48 @@ describe('importing a Fight Club 5e compendium', () => {
     } finally {
       Reflect.deleteProperty(navigator, 'storage');
     }
+  });
+
+  it('replaces the same file imported whole before, with a source per book', async () => {
+    const { book: _, ...whole } = await buildHomebrewRow(
+      {
+        _meta: {
+          sources: [
+            { json: 'FCEmberCodex', full: 'Ember Codex' },
+            { json: 'FCAshenTome', full: 'Ashen Tome' },
+          ],
+          convertedFrom: { format: 'fc5-compendium', fileName: 'library.xml' },
+        },
+        spell: [{ name: 'Ash Bolt', source: 'FCAshenTome', level: 2 }],
+      },
+      'library.xml',
+    );
+    await putHomebrewRow(whole);
+    renderPage();
+    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    const dialog = await findDialog('Import "library.xml"?');
+    expect(dialog.textContent).toContain(
+      'Imported before as one file of 2 books. Importing replaces it, so each entry shows once',
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+    await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books .*replacing 1 book/));
+    const stored = (await homebrewRepo.listMetaSafe()).files;
+    expect(stored.map((f) => f.book).sort()).toEqual(['Ashen Tome', 'Ember Codex']);
+  });
+
+  it('says how many books are off when every book of the file is already here', async () => {
+    renderPage();
+    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    let dialog = await findDialog('Import "library.xml"?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import 2 books' }));
+    await waitFor(() => expect(outcome()).toMatch(/^Imported 2 books/));
+    const ashen = (await homebrewRepo.listMetaSafe()).files.find((f) => f.book === 'Ashen Tome');
+    await homebrewRepo.setEnabled(ashen?.id ?? '', false);
+
+    chooseFile('library.xml', LIBRARY(['Ash Bolt']));
+    dialog = await findDialog('"library.xml" is already here');
+    expect(dialog.textContent).toContain('1 of 2 books turned off.');
+    expect(dialog.textContent).not.toContain('Turned off. It is in your list below.');
   });
 
   it('turns Import off while no book that is new is ticked', async () => {
