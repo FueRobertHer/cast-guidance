@@ -7,19 +7,34 @@
 import type { RulesVersion } from '../data5e/rulesVersion';
 
 /** The kinds a converter can produce, named as their 5etools homebrew keys. */
-export type ConvertedKind = 'spell' | 'item' | 'feat' | 'background' | 'race';
+export type ConvertedKind = 'spell' | 'item' | 'feat' | 'background' | 'race' | 'optionalfeature';
 
 /**
- * Whether the installed game data already has this entry. A converter leaves
- * such entries out: the installed one is the better copy (curated mechanics,
- * structured data), and two of the same thing in a picker is noise.
+ * Whether the installed game data already has this entry: in the book given
+ * (its code, any edition), or without one, anywhere in that edition. A
+ * converter leaves such entries out: the installed one is the better copy
+ * (curated mechanics, structured data), and two of the same thing in a picker
+ * is noise.
  */
-export type InstalledCheck = (kind: ConvertedKind, name: string, edition: RulesVersion) => boolean;
+export type InstalledCheck = (
+  kind: ConvertedKind,
+  name: string,
+  edition: RulesVersion,
+  book?: string,
+) => boolean;
 
 export interface ConvertOptions {
-  /** The imported file's name; it names the homebrew source. */
+  /** The imported file's name; it names the homebrew source of entries that cite no book. */
   fileName: string;
   isInstalled?: InstalledCheck;
+  /**
+   * Whether the installed game data holds a book, by code. An entry from a
+   * book it lacks is kept as a printing of its own. Absent, every book the app
+   * can name counts as held.
+   */
+  hasBook?: (code: string) => boolean;
+  /** Books the installed data reads as 2024 rules, past the core ones the app knows. */
+  rulesBooks?: ReadonlySet<string>;
 }
 
 /** One entry that did not convert in full, and why, in words for the player. */
@@ -30,8 +45,10 @@ export interface EntryNote {
   /**
    * `partial`: converted, but something it had is only in its text now.
    * `skipped`: not converted (a kind this app does not read, or a broken entry).
-   * `installed`: left out because the game data already has it.
-   * `duplicate`: left out because the file has it twice.
+   * `installed`: left out because the game data already has it, or the
+   *   entry is a copy of one it has (one per choice, ritual-only, starred).
+   * `duplicate`: left out because the file has it twice, or it copies
+   *   another entry the file has (its class lists or choices go to that one).
    */
   status: 'partial' | 'skipped' | 'installed' | 'duplicate';
   reasons: string[];

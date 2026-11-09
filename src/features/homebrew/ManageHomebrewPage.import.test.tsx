@@ -42,6 +42,7 @@ vi.mock('@/data5e/registry', async () => {
   };
 });
 
+import { FC5_CONVERTER_VERSION } from '@/convert/fc5/compendium';
 import { getRegistry } from '@/data5e/registry';
 import { characterRepo } from '@/db/characterRepo';
 import { db } from '@/db/db';
@@ -549,7 +550,7 @@ describe('importing a Fight Club 5e compendium', () => {
     expect(dialog.textContent).toContain('2 spell');
     expect(dialog.textContent).toContain('Converted: 2 entries, each with its full text.');
     // The official Fire Bolt is the one used, so the file's copy is left out.
-    expect(dialog.textContent).toContain('Left out: 1 entry your game data already has.');
+    expect(dialog.textContent).toContain('Left out: 1 entry: your game data already has it.');
     expect(dialog.textContent).toContain('1 class left out: classes cannot be converted yet.');
     expect(dialog.textContent).toContain('Ashen Veil: the file gives no duration.');
     expect(dialog.textContent).toContain('embers (Fight Club 5e) (FCEmbers)');
@@ -563,7 +564,7 @@ describe('importing a Fight Club 5e compendium', () => {
     const json = stored?.json as { _meta: Json; spell: Json[] };
     expect(json._meta.convertedFrom).toEqual({
       format: 'fc5-compendium',
-      converterVersion: 1,
+      converterVersion: FC5_CONVERTER_VERSION,
       fileName: 'embers.xml',
     });
     expect(json.spell.map((s) => s.name)).toEqual(['Ember Lance', 'Ashen Veil']);

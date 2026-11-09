@@ -5,16 +5,15 @@
  * prerequisite, ability increases and skill proficiencies.
  */
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
+import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
 import {
   ABILITIES,
   type AbilityKey,
   abilityKey,
+  entryName,
   plainText,
   readProficiencies,
   readText,
-  sourceLineEdition,
-  splitName,
 } from './text';
 
 const CATEGORIES: Record<string, string> = {
@@ -114,16 +113,13 @@ export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
   if (rawName === undefined) return { skip: 'it has no name' };
   const reasons: string[] = [];
-  const named = splitName(rawName);
+  const named = entryName(rawName);
   const { name, category } = featCategory(named.name);
   const text = readText(childTexts(el, 'text'));
-  const edition =
-    named.edition ??
-    (text.sourceLine === undefined ? undefined : sourceLineEdition(text.sourceLine)) ??
-    ctx.fileEdition;
+  const placement = ctx.place(text.sourceLine, named.edition);
 
-  const feat: Record<string, unknown> = { name, source: ctx.source };
-  if (edition === '2024') feat.edition = 'one';
+  const feat: Record<string, unknown> = { name };
+  placeEntity(feat, placement);
   if (category !== undefined) feat.category = category;
 
   const prerequisite = childText(el, 'prerequisite');
@@ -156,8 +152,7 @@ export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
 
   if (/(?:^|\n)Repeatable\b/.test(prose)) feat.repeatable = true;
   feat.entries = text.entries;
-  if (text.sourceLine !== undefined) {
-    (feat.entries as unknown[]).push(`{@i Source: ${text.sourceLine}}`);
-  }
-  return { kind: 'feat', name, edition: edition ?? '2014', entity: feat, reasons };
+  const citation = citationEntry(placement);
+  if (citation !== undefined) (feat.entries as unknown[]).push(citation);
+  return { kind: 'feat', name, edition: placement.edition, entity: feat, placement, reasons };
 }

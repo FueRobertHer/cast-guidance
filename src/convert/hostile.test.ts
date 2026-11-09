@@ -34,9 +34,51 @@ describe('hostile input', () => {
 
   it('dedupes a very long class list in linear time', () => {
     const names = Array.from({ length: 200_000 }, (_, i) => `C${i % 1000}`);
-    const s = firstSpell(spell(`<classes>${names.join(',')}</classes>`));
+    const s = firstSpell(spell(`<school>EV</school><classes>${names.join(',')}</classes>`));
     const classes = s?.classes as { fromClassList: unknown[] };
     expect(classes.fromClassList).toHaveLength(1000);
+  });
+
+  it('reads a very long list of option lists in linear time', () => {
+    const lists = Array.from({ length: 200_000 }, (_, i) => `Order ${i % 1000}: Tricks [5.5e]`);
+    const { json } = convert(spell(`<classes>${lists.join(',')}</classes>`));
+    const [option] = json.optionalfeature as Record<string, unknown>[];
+    expect(option?.featureType).toHaveLength(1000);
+  });
+
+  it('reads a very long Source line in linear time', () => {
+    const books = Array.from({ length: 200_000 }, (_, i) => `Book ${i}`).join(', ');
+    const item = `<item><name>Rope</name><type>G</type><text>Source: ${books}</text></item>`;
+    const { json } = convert(`<compendium>${item}</compendium>`);
+    const [rope] = json.item as Record<string, unknown>[];
+    // A title past any real one is cut, with a hash to keep it apart from others.
+    expect(String(rope?.source)).toMatch(/^FCBook0Book1\w{30}$/);
+  });
+
+  it('reads a Source line of spaces and dots in linear time', () => {
+    const line = `Book${' .'.repeat(200_000)} p. 3${' '.repeat(200_000)}(Indie)`;
+    const item = `<item><name>Rope</name><type>G</type><source>${line}</source></item>`;
+    const { json } = convert(`<compendium>${item}</compendium>`);
+    expect((json.item as Record<string, unknown>[] | undefined)?.length ?? 0).toBeLessThan(2);
+  });
+
+  it('reads a name ending in many brackets in linear time', () => {
+    const s = firstSpell(
+      spell('').replace('<name>Test</name>', `<name>Ember${'(a)'.repeat(200_000)}</name>`),
+    );
+    expect(String(s?.name).startsWith('Ember')).toBe(true);
+  });
+
+  it('looks for a very long name in the books it cites in linear time', () => {
+    const name = `${'Ember, '.repeat(50_000)}Ash / Grey (Ash, ${'x'.repeat(50_000)}) +1`;
+    const books = Array.from({ length: 30 }, () => "Player's Handbook p. 1").join(', ');
+    const race = `<race><name>${name}</name><trait><name>T</name><text>Source: ${books}</text></trait></race>`;
+    const { json } = convertXmlText(`<compendium>${race}</compendium>`, {
+      fileName: 'hostile.xml',
+      isInstalled: () => false,
+      hasBook: () => true,
+    });
+    expect(json.race as unknown[]).toHaveLength(1);
   });
 
   it.each([

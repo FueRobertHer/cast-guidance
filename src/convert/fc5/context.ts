@@ -1,18 +1,47 @@
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import type { ConvertedKind } from '../types';
+import type { Book, HomebrewSource } from './books';
+
+/**
+ * Where an entry belongs: the source it carries, its rules edition, and the
+ * 5etools fields that cite its book (`page`).
+ */
+export interface Placement {
+  source: HomebrewSource;
+  edition: RulesVersion;
+  /** The entry's own book, when its `Source:` line names one. */
+  book?: Book;
+  /** Every book the `Source:` line names, the entry's own first. */
+  books: readonly Book[];
+  /** The 5etools fields that cite the book, for the entity: `page`. */
+  fields: Record<string, unknown>;
+  /**
+   * The citation as a line of text, when it names more than the entry's own
+   * book. Fight Club cites reprints and references alike (`Griffon's
+   * Saddlebag p. 39, Player's Handbook p. 149` for a magic quarterstaff), so
+   * the others cannot become 5etools `otherSources`, which says "also
+   * printed in".
+   */
+  citation?: string;
+}
 
 /** What every Fight Club entry converter is handed. */
 export interface Fc5Context {
-  /** The homebrew source id every converted entry carries. */
-  source: string;
-  /** The file's own edition, when its name says (`spells_5.5e.xml`). */
-  fileEdition?: RulesVersion;
-  /** Feat names in this file, lowercased, so a background's feat can point at one. */
-  featNames: ReadonlySet<string>;
   /**
-   * Class lists that stub entries add to a spell, by lowercased spell name.
+   * Where an entry with this `Source:` line belongs. `edition` is what the
+   * entry says of itself (a `[5.5e]` name marker), which wins over its book.
+   */
+  place(sourceLine: string | undefined, edition: RulesVersion | undefined): Placement;
+  /**
+   * Feats this file's converted output holds, by lowercased name, with the
+   * source each carries, so a background's feat can point at one.
+   */
+  featSources: ReadonlyMap<string, string>;
+  /**
+   * Class lists that stub entries add to a spell, by {@link extraClassKey}.
    * Fight Club merges entries that share a name, so a class file lists its
-   * subclass spells as `<spell>` with only a name and `<classes>`.
+   * subclass spells as `<spell>` with only a name and `<classes>`, and a
+   * starred copy (`Hold Person*`) adds them the same way.
    */
   extraClasses?: ReadonlyMap<string, readonly string[]>;
 }
@@ -25,6 +54,29 @@ export type Fc5Result =
       name: string;
       edition: RulesVersion;
       entity: Record<string, unknown>;
+      /** Where the entry belongs; its source joins the file's `_meta.sources` if it is kept. */
+      placement: Placement;
       /** What did not carry over, in words; empty for a clean conversion. */
       reasons: string[];
     };
+
+/**
+ * The key {@link Fc5Context.extraClasses} files a spell's added class lists
+ * under: its name and the edition its own name marks, so a `[5.5e]` copy's
+ * lists go to the 2024 spell and not to the 2014 one of the same name.
+ */
+export function extraClassKey(name: string, edition: RulesVersion | undefined): string {
+  return `${name.toLowerCase()}|${edition ?? ''}`;
+}
+
+/** Put a placement's source, edition and citation on an entity being built. */
+export function placeEntity(entity: Record<string, unknown>, placement: Placement): void {
+  entity.source = placement.source.json;
+  if (placement.edition === '2024') entity.edition = 'one';
+  Object.assign(entity, placement.fields);
+}
+
+/** The citation line some entries keep at the end of their text. */
+export function citationEntry(placement: Placement): string | undefined {
+  return placement.citation === undefined ? undefined : `{@i Source: ${placement.citation}}`;
+}
