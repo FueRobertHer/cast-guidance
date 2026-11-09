@@ -932,7 +932,7 @@
         }
       ],
       "prose": {
-        "disagreements": 38,
+        "disagreements": 40,
         "allow": [
           {
             "key": "04ae356a954bb1",
@@ -1458,6 +1458,69 @@
             "kind": "missed",
             "label": "Zhentarim Ruffian (feat|FRHoF)",
             "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "014632b29d9ce4",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Drunken Technique (Monk: Warrior of Mystic Brews|WoW)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1d32751befe96e",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Wizened Brewer (Monk: Warrior of Mystic Brews|WoW)",
+            "note": "Rides on another feature's bonus action, with no slot of its own."
+          },
+          {
+            "key": "1d32751befe96e",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Wizened Brewer (Monk: Warrior of Mystic Brews|WoW)",
+            "note": "Rides on another reaction, with no slot of its own."
+          },
+          {
+            "key": "04c2efa4027e92",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Faithful Steed (Death Knight|WoW)",
+            "note": "The steed's bonus action, not the character's."
+          },
+          {
+            "key": "097fef06015c1b",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Gnomish Lineage (Gnome|WoW)",
+            "note": "The bonus action works a crafted device, and anyone can take it."
+          },
+          {
+            "key": "0ecf11d0f80232",
+            "check": "bonusAction",
+            "kind": "missed",
+            "label": "Ultimate Penitence (Cleric: Discipline Domain|WoW)",
+            "note": "Rides on Holy Bolt's bonus action, with no slot of its own."
+          },
+          {
+            "key": "01b46746bf9f7e",
+            "check": "limitedUses",
+            "kind": "missed",
+            "label": "Beacon of Light (Paladin: Oath of the Holy|WoW)",
+            "note": "Spends Channel Divinity, with no pool of its own."
+          },
+          {
+            "key": "1ef41b54d78d85",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Eredar Lineage (Man'ari) (Draenei; Man'ari Lineage|WoW)",
+            "note": "Hellish Rebuke's reaction, shown on the spell."
+          },
+          {
+            "key": "1e556b021cb390",
+            "check": "reaction",
+            "kind": "missed",
+            "label": "Pact of the Legion (optional feature|WoW)",
+            "note": "Another creature's reaction, not the character's."
           }
         ]
       }
