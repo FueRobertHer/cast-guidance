@@ -284,6 +284,40 @@ export function withReplaceBudget<T>(fn: () => T): T {
   }
 }
 
+/**
+ * What 5etools tests a `replaceArr` regex against: an entry's name when it is
+ * truthy (as text), otherwise the entry itself when it is a plain string.
+ */
+function regexSearchText(e: unknown): string | undefined {
+  if (typeof e === 'string') return e;
+  if (typeof e !== 'object' || e === null) return undefined;
+  const name = (e as { name?: unknown }).name;
+  return name ? String(name) : undefined;
+}
+
+/** The budget to charge: the merge's shared one, or a fresh one for a lone operation. */
+function currentBudget(): ReplaceBudget {
+  return sharedBudget ?? { left: MAX_REPLACE_WORK, skippedLong: 0, exhausted: false };
+}
+
+/**
+ * Charge searching `text` once against `budget`, or say it may not be
+ * searched: too long, or the budget is spent.
+ */
+function chargeText(text: string, budget: ReplaceBudget, quadratic: boolean): boolean {
+  if (text.length > MAX_REPLACE_STRING_LENGTH) {
+    budget.skippedLong++;
+    return false;
+  }
+  const cost = quadratic ? text.length * text.length : text.length;
+  if (cost > budget.left) {
+    budget.exhausted = true;
+    return false;
+  }
+  budget.left -= cost;
+  return true;
+}
+
 function replaceTextDeep(
   v: unknown,
   re: RegExp,
@@ -292,17 +326,7 @@ function replaceTextDeep(
   quadratic: boolean,
 ): unknown {
   if (typeof v === 'string') {
-    if (v.length > MAX_REPLACE_STRING_LENGTH) {
-      budget.skippedLong++;
-      return v;
-    }
-    const cost = quadratic ? v.length * v.length : v.length;
-    if (cost > budget.left) {
-      budget.exhausted = true;
-      return v;
-    }
-    budget.left -= cost;
-    return v.replace(re, w);
+    return chargeText(v, budget, quadratic) ? v.replace(re, w) : v;
   }
   if (Array.isArray(v)) return v.map((x) => replaceTextDeep(x, re, w, budget, quadratic));
   if (typeof v === 'object' && v !== null) {
@@ -395,6 +419,50 @@ export function applyMod(
           } else if (
             typeof replace === 'object' &&
             replace !== null &&
+            typeof (replace as { regex?: unknown }).regex === 'string' &&
+            // 5etools tests `replace.regex` for truth, so an empty one is absent.
+            (replace as { regex: string }).regex !== ''
+          ) {
+            // As in 5etools: the first entry whose name, or which as a plain
+            // string itself, the pattern matches. The pattern comes from the
+            // data, so it passes the same safety check and draws on the same
+            // work budget as `replaceTxt`.
+            const { regex, flags } = replace as { regex: string; flags?: unknown };
+            const compiled = compileModRegex(regex, flags);
+            if (!(compiled instanceof RegExp)) {
+              warn(`replaceArr pattern refused on "${prop}" (${compiled.reason}); left unchanged`);
+              break;
+            }
+            // `compileModRegex` always adds `g`, which `replaceTxt` needs and a
+            // search does not: 5etools builds this one from the file's flags alone.
+            const re = new RegExp(compiled.source, compiled.flags.replace('g', ''));
+            const budget = currentBudget();
+            const quadratic = repeats(regex);
+            let stopped: string | undefined;
+            for (let i = 0; i < a.length; i++) {
+              const text = regexSearchText(a[i]);
+              if (text === undefined) continue;
+              // An entry it cannot read might be the first match, so the
+              // search ends there: going on could replace a later entry.
+              if (!chargeText(text, budget, quadratic)) {
+                stopped =
+                  text.length > MAX_REPLACE_STRING_LENGTH
+                    ? `an entry over ${MAX_REPLACE_STRING_LENGTH} characters`
+                    : 'the end of the work budget';
+                break;
+              }
+              if (re.test(text)) {
+                idx = i;
+                break;
+              }
+            }
+            if (stopped !== undefined) {
+              warn(`replaceArr search on "${prop}" stopped at ${stopped}; left unchanged`);
+              break;
+            }
+          } else if (
+            typeof replace === 'object' &&
+            replace !== null &&
             typeof (replace as { index?: unknown }).index === 'number'
           ) {
             idx = (replace as { index: number }).index;
@@ -412,11 +480,7 @@ export function applyMod(
             warn(`replaceTxt pattern refused on "${prop}" (${re.reason}); left unchanged`);
             break;
           }
-          const budget = sharedBudget ?? {
-            left: MAX_REPLACE_WORK,
-            skippedLong: 0,
-            exhausted: false,
-          };
+          const budget = currentBudget();
           const skippedBefore = budget.skippedLong;
           const wasExhausted = budget.exhausted;
           target[prop] = replaceTextDeep(

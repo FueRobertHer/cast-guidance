@@ -211,6 +211,28 @@ const subraceLookup =
     return withRace ?? matches[0];
   };
 
+/**
+ * Subclasses are keyed by (name, source) plus the class they belong to, as
+ * 5etools' own subclass hash is. A copy never finds itself: World of
+ * Warcraft's Swashbuckler|WoW for Rogue|WoW copies Swashbuckler|WoW for
+ * Rogue|XPHB and comes first in the file.
+ */
+const subclassLookup =
+  (subclasses: Entity[]) =>
+  (copy: CopyRef, self: Entity): Entity | undefined => {
+    const same = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
+    const matches = subclasses.filter(
+      (e) => e !== self && same(e.name, copy.name) && same(e.source, copy.source),
+    );
+    if (matches.length <= 1) return matches[0];
+    const withClass = matches.find(
+      (e) =>
+        (copy.className === undefined || same(e.className, copy.className)) &&
+        (copy.classSource === undefined || same(e.classSource, copy.classSource)),
+    );
+    return withClass ?? matches[0];
+  };
+
 export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityRegistry {
   const reg = new EntityRegistry();
   const warn = (w: CopyModWarning[]) => reg.warnings.push(...w);
@@ -278,7 +300,7 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
     subclassFeatures.push(...entityArray(files, path, 'subclassFeature'));
   }
   warn(resolveCopies(classes, byNameSource(classes), 'class'));
-  warn(resolveCopies(subclasses, byNameSource(subclasses), 'subclass'));
+  warn(resolveCopies(subclasses, subclassLookup(subclasses), 'subclass'));
   reg.addAll('class', classes);
   reg.addAll('subclass', subclasses);
   reg.addAll('classFeature', classFeatures);

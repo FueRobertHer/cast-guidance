@@ -113,6 +113,109 @@ describe('applyMod', () => {
     expect(warnings[0]).toMatch(/replaceArr target not found/);
   });
 
+  it('replaceArr finds a target by regex against a string entry, as 5etools does', () => {
+    // ICC's upgraded Ashen Bands (v2.41.0) replace the base ring's last line.
+    const t: Entity = { entries: ['Lore.', 'While wearing this ring, a thing.'] };
+    applyMod(
+      t,
+      {
+        entries: {
+          mode: 'replaceArr',
+          replace: { regex: '^While wearing this ring,' },
+          items: 'While wearing this ring, a better thing.',
+        },
+      },
+      noWarn,
+    );
+    expect(t.entries).toEqual(['Lore.', 'While wearing this ring, a better thing.']);
+  });
+
+  it("replaceArr matches a regex against a named entry's name, with the file's flags", () => {
+    const t: Entity = { entries: ['old trait text', { name: 'Old Trait', v: 1 }] };
+    applyMod(
+      t,
+      {
+        entries: {
+          mode: 'replaceArr',
+          replace: { regex: '^old trait$', flags: 'i' },
+          items: { name: 'New Trait', v: 2 },
+        },
+      },
+      noWarn,
+    );
+    expect(t.entries).toEqual(['old trait text', { name: 'New Trait', v: 2 }]);
+  });
+
+  it('replaceArr refuses a regex that backtracks catastrophically', () => {
+    const warnings: string[] = [];
+    const t: Entity = { entries: ['aaa'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceArr', replace: { regex: '(a+)+$' }, items: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    expect(t.entries).toEqual(['aaa']);
+    expect(warnings).toEqual([expect.stringMatching(/replaceArr pattern refused/)]);
+  });
+
+  it('replaceArr stops a regex search at an entry it cannot read, rather than replace a later one', () => {
+    const warnings: string[] = [];
+    const long = `Trait ${'x'.repeat(MAX_REPLACE_STRING_LENGTH)}`;
+    const t: Entity = { entries: [long, 'Trait short'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceArr', replace: { regex: '^Trait' }, items: 'X' } },
+      (m) => void warnings.push(m),
+    );
+    // 5etools would replace the first entry; skipping it must not replace the second.
+    expect(t.entries).toEqual([long, 'Trait short']);
+    expect(warnings).toEqual([expect.stringMatching(/replaceArr search on "entries" stopped/)]);
+  });
+
+  it('replaceArr reads a truthy name and skips an empty one, as 5etools does', () => {
+    const t: Entity = { entries: [{ name: '' }, { name: 123 }, 'abc'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceArr', replace: { regex: '^\\d+$|^abc$' }, items: 'X' } },
+      noWarn,
+    );
+    expect(t.entries).toEqual([{ name: '' }, 'X', 'abc']);
+  });
+
+  it('replaceArr treats an empty regex as absent, as 5etools does', () => {
+    const t: Entity = { entries: ['a', 'b'] };
+    applyMod(
+      t,
+      { entries: { mode: 'replaceArr', replace: { regex: '', index: 1 }, items: 'X' } },
+      noWarn,
+    );
+    expect(t.entries).toEqual(['a', 'X']);
+  });
+
+  it('replaceArr searches by regex on the same work budget as replaceTxt', () => {
+    const chunk = `dwarf ${'x'.repeat(MAX_REPLACE_STRING_LENGTH - 6)}`;
+    const fits = Math.floor(MAX_REPLACE_WORK / (chunk.length * chunk.length));
+    const spend: Entity = { entries: Array.from({ length: fits }, () => chunk) };
+    const search: Entity = { entries: [chunk] };
+    const warnings: string[] = [];
+    withReplaceBudget(() => {
+      applyMod(
+        spend,
+        { entries: { mode: 'replaceTxt', replace: 'dwarf\\w*', with: 'gnome' } },
+        (m) => void warnings.push(m),
+      );
+      applyMod(
+        search,
+        { entries: { mode: 'replaceArr', replace: { regex: '^dwarf\\w*' }, items: 'X' } },
+        (m) => void warnings.push(m),
+      );
+    });
+    expect(search.entries).toEqual([chunk]);
+    expect(warnings).toEqual([
+      expect.stringMatching(/replaceArr search on "entries" stopped at the end of the work budget/),
+    ]);
+  });
+
   it('replaceTxt rewrites strings recursively', () => {
     const t: Entity = { entries: ['a dwarf walks', { name: 'X', entries: ['dwarf again'] }] };
     applyMod(t, { entries: { mode: 'replaceTxt', replace: 'dwarf', with: 'gnome' } }, noWarn);
@@ -352,6 +455,84 @@ describe('resolveCopies', () => {
     expect(b.speed).toBe(30);
     expect(bad._copy).toBeUndefined();
     expect(warnings.map((w) => w.message)).toEqual(['t: could not resolve _copy: lookup failed']);
+  });
+});
+
+describe('normalizeDataset subclass copies', () => {
+  const subclassesOf = (files: Record<string, Entity[]>) => {
+    const reg = normalizeDataset(
+      new Map(Object.entries(files).map(([path, subclass]) => [path, { subclass }])),
+    );
+    return { reg, list: reg.byType('subclass') };
+  };
+
+  it('resolves a copy listed before a target that shares its name and source', () => {
+    // WoW (v2.41.0): Swashbuckler|WoW for Rogue|WoW copies Swashbuckler|WoW
+    // for Rogue|XPHB, and comes first in the file.
+    const { reg, list } = subclassesOf({
+      'class/class-rogue.json': [
+        {
+          name: 'Swashbuckler',
+          source: 'WoW',
+          className: 'Rogue',
+          classSource: 'WoW',
+          _copy: { name: 'Swashbuckler', source: 'WoW', className: 'Rogue', classSource: 'XPHB' },
+        },
+        {
+          name: 'Swashbuckler',
+          source: 'WoW',
+          className: 'Rogue',
+          classSource: 'XPHB',
+          subclassFeatures: ['Panache|Rogue|XPHB|Swashbuckler|WoW|9'],
+        },
+      ],
+    });
+    expect(reg.warnings).toEqual([]);
+    const copy = list.find((e) => e.classSource === 'WoW');
+    expect(copy?.subclassFeatures).toEqual(['Panache|Rogue|XPHB|Swashbuckler|WoW|9']);
+    expect(copy?._copy).toBeUndefined();
+  });
+
+  it('copies from the class the copy names when several share its name and source', () => {
+    const { reg, list } = subclassesOf({
+      'class/class-cleric.json': [
+        { name: 'Shadow', source: 'S', className: 'Cleric', classSource: 'PHB', page: 1 },
+        { name: 'Shadow', source: 'S', className: 'Cleric', classSource: 'XPHB', page: 2 },
+      ],
+      'class/class-priest.json': [
+        {
+          name: 'Shadow',
+          source: 'S',
+          className: 'Priest',
+          classSource: 'WoW',
+          _copy: {
+            name: 'Shadow',
+            source: 'S',
+            className: 'Cleric',
+            classSource: 'XPHB',
+            _preserve: { page: true },
+          },
+        },
+      ],
+    });
+    expect(reg.warnings).toEqual([]);
+    expect(list.find((e) => e.className === 'Priest')?.page).toBe(2);
+  });
+
+  it('still finds a target by name and source when the copy names no class', () => {
+    const { reg, list } = subclassesOf({
+      'class/class-fighter.json': [
+        { name: 'Copy', source: 'S', className: 'Fighter', _copy: { name: 'Base', source: 'S' } },
+        {
+          name: 'Base',
+          source: 'S',
+          className: 'Fighter',
+          subclassFeatures: ['F|Fighter||Base|S|3'],
+        },
+      ],
+    });
+    expect(reg.warnings).toEqual([]);
+    expect(list.find((e) => e.name === 'Copy')?.subclassFeatures).toEqual(['F|Fighter||Base|S|3']);
   });
 });
 
