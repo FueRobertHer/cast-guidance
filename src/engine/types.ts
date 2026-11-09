@@ -94,8 +94,12 @@ export interface PlayState {
   inspiration: boolean;
   currency: { cp: number; sp: number; ep: number; gp: number; pp: number };
   xp: number;
-  /** Per-turn action economy; true = used this turn. Optional for older docs. */
-  turn?: { action: boolean; bonus: boolean; reaction: boolean };
+  /**
+   * Per-turn action economy; true = used this turn. Optional for older docs.
+   * `extra` names the boxes an effect adds that are used (Haste's action),
+   * absent when none is.
+   */
+  turn?: { action: boolean; bonus: boolean; reaction: boolean; extra?: string[] };
   /**
    * False for a freshly built character: the sheet fills currentHp to the
    * derived max the first time HP exists, then flips this true. Undefined on
@@ -663,6 +667,9 @@ export interface AttackRow {
   extraDamage: DamageRider[];
   properties: string[];
   range?: string;
+  /** The ability it attacks with, and whether it is a ranged attack: what an effect's filter reads (Rage: melee Strength). */
+  ability?: Ability;
+  ranged?: boolean;
   origin: string;
 }
 

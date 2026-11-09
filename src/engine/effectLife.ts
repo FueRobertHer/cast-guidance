@@ -213,19 +213,26 @@ export function setConcentration(
  * refill to the maximum plus `maxHpChange`.
  */
 export function restEndings(play: PlayState, rest: 'short' | 'long', hp: HpLimits): EffectChange {
+  return endWhere(play, (e) => endsAtRest(e, rest), hp);
+}
+
+/** Does this rest end the effect, by what it lasts? See `restEndings`. */
+export function endsAtRest(e: ActiveEffect, rest: 'short' | 'long'): boolean {
+  // Read as the reader does: a duration that is not one is none.
+  const lasts: unknown = e.lasts;
+  if (lasts === null || typeof lasts !== 'object') return false;
+  const { rest: until, minutes } = lasts as Record<string, unknown>;
+  if (until === 'short' || (until === 'long' && rest === 'long')) return true;
   const limit = rest === 'short' ? 60 : 480;
-  return endWhere(
-    play,
-    (e) => {
-      // Read as the reader does: a duration that is not one is none.
-      const lasts: unknown = e.lasts;
-      if (lasts === null || typeof lasts !== 'object') return false;
-      const { rest: until, minutes } = lasts as Record<string, unknown>;
-      if (until === 'short' || (until === 'long' && rest === 'long')) return true;
-      return typeof minutes === 'number' && minutes >= 0 && minutes <= limit;
-    },
-    hp,
-  );
+  return typeof minutes === 'number' && minutes >= 0 && minutes <= limit;
+}
+
+/**
+ * End the effects with these ids at once (a rest's ticked list): one change to
+ * the maximum, settled once, as `restEndings` does.
+ */
+export function endEffects(play: PlayState, ids: ReadonlySet<string>, hp: HpLimits): EffectChange {
+  return endWhere(play, (e) => ids.has(e.id), hp);
 }
 
 /**

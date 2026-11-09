@@ -48,6 +48,9 @@ function points(max: number): DerivedResource {
   };
 }
 
+/** Room enough that ending an effect never moves current HP. */
+const HP = { maxHp: 100, edition: '2024' } as const;
+
 describe('nextCastResource', () => {
   it('previews cantrips without a resource', () => {
     expect(nextCastResource(block(), emptyPlayState(), 0)).toEqual({ kind: 'cantrip', level: 0 });
@@ -115,10 +118,10 @@ describe('castSpell resource override (GAME-001)', () => {
   const runCast = (
     caster: SpellcastingBlock,
     level: number,
-    resource?: Parameters<typeof castSpell>[4],
+    resource?: Parameters<typeof castSpell>[5],
   ) => {
     const doc = { play: emptyPlayState() } as CharacterDoc;
-    castSpell((recipe) => recipe(doc), caster, level, { name: 'X', source: 'y' }, resource);
+    castSpell((recipe) => recipe(doc), HP, caster, level, { name: 'X', source: 'y' }, resource);
     return doc.play;
   };
 
@@ -132,6 +135,7 @@ describe('castSpell resource override (GAME-001)', () => {
     const doc = { play: emptyPlayState() } as CharacterDoc;
     castSpell(
       (recipe) => recipe(doc),
+      HP,
       block({ slots: [4, 3, 2] }),
       1,
       { name: 'Bless', source: 'phb', concentration: true, economy: 'action' },
@@ -143,10 +147,11 @@ describe('castSpell resource override (GAME-001)', () => {
   });
 
   it('remembers no slot for a concentration spell that spent none', () => {
-    const cast = (level: number, resource?: Parameters<typeof castSpell>[4]) => {
+    const cast = (level: number, resource?: Parameters<typeof castSpell>[5]) => {
       const doc = { play: emptyPlayState() } as CharacterDoc;
       castSpell(
         (recipe) => recipe(doc),
+        HP,
         block({ slots: [1] }),
         level,
         { name: 'Hum', source: 'phb', concentration: true },
@@ -156,6 +161,26 @@ describe('castSpell resource override (GAME-001)', () => {
     };
     expect(cast(0)).toEqual({ label: 'Hum' });
     expect(cast(1, { kind: 'none', level: 1 })).toEqual({ label: 'Hum' });
+  });
+
+  it("ends the character's own effects held by the concentration it replaces", () => {
+    const doc = { play: emptyPlayState() } as CharacterDoc;
+    const bless = (id: string, mine: boolean) => ({
+      id,
+      name: 'Bless',
+      parts: [],
+      lasts: { minutes: 1, concentration: true },
+      ...(mine ? { mine: true } : {}),
+    });
+    doc.play.activeEffects = [bless('mine', true), bless('ally', false)];
+    doc.play.concentratingOn = { label: 'Bless', level: 1 };
+    castSpell((recipe) => recipe(doc), HP, block({ slots: [2, 1] }), 2, {
+      name: 'Haste',
+      source: 'phb',
+      concentration: true,
+    });
+    expect(doc.play.concentratingOn).toEqual({ label: 'Haste', level: 2 });
+    expect(doc.play.activeEffects?.map((e) => e.id)).toEqual(['ally']);
   });
 
   it('spends the pact pool when the pact resource is chosen', () => {
@@ -189,6 +214,7 @@ describe('Mystic Arcanum casting', () => {
         recipe(doc);
         label = typeof named === 'function' ? named(doc) : named;
       },
+      HP,
       caster,
       level,
       { name: 'Eyebite', source: 'phb' },
@@ -479,6 +505,7 @@ describe('castSpell pool conversion', () => {
     const doc = { play: emptyPlayState() } as CharacterDoc;
     castSpell(
       (recipe) => recipe(doc),
+      HP,
       block({ slots: [4] }),
       1,
       { name: 'Shield', source: 'phb', economy: 'reaction' },
@@ -494,6 +521,7 @@ describe('castSpell pool conversion', () => {
     doc.play.resources = [{ key: 'sorcery-points', used: 2 }];
     castSpell(
       (recipe) => recipe(doc),
+      HP,
       block({ slots: [4] }),
       1,
       { name: 'X', source: 'y' },
@@ -517,6 +545,7 @@ describe('castSpell pool conversion', () => {
     const doc = { play: emptyPlayState() } as CharacterDoc;
     castSpell(
       (recipe) => recipe(doc),
+      HP,
       block({ slots: [4] }),
       1,
       { name: 'X', source: 'y' },

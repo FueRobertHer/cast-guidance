@@ -8,6 +8,7 @@ import {
   noD20Effect,
   resolveD20,
 } from '@/engine/conditions';
+import type { RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
 import { currentAdvantage } from '@/stores/advMode';
 import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
@@ -143,6 +144,13 @@ const NO_EFFECTS: D20Effects = { advantage: [], disadvantage: [], autoFail: [], 
  * player's override for this one roll, which leaves the dock's mode, and a
  * feature's advantage (`advantageFrom`: War Caster, Durable), which is not a
  * condition's to ignore.
+ *
+ * `riders` is what effects in play bring (`rollEffects`): their dice roll in
+ * (Bless, named in the working), their advantage and disadvantage count as a
+ * feature's do, and the dice they offer after the roll ride on the result for
+ * the toast. Nothing is offered where nothing could change the outcome: an
+ * automatic failure, or a natural 1 or 20 on a roll the natural settles
+ * (`settlesOnNatural`: attacks and death saves).
  */
 export function rollD20Test(
   expr: string,
@@ -151,29 +159,56 @@ export function rollD20Test(
     effects,
     ignored = false,
     advantageFrom = [],
+    riders,
+    settlesOnNatural = false,
   }: {
     label: string;
     effects?: D20Effects;
     ignored?: boolean;
     advantageFrom?: readonly string[];
+    riders?: RollEffects;
+    settlesOnNatural?: boolean;
   },
 ): RollResult {
   const conditionsApply = effects !== undefined && !noD20Effect(effects);
   const kept = ignored || effects === undefined ? NO_EFFECTS : effects;
-  const used = { ...kept, advantage: [...kept.advantage, ...advantageFrom] };
+  const used = {
+    ...kept,
+    advantage: [...kept.advantage, ...advantageFrom, ...(riders?.advantage ?? [])],
+    disadvantage: [...kept.disadvantage, ...(riders?.disadvantage ?? [])],
+  };
   const resolution = resolveD20(currentAdvantage(), used);
-  const full = resolution.penalty !== 0 ? `${expr}${resolution.penalty}` : expr;
+  // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
+  const dice = riders?.dice ?? [];
+  const withDice = dice.reduce((e, d) => `${e}+${d.dice}`, expr);
+  const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
   const result = roll(full, { label, advantage: resolution.advantage, kind: 'd20' });
+  // A d20 test's expression is the d20 and flat modifiers, so every die after
+  // the first is an effect's, in order.
+  const from: Array<{ term: number; source: string }> = [];
+  result.terms.forEach((t, i) => {
+    const d = i > 0 && t.kind === 'dice' ? dice[from.length] : undefined;
+    if (d !== undefined) from.push({ term: i, source: d.source });
+  });
+  const natural = result.meta?.d20?.natural;
+  const settled = resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20));
+  const offers = settled ? [] : (riders?.offers ?? []);
   const cue = [
     ignored && conditionsApply ? 'Conditions ignored for this roll' : '',
     rollCue(used, resolution),
   ]
     .filter((part) => part !== '')
     .join(' · ');
-  if (cue === '') return result;
+  if (cue === '' && from.length === 0 && offers.length === 0) return result;
   return {
     ...result,
-    meta: { ...result.meta, cue, ...(resolution.autoFail ? { autoFail: true } : {}) },
+    meta: {
+      ...result.meta,
+      ...(cue === '' ? {} : { cue }),
+      ...(resolution.autoFail ? { autoFail: true } : {}),
+      ...(from.length > 0 ? { from } : {}),
+      ...(offers.length > 0 ? { offers } : {}),
+    },
   };
 }
 

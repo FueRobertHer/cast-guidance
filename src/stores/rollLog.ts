@@ -11,6 +11,8 @@ export interface RollLogState {
   append(result: RollResult): void;
   /** Remove one entry (accidental clicks) by its assigned `id`. */
   remove(id: string): void;
+  /** Put a roll in place of the entry with its `id` (a die added after the roll). Says nothing new. */
+  replace(result: RollResult): void;
   clear(): void;
 }
 
@@ -24,6 +26,8 @@ export const rollLogStore = createStore<RollLogState>((set) => ({
       seq: s.seq + 1,
     })),
   remove: (id) => set((s) => ({ rolls: s.rolls.filter((r) => r.id !== id) })),
+  replace: (result) =>
+    set((s) => ({ rolls: s.rolls.map((r) => (r.id === result.id ? result : r)) })),
   clear: () => set({ rolls: [] }),
 }));
 

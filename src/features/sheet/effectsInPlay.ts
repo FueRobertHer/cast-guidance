@@ -1,7 +1,7 @@
 import { parseDice } from '@/dice/parse';
 import { countingEffects, readActiveEffects } from '@/engine/activeEffects';
 import type { ActiveCondition, ConditionImmunity, Edition } from '@/engine/conditions';
-import type { HpLimits } from '@/engine/effectLife';
+import type { HpLimits, newTurn } from '@/engine/effectLife';
 import type { Defenses } from '@/engine/playRules';
 import type {
   Ability,
@@ -202,6 +202,28 @@ export function lastsLine(effect: ActiveEffect): string | undefined {
   if (words.length === 0 && !held) return undefined;
   const say = words.length > 0 ? `Lasts ${andList(words)}` : 'Lasts';
   return `${say}${held ? `${words.length > 0 ? ', ' : ' '}while ${effect.mine === true ? 'you concentrate' : 'its caster concentrates'}` : ''}.`;
+}
+
+/** Minutes as a rest's row says them: "10 minutes", "8 hours". */
+const span = (m: number) =>
+  m >= 60 && m % 60 === 0
+    ? `${m / 60} hour${m === 60 ? '' : 's'}`
+    : `${m} minute${m === 1 ? '' : 's'}`;
+
+/**
+ * What an effect lasts, as a rest's "Ends" row says it ("Concentration, 10
+ * minutes"), with ", so it stays" when the rest leaves it ticked off.
+ */
+export function restLasts(effect: ActiveEffect, ends: boolean): string {
+  const l = effect.lasts;
+  const words: string[] = [];
+  if (l?.concentration === true) words.push('Concentration');
+  if (typeof l?.minutes === 'number' && l.minutes > 0) words.push(span(l.minutes));
+  if (l?.rest === 'short') words.push('until a short rest');
+  else if (l?.rest === 'long') words.push('until a long rest');
+  const said = words.length > 0 ? words.join(', ') : 'Until you end it';
+  const first = said.charAt(0).toUpperCase() + said.slice(1);
+  return ends ? first : `${first}, so it stays`;
 }
 
 /**
@@ -454,6 +476,31 @@ export function defensesRaisedBy(
   const heldBefore = new Set(beforeConditions.map((c) => lower(c.condition)));
   for (const c of nowConditions) if (!heldBefore.has(lower(c.condition))) out.add(c.origin);
   return [...out];
+}
+
+/**
+ * What New turn did, a line each, for its toast: temp HP an effect gave (or
+ * offered, when the character already had more: they never add up), the
+ * effects' own boxes ready again, and what ended (the buffs canvas, Together).
+ */
+export function newTurnLines(
+  change: ReturnType<typeof newTurn>,
+  extrasUsed: readonly string[],
+  tempHp: number,
+): string[] {
+  const lines: string[] = [];
+  const t = change.tempHp;
+  if (t !== undefined)
+    lines.push(
+      t.kept
+        ? `+${t.amount} temp HP: ${t.source}`
+        : t.amount === tempHp
+          ? `${t.source} keeps your temp HP at ${tempHp}`
+          : `${t.source} offers ${t.amount} temp HP; you keep your ${tempHp}`,
+    );
+  for (const x of extrasUsed) lines.push(`${x} ready again`);
+  for (const name of change.ended) lines.push(`${name} ended`);
+  return lines;
 }
 
 /** Every damage type the keypad offers: the ones a defense names, "all" left out. */

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   applyEffect,
   endEffect,
+  endEffects,
+  endsAtRest,
   type HpLimits,
   keepHigherTemp,
   maxHpFrom,
@@ -316,6 +318,36 @@ describe('restEndings', () => {
     const q = play();
     q.activeEffects = [aid(5)];
     expect(restEndings(q, 'long', limits(q)).maxHpChange).toBe(-5);
+  });
+});
+
+describe('endsAtRest and endEffects', () => {
+  it('says what a rest ends by its duration, for the rest sheet to tick', () => {
+    const shield: ActiveEffect = {
+      id: 's',
+      name: 'Shield of Faith',
+      parts: [],
+      lasts: { minutes: 10, concentration: true },
+    };
+    const feast: ActiveEffect = {
+      id: 'f',
+      name: "Heroes' Feast",
+      parts: [],
+      lasts: { minutes: 1440 },
+    };
+    expect(endsAtRest(shield, 'short')).toBe(true);
+    expect(endsAtRest(aid(5), 'short')).toBe(false);
+    expect(endsAtRest(aid(5), 'long')).toBe(true);
+    expect(endsAtRest(feast, 'long')).toBe(false);
+  });
+
+  it('ends the ticked ones at once, settling the maximum once', () => {
+    const p = play();
+    p.activeEffects = [aid(5), aid(10, 'big')];
+    p.currentHp = 40;
+    const change = endEffects(p, new Set(['aid5', 'big']), limits(p));
+    expect(change).toEqual({ ended: ['Aid', 'Aid'], maxHpChange: -10 });
+    expect(p.activeEffects).toBeUndefined();
   });
 });
 

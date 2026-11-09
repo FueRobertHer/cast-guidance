@@ -7,7 +7,13 @@
  * restore preview (current → snapshot) and an undo (now → before).
  */
 import { characterSourceList } from '@/data5e/sourceNames';
-import { ABILITIES, type ActiveEffect, type CharacterDoc, type EntityRef } from '@/engine/types';
+import {
+  ABILITIES,
+  type ActiveEffect,
+  type CharacterDoc,
+  type EntityRef,
+  type PlayState,
+} from '@/engine/types';
 
 export type ChangeKind =
   | 'name'
@@ -185,8 +191,9 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
     conditions: p.conditions
       .map((c) => ({ id: c.id, level: c.level ?? 0 }))
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-    // Older documents predate the turn tracker; absent means nothing used.
-    turn: p.turn ?? { action: false, bonus: false, reaction: false },
+    // Older documents predate the turn tracker; absent means nothing used, and
+    // no extra box used reads as none listed.
+    turn: turnKey(p.turn),
     // Absent on older documents, which are left exactly as saved: settled.
     hpInitialized: p.hpInitialized !== false,
   };
@@ -194,6 +201,14 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
   if (effectsInPlay(doc).length === 0) delete (clone.play as Record<string, unknown>).activeEffects;
   clone.hpMethod = doc.hpMethod ?? 'average';
   return sortedJson(clone);
+}
+
+/** The turn as the key reads it: an empty `extra` is none, in any order. */
+function turnKey(turn: PlayState['turn']) {
+  const { extra, ...slices } = turn ?? { action: false, bonus: false, reaction: false };
+  return extra === undefined || extra.length === 0
+    ? slices
+    : { ...slices, extra: [...extra].sort() };
 }
 
 export function sameContent(a: CharacterDoc, b: CharacterDoc): boolean {

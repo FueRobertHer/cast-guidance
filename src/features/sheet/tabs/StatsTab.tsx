@@ -1,6 +1,6 @@
 import { useOutletContext } from 'react-router';
-import { type D20Effects, d20Effects } from '@/engine/conditions';
-import { defensesInForce } from '@/engine/playRules';
+import { type D20Effects, type D20Test, d20Effects } from '@/engine/conditions';
+import { defensesInForce, rollEffects } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { rollLogStore } from '@/stores/rollLog';
@@ -269,12 +269,20 @@ export function Component() {
       onIgnore={() => ignore.toggle('check')}
     />
   );
-  const rollTest = (label: string, modifier: number, group: RollGroup, effects: D20Effects) =>
+  /** A check or save, with what the effects in play bring to it (Bless, Guidance). */
+  const rollTest = (
+    label: string,
+    modifier: number,
+    group: RollGroup,
+    effects: D20Effects,
+    test: D20Test,
+  ) =>
     rollLogStore.getState().append(
       rollD20Test(`1d20${fmt(modifier)}`, {
         label,
         effects,
         ignored: ignore.take(group, effects),
+        riders: rollEffects(sheet, test),
       }),
     );
 
@@ -304,6 +312,7 @@ export function Component() {
                   sheet.checks[a].total.value,
                   'check',
                   checkEffects(a),
+                  { kind: 'check', ability: a },
                 )
               }
             />
@@ -333,6 +342,7 @@ export function Component() {
                   sheet.saves[a].total.value,
                   'save',
                   saveEffects[a],
+                  { kind: 'save', ability: a },
                 )
               }
             />
@@ -347,7 +357,11 @@ export function Component() {
           skills={sheet.skills}
           wear={rollWear(conditions, checkEffects('str'), ignore.armed('check'))}
           onRoll={(name, s) =>
-            rollTest(`${name} check`, s.total.value, 'check', checkEffects(s.ability))
+            rollTest(`${name} check`, s.total.value, 'check', checkEffects(s.ability), {
+              kind: 'check',
+              ability: s.ability,
+              skill: name,
+            })
           }
         />
       </section>

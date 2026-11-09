@@ -1,5 +1,6 @@
 import type { Entity } from '@/data5e/copyMod';
 import type { RulesVersion } from '@/data5e/rulesVersion';
+import { type HpLimits, setConcentration } from '@/engine/effectLife';
 import type {
   ClassLevelEntry,
   DerivedResource,
@@ -419,9 +420,12 @@ export function isConcentratingOn(play: PlayState, name: string): boolean {
  * action economy the casting time uses and, when the spell concentrates, it
  * becomes the active concentration (dropping any prior one: one at a time),
  * along with the level it was cast at: its dice on a later turn are that slot's.
+ * The character's own effects held by the old concentration end with it
+ * (casting Haste ends Bless), within `hp`.
  */
 export function castSpell(
   update: DocUpdater,
+  hp: HpLimits,
   block: SpellcastingBlock,
   level: number,
   spell?: CastSpellInfo,
@@ -441,10 +445,14 @@ export function castSpell(
       const spend = resource ?? nextCastResource(block, d.play, level);
       spent = spend;
       if (spell?.concentration === true) {
-        d.play.concentratingOn =
-          spend.kind === 'cantrip' || spend.kind === 'none'
-            ? { label: spell.name }
-            : { label: spell.name, level: spend.level };
+        const leveled = spend.kind !== 'cantrip' && spend.kind !== 'none';
+        setConcentration(
+          d.play,
+          leveled ? { label: spell.name, level: spend.level } : { label: spell.name },
+          hp,
+        );
+        // Cast with no slot, it holds no level, whatever an earlier casting held.
+        if (!leveled) delete d.play.concentratingOn?.level;
       }
       if (spend.kind === 'pool') {
         // Converting points into the slot takes its own slice of the turn, so
@@ -476,11 +484,15 @@ export function castSpell(
  */
 export function castGranted(
   update: DocUpdater,
+  hp: HpLimits,
   spell: CastSpellInfo,
   limit?: { key: string; max: number },
 ): void {
   update((d) => {
-    if (spell.concentration === true) d.play.concentratingOn = { label: spell.name };
+    if (spell.concentration === true) {
+      setConcentration(d.play, { label: spell.name }, hp);
+      delete d.play.concentratingOn?.level;
+    }
     if (spell.economy !== undefined) {
       const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
       turn[spell.economy] = true;
