@@ -145,8 +145,8 @@ export interface EffectFinderProps {
   /** The name a description starts with while one is being made; none otherwise. */
   describing: string | null;
   onDescribe: (name: string | null) => void;
-  /** Takes a kept description off the character, by its id. */
-  onForget: (id: string) => void;
+  /** Takes a kept description off the character, by its id; its name is the one shown. */
+  onForget: (id: string, name: string) => void;
 }
 
 export default function EffectFinder({
@@ -224,7 +224,9 @@ export default function EffectFinder({
         onBack={() => onPick(null)}
         onAdd={onAdd}
         onForget={
-          entry.id.startsWith(KEPT) ? () => onForget(entry.id.slice(KEPT.length)) : undefined
+          entry.id.startsWith(KEPT)
+            ? () => onForget(entry.id.slice(KEPT.length), entry.name)
+            : undefined
         }
       />
     );

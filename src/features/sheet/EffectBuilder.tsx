@@ -269,7 +269,7 @@ function PartEditor({
       data-part
       tabIndex={-1}
       aria-labelledby={`${id}-t`}
-      className="flex min-w-0 flex-col gap-2 rounded-control border border-line p-3"
+      className="flex min-w-0 flex-col gap-2 rounded-control border border-line p-3 outline-none"
     >
       <div className="flex items-center justify-between gap-2">
         <span id={`${id}-t`} className="font-semibold text-body text-ink">

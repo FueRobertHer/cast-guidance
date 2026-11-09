@@ -363,26 +363,26 @@ export function keptFrom(draft: Draft, id: string): KeptEffect {
  */
 export function keptEffects(raw: unknown): KeptEffect[] {
   if (!Array.isArray(raw)) return [];
-  const { effects } = readActiveEffects(raw);
-  const whole = effects.filter((e) => {
-    const stored = raw.find(
-      (k): k is { id: string; parts: unknown[] } =>
-        k !== null && typeof k === 'object' && (k as { id?: unknown }).id === e.id,
-    );
-    return stored !== undefined && e.parts.length === stored.parts.length;
-  });
-  return whole.map((e) => {
-    const stored = raw.find(
-      (k): k is { id: string; tempHp?: unknown } =>
-        k !== null && typeof k === 'object' && (k as { id?: unknown }).id === e.id,
-    );
-    const temp = stored?.tempHp;
-    return {
+  const out: KeptEffect[] = [];
+  // The first readable one of an id holds it, as for effects in play.
+  const ids = new Set<string>();
+  // Read one entry at a time, so each effect is compared with the entry it
+  // came from, never an unreadable one that shares its id.
+  for (const item of raw) {
+    const [e] = readActiveEffects([item]).effects;
+    if (e === undefined || ids.has(e.id)) continue;
+    ids.add(e.id);
+    // Read, so an object with a parts list.
+    const stored = item as { parts: unknown[]; tempHp?: unknown };
+    if (e.parts.length !== stored.parts.length) continue;
+    const temp = stored.tempHp;
+    out.push({
       id: e.id,
       name: e.name,
       parts: e.parts,
       ...(e.lasts !== undefined ? { lasts: e.lasts } : {}),
       ...(Number.isInteger(temp) && (temp as number) > 0 ? { tempHp: temp as number } : {}),
-    };
-  });
+    });
+  }
+  return out;
 }

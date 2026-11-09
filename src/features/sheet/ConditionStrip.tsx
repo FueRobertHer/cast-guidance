@@ -300,14 +300,8 @@ export function ConditionStrip({
     if (name === null) toSearch.current = true;
   };
   /** A kept description, taken off the list: the search no longer finds it. */
-  const forgetKept = (id: string) => {
-    // Taken as stored: an entry that is not an effect is passed over, not read.
-    const list: unknown[] = Array.isArray(doc.keptEffects) ? doc.keptEffects : [];
-    const found = list.find(
-      (k): k is { name?: unknown } =>
-        k !== null && typeof k === 'object' && (k as { id?: unknown }).id === id,
-    );
-    const name = typeof found?.name === 'string' ? found.name : 'effect';
+  // The name is the one the search showed, not read again from the stored list.
+  const forgetKept = (id: string, name: string) => {
     update((d) => {
       const left = forget(d.keptEffects, id);
       if (left === undefined) delete d.keptEffects;

@@ -196,6 +196,15 @@ describe('a description kept for next time', () => {
     expect(keptEffects(undefined)).toEqual([]);
   });
 
+  it('matches each kept one with the entry it was read from, past an unreadable one of its id', () => {
+    const ember = { id: 'k1', name: 'Ember', parts: [{ kind: 'acBonus', amount: 1 }], tempHp: 2 };
+    // An entry with no parts, or no name, under the same id is passed over, not compared.
+    expect(keptEffects([{ id: 'k1', name: 'Old' }, ember])).toEqual([ember]);
+    expect(keptEffects([{ id: 'k1', name: 7, parts: [], tempHp: 9 }, ember])).toEqual([ember]);
+    // Two readable ones under one id: the first counts, as for effects in play.
+    expect(keptEffects([ember, { ...ember, name: 'Second' }])).toEqual([ember]);
+  });
+
   it('replaces one of its name, keeps what it cannot read, and forgets by id', () => {
     const one = { id: 'a', name: 'Ember blessing', parts: [] };
     const other = { id: 'b', name: 'Frost ward', parts: [] };

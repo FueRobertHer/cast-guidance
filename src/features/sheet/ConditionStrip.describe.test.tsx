@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type CharacterDoc, type DerivedSheet, newCharacterDoc } from '@/engine/types';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import type { DocUpdater } from '@/stores/characterSession';
 import { ConditionStrip } from './ConditionStrip';
 
@@ -288,6 +289,8 @@ describe('describing an effect', () => {
     renderStrip((d) => {
       d.keptEffects = [
         null,
+        // Unreadable (no parts) under the same id: the search passes it over.
+        { id: 'k1', name: 'Old' },
         { id: 'k1', name: 'Ember blessing', parts: [{ kind: 'acBonus', amount: 1 }] },
       ] as unknown as CharacterDoc['keptEffects'];
     });
@@ -298,7 +301,13 @@ describe('describing an effect', () => {
         name: /^Ember blessing/,
       }),
     );
+    // Earlier tests forget an Ember blessing too.
+    resetAnnouncer();
     fireEvent.click(picker.getByRole('button', { name: 'Forget it' }));
     expect(saved().keptEffects).toEqual([null]);
+    // Said by the name the search showed.
+    await waitFor(() =>
+      expect(getAnnouncerState().messages.map((m) => m.text)).toContain('Ember blessing forgotten'),
+    );
   });
 });
