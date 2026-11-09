@@ -32,8 +32,8 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { spellClassesFromLookup } from '../src/convert/compareOfficial';
 import { convertXmlChunks } from '../src/convert/index';
-import { OFFICIAL_TYPES, officialNames } from '../src/convert/official';
-import type { ConvertedKind } from '../src/convert/types';
+import { OFFICIAL_TYPES, officialFeatLookup, officialNames } from '../src/convert/official';
+import type { ConvertedKind, OfficialFeat } from '../src/convert/types';
 import { DATA_TAG } from '../src/data5e/config';
 import type { Entity } from '../src/data5e/copyMod';
 import { engineContextFor } from '../src/data5e/engineAdapter';
@@ -117,23 +117,30 @@ function convertedSpellClasses(spell: Entity): string[] {
 const classSet = (names: readonly string[]) =>
   [...new Set(names.map((n) => n.toLowerCase()))].sort();
 
-/** The file as the app's worker reads it: in chunks, whatever its size. */
-async function convertFile(file: string) {
+/**
+ * The file as the app's worker reads it: in chunks, whatever its size. A
+ * background's feat that the file lacks names the installed one, as in the app.
+ */
+async function convertFile(file: string, officialFeat: OfficialFeat) {
   const text = readFileSync(file, 'utf8');
   async function* chunks() {
     for (let i = 0; i < text.length; i += 1 << 20) yield text.slice(i, i + (1 << 20));
   }
-  return convertXmlChunks(chunks, { fileName: path.basename(file) });
+  return convertXmlChunks(chunks, { fileName: path.basename(file), officialFeat });
 }
 
-async function convertSet(name: string, files: string[]): Promise<ConvertedSet> {
+async function convertSet(
+  name: string,
+  files: string[],
+  officialFeat: OfficialFeat,
+): Promise<ConvertedSet> {
   const json: Record<string, unknown> = { _meta: { sources: [] } };
   const skipped: string[] = [];
   const sources = new Map<string, unknown>();
   for (const file of files) {
     let one: Record<string, unknown>;
     try {
-      one = (await convertFile(file)).json;
+      one = (await convertFile(file, officialFeat)).json;
     } catch (err) {
       // A file that is not a compendium (the SRD download's `source-srd5e.xml`).
       skipped.push(`${file}: ${err instanceof Error ? err.message : String(err)}`);
@@ -863,6 +870,7 @@ if (sets.length === 0 || sets.some((s) => s.files.length === 0)) {
 const files = await officialFiles();
 const classesOf = await officialSpellClasses();
 const regA = normalizeDataset(files);
+const officialFeat = officialFeatLookup(regA);
 const books = officialBooks(files);
 const results: Array<{
   set: string;
@@ -873,7 +881,7 @@ const results: Array<{
 }> = [];
 for (const s of sets) {
   const started = performance.now();
-  const set = await convertSet(s.name, s.files);
+  const set = await convertSet(s.name, s.files, officialFeat);
   for (const why of set.skipped) console.warn(`   skipped ${why}`);
   const regB = normalizeDataset(files);
   mergeHomebrew(regB, new Map([[s.name, set.json]]));

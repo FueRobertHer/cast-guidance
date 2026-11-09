@@ -548,6 +548,119 @@ describe('convertSpell', () => {
         },
       ]);
     });
+
+    it('reads the upcast step from the text when the file has no roll per level', () => {
+      const result = spell(`
+        <name>Ember Lance</name>${BASE}
+        <text>Each creature takes 3d6 fire damage.</text>
+        <text>At Higher Levels. When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.</text>
+        <roll>3d6</roll>
+      `);
+      expect(JSON.stringify(result.entity.entriesHigherLevel)).toContain(
+        'increases by {@scaledamage 3d6|1-9|1d6} for each slot level above 1st',
+      );
+    });
+
+    it('reads a healing step over the healing roll', () => {
+      const result = spell(`
+        <name>Ember Mend</name>${BASE}
+        <text>A creature regains 1d8 hit points.</text>
+        <text>At Higher Levels. The healing increases by 1d8 for each slot level above 1st.</text>
+      `);
+      expect(JSON.stringify(result.entity.entriesHigherLevel)).toContain(
+        '{@scaledice 1d8|1-9|1d8}',
+      );
+    });
+
+    it('reads no step from the text when it caps the increase or names two rolls of the die', () => {
+      for (const text of [
+        '<text>It takes 3d6 fire damage.</text><text>At Higher Levels. The damage increases by 1d6 for each slot level above 1st, to a maximum of 6d6.</text>',
+        '<text>It takes 3d6 fire damage, then 2d6 fire damage.</text><text>At Higher Levels. The damage increases by 1d6 for each slot level above 1st.</text>',
+        '<text>It takes 2d8 fire damage, and 1d6 cold damage at the start of its next turn.</text><text>At Higher Levels. The initial damage increases by 1d8 and the later damage increases by 1d6 for each slot level above 1st.</text>',
+      ]) {
+        const result = spell(`<name>Ember Lance</name>${BASE}${text}`);
+        expect(JSON.stringify(result.entity.entriesHigherLevel)).not.toContain('@scale');
+      }
+    });
+
+    it('gives a cantrip its ladder from the text when the file has no roll per level', () => {
+      const result = spell(`
+        <name>Ember Bolt</name><level>0</level><school>EV</school><time>1 action</time><range>120 feet</range><duration>Instantaneous</duration>
+        <text>On a hit, the target takes 1d10 fire damage.</text>
+        <text>This spell's damage increases by 1d10 when you reach 5th level (2d10), 11th level (3d10), and 17th level (4d10).</text>
+      `);
+      expect(result.entity.scalingLevelDice).toEqual({
+        label: 'fire damage',
+        scaling: { '1': '1d10', '5': '2d10', '11': '3d10', '17': '4d10' },
+      });
+    });
+
+    it('labels a cantrip’s ladder with a damage type only', () => {
+      const result = spell(`
+        <name>Ember Blade</name><level>0</level><school>EV</school><time>1 action</time><range>Self</range><duration>Instantaneous</duration>
+        <text>On a hit, the target takes 1d8 extra damage.</text>
+        <text>This spell's damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level (4d8).</text>
+      `);
+      expect(result.entity.scalingLevelDice).toEqual({
+        label: 'damage',
+        scaling: { '1': '1d8', '5': '2d8', '11': '3d8', '17': '4d8' },
+      });
+    });
+
+    it('gives a cantrip no ladder when its text describes something else', () => {
+      const result = spell(`
+        <name>Ember Beams</name><level>0</level><school>EV</school><time>1 action</time><range>120 feet</range><duration>Instantaneous</duration>
+        <text>On a hit, the target takes 1d10 force damage.</text>
+        <text>The spell creates two beams at 5th level, three beams at 11th level, and four beams at 17th level.</text>
+      `);
+      expect(result.entity.scalingLevelDice).toBeUndefined();
+    });
+  });
+
+  describe('2024 areas', () => {
+    it('reads a cone the text gives at the range’s reach, and an emanation around the caster', () => {
+      const cone = spell(`
+        <name>Ember Fan</name><level>1</level><school>EV</school><time>Action</time><range>15 feet</range><duration>Instantaneous</duration>
+        <text>Each creature in a 15-foot Cone makes a Dexterity saving throw.</text>
+      `);
+      expect(cone.entity.range).toEqual({ type: 'cone', distance: { type: 'feet', amount: 15 } });
+      const aura = spell(`
+        <name>Ember Ward</name><level>3</level><school>C</school><time>Action</time><range>Self</range><duration>Concentration, up to 10 minutes</duration>
+        <text>Spirits flit around you in a 15-foot Emanation.</text>
+      `);
+      expect(aura.entity.range).toEqual({
+        type: 'emanation',
+        distance: { type: 'feet', amount: 15 },
+      });
+    });
+
+    it('keeps a cone of a Self spell, or of another size, as the range the file gives', () => {
+      const breath = spell(`
+        <name>Ember Form</name>${BASE.replace('<range>60 feet</range>', '<range>Self</range>')}
+        <text>While transformed, you can exhale fire in a 60-foot cone.</text>
+      `);
+      expect(breath.entity.range).toEqual({ type: 'point', distance: { type: 'self' } });
+      const other = spell(`
+        <name>Ember Fan</name>${BASE}
+        <text>A 15-foot cone of fire erupts at a point you choose.</text>
+      `);
+      expect(other.entity.range).toEqual({
+        type: 'point',
+        distance: { type: 'feet', amount: 60 },
+      });
+    });
+
+    it('reads no area from a named part, which is an effect of its own', () => {
+      const surge = spell(`
+        <name>Ember Bind</name>${BASE.replace('<range>60 feet</range>', '<range>30 feet</range>')}
+        <text>You choose a creature within range and bind it in embers.</text>
+        <text>Elemental Flux: Your next elemental surge affects a 30-foot cone.</text>
+      `);
+      expect(surge.entity.range).toEqual({
+        type: 'point',
+        distance: { type: 'feet', amount: 30 },
+      });
+    });
   });
 
   describe('text scans', () => {

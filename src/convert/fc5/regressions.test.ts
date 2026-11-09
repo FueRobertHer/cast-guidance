@@ -66,7 +66,7 @@ describe('backgrounds', () => {
   it('reports a skill choice it keeps only as text', () => {
     const { json, report } = convertXmlText(
       `<compendium><background><name>Lamplighter</name>
-        <trait><name>Skill Proficiencies: Insight, and one skill of your choice</name><text>x</text></trait>
+        <trait><name>Skill Proficiencies: Insight, and one skill from the Lamp table</name><text>x</text></trait>
       </background></compendium>`,
       { fileName: 'r.xml' },
     );
@@ -76,8 +76,24 @@ describe('backgrounds', () => {
         kind: 'background',
         name: 'Lamplighter',
         status: 'partial',
-        reasons: ['its skill choice (one skill of your choice) is kept as text'],
+        reasons: ['its skill choice (one skill from the Lamp table) is kept as text'],
       },
+    ]);
+  });
+
+  it('reads a skill of your choice, and no skill a phrase lists', () => {
+    const skills = (line: string) => {
+      const { json } = convertXmlText(
+        `<compendium><background><name>Lamplighter</name>
+          <trait><name>Skill Proficiencies: ${line}</name><text>x</text></trait>
+        </background></compendium>`,
+        { fileName: 'r.xml' },
+      );
+      return (json.background as Json[])[0]?.skillProficiencies;
+    };
+    expect(skills('Insight, and one skill of your choice')).toEqual([{ insight: true, any: 1 }]);
+    expect(skills('Survival, plus one from among Arcana, History, and Religion')).toEqual([
+      { survival: true },
     ]);
   });
 });

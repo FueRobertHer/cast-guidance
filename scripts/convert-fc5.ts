@@ -30,6 +30,8 @@ import {
   spellClassesFromLookup,
 } from '../src/convert/compareOfficial';
 import { convertXmlText } from '../src/convert/index';
+import { officialFeatLookup } from '../src/convert/official';
+import type { OfficialFeat } from '../src/convert/types';
 import { DATA_TAG, isCompatibleTag } from '../src/data5e/config';
 import { normalizeDataset } from '../src/data5e/normalize';
 import { GithubTagSource } from '../src/data5e/source';
@@ -61,6 +63,8 @@ if (values.tag !== undefined && !values.compare) die('--tag only applies with --
 const EXAMPLES = 3;
 
 let official: OfficialData | undefined;
+/** A background's official feat, as the app finds it; without `--compare`, such a grant is left out. */
+let officialFeat: OfficialFeat | undefined;
 if (values.compare) {
   let tag = values.tag ?? DATA_TAG;
   try {
@@ -71,6 +75,7 @@ if (values.compare) {
       new GithubTagSource(tag).fetchFile('generated/gendata-spell-source-lookup.json'),
     ]);
     const registry = normalizeDataset(release.files);
+    officialFeat = officialFeatLookup(registry);
     official = {
       byType: (type) => registry.byType(type),
       spellClasses: spellClassesFromLookup(lookup),
@@ -88,7 +93,7 @@ for (const file of positionals) {
   const started = performance.now();
   let result: ReturnType<typeof convertXmlText>;
   try {
-    result = convertXmlText(text, { fileName });
+    result = convertXmlText(text, { fileName, officialFeat });
   } catch (err) {
     failed = true;
     console.log(`\n${fileName}: ${err instanceof Error ? err.message : String(err)}`);

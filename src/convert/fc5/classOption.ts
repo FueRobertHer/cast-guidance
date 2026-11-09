@@ -150,11 +150,47 @@ function withoutPrefix(name: string): string {
 const PREREQUISITE = /^\s*Prerequisites?:\s*(\S.*)$/i;
 const LEVEL = /\b(\d{1,2})(?:st|nd|rd|th)[- ]level\b|\blevel (\d{1,2})\+?/i;
 const PACT = /\bPact of the (Blade|Chain|Tome|Talisman)\b/i;
+/** "Level 5+ Warlock", "5th-level Monk", "5th Level Artificer". */
+const LEVEL_THEN_CLASS =
+  /^(?:level (\d{1,2})\+?|(\d{1,2})(?:st|nd|rd|th)[- ]level) ([a-z]{4,12})$/i;
+/** "Warlock Level 5+". */
+const CLASS_THEN_LEVEL = /^([a-z]{4,12}) level (\d{1,2})\+?$/i;
+const CLASSES = [
+  'Artificer',
+  'Barbarian',
+  'Bard',
+  'Cleric',
+  'Druid',
+  'Fighter',
+  'Monk',
+  'Paladin',
+  'Ranger',
+  'Rogue',
+  'Sorcerer',
+  'Warlock',
+  'Wizard',
+];
+
+/** A class level clause's level and class, for a class of the rules or the list's own. */
+function classLevel(
+  text: string,
+  className: string | undefined,
+): { level: number; className: string } | undefined {
+  const first = LEVEL_THEN_CLASS.exec(text);
+  const second = first === null ? CLASS_THEN_LEVEL.exec(text) : null;
+  const level = Number(first?.[1] ?? first?.[2] ?? second?.[2]);
+  const word = (first?.[3] ?? second?.[1] ?? '').toLowerCase();
+  const name = [...CLASSES, ...(className === undefined ? [] : [className])].find(
+    (c) => c.toLowerCase() === word,
+  );
+  return name === undefined || !Number.isInteger(level) ? undefined : { level, className: name };
+}
 
 /**
  * `Prerequisite:` lines into 5etools' shape: a level (of the list's class,
- * when the list is official), a warlock pact, and anything else as `other`
- * text. The engine enforces the level and shows the rest.
+ * when the list is official, or of the class the line names), a warlock pact,
+ * and anything else as `other` text. The engine enforces the level and shows
+ * the rest.
  */
 export function readOptionPrerequisite(
   lines: readonly string[],
@@ -169,7 +205,10 @@ export function readOptionPrerequisite(
       if (text === '') continue;
       const level = LEVEL.exec(text);
       const pact = PACT.exec(text);
-      if (level !== null && text.replace(level[0], '').trim() === '') {
+      const classed = classLevel(text, className);
+      if (classed !== undefined) {
+        out.level = { level: classed.level, class: { name: classed.className, visible: true } };
+      } else if (level !== null && text.replace(level[0], '').trim() === '') {
         const n = Number(level[1] ?? level[2]);
         out.level =
           className === undefined ? n : { level: n, class: { name: className, visible: true } };

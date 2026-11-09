@@ -30,13 +30,17 @@ page (an HTML listing or a page that links to the file) is named as one.
 
 | Element | Converted to | Notes |
 | --- | --- | --- |
-| `<spell>` | `spell` | Time, range, components, duration, classes, saves, attacks, cantrip and upcast dice |
-| `<item>` | `item` | Type, weapon and armor fields, rarity, attunement, value, bonuses |
-| `<feat>` | `feat` | Category, prerequisite, ability increases |
-| `<background>` | `background` | 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields |
-| `<race>` | `race` | Size, speed, ability, darkvision, resistances, languages |
+| `<spell>` | `spell` | Time, range (a 2024 cone or emanation as 5etools writes it), components, duration, classes, saves, attacks, damage dice, cantrip and upcast dice (from `<roll>`s, or from text such as "increases by 1d6 for each slot level above 1st") |
+| `<item>` | `item` | Type, weapon and armor fields, rarity, attunement, value, bonuses, speed, the resistances and immunities its text states |
+| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies, resistances its text states |
+| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields |
+| `<race>` | `race` | Size, speed, ability, darkvision, resistances and condition immunities (tags and text), languages, proficiencies |
 | `<class>` | (left out) | Not converted yet |
 | `<monster>` | (left out) | The app does not use creatures |
+
+On items, feats, race traits and background traits, a labeled `<roll>` the
+text never shows as dice becomes a line of roll tags at the end, so the sheet
+can roll it.
 
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never

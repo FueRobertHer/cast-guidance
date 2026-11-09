@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseXml } from '../xml';
 import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result } from './context';
-import { convertItem, readDetail, readModifiers } from './item';
+import { convertItem, itemDefenses, readDetail, readModifiers } from './item';
 
 const ctx: Fc5Context = fc5Context('test.xml');
 
@@ -148,9 +148,104 @@ describe('readModifiers', () => {
       'the bonus "Luck +1" is kept as text',
     ]);
   });
+
+  it('reads a speed bonus as a change to the walking speed', () => {
+    expect(modifiers(bonus('speed + 10')).fields).toEqual({ modifySpeed: { bonus: { walk: 10 } } });
+    expect(modifiers(bonus('Speed -5')).fields).toEqual({ modifySpeed: { bonus: { walk: -5 } } });
+  });
+});
+
+describe('itemDefenses', () => {
+  it('reads a sentence that says it holds while you wear or hold the item', () => {
+    expect(itemDefenses('You have resistance to cold damage while you wear this armor.')).toEqual({
+      resist: ['cold'],
+    });
+    expect(itemDefenses('While wearing the armor, you are immune to slashing damage.')).toEqual({
+      immune: ['slashing'],
+    });
+    expect(
+      itemDefenses('In addition, while you hold the sword, you have resistance to fire damage.'),
+    ).toEqual({ resist: ['fire'] });
+    expect(
+      itemDefenses(
+        'You are immune to necrotic and cold damage and vulnerable to fire and radiant damage while you wear this armor.',
+      ),
+    ).toEqual({ immune: ['necrotic', 'cold'], vulnerable: ['fire', 'radiant'] });
+  });
+
+  it('reads nothing a condition or choice before a colon sets terms for', () => {
+    expect(
+      itemDefenses(
+        'When you attune to this armor, choose one of the following: while you wear this armor, you have resistance to fire damage.',
+      ),
+    ).toEqual({});
+  });
+
+  it('reads every clause of a sentence that holds while you wear it', () => {
+    expect(
+      itemDefenses(
+        'While wearing this armor, you gain a +1 bonus to AC, you have advantage on saving throws against the breath weapons of dragons, and you have resistance to fire damage.',
+      ),
+    ).toEqual({ resist: ['fire'] });
+    expect(
+      itemDefenses(
+        'While wearing this armor, you have a +1 bonus to Armor Class, and you have resistance to the following damage types: necrotic, poison, and psychic.',
+      ),
+    ).toEqual({ resist: ['necrotic', 'poison', 'psychic'] });
+    expect(
+      itemDefenses(
+        'While you wear it, you have Immunity to the Poisoned condition and Poison damage.',
+      ),
+    ).toEqual({ immune: ['poison'], conditionImmune: ['poisoned'] });
+    expect(
+      itemDefenses(
+        'While you hold the sword, you are immune to being charmed, and you have resistance to psychic damage.',
+      ),
+    ).toEqual({ resist: ['psychic'], conditionImmune: ['charmed'] });
+  });
+
+  it('reads the sentence right after a lead-in that holds while you wear it', () => {
+    expect(
+      itemDefenses(
+        'While you wear this armor, you gain the following benefits: You have resistance to psychic damage.',
+      ),
+    ).toEqual({ resist: ['psychic'] });
+  });
+
+  it('leaves a defense that lasts a while, hangs on a choice or another condition', () => {
+    for (const text of [
+      'You have resistance to fire damage.',
+      'As an action, you gain one of the following benefits of your choice for 1 hour: You have resistance to fire damage.',
+      'When you drink this potion, you gain resistance to fire damage for 1 hour.',
+      'While wearing this armor, you have resistance to one of the following damage types: fire, cold, or acid.',
+      'While wearing this armor, you have resistance to piercing damage from nonmagical weapons.',
+      'While wearing the stormgirdle in its dormant state, you have resistance to lightning damage.',
+      'While semi-incorporeal, you have resistance to bludgeoning, piercing, and slashing damage.',
+      'You and your allies are immune to the frightened condition while within 20 feet of it.',
+    ]) {
+      expect(itemDefenses(text), text).toEqual({});
+    }
+  });
 });
 
 describe('convertItem', () => {
+  it('fills its defenses and speed from its text and modifiers', () => {
+    const result = item(`
+      <name>Glacier Plate</name>
+      <type>HA</type>
+      <magic>YES</magic>
+      <detail>rare (requires attunement)</detail>
+      <ac>18</ac>
+      ${bonus('speed +5')}
+      <text>You have resistance to cold damage while you wear this armor.</text>
+    `);
+    expect(result.entity).toMatchObject({
+      resist: ['cold'],
+      modifySpeed: { bonus: { walk: 5 } },
+    });
+    expect(result.reasons).toEqual([]);
+  });
+
   it('converts a magic melee weapon', () => {
     const result = item(`
       <name>Cinder Axe</name>

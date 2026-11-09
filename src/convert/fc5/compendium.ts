@@ -38,12 +38,19 @@ import type {
   ConvertedKind,
   ConvertOptions,
   EntryNote,
+  OfficialFeat,
 } from '../types';
 import { childElements, childText, type XmlElement } from '../xml';
-import { convertBackground } from './background';
+import { addFeatSource, convertBackground } from './background';
 import { bookSource, codeEdition, type HomebrewSource, readSourceLine } from './books';
 import { convertClassOption, isClassOption, isOnOfficialList } from './classOption';
-import { extraClassKey, type Fc5Context, type Fc5Result, type Placement } from './context';
+import {
+  extraClassKey,
+  type Fc5Context,
+  type Fc5Result,
+  type FeatRef,
+  type Placement,
+} from './context';
 import { convertFeat } from './feat';
 import { convertItem } from './item';
 import { convertRace } from './race';
@@ -245,8 +252,9 @@ export function fc5Context(
   fileName: string,
   more: {
     rulesBooks?: ReadonlySet<string>;
-    featSources?: ReadonlyMap<string, string>;
+    featSources?: ReadonlyMap<string, readonly FeatRef[]>;
     extraClasses?: ReadonlyMap<string, readonly string[]>;
+    officialFeat?: OfficialFeat;
   } = {},
 ): Fc5Context {
   const ctx: Fc5Context = {
@@ -254,6 +262,7 @@ export function fc5Context(
     featSources: more.featSources ?? new Map(),
   };
   if (more.extraClasses !== undefined) ctx.extraClasses = more.extraClasses;
+  if (more.officialFeat !== undefined) ctx.officialFeat = more.officialFeat;
   return ctx;
 }
 
@@ -293,13 +302,13 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // The class lists that stubs and starred copies add to spells, filled in
   // between the passes; the context hands them to the spells it converts.
   const extra = new Map<string, string[]>();
-  const featSources = new Map<string, string>();
-  const ctx = fc5Context(
-    opts.fileName,
-    opts.rulesBooks === undefined
-      ? { featSources, extraClasses: extra }
-      : { featSources, extraClasses: extra, rulesBooks: opts.rulesBooks },
-  );
+  const featSources = new Map<string, FeatRef[]>();
+  const ctx = fc5Context(opts.fileName, {
+    featSources,
+    extraClasses: extra,
+    ...(opts.rulesBooks === undefined ? {} : { rulesBooks: opts.rulesBooks }),
+    ...(opts.officialFeat === undefined ? {} : { officialFeat: opts.officialFeat }),
+  });
 
   // Whether the game data has an entry, when the data holds its book: in its
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
@@ -472,10 +481,10 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         decided.set(c.at, undefined);
       } else if (choice === undefined || group === undefined || group.length < 2) {
         decided.set(c.at, c);
-        featSources.set(c.result.name.toLowerCase(), c.result.placement.source.json);
+        addFeatSource(featSources, c.result.name, c.result.placement.source.json);
       } else if (group[0] === c) {
         decided.set(c.at, mergeChoices(group, choice.base));
-        featSources.set(choice.base.toLowerCase(), c.result.placement.source.json);
+        addFeatSource(featSources, choice.base, c.result.placement.source.json);
       } else {
         featNotes.set(c.at, () => leave(c, 'duplicate', WHY.choice));
         decided.set(c.at, undefined);
