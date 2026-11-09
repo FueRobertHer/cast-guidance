@@ -26,6 +26,7 @@ export type ChangeKind =
   | 'background'
   | 'hpRule'
   | 'diceRule'
+  | 'variantRule'
   | 'feats'
   | 'abilities'
   | 'choices'
@@ -94,6 +95,7 @@ const FAMILY: Record<ChangeKind, string | undefined> = {
   background: undefined,
   hpRule: undefined,
   diceRule: undefined,
+  variantRule: undefined,
   feats: undefined,
   other: undefined,
 };
@@ -204,6 +206,8 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
   if (effectsInPlay(doc).length === 0) delete (clone.play as Record<string, unknown>).activeEffects;
   // None kept reads as absent too.
   if (keptOf(doc).length === 0) delete clone.keptEffects;
+  // Optional class features off reads as absent, as a character from before them.
+  if (doc.optionalClassFeatures !== true) delete clone.optionalClassFeatures;
   clone.hpMethod = doc.hpMethod ?? 'average';
   return sortedJson(clone);
 }
@@ -299,6 +303,11 @@ export function effectChanges(
 /** When a character's one-use dice are offered, in words: its own rule, or the app's. */
 export function diceRuleWords(rule: CharacterDoc['oneUseDice']): string {
   return rule === undefined ? 'as in Settings' : `${rule} the roll`;
+}
+
+/** Whether a character uses optional class features, in words. Absent is off. */
+export function variantRuleWords(doc: CharacterDoc): 'on' | 'off' {
+  return doc.optionalClassFeatures === true ? 'on' : 'off';
 }
 
 /** "+Shield, +Rope, −Longsword", at most three names then a count. */
@@ -558,6 +567,12 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
     out.push({
       kind: 'diceRule',
       line: `One-use dice: ${diceRuleWords(from.oneUseDice)} → ${diceRuleWords(to.oneUseDice)}`,
+      structural: true,
+    });
+  if (variantRuleWords(from) !== variantRuleWords(to))
+    out.push({
+      kind: 'variantRule',
+      line: `Optional class features: ${variantRuleWords(from)} → ${variantRuleWords(to)}`,
       structural: true,
     });
   if (!same(from.feats, to.feats)) {

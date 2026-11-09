@@ -272,6 +272,7 @@ export function deriveSheet(
     classDataMissing: doc.classes.some(
       (c) => ctx.get('class', c.ref.name, c.ref.source) === undefined,
     ),
+    classVariantCount: col.classVariants.size,
     pending: col.pending,
     resolvedChoices: col.resolved,
   };

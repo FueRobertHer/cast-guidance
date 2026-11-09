@@ -229,6 +229,21 @@ describe('diffDocs', () => {
     expect(sameContent(after, base())).toBe(false);
   });
 
+  it('names the optional class features rule, reading an explicit off as absent', () => {
+    const on = edited((d) => {
+      d.optionalClassFeatures = true;
+    });
+    const changes = diffDocs(base(), on);
+    expect(changes.map((c) => c.line)).toEqual(['Optional class features: off → on']);
+    expect(changes.every((c) => c.kind === 'variantRule' && c.structural)).toBe(true);
+    expect(lines(on, base())).toEqual(['Optional class features: on → off']);
+    const off = edited((d) => {
+      d.optionalClassFeatures = false;
+    });
+    expect(lines(base(), off)).toEqual([]);
+    expect(sameContent(off, base())).toBe(true);
+  });
+
   it('shows the source when only the edition of a species changed', () => {
     const from = edited((d) => {
       d.race = { name: 'Elf', source: 'PHB' };

@@ -207,6 +207,13 @@ export interface CharacterDoc {
    */
   oneUseDice?: 'after' | 'before';
   /**
+   * Whether this character's table uses optional class features: the ones the
+   * data marks as variants (Tasha's on 2014 classes, a book's on 2024 ones).
+   * On, each is a pick under its class; off, the classes stay as printed.
+   * Optional; absent is off.
+   */
+  optionalClassFeatures?: boolean;
+  /**
    * Effects the player described and kept, found by + Effect's search for
    * next time. Optional; absent is none. Stored as effects are, so a kept one
    * lands as a copy with an id of its own.
@@ -921,6 +928,11 @@ export interface DerivedSheet {
    * landing or is gone. It derives no slots or pools, so those limits are unknown.
    */
   classDataMissing: boolean;
+  /**
+   * How many optional class features this character's classes have at their
+   * levels, taken or not. Build offers the rule only where there are some.
+   */
+  classVariantCount: number;
   pending: ChoicePrompt[];
   /** Choices already made — powers "change this pick" in the build editor. */
   resolvedChoices: Array<{ prompt: ChoicePrompt; selected: string[] }>;

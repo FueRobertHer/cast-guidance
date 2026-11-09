@@ -6,6 +6,7 @@ import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } f
 import { collectAdditionalSpells, hasChosenSpell } from './additionalSpells';
 import { asiFeatInstance } from './asiFeatInstance';
 import { asEntityArray, type Collector, str } from './base';
+import { VariantGate } from './classVariants';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
 import { readOptionalFeatures } from './optionalFeatures';
@@ -316,9 +317,29 @@ function collectFeatureWithNested(
   const { refs, picks } = PICK_ONE.has(identity)
     ? { refs: [], picks: [{ count: 1, branches: featureBranches(feature.entries) }] }
     : nestedFeatureRefs(feature.entries);
-  for (const nested of refs) {
-    const target = parseNested(nested);
-    if (target !== undefined) collectNested(walk, target, undefined, choicePrefix);
+  // The refs are siblings: an optional feature among them (Primal Companion
+  // beside Ranger's Companion) is a pick. A ref the class's or subclass's own
+  // list holds is that list's to pair, so it is left out here.
+  const nested = refs.flatMap((r) => {
+    const target = parseNested(r);
+    if (target === undefined || target.level > walk.classLevel) return [];
+    if (ledger.claimed.has(target.key) || ledger.collected.has(target.key)) return [];
+    const entity = target.find(col);
+    return entity === undefined ? [] : [{ target, sibling: { ...target, entity } }];
+  });
+  const gate = new VariantGate(
+    col,
+    cardOrigin,
+    nested.map((n) => n.sibling),
+    choicePrefix,
+  );
+  for (const { target, sibling } of nested) {
+    if (ledger.claimed.has(target.key) || ledger.collected.has(target.key)) continue;
+    if (!gate.allows(sibling)) {
+      ledger.claimed.add(target.key);
+      continue;
+    }
+    collectNested(walk, target, sibling.entity, gate.choicePrefixFor(sibling, choicePrefix));
   }
   picks.forEach((pick, index) => {
     collectPick(walk, pick, { name, level, identity, index }, choicePrefix);
@@ -622,16 +643,29 @@ export function collectClasses(col: Collector): void {
       const ref = refStr !== undefined ? parseClassFeatureRef(refStr) : undefined;
       if (ref !== undefined && ref.level <= classLevel) ledger.claimed.add(classFeatureKey(ref));
     }
-    // Expertise levels, asked for once the subclass is collected (see below).
-    const expertiseAt: number[] = [];
-    for (const rawRef of featureRefs) {
+    const rows = featureRefs.flatMap((rawRef) => {
+      const refStr = typeof rawRef === 'string' ? rawRef : str((rawRef as DataEntity).classFeature);
+      const ref = refStr !== undefined ? parseClassFeatureRef(refStr) : undefined;
+      if (refStr === undefined || ref === undefined || ref.level > classLevel) return [];
       const isGainSubclass =
         typeof rawRef === 'object' && rawRef !== null && 'gainSubclassFeature' in rawRef;
-      const refStr = typeof rawRef === 'string' ? rawRef : str((rawRef as DataEntity).classFeature);
-      if (refStr === undefined) continue;
-      const ref = parseClassFeatureRef(refStr);
-      if (ref === undefined || ref.level > classLevel) continue;
-
+      const entity = findClassFeature(col, ref);
+      const sibling =
+        entity === undefined
+          ? undefined
+          : { key: classFeatureKey(ref), name: ref.name, level: ref.level, entity };
+      return [{ refStr, ref, isGainSubclass, sibling }];
+    });
+    // An optional feature in the list (Favored Foe beside Favored Enemy) is a pick.
+    const classGate = new VariantGate(
+      col,
+      origin,
+      rows.flatMap((r) => r.sibling ?? []),
+      `class:${classUid}`,
+    );
+    // Expertise levels, asked for once the subclass is collected (see below).
+    const expertiseAt: number[] = [];
+    for (const { refStr, ref, isGainSubclass, sibling } of rows) {
       if (isGainSubclass && entry.subclass === undefined) {
         col.pending.push({
           id: subclassPromptId(classUid),
@@ -643,11 +677,11 @@ export function collectClasses(col: Collector): void {
         });
       }
 
-      const feature = findClassFeature(col, ref);
-      if (feature === undefined) {
+      if (sibling === undefined) {
         col.warn(`Class feature not found: ${refStr}`);
         continue;
       }
+      if (!classGate.allows(sibling)) continue;
 
       if (ref.name.startsWith('Ability Score Improvement')) {
         handleAsi(col, origin, classUid, ref.level);
@@ -655,11 +689,11 @@ export function collectClasses(col: Collector): void {
       if (ref.name === 'Expertise') expertiseAt.push(ref.level);
       collectFeatureWithNested(
         classWalk,
-        feature,
+        sibling.entity,
         ref.name,
         ref.level,
-        classFeatureKey(ref),
-        `class:${classUid}`,
+        sibling.key,
+        classGate.choicePrefixFor(sibling, `class:${classUid}`),
       );
     }
 
@@ -715,22 +749,36 @@ export function collectClasses(col: Collector): void {
             ledger.claimed.add(subclassFeatureKey(ref));
           }
         }
-        for (const rawRef of subRefs) {
-          if (typeof rawRef !== 'string') continue;
-          const ref = parseSubclassFeatureRef(rawRef);
-          if (ref === undefined || ref.level > classLevel) continue;
-          const feature = findSubclassFeature(col, ref);
-          if (feature === undefined) {
+        const subRows = subRefs.flatMap((rawRef) => {
+          const ref = typeof rawRef === 'string' ? parseSubclassFeatureRef(rawRef) : undefined;
+          if (ref === undefined || ref.level > classLevel) return [];
+          const entity = findSubclassFeature(col, ref);
+          const sibling =
+            entity === undefined
+              ? undefined
+              : { key: subclassFeatureKey(ref), name: ref.name, level: ref.level, entity };
+          return [{ rawRef: String(rawRef), ref, sibling }];
+        });
+        // Blessed Strikes beside a 2014 domain's Divine Strike is a pick.
+        const subGate = new VariantGate(
+          col,
+          subOrigin,
+          subRows.flatMap((r) => r.sibling ?? []),
+          `subclass:${subOrigin.uid}`,
+        );
+        for (const { rawRef, ref, sibling } of subRows) {
+          if (sibling === undefined) {
             col.warn(`Subclass feature not found: ${rawRef}`);
             continue;
           }
+          if (!subGate.allows(sibling)) continue;
           collectFeatureWithNested(
             subWalk,
-            feature,
+            sibling.entity,
             ref.name,
             ref.level,
-            subclassFeatureKey(ref),
-            `subclass:${subOrigin.uid}`,
+            sibling.key,
+            subGate.choicePrefixFor(sibling, `subclass:${subOrigin.uid}`),
           );
         }
         // A Battle Master's maneuvers, a Four Elements monk's disciplines, a
