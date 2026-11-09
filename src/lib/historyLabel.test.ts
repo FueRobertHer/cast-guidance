@@ -109,6 +109,17 @@ describe('historyLabel', () => {
     expect(historyLabel(blessed, longer)).toBe('Bless changed');
   });
 
+  it('names an effect described and kept, kept again, and forgotten', () => {
+    const ember = { id: 'k1', name: 'Ember blessing', parts: [] };
+    const kept = base();
+    kept.keptEffects = [ember];
+    const again = base();
+    again.keptEffects = [{ ...ember, tempHp: 5 }];
+    expect(historyLabel(base(), kept)).toBe('Kept Ember blessing');
+    expect(historyLabel(kept, again)).toBe('Kept Ember blessing again');
+    expect(historyLabel(kept, base())).toBe('Forgot Ember blessing');
+  });
+
   it('still says Play state when effects only change order', () => {
     const a = { id: 'a', name: 'Bless', parts: [] };
     const b = { id: 'b', name: 'Haste', parts: [] };

@@ -336,6 +336,8 @@ describe('effects in play', () => {
     expect(contentKey(doc)).toBe(before);
     doc.play.activeEffects = [];
     expect(contentKey(doc)).toBe(before);
+    doc.keptEffects = [];
+    expect(contentKey(doc)).toBe(before);
   });
 
   it('reads none in play the same as none listed', () => {
@@ -382,5 +384,22 @@ describe('effects in play', () => {
       d.play.activeEffects = [{ ...bless, parts: [{ kind: 'acBonus', amount: 2 }] }];
     });
     expect(lines(blessed, stronger)).toEqual(['Bless edited']);
+  });
+
+  it('names effects kept, kept again under their name, and forgotten', () => {
+    const ember = { id: 'k1', name: 'Ember blessing', parts: [] };
+    const kept = edited((d) => {
+      d.keptEffects = [ember];
+    });
+    const again = edited((d) => {
+      d.keptEffects = [{ ...ember, id: 'k2', parts: [{ kind: 'acBonus', amount: 1 }] }];
+    });
+    const frost = edited((d) => {
+      d.keptEffects = [{ id: 'k3', name: 'Frost ward', parts: [] }];
+    });
+    expect(lines(base(), kept)).toEqual(['Kept: +Ember blessing']);
+    expect(lines(kept, again)).toEqual(['Ember blessing kept again']);
+    expect(lines(kept, frost)).toEqual(['Kept: +Frost ward, −Ember blessing']);
+    expect(sameContent(base(), kept)).toBe(false);
   });
 });

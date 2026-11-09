@@ -138,9 +138,11 @@ export function partLine(p: EffectPart, weaponName?: (id: string) => string | un
       return `${signed(p.amount)} to ${scopeWords(p.scope)}${kind}attack rolls${ability}${onWeapon(p.weapon)}`;
     }
     case 'checkBonus':
-      return 'skills' in p
-        ? `${signed(p.amount)} to ${andList(p.skills)} checks`
-        : `${signed(p.amount)} to ${ABILITY[p.ability]} checks`;
+      return 'every' in p
+        ? `${signed(p.amount)} to every ability check, initiative too`
+        : 'skills' in p
+          ? `${signed(p.amount)} to ${andList(p.skills)} checks`
+          : `${signed(p.amount)} to ${ABILITY[p.ability]} checks`;
     case 'conditionImmune':
       return `You cannot be ${lower(p.condition)}${p.note ? ` (${p.note})` : ''}`;
     case 'critRange':
