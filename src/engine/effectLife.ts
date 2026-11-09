@@ -248,25 +248,21 @@ function endOutOfAction(
 }
 
 /**
- * What the conditions in force end, for the sheet to call when one comes on:
+ * What the condition `id` ends as it comes on (added, or switched back on):
  * Incapacitated, or a condition that brings it (Paralyzed, Petrified, Stunned,
  * Unconscious), breaks concentration in both rules versions and ends what it
  * held and 2024 Rage; Unconscious ends 2014 Rage too. One switched off or held
- * off ends nothing. `by` names the conditions that did it.
+ * off ends nothing. Only `id` counts: what the player kept up under a
+ * condition already on (the sheet warns, never blocks) stays.
  */
-export function conditionEndings(play: PlayState, hp: HpLimits): EffectChange & { by: string[] } {
-  const out = outOfAction(play.conditions, hp.edition, { immune: hp.immune });
-  const change = endOutOfAction(
+export function conditionEndings(play: PlayState, id: string, hp: HpLimits): EffectChange {
+  const came = play.conditions.filter((c) => c.id === id);
+  const out = outOfAction(came, hp.edition, { immune: hp.immune });
+  return endOutOfAction(
     play,
     { incapacitated: out.incapacitated.length > 0, unconscious: out.unconscious },
     hp,
   );
-  // Unconscious brings Incapacitated, so it is named already, unless held off.
-  const by =
-    out.unconscious && !out.incapacitated.includes('Unconscious')
-      ? [...out.incapacitated, 'Unconscious']
-      : out.incapacitated;
-  return { ...change, by };
 }
 
 /**

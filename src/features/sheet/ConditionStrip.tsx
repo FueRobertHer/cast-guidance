@@ -82,23 +82,24 @@ const CHIP_X =
   'tap -my-1.5 -mr-1.5 rounded-full text-ink-muted [--tap-inset:0.625rem] hover:text-ink';
 
 /**
- * A condition just came on in this draft: what it ends goes (concentration,
- * Rage; see `conditionEndings`), and the notice says so. Null when nothing ended.
+ * The condition `id` just came on in this draft: what it ends goes
+ * (concentration, Rage; see `conditionEndings`), and the notice says so. Null
+ * when nothing ended.
  */
-function settleCondition(d: CharacterDoc, hp: HpLimits | null): Notice | null {
+function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Notice | null {
   if (hp === null) return null;
   const focus = d.play.concentratingOn?.label;
-  const { ended, by } = conditionEndings(d.play, hp);
+  const { ended } = conditionEndings(d.play, id, hp);
   const gone = ended.length === 0 ? [] : [`Ended ${andList(ended)}`];
   if (focus !== undefined && d.play.concentratingOn === undefined) {
     return {
       title: 'Concentration broken',
-      detail: [focus, andList(by), ...gone].join(' · '),
+      detail: [focus, id, ...gone].join(' · '),
       tone: 'warn',
     };
   }
   if (ended.length === 0) return null;
-  return { title: `Ended ${andList(ended)}`, detail: andList(by), tone: 'warn' };
+  return { title: `Ended ${andList(ended)}`, detail: id, tone: 'warn' };
 }
 
 /** "You cannot be poisoned: Periapt of Proof against Poison." */
@@ -269,7 +270,7 @@ export function ConditionStrip({
       const idx = d.play.conditions.findIndex((x) => x.id === id);
       if (idx === -1) {
         d.play.conditions.push({ id });
-        notice = settleCondition(d, hp);
+        notice = settleCondition(d, id, hp);
       } else d.play.conditions.splice(idx, 1);
     });
     if (notice !== null) notify(notice);
@@ -363,7 +364,7 @@ export function ConditionStrip({
       if (c === undefined) return;
       if (applied) {
         delete c.ignored;
-        notice = settleCondition(d, hp);
+        notice = settleCondition(d, id, hp);
       } else c.ignored = true;
     });
     if (notice !== null) notify(notice);

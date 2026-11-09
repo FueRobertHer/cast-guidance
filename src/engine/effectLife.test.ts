@@ -313,10 +313,9 @@ describe('conditionEndings', () => {
         const p = play();
         applyEffect(p, bless(), limits(p, edition));
         p.conditions.push({ id });
-        expect(conditionEndings(p, limits(p, edition)), `${id} ${edition}`).toEqual({
+        expect(conditionEndings(p, id, limits(p, edition)), `${id} ${edition}`).toEqual({
           ended: ['Bless'],
           maxHpChange: 0,
-          by: [id],
         });
         expect(p, `${id} ${edition}`).not.toHaveProperty('concentratingOn');
         expect(p, `${id} ${edition}`).not.toHaveProperty('activeEffects');
@@ -328,7 +327,7 @@ describe('conditionEndings', () => {
     const p = play();
     p.concentratingOn = { label: 'Hold Person', level: 2 };
     p.conditions.push({ id: 'Stunned' });
-    expect(conditionEndings(p, limits(p))).toEqual({ ended: [], maxHpChange: 0, by: ['Stunned'] });
+    expect(conditionEndings(p, 'Stunned', limits(p))).toEqual({ ended: [], maxHpChange: 0 });
     expect(p).not.toHaveProperty('concentratingOn');
   });
 
@@ -337,26 +336,40 @@ describe('conditionEndings', () => {
     p.activeEffects = [bless('ally', false)];
     p.concentratingOn = { label: 'Haste' };
     p.conditions.push({ id: 'Paralyzed' });
-    conditionEndings(p, limits(p));
+    conditionEndings(p, 'Paralyzed', limits(p));
     expect(names(p)).toEqual(['Bless']);
     expect(p).not.toHaveProperty('concentratingOn');
   });
 
   it('ends nothing for a condition that does not incapacitate, one switched off, or one held off', () => {
-    const cases: Array<[PlayState['conditions'], HpLimits['immune']]> = [
-      [[{ id: 'Poisoned' }, { id: 'Prone' }, { id: 'Exhaustion', level: 5 }], undefined],
-      [[{ id: 'Stunned', ignored: true }], undefined],
-      [[{ id: 'Stunned' }], [{ condition: 'stunned', origin: 'Mind Blank' }]],
+    const cases: Array<[PlayState['conditions'][number], HpLimits['immune']]> = [
+      [{ id: 'Poisoned' }, undefined],
+      [{ id: 'Prone' }, undefined],
+      [{ id: 'Exhaustion', level: 5 }, undefined],
+      [{ id: 'Stunned', ignored: true }, undefined],
+      [{ id: 'Stunned' }, [{ condition: 'stunned', origin: 'Mind Blank' }]],
       // Held off however it comes: immune to Incapacitated, a Paralyzed character is not.
-      [[{ id: 'Paralyzed' }], [{ condition: 'incapacitated', origin: 'Homebrew' }]],
+      [{ id: 'Paralyzed' }, [{ condition: 'incapacitated', origin: 'Homebrew' }]],
     ];
-    for (const [conditions, immune] of cases) {
+    for (const [condition, immune] of cases) {
       const p = play();
       applyEffect(p, bless(), limits(p));
-      p.conditions = conditions;
-      expect(conditionEndings(p, { ...limits(p), immune }).ended).toEqual([]);
-      expect(p.concentratingOn).toEqual({ label: 'Bless' });
+      p.conditions = [condition];
+      expect(conditionEndings(p, condition.id, { ...limits(p), immune }).ended).toEqual([]);
+      expect(p.concentratingOn, condition.id).toEqual({ label: 'Bless' });
     }
+  });
+
+  it('leaves alone what the player kept up under a condition already on, when another comes on', () => {
+    // Stunned is on and the player concentrates anyway (the sheet warns, never blocks).
+    const p = play();
+    p.conditions = [{ id: 'Stunned' }];
+    applyEffect(p, bless(), limits(p, '2024'));
+    applyEffect(p, rageEffect('rage', 5, '2024'), limits(p, '2024'));
+    p.conditions.push({ id: 'Prone' });
+    expect(conditionEndings(p, 'Prone', limits(p, '2024')).ended).toEqual([]);
+    expect(p.concentratingOn).toEqual({ label: 'Bless' });
+    expect(names(p)).toEqual(['Bless', 'Rage']);
   });
 
   it('ends 2024 Rage with Incapacitated, and 2014 Rage only when knocked unconscious', () => {
@@ -364,14 +377,14 @@ describe('conditionEndings', () => {
       const p = play();
       applyEffect(p, rageEffect('rage', 5, '2024'), limits(p, '2024'));
       p.conditions.push({ id });
-      expect(conditionEndings(p, limits(p, '2024')).ended, id).toEqual(['Rage']);
+      expect(conditionEndings(p, id, limits(p, '2024')).ended, id).toEqual(['Rage']);
     }
     const p = play();
     applyEffect(p, rageEffect('rage', 5, '2014'), limits(p));
     p.conditions.push({ id: 'Stunned' });
-    expect(conditionEndings(p, limits(p)).ended).toEqual([]);
+    expect(conditionEndings(p, 'Stunned', limits(p)).ended).toEqual([]);
     p.conditions.push({ id: 'Unconscious' });
-    expect(conditionEndings(p, limits(p)).ended).toEqual(['Rage']);
+    expect(conditionEndings(p, 'Unconscious', limits(p)).ended).toEqual(['Rage']);
   });
 
   it('leaves an ending it cannot read, or an effect with none, in play', () => {
@@ -382,7 +395,7 @@ describe('conditionEndings', () => {
     ];
     p.activeEffects = structuredClone(odd) as unknown as ActiveEffect[];
     p.conditions.push({ id: 'Unconscious' });
-    expect(conditionEndings(p, limits(p)).ended).toEqual([]);
+    expect(conditionEndings(p, 'Unconscious', limits(p)).ended).toEqual([]);
     expect(p.activeEffects).toEqual(odd);
   });
 });

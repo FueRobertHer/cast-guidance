@@ -1918,8 +1918,8 @@ export function Component() {
                   )}
                   {/* Rage in heavy armor: said, never stopped. */}
                   {starts?.inHeavyArmor !== undefined && sheet.heavyArmor !== undefined && (
-                    <span className="flex items-center gap-1 text-caption text-guide">
-                      <AlertTriangle size={14} className="shrink-0" />
+                    <span className="flex gap-1.5 text-caption text-guide">
+                      <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
                       {`${sheet.heavyArmor}: ${starts.inHeavyArmor}`}
                     </span>
                   )}

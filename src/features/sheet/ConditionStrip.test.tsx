@@ -319,6 +319,14 @@ describe('what a condition coming on ends', () => {
     expect(noticeStore.getState().notice).toBeNull();
   });
 
+  it('leaves concentration kept up under Stunned alone when another condition comes on', async () => {
+    // The sheet warns and never blocks, so the player may concentrate while stunned.
+    renderStrip([{ id: 'Stunned' }], { addable: true, concentrating: 'Hold Person' });
+    await pickCondition('Prone');
+    expect(concentrating()).toBe('Concentrating on Hold Person');
+    expect(noticeStore.getState().notice).toBeNull();
+  });
+
   it('breaks it when a switched-off Paralyzed is switched back on', async () => {
     renderStrip([{ id: 'Paralyzed', ignored: true }], { concentrating: 'Hold Person' });
     expect(concentrating()).toBe('Concentrating on Hold Person');
