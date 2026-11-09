@@ -253,6 +253,18 @@ describe('spells while raging', () => {
     await renderSheet(doc);
     expect(screen.queryByText(warning)).toBeNull();
   });
+
+  it('warns on the Spells tab too, and not once Rage is off', async () => {
+    const doc = sorcerer();
+    doc.play.activeEffects = [rageEffect('rage', 3, '2014')];
+    await renderSheet(doc, { path: 'spells' });
+    expect(await screen.findByText(warning)).toBeTruthy();
+    await resetSheetHarness();
+
+    doc.play.activeEffects = [{ ...rageEffect('rage', 3, '2014'), off: true }];
+    await renderSheet(doc, { path: 'spells' });
+    expect(screen.queryByText(warning)).toBeNull();
+  });
 });
 
 describe('Innate Sorcery from its own Use', () => {
@@ -330,6 +342,30 @@ describe('Innate Sorcery from its own Use', () => {
     expect(lastRoll()?.label).toBe('Spark Dart spell attack');
     expect(lastRoll()?.meta?.advantage).toBe('adv');
     expect(lastRoll()?.meta?.cue).toBe('Advantage: Innate Sorcery');
+  });
+
+  it("rings the Spells tab's save DCs too, the class's and a save spell's", async () => {
+    const puff: DataEntity = {
+      name: 'Frost Puff',
+      source: 'TST',
+      level: 0,
+      school: 'V',
+      time: [{ number: 1, unit: 'action' }],
+      savingThrow: ['constitution'],
+      entries: ['A creature must succeed on a Constitution saving throw.'],
+    };
+    const doc = sparks();
+    const ref = { name: 'Frost Puff', source: 'TST' };
+    doc.spellcasting = { 'sorcerer|xphb': { known: [ref], prepared: [ref] } };
+    doc.play.activeEffects = [innateSorceryEffect('innate')];
+    await renderSheet(doc, { path: 'spells', extra: { ...world, spell: [puff] } });
+    const badge = async (text: RegExp) => (await screen.findByText(text)).closest('span');
+    const block = await badge(/^Save DC/);
+    expect(block?.textContent).toBe('Save DC 14, raised by Innate Sorcery');
+    expect(block?.closest('.fx-lift-on')).not.toBeNull();
+    const row = await badge(/^DC 14/);
+    expect(row?.textContent).toBe('DC 14, raised by Innate Sorcery');
+    expect(row?.closest('.fx-lift-on')).not.toBeNull();
   });
 
   it('reaches the same spell attack from the Spells tab', async () => {

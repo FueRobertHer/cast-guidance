@@ -38,12 +38,13 @@ import {
   rollWear,
   useIgnoreOnce,
 } from './d20Tests';
-import { conditionsInForce, hpLimits } from './effectsInPlay';
+import { conditionsInForce, hpLimits, saveDcRaisedBy } from './effectsInPlay';
 import { castGrantedAsking, castSpellAsking } from './namedStarts';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
 import { SpellSlots } from './SpellSlots';
+import { NoSpellsCue, raging, SaveDcBadge } from './spellcastingMarks';
 import { findSpell, useSpellData } from './spellData';
 import { spellMeta, spellSaves } from './spellMeta';
 import { spellRollActions } from './spellRolls';
@@ -115,6 +116,8 @@ interface RowContext {
   castWear: ChipWear;
   noVerbal: readonly string[];
   entityOf: (ref: { name: string; source: string }) => Entity | undefined;
+  /** What raised a class's save DC (Innate Sorcery), for its ring. */
+  dcRaisedBy: (block: SpellcastingBlock) => string[];
 }
 
 const hasSpellAttack = (entity: Entity | undefined) =>
@@ -312,7 +315,9 @@ function SlotSpellRow({
       }
       actions={
         <>
-          {spellSaves(entity).length > 0 && <Badge tone="arcane">DC {block.saveDc.value}</Badge>}
+          {spellSaves(entity).length > 0 && (
+            <SaveDcBadge value={block.saveDc.value} raisedBy={ctx.dcRaisedBy(block)} short />
+          )}
           {rolling && !concentrating && (
             <CastResourcePicker
               {...castContext}
@@ -597,14 +602,13 @@ function ClassSection({
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
-          <Badge tone="arcane">
-            Save DC <strong>{block.saveDc.value}</strong>
-          </Badge>
+          <SaveDcBadge value={block.saveDc.value} raisedBy={ctx.dcRaisedBy(block)} />
           <Badge tone="arcane">
             Attack <strong>{signed(block.attackMod.value)}</strong>
           </Badge>
           <Badge>{block.ability.toUpperCase()}</Badge>
         </div>
+        {raging(ctx.sheet) && <NoSpellsCue />}
         <SpellSlots
           block={block}
           play={play}
@@ -700,10 +704,13 @@ function ClassSection({
 export function YourSpells({
   doc,
   sheet,
+  built,
   update,
 }: {
   doc: CharacterDoc;
   sheet: DerivedSheet;
+  /** The sheet from the build alone, to say what an effect in play raised. */
+  built?: DerivedSheet | null;
   update: DocUpdater;
 }) {
   const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
@@ -745,6 +752,7 @@ export function YourSpells({
     castWear: conditionWear(conditions, limits.noActions),
     noVerbal: limits.noVerbal,
     entityOf,
+    dcRaisedBy: (block) => saveDcRaisedBy(block, built),
   };
 
   // Always prepared grants cast with a class's slots, so they sit in its list.

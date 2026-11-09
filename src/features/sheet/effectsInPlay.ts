@@ -11,6 +11,7 @@ import type {
   DerivedValue,
   EffectPart,
   RollFilter,
+  SpellcastingBlock,
 } from '@/engine/types';
 
 /**
@@ -280,6 +281,20 @@ export function raisedBy(now: DerivedValue, before: DerivedValue | undefined): s
   const had = new Set(before?.parts.map((p) => p.label));
   const names = now.parts.filter((p) => !had.has(p.label) && p.amount > 0).map((p) => p.label);
   return names.length > 0 ? [...new Set(names)] : ['an effect in play'];
+}
+
+/**
+ * What raised a casting class's save DC (Innate Sorcery), by name, against the
+ * same class in the build alone. None without the build to compare.
+ */
+export function saveDcRaisedBy(
+  block: Pick<SpellcastingBlock, 'classUid' | 'saveDc'>,
+  built: Pick<DerivedSheet, 'spellcasting'> | null | undefined,
+): string[] {
+  return raisedBy(
+    block.saveDc,
+    built?.spellcasting.find((b) => b.classUid === block.classUid)?.saveDc,
+  );
 }
 
 /** A dice expression's average, for telling a raised damage roll from a lowered one. */
