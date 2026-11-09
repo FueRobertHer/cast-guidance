@@ -6,7 +6,7 @@ import type { ConversionReport } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import type { HomebrewFileRow } from '@/db/db';
-import { type HomebrewFile, homebrewRepo } from '@/db/homebrewRepo';
+import { type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
 import { readFileTextBounded } from '@/lib/boundedRead';
 import { downloadJson } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
@@ -68,7 +68,7 @@ export function Component() {
   usePageTitle('Homebrew');
   const navigate = useNavigate();
   // Unreadable files are reported here, the one screen that can remove them.
-  const read = useLiveQuery(() => homebrewRepo.listSafe(), []);
+  const read = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
   const rows = read?.files;
   const readErrors = read?.errors ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
@@ -255,7 +255,7 @@ export function Component() {
   };
 
   /** Counts are a plain record by the time a file is here: see the boundary. */
-  const summary = (r: HomebrewFile) =>
+  const summary = (r: HomebrewFileMeta) =>
     Object.entries(r.counts)
       .map(([k, v]) => `${String(v)} ${k}`)
       .join(' · ') || 'no recognized entities';
@@ -442,9 +442,12 @@ export function Component() {
                 type="button"
                 aria-label={`Download ${r.fileName}`}
                 title="Download"
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    downloadJson(r.fileName, r.json);
+                    // The list holds metadata only; the content is read for this.
+                    const { file, error } = await homebrewRepo.getSafe(r.id);
+                    if (file === undefined) throw new Error(error?.message ?? 'the file is gone');
+                    downloadJson(r.fileName, file.json);
                   } catch (err) {
                     notifyFailure('Download', err);
                   }

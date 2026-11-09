@@ -1,5 +1,6 @@
 // IndexedDB-backed coverage for the homebrew repository (TEST-002 harness).
 import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ValidationError } from '@/lib/guards';
 import { isQuotaError } from '@/lib/storageErrors';
@@ -90,7 +91,7 @@ describe('homebrewRepo.prepare and commit (IndexedDB-backed)', () => {
     expect(result.duplicate).toBe(true);
     expect(result.row.fileName).toBe('brew.json');
     expect(await db.homebrewFiles.count()).toBe(1);
-    expect(await db.homebrewFiles.get(first.id)).toEqual(first);
+    expect((await homebrewRepo.getSafe(first.id)).file).toEqual(first);
   });
 });
 
@@ -222,5 +223,89 @@ describe('buildHomebrewRow', () => {
     const r1 = await buildHomebrewRow(file('BREW', ['Zap']), 'one.json');
     const r2 = await buildHomebrewRow(file('BREW', ['Zap']), 'two.json');
     expect(r1.id).toBe(r2.id);
+  });
+});
+
+describe('homebrew content apart from its metadata', () => {
+  it('lists metadata without reading any content', async () => {
+    await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
+    const reads = vi.spyOn(db.homebrewJson, 'bulkGet');
+
+    const { files } = await homebrewRepo.listMetaSafe();
+    const enabled = await homebrewRepo.enabledMetaSafe();
+
+    expect(files.map((f) => f.sourceIds)).toEqual([['BREW']]);
+    expect(files[0]).not.toHaveProperty('json');
+    expect(enabled.files.map((f) => f.fileName)).toEqual(['brew.json']);
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it('stores the content in its own table, and removes it with the file', async () => {
+    const row = await homebrewRepo.importJson(file('BREW', ['Zap']), 'brew.json');
+    expect(await db.homebrewFiles.get(row.id)).not.toHaveProperty('json');
+    expect((await db.homebrewJson.get(row.id))?.json).toEqual(row.json);
+
+    await homebrewRepo.delete(row.id);
+    expect(await db.homebrewJson.count()).toBe(0);
+  });
+
+  it('saves an edit to the content table and bumps the revision', async () => {
+    const brew = await homebrewRepo.createEditable('Brew', 'BREW');
+    await homebrewRepo.saveEditable(brew.id, file('BREW', ['Zap']));
+
+    expect((await db.homebrewFiles.get(brew.id))?.rev).toBe(1);
+    expect((await homebrewRepo.getSafe(brew.id)).file?.json).toEqual(file('BREW', ['Zap']));
+  });
+
+  it('reads a row that still carries its content', async () => {
+    await db.homebrewFiles.put({
+      id: 'legacy',
+      fileName: 'legacy.json',
+      json: file('OLD', ['Zap']),
+      enabled: true,
+      editable: false,
+      sourceIds: ['OLD'],
+      counts: { spell: 1 },
+      addedAt: 1,
+    });
+
+    const { files, errors } = await homebrewRepo.enabledSafe();
+    expect(errors).toEqual([]);
+    expect(files.map((f) => f.json)).toEqual([file('OLD', ['Zap'])]);
+  });
+
+  it('reports a disabled row it cannot read without reading content', async () => {
+    await db.homebrewFiles.put({ id: '', fileName: 'nameless.json', enabled: false } as never);
+    const { files, errors } = await homebrewRepo.enabledSafe();
+    expect(files).toEqual([]);
+    expect(errors.map((e) => e.fileName)).toEqual(['nameless.json']);
+  });
+});
+
+describe('the version 5 upgrade', () => {
+  it('moves each stored file`s content into the content table', async () => {
+    db.close();
+    await Dexie.delete('cast-guidance');
+    const old = new Dexie('cast-guidance');
+    old.version(4).stores({
+      dataFiles: 'key, tag, pack, bytes',
+      dataMeta: 'id',
+      characters: 'id, name, updatedAt',
+      homebrewFiles: 'id, enabled, addedAt',
+      searchIndexes: 'key',
+      settings: 'key',
+      rollLog: 'id, at, charId',
+      characterHistory: 'id, charId, at, [charId+at]',
+    });
+    const stored = await buildHomebrewRow(file('BREW', ['Zap']), 'brew.json');
+    await old.table('homebrewFiles').put(stored);
+    old.close();
+
+    await db.open();
+
+    const { json, ...meta } = stored;
+    expect(await db.homebrewFiles.get(stored.id)).toEqual(meta);
+    expect(await db.homebrewJson.get(stored.id)).toEqual({ id: stored.id, json });
+    expect((await homebrewRepo.listSafe()).files).toEqual([{ ...stored, rev: undefined }]);
   });
 });

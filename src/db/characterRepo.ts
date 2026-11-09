@@ -11,7 +11,7 @@ import {
 } from '@/lib/guards';
 import { randomId } from '@/lib/randomId';
 import { type CharacterRow, db, type HomebrewFileRow } from './db';
-import { buildHomebrewRow } from './homebrewRepo';
+import { buildHomebrewRow, putHomebrewRow } from './homebrewRepo';
 
 /**
  * What a save expects the stored row to be (REL-007, #98): the revision this
@@ -230,27 +230,33 @@ export const characterRepo = {
    */
   async commitImport(prepared: PreparedCharacterImport): Promise<ImportSummary> {
     const { doc, homebrew } = prepared;
-    const summary = await db.transaction('rw', db.characters, db.homebrewFiles, async () => {
-      const existingHomebrewIds = new Set(
-        await db.homebrewFiles
-          .where('id')
-          .anyOf(homebrew.map((r) => r.id))
-          .primaryKeys(),
-      );
-      const characterExists = (await db.characters.get(doc.id)) !== undefined;
-      const addedAt = Date.now();
-      const plan = planCharacterImport(doc, homebrew, {
-        characterExists,
-        existingHomebrewIds,
-        newId: () => crypto.randomUUID(),
-        now: () => new Date().toISOString(),
-      });
-      // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
-      // an import from when it lands.
-      for (const row of plan.homebrewToAdd) await db.homebrewFiles.add({ ...row, addedAt });
-      await db.characters.put({ ...plan.finalDoc, revision: randomId() });
-      return plan.summary;
-    });
+    const summary = await db.transaction(
+      'rw',
+      db.characters,
+      db.homebrewFiles,
+      db.homebrewJson,
+      async () => {
+        const existingHomebrewIds = new Set(
+          await db.homebrewFiles
+            .where('id')
+            .anyOf(homebrew.map((r) => r.id))
+            .primaryKeys(),
+        );
+        const characterExists = (await db.characters.get(doc.id)) !== undefined;
+        const addedAt = Date.now();
+        const plan = planCharacterImport(doc, homebrew, {
+          characterExists,
+          existingHomebrewIds,
+          newId: () => crypto.randomUUID(),
+          now: () => new Date().toISOString(),
+        });
+        // Stamped at commit, as `homebrewRepo.commit` does: merge order counts
+        // an import from when it lands.
+        for (const row of plan.homebrewToAdd) await putHomebrewRow({ ...row, addedAt }, 'add');
+        await db.characters.put({ ...plan.finalDoc, revision: randomId() });
+        return plan.summary;
+      },
+    );
 
     if (homebrew.length > 0) invalidateRegistry();
     return summary;

@@ -4,7 +4,7 @@ import {
   homebrewEntityCounts,
   sha256Hex,
 } from '@/lib/guards';
-import { db, type HomebrewFileRow } from './db';
+import { db, type HomebrewFileRow, type HomebrewMetaRow } from './db';
 import { compareMergeOrder } from './homebrewOrder';
 
 /**
@@ -45,6 +45,9 @@ export interface HomebrewFile extends Omit<HomebrewFileRow, 'json'> {
   json: Record<string, unknown>;
 }
 
+/** A stored file's metadata, read: everything a list or a toggle needs, without the content. */
+export type HomebrewFileMeta = Omit<HomebrewFile, 'json'>;
+
 export interface HomebrewReadError {
   id?: string;
   fileName?: string;
@@ -53,6 +56,11 @@ export interface HomebrewReadError {
 
 export interface HomebrewListResult {
   files: HomebrewFile[];
+  errors: HomebrewReadError[];
+}
+
+export interface HomebrewMetaListResult {
+  files: HomebrewFileMeta[];
   errors: HomebrewReadError[];
 }
 
@@ -77,21 +85,32 @@ function numberOr(v: unknown, fallback: number): number {
  * repaired, not hidden.
  */
 function readHomebrewRow(row: unknown): HomebrewFile | HomebrewReadError {
+  const meta = readHomebrewMeta(row);
+  if (isReadError(meta)) return meta;
+  const json = (row as Record<string, unknown>).json;
+  if (!isRecord(json)) {
+    return {
+      id: meta.id,
+      fileName: meta.fileName,
+      message: 'the file content is missing or is not a JSON object',
+    };
+  }
+  return { ...meta, json };
+}
+
+/** A stored row's metadata, or why it cannot be read: {@link readHomebrewRow} without the content. */
+function readHomebrewMeta(row: unknown): HomebrewFileMeta | HomebrewReadError {
   if (!isRecord(row)) return { message: `expected a stored row, got ${typeof row}` };
   const id = row.id;
   const fileName = typeof row.fileName === 'string' ? row.fileName : undefined;
   if (typeof id !== 'string' || id === '') {
     return { fileName, message: 'the row has no id, so nothing can address it' };
   }
-  if (!isRecord(row.json)) {
-    return { id, fileName, message: 'the file content is missing or is not a JSON object' };
-  }
   const counts = isRecord(row.counts) ? row.counts : {};
   return {
     id,
     fileName: fileName ?? `${id}.json`,
     url: typeof row.url === 'string' ? row.url : undefined,
-    json: row.json,
     enabled: row.enabled !== false,
     editable: row.editable === true,
     sourceIds: Array.isArray(row.sourceIds)
@@ -105,7 +124,7 @@ function readHomebrewRow(row: unknown): HomebrewFile | HomebrewReadError {
   };
 }
 
-function isReadError(v: HomebrewFile | HomebrewReadError): v is HomebrewReadError {
+function isReadError<T extends object>(v: T | HomebrewReadError): v is HomebrewReadError {
   return 'message' in v;
 }
 
@@ -125,6 +144,47 @@ export function partitionHomebrewRows(rows: readonly unknown[]): HomebrewListRes
   return { files, errors };
 }
 
+/** {@link partitionHomebrewRows} for metadata alone: a row without its content is no error here. */
+export function partitionHomebrewMeta(rows: readonly unknown[]): HomebrewMetaListResult {
+  const files: HomebrewFileMeta[] = [];
+  const errors: HomebrewReadError[] = [];
+  for (const row of rows) {
+    const read = readHomebrewMeta(row);
+    if (isReadError(read)) errors.push(read);
+    else files.push(read);
+  }
+  return { files, errors };
+}
+
+/**
+ * Stored rows with their content put back on, as the readers take them. A
+ * `json` still on the row (written before the content had a table of its
+ * own) is used when the content table has none.
+ */
+async function withContent(rows: readonly HomebrewMetaRow[]): Promise<unknown[]> {
+  const bodies = await db.homebrewJson.bulkGet(rows.map((row) => row.id));
+  return rows.map((row, i) => ({ ...row, json: bodies[i]?.json ?? row.json }));
+}
+
+/**
+ * Write a whole file: its metadata to `homebrewFiles`, its content to
+ * `homebrewJson`. The caller holds a transaction over both tables.
+ */
+export async function putHomebrewRow(
+  row: HomebrewFileRow,
+  how: 'put' | 'add' = 'put',
+): Promise<void> {
+  const { json, ...meta } = row;
+  if (how === 'add') await db.homebrewFiles.add(meta);
+  else await db.homebrewFiles.put(meta);
+  await db.homebrewJson.put({ id: row.id, json });
+}
+
+/** Newest import first; ties break on the id descending. */
+function newestFirst(a: HomebrewFileMeta, b: HomebrewFileMeta): number {
+  return b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+}
+
 export const homebrewRepo = {
   /** Every stored homebrew file, newest first. */
   async listSafe(): Promise<HomebrewListResult> {
@@ -133,8 +193,15 @@ export const homebrewRepo = {
     // so the damaged rows this exists to report are the ones an ordered read
     // would never hand it. Ties break on the id descending, as the reversed
     // traversal did, so a same-millisecond import keeps its order.
-    const result = partitionHomebrewRows(await db.homebrewFiles.toArray());
-    result.files.sort((a, b) => b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    const result = partitionHomebrewRows(await withContent(await db.homebrewFiles.toArray()));
+    result.files.sort(newestFirst);
+    return result;
+  },
+
+  /** {@link homebrewRepo.listSafe} without the content: what a list of files or of sources needs. */
+  async listMetaSafe(): Promise<HomebrewMetaListResult> {
+    const result = partitionHomebrewMeta(await db.homebrewFiles.toArray());
+    result.files.sort(newestFirst);
     return result;
   },
 
@@ -147,7 +214,26 @@ export const homebrewRepo = {
    * `addedAt` was lost reads as 0, so it sorts first rather than moving.
    */
   async enabledSafe(): Promise<HomebrewListResult> {
-    const { files, errors } = partitionHomebrewRows(await db.homebrewFiles.toArray());
+    return db.transaction('r', db.homebrewFiles, db.homebrewJson, async () => {
+      const rows = await db.homebrewFiles.toArray();
+      // The disabled rows' errors too, without paying for their content.
+      const off = partitionHomebrewMeta(rows.filter((row) => row.enabled === false));
+      const read = partitionHomebrewRows(
+        await withContent(rows.filter((row) => row.enabled !== false)),
+      );
+      return {
+        files: read.files.filter((r) => r.enabled).sort(compareMergeOrder),
+        errors: [...read.errors, ...off.errors],
+      };
+    });
+  },
+
+  /**
+   * {@link homebrewRepo.enabledSafe} without the content, in the same order:
+   * enough for the registry to tell whether what it holds is current.
+   */
+  async enabledMetaSafe(): Promise<HomebrewMetaListResult> {
+    const { files, errors } = partitionHomebrewMeta(await db.homebrewFiles.toArray());
     return { files: files.filter((r) => r.enabled).sort(compareMergeOrder), errors };
   },
 
@@ -159,7 +245,7 @@ export const homebrewRepo = {
   async getSafe(id: string): Promise<{ file?: HomebrewFile; error?: HomebrewReadError }> {
     const row = await db.homebrewFiles.get(id);
     if (row === undefined) return {};
-    const { files, errors } = partitionHomebrewRows([row]);
+    const { files, errors } = partitionHomebrewRows(await withContent([row]));
     return { file: files[0], error: errors[0] };
   },
 
@@ -182,11 +268,14 @@ export const homebrewRepo = {
    * cannot jump ahead of a file imported while it was showing.
    */
   async commit(prepared: HomebrewFileRow): Promise<{ row: HomebrewFileRow; duplicate: boolean }> {
-    return db.transaction('rw', db.homebrewFiles, async () => {
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       const existing = await db.homebrewFiles.get(prepared.id);
-      if (existing !== undefined) return { row: existing, duplicate: true };
+      if (existing !== undefined) {
+        const [stored] = await withContent([existing]);
+        return { row: stored as HomebrewFileRow, duplicate: true };
+      }
       const row: HomebrewFileRow = { ...prepared, addedAt: Date.now() };
-      await db.homebrewFiles.put(row);
+      await putHomebrewRow(row);
       return { row, duplicate: false };
     });
   },
@@ -206,7 +295,10 @@ export const homebrewRepo = {
   },
 
   async delete(id: string): Promise<void> {
-    await db.homebrewFiles.delete(id);
+    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      await db.homebrewFiles.delete(id);
+      await db.homebrewJson.delete(id);
+    });
   },
 
   /** New in-app editable homebrew file (uuid id — edits don't change identity). */
@@ -228,21 +320,25 @@ export const homebrewRepo = {
       counts: {},
       addedAt: Date.now(),
     };
-    await db.homebrewFiles.put(row);
+    await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () => putHomebrewRow(row));
     return row;
   },
 
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
     // Bump rev so the registry/search signature notices the content change even
     // though the file id stays the same across edits.
-    const modified = await db.homebrewFiles
-      .where('id')
-      .equals(id)
-      .modify((row) => {
-        row.json = json;
-        row.counts = homebrewEntityCounts(json);
-        row.rev = (row.rev ?? 0) + 1;
-      });
+    const modified = await db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const count = await db.homebrewFiles
+        .where('id')
+        .equals(id)
+        .modify((row) => {
+          delete row.json;
+          row.counts = homebrewEntityCounts(json);
+          row.rev = (row.rev ?? 0) + 1;
+        });
+      if (count > 0) await db.homebrewJson.put({ id, json });
+      return count;
+    });
     // Matching no rows is not success. The builder reports what this resolves
     // to, so a save against a file deleted in another tab has to say so rather
     // than close the form over an edit that reached nothing.

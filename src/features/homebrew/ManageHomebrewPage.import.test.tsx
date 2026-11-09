@@ -231,7 +231,7 @@ describe('homebrew import preview', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Keep the existing file' }));
 
     await waitFor(() => expect(outcome()).toBe('Kept the existing "zap.json". Nothing was added.'));
-    expect(await db.homebrewFiles.toArray()).toEqual([{ ...existing, enabled: false }]);
+    expect((await homebrewRepo.listSafe()).files).toEqual([{ ...existing, enabled: false }]);
     // As the old flow did for a file imported twice.
     await waitFor(() => expect(ensureSourcesVisible).toHaveBeenCalledWith(['HB']));
   });
@@ -257,7 +257,7 @@ describe('homebrew import preview', () => {
 
     // What a character would get: the version in the file the preview named.
     const winner = (await getRegistry()).get('spell', 'Zap', 'HB');
-    const files = await db.homebrewFiles.toArray();
+    const { files } = await homebrewRepo.listSafe();
     const winnerFile = files.find((f) =>
       (f.json as { spell: { level: number }[] }).spell.some((s) => s.level === winner?.level),
     );
@@ -559,7 +559,7 @@ describe('importing a Fight Club 5e compendium', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(outcome()).toBe('Imported "embers.xml" (2 spell)'));
-    const [stored] = await db.homebrewFiles.toArray();
+    const [stored] = (await homebrewRepo.listSafe()).files;
     expect(stored?.fileName).toBe('embers.xml');
     const json = stored?.json as { _meta: Json; spell: Json[] };
     expect(json._meta.convertedFrom).toEqual({

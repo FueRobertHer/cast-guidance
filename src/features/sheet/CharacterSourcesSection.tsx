@@ -180,7 +180,7 @@ function SourceChecklist({
   // arrived, so a list written out from it mid-download can miss some.
   const downloading = useDataStatus((s) => s.phase !== 'done');
   const brewSources = useLiveQuery(
-    async () => new Set((await homebrewRepo.listSafe()).files.flatMap((r) => r.sourceIds)),
+    async () => new Set((await homebrewRepo.listMetaSafe()).files.flatMap((r) => r.sourceIds)),
     [],
   );
   const lastHintId = useId();
