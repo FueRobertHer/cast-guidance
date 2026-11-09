@@ -90,6 +90,7 @@ export function rollsWords(on: RollFilter): string {
     }
     if (r === 'check') {
       if (on.skills !== undefined && on.skills.length > 0) return `${andList(on.skills)} checks`;
+      if (on.skilled === true) return abilities ? `${abilities} skill checks` : 'skill checks';
       return abilities ? `${abilities} checks` : 'ability checks';
     }
     return abilities ? `${abilities} saving throws` : 'saving throws';

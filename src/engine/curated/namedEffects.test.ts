@@ -25,7 +25,7 @@ describe('the named effects', () => {
       blessEffect('d', true),
       blessEffect('e', false),
       guidanceEffect('f', '2014'),
-      guidanceEffect('g', '2024', 'Athletics'),
+      guidanceEffect('g', '2024'),
       bardicEffect('h', '2014', 'd8'),
       bardicEffect('i', '2024', 'd12'),
     ];
@@ -60,11 +60,11 @@ describe('the named effects', () => {
     expect('mine' in blessEffect('b', false)).toBe(false);
   });
 
-  it('roll 2024 Guidance in for its skill alone, and offer 2014 Guidance once', () => {
-    const skill = guidanceEffect('g', '2024', 'Athletics');
-    expect(skill).toMatchObject({ name: 'Guidance: Athletics', same: 'Guidance' });
-    expect(skill.parts).toEqual([
-      { kind: 'rollDie', dice: '1d4', on: { rolls: ['check'], skills: ['Athletics'] } },
+  it('offer 2024 Guidance on every skill check until it ends, and 2014 Guidance once', () => {
+    const now = guidanceEffect('g', '2024');
+    expect(now.name).toBe('Guidance');
+    expect(now.parts).toEqual([
+      { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], skilled: true } },
     ]);
     expect(guidanceEffect('g', '2014').parts).toEqual([
       { kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'] }, once: true },

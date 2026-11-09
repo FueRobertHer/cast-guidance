@@ -50,6 +50,17 @@ describe('filterReaches', () => {
     expect(filterReaches(stealth, { kind: 'check', ability: 'dex' })).toBe(false);
     expect(filterReaches(stealth, { kind: 'save', ability: 'dex' })).toBe(true);
   });
+
+  it('reaches any skill check, but no bare ability check or initiative, when skilled', () => {
+    const skilled = { rolls: ['check' as const], skilled: true };
+    expect(filterReaches(skilled, { kind: 'check', ability: 'str', skill: 'Athletics' })).toBe(
+      true,
+    );
+    expect(filterReaches(skilled, { kind: 'check', ability: 'wis', skill: 'Insight' })).toBe(true);
+    expect(filterReaches(skilled, { kind: 'check', ability: 'str' })).toBe(false);
+    expect(filterReaches(skilled, { kind: 'initiative' })).toBe(false);
+    expect(filterReaches(skilled, { kind: 'save', ability: 'wis' })).toBe(false);
+  });
 });
 
 describe('rollEffects', () => {

@@ -114,6 +114,10 @@ describe('partLine', () => {
     ).toBe(
       'Add 1d6 to one of your ability checks and saving throws, after you see the d20, if it failed',
     );
+    // 2024 Guidance.
+    expect(
+      partLine({ kind: 'rollOffer', dice: '1d4', on: { rolls: ['check'], skilled: true } }),
+    ).toBe('Add 1d4 to your skill checks, after you see the d20');
     expect(
       partLine({
         kind: 'rollAdvantage',

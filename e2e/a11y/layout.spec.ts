@@ -22,7 +22,7 @@ import {
   sheetMenuButton,
   skipOfflineReadyNotice,
 } from '../support/app.ts';
-import { getCharacter, putCharacterRow } from '../support/idb.ts';
+import { getCharacter } from '../support/idb.ts';
 import { expect, test } from '../support/test.ts';
 
 /**
@@ -543,20 +543,12 @@ test.describe('the Effects picker', () => {
   ] as const) {
     test(`scrolls only up and down, its chips focused at the edge ${when}`, async ({ page }) => {
       if (viewport !== undefined) await page.setViewportSize(viewport);
-      // A 2024 character, so Guidance asks which skill and every chip row is
-      // drawn.
       const id = await setUp(page);
-      const blank = await getCharacter(page, id);
-      if (blank === undefined) throw new Error('The blank character was not stored');
-      await putCharacterRow(page, { ...blank, rulesVersion: '2024' });
       await gotoSheetTab(page, id, 'Play');
       await applyMeasuredFont(page, extra);
       await stripEnd(page).click();
       const picker = page.getByRole('dialog', { name: 'Effects' });
       await expect(picker).toBeVisible();
-      await picker.getByRole('button', { name: 'Guidance' }).click();
-      const skills = picker.getByRole('group', { name: 'Guidance on which skill?' });
-      await expect(skills).toBeVisible();
       await animationsSettled(page);
 
       const scroll = picker.getByRole('heading', { name: 'Helping you' }).locator('..');
@@ -580,9 +572,9 @@ test.describe('the Effects picker', () => {
       // Each row's first chip still lines its face up with the headings:
       // only its clear border sits outside the column.
       const heading = await box(picker.getByRole('heading', { name: 'Helping you' }));
-      // Helping you, Guidance's skills and Conditions.
+      // Helping you and Conditions.
       const rows = scroll.locator('h3 + div');
-      await expect(rows).toHaveCount(3);
+      await expect(rows).toHaveCount(2);
       for (const row of await rows.all()) {
         const face = await row
           .getByRole('button')

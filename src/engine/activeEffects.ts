@@ -39,6 +39,7 @@ function isFilter(x: unknown): boolean {
     listOf(x.rolls, oneOf('attack', 'save', 'check')) &&
     (x.abilities === undefined || listOf(x.abilities, isAbility)) &&
     (x.skills === undefined || listOf(x.skills, isStr)) &&
+    optBool(x.skilled) &&
     (x.attack === undefined || oneOf('weapon', 'spell')(x.attack)) &&
     (x.range === undefined || oneOf('melee', 'ranged')(x.range)) &&
     optStr(x.className)

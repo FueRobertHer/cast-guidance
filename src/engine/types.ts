@@ -160,6 +160,8 @@ export interface RollFilter {
   abilities?: Ability[];
   /** Checks with one of these skills. */
   skills?: string[];
+  /** Checks made with any skill, not a bare ability check (2024 Guidance). */
+  skilled?: boolean;
   attack?: 'weapon' | 'spell';
   range?: 'melee' | 'ranged';
   /** Attacks with this class's spells (2024 Innate Sorcery: Sorcerer). */

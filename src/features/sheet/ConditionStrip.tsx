@@ -5,7 +5,7 @@ import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
 import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
 import { applyEffect, endEffect, setConcentration, setEffectOff } from '@/engine/effectLife';
-import { type ActiveEffect, type CharacterDoc, type DerivedSheet, SKILLS } from '@/engine/types';
+import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
 import { Button } from '@/ui/Button';
@@ -109,9 +109,6 @@ export function ConditionStrip({
   const lastEffect = useRef<ActiveEffect | undefined>(undefined);
   const [infoOpen, setInfoOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // 2024 Guidance asks which skill before it lands.
-  const [askingSkill, setAskingSkill] = useState(false);
-  const guidanceChip = useRef<HTMLButtonElement>(null);
   // A removed chip's place: focus goes to the chip now there, the one before
   // it if it was the last, the end of the strip if none is left, then the title.
   const refocus = useRef<number | null>(null);
@@ -129,7 +126,6 @@ export function ConditionStrip({
   const closePicker = () => {
     setPickerOpen(false);
     clearRefused();
-    setAskingSkill(false);
   };
 
   // Tells the attack chips a change is being made over them (conditionSheet.ts).
@@ -227,16 +223,10 @@ export function ConditionStrip({
     if (hp === null) return;
     update((d) => void applyEffect(d.play, effect, hp));
   };
-  /** A starter's chip, not yet in play: add it, or ask what it needs first. */
-  const start = (name: string, skill?: string) => {
-    if (name === 'Guidance' && edition === '2024' && skill === undefined) {
-      setAskingSkill((was) => !was);
-      return;
-    }
-    const effect = starterEffect(name, edition, skill === undefined ? {} : { skill });
-    if (effect === undefined) return;
-    setAskingSkill(false);
-    put(effect);
+  /** A starter's chip, not yet in play: add it. */
+  const start = (name: string) => {
+    const effect = starterEffect(name, edition);
+    if (effect !== undefined) put(effect);
   };
   const switchEffect = (effect: ActiveEffect, on: boolean) => {
     const hp = limits();
@@ -575,14 +565,11 @@ export function ConditionStrip({
               <div className="-mx-1.5 mb-3 flex flex-wrap">
                 {STARTERS.map((st) => {
                   const held = starterHeld.get(st.name);
-                  const asks = st.name === 'Guidance' && edition === '2024' && held === undefined;
                   const mark = held === undefined ? st.mark : effectMark(held);
                   return (
                     <Chip
                       key={st.name}
-                      ref={st.name === 'Guidance' ? guidanceChip : undefined}
                       pressed={held !== undefined}
-                      aria-expanded={asks ? askingSkill : undefined}
                       onClick={() => (held === undefined ? start(st.name) : end(held))}
                     >
                       {mark !== undefined && (
@@ -610,35 +597,6 @@ export function ConditionStrip({
                     );
                   })}
               </div>
-              {askingSkill && starterHeld.get('Guidance') === undefined && (
-                <>
-                  <h3
-                    id="guidance-skill"
-                    className="mb-1 text-caption text-ink-muted font-semibold"
-                  >
-                    Guidance on which skill?
-                  </h3>
-                  {/* 2024 Guidance adds its d4 to every check with one skill. */}
-                  {/* biome-ignore lint/a11y/useSemanticElements: a group of buttons, not a fieldset of inputs */}
-                  <div
-                    role="group"
-                    aria-labelledby="guidance-skill"
-                    className="-mx-1.5 mb-3 flex flex-wrap"
-                  >
-                    {SKILLS.map((sk) => (
-                      <Chip
-                        key={sk.name}
-                        onClick={() => {
-                          start('Guidance', sk.name);
-                          guidanceChip.current?.focus();
-                        }}
-                      >
-                        {sk.name}
-                      </Chip>
-                    ))}
-                  </div>
-                </>
-              )}
               {bardicDie !== undefined && bardic !== undefined && (
                 <div className="mb-3 flex flex-col gap-1">
                   <h3 className="text-caption text-ink-muted font-semibold">
