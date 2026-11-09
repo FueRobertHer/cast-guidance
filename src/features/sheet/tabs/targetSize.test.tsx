@@ -106,7 +106,7 @@ describe('touch targets (A11Y-002)', () => {
     const none = (() => undefined) as unknown as DocUpdater;
     render(
       <>
-        <ConditionStrip doc={doc} update={none} addable />
+        <ConditionStrip doc={doc} sheet={null} update={none} addable />
         <ExhaustionStepper
           level={2}
           edition="2024"
@@ -124,7 +124,7 @@ describe('touch targets (A11Y-002)', () => {
     ]);
     expect(rows.filter((r) => !r.big)).toEqual([]);
     // A chip's name and the add chip are as wide as their words, and 44px tall.
-    for (const name of ['Poisoned', 'Exhausted 2', 'Condition']) {
+    for (const name of ['Poisoned', 'Exhausted 2', 'Add an effect']) {
       expect(screen.getByRole('button', { name }).className.split(' ')).toContain('min-h-tap');
     }
   });

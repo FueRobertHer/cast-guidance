@@ -658,6 +658,8 @@ export interface AttackRow {
   damage: string;
   damageType?: string;
   versatileDamage?: string;
+  /** What adds to the damage beyond the ability and the weapon's own bonus (Rage), when anything does. */
+  damageFrom?: string[];
   extraDamage: DamageRider[];
   properties: string[];
   range?: string;

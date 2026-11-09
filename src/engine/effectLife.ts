@@ -159,6 +159,27 @@ export function endEffect(play: PlayState, id: string, hp: HpLimits): EffectChan
 }
 
 /**
+ * Switch an effect off (still listed, nothing applies) or back on. Current HP
+ * comes under a maximum that fell, but switching Aid back on heals nothing:
+ * the hit points it gave came with the casting, not the switch.
+ */
+export function setEffectOff(
+  play: PlayState,
+  id: string,
+  off: boolean,
+  hp: HpLimits,
+): EffectChange {
+  const effect = (play.activeEffects ?? []).find((e) => isEffect(e) && e.id === id);
+  if (effect === undefined || (effect.off === true) === off) return { ended: [], maxHpChange: 0 };
+  const before = maxHpFrom(play.activeEffects);
+  if (off) effect.off = true;
+  else delete effect.off;
+  const change = maxHpFrom(play.activeEffects) - before;
+  settleHp(play, change, hp, false);
+  return { ended: [], maxHpChange: change };
+}
+
+/**
  * Concentrate on something new, or on nothing: every effect the character
  * holds by concentration under another name ends (casting Haste ends Bless).
  * One under the new name stays, since the cast that put it in play comes first.

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// The Resistances line names each damage type once, however many sources give it.
+// The Stats tab's Defenses section names each damage type once, however many
+// sources give it, and a save an effect in play raised is ringed.
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, expect, it } from 'vitest';
@@ -40,7 +41,36 @@ it('names fire once when a species and a ring both resist it', () => {
     },
   ]);
   render(<RouterProvider router={router} />);
-  expect(screen.getByText('Resistances:').parentElement?.textContent).toBe(
-    'Resistances: fire, cold',
-  );
+  expect(screen.getByText('Resists').parentElement?.textContent).toBe('Resists fire, cold');
+});
+
+it('rings every save an effect in play raised, naming it, and says when there are no defenses', () => {
+  const ctx: EngineContext = { get: () => undefined, byType: () => [] };
+  const doc = newCharacterDoc('c1', 'Hero', 't');
+  doc.play.activeEffects = [
+    { id: 'aura', name: 'Aura of Protection', parts: [{ kind: 'saveBonus', amount: 3 }] },
+  ];
+  const sheet = deriveSheet(doc, ctx);
+  const built = deriveSheet(doc, ctx, { active: false });
+  const context = { doc, sheet, built, update: () => undefined } as unknown as CharacterSheetState;
+  const router = createMemoryRouter([
+    {
+      path: '/',
+      element: <Outlet context={context} />,
+      children: [{ index: true, element: <StatsTab /> }],
+    },
+  ]);
+  render(<RouterProvider router={router} />);
+  const saves = screen.getAllByRole('button', { name: /raised by Aura of Protection/ });
+  // The six saves, and no ability check, which the aura does not reach.
+  expect(saves.map((b) => b.textContent?.slice(0, 3))).toEqual([
+    'STR',
+    'DEX',
+    'CON',
+    'INT',
+    'WIS',
+    'CHA',
+  ]);
+  for (const save of saves) expect(save.closest('.fx-lift-on')).not.toBeNull();
+  expect(screen.getByText('None yet.')).toBeTruthy();
 });

@@ -72,8 +72,8 @@ const sheetTab = (tab: SheetPage): Route => ({
       ? [
           page.getByRole('button', { name: 'Dice tray' }),
           page.getByRole('button', { name: 'Long rest' }),
-          // The condition strip's add chip, in the header's own row.
-          page.getByRole('button', { name: 'Condition', exact: true }),
+          // The effect strip's end, in the header's own row.
+          stripEnd(page),
         ]
       : []),
   ],
@@ -200,13 +200,20 @@ async function setUpFilled(page: Page): Promise<string> {
 }
 
 /**
+ * The effect strip's end: "Add an effect", or how many chips are out of sight
+ * while some are.
+ */
+const stripEnd = (page: Page) =>
+  page.getByRole('button', { name: /^(Add an effect|Effects, \d+ more not shown)$/ });
+
+/**
  * Turns on `names` (and `exhaustion` levels of exhaustion) from the picker
  * behind Play's add chip, so the condition strip is drawn on every tab.
  */
 async function addConditions(page: Page, id: string, names: string[], exhaustion = 0) {
   await gotoSheetTab(page, id, 'Play');
-  await page.getByRole('button', { name: 'Condition', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: 'Conditions' });
+  await stripEnd(page).click();
+  const picker = page.getByRole('dialog', { name: 'Effects' });
   await expect(picker).toBeVisible();
   for (const name of names) {
     const toggle = picker.getByRole('button', { name, exact: true });
@@ -366,7 +373,7 @@ test.describe('the condition strip, every condition on', () => {
   }) => {
     const id = await setUp(page);
     await addConditions(page, id, [...CONDITIONS], 2);
-    const strip = page.getByRole('list', { name: 'Active conditions' });
+    const strip = page.getByRole('list', { name: 'Active effects' });
     const route = { name: 'the condition strip', open: async () => {}, primary: () => [] };
 
     for (const extra of ['', 'html { font-size: 200% !important; }']) {
@@ -382,9 +389,8 @@ test.describe('the condition strip, every condition on', () => {
       }));
       expect(scrollWidth).toBeGreaterThan(clientWidth);
       // One line, however many chips, so the header grows by no more than a
-      // row: the first chip and the add chip after the last, scrolled to,
-      // share it.
-      const add = page.getByRole('button', { name: 'Condition', exact: true });
+      // row: the first chip and the strip's end share it.
+      const add = stripEnd(page);
       await add.scrollIntoViewIfNeeded();
       await expect(add).toBeInViewport({ ratio: 1 });
       const first = await box(strip.getByRole('listitem').first());

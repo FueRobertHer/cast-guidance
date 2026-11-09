@@ -1,5 +1,6 @@
 import { useOutletContext } from 'react-router';
 import { type D20Effects, d20Effects } from '@/engine/conditions';
+import { defensesInForce } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { rollLogStore } from '@/stores/rollLog';
@@ -7,8 +8,10 @@ import { BreakdownParts, BreakdownSheet } from '@/ui/BreakdownSheet';
 import { ChipFace, type ChipWear, useRollMoment } from '@/ui/ChipFace';
 import { D20Icon } from '@/ui/D20Icon';
 import { Tip, useTip } from '@/ui/Hint';
+import { Lift } from '@/ui/Lift';
 import { ProfDot } from '@/ui/ProfDot';
 import { listClass } from '@/ui/surfaces';
+import { DefenseLines } from '../Defenses';
 import {
   effectLines,
   noteLines,
@@ -18,6 +21,7 @@ import {
   saveEffectLines,
   useIgnoreOnce,
 } from '../d20Tests';
+import { conditionsInForce, defenseView, raised, raisedBy } from '../effectsInPlay';
 import { RollEffectCue } from '../RollEffectCue';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -61,73 +65,80 @@ function AbilityTile({
   ability,
   check,
   wear,
+  lifted,
   onRoll,
 }: {
   name: Ability;
   ability: Sheet['abilities'][Ability];
   check: Sheet['checks'][Ability];
   wear: ChipWear;
+  /** The effects in play that raised its score or its check. */
+  lifted: readonly string[];
   onRoll: () => void;
 }) {
   const moment = useRollMoment();
   return (
-    <div className={`relative flex rounded-card ${TILE}`}>
-      <ChipFace surface="tile" wear={wear} rolls={moment.rolls} showing={moment.showing}>
-        {/* The mark stays outside the uppercase label, so its words are not
+    <Lift on={lifted.length > 0} className="flex min-w-0 rounded-card">
+      <div className={`relative flex min-w-0 flex-1 rounded-card ${TILE}`}>
+        <ChipFace surface="tile" wear={wear} rolls={moment.rolls} showing={moment.showing}>
+          {/* The mark stays outside the uppercase label, so its words are not
             shouted, and in ink as on the skill rows. With large text in a narrow
             tile it wraps above the label rather than pushing the pair out of the
             tile. */}
-        <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5">
-          {check.halfProf && <ProfDot level="half" />}
-          <span className="cx-ink text-ink-muted text-overline uppercase">{name}</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            onRoll();
-            moment.rolled();
-          }}
-          aria-label={`Roll ${name.toUpperCase()} check (${signed(check.total.value)})`}
-          className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
-          title={`Roll ${name.toUpperCase()} check`}
-        >
-          <span className="cx-move">{signed(check.total.value)}</span>
-        </button>
-        <BreakdownSheet
-          title={`${name.toUpperCase()} score`}
-          value={ability}
-          trigger={
-            <button
-              type="button"
-              aria-label={`${name.toUpperCase()} score ${ability.value}${
-                ability.overridden ? ' (set manually)' : ''
-              }: breakdown`}
-              // A thumb-sized target around the small score pill
-              // (A11Y-003: it was 13 by 16, under even axe's 24px floor):
-              // the pill is what shows, the transparent rest takes the
-              // tap. The negative margin spends the card's bottom
-              // padding, so the card grows less than the target does.
-              className="group tap -mb-2"
-            >
-              <span className="cx-ink h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
-                {ability.value}
-                {ability.overridden ? '•' : ''}
-              </span>
-            </button>
-          }
-        >
-          {check.total.parts.length > 1 ? (
-            <div className="flex flex-col gap-1">
-              <p className="flex justify-between gap-3 font-semibold text-body">
-                <span>{name.toUpperCase()} check</span>
-                <span className="tabular-nums">{signed(check.total.value)}</span>
-              </p>
-              <BreakdownParts parts={check.total.parts} />
-            </div>
-          ) : undefined}
-        </BreakdownSheet>
-      </ChipFace>
-    </div>
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-1.5">
+            {check.halfProf && <ProfDot level="half" />}
+            <span className="cx-ink text-ink-muted text-overline uppercase">{name}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onRoll();
+              moment.rolled();
+            }}
+            aria-label={`Roll ${name.toUpperCase()} check (${signed(check.total.value)})${
+              lifted.length > 0 ? `, raised by ${lifted.join(', ')}` : ''
+            }`}
+            className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
+            title={`Roll ${name.toUpperCase()} check`}
+          >
+            <span className="cx-move">{signed(check.total.value)}</span>
+          </button>
+          <BreakdownSheet
+            title={`${name.toUpperCase()} score`}
+            value={ability}
+            trigger={
+              <button
+                type="button"
+                aria-label={`${name.toUpperCase()} score ${ability.value}${
+                  ability.overridden ? ' (set manually)' : ''
+                }: breakdown`}
+                // A thumb-sized target around the small score pill
+                // (A11Y-003: it was 13 by 16, under even axe's 24px floor):
+                // the pill is what shows, the transparent rest takes the
+                // tap. The negative margin spends the card's bottom
+                // padding, so the card grows less than the target does.
+                className="group tap -mb-2"
+              >
+                <span className="cx-ink h-5.5 min-w-8.5 rounded-full bg-surface-raised px-2 text-center text-ink-muted text-label leading-5.5 tabular-nums transition-colors duration-120 group-hover:bg-surface-hover">
+                  {ability.value}
+                  {ability.overridden ? '•' : ''}
+                </span>
+              </button>
+            }
+          >
+            {check.total.parts.length > 1 ? (
+              <div className="flex flex-col gap-1">
+                <p className="flex justify-between gap-3 font-semibold text-body">
+                  <span>{name.toUpperCase()} check</span>
+                  <span className="tabular-nums">{signed(check.total.value)}</span>
+                </p>
+                <BreakdownParts parts={check.total.parts} />
+              </div>
+            ) : undefined}
+          </BreakdownSheet>
+        </ChipFace>
+      </div>
+    </Lift>
   );
 }
 
@@ -139,31 +150,37 @@ function SaveButton({
   name,
   save,
   wear,
+  lifted,
   onRoll,
 }: {
   name: Ability;
   save: Sheet['saves'][Ability];
   wear: ChipWear;
+  /** The effects in play that raised it. */
+  lifted: readonly string[];
   onRoll: () => void;
 }) {
   const moment = useRollMoment();
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onRoll();
-        moment.rolled();
-      }}
-      className={`relative flex min-h-tap rounded-control text-ink ${TILE} ${ROLLS}`}
-    >
-      <ChipFace surface="save" wear={wear} rolls={moment.rolls} showing={moment.showing}>
-        <span className="inline-flex items-center gap-2 text-label">
-          <ProfDot level={save.prof ? 1 : 0} decorative />
-          <span className="cx-ink text-ink-muted">{name.toUpperCase()}</span>
-        </span>{' '}
-        <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
-      </ChipFace>
-    </button>
+    <Lift on={lifted.length > 0} className="flex min-w-0 rounded-control">
+      <button
+        type="button"
+        onClick={() => {
+          onRoll();
+          moment.rolled();
+        }}
+        className={`relative flex min-h-tap flex-1 rounded-control text-ink ${TILE} ${ROLLS}`}
+      >
+        <ChipFace surface="save" wear={wear} rolls={moment.rolls} showing={moment.showing}>
+          <span className="inline-flex items-center gap-2 text-label">
+            <ProfDot level={save.prof ? 1 : 0} decorative />
+            <span className="cx-ink text-ink-muted">{name.toUpperCase()}</span>
+          </span>{' '}
+          <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
+          {lifted.length > 0 && <span className="sr-only">, raised by {lifted.join(', ')}</span>}
+        </ChipFace>
+      </button>
+    </Lift>
   );
 }
 
@@ -217,20 +234,31 @@ function SkillsCard({
 }
 
 export function Component() {
-  const { sheet, doc } = useOutletContext<CharacterSheetState>();
-  const conditions = doc?.play.conditions ?? [];
-  const ignore = useIgnoreOnce(JSON.stringify(conditions));
+  const { sheet, built: builtSheet, doc } = useOutletContext<CharacterSheetState>();
+  const ignore = useIgnoreOnce(JSON.stringify(doc?.play.conditions ?? []));
   const rollTip = useTip('tap-to-roll');
   if (sheet === null) return <p className="text-body text-ink-muted">Deriving…</p>;
 
   // What the character's conditions do to checks and saves: applied to each
   // roll, said above the rolls they reach, and "Ignore once" for one roll.
+  // One the character is immune to is held off, as one switched off is.
   const edition = doc?.rulesVersion ?? '2014';
+  const immune = { immune: sheet.conditionImmunities };
+  const conditions = conditionsInForce(doc?.play.conditions ?? [], sheet.conditionImmunities);
   const checkEffects = (ability: Ability) =>
-    d20Effects(conditions, edition, { kind: 'check', ability });
+    d20Effects(conditions, edition, { kind: 'check', ability }, immune);
   const saveEffects = Object.fromEntries(
-    ABILITIES.map((a) => [a, d20Effects(conditions, edition, { kind: 'save', ability: a })]),
+    ABILITIES.map((a) => [
+      a,
+      d20Effects(conditions, edition, { kind: 'save', ability: a }, immune),
+    ]),
   ) as Record<Ability, D20Effects>;
+  // The build alone, so the numbers an effect raised wear its ring.
+  const built = builtSheet ?? sheet;
+  const abilityLift = (a: Ability) =>
+    raised(sheet.abilities[a], built.abilities[a])
+      ? raisedBy(sheet.abilities[a], built.abilities[a])
+      : raisedBy(sheet.checks[a].total, built.checks[a].total);
   // No condition singles out one ability's checks, so any one speaks for all.
   const checkCue = (
     <RollEffectCue
@@ -269,6 +297,7 @@ export function Component() {
               ability={sheet.abilities[a]}
               check={sheet.checks[a]}
               wear={rollWear(conditions, checkEffects(a), ignore.armed('check'))}
+              lifted={abilityLift(a)}
               onRoll={() =>
                 rollTest(
                   `${a.toUpperCase()} check`,
@@ -297,6 +326,7 @@ export function Component() {
               name={a}
               save={sheet.saves[a]}
               wear={rollWear(conditions, saveEffects[a], ignore.armed('save'))}
+              lifted={raisedBy(sheet.saves[a].total, built.saves[a].total)}
               onRoll={() =>
                 rollTest(
                   `${a.toUpperCase()} save`,
@@ -322,6 +352,12 @@ export function Component() {
         />
       </section>
 
+      {/* What changes the damage the character takes, written out: no tap needed. */}
+      <section className="flex flex-col gap-2">
+        <h2 className={H2}>Defenses</h2>
+        <DefenseLines view={defenseView(sheet, defensesInForce(sheet, conditions, edition))} />
+      </section>
+
       {/* Passives, senses, proficiencies, languages */}
       <section className={`${listClass} text-body`}>
         <div className={`flex items-center justify-between gap-3 ${ROW}`}>
@@ -332,13 +368,6 @@ export function Component() {
           <div className={ROW}>
             <span className="text-ink-muted">Senses: </span>
             {sheet.senses.map((s) => `${s.sense} ${s.range} ft.`).join(', ')}
-          </div>
-        )}
-        {sheet.resists.length > 0 && (
-          <div className={ROW}>
-            <span className="text-ink-muted">Resistances: </span>
-            {/* A species and a ring can both resist fire: name it once. */}
-            {[...new Set(sheet.resists.map((r) => r.damageType))].join(', ')}
           </div>
         )}
         {sheet.languages.length > 0 && (

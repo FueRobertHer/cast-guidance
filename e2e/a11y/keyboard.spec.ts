@@ -314,8 +314,8 @@ test.describe('keyboard: dialogs and drawers', () => {
     const id = await createBlankCharacter(page);
 
     await gotoSheetTab(page, id, 'Play');
-    const add = page.getByRole('button', { name: 'Condition', exact: true });
-    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    const add = page.getByRole('button', { name: 'Add an effect', exact: true });
+    const picker = page.getByRole('dialog', { name: 'Effects' });
     await checkDialog(page, add, picker);
 
     // Two conditions on from the picker, by keyboard alone.
@@ -344,7 +344,7 @@ test.describe('keyboard: dialogs and drawers', () => {
     }
     await escapeReturnsTo(page, picker, add);
 
-    const strip = page.getByRole('list', { name: 'Active conditions' });
+    const strip = page.getByRole('list', { name: 'Active effects' });
     await checkDialog(
       page,
       strip.getByRole('button', { name: 'Poisoned', exact: true }),

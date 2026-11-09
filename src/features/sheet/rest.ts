@@ -77,7 +77,9 @@ export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition)
     if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
     else exh.level -= 1;
   }
-  const maxHp = conditionMaxHp(sheet.maxHp.value, play.conditions, edition).value;
+  const maxHp = conditionMaxHp(sheet.maxHp.value, play.conditions, edition, {
+    immune: sheet.conditionImmunities,
+  }).value;
 
   const hpHealed = maxHp - play.currentHp;
   if (hpHealed > 0) restored.push(`+${hpHealed} HP`);

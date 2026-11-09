@@ -38,6 +38,7 @@ import {
   rollWear,
   useIgnoreOnce,
 } from './d20Tests';
+import { conditionsInForce } from './effectsInPlay';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -660,14 +661,21 @@ export function YourSpells({
   const ignore = useIgnoreOnce(JSON.stringify(doc.play.conditions));
   const [filter, setFilter] = useState('');
 
-  const attackEffects = d20Effects(doc.play.conditions, doc.rulesVersion, { kind: 'attack' });
+  // One the character is immune to is held off, as one switched off is.
+  const conditions = conditionsInForce(doc.play.conditions, sheet.conditionImmunities);
+  const attackEffects = d20Effects(
+    conditions,
+    doc.rulesVersion,
+    { kind: 'attack' },
+    { immune: sheet.conditionImmunities },
+  );
   const rollAttack = (modifier: number, label: string) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
     });
-  const limits = conditionLimits(doc.play.conditions);
+  const limits = conditionLimits(conditions);
   const entityOf = (ref: { name: string; source: string }) =>
     findSpell(registry, ref.name, ref.source, doc.rulesVersion);
   const ctx: RowContext = {
@@ -676,8 +684,8 @@ export function YourSpells({
     update,
     choice,
     rollAttack,
-    wear: rollWear(doc.play.conditions, attackEffects, ignore.armed('attack'), limits.noActions),
-    castWear: conditionWear(doc.play.conditions, limits.noActions),
+    wear: rollWear(conditions, attackEffects, ignore.armed('attack'), limits.noActions),
+    castWear: conditionWear(conditions, limits.noActions),
     noVerbal: limits.noVerbal,
     entityOf,
   };

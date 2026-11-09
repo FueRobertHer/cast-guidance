@@ -257,8 +257,8 @@ export async function renderSheet(
       await sheetReady(doc.name);
     },
     async conditions() {
-      fireEvent.click(screen.getByRole('button', { name: 'Condition' }));
-      await screen.findByRole('dialog', { name: 'Conditions' }, { timeout: LOAD_MS });
+      fireEvent.click(screen.getByRole('button', { name: 'Add an effect' }));
+      await screen.findByRole('dialog', { name: 'Effects' }, { timeout: LOAD_MS });
     },
     async saved() {
       await flushed();

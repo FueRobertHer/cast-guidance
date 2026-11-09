@@ -146,13 +146,10 @@ test.describe('touch target sizes', () => {
     await expectTargets(page.getByRole('link', { name: 'Back to characters', exact: true }), 1);
     await expectTargets(editLink(page), 1);
     await expectTargets(sheetMenuButton(page), 1);
-    // The condition strip: the caster carries a level of exhaustion, so a
-    // chip (its name and its x) and the add chip.
-    await expectTargets(
-      page.getByRole('list', { name: 'Active conditions' }).getByRole('button'),
-      2,
-    );
-    await expectTargets(button(page, 'Condition'), 1);
+    // The effect strip: the caster carries a level of exhaustion, so a
+    // chip (its name and its x) and the end of the strip.
+    await expectTargets(page.getByRole('list', { name: 'Active effects' }).getByRole('button'), 2);
+    await expectTargets(button(page, 'Add an effect'), 1);
     await expectTargets(button(page, /^(Damage|Heal) [15] hit points?$/), 4);
     await expectTargets(button(page, /^(Damage|Heal)$/), 2);
     await expectTargets(button(page, /^(Spend|Restore) [15] Sorcery Points$/), 4);
@@ -162,8 +159,8 @@ test.describe('touch target sizes', () => {
     await expectFloor(page);
 
     // The picker holds each condition's toggle and exhaustion's stepper.
-    await button(page, 'Condition').click();
-    const picker = page.getByRole('dialog', { name: 'Conditions' });
+    await button(page, 'Add an effect').click();
+    const picker = page.getByRole('dialog', { name: 'Effects' });
     await expect(picker).toBeVisible();
     await animationsSettled(page);
     await expectTargets(picker.locator('button[aria-pressed]'), 14);

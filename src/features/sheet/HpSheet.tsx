@@ -1,6 +1,16 @@
-import { HeartCrack, HeartPlus, Shield, Undo2 } from 'lucide-react';
+import {
+  HeartCrack,
+  HeartPlus,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldHalf,
+  Undo2,
+} from 'lucide-react';
 import { type KeyboardEvent, type RefObject, useRef, useState } from 'react';
+import { type DamageStep, type Defenses, damageTaken } from '@/engine/playRules';
 import { Button, type ButtonVariant } from '@/ui/Button';
+import { chipClass } from '@/ui/Chip';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/sheet';
 
@@ -47,6 +57,109 @@ const KEY =
   'flex min-h-13 items-center justify-center rounded-control bg-surface-raised px-1 transition-colors duration-120 hover:bg-surface-hover active:bg-surface-hover';
 /** A key's digit: the keypad's own size, between `body` and `stat`. */
 const DIGIT = 'font-semibold text-[1.375rem] tabular-nums';
+/** Half and the damage types: outline chips that fill with ink while on. */
+const DEF_CHIP = `${chipClass('outline')} shrink-0 px-3 text-ink`;
+const DEF_ICON = { half: ShieldHalf, check: ShieldCheck, alert: ShieldAlert } as const;
+const NO_DEFENSES: Defenses = { resist: [], immune: [], vulnerable: [] };
+
+/** A damage type a defense names, offered as a chip to say what hit. */
+export interface DefendedType {
+  type: string;
+  icon: 'half' | 'check' | 'alert';
+}
+
+/** One step of what changed a hit, as the sheet's line says it. */
+function stepWords(step: DamageStep): string {
+  switch (step.kind) {
+    case 'immune':
+      return `${step.sources.join(', ')} stops all of it`;
+    case 'half':
+      return `half is ${step.to}`;
+    case 'reduced':
+      return `${step.source} takes ${step.by} off, to ${step.to}`;
+    case 'resisted':
+      return `${step.sources.join(', ')} halves it to ${step.to}`;
+    case 'vulnerable':
+      return `${step.sources.join(', ')} doubles it to ${step.to}`;
+  }
+}
+
+/**
+ * What a hit does once Half and the character's defenses have their say: half
+ * for a save first, then resistance, then vulnerability, each rounding down,
+ * immunity over all, all before temp HP (the buffs canvas, Damage A). `why` is
+ * the sentence that says so, empty when nothing changed it.
+ */
+export function damageAfter(
+  amount: number,
+  type: string | null,
+  half: boolean,
+  defenses: Defenses,
+): { taken: number; why: string } {
+  if (!(amount > 0)) return { taken: 0, why: '' };
+  const hit = damageTaken([{ amount, ...(type === null ? {} : { type }) }], defenses, { half });
+  const steps = hit.parts.flatMap((p) => p.steps);
+  if (steps.length === 0) return { taken: hit.total, why: '' };
+  return {
+    taken: hit.total,
+    why: `${amount} ${type ?? 'damage'}: ${steps.map(stepWords).join(', then ')}.`,
+  };
+}
+
+/** A defense that holds only sometimes (Stoneskin: nonmagical), which the keypad asks about. */
+export interface AskedDefense {
+  key: string;
+  kind: 'resist' | 'immune';
+  damageType: string;
+  origin: string;
+  note: string;
+}
+
+/**
+ * The defenses the keypad applies by itself, and the ones with a note, which
+ * count only once the player says they hold (`playRules.Defenses`).
+ */
+export function splitDefenses(defenses: Defenses): { held: Defenses; asked: AskedDefense[] } {
+  const asked: AskedDefense[] = [];
+  const keep = (kind: AskedDefense['kind']) =>
+    defenses[kind].filter((d) => {
+      if (d.note === undefined || d.note.trim() === '') return true;
+      const damageType = d.damageType.trim().toLowerCase();
+      asked.push({
+        key: `${kind}:${damageType}:${d.origin}:${d.note}`,
+        kind,
+        damageType,
+        origin: d.origin,
+        note: d.note,
+      });
+      return false;
+    });
+  return {
+    held: { resist: keep('resist'), immune: keep('immune'), vulnerable: defenses.vulnerable },
+    asked,
+  };
+}
+
+/** The asked defenses a hit of this type could meet: its own type's, and any for all. */
+export function askedFor(asked: readonly AskedDefense[], type: string | null): AskedDefense[] {
+  return asked.filter((a) => a.damageType === 'all' || a.damageType === type);
+}
+
+/** The held defenses, plus the asked ones the player said hold. */
+export function withHolding(
+  held: Defenses,
+  asked: readonly AskedDefense[],
+  holds: ReadonlySet<string>,
+): Defenses {
+  const yes = asked.filter((a) => holds.has(a.key));
+  const add = (kind: AskedDefense['kind']) => [
+    ...held[kind],
+    ...yes
+      .filter((a) => a.kind === kind)
+      .map((a) => ({ damageType: a.damageType, origin: a.origin })),
+  ];
+  return { resist: add('resist'), immune: add('immune'), vulnerable: held.vulnerable };
+}
 
 /** A digit on the end of the amount: three at most, no leading zeros. */
 export function typeDigit(amount: string, digit: string): string {
@@ -162,11 +275,17 @@ export function HpSheet({
   onApply,
   onOpenChange,
   openedFrom,
+  defenses = NO_DEFENSES,
+  types = [],
 }: {
   open: boolean;
   /** The mode it opens on; the player can change it from there. */
   mode: HpMode;
   hp: HpNow;
+  /** The character's defenses in play, which damage passes through. */
+  defenses?: Defenses;
+  /** The damage types those defenses name. */
+  types?: readonly DefendedType[];
   onApply: (mode: HpMode, amount: number) => void | Promise<void>;
   onOpenChange: (open: boolean) => void;
   /** Where focus goes back to: this sheet has no trigger of its own for Radix to use. */
@@ -192,6 +311,8 @@ export function HpSheet({
             open={open}
             initialMode={mode}
             hp={hp}
+            defenses={defenses}
+            types={types}
             onApply={onApply}
             onClose={() => onOpenChange(false)}
           />
@@ -205,12 +326,16 @@ function HpSheetBody({
   open,
   initialMode,
   hp,
+  defenses,
+  types,
   onApply,
   onClose,
 }: {
   open: boolean;
   initialMode: HpMode;
   hp: HpNow;
+  defenses: Defenses;
+  types: readonly DefendedType[];
   onApply: (mode: HpMode, amount: number) => void | Promise<void>;
   onClose: () => void;
 }) {
@@ -222,7 +347,33 @@ function HpSheetBody({
   const shown = useRef(hp);
   if (open) shown.current = hp;
   const { currentHp, tempHp, maxHp } = shown.current;
-  const { confirm, ready, line } = hpSheetCopy(mode, amount, shown.current);
+  // Damage passes through Half and the type the player says hit.
+  const [half, setHalf] = useState(false);
+  const [type, setType] = useState<string | null>(null);
+  // A defense with a note (Stoneskin: nonmagical) counts once the player says it holds.
+  const [holds, setHolds] = useState<ReadonlySet<string>>(new Set());
+  const { held, asked } = splitDefenses(defenses);
+  const askedNow = askedFor(asked, type);
+  const damage = mode === 'damage';
+  const { taken, why } = damageAfter(
+    Number(amount),
+    type,
+    half,
+    withHolding(held, askedNow, holds),
+  );
+  const changed = damage && amount !== '' && taken !== Number(amount);
+  // What goes in: damage once the defenses had their say, anything else as keyed.
+  const applied = damage && amount !== '' ? String(taken) : amount;
+  const copy = hpSheetCopy(mode, applied, shown.current);
+  const noDamage = damage && Number(amount) > 0 && taken === 0;
+  const confirm = noDamage ? 'Done: no damage' : copy.confirm;
+  const ready = noDamage || copy.ready;
+  let line = copy.line;
+  // Empty, it says what temp HP will take first, as before, or what to tap.
+  if (damage && amount === '' && tempHp === 0)
+    line = `Enter the amount, then tap Half${types.length > 0 ? ' or a type' : ''} if one applies.`;
+  else if (noDamage) line = `${why} No damage.`;
+  else if (why !== '') line = `${why} ${copy.line}`;
   const { variant, Icon } = CONFIRM[mode];
 
   // The confirm is still there for the half second the sheet takes to go, and a
@@ -231,7 +382,8 @@ function HpSheetBody({
   const run = async () => {
     if (!open || !ready || applying.current) return;
     applying.current = true;
-    await onApply(mode, Number(amount));
+    // A hit that does nothing changes nothing, and so asks for no concentration save.
+    if (!noDamage) await onApply(mode, Number(applied));
     applying.current = false;
     onClose();
   };
@@ -271,8 +423,15 @@ function HpSheetBody({
           block
         />
         <output className="mt-2 flex items-baseline justify-center gap-2 pt-2 pb-3">
+          {/* What Half or a defense took off: the keyed amount, struck through. */}
+          {changed && (
+            <span className="font-semibold text-[1.375rem] text-ink-muted tabular-nums line-through">
+              <span className="sr-only">down from </span>
+              {amount}
+            </span>
+          )}
           <span className={`text-stat-hero tabular-nums ${amount === '' ? 'text-ink-faint' : ''}`}>
-            {amount === '' ? '0' : amount}
+            {amount === '' ? '0' : applied}
           </span>
           <span className="text-body text-ink-muted">HP</span>
         </output>
@@ -331,6 +490,82 @@ function HpSheetBody({
               Undo
             </button>
           </div>
+          {damage && (
+            // One row, scrolling sideways, so a character with many defenses
+            // does not push the confirm down on a 320 by 640 phone.
+            // biome-ignore lint/a11y/useSemanticElements: a group of toggles, not a fieldset of inputs
+            <div
+              role="group"
+              aria-label="What changes how much you take"
+              className="-mx-4 -mt-1 mb-2 flex items-center overflow-x-auto px-2.5 [scrollbar-width:none]"
+            >
+              <button
+                type="button"
+                aria-pressed={half}
+                aria-label="Half, from a save or a feature"
+                onClick={() => setHalf((h) => !h)}
+                className={DEF_CHIP}
+              >
+                <span aria-hidden="true" className="font-bold text-[1rem]">
+                  ½
+                </span>
+                Half
+              </button>
+              {types.length > 0 && (
+                <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-line-strong" />
+              )}
+              {types.map((t) => {
+                const TypeIcon = DEF_ICON[t.icon];
+                const on = type === t.type;
+                return (
+                  <button
+                    key={t.type}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setType(on ? null : t.type)}
+                    className={`${DEF_CHIP} capitalize`}
+                  >
+                    <TypeIcon
+                      size={16}
+                      aria-hidden="true"
+                      className={`shrink-0 ${on ? '' : t.icon === 'alert' ? 'text-danger' : 'text-ward'}`}
+                    />
+                    {t.type}
+                  </button>
+                );
+              })}
+              {askedNow.length > 0 && (
+                <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-line-strong" />
+              )}
+              {askedNow.map((a) => {
+                const on = holds.has(a.key);
+                const AskIcon = a.kind === 'immune' ? ShieldCheck : ShieldHalf;
+                return (
+                  <button
+                    key={a.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setHolds((h) => {
+                        const next = new Set(h);
+                        if (on) next.delete(a.key);
+                        else next.add(a.key);
+                        return next;
+                      })
+                    }
+                    className={DEF_CHIP}
+                  >
+                    <AskIcon
+                      size={16}
+                      aria-hidden="true"
+                      className={`shrink-0 ${on ? '' : 'text-ward'}`}
+                    />
+                    {a.origin}: {a.note}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         {/* Two lines kept for it: it sits under the keypad in a sheet anchored
             to the bottom, so a line that grew as you typed would slide the keys

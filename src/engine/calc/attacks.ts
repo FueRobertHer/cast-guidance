@@ -176,8 +176,11 @@ export function calcAttacks(
     }
 
     let dmgMod = mod + magicBonus;
+    const damageFrom: string[] = [];
     for (const b of damageBonuses) {
-      if (reaches(b, ranged, ability)) dmgMod += b.amount;
+      if (!reaches(b, ranged, ability)) continue;
+      dmgMod += b.amount;
+      if (b.amount !== 0 && !damageFrom.includes(b.origin.label)) damageFrom.push(b.origin.label);
     }
     const riders = [
       ...extraDamage,
@@ -196,6 +199,7 @@ export function calcAttacks(
       damage: damageDice !== undefined ? `${damageDice}${dmgSuffix}` : `${Math.max(1, 1 + dmgMod)}`,
       damageType,
       versatileDamage: versatile !== undefined ? `${versatile}${dmgSuffix}` : undefined,
+      ...(damageFrom.length > 0 ? { damageFrom } : {}),
       // Riders are flat dice: `dmgSuffix` is deliberately not applied. You add
       // your Strength to the sword, not to the flames.
       extraDamage: riders,
