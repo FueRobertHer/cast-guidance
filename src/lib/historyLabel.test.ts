@@ -222,6 +222,15 @@ describe('historyLabel', () => {
     expect(historyLabel(both, fresh)).toBe('Freed action + bonus');
   });
 
+  it("names an effect's box by its own name", () => {
+    const fresh = base();
+    fresh.play.turn = { action: false, bonus: false, reaction: false };
+    const hasted = base();
+    hasted.play.turn = { action: true, bonus: false, reaction: false, extra: ['Haste action'] };
+    expect(historyLabel(fresh, hasted)).toBe('Used action + Haste action');
+    expect(historyLabel(hasted, fresh)).toBe('Freed action + Haste action');
+  });
+
   it('falls back to "Play state" only when nothing else named the change', () => {
     // A resource row appearing with used: 0 moves play state but matches no
     // specific label. 'Play state' is vague, but it beats 'Edited', which

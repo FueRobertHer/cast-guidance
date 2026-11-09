@@ -11,9 +11,11 @@ import {
   effectMark,
   immunityTo,
   lastsLine,
+  newTurnLines,
   partLine,
   raised,
   raisedBy,
+  restLasts,
 } from './effectsInPlay';
 
 const value = (n: number, parts: Array<[string, number]> = []): DerivedValue => ({
@@ -413,5 +415,58 @@ describe('defensesRaisedBy', () => {
       vulnerable: [],
     };
     expect(defensesRaisedBy(rage, all, [], [])).toEqual([]);
+  });
+});
+
+describe('restLasts', () => {
+  const fx = (lasts: ActiveEffect['lasts']): ActiveEffect => ({
+    id: 'x',
+    name: 'X',
+    parts: [],
+    ...(lasts ? { lasts } : {}),
+  });
+  it('says what an effect lasts as a rest row does', () => {
+    expect(restLasts(fx({ minutes: 480 }), true)).toBe('8 hours');
+    expect(restLasts(fx({ minutes: 10, concentration: true }), true)).toBe(
+      'Concentration, 10 minutes',
+    );
+    expect(restLasts(fx({ minutes: 1440 }), false)).toBe('24 hours, so it stays');
+    expect(restLasts(fx({ rest: 'long' }), true)).toBe('Until a long rest');
+    expect(restLasts(fx(undefined), false)).toBe('Until you end it, so it stays');
+  });
+});
+
+describe('newTurnLines', () => {
+  it('says the temp HP given, the boxes ready again and what ended', () => {
+    expect(
+      newTurnLines(
+        {
+          ended: ['Reckless Attack'],
+          maxHpChange: 0,
+          tempHp: { amount: 3, source: 'Heroism', kept: true },
+        },
+        ['Haste action'],
+        3,
+      ),
+    ).toEqual(['+3 temp HP: Heroism', 'Haste action ready again', 'Reckless Attack ended']);
+  });
+
+  it('says temp HP offered and not kept, since they never add up', () => {
+    expect(
+      newTurnLines(
+        { ended: [], maxHpChange: 0, tempHp: { amount: 3, source: 'Heroism', kept: false } },
+        [],
+        10,
+      ),
+    ).toEqual(['Heroism offers 3 temp HP; you keep your 10']);
+    expect(newTurnLines({ ended: [], maxHpChange: 0 }, [], 0)).toEqual([]);
+    // Its own 3 untouched since the last turn: nothing gained, nothing passed up.
+    expect(
+      newTurnLines(
+        { ended: [], maxHpChange: 0, tempHp: { amount: 3, source: 'Heroism', kept: false } },
+        [],
+        3,
+      ),
+    ).toEqual(['Heroism keeps your temp HP at 3']);
   });
 });

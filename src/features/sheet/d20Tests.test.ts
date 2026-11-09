@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { rollDetail } from '@/dice/format';
 import {
   type ActiveCondition,
   conditionSpeed,
@@ -8,6 +9,7 @@ import {
   d20Effects,
   type Edition,
 } from '@/engine/conditions';
+import type { RollEffects } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
 import { advModeStore } from '@/stores/advMode';
 import { rollTone } from '@/ui/rollTone';
@@ -326,6 +328,93 @@ describe('rollD20Test', () => {
       advantage: 'adv',
       cue: 'Conditions ignored for this roll · Advantage: War Caster',
     });
+  });
+});
+
+describe('rollD20Test with effects in play', () => {
+  const bless = { dice: '1d4', source: 'Bless' };
+  const bardic = {
+    dice: '1d8',
+    source: 'Bardic Inspiration',
+    effectId: 'b1',
+    once: true,
+    ifFailed: false,
+  };
+  const riders = (over: Partial<RollEffects> = {}): RollEffects => ({
+    dice: [],
+    offers: [],
+    advantage: [],
+    disadvantage: [],
+    ...over,
+  });
+
+  it("rolls Bless's die in and names it in the working", () => {
+    nextFaces(11, 3);
+    const r = rollD20Test('1d20+7', {
+      label: 'Greataxe attack',
+      riders: riders({ dice: [bless] }),
+    });
+    expect(r.total).toBe(21);
+    expect(
+      rollDetail(r)
+        .map((p) => p.text)
+        .join(''),
+    ).toBe('d20 [11] + 7 + d4 [3] Bless');
+  });
+
+  it('puts the dice on offer on the result, and no die for them yet', () => {
+    nextFaces(9);
+    const r = rollD20Test('1d20+2', { label: 'DEX save', riders: riders({ offers: [bardic] }) });
+    expect(r.total).toBe(11);
+    expect(r.meta?.offers).toEqual([bardic]);
+  });
+
+  it('offers nothing where nothing could change it', () => {
+    nextFaces(20);
+    const nat20 = rollD20Test('1d20+7', {
+      label: 'Attack',
+      riders: riders({ offers: [bardic] }),
+      settlesOnNatural: true,
+    });
+    expect(nat20.meta?.offers).toBeUndefined();
+    nextFaces(1);
+    const nat1 = rollD20Test('1d20+7', {
+      label: 'Attack',
+      riders: riders({ offers: [bardic] }),
+      settlesOnNatural: true,
+    });
+    expect(nat1.meta?.offers).toBeUndefined();
+    // A save's natural 20 is no success by itself, so the offer stays.
+    nextFaces(20);
+    expect(
+      rollD20Test('1d20', { label: 'WIS save', riders: riders({ offers: [bardic] }) }).meta?.offers,
+    ).toEqual([bardic]);
+    nextFaces(15);
+    const paralyzed = effects([{ id: 'Paralyzed' }], '2014', { kind: 'save', ability: 'dex' });
+    const fails = rollD20Test('1d20+2', {
+      label: 'DEX save',
+      effects: paralyzed,
+      riders: riders({ offers: [bardic] }),
+    });
+    expect(fails.meta?.autoFail).toBe(true);
+    expect(fails.meta?.offers).toBeUndefined();
+  });
+
+  it("rolls an effect's advantage and disadvantage as a feature's", () => {
+    nextFaces(15, 4);
+    const r = rollD20Test('1d20+3', {
+      label: 'Spell attack',
+      riders: riders({ advantage: ['Innate Sorcery'] }),
+    });
+    expect(r.total).toBe(18);
+    expect(r.meta?.cue).toBe('Advantage: Innate Sorcery');
+    nextFaces(15, 4);
+    const both = rollD20Test('1d20+3', {
+      label: 'Spell attack',
+      effects: effects([{ id: 'Poisoned' }], '2014', { kind: 'attack' }),
+      riders: riders({ advantage: ['Innate Sorcery'] }),
+    });
+    expect(both.meta?.cue).toBe('Advantage and disadvantage cancel: Innate Sorcery, Poisoned');
   });
 });
 

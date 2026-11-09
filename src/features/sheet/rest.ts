@@ -64,8 +64,17 @@ export function shortRest(play: PlayState, sheet: DerivedSheet): string[] {
   return restored;
 }
 
-/** Reset long-rest state and return a human summary of what was restored. */
-export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition): string[] {
+/**
+ * Reset long-rest state and return a human summary of what was restored.
+ * `maxHpChange` is what the effects the rest ended took off the maximum (Aid's
+ * +5 gone is -5), so the hit points refill to what is left.
+ */
+export function longRest(
+  play: PlayState,
+  sheet: DerivedSheet,
+  edition: Edition,
+  maxHpChange = 0,
+): string[] {
   const restored: string[] = [];
 
   // A long rest removes one level of exhaustion (both editions), and the hit
@@ -77,7 +86,7 @@ export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition)
     if (exh.level <= 1) play.conditions = play.conditions.filter((c) => c.id !== 'Exhaustion');
     else exh.level -= 1;
   }
-  const maxHp = conditionMaxHp(sheet.maxHp.value, play.conditions, edition, {
+  const maxHp = conditionMaxHp(sheet.maxHp.value + maxHpChange, play.conditions, edition, {
     immune: sheet.conditionImmunities,
   }).value;
 
@@ -92,6 +101,7 @@ export function longRest(play: PlayState, sheet: DerivedSheet, edition: Edition)
 
   play.currentHp = maxHp;
   play.tempHp = 0;
+  delete play.tempHpFrom;
   play.slotsSpent = play.slotsSpent.map(() => 0);
   play.pactSlotsSpent = 0;
   // Absent rather than empty, as `setArcanumUsed` leaves it.

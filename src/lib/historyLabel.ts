@@ -194,8 +194,13 @@ function playLabels(prev: CharacterDoc, next: CharacterDoc): string[] {
     const slices = ['action', 'bonus', 'reaction'] as const;
     const spent = slices.filter((k) => nt[k] && !pt[k]);
     const freed = slices.filter((k) => pt[k] && !nt[k]);
-    if (spent.length > 0) out.push(`Used ${spent.join(' + ')}`);
-    else if (freed.length > 0) out.push(`Freed ${freed.join(' + ')}`);
+    // An effect's own box (Haste action) by its name.
+    const extraSpent = (nt.extra ?? []).filter((x) => !(pt.extra ?? []).includes(x));
+    const extraFreed = (pt.extra ?? []).filter((x) => !(nt.extra ?? []).includes(x));
+    const used = [...spent, ...extraSpent];
+    const freedAll = [...freed, ...extraFreed];
+    if (used.length > 0) out.push(`Used ${used.join(' + ')}`);
+    else if (freedAll.length > 0) out.push(`Freed ${freedAll.join(' + ')}`);
   }
 
   return out;

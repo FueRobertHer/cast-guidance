@@ -205,6 +205,8 @@ export function calcAttacks(
       extraDamage: riders,
       properties,
       range,
+      ability,
+      ranged,
       origin,
     };
   };

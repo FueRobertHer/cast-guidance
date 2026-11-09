@@ -49,6 +49,19 @@ export interface MultiplierDetail {
  */
 export type RollKind = 'd20' | 'damage' | 'heal';
 
+/**
+ * A die an effect offers once the roll is seen (Guidance, Bardic Inspiration):
+ * the toast shows it, and adding it is the player's call. `once` spends the
+ * effect (`effectId`); `ifFailed` is 2024 Bardic, which only a failed roll takes.
+ */
+export interface RollOffer {
+  dice: string;
+  source: string;
+  effectId?: string;
+  once: boolean;
+  ifFailed: boolean;
+}
+
 export interface RollResult {
   expr: string;
   label?: string;
@@ -76,6 +89,10 @@ export interface RollResult {
     cue?: string;
     /** A condition makes it fail whatever the dice say (a Stunned DEX save). */
     autoFail?: boolean;
+    /** Dice an effect added, by term index, named for it ("d4 [3] Bless"). */
+    from?: Array<{ term: number; source: string }>;
+    /** Dice effects offer after the roll; absent when nothing could change it (a natural 20 attack). */
+    offers?: RollOffer[];
   };
 }
 

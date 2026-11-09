@@ -19,9 +19,22 @@ import { useOutletContext } from 'react-router';
 import type { RulesVersion } from '@/data5e/rulesVersion';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
-import { attacksAgainst, conditionMaxHp, conditionSpeed, d20Effects } from '@/engine/conditions';
-import { defensesInForce } from '@/engine/playRules';
-import type { ActionEconomy, DerivedSheet, PlayState, SpellcastingBlock } from '@/engine/types';
+import {
+  attacksAgainst,
+  conditionMaxHp,
+  conditionSpeed,
+  type D20Test,
+  d20Effects,
+} from '@/engine/conditions';
+import { endEffects, type HpLimits, newTurn, setConcentration } from '@/engine/effectLife';
+import { defensesInForce, rollEffects } from '@/engine/playRules';
+import type {
+  ActionEconomy,
+  AttackRow,
+  DerivedSheet,
+  PlayState,
+  SpellcastingBlock,
+} from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { type Notice, notify } from '@/stores/notices';
@@ -69,16 +82,21 @@ import {
   useIgnoreOnce,
 } from '../d20Tests';
 import {
+  andList,
   attackLift,
   conditionsInForce,
   defendedTypes,
   defensesRaisedBy,
   defenseView,
+  effectsInPlay,
+  hpLimits,
   immunityTo,
+  newTurnLines,
   raisedBy,
 } from '../effectsInPlay';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
+import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
 import { backCaption, giveBack, longRest, shortRest } from '../rest';
 import { SpellInfoSheet } from '../SpellInfoSheet';
@@ -147,6 +165,13 @@ const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
 const STAT_LIFT = 'fx-lift-room rounded-control';
 /** A cell a condition can wear: its `ChipFace` lays it out as `TILE` does the others. */
 const WORN_TILE = 'relative flex min-h-19 min-w-0 flex-col';
+/** What a long rest does, said before it is taken. */
+const LONG_REST_DETAIL =
+  'Full HP, all spell slots and resources restored; regain half your hit dice.';
+/** No effects to end. */
+const NONE: ReadonlySet<string> = new Set();
+/** A spell attack, as an effect's filter reads it (Innate Sorcery's advantage). */
+const SPELL_ATTACK: D20Test = { kind: 'attack', attack: 'spell' };
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
 const POOL_STEP =
   'tap rounded-full bg-surface-raised px-2 text-label tabular-nums leading-none hover:bg-surface-hover unavailable:bg-surface-raised unavailable:text-ink-faint';
@@ -174,7 +199,11 @@ export function hpSpeech(play: Pick<PlayState, 'currentHp' | 'tempHp'>, max: num
   return `${play.currentHp} of ${max} hit points${temp}`;
 }
 
-/** Damage eats temp HP first; healing caps at max. */
+/**
+ * Damage eats temp HP first; healing caps at max. Dropping to 0 breaks
+ * concentration, which the caller ends (`setConcentration`), once it knows the
+ * drop sticks (Relentless Endurance).
+ */
 function applyHp(play: PlayState, delta: number, maxHp: number): void {
   // Any manual HP change means the character is in play now: stop auto-tracking
   // max HP so a deliberate 0-HP / damaged state sticks across level-ups.
@@ -187,7 +216,6 @@ function applyHp(play: PlayState, delta: number, maxHp: number): void {
     if (play.tempHp === 0) delete play.tempHpFrom;
     dmg -= fromTemp;
     play.currentHp = Math.max(0, play.currentHp - dmg);
-    if (play.currentHp === 0) play.concentratingOn = undefined; // dropping to 0 breaks concentration
   } else {
     play.currentHp = Math.min(maxHp, play.currentHp + delta);
     if (play.currentHp > 0) play.deathSaves = { success: 0, fail: 0 };
@@ -206,6 +234,7 @@ function rollConcentration(
   play: PlayState,
   damageTaken: number,
   rollSave: (label: string) => RollResult,
+  hp: HpLimits,
 ): Notice | null {
   const label = play.concentratingOn?.label;
   if (label === undefined || damageTaken <= 0 || play.currentHp === 0) return null;
@@ -213,11 +242,12 @@ function rollConcentration(
   const r = rollSave(`Concentration save (DC ${dc})`);
   rollLogStore.getState().append(r);
   const held = r.meta?.autoFail !== true && r.total >= dc;
-  if (!held) play.concentratingOn = undefined;
+  const ended = held ? [] : setConcentration(play, undefined, hp).ended;
   const cue = r.meta?.cue === undefined ? '' : ` · ${r.meta.cue}`;
+  const gone = ended.length === 0 ? '' : ` · Ended ${andList(ended)}`;
   return {
     title: held ? 'Concentration held' : 'Concentration broken',
-    detail: `${label} · rolled ${r.total} vs DC ${dc}${cue}`,
+    detail: `${label} · rolled ${r.total} vs DC ${dc}${cue}${gone}`,
     tone: held ? 'good' : 'warn',
   };
 }
@@ -280,6 +310,11 @@ export function Component() {
   const hpTip = useTip('hp-exact');
   const rulesTip = useTip('tap-for-rules');
   const hpNumber = useRef<HTMLButtonElement>(null);
+  // The rest whose sheet asks which effects it ends, kept as the sheet closes.
+  const [restAsked, setRestAsked] = useState<{ rest: 'short' | 'long'; open: boolean }>({
+    rest: 'short',
+    open: false,
+  });
   const [hpSheet, setHpSheet] = useState<{ open: boolean; mode: HpMode }>({
     open: false,
     mode: 'damage',
@@ -299,6 +334,42 @@ export function Component() {
     castingEconomy(spellEntity(name, source));
 
   const play = doc.play;
+  // What ending or switching effects needs, to keep current HP within the maximum.
+  const hpNow = hpLimits(sheet, doc.rulesVersion);
+  const inPlay = effectsInPlay(play);
+  /** Take a rest, ending the effects ticked first, so Aid's +5 does not outlive it. */
+  const finishRest = (rest: 'short' | 'long', ends: ReadonlySet<string>) => {
+    let restored: string[] = [];
+    let ended: string[] = [];
+    update(
+      (d) => {
+        const change = endEffects(d.play, ends, hpNow);
+        ended = change.ended;
+        restored =
+          rest === 'short'
+            ? shortRest(d.play, sheet)
+            : longRest(d.play, sheet, doc.rulesVersion, change.maxHpChange);
+      },
+      rest === 'short' ? 'Short rest' : 'Long rest',
+    );
+    const said = [
+      ...(restored.length > 0 ? [`Restored ${restored.join(', ')}`] : []),
+      ...(ended.length > 0 ? [`Ended ${andList(ended)}`] : []),
+    ];
+    notify(
+      rest === 'short'
+        ? {
+            title: 'Short rest',
+            detail: said.length > 0 ? said.join(' · ') : 'Nothing to restore',
+            tone: said.length > 0 ? 'good' : 'info',
+          }
+        : {
+            title: 'Long rest complete',
+            detail: said.length > 0 ? said.join(' · ') : 'Already at full',
+            tone: 'good',
+          },
+    );
+  };
 
   // What the character's conditions do to their own rolls, speed and hit
   // point maximum (engine/conditions.ts): applied, said in a cue where each
@@ -369,13 +440,25 @@ export function Component() {
     sheet.conditionImmunities,
     built.conditionImmunities,
   );
-  /** A d20 test in the attack group: the weapon and spell attack chips. */
-  const rollAttack = (modifier: number, label: string) => () =>
+  /**
+   * A d20 test in the attack group: the weapon and spell attack chips, with
+   * what the effects in play bring to that attack (Bless, Bardic Inspiration).
+   */
+  const rollAttack = (modifier: number, label: string, test: D20Test) => () =>
     rollD20Test(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
+      riders: rollEffects(sheet, test),
+      settlesOnNatural: true,
     });
+  /** What a weapon row's attack is, as an effect's filter reads it. */
+  const weaponTest = (a: AttackRow): D20Test => ({
+    kind: 'attack',
+    attack: 'weapon',
+    ...(a.ranged === undefined ? {} : { range: a.ranged ? 'ranged' : 'melee' }),
+    ...(a.ability === undefined ? {} : { ability: a.ability }),
+  });
   /** The attack rolls' cue: over the attack list, and again over spells with attack rolls. */
   const attackCue = (heading?: string) => (
     <RollEffectCue
@@ -485,6 +568,8 @@ export function Component() {
       effects: concentrationEffects,
       ignored: ignore.take('concentration', concentrationEffects),
       advantageFrom: warCaster,
+      // Settled on the spot, so nothing is offered after it.
+      riders: { ...rollEffects(sheet, { kind: 'save', ability: 'con' }), offers: [] },
     });
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
@@ -525,16 +610,16 @@ export function Component() {
       }));
     let notice: Notice | null = null;
     update((d) => {
-      const concentration = d.play.concentratingOn;
       applyHp(d.play, delta, maxHp.value);
       if (useRelentless && d.play.currentHp === 0) {
-        d.play.currentHp = 1;
-        d.play.concentratingOn = concentration; // never actually hit 0
+        d.play.currentHp = 1; // never actually hit 0, so concentration holds
         const entry = d.play.resources.find((r) => r.key === 'relentless-endurance');
         if (entry !== undefined) entry.used += 1;
         else d.play.resources.push({ key: 'relentless-endurance', used: 1 });
       }
-      notice = rollConcentration(d.play, -delta, rollConcentrationSave);
+      // Dropping to 0 breaks concentration, and ends what it held.
+      if (d.play.currentHp === 0) setConcentration(d.play, undefined, hpNow);
+      notice = rollConcentration(d.play, -delta, rollConcentrationSave, hpNow);
       after.currentHp = d.play.currentHp;
       after.tempHp = d.play.tempHp;
     });
@@ -932,6 +1017,9 @@ export function Component() {
                     effects: deathEffects,
                     ignored: ignore.take('death', deathEffects),
                     advantageFrom: durable,
+                    // Bless reaches a death save; it is settled on the spot,
+                    // so nothing is offered after it.
+                    riders: { ...rollEffects(sheet, { kind: 'save' }), offers: [] },
                   });
                   rollLogStore.getState().append(r);
                   const nat = r.meta?.d20?.natural;
@@ -1011,6 +1099,7 @@ export function Component() {
                   label: 'Initiative',
                   effects: initiativeEffects,
                   ignored: ignore.take('initiative', initiativeEffects),
+                  riders: rollEffects(sheet, { kind: 'initiative' }),
                 }),
               );
               initiativeRoll.rolled();
@@ -1183,7 +1272,7 @@ export function Component() {
           aria-pressed={play.concentratingOn !== undefined}
           onClick={async () => {
             if (play.concentratingOn !== undefined) {
-              update((d) => void (d.play.concentratingOn = undefined));
+              update((d) => void setConcentration(d.play, undefined, hpNow));
               return;
             }
             const label = await askText({
@@ -1191,7 +1280,7 @@ export function Component() {
               placeholder: 'For example, Bless',
             });
             if (label !== null && label.trim() !== '') {
-              update((d) => void (d.play.concentratingOn = { label: label.trim() }));
+              update((d) => void setConcentration(d.play, { label: label.trim() }, hpNow));
             }
           }}
           // Sized by its content, so a spell's whole name shows, on a line of
@@ -1240,11 +1329,17 @@ export function Component() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
+            onClick={() => {
+              // What starts or ends with the turn, said in the toast after.
+              let said: string[] = [];
               update((d) => {
+                const extraBack = d.play.turn?.extra ?? [];
                 d.play.turn = { action: false, bonus: false, reaction: false };
-              }, 'New turn')
-            }
+                said = newTurnLines(newTurn(d.play, hpNow), extraBack, d.play.tempHp);
+              }, 'New turn');
+              if (said.length > 0)
+                notify({ title: 'New turn', detail: said.join(' · '), tone: 'info' });
+            }}
             className="-my-1 -mr-1 ml-auto"
             title="Reset action, bonus action, and reaction"
           >
@@ -1302,6 +1397,46 @@ export function Component() {
             );
           })}
         </div>
+        {/* A box an effect adds (Haste's action), outlined in heal green for
+            the effect, which each new turn resets. Its note says what it can
+            do while ready. */}
+        {sheet.extraActions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {sheet.extraActions.map((x) => {
+              const used = play.turn?.extra?.includes(x.label) ?? false;
+              return (
+                <button
+                  key={x.label}
+                  type="button"
+                  aria-pressed={used}
+                  onClick={() =>
+                    update((d) => {
+                      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+                      const extra = (turn.extra ?? []).filter((e) => e !== x.label);
+                      if (!used) extra.push(x.label);
+                      if (extra.length > 0) turn.extra = extra;
+                      else delete turn.extra;
+                      d.play.turn = turn;
+                    })
+                  }
+                  className={`flex min-h-15 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-3 py-2 text-center text-label transition-colors duration-120 ${
+                    used
+                      ? 'bg-surface-raised text-ink-muted'
+                      : 'text-ink ring-[1.5px] ring-heal ring-inset hover:bg-surface-raised'
+                  }`}
+                  title={used ? `${x.label} used: tap to undo` : `Tap when you use your ${x.label}`}
+                >
+                  <span className={used ? 'line-through decoration-[1.5px]' : undefined}>
+                    {x.label}
+                  </span>
+                  <span className="font-normal text-[0.6875rem] text-ink-muted leading-3.5">
+                    {used ? 'Used' : (x.note ?? 'Ready')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Resources with pips */}
@@ -1449,7 +1584,7 @@ export function Component() {
                       display={signed(a.toHit.value)}
                       label={`${a.label} attack`}
                       variant="d20"
-                      roller={rollAttack(a.toHit.value, `${a.label} attack`)}
+                      roller={rollAttack(a.toHit.value, `${a.label} attack`, weaponTest(a))}
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
                       onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
@@ -1759,6 +1894,7 @@ export function Component() {
                   const cast = () => {
                     castSpell(
                       update,
+                      hpNow,
                       sc,
                       level,
                       {
@@ -1846,7 +1982,11 @@ export function Component() {
                             display={`Atk ${signed(sc.attackMod.value)}`}
                             label={`${ref.name} spell attack`}
                             variant="d20"
-                            roller={rollAttack(sc.attackMod.value, `${ref.name} spell attack`)}
+                            roller={rollAttack(
+                              sc.attackMod.value,
+                              `${ref.name} spell attack`,
+                              SPELL_ATTACK,
+                            )}
                             wear={attackChipWear}
                             onRolled={running ? undefined : cast}
                           />
@@ -1955,6 +2095,7 @@ export function Component() {
                 if (g.usage === 'prepared' && block !== undefined) {
                   castSpell(
                     update,
+                    hpNow,
                     block,
                     level,
                     {
@@ -1968,6 +2109,7 @@ export function Component() {
                 } else {
                   castGranted(
                     update,
+                    hpNow,
                     {
                       name: g.name,
                       source: g.source,
@@ -2065,7 +2207,7 @@ export function Component() {
                         display={`Atk ${signed(attackModifier)}`}
                         label={`${g.name} spell attack`}
                         variant="d20"
-                        roller={rollAttack(attackModifier, `${g.name} spell attack`)}
+                        roller={rollAttack(attackModifier, `${g.name} spell attack`, SPELL_ATTACK)}
                         wear={attackChipWear}
                         onRolled={depleted || running ? undefined : cast}
                       />
@@ -2118,16 +2260,12 @@ export function Component() {
       <section className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => {
-            let restored: string[] = [];
-            update((d) => void (restored = shortRest(d.play, sheet)), 'Short rest');
-            notify({
-              title: 'Short rest',
-              detail:
-                restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Nothing to restore',
-              tone: restored.length > 0 ? 'good' : 'info',
-            });
-          }}
+          // With effects in play, a sheet asks which ones the rest ends.
+          onClick={() =>
+            inPlay.length > 0
+              ? setRestAsked({ rest: 'short', open: true })
+              : finishRest('short', NONE)
+          }
           className={buttonClass({ variant: 'outline' })}
         >
           <Hourglass size={18} /> Short rest
@@ -2135,25 +2273,33 @@ export function Component() {
         <button
           type="button"
           onClick={async () => {
+            if (inPlay.length > 0) {
+              setRestAsked({ rest: 'long', open: true });
+              return;
+            }
             const ok = await askConfirm({
               title: 'Long rest',
-              detail: 'Full HP, all spell slots and resources restored; regain half your hit dice.',
+              detail: LONG_REST_DETAIL,
               confirmLabel: 'Rest',
             });
-            if (!ok) return;
-            let restored: string[] = [];
-            update((d) => void (restored = longRest(d.play, sheet, doc.rulesVersion)), 'Long rest');
-            notify({
-              title: 'Long rest complete',
-              detail: restored.length > 0 ? `Restored ${restored.join(', ')}` : 'Already at full',
-              tone: 'good',
-            });
+            if (ok) finishRest('long', NONE);
           }}
           className={buttonClass({ variant: 'outline' })}
         >
           <Moon size={18} /> Long rest
         </button>
       </section>
+      <RestSheet
+        rest={restAsked.rest}
+        open={restAsked.open}
+        effects={inPlay}
+        {...(restAsked.rest === 'long' ? { detail: LONG_REST_DETAIL } : {})}
+        onOpenChange={(open) => setRestAsked((was) => ({ ...was, open }))}
+        onRest={(rest, ends) => {
+          setRestAsked((was) => ({ ...was, open: false }));
+          finishRest(rest, ends);
+        }}
+      />
     </div>
   );
 }

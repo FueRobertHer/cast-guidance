@@ -43,6 +43,7 @@ import {
 } from '../characters/characterActions';
 import { ConditionStrip } from './ConditionStrip';
 import { HistoryDrawer } from './HistoryDrawer';
+import { useRollOfferSpending } from './rollOfferSpending';
 import { SheetMenu } from './SheetMenu';
 import { type CharacterSheetState, useCharacterSheet } from './useCharacterSheet';
 import { useOpenElsewhere } from './useOpenElsewhere';
@@ -193,6 +194,8 @@ export function Component() {
   // padding that keeps a focused control out from behind the header.
   const header = useStickyHeight('--sheet-header-h');
   const state = useCharacterSheet(id);
+  // The roll toast spends the dice it offers through this (Bardic Inspiration).
+  useRollOfferSpending(state.doc, state.sheet, state.update);
   const openElsewhere = useOpenElsewhere(id);
   // Said through the announcer when it starts (A11Y-002): the banner mounts
   // with its text, and a status region that does that is heard unreliably.

@@ -2,6 +2,8 @@ import { AlertTriangle, ChevronRight, Search } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { Entity } from '@/data5e/copyMod';
 import { d20Effects } from '@/engine/conditions';
+import { type HpLimits, setConcentration } from '@/engine/effectLife';
+import { rollEffects } from '@/engine/playRules';
 import {
   type CharacterDoc,
   type DerivedSheet,
@@ -38,7 +40,7 @@ import {
   rollWear,
   useIgnoreOnce,
 } from './d20Tests';
-import { conditionsInForce } from './effectsInPlay';
+import { conditionsInForce, hpLimits } from './effectsInPlay';
 import { RollEffectCue } from './RollEffectCue';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -129,7 +131,16 @@ function VerbalMark({
 }
 
 /** Ends the concentration this row started: its Cast, while it lasts. */
-function EndButton({ name, update }: { name: string; update: DocUpdater }) {
+function EndButton({
+  name,
+  update,
+  hp,
+}: {
+  name: string;
+  update: DocUpdater;
+  /** Its own effects held by this concentration end with it. */
+  hp: HpLimits;
+}) {
   return (
     <Button
       variant="outline"
@@ -138,7 +149,7 @@ function EndButton({ name, update }: { name: string; update: DocUpdater }) {
       className="-my-1"
       onClick={() =>
         update((d) => {
-          d.play.concentratingOn = undefined;
+          setConcentration(d.play, undefined, hp);
         })
       }
     >
@@ -255,11 +266,12 @@ function SlotSpellRow({
   // an answer, so a rolling spell's picker settles the slot before the roll.
   const castAsking = async () => {
     if (!choosing) {
-      castSpell(update, block, level, info, options[0]);
+      castSpell(update, hpLimits(sheet, doc.rulesVersion), block, level, info, options[0]);
       return;
     }
     const picked = await askCastResource(castContext);
-    if (picked !== null) castSpell(update, block, level, info, picked);
+    if (picked !== null)
+      castSpell(update, hpLimits(sheet, doc.rulesVersion), block, level, info, picked);
   };
   const locked =
     block.learnable !== undefined &&
@@ -303,11 +315,21 @@ function SlotSpellRow({
             wear={ctx.wear}
             castWear={ctx.castWear}
             onCast={
-              concentrating ? undefined : () => castSpell(update, block, level, info, resource)
+              concentrating
+                ? undefined
+                : () =>
+                    castSpell(
+                      update,
+                      hpLimits(sheet, doc.rulesVersion),
+                      block,
+                      level,
+                      info,
+                      resource,
+                    )
             }
           />
           {concentrating ? (
-            <EndButton name={name} update={update} />
+            <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
           ) : (
             !rolling && (
               <CastButton
@@ -371,6 +393,7 @@ function InnateSpellRow({
   const cast = () =>
     castGranted(
       update,
+      hpLimits(sheet, doc.rulesVersion),
       {
         name,
         source,
@@ -422,7 +445,7 @@ function InnateSpellRow({
             onCast={concentrating || depleted ? undefined : cast}
           />
           {concentrating ? (
-            <EndButton name={name} update={update} />
+            <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
           ) : (
             !rolling && (
               <CastButton
@@ -674,6 +697,8 @@ export function YourSpells({
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
+      riders: rollEffects(sheet, { kind: 'attack', attack: 'spell' }),
+      settlesOnNatural: true,
     });
   const limits = conditionLimits(conditions);
   const entityOf = (ref: { name: string; source: string }) =>

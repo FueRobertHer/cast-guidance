@@ -21,7 +21,8 @@ function diceParts(term: DiceRollDetail): RollDetailPart[] {
 /**
  * The working of a roll, as "d20 [17, 4] advantage + 3": every die face in
  * order, the dropped ones marked, the mode that rolled the second d20 in words,
- * then the flat modifiers with a true minus. Shown under the total in both the
+ * then the flat modifiers with a true minus, and a die an effect added named
+ * for it. Shown under the total in both the
  * toast and the tray's history (`ui/RollDetail`), which is why it lives here
  * rather than in either of them.
  */
@@ -32,6 +33,9 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
     if (t.kind === 'dice') {
       const sign = t.sign < 0 ? '− ' : i > 0 ? '+ ' : '';
       parts.push({ text: `${i > 0 ? ' ' : ''}${sign}` }, ...diceParts(t));
+      // A die an effect added says whose it is: "+ d4 [3] Bless".
+      const from = result.meta?.from?.find((f) => f.term === i);
+      if (from !== undefined) parts.push({ text: ` ${from.source}` });
       // Adv mode reaches every roll of the tray, and changes only a lone d20.
       if (i === 0 && mode !== undefined && t.sides === 20 && t.rolls.length > 1) {
         parts.push({ text: mode === 'adv' ? ' advantage' : ' disadvantage' });

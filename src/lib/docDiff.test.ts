@@ -61,6 +61,24 @@ describe('diffDocs', () => {
     expect(sameContent(old, fresh)).toBe(true);
   });
 
+  it('treats no effect box used as none listed, in any order', () => {
+    const none = edited((d) => {
+      d.play.turn = { action: true, bonus: false, reaction: false };
+    });
+    const empty = edited((d) => {
+      d.play.turn = { action: true, bonus: false, reaction: false, extra: [] };
+    });
+    expect(sameContent(none, empty)).toBe(true);
+    const two = edited((d) => {
+      d.play.turn = { action: true, bonus: false, reaction: false, extra: ['A', 'B'] };
+    });
+    const swapped = edited((d) => {
+      d.play.turn = { action: true, bonus: false, reaction: false, extra: ['B', 'A'] };
+    });
+    expect(sameContent(two, swapped)).toBe(true);
+    expect(sameContent(none, two)).toBe(false);
+  });
+
   it('treats zero-valued play entries as absent', () => {
     // Ticking a pip and unticking it leaves {used: 0} where there was nothing.
     const touched = edited((d) => {

@@ -163,6 +163,16 @@ describe('longRest', () => {
     );
   });
 
+  it('refills to the maximum the ended effects left, and lets their temp HP go', () => {
+    // Aid ended by the rest took 5 off a 20 maximum the sheet still shows.
+    const p = play({ currentHp: 3, tempHp: 4, tempHpFrom: 'hero' });
+    const restored = longRest(p, sheet(), '2014', -5);
+    expect(p.currentHp).toBe(15);
+    expect(restored).toContain('+12 HP');
+    expect(p.tempHp).toBe(0);
+    expect('tempHpFrom' in p).toBe(false);
+  });
+
   it('regains every Mystic Arcanum, and saves as if none had been tracked', () => {
     const p = play({ arcanumUsed: [6, 8] });
     const restored = longRest(p, sheet(), '2024');

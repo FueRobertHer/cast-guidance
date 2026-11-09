@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
-import { endEffect, setEffectOff } from '@/engine/effectLife';
+import { endEffect, setConcentration, setEffectOff } from '@/engine/effectLife';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
@@ -215,12 +215,15 @@ export function ConditionStrip({
       else c.ignored = true;
     });
   const applyDeath = () => {
+    const hp = limits();
     update((d) => {
       d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
       d.play.currentHp = 0;
       d.play.tempHp = 0;
       delete d.play.tempHpFrom;
-      d.play.concentratingOn = undefined;
+      // Death ends concentration, and the character's own effects it held.
+      if (hp === null) delete d.play.concentratingOn;
+      else setConcentration(d.play, undefined, hp);
     });
     // The 0 HP it sets is on the page behind the sheet, so close it to show
     // what was done rather than leave the button looking unpressed.
