@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseXml } from '../xml';
 import { backgroundAbility, convertBackground, featGrant, readTools } from './background';
+import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result } from './context';
 import { abilityFromProse, convertFeat, featCategory, readPrerequisite } from './feat';
 import { convertRace, raceAbility } from './race';
 
-const ctx: Fc5Context = { source: 'FCTest', featNames: new Set() };
+const ctx: Fc5Context = fc5Context('test.xml');
 
 function done(result: Fc5Result) {
   if ('skip' in result) throw new Error(`skipped: ${result.skip}`);
@@ -156,7 +157,7 @@ describe('feats', () => {
       expect(result.reasons).toEqual(['the modifier "initiative +5" is kept as text']);
     });
 
-    it('reads the edition from a Source line and keeps the line as text', () => {
+    it('reads the edition and the book from a Source line', () => {
       const result = done(
         convertFeat(
           parseXml(
@@ -166,10 +167,9 @@ describe('feats', () => {
         ),
       );
       expect(result.edition).toBe('2024');
-      expect(result.entity.entries).toEqual([
-        'Breathe deep.',
-        '{@i Source: Homebrew Codex (2024)}',
-      ]);
+      expect(result.entity.source).toBe('FCHomebrewCodex2024');
+      expect(result.placement.source.full).toBe('Homebrew Codex (2024)');
+      expect(result.entity.entries).toEqual(['Breathe deep.']);
     });
 
     it('is not repeatable for the word mid-sentence', () => {
@@ -216,11 +216,12 @@ describe('backgrounds', () => {
       expect(featGrant('Iron Lungs [2024]', ctx, '2024')).toBe('iron lungs|xphb');
     });
 
-    it('points at the file itself when the file has that feat', () => {
-      const withFeat = { ...ctx, featNames: new Set(['ember adept']) };
-      expect(featGrant('Ember Adept (Cleric)', withFeat, '2024')).toBe(
-        'ember adept; cleric|fctest',
-      );
+    it("points at the file's own feat, whole, when the file has that feat", () => {
+      const withFeat = fc5Context('test.xml', {
+        featSources: new Map([['ember adept', 'FCTest']]),
+      });
+      expect(featGrant('Ember Adept (Cleric)', withFeat, '2024')).toBe('ember adept|fctest');
+      expect(featGrant('Ember Adept', withFeat, '2024')).toBe('ember adept|fctest');
     });
   });
 
@@ -354,7 +355,7 @@ describe('backgrounds', () => {
       ]);
     });
 
-    it('puts loose text first and the Source line last', () => {
+    it('puts loose text first, and files the background under its book', () => {
       const result = done(
         convertBackground(
           parseXml(`<background>
@@ -366,10 +367,10 @@ describe('backgrounds', () => {
         ),
       );
       expect(result.edition).toBe('2024');
+      expect(result.entity.source).toBe('FCHomebrewCodex2024');
       expect(result.entity.entries).toEqual([
         'An old trade.',
         { type: 'entries', name: 'Lamp Lore', entries: ['You know lamps.'] },
-        '{@i Source: Homebrew Codex (2024)}',
       ]);
     });
 
@@ -505,11 +506,8 @@ describe('races', () => {
       );
       expect(result.edition).toBe('2024');
       expect(result.entity.edition).toBe('one');
-      expect(result.entity.entries).toEqual([
-        'A loose line.',
-        'Sparks.',
-        '{@i Source: Homebrew Codex (2024)}',
-      ]);
+      expect(result.entity.source).toBe('FCHomebrewCodex2024');
+      expect(result.entity.entries).toEqual(['A loose line.', 'Sparks.']);
     });
 
     it('skips an entry with no name', () => {

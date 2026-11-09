@@ -80,13 +80,28 @@ describe('officialNames', () => {
     expect(names).not.toContain('joraga nation elf (zendikar)');
   });
 
-  it('puts a qualifier with a semicolon after the race only', () => {
+  it('puts a qualifier with a semicolon after the race only, and names a variant without its label', () => {
     const names = officialNames('subrace', {
       name: 'Variant; Hellfire',
       source: 'SCAG',
       raceName: 'Tiefling',
     });
-    expect(names).toEqual(['tiefling, variant; hellfire', 'tiefling (variant; hellfire)']);
+    expect(names).toEqual([
+      'tiefling, variant; hellfire',
+      'tiefling (variant; hellfire)',
+      'tiefling, hellfire',
+      'tiefling (hellfire)',
+      'hellfire tiefling',
+    ]);
+  });
+
+  it('names a Sword Coast half-elf by its descent', () => {
+    const names = officialNames('subrace', {
+      name: 'Variant; Drow Descent',
+      source: 'SCAG',
+      raceName: 'Half-Elf',
+    });
+    expect(names).toContain('half-elf, drow');
   });
 
   it('names a version of a race that does not carry the race`s name by its own name', () => {

@@ -6,15 +6,21 @@
  */
 import type { RulesVersion } from '../../data5e/rulesVersion';
 import { childElements, childText, childTexts, textContent, type XmlElement } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
+import {
+  citationEntry,
+  extraClassKey,
+  type Fc5Context,
+  type Fc5Result,
+  placeEntity,
+} from './context';
 import {
   type Entry,
+  entryName,
   inlineText,
   own,
   parenthetical,
   plainText,
   readText,
-  sourceLineEdition,
   splitName,
 } from './text';
 
@@ -312,22 +318,22 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
   if (rawName === undefined) return { skip: 'it has no name' };
   const reasons: string[] = [];
-  const named = splitName(rawName);
+  const named = entryName(rawName);
   const text = readText(childTexts(el, 'text'));
   const sourceLine = childText(el, 'source') ?? text.sourceLine;
   const classes = readClasses(
-    [childText(el, 'classes'), ...(ctx.extraClasses?.get(named.name.toLowerCase()) ?? [])]
+    [
+      childText(el, 'classes'),
+      ...(ctx.extraClasses?.get(extraClassKey(named.name, named.edition)) ?? []),
+    ]
       .filter((c): c is string => c !== undefined)
       .join(', '),
   );
-  const edition =
-    named.edition ??
-    classes.edition ??
-    (sourceLine === undefined ? undefined : sourceLineEdition(sourceLine)) ??
-    ctx.fileEdition;
+  const placement = ctx.place(sourceLine, named.edition ?? classes.edition);
+  const edition = placement.edition;
 
-  const spell: Record<string, unknown> = { name: named.name, source: ctx.source };
-  if (edition === '2024') spell.edition = 'one';
+  const spell: Record<string, unknown> = { name: named.name };
+  placeEntity(spell, placement);
 
   const level = Number(childText(el, 'level'));
   if (Number.isInteger(level) && level >= 0 && level <= 9) spell.level = level;
@@ -407,7 +413,8 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
     } else entries.push(e);
   }
   spell.entries = [...lead, ...entries];
-  if (sourceLine !== undefined) (spell.entries as Entry[]).push(`{@i Source: ${sourceLine}}`);
+  const citation = citationEntry(placement);
+  if (citation !== undefined) (spell.entries as Entry[]).push(citation);
 
   if (level === 0) {
     const scaling = cantripScaling(el);
@@ -429,5 +436,5 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   ];
   if (attacks.length > 0) spell.spellAttack = attacks;
 
-  return { kind: 'spell', name: named.name, edition: edition ?? '2014', entity: spell, reasons };
+  return { kind: 'spell', name: named.name, edition, entity: spell, placement, reasons };
 }

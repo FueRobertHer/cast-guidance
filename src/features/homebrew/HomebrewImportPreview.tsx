@@ -165,30 +165,39 @@ function NoteList({ notes, intro }: { notes: EntryNote[]; intro: string }) {
   );
 }
 
+/** Entries left out as copies, counted by why, the most common first. */
+function leftOut(report: ConversionReport): [why: string, count: number][] {
+  const counts = new Map<string, number>();
+  for (const note of report.notes) {
+    if (note.status !== 'installed' && note.status !== 'duplicate') continue;
+    const why =
+      note.reasons[0] ??
+      (note.status === 'installed'
+        ? 'your game data already has it'
+        : 'the file has it more than once');
+    counts.set(why, (counts.get(why) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]);
+}
+
 /**
  * What carried over from another app's file. Every entry keeps its full
  * text; the lists say what the sheet will not apply for the player, so a
- * partial conversion is never silent.
+ * partial conversion is never silent, and what was left out is counted by
+ * why.
  */
 function ConversionSection({ report }: { report: ConversionReport }) {
-  const installed = notesWith(report, 'installed').length;
-  const duplicate = notesWith(report, 'duplicate').length;
   return (
     <PreviewSection heading={`Converted from ${report.formatName}`}>
       <PreviewList>
         <StatusItem tone="good" status="Converted:">
           {entries(convertedTotal(report))}, each with its full text.
         </StatusItem>
-        {installed > 0 && (
-          <StatusItem tone="info" status="Left out:">
-            {entries(installed)} your game data already has. Its copy is the one used.
+        {leftOut(report).map(([why, count]) => (
+          <StatusItem key={why} tone="info" status="Left out:">
+            {entries(count)}: {why}.
           </StatusItem>
-        )}
-        {duplicate > 0 && (
-          <StatusItem tone="info" status="Left out:">
-            {entries(duplicate)} the file has more than once. The first of each is kept.
-          </StatusItem>
-        )}
+        ))}
         {report.warnings.map((w) => (
           <StatusItem key={w} tone="warn">
             {w}

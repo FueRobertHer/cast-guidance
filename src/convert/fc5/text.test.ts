@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   abilityKey,
+  entryName,
   inlineText,
+  lastGroup,
   leadIn,
   markerEdition,
   own,
@@ -12,6 +14,7 @@ import {
   sourceLineEdition,
   splitList,
   splitName,
+  stripBookTags,
 } from './text';
 
 describe('lists', () => {
@@ -205,7 +208,50 @@ describe('leadIn', () => {
   });
 });
 
+describe('entry names', () => {
+  it('finds the last bracket, brackets inside it included', () => {
+    expect(lastGroup('Ember Lance (Ash (Old))')).toEqual({
+      base: 'Ember Lance',
+      inner: 'Ash (Old)',
+    });
+    expect(lastGroup('Ember Lance')).toBeUndefined();
+    expect(lastGroup('(Ash)')).toBeUndefined();
+  });
+
+  it('takes book tags out of the trailing brackets, wherever they sit', () => {
+    expect(stripBookTags('Ember Fear (Charisma) (HB)')).toEqual({
+      name: 'Ember Fear (Charisma)',
+      tags: ['hb'],
+    });
+    expect(stripBookTags('Ember Acrobat (UA) (Proficient)')).toEqual({
+      name: 'Ember Acrobat (Proficient)',
+      tags: ['ua'],
+    });
+    expect(stripBookTags('Ember Lance (Ritual Only)')).toEqual({
+      name: 'Ember Lance (Ritual Only)',
+      tags: [],
+    });
+  });
+
+  it('drops the footnote star, the tags and the edition marker', () => {
+    expect(entryName('Ember Lance*')).toEqual({ name: 'Ember Lance' });
+    expect(entryName('Ember Lance (UA) [5.5e]')).toEqual({ name: 'Ember Lance', edition: '2024' });
+    expect(entryName('Ember Lance [5.5e] (UA)')).toEqual({ name: 'Ember Lance', edition: '2024' });
+  });
+
+  it('reads (Legacy) as the 2014 entry', () => {
+    expect(entryName('Emberkin (Legacy)')).toEqual({ name: 'Emberkin', edition: '2014' });
+  });
+});
+
 describe('readText', () => {
+  it('joins a Source line that runs on after a comma, and drops a repeated label', () => {
+    expect(readText(['Text.', 'Source: Ember Codex p. 2,', 'Ash Codex p. 9']).sourceLine).toBe(
+      'Ember Codex p. 2, Ash Codex p. 9',
+    );
+    expect(readText(['Source: Source: Ember Codex p. 2']).sourceLine).toBe('Ember Codex p. 2');
+  });
+
   it('makes every non-blank line a paragraph, across and within blocks', () => {
     expect(readText(['First line\nSecond   line', '', '   ', 'Third'])).toEqual({
       entries: ['First line', 'Second line', 'Third'],

@@ -7,7 +7,7 @@ import {
   notesWith,
 } from '../types';
 import { parseXml } from '../xml';
-import { convertFc5Compendium, isSpellStub, sourceFor } from './compendium';
+import { convertFc5Compendium, FC5_CONVERTER_VERSION, isSpellStub, sourceFor } from './compendium';
 
 const FILE = 'ember_homebrew.xml';
 const SOURCE = 'FCEmberHomebrew';
@@ -100,7 +100,11 @@ describe('convertFc5Compendium', () => {
     expect(Object.keys(json)).toEqual(['_meta', 'spell', 'item', 'feat', 'background', 'race']);
     expect(json._meta).toEqual({
       sources: [{ json: SOURCE, abbreviation: SOURCE, full: 'ember_homebrew (Fight Club 5e)' }],
-      convertedFrom: { format: 'fc5-compendium', converterVersion: 1, fileName: FILE },
+      convertedFrom: {
+        format: 'fc5-compendium',
+        converterVersion: FC5_CONVERTER_VERSION,
+        fileName: FILE,
+      },
     });
     for (const kind of ['spell', 'item', 'feat', 'background', 'race'] as const) {
       expect(list(json, kind).map((e) => e.source)).toEqual([SOURCE]);
@@ -108,7 +112,7 @@ describe('convertFc5Compendium', () => {
     expect(report).toEqual({
       format: 'fc5-compendium',
       formatName: 'Fight Club 5e',
-      converterVersion: 1,
+      converterVersion: FC5_CONVERTER_VERSION,
       converted: { spell: 1, item: 1, feat: 1, background: 1, race: 1 },
       notes: [],
       warnings: [],
@@ -193,13 +197,12 @@ describe('convertFc5Compendium', () => {
         },
       ]);
       expect(calls).toEqual([
-        // Feats are asked first, so a background's feat grant knows which
-        // feats the converted file keeps.
+        // Feats are asked first, and once, so a background's feat grant
+        // knows which feats the converted file keeps.
         ['feat', 'Ember Adept', '2014'],
         ['race', 'Emberkin', '2014'],
         ['spell', 'Ember Lance', '2014'],
         ['item', 'Rope Coil', '2014'],
-        ['feat', 'Ember Adept', '2014'],
         ['background', 'Lamplighter', '2014'],
       ]);
     });
@@ -354,13 +357,308 @@ describe('feat grants against left-out feats', () => {
     return Object.keys((json.background as { feats: Record<string, true>[] }[])[0]?.feats[0] ?? {});
   };
 
-  it("names this file's source for a feat the file keeps", () => {
-    expect(grant()).toEqual(['ember adept; fire|fcorigins55e']);
+  it("names this file's feat whole for a feat the file keeps, since its choice is inside it", () => {
+    expect(grant()).toEqual(['ember adept|fcorigins55e']);
   });
 
   it('names the installed copy for a feat left out as installed', () => {
     expect(grant((kind, name) => kind === 'feat' && name === 'Ember Adept')).toEqual([
       'ember adept; fire|xphb',
     ]);
+  });
+});
+
+describe('books', () => {
+  const cited = (name: string, line: string) =>
+    spell(name, `<classes>Wizard</classes><text>Text.\nSource: ${line}</text>`);
+  const XGE = "Xanathar's Guide to Everything";
+
+  it('puts each entry in the book it cites, one source per book', () => {
+    const { json } = convert(`
+      ${cited('Ember Lance', 'Ember Codex p. 3')}
+      ${cited('Ash Ward', 'Ember Codex p. 9')}
+      ${cited('Cinder Step', 'Ash Almanac p. 1')}
+      ${spell('Smoke Veil', '<classes>Wizard</classes>')}
+    `);
+    expect(list(json, 'spell').map((s) => [s.name, s.source, s.page])).toEqual([
+      ['Ember Lance', 'FCEmberCodex', 3],
+      ['Ash Ward', 'FCEmberCodex', 9],
+      ['Cinder Step', 'FCAshAlmanac', 1],
+      ['Smoke Veil', SOURCE, undefined],
+    ]);
+    expect((json._meta as { sources: unknown[] }).sources).toEqual([
+      { json: 'FCEmberCodex', abbreviation: 'EC', full: 'Ember Codex' },
+      { json: 'FCAshAlmanac', abbreviation: 'AA', full: 'Ash Almanac' },
+      { json: SOURCE, abbreviation: SOURCE, full: 'ember_homebrew (Fight Club 5e)' },
+    ]);
+  });
+
+  it('keeps the citation as text when it names more than one book', () => {
+    const { json } = convert(cited('Ember Lance', 'Ember Codex p. 3, Ash Almanac p. 4'));
+    expect(list(json, 'spell')[0]?.entries).toEqual([
+      'Text.',
+      '{@i Source: Ember Codex p. 3, Ash Almanac p. 4}',
+    ]);
+  });
+
+  it('asks about an entry from a book the data holds in its edition, then in its book', () => {
+    const { calls, check } = recorder(() => false);
+    convert(cited('Ember Lance', `${XGE} p. 3`), {
+      fileName: FILE,
+      isInstalled: check,
+      hasBook: () => true,
+    });
+    expect(calls).toEqual([
+      ['spell', 'Ember Lance', '2014'],
+      ['spell', 'Ember Lance', '2014', 'XGE'],
+    ]);
+  });
+
+  it('keeps an entry from a book the data does not hold without asking', () => {
+    const { calls, check } = recorder(() => true);
+    const { json } = convert(cited('Ember Lance', `${XGE} p. 3`), {
+      fileName: FILE,
+      isInstalled: check,
+      hasBook: () => false,
+    });
+    expect(calls).toEqual([]);
+    expect(list(json, 'spell')[0]?.source).toBe('FCXanatharSGuideToEverything');
+  });
+
+  it('finds a copy in any book it cites, under a name Fight Club words its own way', () => {
+    const { check } = recorder(
+      (_kind, name, _edition, book) => name === 'Ashen Emberkin' && book === 'XGE',
+    );
+    const { json, report } = convert(
+      `<race><name>Emberkin, Ashen</name><size>M</size><speed>30</speed>
+        <trait><name>Ash</name><text>Ash.\nSource: Player's Handbook p. 1, ${XGE} p. 2</text></trait></race>`,
+      { fileName: FILE, isInstalled: check, hasBook: () => true },
+    );
+    expect(json.race).toBeUndefined();
+    expect(notesWith(report, 'installed').map((n) => n.name)).toEqual(['Emberkin, Ashen']);
+  });
+
+  it('gives 2024 entries of a book of unknown edition a source of their own', () => {
+    const { json } = convert(
+      `${cited('Ember Lance', 'Ember Codex p. 3')}${cited('Ember Lance [5.5e]', 'Ember Codex p. 3')}`,
+    );
+    expect(list(json, 'spell').map((s) => [s.source, s.edition])).toEqual([
+      ['FCEmberCodex', undefined],
+      ['FCEmberCodex2024', 'one'],
+    ]);
+  });
+
+  it('checks an entry from a free rules text by name and edition', () => {
+    const { calls, check } = recorder(() => true);
+    const { json } = convert(
+      `${cited('Ember Lance', 'System Reference Document 5.1 p. 3')}${cited('Ash Ward', 'System Reference Document v5.2.1')}`,
+      { fileName: FILE, isInstalled: check, hasBook: () => true },
+    );
+    expect(json.spell).toBeUndefined();
+    expect(calls).toEqual([
+      ['spell', 'Ember Lance', '2014'],
+      ['spell', 'Ash Ward', '2024'],
+    ]);
+  });
+
+  it('keeps the same name from two books as two printings', () => {
+    const { json, report } = convert(
+      `${cited('Ember Lance', 'Ember Codex p. 3')}${cited('Ember Lance', 'Ash Almanac p. 4')}`,
+    );
+    expect(list(json, 'spell')).toHaveLength(2);
+    expect(report.notes).toEqual([]);
+  });
+});
+
+describe('copies of other entries', () => {
+  it('folds a starred copy`s subclass lists into the spell and leaves it out', () => {
+    const { json, report } = convert(`
+      ${spell('Ember Lance', '<classes>Wizard</classes>')}
+      ${spell('Ember Lance*', '<classes>Cleric (Forge)</classes>')}
+    `);
+    expect(list(json, 'spell')).toHaveLength(1);
+    expect(list(json, 'spell')[0]?.classes).toMatchObject({
+      fromSubclass: [{ class: { name: 'Cleric' }, subclass: { name: 'Forge' } }],
+    });
+    expect(report.notes).toEqual([
+      {
+        kind: 'spell',
+        name: 'Ember Lance',
+        status: 'duplicate',
+        reasons: ['a copy that adds subclass lists to a spell in the file, which gets them'],
+      },
+    ]);
+  });
+
+  it('leaves out a starred copy of an installed spell', () => {
+    const { report } = convert(spell('Ember Lance*', '<classes>Cleric (Forge)</classes>'), {
+      fileName: FILE,
+      isInstalled: (_kind, name) => name === 'Ember Lance',
+    });
+    expect(report.notes.map((n) => n.reasons)).toEqual([
+      ['a copy that adds subclass lists to a spell your game data already has'],
+    ]);
+  });
+
+  it('leaves out a ritual-only copy', () => {
+    const inFile = convert(
+      `${spell('Ember Lance', '<classes>Wizard</classes>')}${spell('Ember Lance (Ritual Only)', '<classes>Ritual Caster</classes>')}`,
+    );
+    expect(list(inFile.json, 'spell').map((s) => s.name)).toEqual(['Ember Lance']);
+    expect(inFile.report.notes.map((n) => n.reasons)).toEqual([
+      ['a ritual-only copy of a spell in the file'],
+    ]);
+    const installed = convert(
+      spell('Ember Lance (Ritual Only)', '<classes>Ritual Caster</classes>'),
+      { fileName: FILE, isInstalled: (_kind, name) => name === 'Ember Lance' },
+    );
+    expect(installed.report.notes.map((n) => n.reasons)).toEqual([
+      ['a ritual-only copy of a spell your game data already has'],
+    ]);
+  });
+
+  it('makes a homebrew feat split per choice one feat with the choice', () => {
+    const feat = (ability: string) =>
+      `<feat><name>Ember Fear (${ability})</name><text>Roar.</text><modifier category="ability score">${ability} +1</modifier></feat>`;
+    const { json, report } = convert(`${feat('Strength')}${feat('Charisma')}`);
+    expect(list(json, 'feat').map((f) => [f.name, f.ability])).toEqual([
+      ['Ember Fear', [{ choose: { from: ['str', 'cha'] } }]],
+    ]);
+    expect(report.notes).toEqual([
+      {
+        kind: 'feat',
+        name: 'Ember Fear (Charisma)',
+        status: 'duplicate',
+        reasons: ['a copy per choice of a feat, and the copies are one feat with the choice here'],
+      },
+    ]);
+  });
+
+  it('leaves out every choice of a feat the game data has', () => {
+    const { json, report } = convert(
+      '<feat><name>Ember Fear (Strength)</name><text>Roar.</text></feat><feat><name>Ember Fear (Charisma)</name><text>Roar.</text></feat>',
+      { fileName: FILE, isInstalled: (_kind, name) => name === 'Ember Fear' },
+    );
+    expect(json.feat).toBeUndefined();
+    expect(report.notes.map((n) => n.reasons[0])).toEqual([
+      'a copy per choice of a feat your game data already has, choices included',
+      'a copy per choice of a feat your game data already has, choices included',
+    ]);
+  });
+
+  it('leaves out copies per choice of a feat the file has whole', () => {
+    const { json, report } = convert(
+      '<feat><name>Ember Fear</name><text>Roar.</text></feat>' +
+        '<feat><name>Ember Fear (Strength)</name><text>Roar.</text></feat>' +
+        '<feat><name>Ember Fear (Charisma)</name><text>Roar.</text></feat>',
+    );
+    expect(list(json, 'feat').map((f) => f.name)).toEqual(['Ember Fear']);
+    expect(report.notes.map((n) => [n.name, n.reasons[0]])).toEqual([
+      ['Ember Fear (Strength)', 'a copy per choice of a feat the file has whole'],
+      ['Ember Fear (Charisma)', 'a copy per choice of a feat the file has whole'],
+    ]);
+  });
+
+  it('reads a lone bracket as a choice only when it names an ability', () => {
+    const isInstalled = (_kind: string, name: string) => name === 'Ember Fear';
+    const revised = convert('<feat><name>Ember Fear (Revised)</name><text>Roar.</text></feat>', {
+      fileName: FILE,
+      isInstalled,
+    });
+    expect(list(revised.json, 'feat').map((f) => f.name)).toEqual(['Ember Fear (Revised)']);
+    const strength = convert('<feat><name>Ember Fear (Strength)</name><text>Roar.</text></feat>', {
+      fileName: FILE,
+      isInstalled,
+    });
+    expect(strength.json.feat).toBeUndefined();
+  });
+
+  it('reads one bracket the file repeats as no choice', () => {
+    const { json } = convert(
+      '<feat><name>Ember Fear</name><text>Roar.</text></feat>' +
+        '<feat><name>Ember Fear (Revised)</name><text>Roar louder.</text></feat>' +
+        '<feat><name>Ember Fear (Revised)</name><text>Roar louder.</text></feat>',
+    );
+    expect(list(json, 'feat').map((f) => f.name)).toEqual(['Ember Fear', 'Ember Fear (Revised)']);
+  });
+
+  it('gives a stub`s lists to the spell whose name marks no edition, or to all when unsure', () => {
+    const fromSubclass = (json: Record<string, unknown>) =>
+      list(json, 'spell').map((s) => [
+        s.edition,
+        (s.classes as { fromSubclass?: unknown[] }).fromSubclass?.length,
+      ]);
+    const unmarked = convert(`
+      ${spell('Ember Hold', '<classes>Wizard</classes>')}
+      ${spell('Ember Hold [5.5e]', '<classes>Wizard [5.5e]</classes>')}
+      <spell><name>Ember Hold</name><classes>Cleric [Legacy] (Forge)</classes></spell>
+    `);
+    expect(fromSubclass(unmarked.json)).toEqual([
+      [undefined, 1],
+      ['one', undefined],
+    ]);
+    const unsure = convert(`
+      ${spell('Ember Hold (Legacy)', '<classes>Wizard</classes>')}
+      ${spell('Ember Hold [5.5e]', '<classes>Wizard [5.5e]</classes>')}
+      <spell><name>Ember Hold</name><classes>Cleric (Forge)</classes></spell>
+    `);
+    expect(fromSubclass(unsure.json)).toEqual([
+      [undefined, 1],
+      ['one', 1],
+    ]);
+  });
+
+  it('gives a starred copy`s lists to the spell of its own edition', () => {
+    const { json } = convert(`
+      ${spell('Ember Hold', '<classes>Wizard</classes>')}
+      ${spell('Ember Hold [5.5e]', '<classes>Wizard [5.5e]</classes>')}
+      ${spell('Ember Hold* [5.5e]', '<classes>Cleric [5.5e] (Forge)</classes>')}
+    `);
+    expect(
+      list(json, 'spell').map((s) => [
+        s.edition,
+        (s.classes as { fromSubclass?: unknown[] }).fromSubclass?.length,
+      ]),
+    ).toEqual([
+      [undefined, undefined],
+      ['one', 1],
+    ]);
+  });
+
+  it('reads a book tag in a name as no part of it', () => {
+    const { json } = convert(spell('Ember Lance (HB)', '<classes>Wizard</classes>'));
+    expect(list(json, 'spell')[0]?.name).toBe('Ember Lance');
+  });
+});
+
+describe('class options', () => {
+  it('converts options to optional features, and warns when no class offers a list', () => {
+    const { json, report } = convert(`
+      <spell><name>Invocation: Ember Sight</name><level>0</level><classes>Eldritch Invocations</classes><text>Smoke.</text></spell>
+      <spell><name>Ash Rite</name><level>0</level><classes>Ember Knight: Rites</classes><text>Ash.</text></spell>
+    `);
+    expect(list(json, 'optionalfeature').map((o) => [o.name, o.featureType])).toEqual([
+      ['Ember Sight', ['EI']],
+      ['Ash Rite', ['Ember Knight: Rites']],
+    ]);
+    expect(report.warnings).toEqual([
+      '1 class option is for a class this app cannot convert yet (Ember Knight: Rites). It is in the Library under Optional features, but no character can pick it yet.',
+    ]);
+  });
+
+  it('counts options, not lists, in the warning', () => {
+    const { report } = convert(
+      '<spell><name>Ash Rite</name><level>0</level><classes>Ember Knight: Rites, Ash Knight: Rites</classes></spell>',
+    );
+    expect(report.warnings[0]).toMatch(/^1 class option is for classes /);
+  });
+
+  it('asks about an option as an optional feature', () => {
+    const { calls, check } = recorder(() => false);
+    convert(
+      '<spell><name>Invocation: Ember Sight</name><level>0</level><classes>Eldritch Invocations</classes></spell>',
+      { fileName: FILE, isInstalled: check },
+    );
+    expect(calls).toEqual([['optionalfeature', 'Ember Sight', '2014']]);
   });
 });

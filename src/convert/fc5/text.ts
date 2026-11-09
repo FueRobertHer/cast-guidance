@@ -120,6 +120,78 @@ export function parenthetical(text: string): { base: string; inner: string } | u
   return inner === '' ? undefined : { base: text.slice(0, open).trim(), inner: inner.trim() };
 }
 
+/**
+ * The last bracketed group of a name and what comes before it, matching
+ * brackets from the end: `Acrobat (UA) (Proficient)` is `Acrobat (UA)` and
+ * `Proficient`. Undefined when the name does not end in one, or either side
+ * is empty.
+ */
+export function lastGroup(text: string): { base: string; inner: string } | undefined {
+  if (!text.endsWith(')')) return undefined;
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    const ch = text[i];
+    if (ch === ')') depth += 1;
+    else if (ch === '(') {
+      depth -= 1;
+      if (depth === 0) {
+        const inner = text.slice(i + 1, -1).trim();
+        const base = text.slice(0, i).trim();
+        return inner === '' || base === '' ? undefined : { base, inner };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The books and kinds of book Fight Club writes into a name, lowercased:
+ * `Changeling (UA)`, `Aarakocra (Legacy)`, `Bullywug (DMG NPC)`, `Dead (HB)`,
+ * `Arcane Focus (Generic Variant)`, `Airship (Vehicle)`. Its `Source:` line
+ * names the book in full, so the tag only keeps the name from matching.
+ */
+const BOOK_TAGS = new Set([
+  'legacy',
+  'dmg',
+  'dmg npc',
+  'wgte',
+  'ua',
+  'tp',
+  'hb',
+  'vd',
+  'ai',
+  'generic variant',
+  'vehicle',
+]);
+
+/**
+ * A name without the book tags among its trailing brackets, wherever they sit
+ * in the run: `Dragon Fear (Charisma) (HB)` is `Dragon Fear (Charisma)`, and
+ * `Acrobat (UA) (Proficient)` is `Acrobat (Proficient)`. `legacy` says the
+ * entry is the 2014 one.
+ */
+export function stripBookTags(raw: string): { name: string; tags: string[] } {
+  const kept: string[] = [];
+  const tags: string[] = [];
+  let name = raw;
+  // No real name ends in more than a few brackets; the rest stay in the name.
+  for (let n = 0; n < MAX_TRAILING_GROUPS; n += 1) {
+    const group = lastGroup(name);
+    if (group === undefined) break;
+    const tag = group.inner.toLowerCase();
+    if (BOOK_TAGS.has(tag)) tags.push(tag);
+    else kept.push(group.inner);
+    name = group.base;
+  }
+  if (tags.length === 0) return { name: raw, tags };
+  tags.reverse();
+  kept.reverse();
+  return { name: [name, ...kept.map((k) => `(${k})`)].join(' '), tags };
+}
+
+/** How many trailing brackets {@link stripBookTags} looks at. */
+const MAX_TRAILING_GROUPS = 8;
+
 /** Wider than any table a rules entry has; see `readText`. */
 const MAX_TABLE_COLUMNS = 24;
 
@@ -168,7 +240,8 @@ const NAME_MARKER = /\s*\[([^\]]{1,12})\]\s*$/;
 
 export function markerEdition(marker: string): RulesVersion | undefined {
   if (/^(?:5\.5e?|2024|XPHB|XDMG|XMM|5\.2(?:\.1)?)$/i.test(marker)) return '2024';
-  if (/^(?:5e|5\.0e?|5\.1e?|2014|PHB|DMG|MM)$/i.test(marker)) return '2014';
+  // `Eldritch Invocations [Legacy]`: the 2014 list, in a 5.5e file.
+  if (/^(?:5e|5\.0e?|5\.1e?|2014|PHB|DMG|MM|Legacy)$/i.test(marker)) return '2014';
   return undefined;
 }
 
@@ -177,7 +250,8 @@ export function splitName(raw: string): { name: string; edition?: RulesVersion }
   const m = NAME_MARKER.exec(name);
   const marker = m?.[1];
   if (m === null || marker === undefined) return { name };
-  const isMarker = /^(?:\d(?:\.\d)*e?|20\d\d)$/i.test(marker) || /^[A-Z0-9]{2,8}$/.test(marker);
+  const isMarker =
+    /^(?:\d(?:\.\d)*e?|20\d\d|legacy)$/i.test(marker) || /^[A-Z0-9]{2,8}$/.test(marker);
   if (!isMarker) return { name };
   const edition = markerEdition(marker);
   const stripped = name.slice(0, m.index).trim();
@@ -185,10 +259,27 @@ export function splitName(raw: string): { name: string; edition?: RulesVersion }
   return edition === undefined ? { name: stripped } : { name: stripped, edition };
 }
 
+/**
+ * An entry's name as the converted entry carries it, with what the name says
+ * of its edition: the `[5.5e]` marker and the book tags off, `(Legacy)` read
+ * as 2014.
+ */
+export function entryName(raw: string): { name: string; edition?: RulesVersion } {
+  const named = splitName(raw);
+  // `Hold Person*`: Fight Club's footnote mark for a subclass spell.
+  let bare = named.name;
+  while (bare.endsWith('*')) bare = bare.slice(0, -1).trimEnd();
+  const { name, tags } = stripBookTags(bare || named.name);
+  // A marker before a tag: `Spell [5.5e] (UA)`.
+  const again = tags.length > 0 && named.edition === undefined ? splitName(name) : { name };
+  const edition = named.edition ?? again.edition ?? (tags.includes('legacy') ? '2014' : undefined);
+  return edition === undefined ? { name: again.name } : { name: again.name, edition };
+}
+
 /** The edition a `Source:` line points at, when it says. */
 export function sourceLineEdition(line: string): RulesVersion | undefined {
-  if (/\b(?:5\.2(?:\.\d)?|2024|5\.5e?)\b/.test(line)) return '2024';
-  if (/\b(?:5\.0|5\.1|2014)\b/.test(line)) return '2014';
+  if (/\bv?(?:5\.2(?:\.\d)?|2024|5\.5e?)\b/.test(line)) return '2024';
+  if (/\bv?(?:5\.0|5\.1|2014)\b/.test(line)) return '2014';
   if (/Player's Handbook \(2024\)|Dungeon Master's Guide \(2024\)/i.test(line)) return '2024';
   return undefined;
 }
@@ -323,7 +414,14 @@ export function readText(blocks: readonly string[]): ReadText {
 
     const source = SOURCE_LINE.exec(line);
     if (source !== null) {
-      sourceLine = source[1]?.trim();
+      // Some files repeat the label: `Source: Source: Book p. 3`.
+      const cited = [(source[1] ?? '').replace(/^(?:Source:\s*)+/i, '').trim()];
+      // A list of books runs on to the next line after a comma.
+      while ((cited[cited.length - 1] ?? '').endsWith(',') && (lines[i + 1] ?? '') !== '') {
+        i += 1;
+        cited.push(lines[i] ?? '');
+      }
+      sourceLine = cited.join(' ').replace(/,$/, '');
       continue;
     }
 

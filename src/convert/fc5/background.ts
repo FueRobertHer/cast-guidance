@@ -6,18 +6,17 @@
  * trait also stays as a named entry.
  */
 import { childElements, childText, childTexts, type XmlElement } from '../xml';
-import type { Fc5Context, Fc5Result } from './context';
+import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
 import {
   type AbilityKey,
   abilityKey,
   type Entry,
+  entryName,
   parenthetical,
   readLanguages,
   readProficiencies,
   readText,
-  sourceLineEdition,
   splitList,
-  splitName,
 } from './text';
 
 /** "Intelligence, Wisdom, Charisma" into the two 2024 arrangements: +2/+1 or +1/+1/+1. */
@@ -32,13 +31,22 @@ export function backgroundAbility(list: string): Record<string, unknown>[] | und
   ];
 }
 
-/** "Magic Initiate (Cleric)" into the grant key the engine reads: `magic initiate; cleric|xphb`. */
+/**
+ * "Magic Initiate (Cleric)" into the grant key the engine reads: `magic
+ * initiate; cleric|xphb`, the official feat's version for that choice. A feat
+ * this file converts is one feat with its choices inside (the file's copies
+ * per choice are merged), so the grant names it alone: `dragon fear|fcbook`.
+ */
 export function featGrant(raw: string, ctx: Fc5Context, edition: string): string {
-  const { name } = splitName(raw);
+  const { name } = entryName(raw);
+  const whole = ctx.featSources.get(name.toLowerCase());
+  if (whole !== undefined) return `${name.toLowerCase()}|${whole.toLowerCase()}`;
   const parts = parenthetical(name);
   const base = (parts?.base ?? name).trim().toLowerCase();
   const option = parts?.inner.toLowerCase();
-  const source = ctx.featNames.has(base) ? ctx.source : edition === '2024' ? 'XPHB' : 'PHB';
+  const own = ctx.featSources.get(base);
+  if (own !== undefined) return `${base}|${own.toLowerCase()}`;
+  const source = edition === '2024' ? 'XPHB' : 'PHB';
   return `${option === undefined ? base : `${base}; ${option}`}|${source.toLowerCase()}`;
 }
 
@@ -69,7 +77,7 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
   if (rawName === undefined) return { skip: 'it has no name' };
   const reasons: string[] = [];
-  const named = splitName(rawName);
+  const named = entryName(rawName);
 
   const entries: Entry[] = [];
   const traitFields: Record<string, unknown> = {};
@@ -112,14 +120,11 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   entries.unshift(...loose.entries);
   sourceLine = loose.sourceLine ?? sourceLine;
 
-  const edition =
-    named.edition ??
-    (sourceLine === undefined ? undefined : sourceLineEdition(sourceLine)) ??
-    ctx.fileEdition;
-  const background: Record<string, unknown> = { name: named.name, source: ctx.source };
-  if (edition === '2024') background.edition = 'one';
+  const placement = ctx.place(sourceLine, named.edition);
+  const background: Record<string, unknown> = { name: named.name };
+  placeEntity(background, placement);
   if (grantedFeat !== undefined) {
-    traitFields.feats = [{ [featGrant(grantedFeat, ctx, edition ?? '2014')]: true }];
+    traitFields.feats = [{ [featGrant(grantedFeat, ctx, placement.edition)]: true }];
   }
 
   const proficiency = childText(el, 'proficiency');
@@ -136,12 +141,14 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   }
 
   background.entries = entries;
-  if (sourceLine !== undefined) entries.push(`{@i Source: ${sourceLine}}`);
+  const citation = citationEntry(placement);
+  if (citation !== undefined) entries.push(citation);
   return {
     kind: 'background',
     name: named.name,
-    edition: edition ?? '2014',
+    edition: placement.edition,
     entity: background,
+    placement,
     reasons,
   };
 }
