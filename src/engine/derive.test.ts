@@ -1230,9 +1230,52 @@ describe('deriveSheet — dragonborn ancestry linkage', () => {
     expect(sheet.resists.map((r) => r.damageType)).toContain('lightning');
   });
 
-  it('keeps the resistance prompt when no subrace fixes it', () => {
+  it('asks for the ancestry, not a free resistance, when no subrace names a dragon', () => {
     const sheet = deriveSheet(dragonbornDoc(false), ctx);
-    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(true);
+    expect(sheet.pending.some((p) => p.label === 'Damage resistance')).toBe(false);
+    const ancestry = sheet.pending.find((p) => p.id === 'race:dragonborn|tst:ancestry');
+    expect(ancestry?.label).toBe('Draconic Ancestry');
+    expect(ancestry?.options.map((o) => o.label)).toEqual([
+      'Black (acid)',
+      'Blue (lightning)',
+      'Brass (fire)',
+      'Bronze (lightning)',
+      'Copper (acid)',
+      'Gold (fire)',
+      'Green (poison)',
+      'Red (fire)',
+      'Silver (cold)',
+      'White (cold)',
+    ]);
+    expect(deriveSheet(dragonbornDoc(true), ctx).pending.map((p) => p.id)).not.toContain(
+      'race:dragonborn|tst:ancestry',
+    );
+  });
+
+  it('fixes the resistance and types the breath weapon from a picked ancestry', () => {
+    const doc = dragonbornDoc(false);
+    doc.choices['race:dragonborn|tst:ancestry'] = ['brass'];
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.pending.map((p) => p.id)).not.toContain('race:dragonborn|tst:ancestry');
+    expect(sheet.resists.map((r) => r.damageType)).toEqual(['fire']);
+    const bw = sheet.actions.find((a) => a.label === 'Breath Weapon');
+    expect(bw?.note).toBe('fire · 5 by 30 ft line');
+    expect(bw?.save).toEqual({ targetAbility: 'dex', dc: 12 });
+  });
+
+  it('keeps a resistance picked before the ancestry was asked, until the ancestry is picked', () => {
+    const doc = dragonbornDoc(false);
+    doc.choices['race:dragonborn|tst:resist:r0'] = ['cold'];
+    const before = deriveSheet(doc, ctx);
+    expect(before.resists.map((r) => r.damageType)).toEqual(['cold']);
+    expect(before.pending.map((p) => p.id)).toContain('race:dragonborn|tst:ancestry');
+    doc.choices['race:dragonborn|tst:ancestry'] = ['green'];
+    const after = deriveSheet(doc, ctx);
+    expect(after.resists.map((r) => r.damageType)).toEqual(['poison']);
+    expect(after.actions.find((a) => a.label === 'Breath Weapon')?.save).toEqual({
+      targetAbility: 'con',
+      dc: 12,
+    });
   });
 
   it('types the breath weapon from the ancestry (damage, area, save DC)', () => {
