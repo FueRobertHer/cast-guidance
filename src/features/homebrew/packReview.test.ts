@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import type { PackAppliesTo } from '@/engine/castGuidance';
+import {
+  type PackAppliesTo,
+  RULE_PACK_TYPE,
+  readTableRules,
+  TABLE_RULES,
+  type TableRuleChoices,
+  type TableRuleId,
+} from '@/engine/castGuidance';
+import { tableRulesFor } from '@/engine/rules';
 import {
   describeConflict,
   describeIncomingConflict,
   type PackInPlay,
   packConflicts,
   packReview,
+  RULE_WORDS,
   targetWords,
 } from './importPreview';
 
@@ -106,6 +115,64 @@ describe('where packs disagree', () => {
       'Bram, Party and Everyone all set rest length. Party wins: it comes later in your pack order.',
       'Party and Everyone both set rest length. Party wins: it is applied to those characters, over every character.',
     ]);
+  });
+
+  it('names as the winner the rule the engine plays by, for every rule', () => {
+    const everyone = pack(
+      'Everyone',
+      { tableRules: { critDamage: 'maxPlusRoll', restLength: 'gritty', hpOnLongRest: 'half' } },
+      every,
+    );
+    const hilds = pack(
+      'Hild’s',
+      { tableRules: { critDamage: 'doubleTotal', restLength: 'gritty', hpOnLongRest: 'all' } },
+      to('hild'),
+    );
+    const settings: Array<Partial<TableRuleChoices>> = [
+      {},
+      { critDamage: 'doubleDice' },
+      { hpOnLongRest: 'hitDice', flanking: 'advantage' },
+    ];
+    const rulesOf = (p: PackInPlay) => readTableRules(p.guidance.tableRules).rules;
+    let checked = 0;
+    for (const order of [
+      [everyone, hilds],
+      [hilds, everyone],
+    ]) {
+      for (const chosen of settings) {
+        const clashes = packConflicts(order, chosen);
+        // The registry's packs, as `rulePackEntries` hands them to the engine.
+        const ctx = {
+          byType: (type: string) =>
+            type === RULE_PACK_TYPE
+              ? order.map((p) => ({
+                  name: p.name,
+                  castGuidance: p.guidance,
+                  appliesTo: p.appliesTo,
+                }))
+              : [],
+          rules: chosen,
+        };
+        const played = tableRulesFor({ id: 'hild', rulesVersion: '2024' }, ctx).rules;
+        for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+          const clash = clashes.find((c) => c.what === RULE_WORDS[id].name.toLowerCase());
+          const winner = order.find((p) => p.id === clash?.winnerId);
+          if (winner !== undefined) {
+            expect(rulesOf(winner)[id], `${id} under ${JSON.stringify(chosen)}`).toBe(played[id]);
+            checked += 1;
+          }
+          // Both set crits; Settings hides the every-character pack's, so only then is there no clash.
+          if (id === 'critDamage') {
+            expect(clash !== undefined, JSON.stringify(chosen)).toBe(
+              chosen.critDamage === undefined,
+            );
+            expect(played.critDamage).toBe('doubleTotal');
+          }
+        }
+      }
+    }
+    // Crits in four cases, HP on a long rest in four: rest length agrees, so never a clash.
+    expect(checked).toBe(8);
   });
 
   it('a rule chosen in Settings is over every pack applied to every character', () => {

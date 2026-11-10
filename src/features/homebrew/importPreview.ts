@@ -29,6 +29,7 @@ import {
   own,
   PACK_PARTS,
   type PackAppliesTo,
+  RULE_PACK_TYPE,
   readTableRules,
   TABLE_RULES,
   type TableRuleChoices,
@@ -36,7 +37,8 @@ import {
 } from '@/engine/castGuidance';
 import { readPack } from '@/engine/effects/mechanics';
 import { readPackMoments } from '@/engine/moments';
-import type { CharacterDoc } from '@/engine/types';
+import { appRulesFor, ruleSources } from '@/engine/rules';
+import type { CharacterDoc, DataEntity } from '@/engine/types';
 import {
   collectCharacterRefs,
   collectCharacterSources,
@@ -1041,23 +1043,60 @@ function packSets(p: PackInPlay): PackSets {
   return sets;
 }
 
+/** A character no pack names: who the packs applied to every character alone reach. */
+const NAMED_BY_NONE = '\u0000anyone else';
+
+/** Which pack a character plays a rule by, by its place among the packs, and whether it names them. */
+type PlayedBy = Partial<Record<TableRuleId, { place: number; named: boolean }>>;
+
+/**
+ * The pack each rule comes from for the character `who`, as the engine
+ * decides it (`ruleSources`, then `appRulesFor` where the rule is the app's):
+ * none where a choice in Settings or the book sets it. Each pack goes in
+ * named by its place, so two packs sharing a name are never confused.
+ */
+function playedBy(
+  packs: readonly DataEntity[],
+  who: string,
+  settings: Readonly<Partial<TableRuleChoices>>,
+): PlayedBy {
+  const ctx = {
+    byType: (type: string) => (type === RULE_PACK_TYPE ? packs : []),
+    rules: settings,
+  };
+  const doc = { id: who, rulesVersion: '2024' as const };
+  const from = ruleSources(doc, ctx);
+  const app = appRulesFor(ctx, doc.rulesVersion);
+  // `appRulesFor` names the pack behind a rule, which decides only where Settings has none.
+  const chosen = readTableRules(settings).rules;
+  const out: PlayedBy = {};
+  for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+    const source = from[id];
+    const appPack = app.packs[id];
+    if (source.from === 'pack') out[id] = { place: Number(source.pack), named: true };
+    else if (source.from === 'app' && chosen[id] === undefined && appPack !== undefined)
+      out[id] = { place: Number(appPack), named: false };
+  }
+  return out;
+}
+
 /**
  * Where packs that are on disagree, and which wins, worked out character by
- * character as the engine does (`engine/rules.ts` for table rules,
- * `effects/mechanics.ts` for changes). For a table rule, a pack applied to the
- * character wins over one applied to every character, and between two alike
- * the later in the player's order; a rule chosen in Settings (`app`) is over
- * every pack applied to every character, so those do not clash there. Of two
- * replacing one entry, the later always. Packs that agree, that reach no
- * character in common, or whose version the app cannot read are no clash.
- * A character's own choice of a rule, which is over every pack, is not seen.
+ * character. For a table rule the engine decides (`ruleSources` and
+ * `appRulesFor` in `engine/rules.ts`): a pack counts for a character where,
+ * on its own, they would play the rule by it, and the winner is the pack
+ * they play it by with every pack on. For a change to an entry, the later of
+ * two replacing it wins, as `effects/mechanics.ts` applies them, read by its
+ * `readPack`. Packs that agree, or reach no character in common, are no
+ * clash. A character's own choice of a rule, which is over every pack, is
+ * not seen.
  */
 export function packConflicts(
   packs: readonly PackInPlay[],
   app: Readonly<Partial<TableRuleChoices>> = {},
 ): PackConflict[] {
   const live = packs
-    .filter((p) => reaches(p.appliesTo) && !('problem' in guidanceVersion(p.guidance)))
+    .filter((p) => reaches(p.appliesTo))
     .map((pack) => ({ pack, sets: packSets(pack), to: pack.appliesTo as PackAppliesTo }));
   // Each character a pack names, then everyone else: who an every-character pack alone reaches.
   const people: Who[] = [...new Set(live.flatMap((l) => l.to.characters)), OTHERS];
@@ -1080,26 +1119,44 @@ export function packConflicts(
       why,
     });
   };
+  const entries: DataEntity[] = live.map((l, place) => ({
+    name: String(place),
+    castGuidance: l.pack.guidance,
+    appliesTo: l.to,
+  }));
+  // For each character: the pack behind each rule with every pack on, and with each alone.
+  const played = new Map(
+    people.map((who) => {
+      const id = who === OTHERS ? NAMED_BY_NONE : who;
+      return [
+        who,
+        {
+          all: playedBy(entries, id, app),
+          alone: entries.map((e) => playedBy([e], id, app)),
+        },
+      ] as const;
+    }),
+  );
   for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
     for (const who of people) {
-      const setters = live.filter(
-        (l) => l.sets.rules[id] !== undefined && (l.to.appDefault === true || named(l.to, who)),
-      );
-      const mine = setters.filter((l) => named(l.to, who));
-      const defaults = app[id] === undefined ? setters.filter((l) => !named(l.to, who)) : [];
-      const counted = setters.filter((l) => mine.includes(l) || defaults.includes(l));
-      if (counted.length < 2 || new Set(counted.map((l) => l.sets.rules[id])).size === 1) continue;
-      const winner = mine[mine.length - 1] ?? defaults[defaults.length - 1];
+      const by = played.get(who);
+      const won = by?.all[id];
+      if (by === undefined || won === undefined) continue;
+      const counted = live.flatMap((l, place) => {
+        const alone = by.alone[place]?.[id];
+        return alone === undefined ? [] : [{ ...l, named: alone.named }];
+      });
+      if (counted.length < 2 || new Set(counted.map((c) => c.sets.rules[id])).size === 1) continue;
+      const winner = live[won.place];
       if (winner === undefined) continue;
       // Chosen only when every pack it overrules is applied to every character;
       // one that also names the character it beats by order alone.
       const value = winner.sets.rules[id];
-      const overruled = counted.filter((l) => l.sets.rules[id] !== value);
-      const why =
-        mine.includes(winner) && overruled.every((l) => defaults.includes(l)) ? 'chosen' : 'order';
+      const overruled = counted.filter((c) => c.sets.rules[id] !== value);
+      const why = won.named && overruled.every((c) => !c.named) ? 'chosen' : 'order';
       say(
         ruleName(id).toLowerCase(),
-        counted.map((l) => l.pack),
+        counted.map((c) => c.pack),
         winner.pack,
         why,
       );
