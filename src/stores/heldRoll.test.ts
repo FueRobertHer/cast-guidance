@@ -199,7 +199,7 @@ describe('the prompt', () => {
   it('lets the waiting roll go for another that waits, or one that lands', () => {
     rollFrom(button(), check([], 'Athletics check'));
     rollFrom(button(), check([], 'Stealth check'));
-    expect(held()?.ask.label).toBe('Stealth check');
+    expect(held()?.ask?.label).toBe('Stealth check');
     rollFrom(button(), () => roll('2d4+2', { label: 'Potion of Healing', kind: 'heal' }));
     expect(held()).toBeNull();
     expect(logged().map((r) => r.label)).toEqual(['Potion of Healing']);

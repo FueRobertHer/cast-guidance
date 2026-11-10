@@ -1,4 +1,4 @@
-import { Check, ChevronsUp, HeartCrack, HeartPlus, X } from 'lucide-react';
+import { Check, ChevronsUp, HeartCrack, HeartPlus, Sparkles, X } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -20,6 +20,7 @@ import {
   type HeldRoll,
   heldRollStore,
   nameHeldDie,
+  pickHeldTile,
   type RollFace,
   rollHeld,
   setHeldMode,
@@ -666,26 +667,90 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
   }
   const chip =
     'inline-flex h-11 min-w-14 shrink-0 items-center justify-center rounded-chip font-semibold text-dice tabular-nums';
+  const cast = face.tone === 'cast';
   if (face.wear !== undefined) {
     return (
-      <span className={`relative ${chip}`} aria-hidden="true">
-        <ChipFace
-          wear={{ ...face.wear, ignored: face.wear.ignored || setAside }}
-          rolls={0}
-          showing={false}
-          lift={face.lift}
-        >
-          {face.text}
-        </ChipFace>
+      <span className={`relative ${chip} ${cast ? 'ring-1 ring-line-strong ring-inset' : ''}`}>
+        <span aria-hidden="true" className="contents">
+          <ChipFace
+            wear={{ ...face.wear, ignored: face.wear.ignored || setAside }}
+            rolls={0}
+            showing={false}
+            surface={cast ? 'cast' : 'chip'}
+            tone={face.tone === 'cast' ? undefined : face.tone}
+            lift={face.lift}
+          >
+            {face.text}
+          </ChipFace>
+        </span>
       </span>
     );
   }
   return (
     <Lift on={face.lift === true} className="shrink-0 rounded-chip">
-      <span className={`${chip} bg-roll-soft px-2 text-roll`} aria-hidden="true">
+      <span className={`${chip} px-2 ${FACE_TONE[face.tone ?? 'roll']}`} aria-hidden="true">
         {face.text}
       </span>
     </Lift>
+  );
+}
+
+/** The header chip's plain colour, as the chip it copies has it. */
+const FACE_TONE = {
+  roll: 'bg-roll-soft text-roll',
+  danger: 'bg-danger-soft text-danger',
+  heal: 'bg-heal-soft text-heal',
+  cast: 'text-ink ring-1 ring-line-strong ring-inset',
+} as const;
+
+/**
+ * The ways to cast a spell, as tiles by source (the rolls canvas, "Every way
+ * to cast" A): each group under its heading, its tiles filling the row, each
+ * its level over what is left or what it costs. One that cannot pay stays,
+ * faint, so what is gone is said rather than hidden.
+ */
+function CastTiles({ held }: { held: HeldRoll }) {
+  const groups = held.cast?.groups ?? [];
+  if (groups.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((group) => (
+        <div key={group.tiles[0]?.id ?? group.title} className="flex flex-col gap-1">
+          <span className="px-0.5 font-semibold text-caption text-ink-muted">
+            {group.title}
+            {group.sub === undefined ? '' : <span className="font-normal"> · {group.sub}</span>}
+          </span>
+          {/* biome-ignore lint/a11y/useSemanticElements: a group of toggle buttons, not a fieldset of inputs */}
+          <div role="group" aria-label={group.title} className="flex flex-wrap gap-1.5">
+            {group.tiles.map((tile) => {
+              const on = held.picked === tile.id;
+              return (
+                <button
+                  key={tile.id}
+                  type="button"
+                  aria-pressed={on}
+                  aria-disabled={!tile.ok}
+                  aria-label={tile.aria}
+                  onClick={() => pickHeldTile(tile.id)}
+                  className={`flex min-h-tap min-w-14 flex-1 flex-col items-center justify-center rounded-control px-1.5 py-1 leading-tight ${
+                    on
+                      ? 'bg-ink text-bg'
+                      : tile.ok
+                        ? 'bg-surface-raised text-ink hover:bg-surface-hover'
+                        : 'cursor-default text-ink-muted ring-1 ring-line ring-inset'
+                  }`}
+                >
+                  <span className="font-bold text-label">{tile.head}</span>
+                  <span className={`text-caption ${on ? 'text-bg' : 'text-ink-muted'}`}>
+                    {tile.sub}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -700,6 +765,11 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
  * that the control tapped again rolls too.
  * Roll and Cancel, or Esc, send focus back to the control, when it was in here,
  * and the sheet scrolls that control clear of the prompt as it opens.
+ *
+ * A spell cast here ("Level at cast" A) shows its ways to cast as tiles by
+ * source, and the note says what the tile picked spends. One with no d20
+ * (Cure Wounds, Fireball, Bless) has no mode to pick: its header shows its dice
+ * at the level picked, and its button says what it does (Heal, Roll, Cast).
  */
 function RollPrompt({
   held,
@@ -710,28 +780,64 @@ function RollPrompt({
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const dropUnnamed = useStore(rollOffersStore, (s) => s.before);
-  const { ask } = held;
+  const { ask, cast, picked } = held;
   const choice = {
     mode: held.mode,
     rollsIn: held.rollsIn,
     named: held.named,
     declared: held.declared,
   };
-  const why = ask.cueFor(held.mode, choice);
-  const setAside = held.mode !== ask.presetFor(choice) && ask.conditions;
-  const named = ask.once.filter((_, i) => held.named[i] === true);
-  const left = ask.once.length - named.length;
+  const why = ask?.cueFor(held.mode, choice) ?? '';
+  const setAside = ask !== null && held.mode !== ask.presetFor(choice) && ask.conditions;
+  const once = ask?.once ?? [];
+  const named = once.filter((_, i) => held.named[i] === true);
+  const left = once.length - named.length;
   // What declaring costs comes first: it lasts past this roll.
-  const costs = ask.thisTurn.filter((_, i) => held.declared[i] === true).map((t) => `${t.cost}.`);
+  const costs = (ask?.thisTurn ?? [])
+    .filter((_, i) => held.declared[i] === true)
+    .map((t) => `${t.cost}.`);
   const spends = named.length > 0 ? `Spends ${andWords(named.map((o) => o.source))}.` : '';
+  const leftNote =
+    left === 0
+      ? ''
+      : dropUnnamed
+        ? 'Dice you leave are gone once the d20 shows.'
+        : 'Dice you leave come back after the roll.';
+  // One note: what declaring costs and what the roll spends (the cast's
+  // tile, then the dice added), else what happens to the dice left, else
+  // that the control rolls too.
   const note =
-    costs.length > 0 || spends !== ''
-      ? [...costs, spends].filter((s) => s !== '').join(' ')
-      : left > 0
-        ? dropUnnamed
-          ? 'Dice you leave are gone once the d20 shows.'
-          : 'Dice you leave come back after the roll.'
-        : `Tap ${held.face?.text ?? 'it'} again to roll.`;
+    cast !== undefined
+      ? [
+          ...costs,
+          cast.note(picked),
+          spends !== '' ? spends.replace(/^Spends/, 'Also spends') : leftNote,
+        ]
+          .filter((n) => n !== '')
+          .join(' ')
+      : costs.length > 0 || spends !== ''
+        ? [...costs, spends].filter((n) => n !== '').join(' ')
+        : leftNote !== ''
+          ? leftNote
+          : `Tap ${held.face?.text ?? 'it'} again to roll.`;
+  // A cast with no d20: its header chip shows the dice at the level picked,
+  // and its button says what it does.
+  const dice = cast?.dice(picked);
+  const face =
+    ask === null && held.face !== undefined
+      ? { ...held.face, text: dice?.expr ?? held.face.text }
+      : held.face;
+  const line = cast?.line(picked);
+  const label = ask?.label ?? `Cast ${cast?.spell ?? ''}`;
+  const go =
+    ask !== null
+      ? { word: 'Roll', icon: D20Icon, tone: GO.roll }
+      : dice === undefined
+        ? { word: 'Cast', icon: Sparkles, tone: GO.roll }
+        : dice.kind === 'heal'
+          ? { word: 'Heal', icon: HeartPlus, tone: GO.heal }
+          : { word: 'Roll', icon: dice.kind === 'damage' ? HeartCrack : D20Icon, tone: GO.roll };
+  const GoIcon = go.icon;
   const leave = (act: () => void) => {
     const inside = box.current?.contains(document.activeElement) === true;
     const back = held.from;
@@ -777,7 +883,7 @@ function RollPrompt({
       key={held.seq}
       ref={box}
       role="group"
-      aria-label={`${ask.label}, choose and roll`}
+      aria-label={`${label}, choose and ${go.word.toLowerCase()}`}
       className={`${FRAME} ${TONE.d20.edge} flex flex-col gap-2`}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
@@ -786,67 +892,73 @@ function RollPrompt({
       }}
     >
       <div className={ROW}>
-        <PromptHeader face={held.face} setAside={setAside} />
+        <PromptHeader face={face} setAside={setAside} />
         <span className="block min-w-0 flex-1">
           {/* Whole, unlike a result's: nothing here competes with it. */}
-          <span className="block break-words text-body-strong">{ask.label}</span>
+          <span className="block break-words text-body-strong">{label}</span>
           <span className="block text-dice-small text-ink-muted tabular-nums">
-            {ask.formula(choice)}
+            {ask === null
+              ? (line ?? '')
+              : `${ask.formula(choice)}${line === undefined ? '' : `, ${line}`}`}
           </span>
         </span>
         <button
           type="button"
-          aria-label="Cancel this roll"
+          aria-label={ask === null ? 'Cancel this cast' : 'Cancel this roll'}
           onClick={() => leave(cancelHeld)}
           className="-mt-1 -mr-2 inline-flex size-11 shrink-0 items-center justify-center self-start rounded-full text-ink-muted hover:bg-surface-hover"
         >
           <X size={18} aria-hidden="true" />
         </button>
       </div>
-      <SegmentedControl
-        label="Roll mode"
-        options={ROLL_MODES}
-        value={held.mode}
-        onChange={setHeldMode}
-        block
-      />
-      {why !== '' && <p className="text-caption text-guide">{why}</p>}
-      {(ask.rollsIn.length > 0 || ask.once.length > 0 || ask.thisTurn.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {ask.rollsIn.map((d, i) => (
-            <Extra
-              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
-              key={`in${i}`}
-              on={held.rollsIn[i] === true}
-              dice={d.dice}
-              source={d.source}
-              when="rolls in"
-              onClick={() => toggleHeldRollIn(i)}
-            />
-          ))}
-          {ask.once.map((o, i) => (
-            <Extra
-              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
-              key={`once${i}`}
-              on={held.named[i] === true}
-              dice={o.dice}
-              source={o.source}
-              when="once"
-              onClick={() => nameHeldDie(i)}
-            />
-          ))}
-          {ask.thisTurn.map((t, i) => (
-            <Extra
-              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
-              key={`turn${i}`}
-              on={held.declared[i] === true}
-              source={t.source}
-              when="this turn"
-              onClick={() => declareHeld(i)}
-            />
-          ))}
-        </div>
+      <CastTiles held={held} />
+      {ask !== null && (
+        <SegmentedControl
+          label="Roll mode"
+          options={ROLL_MODES}
+          value={held.mode}
+          onChange={setHeldMode}
+          block
+        />
       )}
+      {why !== '' && <p className="text-caption text-guide">{why}</p>}
+      {ask !== null &&
+        (ask.rollsIn.length > 0 || ask.once.length > 0 || ask.thisTurn.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {ask.rollsIn.map((d, i) => (
+              <Extra
+                // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+                key={`in${i}`}
+                on={held.rollsIn[i] === true}
+                dice={d.dice}
+                source={d.source}
+                when="rolls in"
+                onClick={() => toggleHeldRollIn(i)}
+              />
+            ))}
+            {ask.once.map((o, i) => (
+              <Extra
+                // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+                key={`once${i}`}
+                on={held.named[i] === true}
+                dice={o.dice}
+                source={o.source}
+                when="once"
+                onClick={() => nameHeldDie(i)}
+              />
+            ))}
+            {ask.thisTurn.map((t, i) => (
+              <Extra
+                // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+                key={`turn${i}`}
+                on={held.declared[i] === true}
+                source={t.source}
+                when="this turn"
+                onClick={() => declareHeld(i)}
+              />
+            ))}
+          </div>
+        )}
       {held.damage.length > 0 && (
         <p className="text-dice-small text-ink-muted">
           {held.damage.length === 1
@@ -860,12 +972,18 @@ function RollPrompt({
           ref={rollButton}
           type="button"
           onClick={() => leave(rollHeld)}
-          className="inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-5 font-bold text-label text-on-brand hover:bg-brand-hover"
+          className={`inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-5 font-bold text-label ${go.tone}`}
         >
-          <D20Icon size={16} aria-hidden="true" />
-          Roll
+          <GoIcon size={16} aria-hidden="true" />
+          {go.word}
         </button>
       </div>
     </div>
   );
 }
+
+/** The prompt's main button: the roll blue, or the heal green for a spell that heals. */
+const GO = {
+  roll: 'bg-brand text-on-brand hover:bg-brand-hover',
+  heal: 'bg-heal text-on-brand hover:brightness-112',
+} as const;

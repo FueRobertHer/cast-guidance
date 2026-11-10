@@ -3,14 +3,17 @@
 // own spells by level, each with the one thing a player does with it, and what
 // that does to the slots, the concentration and the history.
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
+import { cancelHeld } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import {
+  castHeld,
+  castNote,
+  castTiles,
   chooseSpells,
   classEntry,
-  dialog,
   HARNESS_TIMEOUT,
   left,
   renderSheet,
@@ -155,6 +158,11 @@ describe('Cast and End on a row', () => {
     expect(within(row('Steady Gaze')).getByText('Concentration')).toBeTruthy();
     expect(within(row('Steady Gaze')).getByText('Enchantment · up to 1 minute')).toBeTruthy();
 
+    // One slot fits, and the prompt says so before anything is spent.
+    press('Cast Steady Gaze');
+    expect(castTiles()).toEqual(['Level 1 slot, 2 left']);
+    expect(left('Level 1 slot')).toBe(2);
+    // Cast again, as Cast in the prompt is pressed.
     press('Cast Steady Gaze');
 
     expect(left('Level 1 slot')).toBe(1);
@@ -173,29 +181,32 @@ describe('Cast and End on a row', () => {
     expect((await sheet.saved()).play.concentratingOn).toBeUndefined();
   });
 
-  it('asks which level when more than one fits, and spends the answer', async () => {
+  it('offers each level that fits, and spends the one picked', async () => {
     const doc = sorcerer();
     doc.spellcasting = { 'sorcerer|tst': { known: [ref('Steady Gaze')], prepared: [] } };
     const sheet = await renderSheet(doc, { path: 'spells', extra: { spell: [gaze] } });
 
     press('Cast Steady Gaze');
-    await (await dialog('Cast Steady Gaze')).press(/^Level 3 slot \(upcast\)/);
+    expect(castTiles().slice(0, 3)).toEqual([
+      'Level 1 slot, 4 left',
+      'Level 2 slot, 3 left',
+      'Level 3 slot, 2 left',
+    ]);
+    castHeld('Level 3 slot');
 
     expect(left('Level 3 slot')).toBe(1);
     expect(left('Level 1 slot')).toBe(4);
     expect((await sheet.saved()).play.concentratingOn).toEqual({ label: 'Steady Gaze', level: 3 });
   });
 
-  it('spends nothing when the player backs out of the choice', async () => {
+  it('spends nothing when the player backs out of the prompt', async () => {
     const doc = sorcerer();
     doc.spellcasting = { 'sorcerer|tst': { known: [ref('Steady Gaze')], prepared: [] } };
     await renderSheet(doc, { path: 'spells', extra: { spell: [gaze] } });
 
     press('Cast Steady Gaze');
-    fireEvent.keyDown(await screen.findByRole('dialog', { name: 'Cast Steady Gaze' }), {
-      key: 'Escape',
-    });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    act(() => cancelHeld());
+    await waitFor(() => expect(castTiles()).toEqual([]));
 
     expect(left('Level 1 slot')).toBe(4);
     expect(screen.getByRole('button', { name: 'Cast Steady Gaze' })).toBeTruthy();
@@ -203,13 +214,13 @@ describe('Cast and End on a row', () => {
 });
 
 describe('a spell that rolls', () => {
-  it('casts from its chip, at the slot its picker settled', async () => {
+  it('casts from its chip, at the slot picked in the prompt', async () => {
     const sheet = await renderSheet(sorcerer(), { path: 'spells' });
-    press('Searing Bolt: casting with Level 1 slot. Change');
-    await (await dialog('Cast Searing Bolt')).press(/^Level 3 slot \(upcast\)/);
+    press('2d6');
+    expect(castNote()).toBe('Spends a 1st-level slot.');
+    castHeld('Level 3 slot');
 
-    press('4d6');
-
+    expect(rollLogStore.getState().rolls.map((r) => r.expr)).toEqual(['4d6']);
     expect(left('Level 3 slot')).toBe(1);
     expect((await sheet.history())[0]).toBe('Cast Searing Bolt (L3)');
   });
@@ -218,22 +229,22 @@ describe('a spell that rolls', () => {
     const doc = sorcerer();
     doc.spellcasting = { 'sorcerer|tst': { known: [ref('Moon Shaft')], prepared: [] } };
     await renderSheet(doc, { path: 'spells', extra: { spell: [shaft] } });
-    press('Moon Shaft: casting with Level 2 slot. Change');
-    await (await dialog('Cast Moon Shaft')).press(/^Level 3 slot \(upcast\)/);
-
-    press('3d10');
+    press('2d10');
+    castHeld('Level 3 slot');
     expect(left('Level 3 slot')).toBe(1);
 
     // Its next turn: the same dice, the same slots, and End beside them.
-    expect(screen.queryByRole('button', { name: /^Moon Shaft: casting with/ })).toBeNull();
     // The chip is still showing its total, so it is found by what it rolls.
     fireEvent.click(screen.getByTitle('Moon Shaft radiant damage'));
     expect(rollLogStore.getState().rolls.map((r) => r.expr)).toEqual(['3d10', '3d10']);
     expect(left('Level 3 slot')).toBe(1);
     expect(left('Level 2 slot')).toBe(3);
+    expect(castTiles()).toEqual([]);
 
+    // Ended, the chip casts again, from the lowest slot that fits.
     press('End concentration on Moon Shaft');
-    expect(screen.getByRole('button', { name: '2d10' })).toBeTruthy();
+    fireEvent.click(screen.getByTitle('Moon Shaft radiant damage'));
+    expect(castNote()).toBe('Spends a 2nd-level slot.');
   });
 });
 
@@ -272,6 +283,7 @@ describe('a condition on casting', () => {
     expect(wearing(chip)).toContain('cx-paralyzed');
 
     fireEvent.click(chip);
+    castHeld();
 
     expect(wearing(screen.getByTitle('Moon Shaft radiant damage'))).toContain('cx-rm');
   });
@@ -335,6 +347,8 @@ describe('who lands where', () => {
 
     expect(within(group).getByText('2/2 per day')).toBeTruthy();
     fireEvent.click(within(group).getByRole('button', { name: '2d6' }));
+    expect(castTiles()).toEqual(['Spark Touched · level 1, 2 left']);
+    castHeld();
     expect(within(group).getByText('1/2 per day')).toBeTruthy();
     expect(left('Level 1 slot')).toBe(4);
   });
@@ -354,6 +368,8 @@ describe('who lands where', () => {
     expect(level('Level 6').caption).toBe('Mystic Arcanum ready');
 
     press('Cast Far Step');
+    expect(castNote()).toBe('Spends your 6th-level Mystic Arcanum.');
+    castHeld();
 
     expect(level('Level 6').caption).toBe('Mystic Arcanum used');
     expect((await sheet.saved()).play.arcanumUsed).toEqual([6]);
@@ -370,6 +386,8 @@ describe('who lands where', () => {
     expect(level('Level 2').caption).toBe('2 pact slots left');
 
     press('Cast Steady Gaze');
+    expect(castTiles()).toEqual(['Pact slot · level 2, 2 left']);
+    castHeld();
 
     expect(level('Level 1').caption).toBe('1 pact slot left');
     expect(level('Level 2').caption).toBe('1 pact slot left');

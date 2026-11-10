@@ -69,8 +69,8 @@ describe('one-use dice in the roll prompt', () => {
     nextFaces(); // asking rolls nothing
     fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
     expect(logged()).toHaveLength(0);
-    expect(held()?.ask.label).toBe('STR check');
-    expect(held()?.ask.once.map((o) => o.source)).toEqual(['Guidance']);
+    expect(held()?.ask?.label).toBe('STR check');
+    expect(held()?.ask?.once.map((o) => o.source)).toEqual(['Guidance']);
 
     act(() => nameHeldDie(0));
     nextFaces(12, 3);
@@ -102,7 +102,7 @@ describe('one-use dice in the roll prompt', () => {
     const sheet = await renderSheet(doc);
     nextFaces(); // nothing rolls until the attack does
     fireEvent.click(screen.getByTitle('Unarmed Strike attack'));
-    expect(held()?.ask.attack).toBe(true);
+    expect(held()?.ask?.attack).toBe(true);
     fireEvent.click(screen.getByTitle(/^Unarmed Strike (\w+ )?damage$/));
     expect(logged()).toHaveLength(0);
     expect(held()?.damage).toHaveLength(1);
