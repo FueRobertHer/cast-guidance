@@ -29,9 +29,11 @@ import { collectClasses } from './effects/class';
 import { collectFeats } from './effects/feat';
 import { markHeldPicks } from './effects/heldPicks';
 import { collectItems, isArmor, isShield, lookupItem } from './effects/item';
+import { subjectsWithMoments } from './effects/mechanics';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
 import { Formula } from './formula';
+import { collectMoments, momentsInForce } from './moments';
 import type {
   Ability,
   ActiveEffect,
@@ -225,6 +227,15 @@ export function deriveSheet(
     col.warnings.push(`${note.origin.label}: ${note.text}`);
   }
 
+  // Moments (H9): the entries' own and the packs applied to this character.
+  const readMoments = collectMoments(subjectsWithMoments(col), ctx, doc.id);
+  for (const problem of readMoments.problems) col.warn(problem);
+  const moments = momentsInForce(
+    readMoments,
+    { abilities, profBonus, totalLevel, maxHp, resources },
+    scope.hp,
+  );
+
   return {
     abilities,
     profBonus,
@@ -291,6 +302,7 @@ export function deriveSheet(
       text: e.text,
       origin: e.origin.label,
     })),
+    ...(moments === undefined ? {} : { moments }),
     effectsNotCounted,
     languages: [...new Set(effectsOf(effects, 'language').map((e) => e.name))],
     armorProfs: uniqueNames(effectsOf(effects, 'armorProf').map((e) => e.name)),

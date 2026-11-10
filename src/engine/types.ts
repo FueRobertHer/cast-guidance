@@ -4,6 +4,7 @@
  * results; overrides are inputs. Everything else is recomputed on read.
  */
 import type { TableRuleChoices } from './castGuidance';
+import type { MomentsInForce } from './moments';
 
 export type Ability = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
 export const ABILITIES: readonly Ability[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -955,6 +956,12 @@ export interface DerivedSheet {
   /** The most temporary hit points offered at the start of each turn. */
   tempHpEachTurn?: { amount: number; origin: string };
   cues: Array<{ tone: 'help' | 'ward' | 'warn' | 'info'; text: string; origin: string }>;
+  /**
+   * What happens at moments the app sees (H9): the moments of the entries the
+   * character has and of rule packs applied to them, with what their amounts
+   * read (`moments.ts`). Absent when there are none.
+   */
+  moments?: MomentsInForce;
   /** Effects in play that count for nothing because one of the same name does. */
   effectsNotCounted: NotCounted[];
   languages: string[];

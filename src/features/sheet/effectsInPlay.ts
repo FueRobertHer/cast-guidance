@@ -2,6 +2,7 @@ import { parseDice } from '@/dice/parse';
 import { countingEffects, readActiveEffects } from '@/engine/activeEffects';
 import type { ActiveCondition, ConditionImmunity, Edition } from '@/engine/conditions';
 import type { HpLimits, newTurn } from '@/engine/effectLife';
+import type { MomentReport } from '@/engine/moments';
 import type { Defenses } from '@/engine/playRules';
 import type {
   Ability,
@@ -13,6 +14,7 @@ import type {
   RollFilter,
   SpellcastingBlock,
 } from '@/engine/types';
+import type { Notice } from '@/stores/notices';
 
 /**
  * How the sheet shows what is in play (Bless, Rage, a Periapt's immunity):
@@ -40,9 +42,17 @@ export function andList(items: readonly string[]): string {
 const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : `+${n}`);
 const lower = (s: string) => s.trim().toLowerCase();
 
-/** What the effects in play need of the sheet to change hit points with them. */
+/**
+ * What the effects in play need of the sheet to change hit points with them,
+ * and the character's moments (H9), which fire as they change.
+ */
 export function hpLimits(sheet: DerivedSheet, edition: Edition): HpLimits {
-  return { maxHp: sheet.maxHp.value, edition, immune: sheet.conditionImmunities };
+  return {
+    maxHp: sheet.maxHp.value,
+    edition,
+    immune: sheet.conditionImmunities,
+    ...(sheet.moments === undefined ? {} : { moments: sheet.moments }),
+  };
 }
 
 /** The effects in play this app can read, in the order they were added. */
@@ -537,7 +547,54 @@ export function newTurnLines(
     );
   for (const x of extrasUsed) lines.push(`${x} ready again`);
   for (const name of change.ended) lines.push(`${name} ended`);
+  if (change.moments !== undefined) lines.push(...momentLines(change.moments));
   return lines;
+}
+
+/** What moments did, a line each: cues, then offers, then changes, then what could not happen. */
+export function momentLines(r: MomentReport): string[] {
+  return [
+    ...r.cues.map((c) => c.text),
+    ...r.offers.map((o) => (o.dice === undefined ? o.label : `${o.label}: ${o.dice}`)),
+    ...r.done.map((d) => d.text),
+    ...r.problems,
+  ];
+}
+
+/** A notice's tone for what moments did: a warning or a problem warns, help or a change is good. */
+function momentTone(r: MomentReport): Notice['tone'] {
+  if (r.problems.length > 0 || r.cues.some((c) => c.tone === 'warn')) return 'warn';
+  return r.cues.some((c) => c.tone === 'help') || r.done.length > 0 ? 'good' : 'info';
+}
+
+/** Where what moments did came from, each named once. */
+const momentSources = (r: MomentReport): string[] => [
+  ...new Set([...r.cues, ...r.offers, ...r.done].map((x) => x.from)),
+];
+
+/** A notice for what moments did, led by its first line and naming where they came from. */
+export function momentNotice(r: MomentReport): Notice | null {
+  const [title, ...rest] = momentLines(r);
+  if (title === undefined) return null;
+  const detail = [...rest, ...momentSources(r)].join(' · ');
+  const tone = momentTone(r);
+  return detail === '' ? { title, tone } : { title, detail, tone };
+}
+
+/**
+ * A notice with what moments did added to it, as one notice: the toast
+ * shows one at a time. Either alone when there is no other.
+ */
+export function withMoments(notice: Notice | null, r: MomentReport | undefined): Notice | null {
+  if (r === undefined) return notice;
+  if (notice === null) return momentNotice(r);
+  const lines = momentLines(r);
+  if (lines.length === 0) return notice;
+  const detail = [notice.detail, ...lines, ...momentSources(r)]
+    .filter((x) => x !== undefined && x !== '')
+    .join(' · ');
+  const tone = notice.tone === 'warn' || momentTone(r) === 'warn' ? 'warn' : notice.tone;
+  return { title: notice.title, detail, tone };
 }
 
 /** Every damage type the keypad offers: the ones a defense names, "all" left out. */
