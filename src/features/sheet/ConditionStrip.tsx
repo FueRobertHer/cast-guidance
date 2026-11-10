@@ -29,11 +29,13 @@ import { conditionSheetStore } from '@/stores/conditionSheet';
 import { type Notice, notify } from '@/stores/notices';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
+import { DecodeBoundary } from '@/ui/DecodeBoundary';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { focusSheetOnTouch, Sheet, touchScreen } from '@/ui/sheet';
 import { fieldClass } from '@/ui/TextField';
 import { ToggleChip } from '@/ui/ToggleChip';
 import { CONDITIONS, conditionEffect } from './conditionEffects';
+import type { EffectTab } from './EffectFinder';
 import { ExhaustionStepper } from './ExhaustionStepper';
 import {
   andList,
@@ -63,6 +65,20 @@ export function conditionLabel(c: Condition): { name: string; level?: number } {
  */
 const loadFinder = () => import('./EffectFinder');
 const EffectFinder = lazy(loadFinder);
+
+/** The sheet tabs by their route segment ('' is Play), each leading + Effect with its own effects. */
+const EFFECT_TABS: Readonly<Record<string, EffectTab>> = {
+  '': 'play',
+  stats: 'stats',
+  spells: 'spells',
+  inventory: 'items',
+  features: 'features',
+};
+
+/** The tab whose effects + Effect leads with, by its route segment; none for another. */
+export function effectTab(segment: string): EffectTab | undefined {
+  return Object.hasOwn(EFFECT_TABS, segment) ? EFFECT_TABS[segment] : undefined;
+}
 
 /** Where focus lands when nothing nearer is left: the sheet's title, which takes it. */
 const sheetTitle = () => document.getElementById('sheet-title');
@@ -123,8 +139,11 @@ const cannotBe = (id: string, by: readonly string[]) =>
  *
  * The row scrolls sideways when full; its end stays put, says how many chips
  * are out of sight, and opens the sheet that holds every one of them, with
- * every condition and the exhaustion stepper. With nothing on, the strip is
- * gone, except on Play (`addable`), where the end stays.
+ * every condition and the exhaustion stepper. With nothing on, the end stays
+ * by itself, + Effect, on every tab: Build, which edits the character rather
+ * than plays it, does not mount the strip. The sheet leads with the effects of
+ * the tab it was opened on (the rolls and casting canvas, Effects C), then the
+ * starters and Conditions; search still finds every effect.
  *
  * The sheets stay mounted here rather than in a chip, so a chip that goes away
  * (its condition removed in the picker, or Exhaustion stepped down to 0 in its
@@ -135,13 +154,14 @@ export function ConditionStrip({
   doc,
   sheet,
   update,
-  addable,
+  tab,
 }: {
   doc: CharacterDoc;
   /** The derived sheet: what the character is immune to, and their HP maximum. */
   sheet: DerivedSheet | null;
   update: DocUpdater;
-  addable: boolean;
+  /** The sheet tab it is on, by its route segment ('' is Play): its effects lead the sheet. */
+  tab: string;
 }) {
   const conditions = doc.play.conditions;
   const effects = effectsInPlay(doc.play);
@@ -164,6 +184,10 @@ export function ConditionStrip({
   const [picked, setPicked] = useState<string | null>(null);
   // A description being made, by the name it started with; none otherwise.
   const [describing, setDescribing] = useState<string | null>(null);
+  // The tab's own list: shown whole once asked, while the sheet is open, and
+  // the entry it opened, whose row Back puts focus on again.
+  const [leadAll, setLeadAll] = useState(false);
+  const leadRow = useRef<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const toSearch = useRef(false);
@@ -188,6 +212,8 @@ export function ConditionStrip({
     setQuery('');
     setPicked(null);
     setDescribing(null);
+    setLeadAll(false);
+    leadRow.current = null;
   };
   useEffect(() => {
     if (pickerOpen) void loadFinder();
@@ -215,7 +241,7 @@ export function ConditionStrip({
   const bardicDie = bardicDieOf(bardic);
 
   const chipCount = conditions.length + effects.length;
-  const stripShown = chipCount > 0 || addable;
+  const lead = effectTab(tab);
   useLayoutEffect(() => {
     const at = refocus.current;
     if (at === null) return;
@@ -241,14 +267,13 @@ export function ConditionStrip({
     setHidden(n);
   }, []);
   useLayoutEffect(measure);
-  // The row comes and goes with the strip, so each one it mounts is watched.
   useEffect(() => {
     const strip = row.current;
-    if (!stripShown || strip === null || typeof ResizeObserver === 'undefined') return;
+    if (strip === null || typeof ResizeObserver === 'undefined') return;
     const watch = new ResizeObserver(measure);
     watch.observe(strip);
     return () => watch.disconnect();
-  }, [measure, stripShown]);
+  }, [measure]);
 
   const limits = () => (sheet === null ? null : hpLimits(sheet, edition));
   const toggle = (id: string) => {
@@ -317,12 +342,24 @@ export function ConditionStrip({
     setDescribing(null);
     setQuery('');
     announce(`${effect.name} added`);
+    leadRow.current = null;
     toSearch.current = true;
   };
   const pick = (id: string | null) => {
     setPicked(id);
-    // Back from an entry goes to the words that found it.
+    // Back from an entry goes to the words that found it; one the tab's own
+    // list opened then puts focus on its row there, when it is still listed.
     if (id === null) toSearch.current = true;
+  };
+  /** An entry opened from the tab's own list, which Back returns to. */
+  const pickLead = (id: string | null) => {
+    leadRow.current = id;
+    setPicked(id);
+  };
+  const takeLeadRow = () => {
+    const id = leadRow.current;
+    leadRow.current = null;
+    return id;
   };
   const describe = (name: string | null) => {
     setDescribing(name);
@@ -429,164 +466,155 @@ export function ConditionStrip({
 
   return (
     <>
-      {stripShown && (
-        <div className="flex min-w-0 basis-full items-center">
-          {/* Padded so the chips' 44px targets, wider than the 32px pills, fit
+      <div className="flex min-w-0 basis-full items-center">
+        {/* Padded so the chips' 44px targets, wider than the 32px pills, fit
               inside the scrolling row instead of being clipped by it. The
               scroll padding does the same for a chip scrolled to (by focus,
               say): it stops clear of both edges. */}
-          <div
-            ref={row}
-            onScroll={measure}
-            className="flex min-w-0 flex-1 scroll-px-3 items-center gap-2 overflow-x-auto py-1.5 pr-1.5 pl-3 [scrollbar-width:none]"
-          >
-            {chipCount > 0 && (
-              <ul
-                ref={list}
-                aria-label="Active effects"
-                className="flex shrink-0 items-center gap-2"
-              >
-                {conditions.map((c, i) => {
-                  const { name, level } = conditionLabel(c);
-                  const by = immunityTo(c.id, immune);
-                  const held = by.length > 0;
-                  return (
-                    <li key={`c:${c.id}`} className={CHIP}>
-                      <button
-                        type="button"
-                        ref={(el) => {
-                          if (el === null) names.current.delete(`c:${c.id}`);
-                          else names.current.set(`c:${c.id}`, el);
-                        }}
-                        aria-haspopup="dialog"
-                        aria-expanded={infoOpen && shownCondition === c.id}
-                        onClick={() => open('condition', c.id)}
-                        className={CHIP_NAME}
-                      >
-                        {held ? (
-                          <ShieldCheck
-                            size={16}
-                            aria-hidden="true"
-                            className="shrink-0 text-ward"
-                          />
-                        ) : (
-                          <CircleAlert size={16} aria-hidden="true" className="shrink-0" />
-                        )}
-                        {/* One run of text, so its name has the space: "Exhausted 2". */}
-                        <span>
-                          {name}
-                          {level !== undefined && (
-                            <>
-                              {' '}
-                              <span className="font-normal text-ink-muted tabular-nums">
-                                {level}
-                              </span>
-                            </>
-                          )}
-                          {(c.ignored === true || held) && (
-                            <>
-                              {' '}
-                              <span className="font-normal text-ink-muted">off</span>
-                            </>
-                          )}
-                          {held && <span className="sr-only">, held off by {by.join(', ')}</span>}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        data-remove=""
-                        aria-label={`Remove ${c.id}`}
-                        onClick={() => remove(c.id, i)}
-                        className={CHIP_X}
-                      >
-                        <X size={14} aria-hidden="true" />
-                      </button>
-                    </li>
-                  );
-                })}
-                {effects.map((e, i) => {
-                  const mark = effectMark(e);
-                  return (
-                    <li key={`e:${e.id}`} className={CHIP}>
-                      <button
-                        type="button"
-                        ref={(el) => {
-                          if (el === null) names.current.delete(`e:${e.id}`);
-                          else names.current.set(`e:${e.id}`, el);
-                        }}
-                        aria-haspopup="dialog"
-                        aria-expanded={infoOpen && shownEffect?.id === e.id}
-                        onClick={() => open('effect', e.id)}
-                        className={CHIP_NAME}
-                      >
-                        {/* The space parts the die from the name when it is read out. */}
-                        {mark !== undefined ? (
+        <div
+          ref={row}
+          onScroll={measure}
+          className="flex min-w-0 flex-1 scroll-px-3 items-center gap-2 overflow-x-auto py-1.5 pr-1.5 pl-3 [scrollbar-width:none]"
+        >
+          {chipCount > 0 && (
+            <ul ref={list} aria-label="Active effects" className="flex shrink-0 items-center gap-2">
+              {conditions.map((c, i) => {
+                const { name, level } = conditionLabel(c);
+                const by = immunityTo(c.id, immune);
+                const held = by.length > 0;
+                return (
+                  <li key={`c:${c.id}`} className={CHIP}>
+                    <button
+                      type="button"
+                      ref={(el) => {
+                        if (el === null) names.current.delete(`c:${c.id}`);
+                        else names.current.set(`c:${c.id}`, el);
+                      }}
+                      aria-haspopup="dialog"
+                      aria-expanded={infoOpen && shownCondition === c.id}
+                      onClick={() => open('condition', c.id)}
+                      className={CHIP_NAME}
+                    >
+                      {held ? (
+                        <ShieldCheck size={16} aria-hidden="true" className="shrink-0 text-ward" />
+                      ) : (
+                        <CircleAlert size={16} aria-hidden="true" className="shrink-0" />
+                      )}
+                      {/* One run of text, so its name has the space: "Exhausted 2". */}
+                      <span>
+                        {name}
+                        {level !== undefined && (
                           <>
-                            <span className="font-bold text-heal tabular-nums">{mark}</span>{' '}
+                            {' '}
+                            <span className="font-normal text-ink-muted tabular-nums">{level}</span>
                           </>
-                        ) : (
-                          <ChevronsUp size={16} aria-hidden="true" className="shrink-0 text-heal" />
                         )}
-                        <span>
-                          {e.name}
-                          {e.off === true && (
-                            <>
-                              {' '}
-                              <span className="font-normal text-ink-muted">off</span>
-                            </>
-                          )}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        data-remove=""
-                        aria-label={`Remove ${e.name}`}
-                        onClick={() => end(e, conditions.length + i)}
-                        className={CHIP_X}
-                      >
-                        <X size={14} aria-hidden="true" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          {/* The end holds the row's right edge, outside the scrolling part,
+                        {(c.ignored === true || held) && (
+                          <>
+                            {' '}
+                            <span className="font-normal text-ink-muted">off</span>
+                          </>
+                        )}
+                        {held && <span className="sr-only">, held off by {by.join(', ')}</span>}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      data-remove=""
+                      aria-label={`Remove ${c.id}`}
+                      onClick={() => remove(c.id, i)}
+                      className={CHIP_X}
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  </li>
+                );
+              })}
+              {effects.map((e, i) => {
+                const mark = effectMark(e);
+                return (
+                  <li key={`e:${e.id}`} className={CHIP}>
+                    <button
+                      type="button"
+                      ref={(el) => {
+                        if (el === null) names.current.delete(`e:${e.id}`);
+                        else names.current.set(`e:${e.id}`, el);
+                      }}
+                      aria-haspopup="dialog"
+                      aria-expanded={infoOpen && shownEffect?.id === e.id}
+                      onClick={() => open('effect', e.id)}
+                      className={CHIP_NAME}
+                    >
+                      {/* The space parts the die from the name when it is read out. */}
+                      {mark !== undefined ? (
+                        <>
+                          <span className="font-bold text-heal tabular-nums">{mark}</span>{' '}
+                        </>
+                      ) : (
+                        <ChevronsUp size={16} aria-hidden="true" className="shrink-0 text-heal" />
+                      )}
+                      <span>
+                        {e.name}
+                        {e.off === true && (
+                          <>
+                            {' '}
+                            <span className="font-normal text-ink-muted">off</span>
+                          </>
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      data-remove=""
+                      aria-label={`Remove ${e.name}`}
+                      onClick={() => end(e, conditions.length + i)}
+                      className={CHIP_X}
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        {/* The end holds the row's right edge, outside the scrolling part,
               so a full strip never hides it and a chip scrolled toward it is
               clipped rather than covered. A word while the strip is empty, a
               plus once anything is on, and how many are out of sight when
               some are. */}
-          <button
-            ref={add}
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={pickerOpen}
-            aria-label={hidden > 0 ? `Effects, ${hidden} more not shown` : 'Add an effect'}
-            onClick={() => setPickerOpen(true)}
-            className={`relative flex min-h-tap shrink-0 items-center bg-bg pr-3 pl-1.5 text-label ${
-              hidden > 0 ? 'text-ink' : 'text-ink-muted hover:text-ink'
-            }`}
-          >
-            {hidden > 0 && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 right-full w-5 bg-gradient-to-r from-transparent to-bg"
-              />
+        <button
+          ref={add}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          aria-label={hidden > 0 ? `Effects, ${hidden} more not shown` : 'Add an effect'}
+          // The search's chunk starts on the press, so the tab's effects are
+          // there as the sheet rises rather than arriving over its lists.
+          onPointerDown={() => void loadFinder()}
+          onClick={() => setPickerOpen(true)}
+          className={`relative flex min-h-tap shrink-0 items-center bg-bg pr-3 pl-1.5 text-label ${
+            hidden > 0 ? 'text-ink' : 'text-ink-muted hover:text-ink'
+          }`}
+        >
+          {hidden > 0 && (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-full w-5 bg-gradient-to-r from-transparent to-bg"
+            />
+          )}
+          <span className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3 ring-1 ring-line-strong ring-inset">
+            {hidden > 0 ? (
+              `${hidden} more`
+            ) : (
+              <>
+                <Plus size={16} aria-hidden="true" />
+                {chipCount === 0 && 'Effect'}
+              </>
             )}
-            <span className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3 ring-1 ring-line-strong ring-inset">
-              {hidden > 0 ? (
-                `${hidden} more`
-              ) : (
-                <>
-                  <Plus size={16} aria-hidden="true" />
-                  {chipCount === 0 && 'Effect'}
-                </>
-              )}
-            </span>
-          </button>
-        </div>
-      )}
+          </span>
+        </button>
+      </div>
 
       <Sheet.Root open={infoOpen} onOpenChange={setInfoOpen}>
         <Sheet.Portal>
@@ -728,6 +756,32 @@ export function ConditionStrip({
                 )
               ) : (
                 <>
+                  {/* The tab's own effects lead (Items: potions; Stats: help for
+                      checks and saves), from the search's chunk; the lists
+                      below wait for none of it. */}
+                  {sheet !== null && lead !== undefined && (
+                    // A chunk that fails to load fails here, not over the
+                    // conditions below it.
+                    <DecodeBoundary label="This tab's list of effects">
+                      <Suspense fallback={null}>
+                        <EffectFinder
+                          doc={doc}
+                          sheet={sheet}
+                          query=""
+                          picked={null}
+                          onPick={pickLead}
+                          onAdd={land}
+                          describing={null}
+                          onDescribe={describe}
+                          onForget={forgetKept}
+                          tab={lead}
+                          allShown={leadAll}
+                          onShowAll={() => setLeadAll(true)}
+                          takeReturn={takeLeadRow}
+                        />
+                      </Suspense>
+                    </DecodeBoundary>
+                  )}
                   <h3 className="mb-1 text-caption text-ink-muted font-semibold">Helping you</h3>
                   {/* Chips pad themselves to 44px with a 6px clear border, so the
                   row needs no gap of its own. A pressed one is in play;

@@ -17,7 +17,7 @@ import type { DocUpdater } from '@/stores/characterSession';
 import { conditionSheetStore } from '@/stores/conditionSheet';
 import { noticeStore } from '@/stores/notices';
 import { namelessControls } from '../../../tests-fixtures/a11y';
-import { ConditionStrip } from './ConditionStrip';
+import { ConditionStrip, effectTab } from './ConditionStrip';
 
 // Rules text in both editions, so the sheet is seen to pick the character's.
 vi.mock('@/data5e/hooks', () => {
@@ -51,24 +51,31 @@ afterEach(cleanup);
 
 type Conditions = CharacterDoc['play']['conditions'];
 
-/** What the strip reads of the sheet: immunities, and the HP maximum effects move. */
+/**
+ * What the strip reads of the sheet: immunities, and the HP maximum effects
+ * move; and what the tab's effects read: no weapons, features or spells.
+ */
 const sheetWith = (immune: DerivedSheet['conditionImmunities']) =>
   ({
     conditionImmunities: immune,
     maxHp: { value: 20, base: 20, parts: [], overridden: false },
+    attacks: [],
+    actions: [],
+    grantedSpells: [],
   }) as unknown as DerivedSheet;
 
 /** The strip over a character held in state, as the session store holds it. */
 function renderStrip(
   conditions: Conditions,
   {
-    addable = false,
+    tab = '',
     effects,
     immune = [],
     edition = '2024',
     concentrating,
   }: {
-    addable?: boolean;
+    /** The sheet tab, by its route segment: Play unless said. */
+    tab?: string;
     effects?: ActiveEffect[];
     immune?: DerivedSheet['conditionImmunities'];
     edition?: CharacterDoc['rulesVersion'];
@@ -104,7 +111,7 @@ function renderStrip(
           {(doc.play.activeEffects ?? []).map((e) => `${e.name}${e.off ? ' off' : ''}`).join(', ')}
         </p>
         <output data-testid="stored">{JSON.stringify(doc.play.activeEffects ?? [])}</output>
-        <ConditionStrip doc={doc} sheet={sheetWith(immune)} update={update} addable={addable} />
+        <ConditionStrip doc={doc} sheet={sheetWith(immune)} update={update} tab={tab} />
       </>
     );
   }
@@ -124,15 +131,27 @@ const closeSheet = async () => {
 };
 
 describe('the condition strip', () => {
-  it('is not there with nothing active, except for the add chip on Play', () => {
-    renderStrip([]);
-    expect(screen.queryByRole('list')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add an effect' })).toBeNull();
-    cleanup();
+  it('keeps its add chip, + Effect, on every tab with nothing active', () => {
+    for (const tab of ['', 'stats', 'spells', 'inventory', 'features']) {
+      renderStrip([], { tab });
+      expect(screen.queryByRole('list')).toBeNull();
+      const add = button('Add an effect');
+      expect(add.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(add.textContent).toBe('Effect');
+      cleanup();
+    }
+  });
 
-    renderStrip([], { addable: true });
-    expect(screen.queryByRole('list')).toBeNull();
-    expect(button('Add an effect').getAttribute('aria-haspopup')).toBe('dialog');
+  it('knows each tab by its route segment, and Build or another by none', () => {
+    expect(['', 'stats', 'spells', 'inventory', 'features'].map(effectTab)).toEqual([
+      'play',
+      'stats',
+      'spells',
+      'items',
+      'features',
+    ]);
+    expect(effectTab('build')).toBeUndefined();
+    expect(effectTab('toString')).toBeUndefined();
   });
 
   it('lists what is active, exhaustion at its level, with the add chip after the list', () => {
@@ -146,20 +165,20 @@ describe('the condition strip', () => {
     expect(button('Add an effect')).toBeTruthy();
   });
 
-  it('removes a condition, focus going to the chip in its place, then the one before, then the title', () => {
-    renderStrip([{ id: 'Poisoned' }, { id: 'Prone' }, { id: 'Blinded' }]);
+  it('removes a condition, focus going to the chip in its place, then the one before, then the add chip', () => {
+    renderStrip([{ id: 'Poisoned' }, { id: 'Prone' }, { id: 'Blinded' }], { tab: 'stats' });
     fireEvent.click(button('Remove Poisoned'));
     expect(document.activeElement).toBe(button('Remove Prone'));
     fireEvent.click(button('Remove Blinded'));
     expect(document.activeElement).toBe(button('Remove Prone'));
     fireEvent.click(button('Remove Prone'));
-    // Off Play the strip goes with its last chip, so the title takes focus.
+    // The strip stays on every tab, so its end takes focus.
     expect(screen.queryByRole('list')).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Hero' }));
+    expect(document.activeElement).toBe(button('Add an effect'));
   });
 
-  it('puts focus on the add chip once the last condition goes, on Play', () => {
-    renderStrip([{ id: 'Poisoned' }], { addable: true });
+  it('puts focus on the add chip once the last condition goes, on Items too', () => {
+    renderStrip([{ id: 'Poisoned' }], { tab: 'inventory' });
     fireEvent.click(button('Remove Poisoned'));
     expect(document.activeElement).toBe(button('Add an effect'));
   });
@@ -196,7 +215,7 @@ describe('the condition strip', () => {
   });
 
   it('steps exhaustion down in its own sheet, which stays open when it reaches 0', async () => {
-    renderStrip([{ id: 'Exhaustion', level: 1 }], { addable: true });
+    renderStrip([{ id: 'Exhaustion', level: 1 }]);
     fireEvent.click(button('Exhausted 1'));
     const sheet = within(await screen.findByRole('dialog', { name: 'Exhaustion' }));
     expect(sheet.getByText('Exhaustion, as printed in 2024.')).toBeTruthy();
@@ -211,7 +230,7 @@ describe('the condition strip', () => {
 
 describe('exhaustion at its limits', () => {
   it('keeps its stepper buttons focusable at 0 and 6, saying they go no further', async () => {
-    renderStrip([{ id: 'Exhaustion', level: 5 }], { addable: true });
+    renderStrip([{ id: 'Exhaustion', level: 5 }]);
     fireEvent.click(button('Add an effect'));
     const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     const up = picker.getByRole('button', { name: 'Increase exhaustion' });
@@ -241,7 +260,7 @@ describe('while a condition sheet is over the attack chips', () => {
   afterEach(() => conditionSheetStore.setState({ open: false }));
 
   it('holds them from the moment a sheet opens until just after it closes', async () => {
-    renderStrip([{ id: 'Poisoned' }], { addable: true });
+    renderStrip([{ id: 'Poisoned' }]);
     expect(held()).toBe(false);
 
     fireEvent.click(button('Add an effect'));
@@ -257,7 +276,7 @@ describe('while a condition sheet is over the attack chips', () => {
   });
 
   it('keeps holding across one sheet closing and another opening', async () => {
-    renderStrip([{ id: 'Poisoned' }], { addable: true });
+    renderStrip([{ id: 'Poisoned' }]);
     fireEvent.click(button('Add an effect'));
     await screen.findByRole('dialog', { name: 'Effects' });
     await closeSheet();
@@ -296,7 +315,6 @@ describe('what a condition coming on ends', () => {
 
   it('breaks concentration under Stunned, ending what it held, and says so', async () => {
     renderStrip([], {
-      addable: true,
       edition: '2014',
       effects: [blessEffect('mine', true), blessEffect('ally', false)],
       concentrating: 'Bless',
@@ -313,7 +331,7 @@ describe('what a condition coming on ends', () => {
   });
 
   it('ends nothing under a condition that does not incapacitate', async () => {
-    renderStrip([], { addable: true, concentrating: 'Hold Person' });
+    renderStrip([], { concentrating: 'Hold Person' });
     await pickCondition('Poisoned');
     expect(concentrating()).toBe('Concentrating on Hold Person');
     expect(noticeStore.getState().notice).toBeNull();
@@ -321,7 +339,7 @@ describe('what a condition coming on ends', () => {
 
   it('leaves concentration kept up under Stunned alone when another condition comes on', async () => {
     // The sheet warns and never blocks, so the player may concentrate while stunned.
-    renderStrip([{ id: 'Stunned' }], { addable: true, concentrating: 'Hold Person' });
+    renderStrip([{ id: 'Stunned' }], { concentrating: 'Hold Person' });
     await pickCondition('Prone');
     expect(concentrating()).toBe('Concentrating on Hold Person');
     expect(noticeStore.getState().notice).toBeNull();
@@ -338,7 +356,7 @@ describe('what a condition coming on ends', () => {
   });
 
   it('ends 2024 Rage under Incapacitated, and 2014 Rage only when knocked unconscious', async () => {
-    renderStrip([], { addable: true, effects: [rageEffect('r', 3, '2024')] });
+    renderStrip([], { effects: [rageEffect('r', 3, '2024')] });
     await pickCondition('Incapacitated');
     expect(effectsNow()).toBe('Effects ');
     expect(noticeStore.getState().notice).toEqual({
@@ -348,7 +366,7 @@ describe('what a condition coming on ends', () => {
     });
     cleanup();
 
-    renderStrip([], { addable: true, edition: '2014', effects: [rageEffect('r', 3, '2014')] });
+    renderStrip([], { edition: '2014', effects: [rageEffect('r', 3, '2014')] });
     await pickCondition('Stunned');
     expect(effectsNow()).toBe('Effects Rage');
     const picker = within(screen.getByRole('dialog', { name: 'Effects' }));
@@ -371,7 +389,7 @@ describe('what a condition coming on ends', () => {
 
 describe('the condition picker', () => {
   it('holds every condition as a toggle that says whether it is on, and the exhaustion stepper', async () => {
-    renderStrip([{ id: 'Poisoned' }], { addable: true });
+    renderStrip([{ id: 'Poisoned' }]);
     fireEvent.click(button('Add an effect'));
     const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     // The 13 conditions besides Poisoned, and the three starters (Bless,
@@ -399,7 +417,7 @@ describe('the condition picker', () => {
   });
 
   it("names every control, Stunned's included, on the strip and in the picker", async () => {
-    renderStrip([{ id: 'Stunned' }], { addable: true });
+    renderStrip([{ id: 'Stunned' }]);
     expect(namelessControls()).toEqual([]);
     expect(button('Stunned').getAttribute('aria-haspopup')).toBe('dialog');
     expect(button('Remove Stunned')).toBeTruthy();
@@ -475,7 +493,7 @@ describe('effects in play on the strip', () => {
   });
 
   it('lists them under Helping you in the Effects sheet, where a tap ends one', async () => {
-    renderStrip([], { effects: [bless, shield], addable: true });
+    renderStrip([], { effects: [bless, shield] });
     fireEvent.click(button('Add an effect'));
     const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     expect(picker.getByRole('heading', { name: 'Helping you' })).toBeTruthy();
@@ -520,7 +538,7 @@ describe('a condition the character is immune to', () => {
   const periapt = [{ condition: 'Poisoned', origin: 'Periapt of Proof against Poison' }];
 
   it('is refused in the picker with the reason, and nothing is added', async () => {
-    renderStrip([], { addable: true, immune: periapt });
+    renderStrip([], { immune: periapt });
     fireEvent.click(button('Add an effect'));
     const picker = within(await screen.findByRole('dialog', { name: 'Effects' }));
     const chip = picker.getByRole('button', { name: 'Poisoned, you are immune' });
@@ -532,7 +550,7 @@ describe('a condition the character is immune to', () => {
       ),
     );
     expect(chip.getAttribute('aria-pressed')).toBe('false');
-    expect(screen.queryByRole('list', { hidden: true })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Active effects', hidden: true })).toBeNull();
   });
 
   it('shows one already on as held off, with the reason in place of the switch', async () => {
@@ -556,7 +574,7 @@ describe('the starter list under Helping you', () => {
   };
 
   it("adds an ally's Bless, Guidance and Bardic Inspiration in 2014, and asks the bard's die", async () => {
-    renderStrip([], { addable: true, edition: '2014' });
+    renderStrip([], { edition: '2014' });
     const picker = await openPicker();
 
     fireEvent.click(picker.getByRole('button', { name: '+d4 Bless', pressed: false }));
@@ -602,7 +620,7 @@ describe('the starter list under Helping you', () => {
   });
 
   it('adds 2024 Guidance at once, offered on skill checks, and waits for a failed roll with Bardic', async () => {
-    renderStrip([], { addable: true, edition: '2024' });
+    renderStrip([], { edition: '2024' });
     const picker = await openPicker();
     const guidance = picker.getByRole('button', { name: '+d4 Guidance' });
     expect(guidance.getAttribute('aria-expanded')).toBeNull();
@@ -626,7 +644,7 @@ describe('the starter list under Helping you', () => {
 
   it("changes only the bard's die, leaving a switched-off Bardic Inspiration off", async () => {
     const bardic = { ...bardicEffect('b1', '2024', 'd8'), off: true, turnsLeft: 2 };
-    renderStrip([], { addable: true, effects: [bardic] });
+    renderStrip([], { effects: [bardic] });
     const picker = await openPicker();
     const dice = within(picker.getByRole('group', { name: "The bard's die, by their level" }));
     fireEvent.click(dice.getByRole('button', { name: 'd10' }));
