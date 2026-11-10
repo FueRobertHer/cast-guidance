@@ -8,11 +8,13 @@ import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiceRollDetail, RollResult } from '@/dice/types';
 import type { ActiveEffect, CharacterDoc, DataEntity } from '@/engine/types';
-import { rollHeld } from '@/stores/heldRoll';
+import { followUpStore, pickHeldTile, rollHeld } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import {
+  castHeld,
   classEntry,
   HARNESS_TIMEOUT,
+  left,
   renderSheet,
   resetSheetHarness,
   sorcerer,
@@ -227,10 +229,67 @@ describe('a critical hit doubles the damage dice', () => {
     nextFaces(9, 8);
     fireEvent.click(screen.getByRole('button', { name: '1d10' }));
     expect(dice(newest())).toEqual(['d10 [9, 8]']);
-    // Searing Bolt has no attack roll: nothing of the crit reaches it.
+    // Searing Bolt has no attack roll: nothing of the crit reaches it. Its
+    // chip opens the roll prompt, and tapped again it casts.
     nextFaces(1, 2);
-    fireEvent.click(screen.getByRole('button', { name: '2d6' }));
+    rollOn(screen.getByRole('button', { name: '2d6' }));
     expect(dice(newest())).toEqual(['d6 [1, 2]']);
+  });
+});
+
+describe('a spell attack cast at a level', () => {
+  /** A spell attack whose damage grows with the slot. */
+  const lance: DataEntity = {
+    ...ray,
+    name: 'Ray Lance',
+    entries: ['A lance deals {@damage 1d10} fire damage.'],
+    entriesHigherLevel: [
+      { entries: ['The damage increases by {@scaledamage 1d10|1-9|1d10} per slot above 1st.'] },
+    ],
+  };
+  const lancer = () => {
+    const doc = sorcerer();
+    const ref = { name: 'Ray Lance', source: 'TST' };
+    doc.spellcasting = { 'sorcerer|tst': { known: [ref], prepared: [ref] } };
+    return doc;
+  };
+  const cast = () => fireEvent.click(screen.getByTitle('Ray Lance spell attack'));
+
+  it('offers the damage at the level picked after a hit, doubled on a crit', async () => {
+    await renderSheet(lancer(), { extra: { spell: [lance] } });
+    cast();
+    nextFaces(20);
+    castHeld('Level 3 slot');
+    expect(left('Level 3 slot')).toBe(1);
+    expect(newest()?.meta?.attack).toMatchObject({ of: 'Ray Lance', crit: true });
+
+    const offer = followUpStore.getState().offer;
+    expect(offer?.expr).toBe('6d10');
+    nextFaces(1, 2, 3, 4, 5, 6);
+    act(() => offer?.go());
+    expect(dice(newest())).toEqual(['d10 [1, 2, 3, 4, 5, 6]']);
+    // The row's damage chip stays at the level last cast.
+    expect(screen.getByTitle('Ray Lance fire damage').textContent).toBe('3d10');
+  });
+
+  it('rolls damage tapped while the attack waits at the level picked, doubled on a crit', async () => {
+    await renderSheet(lancer(), { extra: { spell: [lance] } });
+    cast();
+    act(() => pickHeldTile('slot-2'));
+    fireEvent.click(screen.getByTitle('Ray Lance fire damage'));
+    nextFaces(20, 1, 2, 3, 4);
+    act(() => rollHeld());
+    expect(dice(newest())).toEqual(['d10 [1, 2, 3, 4]']);
+    expect(left('Level 2 slot')).toBe(2);
+  });
+
+  it('spends the slot on a miss, and offers nothing after a natural 1', async () => {
+    await renderSheet(lancer(), { extra: { spell: [lance] } });
+    cast();
+    nextFaces(1);
+    castHeld();
+    expect(left('Level 1 slot')).toBe(3);
+    expect(followUpStore.getState().offer).toBeNull();
   });
 });
 

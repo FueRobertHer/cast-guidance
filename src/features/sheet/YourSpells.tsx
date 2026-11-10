@@ -15,20 +15,12 @@ import { signed } from '@/lib/signed';
 import type { DocUpdater } from '@/stores/characterSession';
 import { Badge, badgeClass } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
-import { type ChipWear, NOT_WORN } from '@/ui/ChipFace';
+import type { ChipWear } from '@/ui/ChipFace';
 import { PackProblem } from '@/ui/PackProblem';
-import { RollChip } from '@/ui/RollChip';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
-import { CastButton } from './CastButton';
-import { askCastResource, CastResourcePicker } from './CastResourcePicker';
-import {
-  type CastSpellInfo,
-  castingEconomy,
-  castResourceLabel,
-  isConcentratingOn,
-  needsCastChoice,
-} from './castResources';
+import { castsByPrompt, type SpellCast } from './castPlan';
+import { castingEconomy, isConcentratingOn } from './castResources';
 import { conditionLimits } from './conditionEffects';
 import {
   conditionWear,
@@ -40,17 +32,15 @@ import {
   useIgnoreOnce,
 } from './d20Tests';
 import { conditionsInForce, hpLimits, saveDcRaisedBy } from './effectsInPlay';
-import { castGrantedAsking, castSpellAsking } from './namedStarts';
 import { RollEffectCue } from './RollEffectCue';
+import { SpellCastChips } from './SpellCastChips';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
 import { SpellSlots } from './SpellSlots';
 import { NoSpellsCue, raging, SaveDcBadge } from './spellcastingMarks';
 import { findSpell, useSpellData } from './spellData';
 import { spellMeta, spellSaves } from './spellMeta';
-import { spellRollActions } from './spellRolls';
 import { countPrepared, spellLimits } from './spellTrim';
-import { useCastChoice } from './useCastChoice';
 
 /** A modifier for a dice expression, whose parser reads a hyphen; on screen, see `signed`. */
 const fmt = (n: number) => `${n >= 0 ? '+' : ''}${n}`;
@@ -100,7 +90,6 @@ interface RowContext {
   doc: CharacterDoc;
   sheet: DerivedSheet;
   update: DocUpdater;
-  choice: ReturnType<typeof useCastChoice>;
   /**
    * A spell attack chip's roll, marked as the attack `of` (the spell's name);
    * `className` is whose spell it is (Innate Sorcery).
@@ -167,64 +156,6 @@ function EndButton({
   );
 }
 
-/**
- * The row's dice. The first one rolled is the cast (the attack, when there is
- * one), unless the spell is already running: a concentration spell rolled on a
- * later turn has been paid for.
- */
-function RollChips({
-  name,
-  by,
-  attackModifier,
-  entity,
-  rolls,
-  roller,
-  wear,
-  castWear,
-  onCast,
-}: {
-  name: string;
-  /** The character's id: a crit of theirs with this spell doubles its damage dice. */
-  by: string;
-  attackModifier: number | undefined;
-  entity: Entity | undefined;
-  rolls: ReturnType<typeof spellRollActions>;
-  roller: (modifier: number, label: string, of: string) => () => D20Ask;
-  wear: RowContext['wear'];
-  castWear: RowContext['castWear'];
-  onCast: (() => void) | undefined;
-}) {
-  const hasAttack = attackModifier !== undefined && hasSpellAttack(entity);
-  return (
-    <>
-      {hasAttack && (
-        <RollChip
-          expr={`1d20${fmt(attackModifier)}`}
-          display={signed(attackModifier)}
-          label={`${name} spell attack`}
-          variant="d20"
-          roller={roller(attackModifier, `${name} spell attack`, name)}
-          wear={wear}
-          onRolled={onCast}
-        />
-      )}
-      {rolls.map((action, index) => (
-        <RollChip
-          key={`${action.expr}:${action.label}`}
-          expr={action.expr}
-          label={action.label}
-          variant={action.variant}
-          withAttack={hasAttack ? { by, of: name } : undefined}
-          onRolled={!hasAttack && index === 0 ? onCast : undefined}
-          wear={
-            !hasAttack && index === 0 ? (onCast === undefined ? NOT_WORN : castWear) : undefined
-          }
-        />
-      ))}
-    </>
-  );
-}
-
 /** A spell cast with the class's slots: known, prepared or always prepared. */
 function SlotSpellRow({
   spell,
@@ -239,52 +170,30 @@ function SlotSpellRow({
   withLevel?: boolean;
   ctx: RowContext;
 }) {
-  const { doc, sheet, update, choice } = ctx;
+  const { doc, sheet, update } = ctx;
   const play = doc.play;
   const { name, source, entity } = spell;
   // Nothing says what a spell no file holds is, so it casts as level 1, with
-  // the slot it spends on show and the player's to change.
+  // the ways to cast it on show in the prompt and the player's to change.
   const level = spell.level ?? 1;
   const concentrating = isConcentratingOn(play, name);
-  const key = `${spell.always ? 'granted' : block.classUid}::${refUid(spell)}`;
-  const { resource, options } = choice.resourceFor(key, block, level, play, sheet.resources);
-  const rolls = spellRollActions(entity, {
-    characterLevel: sheet.totalLevel,
-    // The dice follow the chosen slot, or the slot a running spell was cast with.
-    slotLevel: concentrating ? (play.concentratingOn?.level ?? level) : resource.level,
-    abilityModifier: sheet.abilities[block.ability].mod,
-  });
   const attackModifier = hasSpellAttack(entity) ? block.attackMod.value : undefined;
-  const rolling = attackModifier !== undefined || rolls.length > 0;
-  const info: CastSpellInfo = {
-    name,
-    source,
-    concentration: spellNeedsConcentration(entity),
-    economy: castingEconomy(entity),
-  };
-  const choosing = needsCastChoice(options);
-  const castContext = {
-    spellName: name,
-    options,
+  const cast: SpellCast = {
+    doc,
+    sheet,
+    update,
+    hp: hpLimits(sheet, doc.rulesVersion),
+    info: {
+      name,
+      source,
+      concentration: spellNeedsConcentration(entity),
+      economy: castingEconomy(entity),
+    },
+    entity,
+    level,
     block,
-    play,
-    pools: sheet.resources,
-    spell: entity,
-    spellLevel: level,
-    characterLevel: sheet.totalLevel,
-    rulesVersion: doc.rulesVersion,
-    classes: doc.classes,
-  };
-  // Cast asks which slot when more than one fits. A roll chip cannot wait for
-  // an answer, so a rolling spell's picker settles the slot before the roll.
-  const castAsking = async () => {
-    if (!choosing) {
-      castSpellAsking(update, hpLimits(sheet, doc.rulesVersion), block, level, info, options[0]);
-      return;
-    }
-    const picked = await askCastResource(castContext);
-    if (picked !== null)
-      castSpellAsking(update, hpLimits(sheet, doc.rulesVersion), block, level, info, picked);
+    abilityModifier: sheet.abilities[block.ability].mod,
+    attack: attackModifier !== undefined,
   };
   const locked =
     block.learnable !== undefined &&
@@ -299,7 +208,7 @@ function SlotSpellRow({
         spell.always ? `${block.className} spell · always prepared` : `${block.className} spell`
       }
       meta={spellMeta(entity, { withLevel, concentrating })}
-      concentrates={info.concentration === true}
+      concentrates={cast.info.concentration === true}
       concentrating={concentrating}
       always={spell.always}
       muted={muted}
@@ -314,58 +223,35 @@ function SlotSpellRow({
           {spellSaves(entity).length > 0 && (
             <SaveDcBadge value={block.saveDc.value} raisedBy={ctx.dcRaisedBy(block)} short />
           )}
-          {rolling && !concentrating && (
-            <CastResourcePicker
-              {...castContext}
-              resource={resource}
-              onPick={(picked) => choice.choose(key, picked)}
-            />
-          )}
-          <RollChips
-            name={name}
-            by={doc.id}
-            attackModifier={attackModifier}
-            entity={entity}
-            rolls={rolls}
-            roller={(modifier, label, of) => ctx.rollAttack(modifier, label, of, spell.className)}
+          <SpellCastChips
+            cast={cast}
+            running={concentrating}
+            runningLevel={play.concentratingOn?.level}
+            castButton={!concentrating}
+            attack={
+              attackModifier === undefined
+                ? undefined
+                : {
+                    expr: `1d20${fmt(attackModifier)}`,
+                    display: signed(attackModifier),
+                    roller: ctx.rollAttack(
+                      attackModifier,
+                      `${name} spell attack`,
+                      name,
+                      spell.className,
+                    ),
+                  }
+            }
             wear={ctx.wear}
             castWear={ctx.castWear}
-            onCast={
-              concentrating
-                ? undefined
-                : () =>
-                    castSpellAsking(
-                      update,
-                      hpLimits(sheet, doc.rulesVersion),
-                      block,
-                      level,
-                      info,
-                      resource,
-                    )
+            castTitle={
+              level === 0 && spell.level !== undefined
+                ? 'Cast cantrip (marks the action economy its casting time uses)'
+                : 'Cast: choose how to cast it'
             }
           />
-          {concentrating ? (
+          {concentrating && (
             <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
-          ) : (
-            !rolling && (
-              <CastButton
-                wear={ctx.castWear}
-                aria-label={`Cast ${name}`}
-                aria-haspopup={choosing ? 'dialog' : undefined}
-                onClick={() => {
-                  void castAsking();
-                }}
-                title={
-                  level === 0 && spell.level !== undefined
-                    ? 'Cast cantrip (marks the action economy its casting time uses)'
-                    : choosing
-                      ? 'Cast: choose which slot or pool to spend'
-                      : resource.kind === 'none'
-                        ? 'Cast with nothing left to spend (marks action economy)'
-                        : `Cast (spends ${castResourceLabel(resource).toLowerCase()})`
-                }
-              />
-            )
           )}
         </>
       }
@@ -373,7 +259,7 @@ function SlotSpellRow({
   );
 }
 
-/** An innate grant: no slot, its own pool of uses when it has one. */
+/** An innate grant: no slot, its own pool of uses when it has one, or an item's charges. */
 function InnateSpellRow({
   grant,
   spell,
@@ -390,10 +276,6 @@ function InnateSpellRow({
     grant.ability !== undefined ? sheet.abilities[grant.ability].mod : undefined;
   const modifier =
     abilityModifier !== undefined ? sheet.profBonus.value + abilityModifier : undefined;
-  const rolls = spellRollActions(entity, {
-    characterLevel: sheet.totalLevel,
-    abilityModifier,
-  });
   const attackModifier = hasSpellAttack(entity) ? modifier : undefined;
   const limited =
     grant.resourceKey !== undefined
@@ -403,22 +285,30 @@ function InnateSpellRow({
     limited !== undefined
       ? limited.max - (doc.play.resources.find((r) => r.key === limited.key)?.used ?? 0)
       : undefined;
-  // Rolling is always allowed, but a spent grant must not go on marking your
-  // action and your concentration.
+  const cast: SpellCast = {
+    doc,
+    sheet,
+    update,
+    hp: hpLimits(sheet, doc.rulesVersion),
+    info: {
+      name,
+      source,
+      concentration: spellNeedsConcentration(entity),
+      economy: castingEconomy(entity),
+    },
+    entity,
+    level: spell.level ?? 1,
+    abilityModifier,
+    grantPool:
+      limited === undefined
+        ? undefined
+        : { key: limited.key, label: grant.origin, max: limited.max },
+    attack: attackModifier !== undefined,
+  };
+  // Rolling is always allowed, but a spent grant with nothing else to cast it
+  // with must not go on marking your action and your concentration.
   const depleted = remaining !== undefined && remaining <= 0;
-  const cast = () =>
-    castGrantedAsking(
-      update,
-      hpLimits(sheet, doc.rulesVersion),
-      {
-        name,
-        source,
-        concentration: spellNeedsConcentration(entity),
-        economy: castingEconomy(entity),
-      },
-      limited !== undefined ? { key: limited.key, max: limited.max } : undefined,
-    );
-  const rolling = attackModifier !== undefined || rolls.length > 0;
+  const usedUp = depleted && !castsByPrompt(cast);
   return (
     <SpellRow
       name={name}
@@ -450,29 +340,32 @@ function InnateSpellRow({
           {spellSaves(entity).length > 0 && modifier !== undefined && (
             <Badge tone="arcane">DC {8 + modifier}</Badge>
           )}
-          <RollChips
-            name={name}
-            by={doc.id}
-            attackModifier={attackModifier}
-            entity={entity}
-            rolls={rolls}
-            roller={(modifier, label, of) => ctx.rollAttack(modifier, label, of, spell.className)}
+          <SpellCastChips
+            cast={cast}
+            running={concentrating}
+            runningLevel={doc.play.concentratingOn?.level}
+            usedUp={usedUp}
+            castButton={!concentrating}
+            attack={
+              attackModifier === undefined
+                ? undefined
+                : {
+                    expr: `1d20${fmt(attackModifier)}`,
+                    display: signed(attackModifier),
+                    roller: ctx.rollAttack(
+                      attackModifier,
+                      `${name} spell attack`,
+                      name,
+                      spell.className,
+                    ),
+                  }
+            }
             wear={ctx.wear}
             castWear={ctx.castWear}
-            onCast={concentrating || depleted ? undefined : cast}
+            castTitle={limited === undefined ? 'Cast (no slot)' : 'Cast: choose how to cast it'}
           />
-          {concentrating ? (
+          {concentrating && (
             <EndButton name={name} update={update} hp={hpLimits(sheet, doc.rulesVersion)} />
-          ) : (
-            !rolling && (
-              <CastButton
-                wear={ctx.castWear}
-                aria-label={`Cast ${name}`}
-                disabled={depleted}
-                onClick={cast}
-                title={depleted ? 'No uses left until you rest' : 'Cast (no slot)'}
-              />
-            )
           )}
         </>
       }
@@ -710,7 +603,6 @@ export function YourSpells({
   update: DocUpdater;
 }) {
   const { registry, spellsMissing, spellPacks, spellsSettling } = useSpellData(sheet, doc);
-  const choice = useCastChoice(doc.play);
   const ignore = useIgnoreOnce(JSON.stringify(doc.play.conditions));
   const [filter, setFilter] = useState('');
 
@@ -742,7 +634,6 @@ export function YourSpells({
     doc,
     sheet,
     update,
-    choice,
     rollAttack,
     wear: rollWear(conditions, attackEffects, ignore.armed('attack'), limits.noActions),
     castWear: conditionWear(conditions, limits.noActions),

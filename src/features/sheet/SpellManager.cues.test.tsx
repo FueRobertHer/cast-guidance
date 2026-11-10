@@ -201,6 +201,8 @@ describe('granted spells on the Play tab (TEST-003)', () => {
       usesTitle: '1/day from Wand of Searing',
     });
 
+    // The chip opens the roll prompt on the wand's use; tapped again, it casts.
+    press('2d6');
     press('2d6');
 
     expect(grantedSpell('searing bolt')).toMatchObject({

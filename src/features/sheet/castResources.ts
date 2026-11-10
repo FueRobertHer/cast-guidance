@@ -22,7 +22,9 @@ export interface CastSpellInfo {
  * What a cast spends. `pool` is a non-slot point pool converted into a slot
  * (sorcery points are the shipped case), and carries the price so the spend and
  * the label both read it from one place. `arcanum` is a warlock's Mystic
- * Arcanum at the spell's own level: no slot, once per long rest.
+ * Arcanum at the spell's own level: no slot, once per long rest. `uses` is one
+ * use of an innate or feat grant's own pool (Infernal Legacy's Hellish
+ * Rebuke), and `charges` an item's charges (`ITEM_CHARGES`), `cost` of them.
  */
 export type CastResource =
   | { kind: 'cantrip'; level: 0 }
@@ -30,6 +32,8 @@ export type CastResource =
   | { kind: 'pact'; level: number }
   | { kind: 'slot'; level: number }
   | { kind: 'pool'; level: number; key: string; label: string; cost: number }
+  | { kind: 'uses'; level: number; key: string; label: string }
+  | { kind: 'charges'; level: number; key: string; label: string; cost: number }
   | { kind: 'none'; level: number };
 
 /**
@@ -260,24 +264,17 @@ export function defaultCastResource(
   return (options ?? availableCastResources(block, play, spellLevel, pools))[0] ?? auto;
 }
 
-/**
- * Does this cast need to ask, or can it just happen? More than one option is a
- * decision. A lone pool conversion is one too: it is the only single option
- * that spends something the player was not already resigned to spending (points
- * plus a slice of the turn), so it gets said out loud rather than taken.
- */
-export function needsCastChoice(options: readonly CastResource[]): boolean {
-  return options.length > 1 || options[0]?.kind === 'pool';
-}
-
-/** Stable option id for the cast chooser; must round-trip through askChoice. */
+/** Stable id for one way to cast: a tile in the cast prompt. */
 export function castResourceId(resource: CastResource): string {
   if (resource.kind === 'pact') return 'pact';
-  if (resource.kind === 'pool') return `pool-${resource.key}-${String(resource.level)}`;
+  if (resource.kind === 'pool' || resource.kind === 'charges') {
+    return `${resource.kind}-${resource.key}-${String(resource.level)}`;
+  }
+  if (resource.kind === 'uses') return `uses-${resource.key}`;
   return `${resource.kind}-${String(resource.level)}`;
 }
 
-/** Spoken form, for a chooser row or a control's accessible name. */
+/** Spoken form, for a tile's or a control's accessible name. */
 export function castResourceLabel(resource: CastResource): string {
   switch (resource.kind) {
     case 'cantrip':
@@ -290,44 +287,18 @@ export function castResourceLabel(resource: CastResource): string {
       return `Level ${String(resource.level)} slot`;
     case 'pool':
       return `Level ${String(resource.level)} slot from ${resource.label}`;
+    case 'uses':
+      return `${resource.label} · level ${String(resource.level)}`;
+    case 'charges':
+      return `Level ${String(resource.level)} from ${resource.label}`;
     case 'none':
       return 'No slot left';
   }
 }
 
-/** Initials of a pool's label ("Sorcery Points" -> "SP") for the compact chip. */
-function initials(label: string): string {
-  return label
-    .split(/\s+/)
-    .map((word) => word.charAt(0))
-    .join('')
-    .toUpperCase();
-}
-
-/**
- * Compact text for the inline chip that shows what the next cast will spend.
- * Never icon-only and never color-only: the source is spelled out in the chip's
- * own accessible name via `castResourceLabel`.
- */
-export function castResourceChipLabel(resource: CastResource): string {
-  switch (resource.kind) {
-    case 'cantrip':
-      return 'cantrip';
-    case 'arcanum':
-      return `L${String(resource.level)} arcanum`;
-    case 'pact':
-      return `L${String(resource.level)} pact`;
-    case 'slot':
-      return `L${String(resource.level)}`;
-    case 'pool':
-      return `L${String(resource.level)} ${initials(resource.label)}`;
-    case 'none':
-      return 'no slot';
-  }
-}
-
 export interface CastContext {
-  block: SpellcastingBlock;
+  /** The class whose slots it casts with; none for an innate grant or an item alone. */
+  block?: SpellcastingBlock | undefined;
   play: PlayState;
   /** Derived pools, so a convertible one can be priced against what is left. */
   pools?: readonly DerivedResource[];
@@ -340,48 +311,204 @@ export interface CastContext {
   classes: readonly ClassLevelEntry[];
 }
 
+/** An innate or feat grant's pool that casts this spell once a use (Infernal Legacy). */
+export interface UseWay {
+  key: string;
+  /** Where it comes from: the group's heading and what the note names. */
+  label: string;
+  max: number;
+}
+
+/** A carried item whose charges cast this spell, and what each level costs. */
+export interface ChargeWay {
+  key: string;
+  /** The item's name. */
+  label: string;
+  max: number;
+  costs: ReadonlyArray<{ level: number; cost: number }>;
+}
+
+/** One way to cast, as a tile: what it spends, whether it can pay now, and what is under its level. */
+export interface CastTile {
+  resource: CastResource;
+  ok: boolean;
+  /** What is left, or what it costs: "2 left", "3 points", "2 charges". */
+  sub: string;
+}
+
+/** The tiles of one source, under a heading: "Spell slots", "Staff of Healing". */
+export interface CastWay {
+  title: string;
+  /** What the heading adds: "1 charge a level · 7 left", "Bonus Action to convert". */
+  sub?: string;
+  tiles: CastTile[];
+}
+
+const plural = (n: number, one: string) => `${String(n)} ${one}${n === 1 ? '' : 's'}`;
+
+/** How many of a pool are left to spend, by its key. */
+function leftOf(play: PlayState, key: string, max: number): number {
+  return Math.max(0, max - (play.resources.find((r) => r.key === key)?.used ?? 0));
+}
+
 /**
- * Chooser rows for `askChoice`: what each option spends, how much of it is
- * left, and what the spell's dice become at that level. Pure, so the wording
- * the Play tab and the spell manager offer is the same wording under test.
+ * Every way to cast a spell of `ctx.spellLevel` right now, grouped by source
+ * for the cast prompt (the rolls canvas, "Every way to cast" A): an unused
+ * Mystic Arcanum, slots by level from the spell's own up, the pact slot, a
+ * point pool's conversions, an innate grant's uses, and items' charges. A
+ * source with nothing left keeps its tiles, spent (`ok` false), so the prompt
+ * says what is gone rather than hiding it. Empty for a cantrip.
  */
-export function castResourceOptions(
-  options: readonly CastResource[],
+export function castWays(
   ctx: CastContext,
-): Array<{ id: string; label: string; hint: string }> {
-  return options.map((option) => {
-    const upcast = option.level > ctx.spellLevel ? ' (upcast)' : '';
-    const effect = upcastEffectSummary(ctx.spell, ctx.characterLevel, option.level);
-    const parts: string[] = [];
-    if (effect !== undefined) parts.push(effect);
-    if (option.kind === 'pool') {
-      const pool = ctx.pools?.find((p) => p.key === option.key);
-      const left = pool === undefined ? undefined : poolRemaining(pool, ctx.play);
-      const economy = conversionEconomy(option.key) ?? 'action';
-      const note = conversionTurnNote(economy, ctx.spell, ctx.play);
-      const convert = `${ECONOMY_LABEL[economy]} to convert`;
-      parts.push(
-        `${String(option.cost)} points${left === undefined ? '' : ` of ${String(left)}`} · ${convert}${note === undefined ? '' : `, ${note}`}`,
-      );
-      // Its own part, not a turn note: it is about the character, not the turn.
-      const levelNote = conversionLevelNote(option.key, option.level, ctx);
-      if (levelNote !== undefined) parts.push(levelNote);
-    } else if (option.kind === 'arcanum') {
-      parts.push('no slot · once per long rest');
-    } else if (option.kind === 'pact') {
-      const left = (ctx.block.pactSlots?.count ?? 0) - ctx.play.pactSlotsSpent;
-      parts.push(`${String(left)} left`);
-    } else if (option.kind === 'slot') {
-      const left =
-        (ctx.block.slots[option.level - 1] ?? 0) - (ctx.play.slotsSpent[option.level - 1] ?? 0);
-      parts.push(`${String(left)} left`);
+  extra: { uses?: readonly UseWay[]; charges?: readonly ChargeWay[] } = {},
+): CastWay[] {
+  const { block, play, spellLevel } = ctx;
+  if (spellLevel === 0) return [];
+  const out: CastWay[] = [];
+  if (block?.mysticArcanum?.includes(spellLevel) === true) {
+    const ok = arcanumReady(block, play, spellLevel);
+    out.push({
+      title: 'Mystic Arcanum',
+      sub: 'once per long rest',
+      tiles: [{ resource: { kind: 'arcanum', level: spellLevel }, ok, sub: ok ? 'ready' : 'used' }],
+    });
+  }
+  if (block !== undefined) {
+    const slots: CastTile[] = [];
+    for (let level = spellLevel; level <= 9; level++) {
+      const total = block.slots[level - 1] ?? 0;
+      if (total <= 0) continue;
+      const left = Math.max(0, total - (play.slotsSpent[level - 1] ?? 0));
+      slots.push({ resource: { kind: 'slot', level }, ok: left > 0, sub: `${String(left)} left` });
     }
-    return {
-      id: castResourceId(option),
-      label: `${castResourceLabel(option)}${upcast}`,
-      hint: parts.join(' · '),
-    };
-  });
+    if (slots.length > 0) out.push({ title: 'Spell slots', tiles: slots });
+    const pact = block.pactSlots;
+    if (pact !== undefined && pact.level >= spellLevel) {
+      const left = Math.max(0, pact.count - play.pactSlotsSpent);
+      out.push({
+        title: 'Pact slots',
+        tiles: [
+          {
+            resource: { kind: 'pact', level: pact.level },
+            ok: left > 0,
+            sub: `${String(left)} left`,
+          },
+        ],
+      });
+    }
+    for (const pool of ctx.pools ?? []) {
+      const conversion = SLOT_CONVERSIONS[pool.key];
+      if (conversion === undefined) continue;
+      // The sheet cannot tell which points are gone, so it assumes the locked ones went first.
+      const left = Math.min(poolRemaining(pool, play), pool.max - (pool.noSlotConversion ?? 0));
+      const tiles: CastTile[] = [];
+      for (let level = spellLevel; level <= conversion.costs.length; level++) {
+        const cost = conversion.costs[level - 1];
+        if (cost === undefined) continue;
+        tiles.push({
+          resource: { kind: 'pool', level, key: pool.key, label: pool.label, cost },
+          ok: cost <= left,
+          sub: `${String(cost)} points`,
+        });
+      }
+      if (tiles.length > 0) {
+        out.push({
+          title: pool.label,
+          sub: `${String(poolRemaining(pool, play))} left · ${ECONOMY_LABEL[conversion.economy]} to convert`,
+          tiles,
+        });
+      }
+    }
+  }
+  for (const use of extra.uses ?? []) {
+    const left = leftOf(play, use.key, use.max);
+    out.push({
+      title: use.label,
+      tiles: [
+        {
+          resource: { kind: 'uses', level: spellLevel, key: use.key, label: use.label },
+          ok: left > 0,
+          sub: `${String(left)} left`,
+        },
+      ],
+    });
+  }
+  for (const item of extra.charges ?? []) {
+    const left = leftOf(play, item.key, item.max);
+    const perLevel = item.costs.length > 1;
+    const first = item.costs[0];
+    if (first === undefined) continue;
+    out.push({
+      title: item.label,
+      sub: `${perLevel ? '1 charge a level · ' : ''}${String(left)} of ${String(item.max)} left`,
+      tiles: item.costs.map(({ level, cost }) => ({
+        resource: { kind: 'charges', level, key: item.key, label: item.label, cost },
+        ok: cost <= left,
+        sub: plural(cost, 'charge'),
+      })),
+    });
+  }
+  return out;
+}
+
+/**
+ * The tile a cast starts on: what an unchosen cast has always spent (an unused
+ * arcanum, the pact slot, else the lowest slot), or, with all of those gone,
+ * the first way left that can pay (a conversion, a use, an item's charges).
+ * Undefined when nothing can, so the cast spends nothing.
+ */
+export function defaultCastTile(ways: readonly CastWay[], ctx: CastContext): CastTile | undefined {
+  const tiles = ways.flatMap((w) => w.tiles);
+  if (ctx.block !== undefined) {
+    const auto = nextCastResource(ctx.block, ctx.play, ctx.spellLevel);
+    const id = castResourceId(auto);
+    const found = tiles.find((t) => t.ok && castResourceId(t.resource) === id);
+    if (found !== undefined) return found;
+  }
+  return tiles.find((t) => t.ok);
+}
+
+/** "1st", "2nd", "3rd", "4th": a level as a tile says it. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${String(n)}th`;
+  return `${String(n)}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+}
+
+/**
+ * The note beside Roll for a way to cast: what casting spends, in words, and
+ * what converting points costs the turn or needs of the character. Nothing
+ * left to spend says so, since the cast then marks only the turn.
+ */
+export function castNote(resource: CastResource | undefined, ctx: CastContext): string {
+  if (resource === undefined || resource.kind === 'none') {
+    return 'Nothing left to spend: it marks only your turn.';
+  }
+  switch (resource.kind) {
+    case 'cantrip':
+      return 'A cantrip spends nothing.';
+    case 'arcanum':
+      return `Spends your ${ordinal(resource.level)}-level Mystic Arcanum.`;
+    case 'pact':
+      return `Spends a pact slot (${ordinal(resource.level)} level).`;
+    case 'slot':
+      return `Spends a ${ordinal(resource.level)}-level slot.`;
+    case 'uses':
+      return `Spends a use of ${resource.label}.`;
+    case 'charges':
+      return `Spends ${plural(resource.cost, `${resource.label} charge`)}.`;
+    case 'pool': {
+      const economy = conversionEconomy(resource.key) ?? 'action';
+      const turn = conversionTurnNote(economy, ctx.spell, ctx.play);
+      const level = conversionLevelNote(resource.key, resource.level, ctx);
+      const article = economy === 'action' ? 'an' : 'a';
+      return [
+        `Spends ${String(resource.cost)} ${resource.label} and ${article} ${ECONOMY_LABEL[economy]} to convert${turn === undefined ? '' : `, ${turn}`}.`,
+        ...(level === undefined ? [] : [`${level}.`]),
+      ].join(' ');
+    }
+  }
 }
 
 /**
@@ -427,7 +554,8 @@ export function isConcentratingOn(play: PlayState, name: string): boolean {
 export function castSpell(
   update: DocUpdater,
   hp: HpLimits,
-  block: SpellcastingBlock,
+  /** The class whose slots it casts with; without one, it spends only `resource`. */
+  block: SpellcastingBlock | undefined,
   level: number,
   spell?: CastSpellInfo,
   resource?: CastResource,
@@ -443,7 +571,11 @@ export function castSpell(
         turn[spell.economy] = true;
         turnUsed = true;
       }
-      const spend = resource ?? nextCastResource(block, d.play, level);
+      const spend =
+        resource ??
+        (block === undefined
+          ? { kind: 'none' as const, level }
+          : nextCastResource(block, d.play, level));
       spent = spend;
       if (spell?.concentration === true) {
         const leveled = spend.kind !== 'cantrip' && spend.kind !== 'none';
@@ -464,6 +596,12 @@ export function castSpell(
         const entry = d.play.resources.find((r) => r.key === spend.key);
         if (entry !== undefined) entry.used += spend.cost;
         else d.play.resources.push({ key: spend.key, used: spend.cost });
+      } else if (spend.kind === 'uses' || spend.kind === 'charges') {
+        // An innate grant's use, or an item's charges: its own pool.
+        const cost = spend.kind === 'uses' ? 1 : spend.cost;
+        const entry = d.play.resources.find((r) => r.key === spend.key);
+        if (entry !== undefined) entry.used += cost;
+        else d.play.resources.push({ key: spend.key, used: cost });
       } else if (spend.kind === 'arcanum') {
         setArcanumUsed(d.play, spend.level, true);
       } else if (spend.kind === 'pact') {
@@ -518,6 +656,10 @@ export function castCost(spent: CastResource | undefined, level: number): string
   // Which pool paid is always news, even at the spell's own level.
   if (spent.kind === 'pool') {
     return ` (L${String(spent.level)} from ${String(spent.cost)} ${spent.label})`;
+  }
+  if (spent.kind === 'uses') return ` (${spent.label})`;
+  if (spent.kind === 'charges') {
+    return ` (L${String(spent.level)} from ${plural(spent.cost, `${spent.label} charge`)})`;
   }
   // Casting with nothing left to spend is deliberate but must not read the same
   // as a paid cast, since the explicit label replaces the diff that would show it.

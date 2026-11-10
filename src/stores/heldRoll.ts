@@ -1,4 +1,5 @@
 import { createStore } from 'zustand/vanilla';
+import { roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
 import type { D20Ask, RollMode } from '@/features/sheet/d20Tests';
 import type { ChipWear } from '@/ui/ChipFace';
@@ -43,6 +44,63 @@ export interface RollFace {
   text: string;
   wear?: ChipWear | undefined;
   lift?: boolean | undefined;
+  /** A chip's colour when it is not the roll blue: damage, healing, or Cast's outline. */
+  tone?: 'danger' | 'heal' | 'cast' | undefined;
+}
+
+/**
+ * One way to cast, as the prompt's tile draws it (`castWays`): its level, what
+ * is left or what it costs under it, and whether it can pay now.
+ */
+export interface CastTileView {
+  id: string;
+  /** "1st", "3rd". */
+  head: string;
+  sub: string;
+  ok: boolean;
+  /** Its accessible name: what it spends and what is left. */
+  aria: string;
+}
+
+/** The tiles of one source, under its heading ("Spell slots", "Staff of Healing"). */
+export interface CastGroupView {
+  title: string;
+  sub?: string | undefined;
+  tiles: readonly CastTileView[];
+}
+
+/** What a spell rolls at a level: its chip's dice, or its damage after a hit. */
+export interface CastDice {
+  expr: string;
+  label: string;
+  kind: 'damage' | 'heal' | undefined;
+}
+
+/**
+ * A spell cast from the prompt (the rolls canvas, "Level at cast" A): every
+ * way to cast it as tiles by source, and what the tile picked does. The cast
+ * spends it as the roll lands, or as Cast is pressed for a spell with no dice.
+ */
+export interface HeldCast {
+  /** The row it is cast from, so that row alone refreshes it (`refreshHeldCast`). */
+  id: string;
+  spell: string;
+  groups: readonly CastGroupView[];
+  /** The tile it starts on: null when nothing can pay, and the cast spends nothing. */
+  picked: string | null;
+  /** The note by Roll: what the tile spends. */
+  note: (id: string | null) => string;
+  /**
+   * The spell's dice at the tile's level: what Roll rolls with no d20, or the
+   * damage a spell attack's hit offers. None for a spell with no dice. With
+   * `label`, the spell's roll of that label (Ice Knife's cold damage, tapped
+   * while its attack waits).
+   */
+  dice: (id: string | null, label?: string) => CastDice | undefined;
+  /** The dice in words at the tile's level, under the label. */
+  line: (id: string | null) => string | undefined;
+  /** Spends what the tile says and marks the cast. */
+  cast: (id: string | null) => void;
 }
 
 /** What a hit offers after it lands: its damage, rolled as the damage chip would. */
@@ -63,7 +121,12 @@ interface Pending {
 export interface HeldRoll {
   /** Counts holds, so the toast knows a new one from the last. */
   seq: number;
-  ask: D20Ask;
+  /** The d20 test asked about; null for a cast with no d20 (Cure Wounds, Fireball, Bless). */
+  ask: D20Ask | null;
+  /** The spell this roll casts, with its ways to cast. */
+  cast: HeldCast | undefined;
+  /** The way to cast picked (`cast`'s tile id). */
+  picked: string | null;
   onLanded: Landed | undefined;
   /** Side effects of asking that wait for the roll to land (`whenLanded`). */
   effects: Array<() => void>;
@@ -76,9 +139,15 @@ export interface HeldRoll {
   named: boolean[];
   /**
    * Damage tapped while an attack waits, in order: made once the attack has
-   * landed, so a crit doubles it, and landed with it.
+   * landed, so a crit doubles it, and landed with it. The cast spell's own
+   * damage (`ofCast`) is made at the level picked, by its label.
    */
-  damage: Array<{ make: () => RollResult; onLanded: Landed | undefined }>;
+  damage: Array<{
+    make: () => RollResult;
+    onLanded: Landed | undefined;
+    label: string;
+    ofCast: boolean;
+  }>;
   afterHit: FollowUp | undefined;
 }
 
@@ -169,16 +238,25 @@ export function rollFrom(
     face,
     afterHit,
     joins,
-  }: { face?: RollFace; afterHit?: FollowUp; joins?: { label: string } | undefined } = {},
+    cast,
+  }: {
+    face?: RollFace;
+    afterHit?: FollowUp;
+    /** `of`: the attack it goes with, by name, so the cast spell's own damage is made at its level. */
+    joins?: { label: string; of?: string | undefined } | undefined;
+    /** The spell an attack casts (a spell attack): its ways to cast join the prompt. */
+    cast?: HeldCast | undefined;
+  } = {},
 ): void {
   const { held } = heldRollStore.getState();
   if (held !== null && from !== null && held.from === from) {
     rollHeld();
     return;
   }
-  if (held?.ask.attack && joins !== undefined) {
+  if (held?.ask?.attack === true && joins !== undefined) {
     // Made once the attack lands, so a crit there doubles it.
-    join(held, make as () => RollResult, onLanded, joins.label);
+    const ofCast = held.cast !== undefined && joins.of === held.cast.spell;
+    join(held, make as () => RollResult, onLanded, joins.label, ofCast);
     return;
   }
   const { value, effects } = made(make);
@@ -188,6 +266,8 @@ export function rollFrom(
       held: {
         seq: s.seq + 1,
         ask: value,
+        cast,
+        picked: cast?.picked ?? null,
         onLanded,
         effects,
         from,
@@ -200,7 +280,8 @@ export function rollFrom(
       },
     }));
     const why = value.cueFor(value.preset);
-    announce(`${value.label}${why === '' ? '' : `. ${why}`}. Choose, then Roll.`, {
+    const cost = cast === undefined ? '' : ` ${cast.note(cast.picked)}`;
+    announce(`${value.label}${why === '' ? '' : `. ${why}`}.${cost} Choose, then Roll.`, {
       key: 'roll',
       repeat: true,
     });
@@ -210,10 +291,102 @@ export function rollFrom(
   land({ result: value, onLanded, effects });
 }
 
+/**
+ * A spell with no d20 to roll, cast from the prompt: Cure Wounds' healing,
+ * Fireball's damage, Bless with nothing to roll. It waits with its ways to
+ * cast; Roll (or Heal, or Cast), or the same control tapped again, spends the
+ * tile picked and rolls the dice at its level. `onLanded` is what the control
+ * does with that roll.
+ */
+export function castFrom(
+  from: HTMLElement | null,
+  cast: HeldCast,
+  onLanded?: Landed,
+  { face }: { face?: RollFace } = {},
+): void {
+  const { held } = heldRollStore.getState();
+  if (held !== null && from !== null && held.from === from) {
+    rollHeld();
+    return;
+  }
+  heldRollStore.setState((s) => ({
+    seq: s.seq + 1,
+    held: {
+      seq: s.seq + 1,
+      ask: null,
+      cast,
+      picked: cast.picked,
+      onLanded,
+      effects: [],
+      from,
+      face,
+      mode: 'normal',
+      rollsIn: [],
+      named: [],
+      damage: [],
+      afterHit: undefined,
+    },
+  }));
+  announce(`Cast ${cast.spell}. ${cast.note(cast.picked)} Choose, then Roll.`, {
+    key: 'roll',
+    repeat: true,
+  });
+}
+
 /** Damage that waits with the attack, made once it lands. */
-function join(held: HeldRoll, make: () => RollResult, onLanded: Landed | undefined, label: string) {
-  heldRollStore.setState({ held: { ...held, damage: [...held.damage, { make, onLanded }] } });
+function join(
+  held: HeldRoll,
+  make: () => RollResult,
+  onLanded: Landed | undefined,
+  label: string,
+  ofCast: boolean,
+) {
+  heldRollStore.setState({
+    held: { ...held, damage: [...held.damage, { make, onLanded, label, ofCast }] },
+  });
   announce(`${label} rolls with the attack.`, { key: 'roll', repeat: true });
+}
+
+/** Picks the way the waiting cast spends, when it can pay. */
+export function pickHeldTile(id: string): void {
+  const { held } = heldRollStore.getState();
+  const tile = held?.cast?.groups.flatMap((g) => g.tiles).find((t) => t.id === id);
+  if (held === null || tile === undefined || !tile.ok || held.picked === id) return;
+  heldRollStore.setState({ held: { ...held, picked: id } });
+}
+
+/**
+ * Rebuilds the waiting cast from row `id` with what is left now: a slot spent
+ * on the sheet behind the prompt, or a long rest, changes its tiles. A tile
+ * the player picked stays while it can still pay; otherwise the cast takes the
+ * start tile now, so Roll never spends what the character no longer has, and
+ * an unchosen cast never reaches past a slot that came back.
+ */
+export function refreshHeldCast(id: string, make: () => HeldCast): void {
+  const { held } = heldRollStore.getState();
+  if (held?.cast?.id !== id) return;
+  const cast = make();
+  const chosen = held.picked !== held.cast.picked;
+  const stays =
+    chosen && cast.groups.some((g) => g.tiles.some((t) => t.id === held.picked && t.ok));
+  heldRollStore.setState({ held: { ...held, cast, picked: stays ? held.picked : cast.picked } });
+}
+
+/**
+ * Lets the cast from row `id` go unrolled: the row has gone from the screen,
+ * or has nothing left to cast with, so nothing keeps its tiles true.
+ */
+export function cancelHeldCast(id: string): void {
+  if (heldRollStore.getState().held?.cast?.id === id) heldRollStore.setState({ held: null });
+}
+
+/** A cast spell's dice at its level: twice the dice on a crit. */
+function rollCastDice(dice: CastDice, crit: boolean): RollResult {
+  return roll(dice.expr, {
+    label: dice.label,
+    kind: dice.kind,
+    ...(crit ? { critical: true } : {}),
+  });
 }
 
 /** Picks the waiting roll's mode. */
@@ -225,7 +398,7 @@ export function setHeldMode(mode: RollMode): void {
 /** Leaves a die that rolls in (Bless) out of the waiting roll, or puts it back. */
 export function toggleHeldRollIn(index: number): void {
   const { held } = heldRollStore.getState();
-  if (held === null || held.ask.rollsIn[index] === undefined) return;
+  if (held === null || held.ask?.rollsIn[index] === undefined) return;
   const rollsIn = [...held.rollsIn];
   rollsIn[index] = !rollsIn[index];
   heldRollStore.setState({ held: { ...held, rollsIn } });
@@ -234,7 +407,7 @@ export function toggleHeldRollIn(index: number): void {
 /** Adds a one-use die to the waiting roll, or takes it back. */
 export function nameHeldDie(index: number): void {
   const { held } = heldRollStore.getState();
-  if (held === null || held.ask.once[index] === undefined) return;
+  if (held === null || held.ask?.once[index] === undefined) return;
   const named = [...held.named];
   named[index] = !named[index];
   heldRollStore.setState({ held: { ...held, named } });
@@ -247,17 +420,32 @@ export function cancelHeld(): void {
 
 /**
  * The waiting roll lands, under the prompt's choices: the one-use dice added
- * roll in and are spent. Damage that joined it is made next, in the order
- * tapped, and lands marked as going with it. A hit with nothing joined offers
- * its damage (`afterHit`), unless a natural 1 or an automatic failure settled it.
+ * roll in and are spent, and a cast spends its tile, hit or miss. Damage that
+ * joined it is made next, in the order tapped, and lands marked as going with
+ * it. A hit with nothing joined offers its damage (`afterHit`, or the spell's
+ * at the level cast), unless a natural 1 or an automatic failure settled it. A
+ * cast with no d20 rolls its dice at the level picked, if it has any.
  */
 export function rollHeld(): void {
   const { held } = heldRollStore.getState();
   if (held === null) return;
   heldRollStore.setState({ held: null });
   const id = crypto.randomUUID();
+  const { ask, cast, picked } = held;
+  if (ask === null) {
+    const dice = cast?.dice(picked);
+    if (dice !== undefined) {
+      land({
+        result: { ...rollCastDice(dice, false), id },
+        onLanded: held.onLanded,
+        effects: held.effects,
+      });
+    }
+    cast?.cast(picked);
+    return;
+  }
   const result: RollResult = {
-    ...held.ask.roll({
+    ...ask.roll({
       mode: held.mode,
       rollsIn: held.rollsIn,
       named: held.named,
@@ -265,7 +453,7 @@ export function rollHeld(): void {
     }),
     id,
   };
-  const spent = held.ask.once.flatMap((o, i) =>
+  const spent = ask.once.flatMap((o, i) =>
     held.named[i] === true && o.effectId !== undefined ? [o.effectId] : [],
   );
   land({
@@ -276,8 +464,15 @@ export function rollHeld(): void {
       ...spent.map((effectId) => () => rollOffersStore.getState().spend?.(effectId, true)),
     ],
   });
+  cast?.cast(picked);
+  const crit = result.meta?.attack?.crit === true;
+  const castDamage = cast?.dice(picked);
   for (const d of held.damage) {
-    const { value, effects } = made(d.make);
+    // The spell's own damage, at the level picked; its chip's dice when the
+    // spell has no roll of that label.
+    const own = d.ofCast ? cast?.dice(picked, d.label) : undefined;
+    const make = own !== undefined ? () => rollCastDice(own, crit) : d.make;
+    const { value, effects } = made(make);
     land({
       result: { ...value, meta: { ...value.meta, withRoll: id } },
       onLanded: d.onLanded,
@@ -285,15 +480,13 @@ export function rollHeld(): void {
     });
   }
   const missed = result.meta?.autoFail === true || result.meta?.d20?.natural === 1;
-  if (held.afterHit !== undefined && held.damage.length === 0 && !missed) {
-    const crit = result.meta?.attack?.crit === true;
+  const after: FollowUp | undefined =
+    castDamage !== undefined
+      ? { expr: castDamage.expr, go: () => rollFrom(null, () => rollCastDice(castDamage, crit)) }
+      : held.afterHit;
+  if (after !== undefined && held.damage.length === 0 && !missed) {
     followUpStore.setState({
-      offer: {
-        id,
-        expr: crit ? critDice(held.afterHit.expr) : held.afterHit.expr,
-        go: held.afterHit.go,
-        from: held.from,
-      },
+      offer: { id, expr: crit ? critDice(after.expr) : after.expr, go: after.go, from: held.from },
     });
   }
 }

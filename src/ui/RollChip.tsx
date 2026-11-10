@@ -4,7 +4,7 @@ import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import type { D20Ask } from '@/features/sheet/d20Tests';
 import { currentAdvantage } from '@/stores/advMode';
-import { attackInPlay, rollFrom } from '@/stores/heldRoll';
+import { attackInPlay, castFrom, type HeldCast, rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
 
@@ -64,6 +64,14 @@ export interface RollChipProps {
    * in after them, named (Savage Attacks' extra weapon die).
    */
   withAttack?: { by: string; of?: string; critDice?: { dice: string; source: string } };
+  /**
+   * The spell this chip casts (the rolls canvas, "Level at cast" A): the
+   * prompt opens with every way to cast it as tiles, and Roll, or the chip
+   * again, spends the tile picked and rolls. With a `roller` it rides on the
+   * spell attack's prompt; without one, the chip's own dice are the spell's
+   * at the level picked. Built as the chip is tapped, from what is left then.
+   */
+  cast?: (() => HeldCast) | undefined;
 }
 
 /** Can this be rolled? Free text (a custom attack's damage) cannot. */
@@ -171,6 +179,7 @@ export function RollChip({
   wear,
   raisedBy = [],
   withAttack,
+  cast,
 }: RollChipProps) {
   const [result, setResult] = useState<number | null>(null);
   const [rolls, setRolls] = useState(0);
@@ -189,21 +198,29 @@ export function RollChip({
   // first, and the total and `onRolled` wait for it. Damage tapped while an
   // attack waits, when it goes with one, is made once the attack lands, so a
   // crit doubles it.
-  const onRoll = (event: MouseEvent<HTMLButtonElement>) =>
+  const landed = (r: RollResult) => {
+    onRolled?.(r.total);
+    setResult(r.total);
+    setRolls((n) => n + 1);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setResult(null), TOTAL_MS);
+  };
+  const face = { text: display ?? expr, wear, lift: raised, tone: FACE_TONE[variant] };
+  const onRoll = (event: MouseEvent<HTMLButtonElement>) => {
+    // A spell with no d20 waits in the prompt with its ways to cast.
+    if (cast !== undefined && roller === undefined) {
+      castFrom(event.currentTarget, cast(), landed, { face });
+      return;
+    }
     rollFrom(
       event.currentTarget,
       () => roller?.() ?? chipRoll(expr, label, variant, withAttack),
-      (r) => {
-        onRolled?.(r.total);
-        setResult(r.total);
-        setRolls((n) => n + 1);
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => setResult(null), TOTAL_MS);
-      },
+      landed,
       {
-        face: { text: display ?? expr, wear, lift: raised },
+        face,
+        ...(cast === undefined ? {} : { cast: cast() }),
         ...(variant === 'damage' && withAttack !== undefined
-          ? { joins: { label: label ?? 'Damage' } }
+          ? { joins: { label: label ?? 'Damage', of: withAttack.of } }
           : {}),
         ...(damageAfter === undefined || !isDice(damageAfter.expr)
           ? {}
@@ -218,6 +235,7 @@ export function RollChip({
             }),
       },
     );
+  };
 
   const text =
     result !== null ? (

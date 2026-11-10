@@ -67,6 +67,7 @@ export function calcResources(
         origin: e.origin.label,
         ...(e.noSlotConversion !== undefined ? { noSlotConversion: e.noSlotConversion } : {}),
         ...(e.regainOnShort !== undefined ? { regainOnShort: e.regainOnShort } : {}),
+        ...(e.regainRoll !== undefined ? { regainRoll: e.regainRoll } : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).
