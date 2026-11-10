@@ -260,8 +260,8 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
-  // only in prose — curated table first (by its name, or the trait a homebrew
-  // copy is `basedOn`), generic prose scan for the long tail.
+  // only in prose: the curated table first (by its name, or the trait a homebrew
+  // copy is `basedOn`), the generic prose scan for the long tail.
   for (const entry of asEntityArray(e.entries)) {
     const traitName = str(entry.name);
     if (traitName === undefined) continue;
