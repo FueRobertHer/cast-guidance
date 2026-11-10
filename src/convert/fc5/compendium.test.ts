@@ -264,11 +264,9 @@ describe('convertFc5Compendium', () => {
   });
 
   describe('warnings', () => {
-    it('counts the classes, creatures and unknown elements it leaves out', () => {
+    it('counts the creatures and unknown elements it leaves out', () => {
       const { report } = convert(`
-        <class><name>Ash Knight</name></class>
         <monster><name>Cinder Hound</name></monster>
-        <class><name>Lamp Mage</name></class>
         <npc><name>Old Tom</name></npc>
         <widget/>
         <widget/>
@@ -276,18 +274,27 @@ describe('convertFc5Compendium', () => {
       expect(report.converted).toEqual({});
       expect(report.notes).toEqual([]);
       expect(report.warnings).toEqual([
-        '2 classes left out: classes cannot be converted yet.',
         '1 monster left out: this app does not use creatures.',
         '1 <npc> element left out: not part of this format.',
         '2 <widget> elements left out: not part of this format.',
       ]);
     });
 
-    it('uses the plural for creatures and the singular for one class', () => {
-      const { report } = convert('<monster/><monster/><class><name>Ash Knight</name></class>');
-      expect(report.warnings).toEqual([
-        '2 creatures left out: this app does not use creatures.',
-        '1 class left out: classes cannot be converted yet.',
+    it('uses the plural for creatures', () => {
+      const { report } = convert('<monster/><monster/>');
+      expect(report.warnings).toEqual(['2 creatures left out: this app does not use creatures.']);
+    });
+
+    it('notes a class entry that only adds to a class of its name', () => {
+      const { report } = convert('<class><name>Ash Knight</name><autolevel level="3"/></class>');
+      expect(report.converted).toEqual({});
+      expect(report.notes).toEqual([
+        {
+          kind: 'class',
+          name: 'Ash Knight',
+          status: 'skipped',
+          reasons: ['it only adds features to a class of that name, which is not converted yet'],
+        },
       ]);
     });
   });
@@ -330,13 +337,13 @@ describe('convertFc5Compendium', () => {
 
     it('warns about several stubs, ahead of other warnings', () => {
       const { report } = convert(`
-        <class><name>Ash Knight</name></class>
+        <monster><name>Cinder Hound</name></monster>
         <spell><name>Frost Jab</name><classes>Wizard</classes></spell>
         <spell><name>Ash Ward</name><classes>Cleric</classes></spell>
       `);
       expect(report.warnings).toEqual([
         '2 spell entries left out: they only add class lists to spells this file does not include.',
-        '1 class left out: classes cannot be converted yet.',
+        '1 monster left out: this app does not use creatures.',
       ]);
     });
   });
@@ -796,5 +803,103 @@ describe('class options', () => {
       { fileName: FILE, isInstalled: check },
     );
     expect(calls).toEqual([['optionalfeature', 'Ember Sight', '2014']]);
+  });
+});
+
+describe('classes', () => {
+  const at = (line: string) => `\nSource: ${line}`;
+  const knight = (name: string, line = '') => `
+    <class><name>${name}</name><hd>10</hd><proficiency>Strength, Constitution</proficiency>
+      <trait><name>${name}</name><text>Knights.${line}</text></trait>
+      <autolevel level="1"><feature><name>Second Wind</name><text>Breathe.</text></feature></autolevel>
+      <autolevel level="2"><feature><name>Action Surge</name><text>Surge.</text></feature></autolevel>
+    </class>`;
+
+  it('converts a class with its features, which the report counts', () => {
+    const { json, report } = convert(knight('Ember Knight'));
+    expect(list(json, 'class').map((c) => [c.name, c.source, c.classFeatures])).toEqual([
+      [
+        'Ember Knight',
+        SOURCE,
+        [`Second Wind|Ember Knight|${SOURCE}|1`, `Action Surge|Ember Knight|${SOURCE}|2`],
+      ],
+    ]);
+    expect(list(json, 'classFeature').map((f) => [f.name, f.className, f.level])).toEqual([
+      ['Second Wind', 'Ember Knight', 1],
+      ['Action Surge', 'Ember Knight', 2],
+    ]);
+    expect(report.converted).toEqual({ class: 1, classFeature: 2 });
+    expect(report.notes).toEqual([]);
+  });
+
+  it('leaves out an installed class and its features', () => {
+    const { calls, check } = recorder((kind, name) => kind === 'class' && name === 'Fighter');
+    const { json, report } = convert(knight('Fighter', at("Player's Handbook (2014) p. 70")), {
+      fileName: FILE,
+      isInstalled: check,
+      hasBook: () => true,
+    });
+    expect(json.class).toBeUndefined();
+    expect(json.classFeature).toBeUndefined();
+    expect(calls).toEqual([['class', 'Fighter', '2014']]);
+    expect(notesWith(report, 'installed').map((n) => [n.kind, n.name])).toEqual([
+      ['class', 'Fighter'],
+    ]);
+  });
+
+  it('names the official class and its features a class from a known book prints', () => {
+    const { json } = convert(knight('Fighter', at("Player's Handbook (2014) p. 70")));
+    expect(list(json, 'class')[0]?.printingOf).toEqual(['Fighter|PHB']);
+    expect(list(json, 'classFeature').map((f) => [f.name, f.printingOf])).toEqual([
+      ['Second Wind', ['Second Wind|PHB']],
+      ['Action Surge', ['Action Surge|PHB']],
+    ]);
+  });
+
+  it('names none on the features of a class from a book the app does not know', () => {
+    const { json } = convert(knight('Ember Knight', at('Ember Codex p. 3')));
+    expect(list(json, 'class')[0]?.printingOf).toBeUndefined();
+    expect(list(json, 'classFeature').map((f) => f.printingOf)).toEqual([undefined, undefined]);
+  });
+
+  it('leaves out a second class of the same name and its features', () => {
+    const { json, report } = convert(`${knight('Ember Knight')}${knight('Ember Knight')}`);
+    expect(list(json, 'class')).toHaveLength(1);
+    expect(list(json, 'classFeature')).toHaveLength(2);
+    expect(notesWith(report, 'duplicate').map((n) => n.name)).toEqual(['Ember Knight']);
+  });
+
+  it('puts a spell on the list of a class the file converts, wherever the class is', () => {
+    const { json } = convert(`
+      ${spell('Ember Lance', '<classes>Witch (Valda), Wizard</classes>')}
+      ${knight('Witch (Valda)', at('Ember Codex p. 3'))}
+    `);
+    expect(list(json, 'spell')[0]?.classes).toEqual({
+      fromClassList: [
+        { name: 'Wizard', source: 'PHB' },
+        { name: 'Witch (Valda)', source: 'FCEmberCodex' },
+      ],
+    });
+  });
+
+  it('puts no spell on the list of a class the file names but cannot convert', () => {
+    const { json } = convert(`
+      ${spell('Ember Lance', '<classes>Witch (Valda), Wizard</classes>')}
+      <class><name>Witch (Valda)</name><hd>banana</hd></class>
+    `);
+    expect(list(json, 'spell')[0]?.classes).toMatchObject({
+      fromClassList: [{ name: 'Wizard', source: 'PHB' }],
+    });
+    expect(json.class).toBeUndefined();
+  });
+
+  it('keeps the rules class for a list naming one, whatever the file defines', () => {
+    const { json } = convert(`
+      ${spell('Ember Lance', '<classes>Wizard</classes>')}
+      ${knight('Wizard', at('Ember Codex p. 3'))}
+    `);
+    expect(list(json, 'spell')[0]?.classes).toEqual({
+      fromClassList: [{ name: 'Wizard', source: 'PHB' }],
+    });
   });
 });

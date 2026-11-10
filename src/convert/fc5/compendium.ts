@@ -49,12 +49,14 @@ import {
   type HomebrewSource,
   readSourceLine,
 } from './books';
-import { convertClassOption, isClassOption, isOnOfficialList } from './classOption';
+import { classHitDie, classIdentity, convertClass } from './class';
+import { BASE_CLASSES, convertClassOption, isClassOption, isOnOfficialList } from './classOption';
 import {
   extraClassKey,
   type Fc5Context,
   type Fc5Result,
   type FeatRef,
+  type FileClass,
   type Placement,
   printingRef,
 } from './context';
@@ -77,7 +79,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 10;
+export const FC5_CONVERTER_VERSION = 11;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -85,6 +87,7 @@ const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result>
   feat: convertFeat,
   background: convertBackground,
   race: convertRace,
+  class: convertClass,
 };
 
 /**
@@ -97,7 +100,6 @@ export function fc5Converts(name: string): boolean {
 
 /** Kinds the format has that are left out on purpose, and why, in words. */
 const LEFT_OUT: Record<string, { plural: string; why: string }> = {
-  class: { plural: 'classes', why: 'classes cannot be converted yet' },
   monster: { plural: 'creatures', why: 'this app does not use creatures' },
 };
 
@@ -108,6 +110,8 @@ const KIND_ORDER: readonly ConvertedKind[] = [
   'optionalfeature',
   'background',
   'race',
+  'class',
+  'classFeature',
 ];
 
 /** Why an entry was left out, in words for the player. */
@@ -324,9 +328,9 @@ export function fc5Context(
   return ctx;
 }
 
-/** Whether the first pass reads an entry of this kind: spells and feats. */
+/** Whether the first pass reads an entry of this kind: spells, feats and classes. */
 export function fc5Indexes(name: string): boolean {
-  return name === 'spell' || name === 'feat';
+  return name === 'spell' || name === 'feat' || name === 'class';
 }
 
 /**
@@ -339,7 +343,7 @@ export function fc5Indexes(name: string): boolean {
  * converted. Every entry of the first pass comes before any of the second.
  */
 export interface Fc5Converter {
-  /** First pass. Reads spells and feats ({@link fc5Indexes}); other entries may come as stubs. */
+  /** First pass. Reads spells, feats and classes ({@link fc5Indexes}); other entries may come as stubs. */
   index(el: XmlElement): void;
   /** Second pass: every entry, whole. */
   convert(el: XmlElement): void;
@@ -378,6 +382,10 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     level: (name) =>
       spellLevels.has(name) ? spellLevels.get(name) : installedSpell(name) ? null : undefined,
   };
+  // The classes the file defines whole, for the spell lists that name them;
+  // one the rules have by that name keeps the rules' (`Wizard|PHB`).
+  const fileClasses = new Map<string, FileClass>();
+  ctx.classes = fileClasses;
 
   // Whether the game data has an entry, when the data holds its book: in its
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
@@ -440,6 +448,16 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
           classes: childText(el, 'classes'),
           stub,
         });
+      }
+    } else if (el.name === 'class') {
+      // Only a class the second pass converts: one with a hit die.
+      const hd = classHitDie(el);
+      const identity = hd === undefined || Number.isNaN(hd) ? undefined : classIdentity(el, ctx);
+      const key = identity?.name.toLowerCase();
+      if (identity !== undefined && key !== undefined && !BASE_CLASSES.has(key)) {
+        if (!fileClasses.has(key)) {
+          fileClasses.set(key, { name: identity.name, source: identity.placement.source.json });
+        }
       }
     } else if (el.name === 'feat') {
       const at = featsIndexed;
@@ -581,6 +599,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     optionalfeature: [],
     background: [],
     race: [],
+    class: [],
+    classFeature: [],
   };
   const sources = new Map<string, HomebrewSource>();
   const seen = new Set<string>();
@@ -662,8 +682,16 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       leave(c, 'installed', WHY.installed);
       return;
     }
-    out[kind].push(withPrinting(kind, result.entity, placement));
+    const entity = withPrinting(kind, result.entity, placement);
+    out[kind].push(entity);
     sources.set(placement.source.json, placement.source);
+    // A class's features come with it, each a printing of the official
+    // class's feature when the class is one.
+    for (const part of result.parts ?? []) {
+      if (entity.printingOf !== undefined) withPrinting(part.kind, part.entity, part.placement);
+      out[part.kind].push(part.entity);
+      sources.set(part.placement.source.json, part.placement.source);
+    }
     if (kind === 'optionalfeature' && !isOnOfficialList(result.entity)) {
       unoffered += 1;
       for (const t of result.entity.featureType as string[]) unofferedLists.add(t);

@@ -7,7 +7,15 @@
 import type { RulesVersion } from '../data5e/rulesVersion';
 
 /** The kinds a converter can produce, named as their 5etools homebrew keys. */
-export type ConvertedKind = 'spell' | 'item' | 'feat' | 'background' | 'race' | 'optionalfeature';
+export type ConvertedKind =
+  | 'spell'
+  | 'item'
+  | 'feat'
+  | 'background'
+  | 'race'
+  | 'optionalfeature'
+  | 'class'
+  | 'classFeature';
 
 /**
  * Whether the installed game data already has this entry: in the book given

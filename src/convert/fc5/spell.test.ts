@@ -153,6 +153,7 @@ describe('readClasses', () => {
     expect(readClasses('Wizard, Sorcerer')).toEqual({
       classes: ['Wizard', 'Sorcerer'],
       subclasses: [],
+      fileClasses: [],
     });
   });
 
@@ -169,6 +170,7 @@ describe('readClasses', () => {
         { className: 'Fighter', subclassName: 'Eldritch Knight' },
         { className: 'Rogue', subclassName: 'Ash Trickster' },
       ],
+      fileClasses: [],
     });
   });
 
@@ -180,6 +182,18 @@ describe('readClasses', () => {
     expect(readClasses('Wizard [5.5e], Cleric')).toEqual({
       classes: ['Wizard', 'Cleric'],
       subclasses: [],
+      fileClasses: [],
+      edition: '2024',
+    });
+  });
+
+  it('reads a class the file converts by its whole name, book marker and all', () => {
+    const witch = { name: 'Witch (Valda)', source: 'FCValdaSSpireOfSecrets' };
+    const fileClasses = new Map([['witch (valda)', witch]]);
+    expect(readClasses('Witch (Valda), Wizard, witch (valda) [5.5e]', fileClasses)).toEqual({
+      classes: ['Wizard'],
+      subclasses: [],
+      fileClasses: [witch],
       edition: '2024',
     });
   });

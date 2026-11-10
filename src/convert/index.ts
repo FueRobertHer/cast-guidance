@@ -45,9 +45,9 @@ export function convertXmlText(text: string, opts: ConvertOptions): ConversionRe
  * Convert an XML file from its text in chunks, as it is read: a file too
  * large to hold whole, on a worker. `open` reads the file from its start, and
  * is called twice: the first read takes what converting any entry depends on
- * from the rest of the file (its spells and feats), the second converts each
- * entry and lets it go. Entries the converter does not read (creatures,
- * classes) are only counted. The result is the one {@link convertXmlText}
+ * from the rest of the file (its spells, feats and classes), the second
+ * converts each entry and lets it go. Entries the converter does not read
+ * (creatures) are only counted. The result is the one {@link convertXmlText}
  * gives, without ever holding the file; its bounds are {@link XML_FILE_LIMITS}.
  */
 export async function convertXmlChunks(

@@ -141,11 +141,11 @@ describe('NothingToImportError', () => {
 
   it('gives the reasons when nothing could be converted', async () => {
     const err = await nothing(
-      `<compendium>${spell('Fire Bolt')}<class><name>Ember Knight</name></class><monster><name>Ash Wolf</name></monster></compendium>`,
+      `<compendium>${spell('Fire Bolt')}<monster><name>Ash Wolf</name></monster><widget/></compendium>`,
     );
     expect(err.allInstalled).toBe(false);
     expect(err.message).toBe(
-      'Nothing in this Fight Club 5e file could be converted. 1 is already in your game data. 1 class left out: classes cannot be converted yet. 1 monster left out: this app does not use creatures.',
+      'Nothing in this Fight Club 5e file could be converted. 1 is already in your game data. 1 monster left out: this app does not use creatures. 1 <widget> element left out: not part of this format.',
     );
   });
 
