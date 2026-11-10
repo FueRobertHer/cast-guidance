@@ -302,8 +302,8 @@ test.describe('keyboard: dialogs and drawers', () => {
     await escapeReturnsTo(page, history, menuButton);
     await checkDialog(
       page,
-      page.getByRole('button', { name: 'Long rest' }),
-      page.getByRole('dialog', { name: 'Long rest' }),
+      page.getByRole('button', { name: 'Long rest', exact: true }),
+      page.getByRole('dialog', { name: 'Long rest', exact: true }),
     );
   });
 

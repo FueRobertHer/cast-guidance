@@ -316,6 +316,12 @@ function RollResultToast({
   const before = useRef<HTMLElement | null>(null);
   // What last pressed the toast: a tap leaves `:hover` behind.
   const pressedBy = useRef<string | null>(null);
+  /** Keep `el` as what had focus before the toast, when it is outside it. */
+  const keepBefore = (el: EventTarget | null) => {
+    if (el instanceof HTMLElement && el !== document.body && !toast.current?.contains(el)) {
+      before.current = el;
+    }
+  };
 
   useEffect(() => {
     if (seq === shown.current) return;
@@ -607,6 +613,10 @@ function RollResultToast({
         <button
           type="button"
           aria-haspopup="dialog"
+          // The chip goes with its toast, so the sheet hands focus back to what
+          // had it before: read on the press, or as focus arrives from the keys.
+          onPointerDown={() => keepBefore(document.activeElement)}
+          onFocus={(event) => keepBefore(event.relatedTarget)}
           onClick={() => {
             const back = returnTo.current ?? before.current;
             setVisible(null);

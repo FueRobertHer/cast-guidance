@@ -6,9 +6,10 @@
 // whose chip changes it; a melee spell attack offers flanking; and what
 // dropping to 0 HP, a new turn or a natural 20 sets off is said.
 import 'fake-indexeddb/auto';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
+import { announcerStore, THROTTLE_MS } from '@/stores/announcer';
 import { heldRollStore, rollHeld } from '@/stores/heldRoll';
 import { noticeStore } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
@@ -157,6 +158,41 @@ describe('a crit’s rule on the roll toast', () => {
     expect(screen.getByRole('button', { name: /^Grog’s rule: double the total/ })).toBeTruthy();
   });
 
+  /** A crit's damage rolled from a focused button, and the toast's rule chip. */
+  const critChip = async () => {
+    await renderSheet(fighter());
+    render(<RollToast />);
+    nextFaces(20);
+    rollOn(screen.getByTitle('Longsword attack'));
+    nextFaces(3, 5);
+    const damage = screen.getByTitle('Longsword slashing damage');
+    damage.focus();
+    fireEvent.click(damage);
+    return { damage, chip: screen.getByRole('button', { name: /^Rule: double the dice/ }) };
+  };
+  const closesBackTo = async (el: HTMLElement) => {
+    const opened = await screen.findByRole('dialog', { name: 'Critical hits' });
+    fireEvent.keyDown(opened, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(el);
+  };
+
+  it('hands focus back to the damage button after a tap on the chip', async () => {
+    const { damage, chip } = await critChip();
+    // A tap that leaves focus where it was (Safari), and the toast goes.
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    await closesBackTo(damage);
+  });
+
+  it('hands focus back to the damage button after the chip is reached by keys', async () => {
+    const { damage, chip } = await critChip();
+    fireEvent.focus(chip, { relatedTarget: damage });
+    chip.focus();
+    fireEvent.click(chip);
+    await closesBackTo(damage);
+  });
+
   it('counts a stored value the app does not read as no rule of their own', async () => {
     await renderSheet(
       fighter((d) => {
@@ -285,21 +321,107 @@ describe('a natural 20’s moment', () => {
     expect((await sheet.saved()).play.tempHp).toBe(5);
     expect(notice()).toMatch(/^Natural 20: /);
     const said = notices();
+    const rows = (await sheet.history()).length;
 
     // Seen again on another tab and back, the roll sets nothing off a second time.
     await sheet.tab('Play');
     await sheet.tab('Stats');
     await landed();
     expect(notices()).toBe(said);
-    expect((await sheet.history()).filter((l) => l === 'Natural 20')).toHaveLength(1);
+    expect(await sheet.history()).toHaveLength(rows);
 
-    // A natural 20 on an attack is not a save: nothing is said or kept for it.
+    // A natural 20 on an attack is not a save: nothing is said for it.
     await sheet.tab('Play');
     nextFaces(20);
     rollOn(screen.getByTitle('Longsword attack'));
     await landed();
     expect(rollLogStore.getState().rolls[0]?.meta?.test).toBe('attack');
     expect(notices()).toBe(said);
-    expect((await sheet.history()).filter((l) => l === 'Natural 20')).toHaveLength(1);
+  });
+
+  it('sets nothing off on a save that fails automatically', async () => {
+    const sheet = await renderSheet(
+      fighter((d) => {
+        d.play.conditions = [{ id: 'Stunned' }];
+      }),
+      { extra: { classFeature: [grit] } },
+    );
+    await sheet.tab('Stats');
+    const said = notices();
+    const saves = screen.getByRole('heading', { name: 'Saving throws' }).parentElement;
+    if (saves === null) throw new Error('no saves section');
+    nextFaces(20);
+    rollOn(within(saves).getByRole('button', { name: /^DEX/ }));
+    await landed();
+    expect(rollLogStore.getState().rolls[0]?.meta).toMatchObject({
+      test: 'save',
+      autoFail: true,
+      d20: { natural: 20 },
+    });
+    expect(notices()).toBe(said);
+    expect((await sheet.saved()).play.tempHp).toBe(0);
+  });
+
+  it('keeps the attack’s name on the history row it lands in', async () => {
+    const fierce: DataEntity = {
+      ...grit,
+      castGuidance: {
+        v: 1,
+        moments: [{ at: 'natural20', rolls: ['attack'], do: [{ kind: 'tempHp', amount: 3 }] }],
+      },
+    };
+    const sheet = await renderSheet(fighter(), { extra: { classFeature: [fierce] } });
+    nextFaces(20);
+    rollOn(screen.getByTitle('Longsword attack'));
+    await landed();
+    const saved = await sheet.saved();
+    expect(saved.play.tempHp).toBe(3);
+    expect(saved.play.turn?.action).toBe(true);
+    expect((await sheet.history())[0]).toBe('Attacked with Longsword');
+  });
+});
+
+describe('a natural 1’s moment on a concentration save', () => {
+  // Grit with a cue for a natural 1 on a save.
+  const shaky: DataEntity = {
+    name: 'Grit',
+    source: 'TST',
+    className: 'Warrior',
+    classSource: 'TST',
+    level: 1,
+    entries: ['You are shaky.'],
+    castGuidance: {
+      v: 1,
+      moments: [
+        { at: 'natural1', rolls: ['save'], do: [{ kind: 'cue', text: 'Drop your shield.' }] },
+      ],
+    },
+  };
+
+  it('joins the concentration notice instead of taking its place', async () => {
+    await renderSheet(
+      fighter((d) => {
+        d.play.concentratingOn = { label: 'Bless' };
+      }),
+      { extra: { classFeature: [shaky] } },
+    );
+    nextFaces(1);
+    press('Damage 5 hit points');
+    await act(async () => {});
+    expect(rollLogStore.getState().rolls[0]?.meta).toMatchObject({
+      test: 'save',
+      d20: { natural: 1 },
+    });
+    const said = noticeStore.getState().notice;
+    expect(said?.title).toMatch(/^Concentration/);
+    expect(said?.detail).toContain('Bless');
+    expect(said?.detail).toContain('Natural 1 · Drop your shield. · Grit');
+    // Said once each: the concentration save, then the moment in its own words
+    // (a polite line may wait out the announcer's throttle).
+    const spoken = () => announcerStore.getState().messages.map((m) => m.text);
+    await waitFor(() => expect(spoken()).toContain('Natural 1. Drop your shield. · Grit'), {
+      timeout: THROTTLE_MS * 2,
+    });
+    expect(spoken().filter((t) => t.includes('Concentration'))).toHaveLength(1);
   });
 });

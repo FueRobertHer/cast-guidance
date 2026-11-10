@@ -71,7 +71,7 @@ const sheetTab = (tab: SheetPage): Route => ({
     ...(tab === 'Play'
       ? [
           page.getByRole('button', { name: 'Dice tray' }),
-          page.getByRole('button', { name: 'Long rest' }),
+          page.getByRole('button', { name: 'Long rest', exact: true }),
           // The effect strip's end, in the header's own row.
           stripEnd(page),
         ]
