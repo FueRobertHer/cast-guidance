@@ -86,14 +86,16 @@ or in its last words where the class has a feature named for the label
 becomes a `subclass` whose first feature, at the level it is picked, is the
 pick's own text, then one `subclassFeature` per feature. Two picks of one
 name whose `Source:` lines cite two books are two subclasses, each with the
-features that cite its book. The label is the class's `subclassTitle`, and
+features that cite its book; one left with no features of its own is a repeat
+of the other. The label is the class's `subclassTitle`, and
 the class's feature of that name (or one added where no such feature exists)
 opens the choice on the sheet. A subclass is placed by its own `Source:`
 line, else by the first of its features that has one, else by the class's
 place, in the edition its pick's name marks. Two choices of one label at one
 level within a subclass (`Fighting Style: Dueling (College of Swords)`) are
 options, except a Channel Divinity (or another `Channel` label), which a
-subclass gains all of. A subclass with a spellcasting feature (named for
+subclass gains all of unless its name still names a group to choose by
+(`Channel Arcana: Guided Strike (War Domain)`). A subclass with a spellcasting feature (named for
 spellcasting or pact magic, or one ending in `Magic` or `casting` that names
 a spellcasting ability) casts by the class's optional slot rows, as the
 Eldritch Knight does, and they come back on a short rest when the class's

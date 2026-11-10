@@ -751,15 +751,18 @@ function splitChoices(
   // By name, and by book among picks of one name; a pick that cites no book
   // is a repeat of any other of its name.
   const picks = new Map<string, Pick[]>();
+  // Each name's picks by the book they cite, null once one cites none.
+  const byBook = new Map<string, Map<string, Pick> | null>();
   const pickEls = new Set<XmlElement>();
-  const labelCounts = new Map<string, number>();
   for (const p of candidates) {
     if (!labels.has(p.label.toLowerCase())) continue;
     pickEls.add(p.c.el);
-    const same = picks.get(p.key) ?? [];
     const book = bookOf(p.c.el);
-    if (same.some((s) => s.book === undefined || book === undefined || s.book === book)) continue;
-    same.push({
+    const books = byBook.get(p.key);
+    if (books === null || (books !== undefined && (book === undefined || books.has(book)))) {
+      continue;
+    }
+    const pick: Pick = {
       label: p.label,
       written: p.written,
       level: p.c.level,
@@ -767,9 +770,11 @@ function splitChoices(
       ...(p.c.edition !== undefined && { edition: p.c.edition }),
       ...(book !== undefined && { book }),
       features: [],
-    });
-    picks.set(p.key, same);
-    labelCounts.set(p.label, (labelCounts.get(p.label) ?? 0) + 1);
+    };
+    const same = picks.get(p.key);
+    if (same === undefined) picks.set(p.key, [pick]);
+    else same.push(pick);
+    byBook.set(p.key, book === undefined ? null : (books ?? new Map()).set(book, pick));
   }
   // The last words of a subclass's name, when no other's end so.
   const tails = new Map<string, string | null>();
@@ -787,15 +792,27 @@ function splitChoices(
     const same = found === undefined ? undefined : picks.get(found);
     // Of two of one name, the one whose book the feature cites, else the first.
     const book = same !== undefined && same.length > 1 ? bookOf(c.el) : undefined;
-    const pick = same?.find((p) => p.book === book) ?? same?.[0];
+    const pick =
+      (book === undefined || found === undefined ? undefined : byBook.get(found)?.get(book)) ??
+      same?.[0];
     if (g === undefined || pick === undefined) others.push(c);
     else pick.features.push({ name: g.base, level: c.level, el: c.el });
   }
+  // A pick of a name another pick shares, whose features all went to the
+  // other (they cite its book, or none), is a repeat of it, not a subclass of
+  // its own (the Knowledge Domain a second book reprints with only its flavour).
+  const kept = [...picks.values()].flatMap((same) =>
+    same.length > 1 && same.some((p) => p.features.length > 0)
+      ? same.filter((p) => p.features.length > 0)
+      : same,
+  );
+  const labelCounts = new Map<string, number>();
+  for (const p of kept) labelCounts.set(p.label, (labelCounts.get(p.label) ?? 0) + 1);
   let label: string | undefined;
   for (const [l, n] of labelCounts) {
     if (label === undefined || n > (labelCounts.get(label) ?? 0)) label = l;
   }
-  return { picks: [...picks.values()].flat(), label, others };
+  return { picks: kept, label, others };
 }
 
 /** What a subclass is built from, beside its pick: the class's own parts it shares. */
@@ -905,9 +922,10 @@ function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): F
   const isOption = (f: Choice) => {
     const m = PICK.exec(f.name);
     const label = (m?.[1] ?? '').toLowerCase();
-    return (
-      m !== null && !GAINED_TOGETHER.test(label) && (optionKeys.get(`${label}|${f.level}`) ?? 0) > 1
-    );
+    // Unless its name still names a group to choose by (Theurgy's `Channel
+    // Arcana: Guided Strike (War Domain)`, one per domain).
+    const together = GAINED_TOGETHER.test(label) && lastGroup(m?.[2] ?? '') === undefined;
+    return m !== null && !together && (optionKeys.get(`${label}|${f.level}`) ?? 0) > 1;
   };
 
   const parts: Fc5Part[] = [];

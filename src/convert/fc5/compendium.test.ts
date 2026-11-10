@@ -1042,6 +1042,17 @@ describe('subclasses', () => {
     ]);
   });
 
+  it('says what a class entry with no hit die holds when it has no class to add to', () => {
+    const { report } = convert(`
+      <class><name>Ember Knight</name>
+        <autolevel level="3">${f('Ember Path: Ash Guard')}${f('Ash Strike (Ash Guard)')}${f('Extra Ember', 'x', '')}</autolevel>
+      </class>`);
+    expect(report.notes.map((n) => [n.kind, n.name, n.status])).toEqual([
+      ['class', 'Ember Knight', 'skipped'],
+      ['subclass', 'Ash Guard', 'skipped'],
+    ]);
+  });
+
   it('says a class entry with no hit die and no name has no name', () => {
     const { report } = convert(`
       <class><autolevel level="3">${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel></class>`);

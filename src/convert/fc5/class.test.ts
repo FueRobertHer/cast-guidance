@@ -603,6 +603,28 @@ describe('subclasses', () => {
     expect(subs[0]?.reasons).toEqual([]);
   });
 
+  it('keeps a Channel choice that names a group to choose by as an option', () => {
+    const { subs } = subclassesOf(
+      knight(`
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Theurgy', 'x', opt)}${feature('Channel Arcana: Divine Arcana (Ash Theurgy)', 'x', opt)}${feature('Channel Arcana: Guided Strike (War Domain) (Ash Theurgy)', 'x', opt)}${feature('Channel Arcana: Preserve Life (Life Domain) (Ash Theurgy)', 'x', opt)}`)}
+      `),
+    );
+    expect(subs[0]?.parts?.map((p) => p.entity.name)).toEqual([
+      'Ash Theurgy',
+      'Channel Arcana: Divine Arcana',
+    ]);
+    expect(subs[0]?.reasons).toEqual(['its options are not converted yet']);
+  });
+
+  it('takes a second pick whose features all cite the first one’s book as a repeat', () => {
+    const { subs } = subclassesOf(
+      knight(`
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'x\nSource: Ember Codex p. 1', opt)}${feature('Ember Path: Ash Guard', 'Only flavour.\nSource: Ash Codex p. 1', opt)}${feature('Ash Ward (Ash Guard)', 'Ember.\nSource: Ember Codex p. 2', opt)}`)}
+      `),
+    );
+    expect(subs.map((s) => [s.entity.source, s.parts?.length])).toEqual([['FCEmberCodex', 2]]);
+  });
+
   it('keeps two subclasses of one name from two books apart', () => {
     const { subs } = subclassesOf(
       knight(`
