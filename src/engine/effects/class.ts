@@ -1,6 +1,7 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
+import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -341,6 +342,11 @@ function collectFeatureWithNested(
         ),
       );
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
+      names.some((n) =>
+        labels.some((label) =>
+          emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
+        ),
+      );
       names.some((n) =>
         labels.some((label) =>
           sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),

@@ -273,11 +273,7 @@ export function deriveSheet(
     hitDice,
     totalLevel,
     classLabel,
-    senses: effectsOf(effects, 'sense').map((e) => ({
-      sense: e.sense,
-      range: e.range,
-      origin: e.origin.label,
-    })),
+    senses: longestSenses(effectsOf(effects, 'sense')),
     resists: effectsOf(effects, 'resist').map((e) => ({
       damageType: e.damageType,
       origin: e.origin.label,
@@ -494,6 +490,24 @@ function rollRiders(effects: readonly EffectInput[]): RollRider[] {
     else out.push({ ...from, kind: 'advantage', mode: e.mode });
   }
   return out;
+}
+
+/**
+ * One line a sense: the longest range any source gives it, from that source. A
+ * race's darkvision 60 and a feature's 120 read as darkvision 120.
+ */
+function longestSenses(
+  effects: ReadonlyArray<{ sense: string; range: number; origin: { label: string } }>,
+): Array<{ sense: string; range: number; origin: string }> {
+  const best = new Map<string, { sense: string; range: number; origin: string }>();
+  for (const e of effects) {
+    const key = e.sense.toLowerCase();
+    const had = best.get(key);
+    if (had === undefined || e.range > had.range) {
+      best.set(key, { sense: e.sense, range: e.range, origin: e.origin.label });
+    }
+  }
+  return [...best.values()];
 }
 
 /**
