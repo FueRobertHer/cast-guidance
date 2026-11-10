@@ -178,6 +178,7 @@ export const FORMULA_FIELDS: Readonly<Partial<Record<EffectInput['kind'], readon
   attackBonus: ['amount'],
   damageBonus: ['amount'],
   spellDcBonus: ['amount'],
+  spellDamageBonus: ['amount'],
   saveBonus: ['amount'],
   checkBonus: ['amount'],
   passivePerceptionBonus: ['amount'],

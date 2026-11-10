@@ -30,6 +30,7 @@ import {
   RULE_PACK_TYPE,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
+import { SPELL_SCHOOLS } from '../spellQuery';
 import {
   ACTIVE_PART_KINDS,
   type DataEntity,
@@ -193,6 +194,16 @@ const spellRef: Field = (v) => {
   const ref = typeof v === 'string' ? readRef(v) : undefined;
   if (ref === undefined) throw new Bad('is "name|source"');
   return ref;
+};
+
+/**
+ * A spell by name, which is how a cast is matched. "name|source", as other spell
+ * fields take, is read as its name, since a bonus counts every printing.
+ */
+const spellName: Field = (v, r, k) => {
+  const name = (text()(v, r, k) as string).split('|')[0]?.trim() ?? '';
+  if (name === '') throw new Bad('needs a spell name');
+  return name;
 };
 
 /** A nested object, by its known keys only. `true` marks a key it needs. */
@@ -360,11 +371,23 @@ const KINDS = new Map<Kind, Build>([
       ...scope(o, r),
       dice: req(o, r, 'dice', dice),
       ...opt(o, r, 'damageType', text()),
+      ...opt(o, r, 'weaponsOnly', flag),
     }),
   ],
   [
     'spellDcBonus',
     (o, r) => ({ amount: req(o, r, 'amount', amount), ...opt(o, r, 'className', text()) }),
+  ],
+  [
+    'spellDamageBonus',
+    (o, r) => ({
+      amount: req(o, r, 'amount', amount),
+      ...opt(o, r, 'spells', list(spellName, 50)),
+      ...opt(o, r, 'className', text()),
+      ...opt(o, r, 'cantrips', flag),
+      ...opt(o, r, 'school', oneOf(...Object.keys(SPELL_SCHOOLS))),
+      ...opt(o, r, 'oneRoll', flag),
+    }),
   ],
   [
     'saveBonus',

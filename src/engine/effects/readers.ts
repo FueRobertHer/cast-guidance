@@ -314,23 +314,61 @@ export function masteryNames(e: DataEntity): string[] {
 }
 
 /**
- * The kinds of weapon with a mastery property. The DMG's firearms stay out, as in
- * a weapon filter, and a kind printed in more than one book is offered once.
+ * The masteries a weapon lets anyone use, Weapon Mastery or not: those written
+ * as an object with a note (Psychic Blade's Vex).
  */
-export function weaponMasteryOptions(ctx: EngineContext): ChoiceOption[] {
+export function freeMasteryNames(e: DataEntity): string[] {
+  if (!Array.isArray(e.mastery)) return [];
+  return e.mastery.flatMap((m: unknown) =>
+    typeof m === 'object' && m !== null && (m as DataEntity).note !== undefined
+      ? masteryNames({ mastery: [m] })
+      : [],
+  );
+}
+
+/**
+ * The kind of weapon an item is, for Weapon Mastery: its base item's name, else a
+ * Quarterstaff for a staff or a spellcasting focus wielded as one (Staff of
+ * Striking, the druid's Wooden Staff), else its own name.
+ */
+export function weaponKindName(e: DataEntity): string {
+  const base = str(e.baseItem)?.split('|')[0];
+  if (base !== undefined) return base.trim().toLowerCase();
+  if (e.staff === true || e.scfType !== undefined) return 'quarterstaff';
+  return (str(e.name) ?? '').trim().toLowerCase();
+}
+
+/**
+ * The kinds of weapon with a mastery property: the base weapons, and a weapon no
+ * base item names (Poison Soaked Kukri, a homebrew one) as a kind of its own, unless
+ * anyone can use its mastery (Psychic Blade's). A staff or focus is a Quarterstaff,
+ * not a kind. The DMG's firearms stay out, as in a weapon filter, and a kind
+ * printed in more than one book is offered once. `keep` narrows them (a
+ * Barbarian's melee kinds, a Rogue's proficient ones).
+ */
+export function weaponMasteryOptions(
+  ctx: EngineContext,
+  keep: (e: DataEntity, ranged: boolean) => boolean = () => true,
+): ChoiceOption[] {
   const seen = new Set<string>();
   const options: ChoiceOption[] = [];
-  for (const e of ctx.byType('baseitem')) {
+  const ownKinds = ctx
+    .byType('item')
+    .filter((e) => e.baseItem === undefined && freeMasteryNames(e).length === 0);
+  for (const e of [...ctx.byType('baseitem'), ...ownKinds]) {
     const name = str(e.name);
     const category = str(e.weaponCategory)?.toLowerCase();
     if (name === undefined || category === undefined || e.age !== undefined) continue;
+    if (weaponKindName(e) !== name.trim().toLowerCase()) continue;
     const masteries = masteryNames(e);
     if (masteries.length === 0) continue;
+    const code = String(e.type ?? '').split('|')[0];
+    const ranged = code === 'R' || code === 'AF';
+    if (!keep(e, ranged)) continue;
     if (seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
-    const code = String(e.type ?? '').split('|')[0];
     const mastery = masteries.join(', ');
-    const summary = weaponSummary(e, category, code === 'R' || code === 'AF');
+    const summary = weaponSummary(e, category, ranged);
     options.push({ id: name, label: name, description: `${mastery}. ${summary}` });
   }
   return options.sort((a, b) => a.label.localeCompare(b.label));
@@ -535,6 +573,8 @@ export function readAbilityBlock(
   }
 
   for (const entry of entries) {
+    // A score this block raises can go past 20, up to `max` (an Epic Boon's 30).
+    const max = typeof entry.max === 'number' ? { max: entry.max } : {};
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {
         const c = (value ?? {}) as {
@@ -560,7 +600,13 @@ export function readAbilityBlock(
               selected.forEach((abil, i) => {
                 const amount = weights[i];
                 if (amount !== undefined && (ABILITIES as string[]).includes(abil)) {
-                  col.add({ kind: 'abilityBonus', ability: abil as Ability, amount, origin });
+                  col.add({
+                    kind: 'abilityBonus',
+                    ability: abil as Ability,
+                    amount,
+                    ...max,
+                    origin,
+                  });
                 }
               });
             },
@@ -581,14 +627,20 @@ export function readAbilityBlock(
             (selected) => {
               for (const abil of selected) {
                 if ((ABILITIES as string[]).includes(abil)) {
-                  col.add({ kind: 'abilityBonus', ability: abil as Ability, amount, origin });
+                  col.add({
+                    kind: 'abilityBonus',
+                    ability: abil as Ability,
+                    amount,
+                    ...max,
+                    origin,
+                  });
                 }
               }
             },
           );
         }
       } else if ((ABILITIES as string[]).includes(key) && typeof value === 'number') {
-        col.add({ kind: 'abilityBonus', ability: key as Ability, amount: value, origin });
+        col.add({ kind: 'abilityBonus', ability: key as Ability, amount: value, ...max, origin });
       }
     }
   }

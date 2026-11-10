@@ -323,6 +323,7 @@ function InnateSpellRow({
     },
     entity,
     level: spell.level ?? 1,
+    className: grant.className,
     abilityModifier,
     grantPool:
       limited === undefined

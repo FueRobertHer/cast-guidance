@@ -129,6 +129,9 @@ const ctx = {
     (type === 'optionalfeature'
       ? secrets.find((o) => String(o.name).toLowerCase() === name.toLowerCase())
       : undefined) ??
+    (type === 'baseitem'
+      ? weapons.find((w) => String(w.name).toLowerCase() === name.toLowerCase())
+      : undefined) ??
     base.get(type, name, source),
   byType: (type: string) =>
     type === 'baseitem'
@@ -270,6 +273,24 @@ describe('a weapon mastery only the prose asks for', () => {
     expect(deriveSheet(doc, ctx).features.map((f) => f.name)).toContain(
       'Weapon Master (Fake Blade)',
     );
+  });
+
+  it('lets the attack with that kind of weapon use its mastery', () => {
+    const doc = docWith([masterNew, 'i1']);
+    doc.equipment = [
+      {
+        id: 'e1',
+        ref: { name: 'Fake Blade', source: 'XPHB' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    const tags = () =>
+      deriveSheet(doc, ctx).attacks.find((a) => a.label === 'Fake Blade')?.properties ?? [];
+    expect(tags()).not.toContain('mastery: nick');
+    doc.choices[promptId] = ['Fake Blade'];
+    expect(tags()).toContain('mastery: nick');
   });
 });
 

@@ -5,6 +5,7 @@
  */
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
+import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import type { Ability, DataEntity, EffectOrigin } from '../types';
 import { asSlotCasts, collectAdditionalSpells, withoutPoolCosts } from './additionalSpells';
@@ -152,6 +153,9 @@ export function readOptionalFeatures(
                 emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
               );
               if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+              uids.some((key, i) =>
+                emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),
+              );
               uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
             },
           });

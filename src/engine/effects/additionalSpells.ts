@@ -296,7 +296,7 @@ function readChoose(
  * on demand: a reload must not take a character's spell away until they arrive.
  * What cannot be checked yet is trusted, and what is on file must fit the query.
  */
-function savedPicks(col: Collector, id: string, query: SpellQuery): ChoiceOption[] {
+export function savedPicks(col: Collector, id: string, query: SpellQuery): ChoiceOption[] {
   const stored = col.doc.choices[id];
   const picks = Array.isArray(stored) ? stored : stored === undefined ? [] : [stored];
   return picks.map(String).flatMap((pick) => {

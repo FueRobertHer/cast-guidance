@@ -437,6 +437,11 @@ export type EffectInput = {
    * A class's or subclass's widens that class; any other origin's, every one.
    */
   | { kind: 'spellListAdd'; spells: string[]; filters: string[] }
+  /**
+   * A kind of weapon whose mastery property the character can use, by its base
+   * item's name ("Longsword"): a 2024 class's Weapon Mastery pick, Weapon Master's.
+   */
+  | { kind: 'weaponMastery'; name: string }
   | { kind: 'language'; name: string }
   | { kind: 'acFormula'; label: string; base: number; addAbilities: Ability[]; dexMax?: number }
   | { kind: 'acBonus'; amount: number }
@@ -487,6 +492,8 @@ export type EffectInput = {
   /**
    * A die of extra damage on every weapon hit, rolled apart (Enlarge), or on
    * one carried weapon's when `weapon` names it (Elemental Weapon).
+   * `weaponsOnly`: on carried weapons' hits alone, not an unarmed strike's or a
+   * natural weapon's (the 2014 Improved Divine Smite's "melee weapon").
    */
   | {
       kind: 'damageDie';
@@ -494,9 +501,25 @@ export type EffectInput = {
       dice: string;
       damageType?: string;
       weapon?: string;
+      weaponsOnly?: boolean;
     }
   /** Spell save DC; `className` limits it to that class's spells (2024 Innate Sorcery). */
   | { kind: 'spellDcBonus'; amount: number; className?: string }
+  /**
+   * Added to a spell's damage rolls (Agonizing Blast's Charisma). Every limit
+   * given must hold: a spell named in `spells`, one cast as a spell of the class
+   * `className`, a cantrip when `cantrips`, one of the `school` ("V"). `oneRoll`:
+   * to one damage roll of each cast, not to each (Empowered Evocation).
+   */
+  | {
+      kind: 'spellDamageBonus';
+      amount: BonusAmount;
+      spells?: string[];
+      className?: string;
+      cantrips?: boolean;
+      school?: string;
+      oneRoll?: boolean;
+    }
   /** A flat bonus to saving throws, every one or those of `abilities`. */
   | { kind: 'saveBonus'; amount: BonusAmount; abilities?: Ability[] }
   | {
@@ -606,9 +629,10 @@ export type EffectInput = {
       note?: string;
       /**
        * Target save + what sets the DC: one of the caster's abilities (8+mod+prof),
-       * their spell save DC, or nothing when the prose states no DC to show.
+       * the higher of Strength and Dexterity (`strOrDex`, a maneuver's), their spell
+       * save DC, or nothing when the prose states no DC to show.
        */
-      save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
+      save?: { targetAbility: Ability; dcAbility?: Ability | 'strOrDex' | 'spell' };
       /** The pool using it spends, when that pool is not the one sharing its name. */
       cost?: ActionCost;
       /** The pool that pays for another use once there are none left. */
@@ -859,6 +883,17 @@ export interface AttackRow {
   magical?: true;
 }
 
+/** A `spellDamageBonus` on the sheet: its amount worked out, and its limits as written. */
+export interface SpellDamageBonus {
+  amount: number;
+  origin: string;
+  spells?: string[];
+  className?: string;
+  cantrips?: true;
+  school?: string;
+  oneRoll?: true;
+}
+
 export interface FeatureCard {
   name: string;
   level?: number;
@@ -1007,6 +1042,8 @@ export interface DerivedSheet {
   extraActions: Array<{ label: string; note?: string; origin: string }>;
   /** The lowest d20 that crits on an attack, when something lowers it from 20. */
   critRange?: { min: number; origin: string };
+  /** What adds to spells' damage, worked out, with the limits of each (`spellDamageBonus`). */
+  spellDamageBonuses: SpellDamageBonus[];
   /** The most temporary hit points offered at the start of each turn. */
   tempHpEachTurn?: { amount: number; origin: string };
   cues: Array<{ tone: 'help' | 'ward' | 'warn' | 'info'; text: string; origin: string }>;

@@ -77,7 +77,12 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
   cue: (p) => oneOf('help', 'ward', 'warn', 'info')(p.tone) && isStr(p.text),
   damageBonus: (p) =>
     isScope(p.scope) && isNum(p.amount) && optAbility(p.ability) && optStr(p.weapon),
-  damageDie: (p) => isScope(p.scope) && isDice(p.dice) && optStr(p.damageType) && optStr(p.weapon),
+  damageDie: (p) =>
+    isScope(p.scope) &&
+    isDice(p.dice) &&
+    optStr(p.damageType) &&
+    optStr(p.weapon) &&
+    optBool(p.weaponsOnly),
   extraAction: (p) => isStr(p.label) && optStr(p.note),
   immune: (p) => isStr(p.damageType) && optStr(p.note),
   initiativeBonus: (p) => isNum(p.amount),
@@ -118,7 +123,7 @@ const FIELDS: Record<ActivePartKind, readonly string[]> = {
   critRange: ['min'],
   cue: ['tone', 'text'],
   damageBonus: ['scope', 'amount', 'ability', 'weapon'],
-  damageDie: ['scope', 'dice', 'damageType', 'weapon'],
+  damageDie: ['scope', 'dice', 'damageType', 'weapon', 'weaponsOnly'],
   extraAction: ['label', 'note'],
   immune: ['damageType', 'note'],
   initiativeBonus: ['amount'],

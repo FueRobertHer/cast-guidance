@@ -132,6 +132,26 @@ const WEAPONS: Record<string, DataEntity> = {
     property: ['F|XPHB', 'T|XPHB'],
     mastery: [{ uid: 'Vex|XPHB', note: 'Placeholder note.' }],
   },
+  // An object with no note is the plain reference written longhand.
+  'Plain Blade': {
+    name: 'Plain Blade',
+    type: 'M',
+    weaponCategory: 'simple',
+    dmg1: '1d6',
+    dmgType: 'S',
+    mastery: [{ uid: 'Nick|XPHB' }],
+  },
+  // Shaped like Bloodvenom Blade: a named magic weapon of a mastered kind.
+  'Sapping Revolver': {
+    name: 'Sapping Revolver',
+    baseItem: 'revolver|dmg',
+    rarity: 'rare',
+    type: 'R',
+    weaponCategory: 'martial',
+    dmg1: '2d8',
+    dmgType: 'P',
+    mastery: ['Sap|XPHB'],
+  },
   Relic: {
     name: 'Relic',
     type: 'M',
@@ -221,7 +241,52 @@ describe('calcAttacks', () => {
 
   it("names a property the common ones lack from the data's own list", () => {
     const r = row(attacks(docWith('Revolver'), abilities(0, 2)), 'Revolver');
-    expect(r?.properties).toEqual(['ammunition', 'reload', 'mastery: sap']);
+    expect(r?.properties).toEqual(['ammunition', 'reload']);
+  });
+
+  it('names a mastery only for a kind of weapon the character has mastered', () => {
+    const mastered: EffectInput[] = [
+      {
+        kind: 'weaponMastery',
+        name: 'Revolver',
+        origin: { label: 'Weapon Mastery', uid: 'f', type: 'class' },
+      },
+    ];
+    const props = (effects: EffectInput[]) =>
+      row(attacks(docWith('Revolver'), abilities(0, 2), 2, undefined, effects), 'Revolver')
+        ?.properties;
+    expect(props(mastered)).toEqual(['ammunition', 'reload', 'mastery: sap']);
+    expect(props([])).not.toContain('mastery: sap');
+  });
+
+  it('counts a named magic weapon as the kind its base item is', () => {
+    const mastered: EffectInput[] = [
+      {
+        kind: 'weaponMastery',
+        name: 'Revolver',
+        origin: { label: 'Weapon Mastery', uid: 'f', type: 'class' },
+      },
+    ];
+    const r = row(
+      attacks(docWith('Sapping Revolver'), abilities(0, 2), 2, undefined, mastered),
+      'Sapping Revolver',
+    );
+    expect(r?.properties).toContain('mastery: sap');
+  });
+
+  it('waits for the pick on a mastery written as an object with no note', () => {
+    const mastered: EffectInput[] = [
+      {
+        kind: 'weaponMastery',
+        name: 'Plain Blade',
+        origin: { label: 'Weapon Mastery', uid: 'f', type: 'class' },
+      },
+    ];
+    const props = (effects: EffectInput[]) =>
+      row(attacks(docWith('Plain Blade'), abilities(0, 2), 2, undefined, effects), 'Plain Blade')
+        ?.properties;
+    expect(props([])).toEqual([]);
+    expect(props(mastered)).toEqual(['mastery: nick']);
   });
 
   it("takes a property's name from the weapon's book, and shows a code nothing names", () => {
@@ -229,9 +294,33 @@ describe('calcAttacks', () => {
     expect(r?.properties).toEqual(['this book', 'Zz']);
   });
 
-  it('names a mastery written as an object with a note', () => {
+  it('names a mastery written as an object with a note, mastered or not', () => {
     const r = row(attacks(docWith('Mind Blade'), abilities(0, 3)), 'Mind Blade');
     expect(r?.properties).toEqual(['finesse', 'thrown', 'mastery: vex']);
+    const mastered: EffectInput[] = [
+      {
+        kind: 'weaponMastery',
+        name: 'Mind Blade',
+        origin: { label: 'Weapon Mastery', uid: 'f', type: 'class' },
+      },
+    ];
+    const m = row(
+      attacks(docWith('Mind Blade'), abilities(0, 3), 2, undefined, mastered),
+      'Mind Blade',
+    );
+    expect(m?.properties).toEqual(['finesse', 'thrown', 'mastery: vex']);
+  });
+
+  it('names a mastered kind only on a weapon the character is proficient with', () => {
+    const mastered: EffectInput[] = [
+      {
+        kind: 'weaponMastery',
+        name: 'Revolver',
+        origin: { label: 'Weapon Master', uid: 'f', type: 'feat' },
+      },
+    ];
+    const r = row(attacks(docWith('Revolver'), abilities(0, 2), 2, [], mastered), 'Revolver');
+    expect(r?.properties).not.toContain('mastery: sap');
   });
 
   it('a finesse weapon uses the higher of STR/DEX', () => {
@@ -366,6 +455,34 @@ describe('calcAttacks', () => {
     expect(row(rows, 'Moon Blade')?.magical).toBe(true);
     expect(row(rows, 'Longsword')?.magical).toBeUndefined();
     expect(row(rows, 'Unarmed Strike')?.weaponId).toBeUndefined();
+  });
+
+  it('gives a weapons-only die to carried weapons, not an unarmed strike or a natural weapon', () => {
+    const smite: EffectOrigin = { label: 'Improved Divine Smite', uid: 'p', type: 'class' };
+    const die = { kind: 'damageDie', scope: 'melee', dice: '1d8', damageType: 'radiant' } as const;
+    const horns = {
+      kind: 'naturalWeapon',
+      label: 'Horns',
+      dice: '1d6',
+      damageType: 'piercing',
+      ability: 'str',
+      origin: smite,
+    } as const;
+    const riders = (weaponsOnly: boolean) =>
+      attacks(docWith('Longsword'), abilities(3, 1), 2, undefined, [
+        horns,
+        { ...die, ...(weaponsOnly ? { weaponsOnly } : {}), origin: smite },
+      ]).map((r) => [r.label, r.extraDamage.length]);
+    expect(riders(true)).toEqual([
+      ['Longsword', 1],
+      ['Horns', 0],
+      ['Unarmed Strike', 0],
+    ]);
+    expect(riders(false)).toEqual([
+      ['Longsword', 1],
+      ['Horns', 1],
+      ['Unarmed Strike', 1],
+    ]);
   });
 
   it('always includes an unarmed strike', () => {

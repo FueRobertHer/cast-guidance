@@ -17,7 +17,7 @@ import {
 } from '../types';
 import type { Collector } from './base';
 
-const DAMAGE_TYPES =
+export const DAMAGE_TYPES =
   'acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder';
 const ABILITY_WORDS: Record<string, Ability> = {
   strength: 'str',

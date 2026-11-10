@@ -6,7 +6,7 @@
  * level, up to 4th, and the 2024 staff's data lists it as at will. Each row is
  * read from the item's own text. Keyed by the item's `name|source` uid.
  */
-import { type DerivedResource, type EquipmentEntry, refUid } from '@/engine/types';
+import { type DerivedResource, type EquipmentEntry, refUid } from '../types';
 
 export interface ChargeSpell {
   /** The spell, by name in lower case: any printing of it casts from the item. */
