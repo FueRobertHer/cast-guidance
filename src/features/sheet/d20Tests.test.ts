@@ -16,6 +16,7 @@ import { rollTone } from '@/ui/rollTone';
 import { conditionLimits } from './conditionEffects';
 import {
   conditionWear,
+  d20Ask,
   effectLines,
   noteLines,
   rollD20Test,
@@ -441,7 +442,7 @@ describe('rollD20Test with effects in play', () => {
     expect(fails.meta?.offers).toBeUndefined();
   });
 
-  it('marks the one-use dice to ask about first, whatever the d20 shows', () => {
+  it('offers the one-use dice that do not wait for a failure in the prompt, before any die', () => {
     const guidance = {
       dice: '1d4',
       source: 'Guidance',
@@ -452,37 +453,71 @@ describe('rollD20Test with effects in play', () => {
     // 2024 Bardic waits for a failure, and a die that is not one use waits for nothing.
     const failed = { ...bardic, effectId: 'b2', ifFailed: true };
     const every = { dice: '1d4', source: 'Guidance', once: false, ifFailed: false };
-    nextFaces(20);
-    const nat20 = rollD20Test('1d20+7', {
+    nextFaces(); // asking rolls nothing
+    const attack = d20Ask('1d20+7', {
       label: 'Attack',
       riders: riders({ offers: [bardic, failed, every] }),
       settlesOnNatural: true,
     });
-    // Settled after the roll, but asked about before it: a natural 20 must
-    // not be told by a roll that does not wait.
-    expect(nat20.meta?.offers).toBeUndefined();
-    expect(nat20.meta?.askFirst).toEqual({ offers: [bardic], attack: true });
-    nextFaces(1);
-    const nat1 = rollD20Test('1d20+3', {
+    expect(attack.once).toEqual([bardic]);
+    const check = d20Ask('1d20+3', {
       label: 'Athletics check',
       riders: riders({ offers: [guidance, bardic] }),
     });
-    expect(nat1.meta?.askFirst).toEqual({ offers: [guidance, bardic], attack: false });
-    nextFaces(15);
-    const plain = rollD20Test('1d20+3', {
+    expect(check.once).toEqual([guidance, bardic]);
+    const plain = d20Ask('1d20+3', {
       label: 'Athletics check',
       riders: riders({ offers: [every, failed] }),
     });
-    expect(plain.meta?.askFirst).toBeUndefined();
-    // An automatic failure is on the cue before the roll: nothing to ask.
-    nextFaces(15);
+    expect(plain.once).toEqual([]);
+    // An automatic failure is on the cue before the roll: nothing to add.
     const paralyzed = effects([{ id: 'Paralyzed' }], '2014', { kind: 'save', ability: 'dex' });
-    const fails = rollD20Test('1d20+2', {
+    const fails = d20Ask('1d20+2', {
       label: 'DEX save',
       effects: paralyzed,
       riders: riders({ offers: [bardic] }),
     });
-    expect(fails.meta?.askFirst).toBeUndefined();
+    expect(fails.once).toEqual([]);
+  });
+
+  it('rolls a one-use die added in the prompt, and offers the rest after unless the house rule drops them', () => {
+    const guidance = {
+      dice: '1d4',
+      source: 'Guidance',
+      effectId: 'g1',
+      once: true,
+      ifFailed: false,
+    };
+    const ask = d20Ask('1d20+3', {
+      label: 'Athletics check',
+      riders: riders({ offers: [guidance, bardic] }),
+    });
+    expect(ask.formula({ named: [true, false] })).toBe('d20 +3 + d4 Guidance');
+    nextFaces(10, 2);
+    const added = ask.roll({ named: [true, false] });
+    expect(added.total).toBe(15);
+    expect(added.meta?.from).toEqual([{ term: 2, source: 'Guidance' }]);
+    expect(added.meta?.offers).toEqual([bardic]);
+    nextFaces(10);
+    expect(ask.roll({ dropUnnamed: true }).meta?.offers).toBeUndefined();
+  });
+
+  it('says what a mode chosen over the sheet set aside, and rolls under it', () => {
+    const poisoned = effects([{ id: 'Poisoned' }], '2014', { kind: 'check', ability: 'str' });
+    const ask = d20Ask('1d20+3', { label: 'STR check', effects: poisoned });
+    expect(ask.preset).toBe('dis');
+    expect(ask.conditions).toBe(true);
+    expect(ask.cueFor('dis')).toBe('Disadvantage: Poisoned');
+    expect(ask.cueFor('normal')).toBe('Disadvantage set aside for this roll: Poisoned');
+    expect(ask.cueFor('adv')).toBe('Advantage chosen for this roll, over Poisoned');
+    expect(ask.formula({ mode: 'adv' })).toBe('d20 +3, advantage');
+    nextFaces(4, 15);
+    const r = ask.roll({ mode: 'adv' });
+    expect(r.total).toBe(18);
+    expect(r.meta).toMatchObject({
+      advantage: 'adv',
+      cue: 'Advantage chosen for this roll, over Poisoned',
+    });
   });
 
   it("rolls an effect's advantage and disadvantage as a feature's", () => {

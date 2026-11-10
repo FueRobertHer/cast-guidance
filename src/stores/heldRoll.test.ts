@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
-// Decide before the roll, the house rule (the buffs canvas, Dice B): a roll
-// with one-use dice to name waits, unseen, then lands with the named dice.
+// The roll prompt (the rolls canvas, picked 2026-11-09): a d20 test waits,
+// unrolled, then lands under the prompt's choices.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
-import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from './announcer';
+import { d20Ask } from '@/features/sheet/d20Tests';
+import { getAnnouncerState, resetAnnouncer } from './announcer';
 import {
   attackInPlay,
   cancelHeld,
+  critDice,
+  followUpStore,
   heldRollStore,
   namedFirst,
   nameHeldDie,
   rollFrom,
   rollHeld,
+  setHeldMode,
+  toggleHeldRollIn,
   whenLanded,
 } from './heldRoll';
 import { rollLogStore } from './rollLog';
@@ -44,49 +50,39 @@ const bardic: RollOffer = {
 };
 const failedBardic: RollOffer = { ...bardic, effectId: 'b2', ifFailed: true };
 
-/** A d20 test as `rollD20Test` leaves it: Bless rolled in, dice to ask about. */
-function d20(natural: number, over: Partial<RollResult['meta']> = {}, label = 'Athletics check') {
-  return (): RollResult => ({
-    expr: '1d20+3+1d4',
-    label,
-    kind: 'd20',
-    total: natural + 3 + 2,
-    at: 0,
-    terms: [
-      { kind: 'dice', sign: 1, sides: 20, rolls: [{ v: natural, kept: true }] },
-      { kind: 'mod', value: 3 },
-      { kind: 'dice', sign: 1, sides: 4, rolls: [{ v: 2, kept: true }] },
-    ],
-    meta: {
-      d20: { natural },
-      from: [{ term: 2, source: 'Bless' }],
-      offers: [guidance, bardic],
-      askFirst: { offers: [guidance, bardic], attack: false },
-      ...over,
-    },
+/** A check with Bless rolling in and one-use dice to offer. */
+const check =
+  (offers: RollOffer[] = [guidance, bardic], label = 'Athletics check') =>
+  () =>
+    d20Ask('1d20+3', {
+      label,
+      riders: {
+        dice: [{ dice: '1d4', source: 'Bless' }],
+        offers,
+        advantage: [],
+        disadvantage: [],
+      },
+    });
+
+/** A Greataxe attack, with Bardic to offer. */
+const swing = () =>
+  d20Ask('1d20+7', {
+    label: 'Greataxe attack',
+    riders: { dice: [], offers: [bardic], advantage: [], disadvantage: [] },
+    settlesOnNatural: true,
+    attack: { by: 'c1', of: 'Greataxe' },
   });
-}
 
-const attack = (natural: number, over: Partial<RollResult['meta']> = {}) =>
-  d20(
-    natural,
-    { askFirst: { offers: [bardic], attack: true }, offers: [bardic], ...over },
-    'Greataxe attack',
-  );
-
-const damage = (): RollResult => ({
-  expr: '1d12+4',
-  label: 'Greataxe damage',
-  kind: 'damage',
-  total: 11,
-  at: 0,
-  terms: [
-    { kind: 'dice', sign: 1, sides: 12, rolls: [{ v: 7, kept: true }] },
-    { kind: 'mod', value: 4 },
-  ],
-});
+/** Greataxe damage, doubled when the attack in play crit, as `RollChip` rolls it. */
+const damage = (): RollResult =>
+  roll('1d12+4', {
+    label: 'Greataxe damage',
+    kind: 'damage',
+    ...(attackInPlay()?.crit === true ? { critical: true } : {}),
+  });
 
 const logged = () => rollLogStore.getState().rolls;
+const held = () => heldRollStore.getState().held;
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
 const button = () => document.body.appendChild(document.createElement('button'));
 
@@ -99,186 +95,183 @@ afterEach(() => {
   cancelHeld();
   rollLogStore.setState({ rolls: [], seq: 0 });
   rollOffersStore.setState({ spend: null, expired: 0, before: false });
+  followUpStore.setState({ offer: null });
   document.body.replaceChildren();
   resetAnnouncer();
 });
 
 describe('namedFirst', () => {
   it('takes one-use dice that do not wait for a failure', () => {
-    expect(namedFirst(bardic)).toBe(true);
+    expect(namedFirst(guidance)).toBe(true);
     expect(namedFirst(failedBardic)).toBe(false);
     expect(namedFirst({ ...guidance, once: false })).toBe(false);
   });
 });
 
-describe('after the roll, as written', () => {
-  it('lands at once, with the dice still on offer and no note of asking', () => {
-    const then = vi.fn();
-    rollFrom(button(), d20(12), then);
-    expect(heldRollStore.getState().held).toBeNull();
-    expect(logged()).toHaveLength(1);
-    expect(logged()[0]?.meta?.offers).toEqual([guidance, bardic]);
-    expect(logged()[0]?.meta?.askFirst).toBeUndefined();
-    expect(then).toHaveBeenCalledWith(expect.objectContaining({ total: 17 }));
-  });
-});
-
-describe('before the roll, the house rule', () => {
-  beforeEach(() => {
-    rollOffersStore.setState({ before: true });
-  });
-
-  it('waits, unseen and unsaid, and asks for the dice by name', () => {
-    const then = vi.fn();
-    rollFrom(button(), d20(12), then);
+describe('the prompt', () => {
+  it('waits with nothing rolled, presets the mode and says what to do', () => {
+    nextFaces();
+    rollFrom(button(), check());
     expect(logged()).toHaveLength(0);
-    expect(then).not.toHaveBeenCalled();
-    expect(heldRollStore.getState().held?.offers).toEqual([guidance, bardic]);
-    expect(spoken()).toEqual([
-      'Athletics check waiting: add Guidance or Bardic Inspiration, or Roll.',
-    ]);
-    expect(spoken().join(' ')).not.toMatch(/12|17/);
+    expect(held()?.mode).toBe('normal');
+    expect(held()?.rollsIn).toEqual([true]);
+    expect(held()?.named).toEqual([false, false]);
+    expect(spoken().at(-1)).toBe('Athletics check. Choose, then Roll.');
   });
 
-  it('lands with the named dice rolled in and spent, and offers none of them after', () => {
+  it('rolls the d20 at Roll, Bless in, the one-use dice offered after as written', () => {
+    rollFrom(button(), check());
+    nextFaces(14, 3);
+    rollHeld();
+    const r = logged()[0];
+    expect(r?.total).toBe(14 + 3 + 3);
+    expect(r?.meta?.from).toEqual([{ term: 2, source: 'Bless' }]);
+    expect(r?.meta?.offers).toEqual([guidance, bardic]);
+    expect(held()).toBeNull();
+  });
+
+  it('rolls an added one-use die in and spends it, offering only the rest after', () => {
     const spend = vi.fn();
     rollOffersStore.setState({ spend });
-    const then = vi.fn();
-    rollFrom(button(), d20(12, { offers: [guidance, bardic, failedBardic] }), then);
+    rollFrom(button(), check());
     nameHeldDie(1);
-    nextFaces(6);
+    nextFaces(10, 2, 6);
     rollHeld();
-    const [r] = logged();
-    expect(r?.total).toBe(23);
+    const r = logged()[0];
+    expect(r?.total).toBe(10 + 3 + 2 + 6);
     expect(r?.meta?.from).toEqual([
       { term: 2, source: 'Bless' },
       { term: 3, source: 'Bardic Inspiration' },
     ]);
-    // Guidance was not named, so it is gone; 2024 Bardic still waits for a failure.
-    expect(r?.meta?.offers).toEqual([failedBardic]);
-    expect(r?.meta?.askFirst).toBeUndefined();
-    expect(spend).toHaveBeenCalledTimes(1);
+    expect(r?.meta?.offers).toEqual([guidance]);
     expect(spend).toHaveBeenCalledWith('b1', true);
-    expect(then).toHaveBeenCalledWith(expect.objectContaining({ total: 23 }));
-    expect(heldRollStore.getState().held).toBeNull();
   });
 
-  it('spends a named die on a natural 20 too, which offers nothing after', () => {
+  it('offers none of them after under the house rule', () => {
+    rollOffersStore.setState({ before: true });
+    rollFrom(button(), check([guidance, failedBardic]));
+    nextFaces(10, 2);
+    rollHeld();
+    // 2024 Bardic waits for a failure, so it is still offered after.
+    expect(logged()[0]?.meta?.offers).toEqual([failedBardic]);
+  });
+
+  it('spends an added die on a natural 20 too, and offers nothing after an attack it settles', () => {
     const spend = vi.fn();
     rollOffersStore.setState({ spend });
-    rollFrom(button(), attack(20, { offers: undefined }));
+    rollFrom(button(), swing);
     nameHeldDie(0);
-    nextFaces(5);
+    nextFaces(20, 5);
     rollHeld();
-    expect(logged()[0]?.total).toBe(30);
     expect(logged()[0]?.meta?.offers).toBeUndefined();
     expect(spend).toHaveBeenCalledWith('b1', true);
   });
 
-  it('lands as rolled when nothing is named, spending nothing', () => {
-    const spend = vi.fn();
-    rollOffersStore.setState({ spend });
-    rollFrom(button(), d20(9));
-    nameHeldDie(0);
-    nameHeldDie(0);
+  it('leaves Bless out when the prompt takes it out', () => {
+    rollFrom(button(), check([]));
+    toggleHeldRollIn(0);
+    nextFaces(11);
     rollHeld();
     expect(logged()[0]?.total).toBe(14);
-    expect(logged()[0]?.meta?.from).toEqual([{ term: 2, source: 'Bless' }]);
-    expect(logged()[0]?.meta?.offers).toBeUndefined();
-    expect(spend).not.toHaveBeenCalled();
+    expect(logged()[0]?.meta?.from).toBeUndefined();
   });
 
-  it('rolls when the same control is tapped again, without rolling anew', () => {
+  it('rolls in the mode picked, and the cue says it was chosen', () => {
+    rollFrom(button(), check([]));
+    setHeldMode('adv');
+    nextFaces(4, 17, 1);
+    rollHeld();
+    const r = logged()[0];
+    expect(r?.meta?.d20?.natural).toBe(17);
+    expect(r?.meta?.cue).toBe('Advantage chosen for this roll');
+  });
+
+  it('rolls when the same control is tapped again', () => {
     const from = button();
-    const make = vi.fn(d20(12));
-    rollFrom(from, make);
-    rollFrom(from, make);
-    expect(make).toHaveBeenCalledTimes(1);
+    rollFrom(from, check([]));
+    nextFaces(9, 1);
+    rollFrom(from, check([]));
     expect(logged()).toHaveLength(1);
-    expect(heldRollStore.getState().held).toBeNull();
+    expect(held()).toBeNull();
   });
 
   it('lets the waiting roll go for another that waits, or one that lands', () => {
-    const first = vi.fn();
-    rollFrom(button(), d20(12), first);
-    rollFrom(button(), d20(4, {}, 'Stealth check'));
-    expect(heldRollStore.getState().held?.result.label).toBe('Stealth check');
-    const plain = (): RollResult => ({ ...damage(), kind: 'heal', label: 'Hit die (d8)' });
-    rollFrom(button(), plain);
-    expect(heldRollStore.getState().held).toBeNull();
-    expect(logged().map((r) => r.label)).toEqual(['Hit die (d8)']);
-    expect(first).not.toHaveBeenCalled();
+    rollFrom(button(), check([], 'Athletics check'));
+    rollFrom(button(), check([], 'Stealth check'));
+    expect(held()?.ask.label).toBe('Stealth check');
+    rollFrom(button(), () => roll('2d4+2', { label: 'Potion of Healing', kind: 'heal' }));
+    expect(held()).toBeNull();
+    expect(logged().map((r) => r.label)).toEqual(['Potion of Healing']);
   });
 
   it('lets it go when a roll lands from anywhere else', () => {
-    rollFrom(button(), d20(12));
-    rollLogStore.getState().append(damage());
-    expect(heldRollStore.getState().held).toBeNull();
+    rollFrom(button(), check());
+    rollLogStore.getState().append(roll('1d6'));
+    expect(held()).toBeNull();
   });
 
-  it('cancels unseen: nothing logged, nothing spent, nothing done', () => {
+  it('cancels unrolled: nothing logged, nothing spent, nothing done', () => {
     const spend = vi.fn();
+    const landed = vi.fn();
     rollOffersStore.setState({ spend });
-    const then = vi.fn();
-    rollFrom(button(), d20(12), then);
+    rollFrom(button(), check(), landed);
     nameHeldDie(0);
     cancelHeld();
     expect(logged()).toHaveLength(0);
     expect(spend).not.toHaveBeenCalled();
-    expect(then).not.toHaveBeenCalled();
+    expect(landed).not.toHaveBeenCalled();
   });
+});
 
-  it('holds damage tapped while the attack waits, and lands it after, marked as going with it', () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    const struck = vi.fn();
-    const hurt = vi.fn();
-    rollFrom(button(), attack(14), struck);
-    rollFrom(button(), damage, hurt);
+describe('an attack in the prompt', () => {
+  it('makes damage tapped while it waits after it lands, so a crit doubles it', () => {
+    rollFrom(button(), swing);
+    rollFrom(button(), damage, undefined, { joins: { label: 'Greataxe damage' } });
     expect(logged()).toHaveLength(0);
-    expect(heldRollStore.getState().held?.damage.map((d) => d.result.total)).toEqual([11]);
-    vi.advanceTimersByTime(THROTTLE_MS);
-    expect(spoken().at(-1)).toBe('Greataxe damage rolls with the attack.');
-    vi.useRealTimers();
+    expect(held()?.damage).toHaveLength(1);
+    nextFaces(20, 5, 7);
     rollHeld();
-    const [dealt, swing] = logged();
-    expect(swing?.label).toBe('Greataxe attack');
-    expect(dealt?.label).toBe('Greataxe damage');
-    expect(swing?.id).toBeDefined();
-    expect(dealt?.meta?.withRoll).toBe(swing?.id);
-    expect(struck).toHaveBeenCalledWith(expect.objectContaining({ id: swing?.id }));
-    expect(hurt).toHaveBeenCalledWith(expect.objectContaining({ total: 11 }));
+    const [dmg, atk] = logged();
+    expect(atk?.meta?.attack).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
+    expect(dmg?.meta?.critical).toBe(true);
+    expect(dmg?.total).toBe(5 + 7 + 4);
+    expect(dmg?.meta?.withRoll).toBe(atk?.id);
+    // Damage that joined it needs no offer.
+    expect(followUpStore.getState().offer).toBeNull();
   });
 
-  it('holds every damage roll tapped while the attack waits, and lands each in order', () => {
-    const smite = (): RollResult => ({ ...damage(), label: 'Divine Smite', total: 9 });
-    const hurt = vi.fn();
-    const smote = vi.fn();
-    rollFrom(button(), attack(14));
-    rollFrom(button(), damage, hurt);
-    rollFrom(button(), smite, smote);
-    expect(heldRollStore.getState().held?.damage.map((d) => d.result.label)).toEqual([
-      'Greataxe damage',
-      'Divine Smite',
-    ]);
+  it('offers its damage after a hit, doubled on a crit', () => {
+    const go = vi.fn();
+    rollFrom(button(), swing, undefined, { afterHit: { expr: '1d12+4', go } });
+    nextFaces(20);
     rollHeld();
-    const [smiteRoll, dealt, swing] = logged();
-    expect(logged().map((r) => r.label)).toEqual([
-      'Divine Smite',
-      'Greataxe damage',
-      'Greataxe attack',
-    ]);
-    expect(dealt?.meta?.withRoll).toBe(swing?.id);
-    expect(smiteRoll?.meta?.withRoll).toBe(swing?.id);
-    expect(hurt).toHaveBeenCalledTimes(1);
-    expect(smote).toHaveBeenCalledTimes(1);
+    expect(followUpStore.getState().offer).toMatchObject({
+      id: logged()[0]?.id,
+      expr: '2d12+4',
+    });
+  });
+
+  it('offers no damage after a natural 1', () => {
+    rollFrom(button(), swing, undefined, { afterHit: { expr: '1d12+4', go: vi.fn() } });
+    nextFaces(1);
+    rollHeld();
+    expect(followUpStore.getState().offer).toBeNull();
   });
 
   it('lands damage at once while a check waits, which lets the check go', () => {
-    rollFrom(button(), d20(12));
-    rollFrom(button(), damage);
-    expect(heldRollStore.getState().held).toBeNull();
+    rollFrom(button(), check());
+    rollFrom(button(), damage, undefined, { joins: { label: 'Greataxe damage' } });
+    expect(held()).toBeNull();
     expect(logged().map((r) => r.label)).toEqual(['Greataxe damage']);
-    expect(logged()[0]?.meta?.withRoll).toBeUndefined();
+  });
+
+  it("lands damage that goes with no attack at once, letting the attack go (a save's, a spell cast)", () => {
+    const cast = vi.fn();
+    rollFrom(button(), swing);
+    rollFrom(button(), () => roll('8d6', { label: 'Fireball damage', kind: 'damage' }), cast);
+    expect(held()).toBeNull();
+    expect(logged().map((r) => r.label)).toEqual(['Fireball damage']);
+    expect(cast).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -289,25 +282,26 @@ describe('whenLanded', () => {
     expect(effect).toHaveBeenCalledTimes(1);
   });
 
-  it('waits with a roll that waits: once it lands, never if it is cancelled', () => {
-    rollOffersStore.setState({ before: true });
+  it('waits with a roll in the prompt: once it lands, never if it is cancelled', () => {
     const spentOnce = vi.fn();
-    const making = (r: () => RollResult) => () => {
+    const making = () => {
       whenLanded(spentOnce);
-      return r();
+      return check([])();
     };
-    rollFrom(button(), making(d20(12)));
+    rollFrom(button(), making);
     expect(spentOnce).not.toHaveBeenCalled();
     cancelHeld();
     expect(spentOnce).not.toHaveBeenCalled();
 
-    rollFrom(button(), making(d20(12)));
+    rollFrom(button(), making);
     rollHeld();
     expect(spentOnce).toHaveBeenCalledTimes(1);
 
     // A roll that lands at once spends it as it lands.
-    rollOffersStore.setState({ before: false });
-    rollFrom(button(), making(d20(9)));
+    rollFrom(button(), () => {
+      whenLanded(spentOnce);
+      return roll('1d6');
+    });
     expect(spentOnce).toHaveBeenCalledTimes(2);
   });
 
@@ -324,51 +318,47 @@ describe('whenLanded', () => {
 });
 
 describe('attackInPlay', () => {
-  /** An attack roll as `rollD20Test` stamps it: which attack, and whether it crit. */
-  const swing = (crit: boolean, over: Partial<RollResult['meta']> = {}) =>
-    attack(crit ? 20 : 12, {
-      attack: { by: 'c1', of: 'Greataxe', crit },
-      askFirst: undefined,
-      offers: undefined,
-      ...over,
-    });
+  const landed = (crit: boolean) => () => {
+    nextFaces(crit ? 20 : 12);
+    const r = swing().roll();
+    vi.restoreAllMocks();
+    return r;
+  };
 
   it('is the newest roll, past the damage rolled after it', () => {
     expect(attackInPlay()).toBeUndefined();
-    rollFrom(button(), swing(true));
+    rollFrom(button(), landed(true));
     expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
     rollFrom(button(), damage);
     rollFrom(button(), damage);
     expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
-    // The next attack is the one damage goes with now.
-    rollFrom(button(), swing(false));
+    rollFrom(button(), landed(false));
     expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: false });
   });
 
-  it('lets go once another d20 roll or a heal lands', () => {
-    rollFrom(button(), swing(true));
-    rollFrom(button(), d20(9, { askFirst: undefined, offers: undefined }));
-    expect(attackInPlay()).toBeUndefined();
-    rollFrom(button(), swing(true));
-    rollFrom(button(), () => ({ ...damage(), label: 'Cure Wounds', kind: 'heal' }));
+  it('lets go once a heal lands', () => {
+    rollFrom(button(), landed(true));
+    rollFrom(button(), () => roll('2d4+2', { label: 'Cure Wounds', kind: 'heal' }));
     expect(attackInPlay()).toBeUndefined();
   });
 
   it('passes plain dice rolled after it, which may add to its damage', () => {
-    rollFrom(button(), swing(true));
-    const { kind: _, ...bonus } = { ...damage(), label: 'Superiority die' };
-    rollFrom(button(), () => bonus);
+    rollFrom(button(), landed(true));
+    rollFrom(button(), () => roll('1d8', { label: 'Superiority die' }));
     expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
   });
 
-  it('is the attack that waits, whose natural is not shown yet', () => {
-    rollOffersStore.setState({ before: true });
-    rollFrom(button(), swing(false));
-    rollFrom(button(), swing(true, { askFirst: { offers: [bardic], attack: true } }));
-    expect(logged()).toHaveLength(1);
-    expect(attackInPlay()).toEqual({ by: 'c1', of: 'Greataxe', crit: true });
-    // A check that waits is no attack: damage then goes with nothing.
-    rollFrom(button(), d20(9));
+  it('is nothing while an attack waits, whose d20 is not rolled yet', () => {
+    rollFrom(button(), landed(true));
+    rollFrom(button(), swing);
     expect(attackInPlay()).toBeUndefined();
+  });
+});
+
+describe('critDice', () => {
+  it('doubles every die count, the modifiers once', () => {
+    expect(critDice('1d12+4')).toBe('2d12+4');
+    expect(critDice('2d6+1d8+3')).toBe('4d6+2d8+3');
+    expect(critDice('d10')).toBe('2d10');
   });
 });

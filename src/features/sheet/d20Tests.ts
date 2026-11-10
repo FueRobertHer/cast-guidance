@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { roll } from '@/dice/roll';
-import type { RollResult } from '@/dice/types';
+import type { RollOffer, RollResult } from '@/dice/types';
 import {
   type ActiveCondition,
   type D20Effects,
@@ -137,31 +137,97 @@ function rollCue(e: D20Effects, r: D20Resolution): string {
 
 const NO_EFFECTS: D20Effects = { advantage: [], disadvantage: [], autoFail: [], notes: [] };
 
+/** A d20 test's mode, as the roll prompt offers it. */
+export type RollMode = 'dis' | 'normal' | 'adv';
+
+/** What the roll prompt chose for one roll. Anything left out is as the sheet set it. */
+export interface D20Choice {
+  mode?: RollMode;
+  /** Per `rollsIn`: false leaves that die out of this roll. */
+  rollsIn?: readonly boolean[];
+  /** Per `once`: true adds that one-use die before the d20 is rolled. */
+  named?: readonly boolean[];
+  /**
+   * The table's house rule (`lib/oneUseDice`, "before"): a one-use die not
+   * added in the prompt is not offered after the roll either.
+   */
+  dropUnnamed?: boolean;
+}
+
 /**
- * Rolls a d20 test (`expr` leads with 1d20) under the dock's mode and the
- * conditions' effects: advantage and disadvantage combine and cancel, the
- * 2024 exhaustion penalty is a term of its own, and an automatic failure is
- * marked on the result, never hidden: the dice still show. `ignored` is the
- * player's override for this one roll, which leaves the dock's mode, and a
- * feature's advantage (`advantageFrom`: War Caster, Durable), which is not a
- * condition's to ignore.
+ * A sheet's d20 test before its d20 is rolled: what the roll prompt shows and
+ * presets, and `roll`, which makes it under what the prompt chose.
+ */
+export interface D20Ask {
+  readonly kind: 'ask';
+  label: string;
+  /** The mode the sheet sets: the dock's, the conditions', features' and effects' combined. */
+  preset: RollMode;
+  /** Dice that roll in unless the prompt takes them out (Bless). */
+  rollsIn: ReadonlyArray<{ dice: string; source: string }>;
+  /** One-use dice the prompt offers before the roll (2014 Guidance and Bardic Inspiration). */
+  once: readonly RollOffer[];
+  /** An attack, which a natural 1 or 20 settles. */
+  attack: boolean;
+  /** A condition makes it fail whatever the d20 shows. */
+  autoFail: boolean;
+  /** Conditions reach it and are not ignored: a mode other than the preset sets them aside. */
+  conditions: boolean;
+  /** What the roll will carry as its cue in this mode, '' when nothing: the prompt's why line. */
+  cueFor(mode: RollMode): string;
+  /** The roll in words before it is made: "d20 +7 + d4 Bless, disadvantage". */
+  formula(choice?: D20Choice): string;
+  roll(choice?: D20Choice): RollResult;
+}
+
+/** "1d8" as a chip says it: "d8". */
+const dieWord = (dice: string) => dice.replace(/^1d/, 'd');
+
+/**
+ * What the roll's cue says when the prompt chose a mode the sheet did not set:
+ * advantage or disadvantage chosen, or the sheet's set aside for this roll.
+ */
+function chosenCue(mode: RollMode, preset: RollMode, e: D20Effects): string {
+  if (mode === 'adv' || mode === 'dis') {
+    const word = mode === 'adv' ? 'Advantage' : 'Disadvantage';
+    const over = mode === 'adv' ? e.disadvantage : e.advantage;
+    return over.length > 0
+      ? `${word} chosen for this roll, over ${names(over)}`
+      : `${word} chosen for this roll`;
+  }
+  const word = preset === 'adv' ? 'Advantage' : 'Disadvantage';
+  const sources = preset === 'adv' ? e.advantage : e.disadvantage;
+  return sources.length > 0
+    ? `${word} set aside for this roll: ${names(sources)}`
+    : `${word} set aside for this roll`;
+}
+
+/**
+ * A d20 test (`expr` leads with 1d20) under the dock's mode and the
+ * conditions' effects, asked before it is rolled: the roll prompt shows what
+ * the sheet sets and why, and `roll` makes it under what the prompt chose.
+ * Advantage and disadvantage combine and cancel, the 2024 exhaustion penalty
+ * is a term of its own, and an automatic failure is marked on the result,
+ * never hidden: the dice still show. `ignored` is the player's override for
+ * this one roll, which leaves the dock's mode, and a feature's advantage
+ * (`advantageFrom`: War Caster, Durable), which is not a condition's to ignore.
+ * A mode the prompt picks over the sheet's is the last word on advantage, and
+ * the cue says what it set aside.
  *
  * `riders` is what effects in play bring (`rollEffects`): their dice roll in
- * (Bless, named in the working), their advantage and disadvantage count as a
- * feature's do, and the dice they offer after the roll ride on the result for
- * the toast. Nothing is offered where nothing could change the outcome: an
- * automatic failure, or a natural 1 or 20 on a roll the natural settles
- * (`settlesOnNatural`: attacks and death saves), or an attack's crit.
+ * (Bless, named in the working) unless the prompt takes them out, their
+ * advantage and disadvantage count as a feature's do, and the dice they offer
+ * ride on the result for the toast. The one-use dice among them (2014 Guidance
+ * and Bardic) are offered in the prompt too: one added there rolls in and is
+ * spent, and the rest come back after the roll unless the table's house rule
+ * says otherwise (`dropUnnamed`). Nothing is offered after a roll nothing could
+ * change: an automatic failure, or a natural 1 or 20 on a roll the natural
+ * settles (`settlesOnNatural`: attacks and death saves), or an attack's crit.
  *
  * `attack` marks an attack roll with whose it is and whether it crit (the kept
  * d20 at `critFrom` or above), which the damage that goes with it reads.
- *
- * The one-use dice among the offers are also marked `askFirst`, read before
- * the d20 is, for a table that names them before the roll (`stores/heldRoll`).
- * A roll that passes `settlesOnNatural` and asks is an attack: a death save
- * offers nothing.
  */
-export function rollD20Test(
+export function d20Ask(
   expr: string,
   {
     label,
@@ -184,7 +250,7 @@ export function rollD20Test(
      */
     attack?: { by: string; of: string; critFrom?: number | undefined };
   },
-): RollResult {
+): D20Ask {
   const conditionsApply = effects !== undefined && !noD20Effect(effects);
   const kept = ignored || effects === undefined ? NO_EFFECTS : effects;
   const used = {
@@ -193,55 +259,102 @@ export function rollD20Test(
     disadvantage: [...kept.disadvantage, ...(riders?.disadvantage ?? [])],
   };
   const resolution = resolveD20(currentAdvantage(), used);
-  // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
-  const dice = riders?.dice ?? [];
-  const withDice = dice.reduce((e, d) => `${e}+${d.dice}`, expr);
-  const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
-  const result = roll(full, { label, advantage: resolution.advantage, kind: 'd20' });
-  // A d20 test's expression is the d20 and flat modifiers, so every die after
-  // the first is an effect's, in order.
-  const from: Array<{ term: number; source: string }> = [];
-  result.terms.forEach((t, i) => {
-    const d = i > 0 && t.kind === 'dice' ? dice[from.length] : undefined;
-    if (d !== undefined) from.push({ term: i, source: d.source });
-  });
-  const natural = result.meta?.d20?.natural;
-  // A crit is the kept die in the crit range: a 19 under Hexblade's Curse
-  // settles the attack as a natural 20 does.
-  const crit = attack !== undefined && natural !== undefined && natural >= (attack.critFrom ?? 20);
-  const settled =
-    resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20 || crit));
-  const offers = settled ? [] : (riders?.offers ?? []);
-  // Asked before the roll under the house rule, so read before the d20 is:
-  // only an automatic failure, which the cue already says, asks nothing.
-  const ask = resolution.autoFail ? [] : (riders?.offers ?? []).filter(namedFirst);
-  const cue = [
-    ignored && conditionsApply ? 'Conditions ignored for this roll' : '',
-    rollCue(used, resolution),
-  ]
-    .filter((part) => part !== '')
-    .join(' · ');
-  if (
-    cue === '' &&
-    from.length === 0 &&
-    offers.length === 0 &&
-    ask.length === 0 &&
-    attack === undefined
-  ) {
-    return result;
-  }
+  const preset: RollMode = resolution.advantage ?? 'normal';
+  const rollsIn = riders?.dice ?? [];
+  const offers = riders?.offers ?? [];
+  // Offered before the roll: only an automatic failure, which the cue says, asks nothing.
+  const once = resolution.autoFail ? [] : offers.filter(namedFirst);
+  const ignoredWords = ignored && conditionsApply ? 'Conditions ignored for this roll' : '';
+  const cueFor = (mode: RollMode) => {
+    const parts = [ignoredWords];
+    if (mode === preset) parts.push(rollCue(used, resolution));
+    else {
+      if (resolution.autoFail) parts.push(`Fails automatically: ${names(used.autoFail)}`);
+      parts.push(chosenCue(mode, preset, used));
+      if (used.penalty !== undefined) {
+        parts.push(`${minus(used.penalty.amount)}: ${used.penalty.source}`);
+      }
+    }
+    return parts.filter((part) => part !== '').join(' · ');
+  };
+  /** The dice that roll in this time, in order: the effects' left in, then the one-use dice added. */
+  const diceFor = (choice: D20Choice | undefined) => [
+    ...rollsIn.filter((_, i) => choice?.rollsIn?.[i] !== false),
+    ...once.filter((_, i) => choice?.named?.[i] === true),
+  ];
+  const modifier = expr.replace(/^1d20/, '');
   return {
-    ...result,
-    meta: {
-      ...result.meta,
-      ...(attack === undefined ? {} : { attack: { by: attack.by, of: attack.of, crit } }),
-      ...(cue === '' ? {} : { cue }),
-      ...(resolution.autoFail ? { autoFail: true } : {}),
-      ...(from.length > 0 ? { from } : {}),
-      ...(offers.length > 0 ? { offers } : {}),
-      ...(ask.length > 0 ? { askFirst: { offers: ask, attack: settlesOnNatural } } : {}),
+    kind: 'ask',
+    label,
+    preset,
+    rollsIn,
+    once,
+    attack: settlesOnNatural,
+    autoFail: resolution.autoFail,
+    conditions: conditionsApply && !ignored,
+    cueFor,
+    formula: (choice) => {
+      const mode = choice?.mode ?? preset;
+      const dice = diceFor(choice)
+        .map((d) => ` + ${dieWord(d.dice)} ${d.source}`)
+        .join('');
+      const penalty = resolution.penalty !== 0 ? ` ${minus(resolution.penalty)}` : '';
+      const words = mode === 'adv' ? ', advantage' : mode === 'dis' ? ', disadvantage' : '';
+      return `d20${modifier === '' ? '' : ` ${modifier}`}${dice}${penalty}${words}`;
+    },
+    roll: (choice) => {
+      const mode = choice?.mode ?? preset;
+      const advantage = mode === 'normal' ? undefined : mode;
+      // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
+      const dice = diceFor(choice);
+      const withDice = dice.reduce((e, d) => `${e}+${d.dice}`, expr);
+      const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
+      const result = roll(full, { label, advantage, kind: 'd20' });
+      // A d20 test's expression is the d20 and flat modifiers, so every die after
+      // the first is an effect's, in order.
+      const from: Array<{ term: number; source: string }> = [];
+      result.terms.forEach((t, i) => {
+        const d = i > 0 && t.kind === 'dice' ? dice[from.length] : undefined;
+        if (d !== undefined) from.push({ term: i, source: d.source });
+      });
+      const natural = result.meta?.d20?.natural;
+      // A crit is the kept die in the crit range: a 19 under Hexblade's Curse
+      // settles the attack as a natural 20 does.
+      const crit =
+        attack !== undefined && natural !== undefined && natural >= (attack.critFrom ?? 20);
+      const settled =
+        resolution.autoFail || (settlesOnNatural && (natural === 1 || natural === 20 || crit));
+      const named = once.filter((_, i) => choice?.named?.[i] === true);
+      const after = settled
+        ? []
+        : offers.filter(
+            (o) => !named.includes(o) && !(choice?.dropUnnamed === true && namedFirst(o)),
+          );
+      const cue = cueFor(mode);
+      if (cue === '' && from.length === 0 && after.length === 0 && attack === undefined) {
+        return result;
+      }
+      return {
+        ...result,
+        meta: {
+          ...result.meta,
+          ...(attack === undefined ? {} : { attack: { by: attack.by, of: attack.of, crit } }),
+          ...(cue === '' ? {} : { cue }),
+          ...(resolution.autoFail ? { autoFail: true } : {}),
+          ...(from.length > 0 ? { from } : {}),
+          ...(after.length > 0 ? { offers: after } : {}),
+        },
+      };
     },
   };
+}
+
+/**
+ * A d20 test rolled at once, as the sheet sets it (`d20Ask`): the rolls settled
+ * on the spot (a death save, a concentration save), which no prompt asks about.
+ */
+export function rollD20Test(expr: string, options: Parameters<typeof d20Ask>[1]): RollResult {
+  return d20Ask(expr, options).roll();
 }
 
 /**

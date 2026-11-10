@@ -778,6 +778,8 @@ describe('PlayTab numbers', () => {
     });
     const initiative = screen.getByRole('button', { name: /Initiative/ });
     expect(initiative.textContent).toContain('\u22121');
+    // The prompt opens; Initiative tapped again rolls it.
+    fireEvent.click(initiative);
     fireEvent.click(initiative);
     expect(rollLogStore.getState().rolls[0]?.expr).toMatch(/-1$/);
   });

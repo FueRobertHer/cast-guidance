@@ -81,7 +81,10 @@ describe('half proficiency on the Stats tab', () => {
     renderStats([jack()]);
     // The six ability tiles, and the 16 skills outside Athletics and Intimidation.
     expect(screen.getAllByText('half proficient')).toHaveLength(6 + 16);
-    fireEvent.click(screen.getByRole('button', { name: 'Roll STR check (+3)' }));
+    // The prompt opens; the tile tapped again rolls it.
+    const str = screen.getByRole('button', { name: 'Roll STR check (+3)' });
+    fireEvent.click(str);
+    fireEvent.click(str);
     expect(rollLogStore.getState().rolls[0]?.expr).toBe('1d20+3');
   });
 

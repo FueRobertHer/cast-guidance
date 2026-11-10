@@ -13,10 +13,10 @@ import { ProfDot } from '@/ui/ProfDot';
 import { listClass } from '@/ui/surfaces';
 import { DefenseLines } from '../Defenses';
 import {
+  d20Ask,
   effectLines,
   noteLines,
   type RollGroup,
-  rollD20Test,
   rollWear,
   saveEffectLines,
   useIgnoreOnce,
@@ -284,13 +284,14 @@ export function Component() {
       rollFrom(
         from,
         () =>
-          rollD20Test(`1d20${fmt(modifier)}`, {
+          d20Ask(`1d20${fmt(modifier)}`, {
             label,
             effects,
             ignored: ignore.take(group, effects),
             riders: rollEffects(sheet, test),
           }),
         landed,
+        { face: { text: signed(modifier) } },
       );
 
   return (

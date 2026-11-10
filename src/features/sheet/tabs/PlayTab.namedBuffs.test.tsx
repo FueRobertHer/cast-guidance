@@ -338,6 +338,8 @@ describe('Innate Sorcery from its own Use', () => {
     await renderSheet(sparks(), { extra: { ...world, spell: [dart] } });
     press('Use Innate Sorcery');
     // Only a test that names the Sorcerer is reached (namedEffects.test.ts).
+    // The prompt opens; the chip tapped again rolls it.
+    fireEvent.click(screen.getByRole('button', { name: 'Atk +5' }));
     fireEvent.click(screen.getByRole('button', { name: 'Atk +5' }));
     expect(lastRoll()?.label).toBe('Spark Dart spell attack');
     expect(lastRoll()?.meta?.advantage).toBe('adv');
@@ -374,7 +376,9 @@ describe('Innate Sorcery from its own Use', () => {
     doc.play.activeEffects = [innateSorceryEffect('innate')];
     await renderSheet(doc, { path: 'spells', extra: { ...world, spell: [dart] } });
     // The Spells tab's chip is named by its number alone.
-    fireEvent.click(await screen.findByRole('button', { name: '+5' }));
+    const chip = await screen.findByRole('button', { name: '+5' });
+    fireEvent.click(chip);
+    fireEvent.click(chip);
     expect(lastRoll()?.meta?.advantage).toBe('adv');
   });
 
@@ -400,6 +404,7 @@ describe('Innate Sorcery from its own Use', () => {
       rollLogStore.getState().clear();
       await renderSheet(charmed(), { extra });
       fireEvent.click(screen.getByRole('button', { name: 'Atk +5' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Atk +5' }));
       expect(lastRoll()?.label).toBe('spark dart spell attack');
       expect(lastRoll()?.meta?.advantage).toBeUndefined();
     });
@@ -407,7 +412,10 @@ describe('Innate Sorcery from its own Use', () => {
     it('gets none on the Spells tab either', async () => {
       rollLogStore.getState().clear();
       await renderSheet(charmed(), { path: 'spells', extra });
-      fireEvent.click(await screen.findByRole('button', { name: '+5' }));
+      const chip = await screen.findByRole('button', { name: '+5' });
+      fireEvent.click(chip);
+      fireEvent.click(chip);
+      expect(lastRoll()?.label).toBe('Spark Dart spell attack');
       expect(lastRoll()?.meta?.advantage).toBeUndefined();
     });
   });

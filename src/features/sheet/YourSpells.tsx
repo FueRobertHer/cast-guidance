@@ -32,9 +32,10 @@ import {
 import { conditionLimits } from './conditionEffects';
 import {
   conditionWear,
+  type D20Ask,
+  d20Ask,
   effectLines,
   noteLines,
-  rollD20Test,
   rollWear,
   useIgnoreOnce,
 } from './d20Tests';
@@ -104,12 +105,7 @@ interface RowContext {
    * A spell attack chip's roll, marked as the attack `of` (the spell's name);
    * `className` is whose spell it is (Innate Sorcery).
    */
-  rollAttack: (
-    modifier: number,
-    label: string,
-    of: string,
-    className?: string,
-  ) => () => ReturnType<typeof rollD20Test>;
+  rollAttack: (modifier: number, label: string, of: string, className?: string) => () => D20Ask;
   /** The conditions on the attack chips. */
   wear: ChipWear;
   /** On Cast and the dice chip that casts: only what stops casting. */
@@ -193,7 +189,7 @@ function RollChips({
   attackModifier: number | undefined;
   entity: Entity | undefined;
   rolls: ReturnType<typeof spellRollActions>;
-  roller: (modifier: number, label: string, of: string) => () => ReturnType<typeof rollD20Test>;
+  roller: (modifier: number, label: string, of: string) => () => D20Ask;
   wear: RowContext['wear'];
   castWear: RowContext['castWear'];
   onCast: (() => void) | undefined;
@@ -727,7 +723,7 @@ export function YourSpells({
     { immune: sheet.conditionImmunities },
   );
   const rollAttack = (modifier: number, label: string, of: string, className?: string) => () =>
-    rollD20Test(`1d20${fmt(modifier)}`, {
+    d20Ask(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),

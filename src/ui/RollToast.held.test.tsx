@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
-// The roll toast while a roll waits for its one-use dice to be named (the
-// house rule; the buffs canvas, Dice B), and an attack shown with its damage.
+// The roll prompt in the toast's place (the rolls canvas): a d20 test waiting
+// with nothing rolled, its mode, the dice that roll in and the one-use dice to
+// add, then the roll landing; damage tapped while an attack waits, and a hit's
+// damage offered after it.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RollOffer, RollResult } from '@/dice/types';
+import type { RollEffects } from '@/engine/playRules';
+import { d20Ask } from '@/features/sheet/d20Tests';
+import { advModeStore } from '@/stores/advMode';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
-import { cancelHeld, rollFrom } from '@/stores/heldRoll';
+import { cancelHeld, followUpStore, rollFrom } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
 import { OFFER_WAIT_MS, RollToast, withItsDamage } from './RollToast';
@@ -35,42 +40,24 @@ const bardic: RollOffer = {
   once: true,
   ifFailed: false,
 };
-
-const check = (): RollResult => ({
-  expr: '1d20+3',
-  label: 'Athletics check',
-  kind: 'd20',
-  total: 15,
-  at: 0,
-  terms: [
-    { kind: 'dice', sign: 1, sides: 20, rolls: [{ v: 12, kept: true }] },
-    { kind: 'mod', value: 3 },
-  ],
-  meta: {
-    d20: { natural: 12 },
-    offers: [guidance, bardic],
-    askFirst: { offers: [guidance, bardic], attack: false },
-  },
+const riders = (over: Partial<RollEffects>): RollEffects => ({
+  dice: [],
+  offers: [],
+  advantage: [],
+  disadvantage: [],
+  ...over,
 });
 
-const attack = (): RollResult => ({
-  expr: '1d20+7+1d4',
-  label: 'Greataxe attack',
-  kind: 'd20',
-  total: 23,
-  at: 0,
-  terms: [
-    { kind: 'dice', sign: 1, sides: 20, rolls: [{ v: 14, kept: true }] },
-    { kind: 'mod', value: 7 },
-    { kind: 'dice', sign: 1, sides: 4, rolls: [{ v: 2, kept: true }] },
-  ],
-  meta: {
-    d20: { natural: 14 },
-    from: [{ term: 2, source: 'Bless' }],
-    offers: [bardic],
-    askFirst: { offers: [bardic], attack: true },
-  },
-});
+const check = () =>
+  d20Ask('1d20+3', { label: 'Athletics check', riders: riders({ offers: [guidance, bardic] }) });
+
+const attack = () =>
+  d20Ask('1d20+7', {
+    label: 'Greataxe attack',
+    riders: riders({ dice: [{ dice: '1d4', source: 'Bless' }], offers: [bardic] }),
+    settlesOnNatural: true,
+    attack: { by: 'c1', of: 'Greataxe' },
+  });
 
 const damage = (): RollResult => ({
   expr: '1d12+4',
@@ -85,22 +72,19 @@ const damage = (): RollResult => ({
 });
 
 const spoken = () => getAnnouncerState().messages.map((m) => m.text);
-/** Every name a screen reader is given in the group: its own and its controls'. */
-const everythingSaid = (group: HTMLElement) =>
-  [group, ...group.querySelectorAll('[aria-label]')]
-    .map((el) => el.getAttribute('aria-label') ?? '')
-    .join(' | ');
 const control = (name: string) => {
   const b = document.createElement('button');
   b.textContent = name;
   document.body.appendChild(b);
   return b;
 };
+const prompt = (label: string) => screen.getByRole('group', { name: `${label}, choose and roll` });
+const roll = () => screen.getByRole('button', { name: 'Roll' });
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   resetAnnouncer();
-  rollOffersStore.setState({ before: true });
+  advModeStore.getState().set('normal');
 });
 
 afterEach(() => {
@@ -111,63 +95,101 @@ afterEach(() => {
   resetAnnouncer();
   rollLogStore.setState({ rolls: [], seq: 0 });
   rollOffersStore.setState({ spend: null, expired: 0, before: false });
+  followUpStore.setState({ offer: null });
   document.body.replaceChildren();
 });
 
-describe('a roll waiting for its one-use dice', () => {
-  it('takes the place of the last toast, asks with no total, and holds focus on Roll', () => {
+describe('the roll prompt', () => {
+  it('takes the place of the last toast with nothing rolled, and holds focus on Roll', () => {
     const { container } = render(<RollToast />);
     act(() => rollLogStore.getState().append(damage()));
     expect(container.textContent).toContain('Greataxe damage');
-    const from = control('Athletics');
-    act(() => rollFrom(from, check));
-    const group = screen.getByRole('group', { name: 'Athletics check, waiting to roll' });
+    act(() => rollFrom(control('Athletics'), check));
+    const group = prompt('Athletics check');
     expect(container.textContent).not.toContain('Greataxe damage');
-    expect(group.textContent).toContain('Add a one-use die first?');
-    expect(group.textContent).not.toMatch(/15|12/);
-    expect(everythingSaid(group)).not.toMatch(/15|12/);
-    const roll = screen.getByRole('button', { name: 'Roll' });
-    expect(document.activeElement).toBe(roll);
+    expect(group.textContent).toContain('d20 +3');
+    expect(screen.getByRole('button', { name: 'Normal' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(
+      screen.getByRole('button', { name: '+d4 Guidance, once' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(group.textContent).toContain('Dice you leave come back after the roll.');
+    expect(document.activeElement).toBe(roll());
+    expect(rollLogStore.getState().rolls).toHaveLength(1); // the damage alone
     // It never times out: nothing has happened yet.
     act(() => vi.advanceTimersByTime(OFFER_WAIT_MS * 2));
-    expect(screen.getByRole('group', { name: 'Athletics check, waiting to roll' })).toBeTruthy();
+    expect(prompt('Athletics check')).toBeTruthy();
   });
 
-  it('says what rolls in anyway, and nothing of the d20', () => {
+  it('presets the mode the sheet sets, and says why a mode picked over it was chosen', () => {
+    advModeStore.getState().set('adv');
+    render(<RollToast />);
+    act(() => rollFrom(control('Athletics'), check));
+    expect(screen.getByRole('button', { name: 'Advantage' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Disadvantage' }));
+    const group = prompt('Athletics check');
+    expect(group.textContent).toContain('Disadvantage chosen for this roll');
+    expect(group.textContent).toContain('d20 +3, disadvantage');
+    nextFaces(15, 4);
+    fireEvent.click(roll());
+    expect(rollLogStore.getState().rolls[0]).toMatchObject({
+      total: 7,
+      meta: { advantage: 'dis', cue: 'Disadvantage chosen for this roll' },
+    });
+  });
+
+  it('rolls Bless in unless it is taken out for this roll', () => {
     render(<RollToast />);
     act(() => rollFrom(control('Greataxe'), attack));
-    const group = screen.getByRole('group', { name: 'Greataxe attack, waiting to roll' });
-    expect(group.textContent).toContain('Bless rolls in. Add a one-use die first?');
-    expect(group.textContent).not.toMatch(/23|14/);
-    expect(everythingSaid(group)).not.toMatch(/23|14/);
-    expect(spoken().join(' ')).not.toMatch(/23|14/);
+    const bless = screen.getByRole('button', { name: '+d4 Bless, rolls in' });
+    expect(bless.getAttribute('aria-pressed')).toBe('true');
+    expect(prompt('Greataxe attack').textContent).toContain('d20 +7 + d4 Bless');
+    fireEvent.click(bless);
+    expect(bless.getAttribute('aria-pressed')).toBe('false');
+    expect(prompt('Greataxe attack').textContent).not.toContain('d20 +7 + d4 Bless');
+    nextFaces(14);
+    fireEvent.click(roll());
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(21);
   });
 
-  it('names a die, then rolls with it, landing the total and sending focus back', () => {
+  it('adds a one-use die, then rolls with it, spending it and sending focus back', () => {
     const spend = vi.fn();
     rollOffersStore.setState({ spend });
     const { container } = render(<RollToast />);
     const from = control('Athletics');
     act(() => rollFrom(from, check));
-    const named = screen.getByRole('button', { name: 'Add Guidance to this roll, +d4' });
-    expect(named.getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(named);
+    fireEvent.click(screen.getByRole('button', { name: '+d4 Guidance, once' }));
     expect(
-      screen
-        .getByRole('button', { name: 'Guidance, added to this roll. Tap to take it off' })
-        .getAttribute('aria-pressed'),
+      screen.getByRole('button', { name: '+d4 Guidance, once' }).getAttribute('aria-pressed'),
     ).toBe('true');
-    const go = screen.getByRole('button', { name: 'Roll with it' });
-    go.focus();
-    nextFaces(3);
-    fireEvent.click(go);
-    expect(screen.queryByRole('group', { name: /waiting to roll/ })).toBeNull();
+    expect(prompt('Athletics check').textContent).toContain('Spends Guidance.');
+    roll().focus();
+    nextFaces(12, 3);
+    fireEvent.click(roll());
+    expect(screen.queryByRole('group', { name: /choose and roll/ })).toBeNull();
     expect(container.textContent).toContain('d20 [12] + 3 + d4 [3] Guidance');
-    expect(container.textContent).toMatch(/18$/);
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(18);
     expect(document.activeElement).toBe(from);
     expect(spend).toHaveBeenCalledWith('g1', true);
-    // Asked before, so not offered after.
-    expect(screen.queryByRole('button', { name: /Add Bardic/ })).toBeNull();
+    // Added before, so not offered after; the die left comes back, as written.
+    expect(screen.queryByRole('button', { name: /Guidance/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Bardic Inspiration/ })).toBeTruthy();
+  });
+
+  it('lets the dice left go under the house rule', () => {
+    rollOffersStore.setState({ before: true });
+    const { container } = render(<RollToast />);
+    act(() => rollFrom(control('Athletics'), check));
+    expect(prompt('Athletics check').textContent).toContain(
+      'Dice you leave are gone once the d20 shows.',
+    );
+    nextFaces(12);
+    fireEvent.click(roll());
+    expect(container.textContent).toContain('Athletics check');
+    expect(screen.queryByRole('button', { name: /Bardic Inspiration|Guidance/ })).toBeNull();
   });
 
   it('cancels with the x or Esc, landing nothing and sending focus back', () => {
@@ -180,7 +202,7 @@ describe('a roll waiting for its one-use dice', () => {
     expect(document.activeElement).toBe(from);
 
     act(() => rollFrom(from, check));
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Roll' }), { key: 'Escape' });
+    fireEvent.keyDown(roll(), { key: 'Escape' });
     expect(screen.queryByRole('group')).toBeNull();
     expect(rollLogStore.getState().rolls).toHaveLength(0);
     expect(document.activeElement).toBe(from);
@@ -190,9 +212,10 @@ describe('a roll waiting for its one-use dice', () => {
     const { container } = render(<RollToast />);
     const from = control('Athletics');
     act(() => rollFrom(from, check));
+    nextFaces(12);
     act(() => rollFrom(from, check));
-    expect(screen.queryByRole('group', { name: /waiting to roll/ })).toBeNull();
-    expect(container.textContent).toBe('Athletics checkd20 [12] + 315');
+    expect(screen.queryByRole('group', { name: /choose and roll/ })).toBeNull();
+    expect(container.textContent).toContain('d20 [12] + 3');
   });
 });
 
@@ -200,12 +223,14 @@ describe('damage tapped while the attack waits', () => {
   it('says it rolls with the attack, then shows both together and says both', () => {
     render(<RollToast />);
     act(() => rollFrom(control('Greataxe'), attack));
-    act(() => rollFrom(control('1d12+4'), damage));
-    const waiting = screen.getByRole('group', { name: 'Greataxe attack, waiting to roll' });
-    expect(waiting.textContent).toContain('Damage rolls with the attack');
+    act(() =>
+      rollFrom(control('1d12+4'), damage, undefined, { joins: { label: 'Greataxe damage' } }),
+    );
+    expect(prompt('Greataxe attack').textContent).toContain('Damage rolls with the attack');
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     resetAnnouncer();
-    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    nextFaces(14, 2);
+    fireEvent.click(roll());
     const shown = screen.getByRole('group', { name: 'Roll result' });
     expect(shown.textContent).toContain('Greataxe attack');
     expect(shown.textContent).toContain('23');
@@ -215,27 +240,103 @@ describe('damage tapped while the attack waits', () => {
       'Greataxe attack: 23. Rolled 14, plus 7, plus 2. Greataxe damage: 11. Rolled 7, plus 4',
     ]);
   });
-});
 
-describe('more than one damage roll while the attack waits', () => {
-  it('counts them, then shows and says each under the attack, in the order tapped', () => {
+  it('counts more than one, then shows and says each under the attack, in the order tapped', () => {
     render(<RollToast />);
     act(() => rollFrom(control('Greataxe'), attack));
-    act(() => rollFrom(control('1d12+4'), damage));
-    act(() => rollFrom(control('Smite'), () => ({ ...damage(), label: 'Divine Smite', total: 9 })));
-    const waiting = screen.getByRole('group', { name: 'Greataxe attack, waiting to roll' });
-    expect(waiting.textContent).toContain('2 damage rolls go with the attack');
+    act(() =>
+      rollFrom(control('1d12+4'), damage, undefined, { joins: { label: 'Greataxe damage' } }),
+    );
+    act(() =>
+      rollFrom(
+        control('Smite'),
+        () => ({ ...damage(), label: 'Divine Smite', total: 9 }),
+        undefined,
+        {
+          joins: { label: 'Divine Smite' },
+        },
+      ),
+    );
+    expect(prompt('Greataxe attack').textContent).toContain('2 damage rolls go with the attack');
     act(() => vi.advanceTimersByTime(THROTTLE_MS));
     resetAnnouncer();
-    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    nextFaces(14, 2);
+    fireEvent.click(roll());
     const shown = screen.getByRole('group', { name: 'Roll result' }).textContent ?? '';
     expect(shown.indexOf('Greataxe damage')).toBeLessThan(shown.indexOf('Divine Smite'));
     expect(spoken()[0]).toMatch(/^Greataxe attack: 23\..*Greataxe damage: 11\..*Divine Smite: 9/);
   });
 });
 
+describe("a hit's damage offered after it", () => {
+  const swing = (go: () => void) =>
+    act(() =>
+      rollFrom(control('Greataxe'), attack, undefined, { afterHit: { expr: '1d12+4', go } }),
+    );
+
+  it('offers the damage on a hit, and rolls it as its chip would', () => {
+    const go = vi.fn();
+    render(<RollToast />);
+    swing(go);
+    nextFaces(14, 2);
+    fireEvent.click(roll());
+    fireEvent.click(screen.getByRole('button', { name: 'Roll 1d12+4' }));
+    expect(go).toHaveBeenCalledTimes(1);
+    expect(followUpStore.getState().offer).toBeNull();
+  });
+
+  it('sends focus back where the roll came from once the damage is rolled', () => {
+    render(<RollToast />);
+    const from = control('Greataxe');
+    act(() =>
+      rollFrom(from, attack, undefined, {
+        afterHit: { expr: '1d12+4', go: () => rollFrom(null, damage) },
+      }),
+    );
+    nextFaces(14, 2);
+    fireEvent.click(roll());
+    const offer = screen.getByRole('button', { name: 'Roll 1d12+4' });
+    offer.focus();
+    fireEvent.click(offer);
+    expect(rollLogStore.getState().rolls[0]?.label).toBe('Greataxe damage');
+    expect(document.activeElement).toBe(from);
+  });
+
+  it('offers it doubled on a crit, and keeps the toast up while it waits', () => {
+    render(<RollToast />);
+    swing(() => {});
+    nextFaces(20, 2);
+    fireEvent.click(roll());
+    expect(screen.getByRole('button', { name: 'Roll 2d12+4' })).toBeTruthy();
+    act(() => vi.advanceTimersByTime(OFFER_WAIT_MS - 1));
+    expect(screen.getByRole('button', { name: 'Roll 2d12+4' })).toBeTruthy();
+  });
+
+  it('offers nothing on a natural 1', () => {
+    render(<RollToast />);
+    swing(() => {});
+    nextFaces(1, 2);
+    fireEvent.click(roll());
+    expect(screen.queryByRole('group', { name: /choose and roll/ })).toBeNull();
+    expect(rollLogStore.getState().rolls[0]?.label).toBe('Greataxe attack');
+    expect(screen.queryByRole('button', { name: /^Roll 1d12/ })).toBeNull();
+  });
+});
+
 describe('withItsDamage', () => {
-  const a = { ...attack(), id: 'a' };
+  const a: RollResult = {
+    expr: '1d20+7',
+    label: 'Greataxe attack',
+    kind: 'd20',
+    total: 21,
+    at: 0,
+    id: 'a',
+    terms: [
+      { kind: 'dice', sign: 1, sides: 20, rolls: [{ v: 14, kept: true }] },
+      { kind: 'mod', value: 7 },
+    ],
+    meta: { d20: { natural: 14 } },
+  };
   const d1 = { ...damage(), id: 'd1', meta: { withRoll: 'a' } };
   const d2 = { ...damage(), id: 'd2', label: 'Divine Smite', meta: { withRoll: 'a' } };
 

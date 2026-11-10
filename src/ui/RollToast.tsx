@@ -1,4 +1,4 @@
-import { ChevronsUp, HeartCrack, HeartPlus, X } from 'lucide-react';
+import { Check, ChevronsUp, HeartCrack, HeartPlus, X } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -13,12 +13,25 @@ import { roll } from '@/dice/roll';
 import type { DiceRollDetail, RollOffer, RollResult } from '@/dice/types';
 import { announce } from '@/stores/announcer';
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
-import { cancelHeld, type HeldRoll, heldRollStore, nameHeldDie, rollHeld } from '@/stores/heldRoll';
+import {
+  cancelHeld,
+  followUpStore,
+  type HeldRoll,
+  heldRollStore,
+  nameHeldDie,
+  type RollFace,
+  rollHeld,
+  setHeldMode,
+  toggleHeldRollIn,
+} from '@/stores/heldRoll';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
+import { ChipFace } from './ChipFace';
 import { D20Icon } from './D20Icon';
+import { Lift } from './Lift';
 import { RollDetail } from './RollDetail';
 import { naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
+import { SegmentedControl } from './SegmentedControl';
 
 /**
  * The toast's edge and its tile. A plain result has the `line` hairline every
@@ -88,18 +101,6 @@ function critBelow20(result: RollResult): boolean {
 /** "Bless", "Bless and Heroism", "Bless, Heroism and Enlarge". */
 function andWords(names: readonly string[]): string {
   return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-}
-
-/**
- * What a roll waiting for a one-use die says under its name: the dice that
- * roll in whatever is named (Bless), then the question. Nothing about the d20,
- * which is rolled and unseen.
- */
-export function heldDetail(held: HeldRoll): string {
-  const rollIn = [...new Set((held.result.meta?.from ?? []).map((f) => f.source))];
-  const first =
-    rollIn.length === 0 ? '' : `${andWords(rollIn)} ${rollIn.length > 1 ? 'roll' : 'rolls'} in. `;
-  return `${first}Add a one-use die first?`;
 }
 
 /**
@@ -193,14 +194,14 @@ function keyboardFocus(el: HTMLElement): boolean {
  * die tapped rolls once and joins the total, which is said again; tapped
  * again it comes off and its use comes back. The dice wait a minute at most,
  * until the toast closes, another roll comes, or the hit points change. A roll
- * made from the keyboard moves focus to the first die; Esc closes, and focus
- * goes back.
+ * made from the keyboard moves focus to the first die (or a hit's damage);
+ * Esc closes, and focus goes back.
  *
- * Under the house rule that names one-use dice before the roll
- * (`stores/heldRoll`), a roll they fit waits here instead: the dice to name,
- * then Roll (or the same control again), or Cancel. It never times out, since
- * nothing has happened yet; focus goes to Roll, and back when it lands. Damage
- * tapped while the attack waits lands with it, and the two show together.
+ * A d20 test waits here first, as the roll prompt (`stores/heldRoll`): the
+ * mode, the extras, then Roll (or the same control again), or Cancel. It never
+ * times out, since nothing has happened yet; focus goes to Roll, and back when
+ * it lands. Damage tapped while the attack waits lands with it, and the two
+ * show together; a hit with nothing joined offers its damage instead.
  */
 export function RollToast() {
   const seq = useRollLog((s) => s.seq);
@@ -209,6 +210,7 @@ export function RollToast() {
   // Damage that went with the shown attack, landed after it.
   const [joined, setJoined] = useState<readonly RollResult[]>([]);
   const waiting = useStore(heldRollStore, (s) => s.held);
+  const followUp = useStore(followUpStore, (s) => s.offer);
   const heldSeq = waiting?.seq;
   const rollButton = useRef<HTMLButtonElement | null>(null);
   // The offered dice: rolled once each, and which are added.
@@ -254,10 +256,10 @@ export function RollToast() {
     before.current = null;
     pressedBy.current = null;
     const active = document.activeElement;
-    const fromKeys =
-      (shownRoll.meta?.offers?.length ?? 0) > 0 &&
-      active instanceof HTMLElement &&
-      keyboardFocus(active);
+    const offering =
+      (shownRoll.meta?.offers?.length ?? 0) > 0 ||
+      followUpStore.getState().offer?.id === shownRoll.id;
+    const fromKeys = offering && active instanceof HTMLElement && keyboardFocus(active);
     focusOffer.current = fromKeys;
     returnTo.current = fromKeys ? (active as HTMLElement) : null;
     announce([shownRoll, ...damage].map(rollAnnouncement).join('. '), {
@@ -304,7 +306,12 @@ export function RollToast() {
   });
 
   const offers = settled ? [] : (visible?.meta?.offers ?? []);
-  const deciding = offers.some((_, i) => added[i] !== true);
+  // A hit's damage, offered until it is rolled or the toast is kept as it is.
+  const damageOffer =
+    !settled && followUp !== null && visible?.id !== undefined && followUp.id === visible.id
+      ? followUp
+      : null;
+  const deciding = offers.some((_, i) => added[i] !== true) || damageOffer !== null;
   const held = hovered || focused;
   useEffect(() => {
     if (visible === null || held) return;
@@ -326,7 +333,7 @@ export function RollToast() {
     return () => clearTimeout(timer);
   }, [visible, held, deciding]);
 
-  if (waiting !== null) return <HeldToast held={waiting} rollButton={rollButton} />;
+  if (waiting !== null) return <RollPrompt held={waiting} rollButton={rollButton} />;
   if (visible === null) return null;
   const current = withAdded(visible, rolled, added);
   const autoFail = current.meta?.autoFail === true;
@@ -418,8 +425,9 @@ export function RollToast() {
     });
   };
 
-  // The dice an effect offers, after the roll: tap to add, tap again to take off.
-  const offerRow = offers.length > 0 && (
+  // The dice an effect offers, after the roll: tap to add, tap again to take
+  // off. Then a hit's damage, rolled as its chip rolls it.
+  const offerRow = (offers.length > 0 || damageOffer !== null) && (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
       {offers.map((o, i) => {
         const on = added[i] === true;
@@ -452,6 +460,25 @@ export function RollToast() {
           </button>
         );
       })}
+      {damageOffer !== null && (
+        <button
+          ref={offers.length === 0 ? firstOffer : undefined}
+          type="button"
+          onClick={() => {
+            // The button goes with the toast it was in: focus goes back where
+            // the roll came from, as the x sends it.
+            const inside = toast.current?.contains(document.activeElement) === true;
+            const back = damageOffer.from ?? returnTo.current ?? before.current;
+            followUpStore.setState({ offer: null });
+            damageOffer.go();
+            if (inside && back?.isConnected === true) back.focus();
+          }}
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-danger-soft px-3.5 font-bold text-danger text-label hover:brightness-112"
+        >
+          <HeartCrack size={16} aria-hidden="true" className="shrink-0" />
+          Roll {damageOffer.expr}
+        </button>
+      )}
       {deciding && (
         <button
           type="button"
@@ -576,13 +603,106 @@ const FRAME =
 /** A toast's top row: the tile, the words, the total. */
 const ROW = 'flex items-center gap-3 text-left';
 
+/** The prompt's modes, worst to best, as the dock orders them. */
+const MODES = [
+  { value: 'dis', label: 'Dis', name: 'Disadvantage' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'adv', label: 'Adv', name: 'Advantage' },
+] as const;
+
 /**
- * A roll waiting for its one-use dice to be named (the house rule; the buffs
- * canvas, Dice B): a group with the dice, Roll and Cancel. No total, and
- * nothing of the d20, which is rolled and unseen. Roll and Cancel, or Esc,
- * send focus back to the control that rolled, when it was in here.
+ * One extra in the prompt: a die that rolls in (Bless) or a one-use die
+ * (Guidance, Bardic Inspiration). On, it keeps the heal green of a raised
+ * number with a tick, so the mode's ink pill and Roll stay the loudest.
  */
-function HeldToast({
+function Extra({
+  on,
+  dice,
+  source,
+  when,
+  onClick,
+}: {
+  on: boolean;
+  dice: string;
+  source: string;
+  when: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={`+${dieWord(dice)} ${source}, ${when}`}
+      onClick={onClick}
+      className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
+        on
+          ? 'bg-heal-soft text-ink ring-[1.5px] ring-heal ring-inset'
+          : 'bg-surface-raised text-ink hover:bg-surface-hover'
+      }`}
+    >
+      {on ? (
+        <Check size={14} aria-hidden="true" className="shrink-0 text-heal" />
+      ) : (
+        <ChevronsUp size={14} aria-hidden="true" className="shrink-0 text-heal" />
+      )}
+      +{dieWord(dice)} {source}
+      <span className="font-normal text-ink-muted">· {when}</span>
+    </button>
+  );
+}
+
+/**
+ * The prompt's header: a copy of the control that rolled, wearing what it
+ * wears on the sheet (a condition's face, a buff's ring and lift; the rolls
+ * canvas, Wear B). A mode that sets the conditions aside drains the face, as
+ * Ignore once does. No control's look, and it is the d20 tile.
+ */
+function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside: boolean }) {
+  if (face === undefined) {
+    return (
+      <span
+        className={`flex size-11 shrink-0 items-center justify-center rounded-[0.875rem] ${TONE.d20.tile}`}
+      >
+        <D20Icon size={24} strokeWidth={1.75} aria-hidden="true" />
+      </span>
+    );
+  }
+  const chip =
+    'inline-flex h-11 min-w-14 shrink-0 items-center justify-center rounded-chip font-semibold text-dice tabular-nums';
+  if (face.wear !== undefined) {
+    return (
+      <span className={`relative ${chip}`} aria-hidden="true">
+        <ChipFace
+          wear={{ ...face.wear, ignored: face.wear.ignored || setAside }}
+          rolls={0}
+          showing={false}
+          lift={face.lift}
+        >
+          {face.text}
+        </ChipFace>
+      </span>
+    );
+  }
+  return (
+    <Lift on={face.lift === true} className="shrink-0 rounded-chip">
+      <span className={`${chip} bg-roll-soft px-2 text-roll`} aria-hidden="true">
+        {face.text}
+      </span>
+    </Lift>
+  );
+}
+
+/**
+ * The roll prompt (the rolls canvas, picked 2026-11-09): a d20 test waiting
+ * before its d20 is rolled, in the toast's place above the thumb. The header
+ * is the control that rolled; the mode is preset to what the sheet sets, with
+ * why; the extras are the dice that roll in (on) and the one-use dice that may
+ * be added first (off). One note sits by Roll: what the roll spends, else what
+ * happens to the dice left, else that the control tapped again rolls too.
+ * Roll and Cancel, or Esc, send focus back to the control, when it was in here,
+ * and the sheet scrolls that control clear of the prompt as it opens.
+ */
+function RollPrompt({
   held,
   rollButton,
 }: {
@@ -590,23 +710,68 @@ function HeldToast({
   rollButton: { current: HTMLButtonElement | null };
 }) {
   const box = useRef<HTMLDivElement | null>(null);
-  const label = held.result.label ?? held.result.expr;
-  const cue = held.result.meta?.cue;
-  const anyNamed = held.named.some((on) => on);
+  const dropUnnamed = useStore(rollOffersStore, (s) => s.before);
+  const { ask } = held;
+  const choice = { mode: held.mode, rollsIn: held.rollsIn, named: held.named };
+  const why = ask.cueFor(held.mode);
+  const setAside = held.mode !== ask.preset && ask.conditions;
+  const named = ask.once.filter((_, i) => held.named[i] === true);
+  const left = ask.once.length - named.length;
+  const note =
+    named.length > 0
+      ? `Spends ${andWords(named.map((o) => o.source))}.`
+      : left > 0
+        ? dropUnnamed
+          ? 'Dice you leave are gone once the d20 shows.'
+          : 'Dice you leave come back after the roll.'
+        : `Tap ${held.face?.text ?? 'it'} again to roll.`;
   const leave = (act: () => void) => {
     const inside = box.current?.contains(document.activeElement) === true;
     const back = held.from;
     act();
     if (inside && back?.isConnected === true) back.focus();
   };
+  // The control that rolled stays in sight above the prompt, as it opens and
+  // as it grows (damage joining). Near the foot of the page there is no room
+  // to scroll it clear, so a spacer past the page's end lends what it lacks,
+  // while a prompt is up.
+  const spacer = useRef<HTMLDivElement | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: as each prompt opens, and as it grows
+  useLayoutEffect(() => {
+    const from = held.from;
+    const el = box.current;
+    if (from?.isConnected !== true || el === null) return;
+    // Where the prompt settles: its rise in (a transform) is not counted.
+    const over = from.getBoundingClientRect().bottom - el.offsetTop;
+    if (over <= 0) return;
+    const page = document.scrollingElement;
+    if (page !== null) {
+      const short = over + 8 - (page.scrollHeight - window.innerHeight - window.scrollY);
+      if (short > 0) {
+        const s = spacer.current ?? document.createElement('div');
+        s.setAttribute('aria-hidden', 'true');
+        s.style.cssText = `position:absolute;left:0;width:1px;height:1px;pointer-events:none;top:${page.scrollHeight + short - 1}px`;
+        if (!s.isConnected) document.body.appendChild(s);
+        spacer.current = s;
+      }
+    }
+    window.scrollBy?.({ top: over + 8 });
+  }, [held.seq, held.damage.length]);
+  useEffect(
+    () => () => {
+      spacer.current?.remove();
+      spacer.current = null;
+    },
+    [],
+  );
   return (
     // biome-ignore lint/a11y/useSemanticElements: a group of controls, not a fieldset of inputs
     <div
       key={held.seq}
       ref={box}
       role="group"
-      aria-label={`${label}, waiting to roll`}
-      className={`${FRAME} ${TONE.d20.edge}`}
+      aria-label={`${ask.label}, choose and roll`}
+      className={`${FRAME} ${TONE.d20.edge} flex flex-col gap-2`}
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return;
         event.stopPropagation();
@@ -614,76 +779,75 @@ function HeldToast({
       }}
     >
       <div className={ROW}>
-        <span
-          className={`flex size-11 shrink-0 items-center justify-center rounded-[0.875rem] ${TONE.d20.tile}`}
-        >
-          <D20Icon size={24} strokeWidth={1.75} aria-hidden="true" />
-        </span>
+        <PromptHeader face={held.face} setAside={setAside} />
         <span className="block min-w-0 flex-1">
-          {/* Whole, unlike a result's: nothing here competes with it, and
-              it names what is waiting. */}
-          <span className="block break-words text-body-strong">{label}</span>
-          <span className="block text-dice-small text-ink-muted">{heldDetail(held)}</span>
-          {cue !== undefined && <span className="block text-caption text-guide">{cue}</span>}
+          {/* Whole, unlike a result's: nothing here competes with it. */}
+          <span className="block break-words text-body-strong">{ask.label}</span>
+          <span className="block text-dice-small text-ink-muted tabular-nums">
+            {ask.formula(choice)}
+          </span>
         </span>
+        <button
+          type="button"
+          aria-label="Cancel this roll"
+          onClick={() => leave(cancelHeld)}
+          className="-mt-1 -mr-2 inline-flex size-11 shrink-0 items-center justify-center self-start rounded-full text-ink-muted hover:bg-surface-hover"
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
+      <SegmentedControl
+        label="Roll mode"
+        options={MODES}
+        value={held.mode}
+        onChange={setHeldMode}
+        block
+      />
+      {why !== '' && <p className="text-caption text-guide">{why}</p>}
+      {(ask.rollsIn.length > 0 || ask.once.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {ask.rollsIn.map((d, i) => (
+            <Extra
+              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+              key={`in${i}`}
+              on={held.rollsIn[i] === true}
+              dice={d.dice}
+              source={d.source}
+              when="rolls in"
+              onClick={() => toggleHeldRollIn(i)}
+            />
+          ))}
+          {ask.once.map((o, i) => (
+            <Extra
+              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+              key={`once${i}`}
+              on={held.named[i] === true}
+              dice={o.dice}
+              source={o.source}
+              when="once"
+              onClick={() => nameHeldDie(i)}
+            />
+          ))}
+        </div>
+      )}
       {held.damage.length > 0 && (
-        <p className="pt-1.5 pl-14 text-dice-small text-ink-muted">
+        <p className="text-dice-small text-ink-muted">
           {held.damage.length === 1
             ? 'Damage rolls with the attack'
             : `${held.damage.length} damage rolls go with the attack`}
         </p>
       )}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
-        {held.offers.map((o, i) => {
-          const on = held.named[i] === true;
-          return (
-            <button
-              // biome-ignore lint/suspicious/noArrayIndexKey: an offer's place is its identity in this roll
-              key={i}
-              type="button"
-              aria-pressed={on}
-              aria-label={
-                on
-                  ? `${o.source}, added to this roll. Tap to take it off`
-                  : `Add ${o.source} to this roll, +${dieWord(o.dice)}`
-              }
-              onClick={() => nameHeldDie(i)}
-              className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
-                on ? 'bg-ink text-bg' : 'bg-surface-raised text-ink hover:bg-surface-hover'
-              }`}
-            >
-              <ChevronsUp
-                size={14}
-                aria-hidden="true"
-                className={`shrink-0 ${on ? 'text-bg' : 'text-heal'}`}
-              />
-              +{dieWord(o.dice)} {o.source}
-              {on && <X size={14} aria-hidden="true" className="shrink-0" />}
-            </button>
-          );
-        })}
-        {/* Roll and Cancel stay together at the end, even where large text
-            wraps the dice onto rows of their own. */}
-        <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <button
-            ref={rollButton}
-            type="button"
-            onClick={() => leave(rollHeld)}
-            className="inline-flex min-h-tap items-center gap-1.5 whitespace-nowrap rounded-full bg-roll-soft px-3.5 font-bold text-label text-roll hover:brightness-112"
-          >
-            <D20Icon size={16} aria-hidden="true" />
-            {anyNamed ? 'Roll with it' : 'Roll'}
-          </button>
-          <button
-            type="button"
-            aria-label="Cancel this roll"
-            onClick={() => leave(cancelHeld)}
-            className="inline-flex size-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface-hover"
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </span>
+      <div className="flex items-center gap-3 border-line border-t pt-2">
+        <p className="min-w-0 flex-1 text-caption text-ink-muted">{note}</p>
+        <button
+          ref={rollButton}
+          type="button"
+          onClick={() => leave(rollHeld)}
+          className="inline-flex min-h-tap shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-5 font-bold text-label text-on-brand hover:bg-brand-hover"
+        >
+          <D20Icon size={16} aria-hidden="true" />
+          Roll
+        </button>
       </div>
     </div>
   );

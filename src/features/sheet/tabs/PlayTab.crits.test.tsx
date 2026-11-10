@@ -2,14 +2,12 @@
 // A critical hit through the real sheet: damage rolled for an attack that
 // crit rolls its dice twice and its modifiers once. The damage goes with the
 // newest attack: its own chips, its riders, a damage action with no save
-// (Sneak Attack), and damage tapped while the attack waits for a one-use die.
+// (Sneak Attack), and damage tapped while the attack waits in the roll prompt.
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiceRollDetail, RollResult } from '@/dice/types';
-import { bardicEffect } from '@/engine/curated/namedEffects';
 import type { ActiveEffect, CharacterDoc, DataEntity } from '@/engine/types';
-import { setOneUseDice } from '@/lib/oneUseDice';
 import { rollHeld } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import {
@@ -36,7 +34,6 @@ beforeEach(() => {
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  act(() => setOneUseDice('after'));
   await resetSheetHarness();
 });
 
@@ -98,13 +95,18 @@ const raySorcerer = () => {
 };
 
 const attack = (weapon: string) => screen.getByTitle(`${weapon} attack`);
+/** Opens a d20 test's roll prompt, and taps the control again to roll it. */
+const rollOn = (el: HTMLElement) => {
+  fireEvent.click(el);
+  fireEvent.click(el);
+};
 const damage = (weapon: string, type: string) => screen.getByTitle(`${weapon} ${type} damage`);
 
 describe('a critical hit doubles the damage dice', () => {
   it("rolls the weapon's dice twice on a natural 20, and its modifier once", async () => {
     await renderSheet(fighter());
     nextFaces(20);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(3, 5);
     fireEvent.click(damage('Longsword', 'slashing'));
     const dealt = newest();
@@ -121,7 +123,7 @@ describe('a critical hit doubles the damage dice', () => {
   it('rolls them once on a hit that is no crit', async () => {
     await renderSheet(fighter());
     nextFaces(19);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(4);
     fireEvent.click(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [4]']);
@@ -136,7 +138,7 @@ describe('a critical hit doubles the damage dice', () => {
     };
     await renderSheet(fighter((d) => (d.play.activeEffects = [curse])));
     nextFaces(19);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Longsword', crit: true });
     nextFaces(6, 1);
     fireEvent.click(damage('Longsword', 'slashing'));
@@ -146,7 +148,7 @@ describe('a critical hit doubles the damage dice', () => {
   it('goes with its own attack: a crit with one weapon leaves the other one alone', async () => {
     await renderSheet(fighter());
     nextFaces(20);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(4);
     fireEvent.click(damage('Shortbow', 'piercing'));
     expect(dice(newest())).toEqual(['d6 [4]']);
@@ -176,7 +178,7 @@ describe('a critical hit doubles the damage dice', () => {
     });
     await renderSheet(doc, { extra: { baseitem: [ember] } });
     nextFaces(20);
-    fireEvent.click(attack('Ember Sword'));
+    rollOn(attack('Ember Sword'));
     nextFaces(2, 6);
     fireEvent.click(damage('Ember Sword', 'fire'));
     expect(dice(newest())).toEqual(['d6 [2, 6]']);
@@ -199,7 +201,7 @@ describe('a critical hit doubles the damage dice', () => {
     });
     await renderSheet(doc);
     nextFaces(20);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(1, 2, 3, 4);
     fireEvent.click(screen.getByRole('button', { name: '2d6' }));
     expect(dice(newest())).toEqual(['d6 [1, 2, 3, 4]']);
@@ -212,7 +214,7 @@ describe('a critical hit doubles the damage dice', () => {
     const sheet = await renderSheet(raySorcerer(), { extra: { spell: [ray] } });
     await sheet.tab('Spells');
     nextFaces(20);
-    fireEvent.click(screen.getByTitle('Ray Bolt spell attack'));
+    rollOn(screen.getByTitle('Ray Bolt spell attack'));
     nextFaces(9, 8);
     fireEvent.click(screen.getByRole('button', { name: '1d10' }));
     expect(dice(newest())).toEqual(['d10 [9, 8]']);
@@ -221,7 +223,7 @@ describe('a critical hit doubles the damage dice', () => {
   it("doubles a spell attack's damage, and never a spell's with no attack roll", async () => {
     await renderSheet(raySorcerer(), { extra: { spell: [ray] } });
     nextFaces(20);
-    fireEvent.click(screen.getByTitle('Ray Bolt spell attack'));
+    rollOn(screen.getByTitle('Ray Bolt spell attack'));
     nextFaces(9, 8);
     fireEvent.click(screen.getByRole('button', { name: '1d10' }));
     expect(dice(newest())).toEqual(['d10 [9, 8]']);
@@ -249,13 +251,13 @@ describe('Improved Critical and Superior Critical', () => {
       extra: { feat: [featNamed('Improved Critical')] },
     });
     nextFaces(19);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Longsword', crit: true });
     nextFaces(5, 6);
     fireEvent.click(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [5, 6]']);
     nextFaces(18);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     expect(newest()?.meta?.attack).toMatchObject({ crit: false });
   });
 
@@ -264,7 +266,7 @@ describe('Improved Critical and Superior Critical', () => {
       extra: { feat: [featNamed('Superior Critical')] },
     });
     nextFaces(18);
-    fireEvent.click(attack('Shortbow'));
+    rollOn(attack('Shortbow'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Shortbow', crit: true });
   });
 
@@ -273,7 +275,7 @@ describe('Improved Critical and Superior Critical', () => {
     doc.feats = [{ ref: { name: 'Improved Critical', source: 'TST' }, instanceId: 'f1' }];
     await renderSheet(doc, { extra: { spell: [ray], feat: [featNamed('Improved Critical')] } });
     nextFaces(19);
-    fireEvent.click(screen.getByTitle('Ray Bolt spell attack'));
+    rollOn(screen.getByTitle('Ray Bolt spell attack'));
     expect(newest()?.meta?.attack).toMatchObject({ of: 'Ray Bolt', crit: false });
   });
 });
@@ -300,7 +302,7 @@ describe('Savage Attacks', () => {
   it('adds one more weapon die on a melee crit, named for it', async () => {
     await renderSheet(savage(), { extra: { race: [tuskfolk] } });
     nextFaces(20);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(3, 5, 8);
     fireEvent.click(damage('Longsword', 'slashing'));
     const dealt = newest();
@@ -313,12 +315,12 @@ describe('Savage Attacks', () => {
   it('adds nothing on a hit that is no crit, nor on a ranged crit', async () => {
     await renderSheet(savage(), { extra: { race: [tuskfolk] } });
     nextFaces(12);
-    fireEvent.click(attack('Longsword'));
+    rollOn(attack('Longsword'));
     nextFaces(3);
     fireEvent.click(damage('Longsword', 'slashing'));
     expect(dice(newest())).toEqual(['d8 [3]']);
     nextFaces(20);
-    fireEvent.click(attack('Shortbow'));
+    rollOn(attack('Shortbow'));
     nextFaces(2, 4);
     fireEvent.click(damage('Shortbow', 'piercing'));
     expect(dice(newest())).toEqual(['d6 [2, 4]']);
@@ -327,16 +329,12 @@ describe('Savage Attacks', () => {
 
 describe('damage that waits with its attack', () => {
   it('rolls doubled when the attack it waits on crit, unseen until it lands', async () => {
-    const doc = fighter((d) => {
-      d.play.activeEffects = [bardicEffect('b1', '2014', 'd8')];
-      d.oneUseDice = 'before';
-    });
-    await renderSheet(doc);
-    nextFaces(20);
+    await renderSheet(fighter());
+    nextFaces(); // nothing rolls until the attack does
     fireEvent.click(attack('Longsword'));
-    nextFaces(6, 2);
     fireEvent.click(damage('Longsword', 'slashing'));
     expect(rollLogStore.getState().rolls).toHaveLength(0);
+    nextFaces(20, 6, 2);
     act(() => rollHeld());
     const [dealt, swing] = rollLogStore.getState().rolls;
     expect(swing?.meta?.attack).toMatchObject({ of: 'Longsword', crit: true });
@@ -346,15 +344,10 @@ describe('damage that waits with its attack', () => {
   });
 
   it('rolls once when the attack it waits on is no crit', async () => {
-    const doc = fighter((d) => {
-      d.play.activeEffects = [bardicEffect('b1', '2014', 'd8')];
-      d.oneUseDice = 'before';
-    });
-    await renderSheet(doc);
-    nextFaces(11);
+    await renderSheet(fighter());
     fireEvent.click(attack('Longsword'));
-    nextFaces(6);
     fireEvent.click(damage('Longsword', 'slashing'));
+    nextFaces(11, 6);
     act(() => rollHeld());
     expect(dice(rollLogStore.getState().rolls[0])).toEqual(['d8 [6]']);
   });

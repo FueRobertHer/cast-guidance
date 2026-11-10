@@ -539,8 +539,8 @@ export function Component() {
             {(
               [
                 [undefined, 'As in Settings'],
-                ['after', 'After the roll'],
-                ['before', 'Before the roll'],
+                ['after', 'After too'],
+                ['before', 'Before only'],
               ] as const
             ).map(([rule, label]) => (
               <button
@@ -561,7 +561,7 @@ export function Component() {
           </div>
           <p id={diceRuleWhy} className="mt-1.5 text-caption text-ink-muted">
             {doc.oneUseDice === undefined
-              ? `Settings says ${appDiceRule} the roll, for every character without its own.`
+              ? `Settings says ${appDiceRule === 'after' ? 'after too' : 'before only'}, for every character without its own.`
               : ONE_USE_DICE_WHY[doc.oneUseDice]}
           </p>
         </fieldset>
