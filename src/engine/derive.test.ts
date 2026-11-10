@@ -821,6 +821,28 @@ describe('deriveSheet: what sets an action save DC', () => {
     });
   });
 
+  it('takes the higher of Strength and Dexterity for a maneuver', () => {
+    const dcWith = (str: number, dex: number) => {
+      const doc = newCharacterDoc('s1', 'Saver', 'test-tag');
+      doc.abilities.method = 'manual';
+      doc.abilities.base = { str, dex, con: 10, int: 10, wis: 10, cha: 10 };
+      doc.classes = [caster('Monk', 3)];
+      doc.customEffects = [
+        {
+          origin,
+          kind: 'action',
+          economy: 'none',
+          label: 'Trip Attack',
+          save: { targetAbility: 'str', dcAbility: 'strOrDex' },
+        },
+      ];
+      return deriveSheet(doc, ctx).actions.find((a) => a.label === 'Trip Attack')?.save?.dc;
+    };
+    // 8 + proficiency 2 + the higher modifier.
+    expect(dcWith(16, 10)).toBe(13);
+    expect(dcWith(10, 18)).toBe(14);
+  });
+
   it('reads "your spell save DC" from the one caster who has it', () => {
     expect(saveFor([caster('Mage', 3)], { targetAbility: 'wis', dcAbility: 'spell' })).toEqual({
       targetAbility: 'wis',

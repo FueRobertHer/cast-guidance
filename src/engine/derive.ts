@@ -208,12 +208,15 @@ export function deriveSheet(
     if (cur === undefined || richness(e) > richness(cur)) actionByKey.set(key, e);
   }
   // "Your spell save DC" is only one number with one caster's block to read it from.
-  const saveDc = (from: Ability | 'spell' | undefined) =>
+  // A maneuver's DC takes Strength or Dexterity, the player's choice: the higher.
+  const saveDc = (from: Ability | 'strOrDex' | 'spell' | undefined) =>
     from === 'spell'
       ? spellcasting[1]
         ? undefined
         : spellcasting[0]?.saveDc.value
-      : from && 8 + abilities[from].mod + profBonus.value;
+      : from === 'strOrDex'
+        ? 8 + Math.max(abilities.str.mod, abilities.dex.mod) + profBonus.value
+        : from && 8 + abilities[from].mod + profBonus.value;
   const actions = [...actionByKey.values()].map((e) => ({
     economy: e.economy,
     label: e.label,

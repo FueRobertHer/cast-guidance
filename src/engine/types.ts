@@ -616,9 +616,10 @@ export type EffectInput = {
       note?: string;
       /**
        * Target save + what sets the DC: one of the caster's abilities (8+mod+prof),
-       * their spell save DC, or nothing when the prose states no DC to show.
+       * the higher of Strength and Dexterity (`strOrDex`, a maneuver's), their spell
+       * save DC, or nothing when the prose states no DC to show.
        */
-      save?: { targetAbility: Ability; dcAbility?: Ability | 'spell' };
+      save?: { targetAbility: Ability; dcAbility?: Ability | 'strOrDex' | 'spell' };
       /** The pool using it spends, when that pool is not the one sharing its name. */
       cost?: ActionCost;
       /** The pool that pays for another use once there are none left. */
