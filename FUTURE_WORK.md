@@ -262,13 +262,18 @@ work:
   entries name the entry they print (`printingOf`), so curated rows, spend
   links and prose picks reach them without the official data. Remaining:
   granted spells as `additionalSpells`; choices that only the prose states
-  (Dragonborn resistance, Skilled, background picks); item attacks, AC and
-  "following benefits" defenses; spell captions, prose race speeds and
+  (Dragonborn resistance, Skilled, background picks); spell captions, prose race speeds and
   language oddities; `<class>` and subclass conversion. `printingOf` does not
   reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic
   variants such as `Battleaxe +1`).
+  Items read what their text states for good while you wear, hold or are
+  attuned to them; left out: a bonus a `<modifier>` understates (Fight Club's
+  own tag, as on Sunsword), a 2024 weapon's mastery when its text has no
+  Mastery line (Thunderous Greatclub), firearms' Reload (read as Loading), and
+  a bonus or defense in a list that a state or a choice heads (a vestige's
+  Dormant State).
 
 ### Maintainability and diagnostics
 

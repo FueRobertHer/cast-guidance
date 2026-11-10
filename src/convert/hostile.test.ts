@@ -186,3 +186,26 @@ describe('a file that is not well formed', () => {
     );
   });
 });
+
+describe('what an item gives while you wear it', () => {
+  const firstItem = (name: string, text: string, extra = '') =>
+    (
+      convert(
+        `<compendium><item><name>${name}</name><type>W</type>${extra}<text>${text}</text></item></compendium>`,
+      ).json.item as Record<string, unknown>[]
+    )[0];
+
+  it('reads an item named with every pattern character as plain text', () => {
+    const name = 'Orb [x]{2}|a*b?c^$./-+\\';
+    const i = firstItem(name, `While holding ${name}, you have resistance to fire damage.`);
+    expect(i?.resist).toEqual(['fire']);
+  });
+
+  it.each([
+    ['clauses', `While wearing this armor, ${'you gain a +1 bonus to AC, '.repeat(20_000)}x.`],
+    ['armor terms', `You gain a +1 bonus to AC${', if you are wearing no armor'.repeat(20_000)}.`],
+    ['wearing words', `You gain a +1 bonus to AC${' while wearing this armor'.repeat(20_000)}.`],
+  ])('reads long runs of %s in linear time', (_label, text) => {
+    expect(firstItem('Ward', text)?.name).toBe('Ward');
+  });
+});

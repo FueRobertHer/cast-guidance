@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { parseXml } from '../xml';
 import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result } from './context';
-import { convertItem, itemDefenses, readDetail, readModifiers } from './item';
+import {
+  convertItem,
+  itemAcBonus,
+  itemDefenses,
+  itemWeaponBonus,
+  readDetail,
+  readModifiers,
+} from './item';
 
 const ctx: Fc5Context = fc5Context('test.xml');
 
@@ -212,6 +219,39 @@ describe('itemDefenses', () => {
     ).toEqual({ resist: ['psychic'] });
   });
 
+  it("reads the item's own name, a tattoo on your skin, and a clause beside one that is no defense", () => {
+    expect(
+      itemDefenses(
+        "While attuned to Kyrzin's ooze, you have resistance to poison and acid damage, and you're immune to the poisoned condition.",
+        "Kyrzin's Ooze",
+      ),
+    ).toEqual({ resist: ['poison', 'acid'], conditionImmune: ['poisoned'] });
+    expect(
+      itemDefenses('You are immune to cold damage while holding Matalotok.', 'Matalotok'),
+    ).toEqual({
+      immune: ['cold'],
+    });
+    expect(
+      itemDefenses('While the tattoo is on your skin, you have resistance to acid damage.'),
+    ).toEqual({ resist: ['acid'] });
+    expect(
+      itemDefenses(
+        'While wearing this armor, you gain a +3 bonus to AC, you are immune to fire damage, and you can understand and speak Primordial.',
+      ),
+    ).toEqual({ immune: ['fire'] });
+    expect(
+      itemDefenses(
+        'Additionally, while you are attuned to the egg, you gain resistance to poison damage.',
+      ),
+    ).toEqual({ resist: ['poison'] });
+    // A word that makes any clause pass makes the whole sentence pass.
+    expect(
+      itemDefenses(
+        'While wearing this armor, you have resistance to fire damage, and you lose it when you remove the armor.',
+      ),
+    ).toEqual({});
+  });
+
   it('leaves a defense that lasts a while, hangs on a choice or another condition', () => {
     for (const text of [
       'You have resistance to fire damage.',
@@ -244,6 +284,113 @@ describe('convertItem', () => {
       modifySpeed: { bonus: { walk: 5 } },
     });
     expect(result.reasons).toEqual([]);
+  });
+
+  it('reads a bonus to AC the text gives while you wear the item', () => {
+    expect(
+      itemAcBonus(
+        'While wearing these bracers, you gain a +2 bonus to AC if you are wearing no armor and using no shield.',
+      ),
+    ).toBe('+2');
+    expect(
+      itemAcBonus(
+        'You have a +2 bonus to AC while wearing these bracers, if you do not wear armor or use a shield at the same time.',
+      ),
+    ).toBe('+2');
+    expect(
+      itemAcBonus(
+        'While wearing this armor, you gain a +3 bonus to AC, you are immune to fire damage, and you can understand and speak Primordial.',
+      ),
+    ).toBe('+3');
+    expect(
+      itemAcBonus(
+        'While wearing this armor, you gain a +1 bonus to AC and to saving throws against spells and other magical effects.',
+      ),
+    ).toBe('+1');
+    // Terms of its own, a while, someone else, or no "while you wear it".
+    for (const text of [
+      'You gain a +2 bonus to AC against ranged attacks while you wield this shield.',
+      'You gain a +1 bonus to AC for every two allies within 5 feet of you while you wield this shield.',
+      'While wearing this armor, you gain a +1 bonus to AC until the start of your next turn.',
+      'While holding this horn, you and all affected creatures gain a +1 bonus to AC.',
+      'You gain a +1 bonus to AC.',
+    ]) {
+      expect(itemAcBonus(text)).toBeUndefined();
+    }
+  });
+
+  it('reads a weapon bonus the text states for good, and none in a list or for a while', () => {
+    expect(
+      itemWeaponBonus('You gain a +1 bonus to attack and damage rolls made with this war pick.'),
+    ).toBe('+1');
+    expect(
+      itemWeaponBonus(
+        'In addition, you gain a +1 bonus to attack and damage rolls made using the weapon.',
+      ),
+    ).toBe('+1');
+    expect(
+      itemWeaponBonus(
+        'This staff can be wielded as a magic quarterstaff that grants a +2 bonus to attack and damage rolls made with it.',
+      ),
+    ).toBe('+2');
+    for (const text of [
+      'Dormant State:\n• You gain a +1 bonus to attack and damage rolls made with this magic weapon.',
+      'Until the end of your turn, you gain a +2 bonus to attack and damage rolls made with this weapon.',
+      'You gain a +2 bonus to attack and damage rolls made with this weapon for 1 minute.',
+      'Only the one chosen gains a +2 bonus to attack and damage rolls made with this magic weapon.',
+      '8 | You gain a +3 bonus to attack and damage rolls made with this weapon',
+    ]) {
+      expect(itemWeaponBonus(text)).toBeUndefined();
+    }
+    const pick = (modifier: string) =>
+      item(
+        `<name>Pick</name><type>M</type><dmg1>1d8</dmg1><dmgType>P</dmgType><text>You gain a +1 bonus to attack and damage rolls made with this war pick.</text>${modifier}`,
+      ).entity;
+    expect(pick('').bonusWeapon).toBe('+1');
+    // A modifier says what the file means, even when it says less than the text.
+    expect(pick('<modifier category="bonus">melee attacks +2</modifier>')).toMatchObject({
+      bonusWeaponAttack: '+2',
+    });
+    expect(
+      pick('<modifier category="bonus">melee attacks +2</modifier>').bonusWeapon,
+    ).toBeUndefined();
+  });
+
+  it('keeps the bonus to AC a modifier gives over the one its text states', () => {
+    const ward = (modifier: string) =>
+      item(
+        `<name>Ward</name><type>W</type><text>While wearing these bracers, you gain a +2 bonus to AC.</text>${modifier}`,
+      ).entity.bonusAc;
+    expect(ward('')).toBe('+2');
+    expect(ward('<modifier category="bonus">ac +1</modifier>')).toBe('+1');
+    // A list is for one of the item's states, which the official data leaves to the reader.
+    const jewel = item(
+      `<name>Jewel</name><type>W</type><dmg1>1d4</dmg1><text>In its Dormant State, the jewel has the following properties:</text><text>• You gain a +1 bonus to AC while wearing the jewel.</text><text>• You gain a +1 bonus to attack and damage rolls made with this magic weapon.</text>`,
+    ).entity;
+    expect(jewel.bonusAc).toBeUndefined();
+    expect(jewel.bonusWeapon).toBeUndefined();
+  });
+
+  it("reads what an attuned item's text states for good, and nothing a choice offers", () => {
+    const attuned = (text: string, detail = 'rare (requires attunement)') =>
+      item(`<name>Ember Cloak</name><type>W</type><detail>${detail}</detail>${text}`).entity;
+    expect(
+      attuned(
+        '<text>While wearing this cloak, you gain the following benefits:</text><text>• You have resistance to poison damage.</text><text>• You have a climbing speed.</text>',
+      ).resist,
+    ).toEqual(['poison']);
+    expect(attuned('<text>You have resistance against lightning damage.</text>').resist).toEqual([
+      'lightning',
+    ]);
+    expect(
+      attuned(
+        '<text>When you attune to this cloak, choose one of the following:</text><text>• You have resistance to fire damage.</text><text>• You have resistance to cold damage.</text>',
+      ).resist,
+    ).toBeUndefined();
+    // Without attunement nothing says when a bare sentence holds.
+    expect(
+      attuned('<text>You have resistance to fire damage.</text>', 'rare').resist,
+    ).toBeUndefined();
   });
 
   it('converts a magic melee weapon', () => {
@@ -418,11 +565,25 @@ describe('convertItem', () => {
       expect(result.entity.rarity).toBe('uncommon');
     });
 
-    it('reads a staff with no weapon traits as a focus', () => {
+    it('reads a staff with no weapon traits as a focus you can wield as a quarterstaff', () => {
+      // As the official data gives every staff, the Player's Handbook focus among them.
+      const quarterstaff = {
+        staff: true,
+        dmg1: '1d6',
+        dmg2: '1d8',
+        dmgType: 'B',
+        property: ['V'],
+        weaponCategory: 'simple',
+      };
       const result = item('<name>Ash Staff</name><type>ST</type>');
-      expect(result.entity.type).toBe('SCF');
-      expect(result.entity.staff).toBe(true);
-      expect(result.entity.dmg1).toBeUndefined();
+      expect(result.entity).toMatchObject({ type: 'SCF', ...quarterstaff });
+      expect(result.entity.mastery).toBeUndefined();
+      // A 2024 staff is a Quarterstaff, mastery and all.
+      expect(item('<name>Ash Staff [2024]</name><type>ST</type>').entity).toMatchObject({
+        type: 'M',
+        ...quarterstaff,
+        mastery: ['Topple|XPHB'],
+      });
     });
 
     it('reads a versatile staff as a quarterstaff', () => {
