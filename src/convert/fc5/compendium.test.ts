@@ -5,6 +5,7 @@ import {
   convertedTotal,
   type InstalledCheck,
   notesWith,
+  subclassKey,
 } from '../types';
 import { parseXml } from '../xml';
 import { convertFc5Compendium, FC5_CONVERTER_VERSION, isSpellStub, sourceFor } from './compendium';
@@ -293,7 +294,9 @@ describe('convertFc5Compendium', () => {
           kind: 'class',
           name: 'Ash Knight',
           status: 'skipped',
-          reasons: ['it only adds features to a class of that name, which is not converted yet'],
+          reasons: [
+            'it adds to a class of that name, and only its subclasses convert: it has none',
+          ],
         },
       ]);
     });
@@ -900,6 +903,268 @@ describe('classes', () => {
     `);
     expect(list(json, 'spell')[0]?.classes).toEqual({
       fromClassList: [{ name: 'Wizard', source: 'PHB' }],
+    });
+  });
+});
+
+describe('subclasses', () => {
+  const at = (line: string) => `\nSource: ${line}`;
+  const opt = ' optional="YES"';
+  const f = (name: string, text = 'x', attrs = opt) =>
+    `<feature${attrs}><name>${name}</name><text>${text}</text></feature>`;
+  /** A class with a subclass of each name, each with one feature at 3rd level. */
+  const withSubclasses = (
+    name: string,
+    line: string,
+    subs: readonly string[],
+    hd = '<hd>10</hd>',
+  ) => `
+    <class><name>${name}</name>${hd}
+      <trait><name>${name}</name><text>Knights.${line}</text></trait>
+      <autolevel level="3">${hd === '' ? '' : f('Martial Archetype', 'Choose.', '')}${subs
+        .map((s) => `${f(`Martial Archetype: ${s}`)}${f(`${s} Strike (${s})`)}`)
+        .join('')}</autolevel>
+    </class>`;
+
+  it('keeps the subclasses of a kept class on it, after the class in the file', () => {
+    const { json, report } = convert(withSubclasses('Ember Knight', '', ['Ash Guard']));
+    expect(Object.keys(json).filter((k) => k !== '_meta')).toEqual([
+      'class',
+      'classFeature',
+      'subclass',
+      'subclassFeature',
+    ]);
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Guard', 'Ember Knight', SOURCE],
+    ]);
+    expect(list(json, 'subclassFeature').map((s) => s.name)).toEqual([
+      'Ash Guard',
+      'Ash Guard Strike',
+    ]);
+    expect(report.converted).toEqual({
+      class: 1,
+      classFeature: 1,
+      subclass: 1,
+      subclassFeature: 2,
+    });
+    expect(report.notes).toEqual([]);
+  });
+
+  it("puts an installed class's subclasses on the installed class, leaving out the installed ones", () => {
+    const { calls, check } = recorder(
+      (kind, name, _edition, book) =>
+        (kind === 'class' && name === 'Fighter' && (book === undefined || book === 'PHB')) ||
+        (kind === 'subclass' && name === subclassKey('Champion', 'Fighter')),
+    );
+    const { json, report } = convert(
+      withSubclasses('Fighter', at("Player's Handbook (2014) p. 70"), ['Champion', 'Ash Guard']),
+      { fileName: FILE, isInstalled: check, hasBook: () => true },
+    );
+    expect(json.class).toBeUndefined();
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Guard', 'Fighter', 'PHB'],
+    ]);
+    expect(list(json, 'subclassFeature').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Guard', 'Fighter', 'PHB'],
+      ['Ash Guard Strike', 'Fighter', 'PHB'],
+    ]);
+    expect(notesWith(report, 'installed').map((n) => [n.kind, n.name])).toEqual([
+      ['class', 'Fighter'],
+      ['subclass', 'Champion'],
+    ]);
+    expect(calls.filter(([kind]) => kind === 'class')).toEqual([
+      ['class', 'Fighter', '2014'],
+      ['class', 'Fighter', '2014', 'PHB'],
+    ]);
+  });
+
+  it("keeps a subclass that has the name of another class's installed one", () => {
+    const { calls, check } = recorder(
+      (kind, name) => kind === 'subclass' && name === subclassKey('Champion', 'Fighter'),
+    );
+    const { json } = convert(withSubclasses('Ember Knight', '', ['Champion']), {
+      fileName: FILE,
+      isInstalled: check,
+    });
+    expect(list(json, 'subclass').map((s) => [s.name, s.className])).toEqual([
+      ['Champion', 'Ember Knight'],
+    ]);
+    expect(calls.filter(([kind]) => kind === 'subclass')).toEqual([
+      ['subclass', subclassKey('Champion', 'Ember Knight'), '2014'],
+    ]);
+  });
+
+  it('keeps two subclasses of one name from two books apart, each with its own features', () => {
+    const pick = (book: string) =>
+      `${f('Martial Archetype: Ash Guard', `Guards.\nSource: ${book} p. 1`)}${f('Ash Strike (Ash Guard)', `Strikes.\nSource: ${book} p. 2`)}`;
+    const { json, report } = convert(`
+      <class><name>Ember Knight</name><hd>10</hd>
+        <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${pick('Ember Codex')}${pick('Ash Codex')}</autolevel>
+      </class>`);
+    expect(list(json, 'subclass').map((s) => [s.name, s.source, s.subclassFeatures])).toEqual([
+      [
+        'Ash Guard',
+        'FCEmberCodex',
+        [
+          'Ash Guard|Ember Knight|FCEmberHomebrew|Ash Guard|FCEmberCodex|3',
+          'Ash Strike|Ember Knight|FCEmberHomebrew|Ash Guard|FCEmberCodex|3',
+        ],
+      ],
+      [
+        'Ash Guard',
+        'FCAshCodex',
+        [
+          'Ash Guard|Ember Knight|FCEmberHomebrew|Ash Guard|FCAshCodex|3',
+          'Ash Strike|Ember Knight|FCEmberHomebrew|Ash Guard|FCAshCodex|3',
+        ],
+      ],
+    ]);
+    expect(notesWith(report, 'duplicate')).toEqual([]);
+  });
+
+  it('says what a class entry with no hit die holds besides its subclasses', () => {
+    const { json, report } = convert(`
+      <class><name>Fighter</name>
+        <autolevel level="3">${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}${f('Extra Ember', 'x', '')}</autolevel>
+      </class>`);
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Guard', 'Fighter', 'PHB'],
+    ]);
+    expect(report.notes.filter((n) => n.kind === 'class')).toEqual([
+      {
+        kind: 'class',
+        name: 'Fighter',
+        status: 'partial',
+        reasons: [
+          'its features in no subclass (Extra Ember) are not converted: it adds to a class of that name, and only its subclasses convert',
+        ],
+      },
+    ]);
+  });
+
+  it('says what a class entry with no hit die holds when it has no class to add to', () => {
+    const { report } = convert(`
+      <class><name>Ember Knight</name>
+        <autolevel level="3">${f('Ember Path: Ash Guard')}${f('Ash Strike (Ash Guard)')}${f('Extra Ember', 'x', '')}</autolevel>
+      </class>`);
+    expect(report.notes.map((n) => [n.kind, n.name, n.status])).toEqual([
+      ['class', 'Ember Knight', 'skipped'],
+      ['subclass', 'Ash Guard', 'skipped'],
+    ]);
+  });
+
+  it('says a class entry with no hit die and no name has no name', () => {
+    const { report } = convert(`
+      <class><autolevel level="3">${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel></class>`);
+    expect(report.notes).toEqual([
+      { kind: 'class', name: '(no name)', status: 'skipped', reasons: ['it has no name'] },
+    ]);
+  });
+
+  it('leaves out the subclasses of an installed class it cannot find a book for, and says so', () => {
+    const { check } = recorder(
+      (kind, name, _e, book) => kind === 'class' && name === 'Ember Knight' && book === undefined,
+    );
+    const { json, report } = convert(withSubclasses('Ember Knight', '', ['Ash Guard']), {
+      fileName: FILE,
+      isInstalled: check,
+    });
+    expect(json.subclass).toBeUndefined();
+    expect(notesWith(report, 'skipped')).toEqual([
+      {
+        kind: 'subclass',
+        name: 'Ash Guard',
+        status: 'skipped',
+        reasons: [
+          'its class is in your game data, but the converter cannot tell which class it is',
+        ],
+      },
+    ]);
+  });
+
+  it('puts them on the installed class by its own book, not one it was also printed in', () => {
+    const { json } = convert(
+      withSubclasses('Artificer', at('Eberron: Rising from the Last War p. 54'), ['Ash Smith']),
+      {
+        fileName: FILE,
+        isInstalled: (kind, name) => kind === 'class' && name === 'Artificer',
+        officialClass: (name, edition) =>
+          name === 'Artificer' && edition === '2014'
+            ? { name: 'Artificer', source: 'TCE' }
+            : undefined,
+        hasBook: () => true,
+      },
+    );
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Smith', 'Artificer', 'TCE'],
+    ]);
+  });
+
+  it('keeps a subclass a book offers to two classes on each', () => {
+    const { json, report } = convert(
+      `${withSubclasses('Ember Knight', '', ['Mage of Ash'])}${withSubclasses('Ash Bard', '', ['Mage of Ash'])}`,
+    );
+    expect(list(json, 'subclass').map((s) => [s.name, s.className])).toEqual([
+      ['Mage of Ash', 'Ember Knight'],
+      ['Mage of Ash', 'Ash Bard'],
+    ]);
+    expect(notesWith(report, 'duplicate')).toEqual([]);
+  });
+
+  it("keeps a repeated class entry's subclasses, as Fight Club merges entries of one name", () => {
+    const { json, report } = convert(
+      `${withSubclasses('Ember Knight', '', ['Ash Guard'])}${withSubclasses('Ember Knight', '', ['Ash Guard', 'Cinder Blade'])}`,
+    );
+    expect(list(json, 'subclass').map((s) => s.name)).toEqual(['Ash Guard', 'Cinder Blade']);
+    expect(notesWith(report, 'duplicate').map((n) => [n.kind, n.name])).toEqual([
+      ['class', 'Ember Knight'],
+      ['subclass', 'Ash Guard'],
+    ]);
+  });
+
+  describe('a class entry with no hit die', () => {
+    it('adds its subclasses to the class of its name in the file, before or after it', () => {
+      const { json } = convert(
+        `${withSubclasses('Ember Knight', '', ['Cinder Blade'], '')}${withSubclasses('Ember Knight', '', ['Ash Guard'])}`,
+      );
+      expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+        ['Ash Guard', 'Ember Knight', SOURCE],
+        ['Cinder Blade', 'Ember Knight', SOURCE],
+      ]);
+    });
+
+    it('adds them to the rules class of its name when the file has none', () => {
+      const { json } = convert(withSubclasses('Fighter', '', ['Ash Guard'], ''));
+      expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+        ['Ash Guard', 'Fighter', 'PHB'],
+      ]);
+    });
+
+    it('adds them to the installed class of its name', () => {
+      const { check } = recorder(
+        (kind, name, _e, book) => kind === 'class' && name === 'Fighter' && book === 'XPHB',
+      );
+      const { json } = convert(withSubclasses('Fighter [5.5e]', '', ['Ash Guard'], ''), {
+        fileName: FILE,
+        isInstalled: check,
+      });
+      expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+        ['Ash Guard', 'Fighter', 'XPHB'],
+      ]);
+    });
+
+    it('leaves out the subclasses of a class neither the file nor the rules have', () => {
+      const { json, report } = convert(withSubclasses('Ember Knight', '', ['Ash Guard'], ''));
+      expect(json.subclass).toBeUndefined();
+      expect(notesWith(report, 'skipped').map((n) => [n.kind, n.name, n.reasons])).toEqual([
+        [
+          'subclass',
+          'Ash Guard',
+          [
+            'it adds to a class this file does not have and your game data has no class of that name',
+          ],
+        ],
+      ]);
     });
   });
 });

@@ -563,7 +563,7 @@ describe('importing a Fight Club 5e compendium', () => {
     // The official Fire Bolt is the one used, so the file's copy is left out.
     expect(dialog.textContent).toContain('Left out: 1 entry: your game data already has it.');
     expect(dialog.textContent).toContain(
-      'Ember Knight: it only adds features to a class of that name, which is not converted yet.',
+      'Ember Knight: it adds to a class of that name, and only its subclasses convert: it has none.',
     );
     expect(dialog.textContent).toContain('Ashen Veil: the file gives no duration.');
     expect(dialog.textContent).toContain('embers (Fight Club 5e) (FCEmbers)');

@@ -393,7 +393,32 @@ describe('a class', () => {
       'a spellcasting table of many rows',
       casting(`Level | Spells Known\n${'1st | 4\n'.repeat(50_000)}`),
     ],
+    [
+      'many subclasses, each with a feature',
+      cls(
+        `<autolevel level="3"><feature><name>Ash Path</name><text>x</text></feature>${Array.from(
+          { length: 20_000 },
+          (_, i) =>
+            `<feature optional="YES"><name>Ash Path: Order of the Ash ${i}</name><text>x</text></feature><feature optional="YES"><name>Ward (Ash ${i})</name><text>x</text></feature>`,
+        ).join('')}</autolevel>`,
+      ),
+    ],
+    [
+      'choices named in nested brackets and colons',
+      cls(
+        `<autolevel level="3"><feature optional="YES"><name>A${': ('.repeat(50_000)}${')'.repeat(50_000)}</name><text>x</text></feature><feature optional="YES"><name>Ash Path: ${'(x) '.repeat(50_000)}</name><text>x</text></feature><feature optional="YES"><name>Ward (${'word '.repeat(100_000)})</name><text>x</text></feature></autolevel>`,
+      ),
+    ],
   ])('converts %s in linear time', (_label, xml) => {
     expect(convert(xml).report.converted.class).toBe(1);
+  });
+
+  it('converts the subclasses of a class entry with no hit die in linear time', () => {
+    const xml = `<compendium><class><name>Fighter</name><autolevel level="3">${Array.from(
+      { length: 20_000 },
+      (_, i) =>
+        `<feature optional="YES"><name>Martial Archetype: Ash ${i}</name><text>x</text></feature><feature optional="YES"><name>Ward (Ash ${i})</name><text>x</text></feature>`,
+    ).join('')}</autolevel></class></compendium>`;
+    expect(convert(xml).report.converted.subclass).toBe(20_000);
   });
 });
