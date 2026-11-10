@@ -31,7 +31,7 @@ page (an HTML listing or a page that links to the file) is named as one.
 | Element | Converted to | Notes |
 | --- | --- | --- |
 | `<spell>` | `spell` | Time, range (a 2024 cone or emanation as 5etools writes it), components, duration, classes, saves, attacks, damage dice, cantrip and upcast dice (from `<roll>`s, run to 9th level unless the text names a cap such as "maximum 6d10", or from text such as "increases by 1d6 for each slot level above 1st") |
-| `<item>` | `item` | Type, weapon and armor fields, rarity, attunement, value, bonuses, speed, the resistances and immunities its text states |
+| `<item>` | `item` | Type, weapon and armor fields (every staff a quarterstaff, as both Dungeon Master's Guides say), rarity, attunement, value, bonuses (and a bonus to AC or to attack and damage rolls its text states for good, when no `<modifier>` gives one), speed, the resistances and immunities its text states while you wear or are attuned to it |
 | `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies, resistances its text states, spells it grants |
 | `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; spells it grants, and a guild or college table of spells added to a class's list |
 | `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), languages, proficiencies, spells it grants |

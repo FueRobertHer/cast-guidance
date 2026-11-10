@@ -262,14 +262,13 @@ work:
   entries name the entry they print (`printingOf`), so curated rows, spend
   links and prose picks reach them without the official data, and granted
   spells are read from the text. Remaining: choices that only the prose states
-  (Dragonborn resistance, Skilled, background picks); item attacks, AC and
-  "following benefits" defenses; spell captions (mostly Fight Club's own
-  omissions) and language oddities; `<class>` and subclass conversion. A race
-  whose text Fight Club takes from another book (Monsters of the Multiverse's
-  Tabaxi climb under Volo's citation, its Aarakocra flight under Elemental
-  Evil's) reads that text's speed. A trait offered in place of another
-  ("Variant: Aquatic", "in place of Skill Versatility") gives no speed, since
-  the race lists both. `printingOf` does not
+  (Dragonborn resistance, Skilled, background picks); spell captions (mostly
+  Fight Club's own omissions) and language oddities; `<class>` and subclass
+  conversion. A race whose text Fight Club takes from another book (Monsters
+  of the Multiverse's Tabaxi climb under Volo's citation, its Aarakocra flight
+  under Elemental Evil's) reads that text's speed. A trait offered in place of
+  another ("Variant: Aquatic", "in place of Skill Versatility") gives no
+  speed, since the race lists both. `printingOf` does not
   reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic
@@ -280,6 +279,12 @@ work:
   cast Gaseous Form`). The engine reads a `pb` count (`daily: { pb: [...] }`,
   written by the official 2024 Forest Gnome and by the converter alike) as
   unlimited casts, since `additionalSpells.ts` parses the count as a number.
+  Items read what their text states for good while you wear, hold or are
+  attuned to them; left out: a bonus a `<modifier>` understates (Fight Club's
+  own tag, as on Sunsword), a 2024 weapon's mastery when its text has no
+  Mastery line (Thunderous Greatclub), firearms' Reload (read as Loading), and
+  a bonus or defense in a list that a state or a choice heads (a vestige's
+  Dormant State).
 
 ### Maintainability and diagnostics
 

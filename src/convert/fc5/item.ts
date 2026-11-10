@@ -20,6 +20,7 @@ import {
   readText,
   SKILLS,
   sentences,
+  standingDefenses,
   withRolls,
 } from './text';
 
@@ -155,49 +156,297 @@ export function readModifiers(el: XmlElement): Bonuses {
 }
 
 const HOLD = '(?:wear|wearing|hold|holding|carry|carrying|wield|wielding|(?:are )?attuned to)';
-const THE_ITEM = "(?:(?:this|the|these) [a-z'-]{1,20}(?: [a-z'-]{1,20})?|it|them)";
-const WHILE = `while (?:you(?:'re| are)? )?${HOLD} ${THE_ITEM}`;
-/** "While you wear this armor, you …": the rest of the sentence holds while you do. */
-const WHILE_LEAD = new RegExp(`^(?:in addition, )?${WHILE},? (?=you )`);
-/** "You have resistance to cold damage while you wear this armor." */
-const WHILE_TAIL = new RegExp(` ${WHILE}$`);
-/** "While you wear this armor, you gain the following benefits:" over the sentence after it. */
-const LEAD_IN = new RegExp(
-  `^(?:(?:in addition, )?${WHILE},? you gain the following (?:benefits|properties)|you gain the following (?:benefits|properties) ${WHILE})$`,
-);
+// A second word is the item's name ("this magic sword"), never "and" or "or",
+// so "while you wear this armor and you are raging" keeps its condition, nor
+// how or where you hold it ("while wearing this cap underwater, you").
+const THE_ITEM =
+  "(?:(?:this|the|these) [a-z'-]{1,20}(?: (?!(?:and|or|underwater|upright|aloft|outdoors|indoors|two-handed|one-handed)\\b)[a-z'-]{1,20})?|it|them)";
+/** "While the tattoo is on your skin": a worn item's own words for wearing it. */
+const ON_YOU = "while (?:this|the|these) [a-z'-]{1,20} (?:is|are) on your skin";
+
+/** A name's characters as a pattern that matches only them. */
+function literal(text: string): string {
+  return text.replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&');
+}
+
+/**
+ * The patterns for "while you wear it", with the item's own name among the
+ * ways to say "it": "While attuned to Kyrzin's ooze", "while holding Matalotok".
+ */
+function wearing(name: string) {
+  const own = name.length > 0 && name.length <= 60 ? `|${literal(name.toLowerCase())}` : '';
+  const it = `(?:${THE_ITEM}${own})`;
+  const held = `(?:while (?:you(?:'re| are)? )?${HOLD} ${it}|${ON_YOU})`;
+  return {
+    /** "While you wear this armor, you …": the rest of the sentence holds while you do. */
+    lead: new RegExp(`^(?:(?:in addition|additionally), )?${held},? (?=you )`),
+    /** "You have resistance to cold damage while you wear this armor." */
+    tail: new RegExp(` ${held}$`),
+    /** "While you wear this armor, you gain the following benefits:" over the sentence after it. */
+    leadIn: new RegExp(
+      `^(?:(?:in addition|additionally), )?(?:${held},? you gain the following (?:benefits|properties)|you gain the following (?:benefits|properties) ${held})$`,
+    ),
+  };
+}
 const DAMAGE_WORDS = `(?:${DAMAGE_TYPES.join('|')})(?:(?:,| and|, and) (?:${DAMAGE_TYPES.join('|')})){0,12}`;
 /** "resistance to the following damage types: necrotic, poison, and psychic" said in one clause. */
 const FOLLOWING_TYPES = new RegExp(
   `(resistance|immunity) to the following damage types: (${DAMAGE_WORDS})$`,
 );
+/** Words that make a whole sentence last only a while, whichever clause says them. */
+const PASSING = /\b(?:until|lose|loses|no longer|minutes?|hours?|rounds?|duration|instead)\b/;
 
 /**
- * The resistances and immunities an item's text gives while you wear, hold or
- * are attuned to it, in the book's own words ({@link defenseSentence}): a
- * sentence that says so itself ("you have resistance to cold damage while you
- * wear this armor"), or one right after "while you wear this armor, you gain
- * the following benefits". A defense the text gives only at other times (for
- * an hour, in a dormant state, as one of a choice) stays in the text.
+ * The clauses of a sentence that holds while you wear the item: "you gain a
+ * +3 bonus to AC, you are immune to fire damage, and you can understand and
+ * speak Primordial" reads as three, the last no defense or bonus. A sentence
+ * that opens on anything but "you" ("While raging, you", "If the wand has a
+ * charge, you") has terms over all of it and gives none; a clause `reads`
+ * does not take that sets terms ("you are raging", "you can use a bonus
+ * action") ends the clauses read, since those after it may hang on it.
  */
-export function itemDefenses(prose: string): Defenses {
+function heldClauses(body: string, reads: (clause: string) => boolean): string[] {
+  const clauses = body.split(/,? and (?=you )|, (?=you )/);
+  if (!clauses[0]?.startsWith('you ')) return [];
+  const out: string[] = [];
+  for (const clause of clauses) {
+    if (reads(clause)) out.push(clause);
+    else if (NOT_STANDING.test(clause)) break;
+  }
+  return out;
+}
+
+/**
+ * The defenses of a sentence that holds while you wear the item, clause by
+ * clause ({@link heldClauses}); a word that makes any of it pass
+ * ({@link PASSING}) reads none of it.
+ */
+function heldDefenses(body: string): Defenses | undefined {
+  if (PASSING.test(body)) return undefined;
   let out: Defenses = {};
+  for (const clause of heldClauses(body, (c) => defenseSentence(c) !== undefined)) {
+    out = addDefenses(out, defenseSentence(clause));
+  }
+  return out;
+}
+
+/**
+ * The parts of an item's text that hold while you wear, hold or are attuned
+ * to it, without the words that say so: a sentence that says so itself ("you
+ * have resistance to cold damage while you wear this armor", "while attuned to
+ * Kyrzin's ooze, you have"), or one right after "while you wear this armor,
+ * you gain the following benefits". What follows "When you attune to it,
+ * choose one of the following:" hangs on that choice and is not read. `trim`
+ * takes words off the end of a part before its "while you wear it" is looked for.
+ */
+function heldParts(
+  prose: string,
+  name: string,
+  trim: (part: string) => string = (p) => p,
+): string[] {
+  const held = wearing(name);
+  const out: string[] = [];
   let leadIn = false;
   for (const sentence of sentences(prose)) {
     const parts = sentence.replace(FOLLOWING_TYPES, '$1 to $2 damage').split(': ');
     for (const [i, raw] of parts.entries()) {
       const part = raw.replace(/[.:]$/, '');
-      const lead = WHILE_LEAD.exec(part);
-      const rest = lead === null ? part : part.slice(lead[0].length);
-      const tail = WHILE_TAIL.exec(rest);
+      const lead = held.lead.exec(part);
+      const rest = trim(lead === null ? part : part.slice(lead[0].length));
+      const tail = held.tail.exec(rest);
       const body = tail === null ? rest : rest.slice(0, tail.index);
-      if (lead !== null || tail !== null || leadIn) out = addDefenses(out, defenseSentence(body));
-      leadIn = LEAD_IN.test(part);
-      // "When you attune to it, choose one of the following: …": what follows hangs on it.
+      if (lead !== null || tail !== null || leadIn) out.push(body);
+      leadIn = held.leadIn.test(part);
       if (i < parts.length - 1 && !leadIn && NOT_STANDING.test(part)) break;
     }
   }
   return out;
 }
+
+/**
+ * The resistances and immunities an item's text gives while you wear, hold or
+ * are attuned to it ({@link heldParts}), in the book's own words
+ * ({@link defenseSentence}). A defense the text gives only at other times (for
+ * an hour, in a dormant state, as one of a choice) stays in the text. `name`
+ * is the item's.
+ */
+export function itemDefenses(prose: string, name = ''): Defenses {
+  let out: Defenses = {};
+  for (const body of heldParts(prose, name)) out = addDefenses(out, heldDefenses(body));
+  return out;
+}
+
+/**
+ * "If you are wearing no armor and using no shield": the terms Bracers of
+ * Defense set on their bonus, which the sheet, like the official data, leaves
+ * to the reader.
+ */
+const NO_ARMOR =
+  /,? (?:if|while) you (?:(?:are wearing|wear) no armor(?:,? and (?:are )?(?:using|use) no shield)?|(?:aren't|are not|do not|don't) (?:wearing|wear) armor(?:,? or (?:using|use) a shield)?)(?: at the same time)?$/;
+/**
+ * "You gain a +2 bonus to AC", alone or before what else it is a bonus to:
+ * "and to saving throws", ", saving throws, and spell attack rolls".
+ */
+const AC_BONUS =
+  /^you (?:have|gain) an? \+([1-5]) bonus to (?:your )?(?:ac|armor class)((?:,| and|, and) (?:to )?[a-z' ,]{1,80})?$/;
+/** Words that put terms on a whole bonus: "and to saving throws while you are raging". */
+const CLAUSE_TERMS = /\b(?:while|when|whenever|if|unless|until|only|once|but|for)\b/;
+/** Those, and a time or place: "and saving throws in dim light", "during your turn". */
+const TAIL_TERMS = /\b(?:in|during|within|as long as)\b/;
+/** Those, and "against": "made with this weapon, but only against undead". */
+const BONUS_TERMS = /\b(?:against|while|when|whenever|if|unless|until|only|once|but|for)\b/;
+
+/**
+ * The bonus to AC an item's text gives while you wear or hold it, as "+2",
+ * when no `<modifier>` gives one: "While wearing this armor, you gain a +3
+ * bonus to AC, you are immune to fire damage". A bonus with terms of its own
+ * (against ranged attacks, for every two allies, until your next turn) or one
+ * that lasts a while ({@link PASSING}) stays in the text.
+ */
+export function itemAcBonus(prose: string, name = ''): string | undefined {
+  for (const body of heldParts(prose, name, (part) => part.replace(NO_ARMOR, ''))) {
+    if (PASSING.test(body)) continue;
+    // "And to saving throws against spells" is a second bonus with terms of its
+    // own, as the official Leather Golem Armor reads it; "and saving throws
+    // against undead" puts its terms on both.
+    const bonusOf = (clause: string) => {
+      const m = AC_BONUS.exec(clause);
+      const tail = m?.[2] ?? '';
+      const terms =
+        NOT_STANDING.test(tail) ||
+        CLAUSE_TERMS.test(tail) ||
+        TAIL_TERMS.test(tail) ||
+        (!tail.startsWith(' and to ') && /\bagainst\b/.test(tail));
+      return m === null || terms ? undefined : m[1];
+    };
+    const [first] = heldClauses(body, (c) => bonusOf(c) !== undefined);
+    const bonus = first === undefined ? undefined : bonusOf(first);
+    if (bonus !== undefined) return `+${bonus}`;
+  }
+  return undefined;
+}
+
+/**
+ * An attuned item's text without its "while you wear it" words, so a lead-in
+ * that holds while you are attuned reads as one that holds for good
+ * ({@link standingDefenses}): "While wearing this cloak, you gain the
+ * following benefits:" over the list after it.
+ */
+function withoutWearing(entries: readonly unknown[], held: ReturnType<typeof wearing>): unknown[] {
+  const strip = (text: string) => {
+    const lower = text.toLowerCase();
+    const lead = held.lead.exec(lower);
+    return lead === null ? text : text.slice(lead[0].length);
+  };
+  return entries.map((e) => {
+    if (typeof e === 'string') return strip(e);
+    if (e === null || typeof e !== 'object') return e;
+    const o = e as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...o };
+    if (Array.isArray(o.entries)) out.entries = withoutWearing(o.entries, held);
+    if (Array.isArray(o.items)) out.items = withoutWearing(o.items, held);
+    return out;
+  });
+}
+
+/**
+ * An attuned item's entries up to a line that sets terms on what follows: a
+ * bare heading ("SCARIFIED") or a lead-in that does not hold ("While in this
+ * form:"). What comes after it is that state's, not the item's. A short line
+ * ending in a colon is not one here: under "you gain the following
+ * benefits:" it names a benefit ("Ember Resistance:").
+ */
+function untilTerms(entries: readonly unknown[], held: ReturnType<typeof wearing>): unknown[] {
+  const out: unknown[] = [];
+  for (const e of entries) {
+    if (typeof e === 'string') {
+      const line = e.trim();
+      const heading = !/[.!?:)]$/.test(line) && line.split(' ').length <= 4;
+      // The lead-in's own sentence, without its "while holding this rod" words:
+      // "This rod can be used as an arcane focus. While holding this rod, you gain the following benefits:".
+      const lower = line.toLowerCase();
+      const last = lower.slice(lower.lastIndexOf('. ') + 1).trim();
+      const lead = held.lead.exec(last);
+      const leadIn = lead === null ? last : last.slice(lead[0].length);
+      if (heading || (line.endsWith(':') && NOT_STANDING.test(leadIn))) break;
+    }
+    out.push(e);
+  }
+  return out;
+}
+
+/**
+ * "Stirring (Rare):" on a line of its own: a label over the part after it,
+ * which for a bonus is one of the item's states (a benefit's name is read
+ * through its lead-in, by {@link heldParts}). "You gain these benefits:" is not one.
+ */
+function stateLabel(line: string): boolean {
+  const t = line.trim();
+  return t.endsWith(':') && t.split(' ').length <= 4 && !/[.!?]|\byou\b/i.test(t);
+}
+
+/**
+ * An entry's own paragraphs up to a state's label ({@link stateLabel}): not
+ * its lists' items or its tables' rows, nor a named part ("Stirring (Rare)",
+ * "Transformed", "Dormant State"), which is for one of the item's states, nor
+ * a line Fight Club begins with a bullet.
+ */
+function paragraphs(entries: readonly unknown[]): string {
+  const out: string[] = [];
+  for (const e of entries) {
+    if (typeof e !== 'string') continue;
+    if (stateLabel(e)) break;
+    if (!/^\s*[•·*-]/.test(e)) out.push(e);
+  }
+  return out.join('\n');
+}
+
+const WEAPON_FIELDS = ['bonusWeapon', 'bonusWeaponAttack', 'bonusWeaponDamage'] as const;
+/**
+ * "You gain a +2 bonus to attack and damage rolls made with this magic
+ * weapon", said on its own, or a staff "wielded as a magic quarterstaff that
+ * grants a +2 bonus to attack and damage rolls made with it".
+ */
+const WEAPON_BONUS =
+  /^(?:(?:in addition|additionally|further), )?(?:you (?:gain|have) an? \+([1-5]) bonus to attack and damage rolls made (?:with|using) (?:this|these|the|it)\b(?: magic)?(?: [a-z'-]{1,20}){0,2}|this staff can be wielded as a magic quarterstaff that grants an? \+([1-5]) bonus to attack and damage rolls made with it)(?:,|$)/;
+/** Words that make a weapon's bonus last only a while. */
+const WHILE_ONLY = /\b(?:until|minutes?|hours?|rounds?|duration)\b/;
+
+/**
+ * The bonus to attack and damage rolls a weapon's text states for good, as
+ * "+2", for a file that gives no `<modifier>` for it. A bonus in a list is
+ * not read: a vestige's list is for one of its states, and a list after a
+ * condition is that condition's.
+ */
+export function itemWeaponBonus(prose: string): string | undefined {
+  for (const line of prose.split('\n')) {
+    if (/^\s*[•·*-]/.test(line)) continue;
+    for (const sentence of sentences(line)) {
+      // The rest of a paragraph after "When you speak its command word, …" hangs on it.
+      if (OPENS_ON_TERMS.test(sentence)) break;
+      if (WHILE_ONLY.test(sentence)) continue;
+      const m = WEAPON_BONUS.exec(sentence);
+      const bonus = m?.[1] ?? m?.[2];
+      // "…made with this weapon, but only against undead": terms of its own.
+      // A clause after the comma is another rule ("and you ignore the normal
+      // penalties … while using this weapon underwater") unless it opens on terms.
+      const after = sentence.slice(Math.max(0, sentence.indexOf(' rolls made ')));
+      const comma = after.indexOf(',');
+      const first = comma === -1 ? after : after.slice(0, comma);
+      const next = comma === -1 ? '' : after.slice(comma + 1).trimStart();
+      const terms = BONUS_TERMS.test(first) || NEXT_TERMS.test(next);
+      if (bonus !== undefined && !terms) return `+${bonus}`;
+    }
+  }
+  return undefined;
+}
+
+/** A sentence that opens on a condition or a time sets the terms of the rest of its paragraph. */
+const OPENS_ON_TERMS =
+  /^(?:when|whenever|while|if|unless|until|once|after|before|during|as an? (?:[a-z]+ )?(?:action|reaction)|you can (?:use|take) (?:a|an|your) (?:[a-z]+ )?(?:action|reaction))\b/;
+/** A clause after a weapon's bonus that puts terms on it: ", but only against undead", ", once per day". */
+const NEXT_TERMS =
+  /^(?:but only|only|if|while|when|whenever|against|unless|until|once|provided|as long as)\b/;
 
 const MASTERIES = ['Cleave', 'Graze', 'Nick', 'Push', 'Sap', 'Slow', 'Topple', 'Vex'];
 
@@ -246,6 +495,8 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
     .filter((p) => p !== '');
   let dmg1 = childText(el, 'dmg1');
   let dmg2 = childText(el, 'dmg2');
+  // The dice the file gives, not a staff's quarterstaff dice assumed below.
+  const fileDice = [dmg1, dmg2];
   let dmgType = (childText(el, 'dmgtype') ?? '').toUpperCase();
   const poison = /^poison\b(?:\s*\(([a-z]+)\))?/i.exec(rawDetail);
   if (type === 'P' && poison !== null) {
@@ -261,15 +512,24 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   else if (SAME_TYPES.has(type)) item.type = type;
   else if (type === 'W') item.wondrous = true;
   else if (type === 'ST') {
-    // A Fight Club staff that has weapon traits is a quarterstaff, as the
-    // magic staffs are; its file often leaves the dice to that convention.
+    // Unless its text says otherwise, a staff can be used as a quarterstaff
+    // (both Dungeon Master's Guides), as the official data gives every staff;
+    // Fight Club's file often leaves the dice to that convention. A staff
+    // with dice of its own keeps them. One with none stays a focus in 2014,
+    // as the official Staff is, and is a weapon in 2024, as the 2024 staffs are.
     item.staff = true;
     if (dmg1 !== undefined || dmgType !== '' || codes.includes('V')) {
       item.type = 'M';
       dmg1 ??= '1d6';
       if (codes.includes('V')) dmg2 ??= '1d8';
       if (dmgType === '') dmgType = 'B';
-    } else item.type = 'SCF';
+    } else {
+      item.type = edition === '2024' ? 'M' : 'SCF';
+      dmg1 = '1d6';
+      dmg2 = '1d8';
+      dmgType = 'B';
+      codes.push('V');
+    }
   } else reasons.push(`its type "${type}" is not one this app knows`);
 
   // Fight Club's 2014 SRD gives mundane gear a rarity word ("common"), so a
@@ -315,7 +575,7 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (unknown.length > 0) reasons.push(`unknown weapon properties ${unknown.join(', ')}`);
 
   const prose = plainText(text.entries);
-  const isWeapon = item.type === 'M' || item.type === 'R';
+  const isWeapon = item.type === 'M' || item.type === 'R' || item.staff === true;
   if (isWeapon) {
     // The raw text, not `prose`: a "Proficiency: martial" line on its own is
     // a named entry there, and its colon is gone.
@@ -323,7 +583,10 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
       codes.includes('M') ||
       childTexts(el, 'text').some((t) => /\bProficiency:\s*martial\b/i.test(t));
     item.weaponCategory = martial ? 'martial' : 'simple';
-    const mastery = MASTERIES.find((m) => new RegExp(`\\b${m} \\(Mastery\\)`).test(prose));
+    // A 2024 staff is a Quarterstaff, whose mastery is Topple.
+    const mastery =
+      MASTERIES.find((m) => new RegExp(`\\b${m} \\(Mastery\\)`).test(prose)) ??
+      (item.staff === true && edition === '2024' ? 'Topple' : undefined);
     if (mastery !== undefined) item.mastery = [`${mastery}|XPHB`];
   }
   const range = childText(el, 'range');
@@ -334,10 +597,41 @@ export function convertItem(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const bonuses = readModifiers(el);
   Object.assign(item, bonuses.fields);
   reasons.push(...bonuses.reasons);
-  Object.assign(item, itemDefenses(prose));
+  // A bonus in a list is not read: a list is for one of the item's states (a
+  // vestige's Dormant State), which the official data leaves to the reader.
+  const said = paragraphs(text.entries);
+  const stated = item.dmg1 === undefined ? undefined : itemWeaponBonus(said);
+  if (stated !== undefined && WEAPON_FIELDS.every((f) => item[f] === undefined)) {
+    item.bonusWeapon = stated;
+  }
+  if (item.bonusAc === undefined) {
+    const ac = itemAcBonus(said, named.name);
+    if (ac !== undefined) {
+      item.bonusAc = ac;
+      // The text says what a modifier this app cannot read left out ("unarmored armor class +2").
+      const acKept = (r: string) =>
+        r.startsWith('the bonus "') &&
+        r.endsWith('" is kept as text') &&
+        /\b(?:ac|armor class)\b/i.test(r);
+      reasons.splice(0, reasons.length, ...reasons.filter((r) => !acKept(r)));
+    }
+  }
+  // An item you attune to grants what its text states for good while you are
+  // attuned, which is when the sheet counts it: "You have resistance to fire damage."
+  const defenses = itemDefenses(prose, named.name);
+  const held = wearing(named.name);
+  Object.assign(
+    item,
+    item.reqAttune === undefined
+      ? defenses
+      : addDefenses(
+          defenses,
+          standingDefenses(untilTerms(withoutWearing(text.entries, held), held)),
+        ),
+  );
 
   // A weapon's rolls are its damage dice, which `dmg1` and `dmg2` already hold.
-  item.entries = withRolls(text.entries, el, [dmg1, dmg2]);
+  item.entries = withRolls(text.entries, el, fileDice);
   const citation = citationEntry(placement);
   if (citation !== undefined) (item.entries as unknown[]).push(citation);
   if ((item.entries as unknown[]).length === 0) delete item.entries;
