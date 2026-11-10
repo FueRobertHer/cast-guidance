@@ -833,6 +833,8 @@ export interface AttackRow {
   versatileDamage?: string;
   /** What adds to the damage beyond the ability and the weapon's own bonus (Rage), when anything does. */
   damageFrom?: string[];
+  /** Those of `damageFrom` whose bonuses come to less than zero (a homebrew condition's -2), when any do. */
+  damageAgainst?: string[];
   extraDamage: DamageRider[];
   properties: string[];
   range?: string;

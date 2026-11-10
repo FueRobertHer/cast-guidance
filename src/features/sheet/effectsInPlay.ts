@@ -93,13 +93,14 @@ export function effectMark(effect: ActiveEffect): string | undefined {
 
 /**
  * Which way a part works on its holder: down for a number below zero,
- * disadvantage, a vulnerability or a slower pace; up for a bonus, a die, a
- * defense or anything else it gives. A note (a cue) works neither way.
+ * disadvantage, a vulnerability, a slower pace or a warning; up for a bonus, a
+ * die, a defense, help or anything else it gives. A plain note works neither way.
  */
 function partWay(p: EffectPart): 'up' | 'down' | undefined {
   switch (p.kind) {
     case 'cue':
-      return p.tone === 'warn' ? 'down' : undefined;
+      // A described effect's reroll, action or narrowed bonus is a help cue.
+      return p.tone === 'warn' ? 'down' : p.tone === 'info' ? undefined : 'up';
     case 'rollAdvantage':
       return p.mode === 'dis' ? 'down' : 'up';
     case 'vulnerable':
@@ -377,6 +378,20 @@ function average(expr: string): number | undefined {
 }
 
 /**
+ * The damage bonuses an attack has that its row without effects lacks, split by
+ * which way each pushes: Rage's +2 raises, a homebrew condition's -2 lowers.
+ */
+function addedDamage(now: AttackRow, before: AttackRow | undefined) {
+  const had = new Set(before?.damageFrom);
+  const against = new Set(now.damageAgainst);
+  const added = (now.damageFrom ?? []).filter((n) => !had.has(n));
+  return {
+    raising: added.filter((n) => !against.has(n)),
+    lowering: added.filter((n) => against.has(n)),
+  };
+}
+
+/**
  * Which of an attack's chips an effect raised, from its row without effects,
  * and what raised its damage: the bonuses the build alone lacks, else "an
  * effect in play" (Giant Strength's floor raises it through Strength).
@@ -394,8 +409,7 @@ export function attackLift(
   };
   const damage = more(now.damage, before?.damage);
   const versatile = more(now.versatileDamage, before?.versatileDamage);
-  const had = new Set(before?.damageFrom);
-  const added = (now.damageFrom ?? []).filter((n) => !had.has(n));
+  const added = addedDamage(now, before).raising;
   return {
     hit: raised(now.toHit, before?.toHit),
     damage,
@@ -424,8 +438,7 @@ export function attackDrop(
     const y = average(b);
     return x !== undefined && y !== undefined && x < y;
   };
-  const had = new Set(before?.damageFrom);
-  const added = (now.damageFrom ?? []).filter((n) => !had.has(n));
+  const added = addedDamage(now, before).lowering;
   const by = added.length > 0 ? added : ['an effect in play'];
   return {
     hit: loweredBy(now.toHit, before?.toHit),

@@ -251,7 +251,7 @@ describe('loweredBy', () => {
     expect(raisedBy(net, before)).toEqual([]);
   });
 
-  it('says an effect in play when the parts name nothing new (a slower multiplier)', () => {
+  it('says an effect in play when the parts name nothing new (a lower score)', () => {
     expect(loweredBy(value(10), value(13))).toEqual(['an effect in play']);
   });
 
@@ -278,6 +278,7 @@ describe('attackDrop', () => {
       damage: '1d8+1',
       versatileDamage: '1d10+1',
       damageFrom: ['Dueling', 'Shaken'],
+      damageAgainst: ['Shaken'],
     });
     expect(attackDrop(now, before)).toEqual({
       hit: ['Shaken'],
@@ -285,6 +286,15 @@ describe('attackDrop', () => {
       versatile: ['Shaken'],
     });
     expect(attackLift(now, before)).toMatchObject({ hit: false, damage: false, versatile: false });
+  });
+
+  it('names only the bonuses that pushed each way when a buff and a debuff meet', () => {
+    const before = row({});
+    const both = { damageFrom: ['Rage', 'Weakened'], damageAgainst: ['Weakened'] };
+    // Rage +2 and Weakened -3: lowered, by Weakened alone.
+    expect(attackDrop(row({ damage: '1d8+2', ...both }), before).damage).toEqual(['Weakened']);
+    // Rage +2 and Weakened -1: raised, by Rage alone.
+    expect(attackLift(row({ damage: '1d8+4', ...both }), before).damageBy).toEqual(['Rage']);
   });
 
   it('finds nothing for a raised or unchanged attack, or without a row to compare', () => {
@@ -319,6 +329,17 @@ describe('effectWay', () => {
       effectWay(parts({ kind: 'rollDie', dice: '1d4', on: { rolls: ['save'] } }), 'down'),
     ).toBe('up');
     expect(effectWay(parts({ kind: 'resist', damageType: 'fire' }), 'down')).toBe('up');
+  });
+
+  it('counts help and ward notes as helping, a warning as hindering, and info as neither', () => {
+    const cue = (tone: 'help' | 'ward' | 'warn' | 'info') =>
+      ({ kind: 'cue', tone, text: 'x' }) as EffectPart;
+    // A described reroll with a cost works both ways: an effect in play stays a buff.
+    expect(effectWay([cue('help'), cue('warn')], 'up')).toBe('up');
+    // A condition that only wards is a buff, not the default debuff.
+    expect(effectWay([cue('ward')], 'down')).toBe('up');
+    expect(effectWay([cue('warn')], 'up')).toBe('down');
+    expect(effectWay([cue('info')], 'down')).toBe('down');
   });
 
   it('takes the given way when it works both ways or neither', () => {

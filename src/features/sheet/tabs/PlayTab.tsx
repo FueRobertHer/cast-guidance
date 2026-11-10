@@ -469,12 +469,9 @@ export function Component() {
           ),
         )
       : [];
+  // Only the largest multiplier counts, and it starts at 1, so none slows.
   const speedDown =
-    speed.value < builtSpeed.value
-      ? loweredBy(sheet.speedWalk, built.speedWalk).concat(
-          sheet.speedMultiplier.factor < 1 ? sheet.speedMultiplier.sources : [],
-        )
-      : [];
+    speed.value < builtSpeed.value ? loweredBy(sheet.speedWalk, built.speedWalk) : [];
   const maxHpUp =
     maxHp.value > builtMaxHp.value ? orHeldOff(raisedBy(sheet.maxHp, built.maxHp)) : [];
   const maxHpDown = maxHp.value < builtMaxHp.value ? loweredBy(sheet.maxHp, built.maxHp) : [];
