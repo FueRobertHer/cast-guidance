@@ -186,3 +186,47 @@ describe('a file that is not well formed', () => {
     );
   });
 });
+
+describe('choices read from prose', () => {
+  const race = (text: string, count: number) =>
+    `<compendium>${`<race><name>R</name><trait><name>T</name><text>${text}</text></trait></race>`.repeat(count)}</compendium>`;
+
+  it.each([
+    [
+      'sentences of lead-ins',
+      race(`${'thanks to a gift, '.repeat(2000)}you gain proficiency in arcana. `.repeat(5), 40),
+    ],
+    [
+      'clauses joined to clauses',
+      race('you gain proficiency in arcana, and you '.repeat(3000), 40),
+    ],
+    [
+      'picks of many items',
+      race(`You gain ${'one skill proficiency, '.repeat(3000)}of your choice. `, 100),
+    ],
+    [
+      'resistance lists',
+      race(
+        `You have resistance to one of the following damage types: ${'fire, '.repeat(20_000)}or cold.`,
+        50,
+      ),
+    ],
+    [
+      'ancestry tables',
+      race(
+        `Dragon | Damage Type\n${'Red | Fire\n'.repeat(2000)}You have resistance to the damage type associated with your draconic ancestry.`,
+        100,
+      ),
+    ],
+    [
+      'background skill picks',
+      `<compendium>${`<background><name>B</name><trait><name>Skill Proficiencies: History, plus one from among ${'Arcana, '.repeat(20_000)}and Religion</name><text>x</text></trait></background>`.repeat(10)}</compendium>`,
+    ],
+    [
+      'background tool picks',
+      `<compendium>${`<background><name>B</name><trait><name>Tool Proficiencies: Choose two from among ${'one musical instrument, '.repeat(20_000)}and thieves' tools</name><text>x</text></trait></background>`.repeat(10)}</compendium>`,
+    ],
+  ])('reads %s in linear time', (_label, xml) => {
+    expect(convert(xml).report.converted).not.toEqual({});
+  });
+});

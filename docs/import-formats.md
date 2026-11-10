@@ -32,9 +32,9 @@ page (an HTML listing or a page that links to the file) is named as one.
 | --- | --- | --- |
 | `<spell>` | `spell` | Time, range (a 2024 cone or emanation as 5etools writes it), components, duration, classes, saves, attacks, damage dice, cantrip and upcast dice (from `<roll>`s, or from text such as "increases by 1d6 for each slot level above 1st") |
 | `<item>` | `item` | Type, weapon and armor fields, rarity, attunement, value, bonuses, speed, the resistances and immunities its text states |
-| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies, resistances its text states |
-| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields |
-| `<race>` | `race` | Size, speed, ability, darkvision, resistances and condition immunities (tags and text), languages, proficiencies |
+| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers |
+| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`) |
+| `<race>` | `race` | Size, speed, ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers |
 | `<class>` | (left out) | Not converted yet |
 | `<monster>` | (left out) | The app does not use creatures |
 
@@ -45,6 +45,19 @@ can roll it.
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never
 silently drops it.
+
+A choice the text states becomes the pick the official data writes: a skill,
+tool, language or weapon "of your choice" or from "the following", in any
+sentence of a race trait ("You therefore have proficiency in one of the
+following skills of your choice: …"), a resistance from a list or from a
+Dragonborn's ancestry table, Skilled's "any combination of three skills or
+tools", expertise in a skill already proficient, and a background's
+"History, plus your choice of one from among …" line. Where a tag holds
+Fight Club's own pick beside such a choice (`<proficiency>History,
+Arcana</proficiency>`, a `<resist>` type, a race's `<languages>` without the
+trait's "one extra language of your choice"), the choice is read instead.
+A grant that hangs on a condition or a time ("Whenever you finish a long
+rest, you gain proficiency …") stays text.
 
 Entries the installed game data already has (same kind, name and rules
 edition) are left out: the installed copy carries the app's curated mechanics.
@@ -79,7 +92,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 3, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 5, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

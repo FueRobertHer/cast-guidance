@@ -37,8 +37,11 @@ import {
   readText,
   readTools,
   readWeapons,
+  resistChoice,
+  sentences,
   splitList,
   standingDefenses,
+  tableDamageTypes,
   withRolls,
 } from './text';
 
@@ -201,15 +204,16 @@ interface TraitRules extends ProficiencyGrant {
 }
 
 /**
- * The rules a race trait's first sentence states in the book's own words:
- * languages, proficiencies ({@link proficiencySentence}; a tool only in a
- * trait about tools), and another speed. Anything else, or anything not read
- * in full, is left to the text.
+ * The rules a race trait states in the book's own words: languages and
+ * another speed in its first sentence, proficiencies in any sentence
+ * ({@link traitProficiencies}). Anything else, or anything not read in full,
+ * is left to the text.
  */
 export function traitRules(traitName: string, text: string): TraitRules {
   const sentence = firstSentence(text);
+  const proficiencies = traitProficiencies(traitName, text);
   const speak =
-    /^(?:you|your character) can (?:speak, read,? and write|read, speak,? and write) (?:both )?(.{1,160})$/.exec(
+    /^(?:you|your character) (?:can )?(?:speak, read,? and write|read, speak,? and write) (?:both )?(.{1,160})$/.exec(
       sentence,
     );
   if (speak !== null) {
@@ -219,10 +223,9 @@ export function traitRules(traitName: string, text: string): TraitRules {
         'one extra language of your choice',
       ),
     );
-    return langs === undefined ? {} : { languages: langs };
+    return langs === undefined ? (proficiencies ?? {}) : { ...proficiencies, languages: langs };
   }
-  const grant = proficiencySentence(sentence, /\btools?\b/i.test(traitName) ? 'any' : 'none');
-  if (grant !== undefined) return grant;
+  if (proficiencies !== undefined) return proficiencies;
   const speed =
     /^you have an? (flying|swimming|climbing|burrowing|fly|swim|climb|burrow) speed (?:of (\d{1,3}) feet|equal to your (?:walking )?speed)$/.exec(
       sentence,
@@ -230,6 +233,25 @@ export function traitRules(traitName: string, text: string): TraitRules {
   const mode = speed === null ? undefined : own(MOVES, speed[1] ?? '');
   if (speed === null || mode === undefined) return {};
   return { speed: { [mode]: speed[2] === undefined ? true : Number(speed[2]) } };
+}
+
+/**
+ * What a trait's sentences grant ({@link proficiencySentence}), any of them,
+ * not only its first: "Natural Affinity. Your fey connection to animals gives
+ * you an intuitive bond with them. You therefore have proficiency in one of
+ * the following skills of your choice: …". Each kind from the first sentence
+ * that grants it; a tool by any name only in a trait about tools.
+ */
+function traitProficiencies(traitName: string, text: string): ProficiencyGrant | undefined {
+  const tools = /\btools?\b/i.test(traitName) ? 'any' : 'known';
+  const out: ProficiencyGrant = {};
+  for (const line of sentences(text)) {
+    const grant = proficiencySentence(line, tools);
+    for (const [k, v] of Object.entries(grant ?? {}) as [keyof ProficiencyGrant, never][]) {
+      if (out[k] === undefined) out[k] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** A Fight Club `<special>` that names a 5etools trait tag. */
@@ -252,6 +274,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const prose: TraitRules[] = [];
   const traitTags = new Set<string>();
   const abilityTexts: string[] = [];
+  const traitTexts: string[] = [];
   let defenses: Defenses = {};
   for (const trait of childElements(el, 'trait')) {
     const traitName = childText(trait, 'name') ?? '';
@@ -273,6 +296,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     }
     if (/^ability score increases?$/i.test(traitName)) abilityTexts.push(plain);
     prose.push(traitRules(traitName, plain));
+    traitTexts.push(plain);
     defenses = addDefenses(defenses, standingDefenses(text.entries));
   }
 
@@ -362,6 +386,14 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   }
 
   if (darkvision !== undefined) race.darkvision = darkvision;
+  // A resistance picked from a list, or from the race's own ancestry table.
+  const ancestry = tableDamageTypes(entries);
+  const resistPicks: Record<string, unknown>[] = [];
+  for (const line of traitTexts.flatMap((t) => sentences(t))) {
+    const pick = resistChoice(line, ancestry);
+    if (pick !== undefined && !resistPicks.some((p) => JSON.stringify(p) === JSON.stringify(pick)))
+      resistPicks.push(pick);
+  }
   for (const [field, key] of [
     ['resist', 'resist'],
     ['immune', 'immune'],
@@ -371,7 +403,16 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     const fromTag = raw === undefined ? undefined : damageList(raw);
     if (raw !== undefined && fromTag === undefined)
       reasons.push(`its ${field} "${raw}" is kept as text`);
-    const list = [...new Set([...(fromTag ?? []), ...(defenses[key] ?? [])])];
+    // A type a trait offers as a pick is Fight Club's pick when the tag holds it too.
+    const picked = new Set(
+      key === 'resist'
+        ? resistPicks.flatMap((p) => (p.choose as { from?: string[] } | undefined)?.from ?? [])
+        : [],
+    );
+    const list: unknown[] = [
+      ...new Set([...(fromTag ?? []).filter((t) => !picked.has(t)), ...(defenses[key] ?? [])]),
+    ];
+    if (key === 'resist') list.push(...resistPicks);
     if (list.length > 0) race[key] = list;
   }
   const rawLanguages = childText(el, 'languages');
@@ -384,7 +425,17 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
       proseLanguages[k] = k === 'anyStandard' ? Number(proseLanguages[k] ?? 0) + Number(v) : v;
     }
   }
-  if (tagLanguages !== undefined) race.languageProficiencies = [tagLanguages];
+  // A trait that names the tag's languages and a pick besides ("Common, Elvish,
+  // and one extra language of your choice") says what the tag leaves out.
+  const addsPick =
+    tagLanguages !== undefined &&
+    Object.keys(tagLanguages).every((k) => proseLanguages[k] !== undefined) &&
+    Object.keys(proseLanguages).every(
+      (k) => tagLanguages[k] !== undefined || k === 'anyStandard' || k === 'choose',
+    ) &&
+    Object.keys(proseLanguages).length > Object.keys(tagLanguages).length;
+  if (tagLanguages !== undefined)
+    race.languageProficiencies = [addsPick ? proseLanguages : tagLanguages];
   else if (Object.keys(proseLanguages).length > 0) race.languageProficiencies = [proseLanguages];
   else if (rawLanguages !== undefined) reasons.push('its languages are kept as text');
   if (childText(el, 'spellability') !== undefined || childText(el, 'spells') !== undefined) {

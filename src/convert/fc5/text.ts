@@ -253,7 +253,7 @@ export function readLanguages(raw: string): Record<string, unknown> | undefined 
       continue;
     }
     // "Draconic or Elven", "either Abyssal or Void Speech": one of them.
-    const either = /^(?:either )?([^,]{1,40}) or ([^,]{1,40})$/i.exec(name);
+    const either = /^(?:either |your choice of )?([^,]{1,40}) or ([^,]{1,40})$/i.exec(name);
     if (either !== null && out.choose === undefined) {
       const from = [either[1] ?? '', either[2] ?? ''].map((l) => l.trim());
       if (!from.every(languageName)) return undefined;
@@ -348,12 +348,16 @@ export function readWeapons(
   edition: RulesVersion,
 ): Record<string, unknown> | undefined {
   const text = raw.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
-  const choice = /^(one|two|three|four|\d) (martial|simple) weapons? of your choice$/i.exec(text);
+  // "Two martial weapons of your choice"; "four weapons of your choice" is simple or martial.
+  const choice = /^(one|two|three|four|\d) (?:(martial|simple) )?weapons? of your choice$/i.exec(
+    text,
+  );
   if (choice !== null) {
     const count = countWord(choice[1] ?? '');
     if (count === undefined) return undefined;
-    const category = (choice[2] ?? '').toLowerCase();
-    return { choose: { fromFilter: `type=${category} weapon|miscellaneous=mundane`, count } };
+    const category = choice[2]?.toLowerCase();
+    const types = category === undefined ? 'simple weapon;martial weapon' : `${category} weapon`;
+    return { choose: { fromFilter: `type=${types}|miscellaneous=mundane`, count } };
   }
   const book = edition === '2024' ? 'xphb' : 'phb';
   const out: Record<string, unknown> = {};
@@ -478,16 +482,23 @@ export function readTools(list: string): Record<string, unknown> | undefined {
     .trim()
     .replace(/\.$/, '')
     // "One gaming set of your choice (such as playing cards …)": an example, not a list.
-    .replace(/ \((?:such as|e\.g\.|one of your choice)[^()]{0,160}\)$/i, '');
+    .replace(/ \((?:such as|e\.g\.|one of your choice)[^()]{0,160}\)$/i, '')
+    // "…of your choice, likely something native to your homeland": advice.
+    .replace(/, likely [^,]{1,80}$/i, '');
   const from = /^(?:[a-z' ]{1,40}) of your choice: (.+)$/i.exec(text);
+  // "Choose two from among one type of gaming set, one musical instrument, and thieves' tools".
+  const among = /^choose (one|two|three) from among (.+)$/i.exec(text);
+  const count = among === null ? 1 : countWord(among[1] ?? '');
   const alternatives =
     from?.[1] ??
+    among?.[2] ??
     (/ or /i.test(text) && !/\band\b/i.test(text)
-      ? text.replace(/^your choice of /i, '')
+      ? text.replace(/^(?:your choice of |any )/i, '').replace(/ of your choice$/i, '')
       : undefined);
-  if (alternatives !== undefined) {
+  if (alternatives !== undefined && count !== undefined) {
     const options: string[] = [];
-    for (const part of alternatives.split(/,|\bor\b/i)) {
+    // "And" separates options only in a "choose two from among" list.
+    for (const part of alternatives.split(among === null ? /,|\bor\b/i : /,|\bor\b|\band\b/i)) {
       const trimmed = part.trim().replace(/^(?:one (?:type |kind )?of |an? |one )/i, '');
       if (trimmed === '') continue;
       const category = toolCategory(trimmed);
@@ -497,7 +508,8 @@ export function readTools(list: string): Record<string, unknown> | undefined {
       if (option === undefined) return undefined;
       options.push(option);
     }
-    return options.length >= 2 ? { choose: { from: options } } : undefined;
+    if (options.length <= count) return undefined;
+    return { choose: count === 1 ? { from: options } : { from: options, count } };
   }
   const out: Record<string, unknown> = {};
   for (const part of splitList(text)) {
@@ -559,7 +571,45 @@ export interface ProficiencyGrant {
   weapons?: string;
   armor?: Record<string, unknown>;
   tools?: Record<string, unknown>;
+  /** Languages of your choice: `{ any: 3 }`. */
+  languages?: Record<string, unknown>;
+  /** How many skills or tools the reader picks in any mix (Skilled). */
+  skillsOrTools?: number;
 }
+
+/**
+ * Words before "you" that leave what a sentence grants as it is: "thanks to
+ * your memory, you have", "as an embodiment of revelry, you have". Never a
+ * condition or a time ("whenever you finish a long rest, you gain", "if you
+ * don't keep any of those elements, you gain"), which the grant hangs on.
+ */
+const LEAD_IN =
+  /^(?!(?:when|whenever|while|if|unless|until|after|before|once|each|as long as|during|for|at|starting|beginning|upon|on|instead)\b)[a-z][^,:;()]{0,80}, (?=you )/;
+
+/** A sentence in the words the readers below take: "you are also proficient with" is "you have proficiency with". */
+function grantWords(sentence: string): string {
+  return (
+    sentence
+      .replace(/ if you don't already have (?:it|this proficiency)$/, '')
+      .replace(/, selected from the [a-z' ]{1,40}$/, '')
+      .replace(LEAD_IN, '')
+      .replace(
+        /^you (?:also |therefore |now )?(?:are|'re) (?:also )?proficient (in|with) /,
+        'you have proficiency $1 ',
+      )
+      .replace(/^you (?:also|therefore|now) (have|gain|learn) /, 'you $1 ')
+      // "With two martial weapons of your choice and with light armor": two clauses.
+      .replace(
+        /^(you have proficiency with .{1,120}?) and with /,
+        '$1, and you have proficiency with ',
+      )
+      .replace(/ (one|two|three|four) different /, ' $1 ')
+  );
+}
+
+/** Whether a clause speaks of a proficiency it grants, read or not. */
+const GRANTS =
+  /^you (?:have|gain) (?:proficiency|(?:one|two|three|four) (?:skill|tool) proficienc)/;
 
 /** Skill names by their 5etools keys, or undefined if any is not a skill. */
 function skillNames(list: string[]): string[] | undefined {
@@ -579,12 +629,78 @@ function skillNames(list: string[]): string[] | undefined {
  * only where `tools` allows: `known` for a tool of the rules or a kind of tool
  * ("one type of artisan's tools of your choice"), `any` for any name, `none`
  * not at all. Undefined for any other sentence, or one not read in full.
+ *
+ * Also "you are proficient in", words before "you" that set no condition
+ * ({@link LEAD_IN}), "one skill proficiency and one tool proficiency of your
+ * choice", "three languages of your choice", Skilled's "any combination of
+ * three skills or tools of your choice", and clauses joined by ", and you":
+ * each clause that grants a proficiency must be read, and one that grants
+ * none ("and you can use that type of tool as a spellcasting focus") is left
+ * to the text.
  */
 export function proficiencySentence(
   sentence: string,
   tools: 'any' | 'known' | 'none',
 ): ProficiencyGrant | undefined {
-  const s = sentence.replace(/ if you don't already have (?:it|this proficiency)$/, '');
+  const clauses = grantWords(sentence)
+    .split(/, and (?=you )|; (?=you )/)
+    .map(grantWords);
+  const out: ProficiencyGrant = {};
+  for (const clause of clauses) {
+    const grant = proficiencyClause(clause, tools);
+    if (grant === undefined) {
+      if (clauses.length === 1 || GRANTS.test(clause)) return undefined;
+      continue;
+    }
+    for (const [k, v] of Object.entries(grant) as [keyof ProficiencyGrant, never][]) {
+      if (out[k] === undefined) out[k] = v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** One item of "one skill proficiency, one tool proficiency, and fluency in one language of your choice". */
+const CHOICE_ITEM =
+  /^(one|two|three|four) (skill|tool) proficienc(?:y|ies)(?: of your choice)?$|^fluency in (one|two|three|four) languages?(?: of your choice)?$/;
+
+/** "One skill proficiency and one tool proficiency of your choice" into a grant of each. */
+function choiceGrants(list: string): ProficiencyGrant | undefined {
+  const out: ProficiencyGrant = {};
+  for (const part of splitList(list)) {
+    const m = CHOICE_ITEM.exec(part);
+    const count = m === null ? undefined : countWord(m[1] ?? m[3] ?? '');
+    if (m === null || count === undefined) return undefined;
+    const field = m[2] === 'skill' ? 'skills' : m[2] === 'tool' ? 'tools' : 'languages';
+    if (out[field] !== undefined) return undefined;
+    out[field] = { any: count };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** {@link proficiencySentence} for one clause, in {@link grantWords}. */
+function proficiencyClause(
+  s: string,
+  tools: 'any' | 'known' | 'none',
+): ProficiencyGrant | undefined {
+  const several = /^you gain (.{1,200} of your choice)$/.exec(s);
+  const listed = several === null ? undefined : choiceGrants(several[1] ?? '');
+  if (listed !== undefined) return listed;
+  const languages =
+    /^you (?:learn|gain fluency in) (one|two|three|four) (?:additional |extra |other )?languages? of your choice$/.exec(
+      s,
+    );
+  if (languages !== null) {
+    const count = countWord(languages[1] ?? '');
+    return count === undefined ? undefined : { languages: { any: count } };
+  }
+  const mixed =
+    /^you gain proficiency in any combination of (one|two|three|four) skills or tools of your choice$/.exec(
+      s,
+    );
+  if (mixed !== null) {
+    const count = countWord(mixed[1] ?? '');
+    return count === undefined ? undefined : { skillsOrTools: count };
+  }
   const skill =
     /^you (?:have|gain) proficiency in the (.{1,80}) skills?(?: \(your choice\))?$/.exec(s);
   if (skill !== null) {
@@ -733,6 +849,77 @@ export function defenseSentence(raw: string): Defenses | undefined {
   }
   const found = Object.fromEntries(Object.entries(out).filter(([, v]) => v.length > 0)) as Defenses;
   return Object.keys(found).length > 0 ? found : undefined;
+}
+
+/** "(choose when you select this feat)", before or after the list it is about. */
+const CHOSEN_WHEN = '(?: \\((?:choose|chosen) [^()]{0,60}\\))?';
+const RESIST_PICK = new RegExp(
+  `^you (?:have|gain) resistance to (one|two|three) of the following damage types(?: of your choice)?${CHOSEN_WHEN}: (${DAMAGE}(?:(?:,|,? or) ${DAMAGE}){1,12})${CHOSEN_WHEN}$`,
+);
+/** The 2014 and 2024 Dragonborn's words, and Fizban's ancestries'. */
+const ANCESTRY_RESIST =
+  /^you have resistance to the damage type (?:associated with|determined by) your (?:[a-z]{1,12} )?ancestry(?: trait)?$/;
+
+/**
+ * A resistance its reader picks, as a 5etools `resist` choice: "you have
+ * resistance to one of the following damage types of your choice: cold,
+ * necrotic, or poison", or the type an ancestry gives ("the damage type
+ * associated with your draconic ancestry"), picked from `ancestry`, the
+ * damage types of the entry's own ancestry table ({@link tableDamageTypes}).
+ * Undefined for any other sentence.
+ */
+export function resistChoice(
+  raw: string,
+  ancestry: readonly string[],
+): Record<string, unknown> | undefined {
+  const sentence = raw.replace(/’/g, "'");
+  const pick = RESIST_PICK.exec(sentence);
+  if (pick !== null) {
+    const count = countWord(pick[1] ?? '');
+    const from = [...new Set((pick[2] ?? '').match(new RegExp(DAMAGE, 'g')) ?? [])];
+    if (count === undefined || from.length <= count) return undefined;
+    return { choose: count === 1 ? { from } : { from, count } };
+  }
+  return ANCESTRY_RESIST.test(sentence) && ancestry.length > 1
+    ? { choose: { from: [...ancestry] } }
+    : undefined;
+}
+
+/**
+ * The damage types in a table's "Damage Type" column, in its order: a
+ * Dragonborn's Draconic Ancestry table. Empty when no table has that column
+ * or a cell in it is not a damage type.
+ */
+export function tableDamageTypes(entries: readonly unknown[]): string[] {
+  const out: string[] = [];
+  const walk = (list: readonly unknown[]): boolean => {
+    for (const e of list) {
+      if (e === null || typeof e !== 'object') continue;
+      const o = e as Record<string, unknown>;
+      if (o.type === 'table' && Array.isArray(o.colLabels) && Array.isArray(o.rows)) {
+        const col = o.colLabels.findIndex(
+          (l) => typeof l === 'string' && /^damage(?: type)?$/i.test(l.trim()),
+        );
+        const cells = o.rows.map((row) =>
+          Array.isArray(row) && col !== -1
+            ? String(row[col] ?? '')
+                .trim()
+                .toLowerCase()
+            : '',
+        );
+        if (
+          cells.length === 0 ||
+          !cells.every((c) => (DAMAGE_TYPES as readonly string[]).includes(c))
+        )
+          continue;
+        for (const c of cells) if (!out.includes(c)) out.push(c);
+        return true;
+      }
+      if (Array.isArray(o.entries) && walk(o.entries)) return true;
+    }
+    return false;
+  };
+  return walk(entries) ? out : [];
 }
 
 /** `b`'s defenses added to `a`'s, each kind without repeats. */

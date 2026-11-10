@@ -23,21 +23,24 @@ import {
   readText,
   readTools,
   readWeapons,
+  resistChoice,
   sentences,
   standingDefenses,
+  tableDamageTypes,
   withRolls,
 } from './text';
 
-const CATEGORIES: Record<string, string> = {
+export const CATEGORIES: Record<string, string> = {
   origin: 'O',
   general: 'G',
   'fighting style': 'FS',
   'epic boon': 'EB',
+  'dark gift': 'DG',
 };
 
 /** `Origin: Alert` into the name and the 5etools category code. */
 export function featCategory(name: string): { name: string; category?: string } {
-  const m = /^(Origin|General|Fighting Style|Epic Boon)(?: Feats?)?:\s*(.+)$/i.exec(name);
+  const m = /^(Origin|General|Fighting Style|Epic Boon|Dark Gift)(?: Feats?)?:\s*(.+)$/i.exec(name);
   const code = m === null ? undefined : CATEGORIES[(m[1] ?? '').toLowerCase()];
   if (m === null || code === undefined) return { name };
   return { name: (m[2] ?? name).trim(), category: code };
@@ -113,7 +116,7 @@ export function abilityFromProse(prose: string): Record<string, unknown>[] | und
     return [{ choose }];
   }
   const named = new RegExp(
-    `Increase your (${ABILITY_WORD}(?:(?:,\\s*(?:or\\s+)?|\\s+or\\s+)${ABILITY_WORD})*) scores? by (\\d)`,
+    `Increase your (${ABILITY_WORD}(?:(?:,\\s*(?:or\\s+)?|\\s+or\\s+)${ABILITY_WORD})*)(?: scores?)? by (\\d)`,
     'i',
   ).exec(prose);
   if (named === null) return undefined;
@@ -206,13 +209,27 @@ function featProficiencies(
           ? undefined
           : readWeapons(fromProse.weapons, edition)
         : tag === 'languages'
-          ? undefined
+          ? grants.find((g) => g.languages !== undefined)?.languages
           : fromProse[tag];
     const found = fromTag ?? prose;
     if (found !== undefined) out[field] = [found];
   }
+  // Skilled: three skills or tools in any mix.
+  const mixed = grants.find((g) => g.skillsOrTools !== undefined)?.skillsOrTools;
+  if (mixed !== undefined) {
+    out.skillToolLanguageProficiencies = [
+      { choose: [{ from: ['anySkill', 'anyTool'], count: mixed }] },
+    ];
+  }
   return out;
 }
+
+/**
+ * Expertise in a skill the reader picks: "Choose one skill in which you have
+ * proficiency. You gain expertise with that skill", in a sentence of its own
+ * after the choice, as Prodigy, Skill Expert and Boon of Skill write it.
+ */
+const EXPERTISE = /^you gain expertise (?:with|in) (?:that|the chosen) skill\b/;
 
 export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
@@ -244,9 +261,14 @@ export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (Object.keys(fixed).length > 0 && !choiceCovers(fixed, proseAbility)) feat.ability = [fixed];
   else if (proseAbility !== undefined) feat.ability = proseAbility;
 
-  const grants = sentences(prose).flatMap((line) => proficiencySentence(line, 'known') ?? []);
+  const lines = sentences(prose);
+  const grants = lines.flatMap((line) => proficiencySentence(line, 'known') ?? []);
   Object.assign(feat, featProficiencies(el, grants, placement.edition, reasons));
   Object.assign(feat, standingDefenses(text.entries));
+  const ancestry = tableDamageTypes(text.entries);
+  const resistPicks = lines.flatMap((line) => resistChoice(line, ancestry) ?? []);
+  if (resistPicks.length > 0) feat.resist = [...((feat.resist as unknown[]) ?? []), ...resistPicks];
+  if (lines.some((line) => EXPERTISE.test(line))) feat.expertise = [{ anyProficientSkill: 1 }];
 
   if (/(?:^|\n)Repeatable\b/.test(prose)) feat.repeatable = true;
   feat.entries = withRolls(text.entries, el);

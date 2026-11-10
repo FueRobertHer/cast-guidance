@@ -16,6 +16,7 @@ import {
   type FeatRef,
   placeEntity,
 } from './context';
+import { CATEGORIES } from './feat';
 import {
   type AbilityKey,
   abilityKey,
@@ -134,8 +135,14 @@ export function featGrant(
   ctx: Fc5Context,
   edition: RulesVersion,
   source: string,
-): { key?: string; reason?: string } {
+): { key?: string; choice?: Record<string, unknown>; reason?: string } {
   const value = entryName(raw).name.replace(/\s+/g, ' ').trim();
+  // "A Dark Gift feat of your choice (Mist Walker is recommended)": a pick of that category.
+  const pick = /^an? ([a-z ]{1,20}) feat of your choice(?: \([^()]{1,60} is recommended\))?$/i.exec(
+    value,
+  );
+  const category = pick === null ? undefined : own(CATEGORIES, (pick[1] ?? '').toLowerCase());
+  if (category !== undefined) return { choice: { anyFromCategory: { category: [category] } } };
   const either = /^(.{1,60}?) or (an? [a-z' ]{1,30} feat) of your choice$/i.exec(value);
   if (either !== null) {
     const key = resolveFeat(either[1] ?? '', ctx, edition, source);
@@ -165,6 +172,32 @@ const MISSED: Record<string, string> = {
 };
 
 /**
+ * A skill line that picks from a list, with a skill given beside it or not:
+ * "History, plus your choice of one from among Arcana, Nature, and Religion",
+ * "Choose two from among Deception, Insight, Persuasion, and Stealth",
+ * "Choose one of Arcana, Investigation, Religion, or Survival". Undefined for
+ * any other line, or a list naming anything but skills.
+ */
+function pickedSkills(value: string): Record<string, unknown> | undefined {
+  const plus =
+    /^([a-z ]{1,20}),? plus (?:your choice of )?(one|two) from among ([a-z ,]{1,200})$/i.exec(
+      value,
+    );
+  const among = /^choose (one|two|three) (?:from among|of) ([a-z ,]{1,200})$/i.exec(value);
+  const m = plus ?? among;
+  if (m === null) return undefined;
+  const given = plus === null ? [] : readProficiencies(plus[1] ?? '').skills;
+  const count = countWord((plus === null ? among?.[1] : plus[2]) ?? '');
+  const list = (plus === null ? among?.[2] : plus[3]) ?? '';
+  const { skills, other } = readProficiencies(list.split(/,|\bor\b/i).join(','));
+  if (count === undefined || other.length > 0 || skills.length <= count) return undefined;
+  if (plus !== null && given.length !== 1) return undefined;
+  const entry: Record<string, unknown> = Object.fromEntries(given.map((s) => [s, true]));
+  entry.choose = count === 1 ? { from: skills } : { from: skills, count };
+  return entry;
+}
+
+/**
  * A skill line into a `skillProficiencies` entry and what it could not read:
  * skills by name, "one skill of your choice" as a choice of any, and
  * "Arcana, History, or Religion" as a choice of one of them. The list
@@ -172,7 +205,10 @@ const MISSED: Record<string, string> = {
  * phrase: "Survival, plus one from among Arcana, History, and Religion" is
  * Survival and an unread rest, not three skills.
  */
-export function readSkills(value: string): { entry?: Record<string, unknown>; rest: string[] } {
+export function readSkills(raw: string): { entry?: Record<string, unknown>; rest: string[] } {
+  const value = raw.replace(/,? as appropriate (?:for|to) [a-z' ]{1,40}$/i, '');
+  const picked = pickedSkills(value);
+  if (picked !== undefined) return { entry: picked, rest: [] };
   const entry: Record<string, unknown> = {};
   const parts = splitList(value);
   // "Arcana, History, or Religion" and "Arcana or Religion": one skill of them all.
@@ -243,6 +279,29 @@ function readRulesLine(
     missed.push(read === undefined ? { field, reason } : { field, reason, read });
 }
 
+/**
+ * Whether a skill line's pick says what the `<proficiency>` tag leaves out:
+ * the tag holds the skills the line gives, and Fight Club's pick of the rest
+ * if anything ("History, Arcana" beside "History, plus your choice of one from
+ * among Arcana, Nature, and Religion"). A tag that names anything else wins.
+ */
+function pickBesideTag(tag: unknown, line: Record<string, unknown>[] | undefined): boolean {
+  const [read] = line ?? [];
+  const [held] = Array.isArray(tag) ? (tag as Record<string, unknown>[]) : [];
+  if (read === undefined || held === undefined || line?.length !== 1) return false;
+  const from = (read.choose as { from?: string[] } | undefined)?.from;
+  const any = typeof read.any === 'number' ? read.any : 0;
+  if (from === undefined && any === 0) return false;
+  const picks = from === undefined ? 0 : Number((read.choose as { count?: number }).count ?? 1);
+  const given = Object.keys(read).filter((k) => k !== 'choose' && k !== 'any');
+  const extra = Object.keys(held).filter((k) => !given.includes(k));
+  return (
+    given.every((k) => held[k] === true) &&
+    (any > 0 || extra.every((k) => from?.includes(k))) &&
+    extra.length <= any + picks
+  );
+}
+
 /** The bullets of a 2014 background's description: `• Tool Proficiencies: Herbalism kit`. */
 const BULLET =
   /^(skill proficienc(?:y|ies)|tool proficienc(?:y|ies)|languages?)\s*:\s*(.{1,200}?)\s*$/i;
@@ -292,6 +351,7 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (grantedFeat !== undefined) {
     const grant = featGrant(grantedFeat, ctx, placement.edition, placement.source.json);
     if (grant.key !== undefined) traitFields.feats = [{ [grant.key]: true }];
+    else if (grant.choice !== undefined) traitFields.feats = [grant.choice];
     if (grant.reason !== undefined) reasons.push(grant.reason);
   }
 
@@ -308,6 +368,11 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const languages = childText(el, 'languages');
   if (languages !== undefined) readRulesLine('languages', languages, elementFields, missed);
 
+  const line = (traitFields.skillProficiencies ?? bulletFields.skillProficiencies) as
+    | Record<string, unknown>[]
+    | undefined;
+  if (pickBesideTag(elementFields.skillProficiencies, line))
+    elementFields.skillProficiencies = line;
   for (const fields of [elementFields, traitFields, bulletFields]) {
     for (const [k, v] of Object.entries(fields)) background[k] ??= v;
   }
