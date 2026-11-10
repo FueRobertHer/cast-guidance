@@ -445,6 +445,37 @@ describe('openClass', () => {
     expect(Object.keys(back.changed)).toEqual([theirs.ref]);
   });
 
+  it("writes the player's own features whole, in another of their books too", () => {
+    const { registry, cls } = book();
+    const lantern = loaded(registry, save(registry, cls, edits(registry, cls)));
+    const theirs = nodeOf(registry, lantern, 'Lantern Flurry');
+    const arts = nodeOf(registry, lantern, 'Martial Arts');
+    const draft = openClass(structuredClone(lantern), { original: lantern, registry });
+    Object.assign(draft, { name: 'Lantern B' });
+    draft._features = {
+      ...editsOf(draft),
+      changed: {
+        [theirs.ref]: { ...theirs.base, entries: ['Four.'] },
+        [arts.ref]: { ...arts.base, entries: ['Lanterns.'] },
+      },
+    };
+    const b = writeClass({
+      original: lantern,
+      copied: lantern,
+      draft,
+      source: 'OtherBook',
+      mode: 'changes',
+      registry,
+    });
+    // A later Lantern of the same name in MyHomebrew would make a copy of it ambiguous.
+    expect(b.owned.find((f) => f.name === 'Lantern Flurry')?._copy).toBeUndefined();
+    // The book's own Martial Arts is found by its name and book alone.
+    expect(b.owned.find((f) => f.name === 'Martial Arts')?._copy).toMatchObject({
+      name: 'Martial Arts',
+      source: 'XPHB',
+    });
+  });
+
   it('keeps what a feature holds in it when a full copy opens without its original', () => {
     const { registry, cls } = book();
     const written = save(registry, cls, edits(registry, cls), 'full');
@@ -682,6 +713,26 @@ describe('the class editor on screen', () => {
       ),
     );
   };
+
+  it("names the class whose subclasses a copy of the player's own class offers", async () => {
+    const { registry, cls } = book();
+    mount(registry, cls);
+    fireEvent.click(screen.getByRole('button', { name: 'Subclasses' }));
+    expect(
+      await screen.findByText(
+        "Monk's own subclasses stay with it, and a character of this class can take them too.",
+      ),
+    ).toBeTruthy();
+    cleanup();
+    const lantern = loaded(registry, save(registry, cls, edits3(registry, cls)));
+    mount(registry, lantern);
+    fireEvent.click(screen.getByRole('button', { name: 'Subclasses' }));
+    expect(
+      await screen.findByText(
+        "Lantern's own subclasses stay with it. A character of this class can take Monk's, the class Lantern was made from.",
+      ),
+    ).toBeTruthy();
+  });
 
   it('opens on the table, a row per level, and removes a holder with what it holds', async () => {
     const { registry, cls } = book();

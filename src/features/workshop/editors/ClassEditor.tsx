@@ -16,8 +16,9 @@
  * - a changed one is the player's own entry, `_copy` of the original with its
  *   changes and a `basedOn` of its own, or whole where the original's name and
  *   book do not find it alone (every class has an Ability Score Improvement),
- *   or where the original is in the player's own book (a class started from
- *   one of theirs), which the copy would share;
+ *   or where the original is the player's own (a class started from one of
+ *   theirs): their books gain entries, so a name and book that find one
+ *   feature today can find two later;
  * - a feature whose text holds one that was changed or removed is written too,
  *   its refs pointed at the feature now (or taken out), so what it holds stays
  *   in it: the sheet reads a held feature with the others it holds, an
@@ -119,6 +120,12 @@ function isAt(f: Json, raw: string): boolean {
     f.level === r.level &&
     (r.featureSource === undefined || eq(f.source, r.featureSource))
   );
+}
+
+/** Whether a feature is the data's own, not a homebrew file's (homebrew merges after it). */
+function isOfficialIn(registry: EntityRegistry, f: Json): boolean {
+  const at = registry.byType(FEATURE).indexOf(f as never);
+  return at !== -1 && at < registry.officialCount(FEATURE);
 }
 
 function findFeature(registry: EntityRegistry, raw: string): Json | undefined {
@@ -715,6 +722,7 @@ export function writeClass(at: WriteContext): Written {
     return t;
   };
   const written = (n: FeatureNode) => n.entity !== undefined && !removed.has(n.ref) && isTouched(n);
+  const isOfficial = (f: Json) => isOfficialIn(registry, f);
 
   // The ref each feature Save writes is found by, worked out first so the one
   // holding it can point there. A name kept as it was keeps the book's spelling.
@@ -759,9 +767,8 @@ export function writeClass(at: WriteContext): Written {
     // A copy is found by name and book alone; where two features share them
     // (every class's Ability Score Improvement), it could find the other, so
     // this one is written out whole, as is one the data holds as a copy, and
-    // one in the player's own book, which this one would share it with.
-    const alone =
-      registry.get(FEATURE, String(e.name), String(e.source)) === e && !eq(e.source, source);
+    // one of the player's own, whose books can gain another of that name.
+    const alone = registry.get(FEATURE, String(e.name), String(e.source)) === e && isOfficial(e);
     const f = writeEntry({
       original: e,
       draft: { ...now, entries: heldText(n, now), ...place(n.level) },
@@ -1382,6 +1389,9 @@ function ClassBody(props: EditorProps) {
     [original, registry],
   );
   const isCopy = original !== undefined || isRecord(own(draft, '_copy'));
+  // The class Save names as the one this copies, whose subclasses the sheet
+  // offers: the official one a class of the player's own was made from.
+  const ancestor = original === undefined ? undefined : basedOnKey(original).split('|')[0];
   const [tab, setTab] = useState<Tab>(isCopy ? 'table' : 'basics');
   const [changing, setChanging] = useState<ReadonlySet<string>>(() => new Set());
   if (original === undefined && isRecord(own(draft, '_copy'))) {
@@ -1660,8 +1670,9 @@ function ClassBody(props: EditorProps) {
             {original !== undefined && (
               <p className="flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption">
                 <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
-                {String(original.name)}'s own subclasses stay with it, and a character of this class
-                can take them too.
+                {ancestor === undefined || eq(ancestor, original.name)
+                  ? `${String(original.name)}'s own subclasses stay with it, and a character of this class can take them too.`
+                  : `${String(original.name)}'s own subclasses stay with it. A character of this class can take ${ancestor}'s, the class ${String(original.name)} was made from.`}
               </p>
             )}
           </Section>
