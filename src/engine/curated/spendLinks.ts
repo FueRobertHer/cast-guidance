@@ -34,8 +34,13 @@ interface SpendRow {
 
 /** What a buy-back needs beyond its price, when the sheet does not line up by name. */
 interface Restores {
-  /** The key of the use, when it does not share the action's name (a granted spell's). */
-  own?: string;
+  /**
+   * The use, when it does not share the action's name: a spell the feature's
+   * own subclass or class grants, by the name its pool is keyed by
+   * (`additionalSpells`). The key is built from the subclass the sheet walks,
+   * so a renamed copy of the subclass finds its own pool.
+   */
+  ownSpell?: string;
   /** The action to hang it on, when that is another feature's. */
   onAction?: string;
   /** Its uses, when the feature has no row counting them. Labelled with the feature's name. */
@@ -341,10 +346,8 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
     'bulwark of force|psi warrior|tce': restore(1),
     'bulwark of force|psi warrior|xphb': restore(1),
     // The chip is the bonus attack, and the use is the granted spell's.
-    'telekinetic master|psi warrior|tce': restore(1, { own: 'spell:psi warrior|tce:telekinesis' }),
-    'telekinetic master|psi warrior|xphb': restore(1, {
-      own: 'spell:psi warrior|xphb:telekinesis',
-    }),
+    'telekinetic master|psi warrior|tce': restore(1, { ownSpell: 'telekinesis' }),
+    'telekinetic master|psi warrior|xphb': restore(1, { ownSpell: 'telekinesis' }),
   }),
   ...pool('soulknife-dice', {
     'psi-bolstered knack|soulknife|tce': rider(),
@@ -468,11 +471,13 @@ function linkBuyBack(
   col: Collector,
   resource: string,
   amount: number,
-  { own, onAction, uses }: Restores,
+  { ownSpell, onAction, uses }: Restores,
   label: string,
   origin: EffectOrigin,
 ): void {
   if (uses !== undefined) col.add({ kind: 'resource', label, ...uses, origin });
+  // Keyed as `additionalSpells` keys a granted spell's pool: by the origin's uid.
+  const own = ownSpell !== undefined ? `spell:${origin.uid}:${ownSpell}` : undefined;
   const buyBack: ActionBuyBack = { resource, amount, ...(own !== undefined ? { own } : {}) };
   const target = col.effects.find(
     (e) =>

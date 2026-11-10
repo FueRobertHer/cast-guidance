@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '@/data5e/normalize';
 import { readStored } from '../copyWriter';
-import type { Json } from '../editorTypes';
+import { EDITORS, type Json } from '../editorTypes';
 import {
   editor,
   editsOf,
@@ -127,6 +127,14 @@ const features = (registry: EntityRegistry, refs: unknown) =>
       );
     return [name, f?.entries];
   });
+
+describe('the Workshop', () => {
+  it('finds this editor for subclasses', async () => {
+    const load = EDITORS.get('subclass');
+    expect(load).toBeDefined();
+    expect((await load?.())?.editor).toBe(editor);
+  });
+});
 
 describe('featureTree', () => {
   it('lists each feature once, with those its text holds under it', () => {

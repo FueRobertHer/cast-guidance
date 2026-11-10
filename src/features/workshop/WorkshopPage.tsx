@@ -256,6 +256,17 @@ function resolve(
   };
 }
 
+/**
+ * The draft an editor opens on, for one whose entry gathers others (a
+ * subclass's features, entries of their own): its `open` works out what the
+ * player did to them. Every other editor opens on the entry as it is.
+ */
+function opened(r: Resolved, spec: EditorSpec, registry: EntityRegistry): Resolved {
+  if (r.state !== 'ready' || spec.open === undefined) return r;
+  const { draft, original } = r.subject;
+  return { ...r, subject: { ...r.subject, draft: spec.open(draft, { original, registry }) } };
+}
+
 function Editor({
   type,
   spec,
@@ -303,6 +314,7 @@ function Editor({
     if (original === undefined) return 'Saved to your homebrew file on this device.';
     const of = String(original.name);
     if (mode === 'full') return `A full copy of ${of}, readable without ${of} in the data.`;
+    if (spec.summary !== undefined) return spec.summary(draft, original, registry);
     const n = changeCount(original, draft);
     return n === 0
       ? `No changes from ${of} yet. You can save it as it is.`
@@ -317,10 +329,23 @@ function Editor({
       // A full copy reopened keeps the mark of the original it was made from.
       const base = mode === 'full' && subject.mode === 'full' ? undefined : original;
       const source = at.stored?.source ?? WORKSHOP_SOURCE;
-      const entry = writeEntry({ original: base, draft, source, mode }) as Json & EntryKey;
+      // An entry that owns others (a subclass's features) is written by its
+      // editor, and saved with them in one write.
+      const written = spec.write?.({
+        original: base,
+        copied: original,
+        draft,
+        source,
+        mode,
+        registry,
+        stored: at.stored,
+      });
+      const entry =
+        written?.entry ?? (writeEntry({ original: base, draft, source, mode }) as Json & EntryKey);
       const saved = await homebrewRepo.saveEntry(type, entry, {
         fileId: at.fileId,
         replaces: at.stored,
+        ...(written !== undefined ? { owned: written.owned } : {}),
       });
       invalidateRegistry();
       if (saved.created) {
@@ -516,7 +541,11 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       ? { state: 'ready', subject: current.subject }
       : loading || spec === undefined || reg.registry === null || owned === undefined
         ? { state: 'loading' }
-        : resolve(action, type, uid, spec, reg.registry, entriesOf(owned.files));
+        : opened(
+            resolve(action, type, uid, spec, reg.registry, entriesOf(owned.files)),
+            spec,
+            reg.registry,
+          );
 
   usePageTitle(resolved.state === 'gone' ? 'Not found' : null, 'Workshop');
 
