@@ -107,6 +107,25 @@ describe('subclassOptions', () => {
     ]);
   });
 
+  it("offers a Workshop copy of a class its original's subclasses beside its own", () => {
+    const reg = fighterRegistry();
+    const own: Entity = {
+      name: 'Lantern Order',
+      source: 'HB',
+      className: 'Warden',
+      classSource: 'HB',
+    };
+    const all = [...reg.byType('subclass'), own];
+    const warden = { name: 'Warden', source: 'HB' };
+    expect(names(subclassOptions(all, warden, '2024', undefined, fighterXphb))).toEqual([
+      'Arcane Archer|XGE',
+      'Champion|XPHB',
+      'Lantern Order|HB',
+    ]);
+    // Without the original named, only its own.
+    expect(names(subclassOptions(all, warden, '2024'))).toEqual(['Lantern Order|HB']);
+  });
+
   it('does not throw on rows whose fields are not text', () => {
     const odd: Entity[] = [
       { name: 'Odd', source: 'HB', className: 42, classSource: null, reprintedAs: 'x' },

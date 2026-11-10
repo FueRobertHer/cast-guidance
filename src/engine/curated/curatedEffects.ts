@@ -8,6 +8,7 @@
  */
 import { countedSpells, parseSpellRef } from '../effects/additionalSpells';
 import { asEntityArray, type Collector } from '../effects/base';
+import { basedOn } from '../effects/mechanics';
 import {
   LANGUAGE_OPTIONS,
   markKnownLanguages,
@@ -224,16 +225,20 @@ const skillPick =
     featureSkillPick(col, origin, count, from);
 
 /**
- * The character's class of this name, or else the class reskinning it (a Warrior
- * for "Fighter"), whose features are that class's and read its level as theirs.
+ * The character's class of this name, or else the class reskinning or copying
+ * it (a Warrior for "Fighter", a Workshop copy of the Fighter), whose features
+ * are that class's and read its level as theirs.
  */
 function classEntry(col: Collector, className: string) {
   const name = className.toLowerCase();
   return (
     col.doc.classes.find((c) => c.ref.name.toLowerCase() === name) ??
-    col.doc.classes.find(
-      (c) => reskinOf(col.ctx.get('class', c.ref.name, c.ref.source))?.name.toLowerCase() === name,
-    )
+    col.doc.classes.find((c) => {
+      // Both count, not the first found: a copy of the Demon Hunter is a Demon
+      // Hunter, for the rows written under that name, and the Ranger it reskins.
+      const cls = col.ctx.get('class', c.ref.name, c.ref.source);
+      return [reskinOf(cls), basedOn(cls)].some((r) => r?.name.toLowerCase() === name);
+    })
   );
 }
 

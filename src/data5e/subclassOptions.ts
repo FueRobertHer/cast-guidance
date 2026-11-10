@@ -9,7 +9,9 @@ interface Ref {
 /**
  * The subclasses a picker offers for one class: that class's subclasses,
  * deduped for the rules version, with the character's current pick kept
- * whatever its edition (GAME-009).
+ * whatever its edition (GAME-009). A class copied in the Workshop (`copied`,
+ * its `castGuidance.basedOn`) also offers its original's: their features name
+ * that class, and the sheet finds a subclass by its own name and book.
  *
  * 5etools copies each legacy subclass onto the 2024 class (classSource XPHB),
  * and the copy keeps the original's `reprintedAs` through `_preserve`, so the
@@ -22,14 +24,14 @@ export function subclassOptions(
   classRef: Ref,
   version: RulesVersion,
   held?: Ref,
+  copied?: Ref,
 ): Entity[] {
-  const className = classRef.name.toLowerCase();
-  const classSource = classRef.source.toLowerCase();
-  const list = all.filter(
-    (s) =>
-      String(s.className).toLowerCase() === className &&
-      String(s.classSource).toLowerCase() === classSource,
-  );
+  const of = (r: Ref) => (s: Entity) =>
+    String(s.className).toLowerCase() === r.name.toLowerCase() &&
+    String(s.classSource).toLowerCase() === r.source.toLowerCase();
+  const own = of(classRef);
+  const original = copied === undefined ? () => false : of(copied);
+  const list = all.filter((s) => own(s) || original(s));
   // Within one class's list, name|source is unique, so it names the pick.
   const heldUid = held === undefined ? undefined : `${held.name}|${held.source}`.toLowerCase();
   return filterByRulesVersion(list, version, {
