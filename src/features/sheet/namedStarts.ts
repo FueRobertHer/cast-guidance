@@ -1,9 +1,12 @@
 /**
  * Where the named effects come into play on the sheet (the buffs canvas, "How
- * a buff gets on"): Rage and Innate Sorcery from their own Use, Bless from
- * casting it, and the starter list under + Effect. The effects themselves are
+ * a buff gets on"): Rage and Innate Sorcery from their own Use, Reckless Attack
+ * declared in the roll prompt, Bless from casting it, and the starter list
+ * under + Effect. The effects themselves are
  * built in `engine/curated/namedEffects.ts`.
  */
+
+import type { D20Test } from '@/engine/conditions';
 import {
   type BardicDie,
   bardicEffect,
@@ -12,8 +15,12 @@ import {
   innateSorceryEffect,
   rageEffect,
   rageHeavyArmor,
+  recklessAttackCost,
+  recklessAttackEffect,
+  recklessAttackOn,
 } from '@/engine/curated/namedEffects';
 import { applyEffect, type HpLimits } from '@/engine/effectLife';
+import { filterReaches } from '@/engine/playRules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
 import { randomId } from '@/lib/randomId';
 import type { DocUpdater } from '@/stores/characterSession';
@@ -68,6 +75,45 @@ export function namedStart(
     return { name: 'Innate Sorcery', build: innateSorceryEffect, endsConcentration: false };
   }
   return undefined;
+}
+
+/** What the roll prompt offers to declare for the turn: its name, mode, cost and effect. */
+export interface TurnStart {
+  name: string;
+  mode: 'adv';
+  cost: string;
+  build: (id: string) => ActiveEffect;
+}
+
+/**
+ * Reckless Attack as the roll prompt offers it (the rolls canvas, phase 2):
+ * to a character with the feature (`hasFeature`), on the first attack of
+ * their turn (no action spent yet) that it reaches, in their Barbarian
+ * class's printing. Once it is in play it reaches the turn's later attacks
+ * itself, so it is not offered again until it ends.
+ */
+export function recklessStart(
+  doc: CharacterDoc,
+  hasFeature: boolean,
+  inPlay: readonly ActiveEffect[],
+  test: D20Test,
+): TurnStart | undefined {
+  if (!hasFeature || doc.play.turn?.action === true) return undefined;
+  if (inPlay.some((e) => answersTo(e, 'Reckless Attack'))) return undefined;
+  const barbarian = classOf(doc, 'barbarian');
+  const edition =
+    barbarian === undefined
+      ? doc.rulesVersion
+      : lower(barbarian.ref.source) === 'xphb'
+        ? '2024'
+        : '2014';
+  if (!filterReaches(recklessAttackOn(edition), test)) return undefined;
+  return {
+    name: 'Reckless Attack',
+    mode: 'adv',
+    cost: recklessAttackCost(edition),
+    build: (id) => recklessAttackEffect(id, edition),
+  };
 }
 
 /**

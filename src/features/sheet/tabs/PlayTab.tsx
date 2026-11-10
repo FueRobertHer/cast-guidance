@@ -91,6 +91,7 @@ import {
   noteLines,
   rollD20Test,
   rollWear,
+  type TurnExtra,
   useIgnoreOnce,
 } from '../d20Tests';
 import {
@@ -108,7 +109,13 @@ import {
   saveDcRaisedBy,
 } from '../effectsInPlay';
 import { type HpMode, HpSheet } from '../HpSheet';
-import { answersTo, castGrantedAsking, castSpellAsking, namedStart } from '../namedStarts';
+import {
+  answersTo,
+  castGrantedAsking,
+  castSpellAsking,
+  namedStart,
+  recklessStart,
+} from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
@@ -482,8 +489,23 @@ export function Component() {
       ? 19
       : 20;
   /**
+   * What the roll prompt offers to declare for the turn on this attack:
+   * Reckless Attack on a barbarian's first, put in play as the roll lands.
+   */
+  const turnExtras = (test: D20Test): TurnExtra[] => {
+    const start = recklessStart(doc, capabilities.has('reckless attack'), inPlay, test);
+    if (start === undefined) return [];
+    const declare = () =>
+      update(
+        (d) => void applyEffect(d.play, start.build(randomId()), hpNow),
+        `Declared ${start.name}`,
+      );
+    return [{ source: start.name, mode: start.mode, cost: start.cost, declare }];
+  };
+  /**
    * A d20 test in the attack group: the weapon and spell attack chips, with
-   * what the effects in play bring to that attack (Bless, Bardic Inspiration).
+   * what the effects in play bring to that attack (Bless, Bardic Inspiration)
+   * and what may be declared for the turn on it (Reckless Attack).
    * It is marked as the attack `of` (a weapon's or a spell's name) and whether
    * it crit, inside the character's crit range: the damage that goes with it
    * (`attackDamage`) reads that to roll its dice twice.
@@ -495,6 +517,7 @@ export function Component() {
       ignored: ignore.take('attack', attackEffects),
       riders: rollEffects(sheet, test),
       settlesOnNatural: true,
+      thisTurn: turnExtras(test),
       attack: {
         by: doc.id,
         of,

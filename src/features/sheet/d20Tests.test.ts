@@ -22,6 +22,7 @@ import {
   rollD20Test,
   rollWear,
   saveEffectLines,
+  type TurnExtra,
   useIgnoreOnce,
 } from './d20Tests';
 
@@ -535,6 +536,70 @@ describe('rollD20Test with effects in play', () => {
       riders: riders({ advantage: ['Innate Sorcery'] }),
     });
     expect(both.meta?.cue).toBe('Advantage and disadvantage cancel: Innate Sorcery, Poisoned');
+  });
+
+  describe('something declared for the turn (Reckless Attack)', () => {
+    const reckless = (declare = () => {}): TurnExtra => ({
+      source: 'Reckless Attack',
+      mode: 'adv',
+      cost: 'Attack rolls against you have advantage until your next turn',
+      declare,
+    });
+    const swing = (more: Partial<Parameters<typeof d20Ask>[1]> = {}) =>
+      d20Ask('1d20+5', { label: 'Greataxe attack', thisTurn: [reckless()], ...more });
+
+    it('counts its advantage only once declared, in the preset and the cue', () => {
+      const ask = swing();
+      expect(ask.thisTurn.map((t) => t.source)).toEqual(['Reckless Attack']);
+      expect(ask.preset).toBe('normal');
+      expect(ask.presetFor()).toBe('normal');
+      expect(ask.cueFor('normal')).toBe('');
+      const declared = { declared: [true] };
+      expect(ask.presetFor(declared)).toBe('adv');
+      expect(ask.cueFor('adv', declared)).toBe('Advantage: Reckless Attack');
+      expect(ask.cueFor('normal', declared)).toBe(
+        'Advantage set aside for this roll: Reckless Attack',
+      );
+      expect(ask.formula(declared)).toBe('d20 +5, advantage');
+    });
+
+    it('rolls under it when declared, naming it on the result', () => {
+      nextFaces(6, 17);
+      const r = swing().roll({ declared: [true] });
+      expect(r.total).toBe(22);
+      expect(r.meta).toMatchObject({ advantage: 'adv', cue: 'Advantage: Reckless Attack' });
+      nextFaces(6);
+      expect(swing().roll().total).toBe(11);
+    });
+
+    it("cancels a condition's disadvantage, as any advantage does", () => {
+      const ask = swing({
+        effects: effects([{ id: 'Poisoned' }], '2014', { kind: 'attack' }),
+      });
+      expect(ask.preset).toBe('dis');
+      const declared = { declared: [true] };
+      expect(ask.presetFor(declared)).toBe('normal');
+      expect(ask.cueFor('normal', declared)).toBe(
+        'Advantage and disadvantage cancel: Reckless Attack, Poisoned',
+      );
+    });
+
+    it("reads the dock's mode as it was when the prompt opened, declared or not", () => {
+      const ask = swing();
+      advModeStore.getState().set('dis');
+      expect(ask.presetFor()).toBe('normal');
+      expect(ask.presetFor({ declared: [true] })).toBe('adv');
+      expect(ask.cueFor('adv', { declared: [true] })).toBe('Advantage: Reckless Attack');
+    });
+
+    it('puts nothing in play itself: the prompt declares it as the roll lands', () => {
+      const declare = vi.fn();
+      nextFaces(6, 17);
+      d20Ask('1d20+5', { label: 'Greataxe attack', thisTurn: [reckless(declare)] }).roll({
+        declared: [true],
+      });
+      expect(declare).not.toHaveBeenCalled();
+    });
   });
 });
 

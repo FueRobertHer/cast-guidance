@@ -152,6 +152,22 @@ export interface D20Choice {
    * added in the prompt is not offered after the roll either.
    */
   dropUnnamed?: boolean;
+  /** Per `thisTurn`: true declares it for the turn. */
+  declared?: readonly boolean[];
+}
+
+/**
+ * What the roll prompt offers to declare for the rest of the turn (Reckless
+ * Attack, on the turn's first attack). Declared, its mode counts on this roll
+ * as an effect's does and its cost is said by Roll; as the roll lands,
+ * `declare` puts it in play, where it reaches the turn's later rolls itself.
+ */
+export interface TurnExtra {
+  source: string;
+  mode: 'adv' | 'dis';
+  /** What declaring it costs, in words. */
+  cost: string;
+  declare: () => void;
 }
 
 /**
@@ -167,14 +183,21 @@ export interface D20Ask {
   rollsIn: ReadonlyArray<{ dice: string; source: string }>;
   /** One-use dice the prompt offers before the roll (2014 Guidance and Bardic Inspiration). */
   once: readonly RollOffer[];
+  /** What the prompt offers to declare for the turn (Reckless Attack). */
+  thisTurn: readonly TurnExtra[];
   /** An attack, which a natural 1 or 20 settles. */
   attack: boolean;
   /** A condition makes it fail whatever the d20 shows. */
   autoFail: boolean;
   /** Conditions reach it and are not ignored: a mode other than the preset sets them aside. */
   conditions: boolean;
-  /** What the roll will carry as its cue in this mode, '' when nothing: the prompt's why line. */
-  cueFor(mode: RollMode): string;
+  /** The mode the sheet sets with what `choice` declares counted: `preset` when it declares nothing. */
+  presetFor(choice?: D20Choice): RollMode;
+  /**
+   * What the roll will carry as its cue in this mode, with what `choice`
+   * declares, '' when nothing: the prompt's why line.
+   */
+  cueFor(mode: RollMode, choice?: D20Choice): string;
   /** The roll in words before it is made: "d20 +7 + d4 Bless, disadvantage". */
   formula(choice?: D20Choice): string;
   roll(choice?: D20Choice): RollResult;
@@ -224,6 +247,10 @@ function chosenCue(mode: RollMode, preset: RollMode, e: D20Effects): string {
  * change: an automatic failure, or a natural 1 or 20 on a roll the natural
  * settles (`settlesOnNatural`: attacks and death saves), or an attack's crit.
  *
+ * `thisTurn` is what the prompt offers to declare for the turn (Reckless
+ * Attack): declared, its advantage counts as an effect's does, so the preset
+ * and the cue follow it (`presetFor`), and it goes in play as the roll lands.
+ *
  * `attack` marks an attack roll with whose it is and whether it crit (the kept
  * d20 at `critFrom` or above), which the damage that goes with it reads.
  */
@@ -237,6 +264,7 @@ export function d20Ask(
     riders,
     settlesOnNatural = false,
     attack,
+    thisTurn = [],
   }: {
     label: string;
     effects?: D20Effects;
@@ -244,6 +272,7 @@ export function d20Ask(
     advantageFrom?: readonly string[];
     riders?: RollEffects;
     settlesOnNatural?: boolean;
+    thisTurn?: readonly TurnExtra[];
     /**
      * An attack roll: the character's id, the attack's name, and the lowest
      * natural that crits (20 unless an effect lowers it).
@@ -258,19 +287,38 @@ export function d20Ask(
     advantage: [...kept.advantage, ...advantageFrom, ...(riders?.advantage ?? [])],
     disadvantage: [...kept.disadvantage, ...(riders?.disadvantage ?? [])],
   };
-  const resolution = resolveD20(currentAdvantage(), used);
+  // Read once, as the prompt opens: the dock can change while it waits.
+  const dock = currentAdvantage();
+  const resolution = resolveD20(dock, used);
   const preset: RollMode = resolution.advantage ?? 'normal';
+  /** The effects and how they resolve with what `choice` declares for the turn counted. */
+  const under = (choice: D20Choice | undefined) => {
+    const declared = thisTurn.filter((_, i) => choice?.declared?.[i] === true);
+    if (declared.length === 0) return { used, resolution };
+    const sources = (mode: TurnExtra['mode']) =>
+      declared.filter((d) => d.mode === mode).map((d) => d.source);
+    const withDeclared = {
+      ...used,
+      advantage: [...used.advantage, ...sources('adv')],
+      disadvantage: [...used.disadvantage, ...sources('dis')],
+    };
+    return { used: withDeclared, resolution: resolveD20(dock, withDeclared) };
+  };
+  const presetFor = (choice?: D20Choice): RollMode =>
+    under(choice).resolution.advantage ?? 'normal';
   const rollsIn = riders?.dice ?? [];
   const offers = riders?.offers ?? [];
   // Offered before the roll: only an automatic failure, which the cue says, asks nothing.
   const once = resolution.autoFail ? [] : offers.filter(namedFirst);
   const ignoredWords = ignored && conditionsApply ? 'Conditions ignored for this roll' : '';
-  const cueFor = (mode: RollMode) => {
+  const cueFor = (mode: RollMode, choice?: D20Choice) => {
+    const now = under(choice);
+    const set = now.resolution.advantage ?? 'normal';
     const parts = [ignoredWords];
-    if (mode === preset) parts.push(rollCue(used, resolution));
+    if (mode === set) parts.push(rollCue(now.used, now.resolution));
     else {
       if (resolution.autoFail) parts.push(`Fails automatically: ${names(used.autoFail)}`);
-      parts.push(chosenCue(mode, preset, used));
+      parts.push(chosenCue(mode, set, now.used));
       if (used.penalty !== undefined) {
         parts.push(`${minus(used.penalty.amount)}: ${used.penalty.source}`);
       }
@@ -289,12 +337,14 @@ export function d20Ask(
     preset,
     rollsIn,
     once,
+    thisTurn,
     attack: settlesOnNatural,
     autoFail: resolution.autoFail,
     conditions: conditionsApply && !ignored,
+    presetFor,
     cueFor,
     formula: (choice) => {
-      const mode = choice?.mode ?? preset;
+      const mode = choice?.mode ?? presetFor(choice);
       const dice = diceFor(choice)
         .map((d) => ` + ${dieWord(d.dice)} ${d.source}`)
         .join('');
@@ -303,7 +353,7 @@ export function d20Ask(
       return `d20${modifier === '' ? '' : ` ${modifier}`}${dice}${penalty}${words}`;
     },
     roll: (choice) => {
-      const mode = choice?.mode ?? preset;
+      const mode = choice?.mode ?? presetFor(choice);
       const advantage = mode === 'normal' ? undefined : mode;
       // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
       const dice = diceFor(choice);
@@ -330,7 +380,7 @@ export function d20Ask(
         : offers.filter(
             (o) => !named.includes(o) && !(choice?.dropUnnamed === true && namedFirst(o)),
           );
-      const cue = cueFor(mode);
+      const cue = cueFor(mode, choice);
       if (cue === '' && from.length === 0 && after.length === 0 && attack === undefined) {
         return result;
       }

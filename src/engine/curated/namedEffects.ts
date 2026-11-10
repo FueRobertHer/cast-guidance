@@ -1,13 +1,14 @@
 /**
  * The named effects the sheet puts in play itself (the buffs canvas, "How a
- * buff gets on"): Rage and Innate Sorcery from their own Use, and the starter
+ * buff gets on"): Rage and Innate Sorcery from their own Use, Reckless Attack
+ * declared in the roll prompt, and the starter
  * list under + Effect (Bless, Guidance, Bardic Inspiration). Each is built in
  * the character's rules version with its questions already answered (the
  * barbarian's level, the bard's die), as an effect in play is
  * stored: never a pointer into this table, so a later change here leaves the
  * effects already on a character as they were.
  */
-import type { ActiveEffect, EffectPart } from '../types';
+import type { ActiveEffect, EffectPart, RollFilter } from '../types';
 
 type Edition = '2014' | '2024';
 
@@ -58,6 +59,46 @@ export function rageEffect(id: string, level: number, edition: Edition): ActiveE
       ? { minutes: 10, endsWhen: 'incapacitated' as const }
       : { minutes: 1, endsWhen: 'unconscious' as const };
   return { id, name: 'Rage', parts, lasts, mine: true };
+}
+
+/**
+ * The attacks Reckless Attack gives advantage on. 2014: melee weapon attacks
+ * using Strength. 2024: any attack roll using Strength, a thrown weapon and an
+ * Unarmed Strike included.
+ */
+export function recklessAttackOn(edition: Edition): RollFilter {
+  return edition === '2024'
+    ? { rolls: ['attack'], abilities: ['str'] }
+    : { rolls: ['attack'], attack: 'weapon', range: 'melee', abilities: ['str'] };
+}
+
+/** What declaring Reckless Attack costs, in each printing's words. */
+export function recklessAttackCost(edition: Edition): string {
+  return edition === '2024'
+    ? 'Attack rolls against you have advantage until the start of your next turn'
+    : 'Attack rolls against you have advantage until your next turn';
+}
+
+/**
+ * Reckless Attack, declared on the first attack of a barbarian's turn (the
+ * rolls canvas, phase 2): advantage on the attacks it reaches, and its cost
+ * said, until the start of their next turn. 2014's advantage is for this turn
+ * only, while its cost lasts until the next, so the effect lasts as long as
+ * the cost and says that an attack on another's turn has none.
+ */
+export function recklessAttackEffect(id: string, edition: Edition): ActiveEffect {
+  const parts: EffectPart[] = [
+    { kind: 'rollAdvantage', mode: 'adv', on: recklessAttackOn(edition) },
+    { kind: 'cue', tone: 'warn', text: recklessAttackCost(edition) },
+  ];
+  if (edition === '2014') {
+    parts.push({
+      kind: 'cue',
+      tone: 'info',
+      text: 'The advantage is for your turn only, so none on an opportunity attack',
+    });
+  }
+  return { id, name: 'Reckless Attack', parts, turnsLeft: 1, mine: true };
 }
 
 /** 2024 Innate Sorcery: Sorcerer spells' save DC +1 and advantage on their attack rolls. */

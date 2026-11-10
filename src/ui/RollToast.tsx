@@ -15,6 +15,7 @@ import { announce } from '@/stores/announcer';
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import {
   cancelHeld,
+  declareHeld,
   followUpStore,
   type HeldRoll,
   heldRollStore,
@@ -611,8 +612,9 @@ const MODES = [
 ] as const;
 
 /**
- * One extra in the prompt: a die that rolls in (Bless) or a one-use die
- * (Guidance, Bardic Inspiration). On, it keeps the heal green of a raised
+ * One extra in the prompt: a die that rolls in (Bless), a one-use die
+ * (Guidance, Bardic Inspiration), or something declared for the turn with no
+ * die of its own (Reckless Attack). On, it keeps the heal green of a raised
  * number with a tick, so the mode's ink pill and Roll stay the loudest.
  */
 function Extra({
@@ -623,16 +625,17 @@ function Extra({
   onClick,
 }: {
   on: boolean;
-  dice: string;
+  dice?: string;
   source: string;
   when: string;
   onClick: () => void;
 }) {
+  const name = dice === undefined ? source : `+${dieWord(dice)} ${source}`;
   return (
     <button
       type="button"
       aria-pressed={on}
-      aria-label={`+${dieWord(dice)} ${source}, ${when}`}
+      aria-label={`${name}, ${when}`}
       onClick={onClick}
       className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
         on
@@ -645,7 +648,7 @@ function Extra({
       ) : (
         <ChevronsUp size={14} aria-hidden="true" className="shrink-0 text-heal" />
       )}
-      +{dieWord(dice)} {source}
+      {name}
       <span className="font-normal text-ink-muted">· {when}</span>
     </button>
   );
@@ -696,9 +699,11 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
  * The roll prompt (the rolls canvas, picked 2026-11-09): a d20 test waiting
  * before its d20 is rolled, in the toast's place above the thumb. The header
  * is the control that rolled; the mode is preset to what the sheet sets, with
- * why; the extras are the dice that roll in (on) and the one-use dice that may
- * be added first (off). One note sits by Roll: what the roll spends, else what
- * happens to the dice left, else that the control tapped again rolls too.
+ * why; the extras are the dice that roll in (on), the one-use dice that may
+ * be added first (off), and what may be declared for the turn (off: Reckless
+ * Attack, which moves the mode). One note sits by Roll: what a declaration
+ * costs and what the roll spends, else what happens to the dice left, else
+ * that the control tapped again rolls too.
  * Roll and Cancel, or Esc, send focus back to the control, when it was in here,
  * and the sheet scrolls that control clear of the prompt as it opens.
  */
@@ -712,14 +717,22 @@ function RollPrompt({
   const box = useRef<HTMLDivElement | null>(null);
   const dropUnnamed = useStore(rollOffersStore, (s) => s.before);
   const { ask } = held;
-  const choice = { mode: held.mode, rollsIn: held.rollsIn, named: held.named };
-  const why = ask.cueFor(held.mode);
-  const setAside = held.mode !== ask.preset && ask.conditions;
+  const choice = {
+    mode: held.mode,
+    rollsIn: held.rollsIn,
+    named: held.named,
+    declared: held.declared,
+  };
+  const why = ask.cueFor(held.mode, choice);
+  const setAside = held.mode !== ask.presetFor(choice) && ask.conditions;
   const named = ask.once.filter((_, i) => held.named[i] === true);
   const left = ask.once.length - named.length;
+  // What declaring costs comes first: it lasts past this roll.
+  const costs = ask.thisTurn.filter((_, i) => held.declared[i] === true).map((t) => `${t.cost}.`);
+  const spends = named.length > 0 ? `Spends ${andWords(named.map((o) => o.source))}.` : '';
   const note =
-    named.length > 0
-      ? `Spends ${andWords(named.map((o) => o.source))}.`
+    costs.length > 0 || spends !== ''
+      ? [...costs, spends].filter((s) => s !== '').join(' ')
       : left > 0
         ? dropUnnamed
           ? 'Dice you leave are gone once the d20 shows.'
@@ -804,7 +817,7 @@ function RollPrompt({
         block
       />
       {why !== '' && <p className="text-caption text-guide">{why}</p>}
-      {(ask.rollsIn.length > 0 || ask.once.length > 0) && (
+      {(ask.rollsIn.length > 0 || ask.once.length > 0 || ask.thisTurn.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {ask.rollsIn.map((d, i) => (
             <Extra
@@ -826,6 +839,16 @@ function RollPrompt({
               source={o.source}
               when="once"
               onClick={() => nameHeldDie(i)}
+            />
+          ))}
+          {ask.thisTurn.map((t, i) => (
+            <Extra
+              // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+              key={`turn${i}`}
+              on={held.declared[i] === true}
+              source={t.source}
+              when="this turn"
+              onClick={() => declareHeld(i)}
             />
           ))}
         </div>

@@ -219,6 +219,60 @@ describe('the roll prompt', () => {
   });
 });
 
+describe('Reckless Attack in the prompt', () => {
+  const swing = (declare: () => void) => () =>
+    d20Ask('1d20+7', {
+      label: 'Greataxe attack',
+      riders: riders({ offers: [bardic] }),
+      settlesOnNatural: true,
+      attack: { by: 'c1', of: 'Greataxe' },
+      thisTurn: [
+        {
+          source: 'Reckless Attack',
+          mode: 'adv',
+          cost: 'Attack rolls against you have advantage until your next turn',
+          declare,
+        },
+      ],
+    });
+
+  it('offers it for this turn; declared, it presets Adv with why and says its cost by Roll', () => {
+    const declare = vi.fn();
+    render(<RollToast />);
+    act(() => rollFrom(control('Greataxe'), swing(declare)));
+    const reckless = screen.getByRole('button', { name: 'Reckless Attack, this turn' });
+    expect(reckless.getAttribute('aria-pressed')).toBe('false');
+    expect(reckless.textContent).toBe('Reckless Attack· this turn');
+    expect(screen.getByRole('button', { name: 'Normal' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    fireEvent.click(reckless);
+    const group = prompt('Greataxe attack');
+    expect(reckless.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Advantage' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(group.textContent).toContain('Advantage: Reckless Attack');
+    expect(group.textContent).toContain('d20 +7, advantage');
+    expect(group.textContent).toContain(
+      'Attack rolls against you have advantage until your next turn.',
+    );
+    // With a one-use die added too, the note says both.
+    fireEvent.click(screen.getByRole('button', { name: '+d8 Bardic Inspiration, once' }));
+    expect(group.textContent).toContain(
+      'Attack rolls against you have advantage until your next turn. Spends Bardic Inspiration.',
+    );
+    expect(declare).not.toHaveBeenCalled();
+    nextFaces(6, 15, 3);
+    fireEvent.click(roll());
+    expect(declare).toHaveBeenCalledTimes(1);
+    expect(rollLogStore.getState().rolls[0]).toMatchObject({
+      total: 25,
+      meta: { advantage: 'adv', cue: 'Advantage: Reckless Attack' },
+    });
+  });
+});
+
 describe('damage tapped while the attack waits', () => {
   it('says it rolls with the attack, then shows both together and says both', () => {
     render(<RollToast />);
