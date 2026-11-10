@@ -8,10 +8,20 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { EntriesView } from '@/data5e/entries/renderEntries';
 import { useRegistry } from '@/data5e/hooks';
 import { pickForVersion } from '@/data5e/rulesVersion';
+import { conditionMechanics, isBuiltInCondition } from '@/engine/conditions';
 import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
 import {
   applyEffect,
@@ -472,13 +482,23 @@ export function ConditionStrip({
 
   // Condition/status rules text for the character's edition: Exhaustion in
   // particular reads very differently between 2014 and 2024.
-  const rules = (id: string): unknown => {
+  const rules = (id: string) => {
     if (registry === null) return undefined;
     const cands = [...registry.byType('condition'), ...registry.byType('status')].filter(
       (e) => String(e.name).toLowerCase() === id.toLowerCase(),
     );
-    return pickForVersion(cands, edition)?.entries;
+    return pickForVersion(cands, edition);
   };
+  // Homebrew conditions (H5), offered after the built-in ones, by name.
+  const homebrew = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const e of registry?.byType('condition') ?? []) {
+      const name = typeof e.name === 'string' ? e.name.trim() : '';
+      if (name !== '' && !isBuiltInCondition(name) && !names.has(name.toLowerCase()))
+        names.set(name.toLowerCase(), name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b));
+  }, [registry]);
 
   const exhaustion = (
     <ExhaustionStepper
@@ -506,7 +526,13 @@ export function ConditionStrip({
     if (gone) setInfoOpen(false);
   }, [gone]);
   const effect = shownCondition === null ? undefined : conditionEffect(shownCondition, edition);
-  const entries = shownCondition === null ? undefined : rules(shownCondition);
+  const rule = shownCondition === null ? undefined : rules(shownCondition);
+  const entries = rule?.entries;
+  // What a homebrew one does on the sheet, as derive counts it.
+  const brewParts =
+    shownCondition === null || isBuiltInCondition(shownCondition)
+      ? []
+      : conditionMechanics(rule).parts;
   // Exhaustion at 0 has no entry, and so nothing to switch.
   const shownEntry = conditions.find((c) => c.id === shownCondition);
   const shownHeld = shownEntry === undefined ? [] : immunityTo(shownEntry.id, immune);
@@ -702,6 +728,17 @@ export function ConditionStrip({
                         {effect}
                       </p>
                     )
+                  )}
+                  {brewParts.length > 0 && (
+                    <ul className="mb-3 flex flex-col gap-1 text-caption text-guide">
+                      {brewParts.map((p, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: the stored parts have no id, and their order is the entry's own
+                        <li key={i} className="flex gap-1">
+                          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                          {partLine(p)}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                   {shownEntry !== undefined &&
                     (shownHeld.length > 0 ? (
@@ -901,7 +938,7 @@ export function ConditionStrip({
                   )}
                   <h3 className="mb-1 text-caption text-ink-muted font-semibold">Conditions</h3>
                   <div className="-mx-1.5 flex flex-wrap">
-                    {CONDITIONS.map((c) => {
+                    {[...CONDITIONS, ...homebrew].map((c) => {
                       const by = immunityTo(c, immune);
                       const has = conditions.some((x) => x.id === c);
                       return (

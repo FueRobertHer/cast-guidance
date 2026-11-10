@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EntityRegistry } from '@/data5e/normalize';
 import { conditionMechanics, homebrewConditionEffects } from '@/engine/conditions';
 import { writeEntry } from '../copyWriter';
-import type { Json } from '../editorTypes';
+import { EDITORS, type Json } from '../editorTypes';
 import { editor } from './ConditionEditor';
 
 afterEach(cleanup);
@@ -115,6 +115,11 @@ describe('ConditionEditor', () => {
     const mine = { name: 'Dazed', source: 'Other', entries: [] };
     mount({ ...mine, name: 'Dazed Again' }, mine);
     expect(screen.queryByRole('button', { name: /^Add what/ })).toBeNull();
+  });
+
+  it('is the editor the Workshop finds for conditions', async () => {
+    const load = EDITORS.get('condition');
+    expect((await load?.())?.editor).toBe(editor);
   });
 
   it('refuses a built-in name, whatever its case', () => {
