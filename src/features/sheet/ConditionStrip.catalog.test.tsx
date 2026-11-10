@@ -60,7 +60,8 @@ const sheet = {
   grantedSpells: [],
 } as unknown as DerivedSheet;
 
-function renderStrip(setup: (d: CharacterDoc) => void = () => undefined) {
+/** The strip on a tab, by its route segment: Play unless said. */
+function renderStrip(setup: (d: CharacterDoc) => void = () => undefined, tab = '') {
   function Harness() {
     const [doc, setDoc] = useState(() => {
       const d = newCharacterDoc('c1', 'Hero', 't');
@@ -80,7 +81,7 @@ function renderStrip(setup: (d: CharacterDoc) => void = () => undefined) {
           Hero
         </h1>
         <output data-testid="play">{JSON.stringify(doc.play)}</output>
-        <ConditionStrip doc={doc} sheet={sheet} update={update} addable />
+        <ConditionStrip doc={doc} sheet={sheet} update={update} tab={tab} />
       </>
     );
   }
@@ -416,5 +417,113 @@ describe('the search under + Effect', () => {
     type(picker, 'rage');
     const list = await results(picker);
     expect(list.queryByRole('button', { name: /^Rage\b/ })).toBeNull();
+  });
+});
+
+describe('+ Effect on every tab, leading with that tab’s effects', () => {
+  /** The headings over the sheet's lists, in their order. */
+  const headings = (picker: ReturnType<typeof within>) =>
+    picker.getAllByRole('heading', { level: 3 }).map((h: HTMLElement) => h.textContent);
+  /** The names of the rows in the tab's own list. */
+  const rows = (list: HTMLElement) =>
+    within(list)
+      .getAllByRole('button')
+      .map((b) => b.querySelector('span')?.textContent);
+
+  it('on Items, lists the potions first, those carried first, then the starters and Conditions', async () => {
+    renderStrip((d) => {
+      d.equipment.push(
+        {
+          id: 'p1',
+          ref: { name: 'Potion of Speed', source: 'DMG' },
+          qty: 1,
+          equipped: false,
+          attuned: false,
+        },
+        { id: 'r1', custom: { name: 'Rope' }, qty: 1, equipped: false, attuned: false },
+      );
+    }, 'inventory');
+    const picker = await openPicker();
+    const list = await picker.findByRole('list', { name: 'Potions' });
+    expect(headings(picker)).toEqual(['Potions', 'Helping you', 'Conditions']);
+    expect(rows(list)).toEqual([
+      'Potion of Speed',
+      'Potion of Heroism',
+      'Potion of Giant Strength',
+    ]);
+    expect(within(list).getByText('Potion, carried. 1 minute.')).toBeTruthy();
+
+    // The rest are a tap away, and focus goes to the first of them.
+    fireEvent.click(picker.getByRole('button', { name: 'Show 6 more' }));
+    expect(rows(list)).toHaveLength(9);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(list).getByRole('button', { name: /^Potion of Resistance\b/ }),
+      ),
+    );
+    expect(picker.queryByRole('button', { name: /^Show \d+ more$/ })).toBeNull();
+
+    // Back from one it opened puts focus on its row, the list still whole.
+    fireEvent.click(within(list).getByRole('button', { name: /^Potion of Flying\b/ }));
+    const heading = picker.getByRole('heading', { name: 'Potion of Flying' });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    fireEvent.click(picker.getByRole('button', { name: 'All effects' }));
+    const back = await picker.findByRole('list', { name: 'Potions' });
+    expect(rows(back)).toHaveLength(9);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(back).getByRole('button', { name: /^Potion of Flying\b/ }),
+      ),
+    );
+  });
+
+  it('opens one from the list and lands it, then leads with what is left', async () => {
+    renderStrip(() => undefined, 'inventory');
+    const picker = await openPicker();
+    const list = await picker.findByRole('list', { name: 'Potions' });
+    fireEvent.click(within(list).getByRole('button', { name: /^Potion of Heroism\b/ }));
+    const heading = picker.getByRole('heading', { name: 'Potion of Heroism' });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    fireEvent.click(picker.getByRole('button', { name: 'Add to Hero' }));
+    expect(stored().map((e) => e.name)).toEqual(['Heroism potion']);
+    // Added, it starts over at the search, as from a search result.
+    const box = picker.getByRole('searchbox', { name: 'Search effects' });
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    // It is on now, so it is not offered again, and the next leads.
+    const again = await picker.findByRole('list', { name: 'Potions' });
+    expect(rows(again)[0]).toBe('Potion of Giant Strength');
+    expect(rows(again)).not.toContain('Potion of Heroism');
+  });
+
+  it('on Play, Stats, Spells and Features, leads with that tab’s kind, and search still finds every effect', async () => {
+    const lead: Array<[string, string, string]> = [
+      ['', 'For attacks and damage', 'Enlarge/Reduce, enlarged'],
+      ['stats', 'For checks and saves', 'Enhance Ability'],
+      ['spells', 'Spells cast on Hero', 'Shield of Faith'],
+      ['features', 'Features', 'Aura of Protection'],
+    ];
+    for (const [tab, title, first] of lead) {
+      renderStrip(() => undefined, tab);
+      const picker = await openPicker();
+      const list = await picker.findByRole('list', { name: title });
+      expect(rows(list)[0]).toBe(first);
+      expect(headings(picker)).toEqual([title, 'Helping you', 'Conditions']);
+      // A potion is no feature, but the search finds it on any tab.
+      type(picker, 'potion of speed');
+      expect(
+        (await results(picker)).getByRole('button', { name: /^Potion of Speed\b/ }),
+      ).toBeTruthy();
+      expect(picker.queryByRole('list', { name: title })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("lists a spell only its caster gets first on Spells, when it is the character's", async () => {
+    renderStrip((d) => {
+      d.spellcasting = { wizard: { known: [{ name: 'Shield', source: 'XPHB' }], prepared: [] } };
+    }, 'spells');
+    const picker = await openPicker();
+    const list = await picker.findByRole('list', { name: 'Spells cast on Hero' });
+    expect(rows(list)[0]).toBe('Shield');
   });
 });

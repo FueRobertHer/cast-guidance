@@ -106,7 +106,7 @@ describe('touch targets (A11Y-002)', () => {
     const none = (() => undefined) as unknown as DocUpdater;
     render(
       <>
-        <ConditionStrip doc={doc} sheet={null} update={none} addable />
+        <ConditionStrip doc={doc} sheet={null} update={none} tab="" />
         <ExhaustionStepper
           level={2}
           edition="2024"

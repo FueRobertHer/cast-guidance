@@ -59,7 +59,7 @@ function renderStrip(setup: (d: CharacterDoc) => void = () => undefined) {
           Hero
         </h1>
         <output data-testid="doc">{JSON.stringify(doc)}</output>
-        <ConditionStrip doc={doc} sheet={sheet} update={update} addable />
+        <ConditionStrip doc={doc} sheet={sheet} update={update} tab="" />
       </>
     );
   }

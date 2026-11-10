@@ -1,13 +1,15 @@
 /**
  * What + Effect finds when you search it (the buffs canvas, Catalog board):
  * the results for the words typed, and the one tapped, with the questions it
- * asks before it lands and what it will do on this character. It and the
- * table it reads load in a chunk of their own when the Effects sheet opens.
+ * asks before it lands and what it will do on this character. Before anything
+ * is typed, the effects of the tab it was opened on (the rolls and casting
+ * canvas, Effects C). It and the table it reads load in a chunk of their own
+ * when the Effects sheet opens.
  */
-import { ArrowLeft, Dices, PencilLine } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ChevronDown, Dices, PencilLine } from 'lucide-react';
+import { type Ref, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { roll } from '@/dice/roll';
-import { countsAs } from '@/engine/activeEffects';
+import { countsAs, namedEffect } from '@/engine/activeEffects';
 import {
   type Answers,
   asksShown,
@@ -21,7 +23,13 @@ import {
   unanswered,
 } from '@/engine/curated/effectCatalog';
 import { heldByMe } from '@/engine/effectLife';
-import type { ActiveEffect, CharacterDoc, DerivedSheet, KeptEffect } from '@/engine/types';
+import type {
+  ActiveEffect,
+  CharacterDoc,
+  DerivedSheet,
+  EffectPart,
+  KeptEffect,
+} from '@/engine/types';
 import { randomId } from '@/lib/randomId';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { Button } from '@/ui/Button';
@@ -32,10 +40,16 @@ import { keptEffects } from './describedEffect';
 import { EffectBuilder } from './EffectBuilder';
 import { Line, toneOf } from './effectLines';
 import { effectsInPlay, partLine, restLasts } from './effectsInPlay';
-import { namedStart } from './namedStarts';
+import { type NamedStart, namedStart, STARTERS } from './namedStarts';
 
 /** At most this many results show; typing more narrows the rest. */
 export const RESULTS_SHOWN = 6;
+
+/** A sheet tab whose + Effect leads with its own kind of effect. Build has none. */
+export type EffectTab = 'play' | 'stats' | 'spells' | 'items' | 'features';
+
+/** At most this many of a tab's own effects show at first, so Conditions stay near. */
+export const TAB_SHOWN = 3;
 
 /** How long typing rests before the count is said, as the Library's search waits. */
 const SEARCH_SETTLE_MS = 750;
@@ -133,6 +147,157 @@ export function keptEntry(k: KeptEffect, who: string): CatalogEntry {
   };
 }
 
+/** What a tab's own effects are called, over their list. */
+export function tabGroupTitle(tab: EffectTab, who: string): string {
+  switch (tab) {
+    case 'play':
+      return 'For attacks and damage';
+    case 'stats':
+      return 'For checks and saves';
+    case 'spells':
+      return `Spells cast on ${who}`;
+    case 'items':
+      return 'Potions';
+    case 'features':
+      return 'Features';
+  }
+}
+
+/** The answers an entry is looked at with before any is given: each question's own choice, else its first. */
+function firstAnswers(entry: CatalogEntry): Answers {
+  const out: Record<string, string> = {};
+  for (const q of entry.asks) {
+    if (q.kind === 'pick') {
+      const v = q.initial ?? q.options[0]?.value;
+      if (v !== undefined) out[q.key] = v;
+    } else if (q.kind === 'roll') out[q.key] = String(rollRange(q.dice).min);
+  }
+  return out;
+}
+
+/** The d20 rolls a part changes, when it changes some. */
+const rollsOf = (p: EffectPart): readonly string[] =>
+  p.kind === 'rollDie' || p.kind === 'rollOffer' || p.kind === 'rollAdvantage' ? p.on.rolls : [];
+
+/** A line on what helps that says what it helps with: "+1d6 damage when you hit your quarry". */
+const helpSays = (p: EffectPart, words: RegExp) =>
+  p.kind === 'cue' && p.tone === 'help' && words.test(p.text);
+
+const ATTACK_PARTS = new Set<EffectPart['kind']>([
+  'attackBonus',
+  'damageBonus',
+  'damageDie',
+  'critRange',
+  // Haste's action: one attack is among what it may be spent on.
+  'extraAction',
+]);
+const TEST_PARTS = new Set<EffectPart['kind']>([
+  'saveBonus',
+  'checkBonus',
+  'abilityMin',
+  'initiativeBonus',
+]);
+
+/** It changes an attack roll or its damage, or gives an action to attack with. */
+const forAttacks = (p: EffectPart) =>
+  ATTACK_PARTS.has(p.kind) || rollsOf(p).includes('attack') || helpSays(p, /\b(attack|damage)\b/i);
+
+/**
+ * It changes a check or a save, or the score they are made with. Its parts
+ * alone say so: a line's words name a save another makes too (Dragon's Breath).
+ */
+const forTests = (p: EffectPart) =>
+  TEST_PARTS.has(p.kind) || rollsOf(p).some((r) => r !== 'attack');
+
+/** The entry is of the tab's kind: by what it is, or by what its effect changes. */
+function belongs(tab: EffectTab, entry: CatalogEntry, effect: ActiveEffect): boolean {
+  switch (tab) {
+    case 'play':
+      return effect.parts.some(forAttacks);
+    case 'stats':
+      return effect.parts.some(forTests);
+    case 'spells':
+      return /^(spell|cantrip)\b/i.test(entry.what);
+    case 'items':
+      return entry.what === 'Potion';
+    case 'features':
+      return /\bfeature\b/i.test(entry.what);
+  }
+}
+
+/** The names an effect counts as: its own, the named effect it is, and each part's. */
+const namesOf = (e: ActiveEffect): string[] =>
+  [e.name, ...(e.same !== undefined ? [e.same] : []), ...e.parts.map((p) => namedEffect(e, p))].map(
+    lower,
+  );
+
+/** A name in its words, so "Potion of Hill Giant Strength" is seen to hold "Potion of Giant Strength". */
+const wordsOf = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[’'`]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w !== '');
+
+/** The character carries this potion: an item named with every word of its name ("Potion of Fire Resistance"). */
+export function carries(entry: CatalogEntry, carried: readonly string[]): boolean {
+  if (entry.what !== 'Potion') return false;
+  const need = wordsOf(entry.name);
+  return carried.some((name) => {
+    const has = new Set(wordsOf(name));
+    return need.every((w) => has.has(w));
+  });
+}
+
+/** What a tab's list reads of the character, beside the catalog. */
+export interface TabCharacter {
+  /** The effects on the character now: none of them, nor one of their names, is offered again. */
+  effects: readonly ActiveEffect[];
+  /** The spells the character has, by lowercase name: a spell on its caster only needs one. */
+  spells: ReadonlySet<string>;
+  /** The names of the items the character carries. */
+  carried: readonly string[];
+  /** What each of the character's own features starts (Rage), by lowercase name. */
+  starts: ReadonlyMap<string, NamedStart>;
+}
+
+/**
+ * The effects + Effect leads with on a tab, before anything is typed (the
+ * rolls and casting canvas, Effects C), read from what the catalog already
+ * says of each entry: what it is (a spell, a potion, a feature) and what its
+ * parts change (an attack or its damage, a check or a save). The character's
+ * own come first: their features, the spells only they can cast on themselves,
+ * the potions they carry. Left out: the starters (Bless, Guidance, Bardic
+ * Inspiration), whose chips follow in the same sheet; a spell only its caster
+ * gets, when the character lacks it; and anything on the character now, or of
+ * a name one on now counts as (a Potion of Speed while Hasted). Search still
+ * finds every one of them.
+ */
+export function tabEffects(
+  tab: EffectTab,
+  entries: readonly CatalogEntry[],
+  who: TabCharacter,
+): CatalogEntry[] {
+  const on = new Set(who.effects.flatMap(namesOf));
+  const starters = new Set(STARTERS.map((s) => lower(s.name)));
+  const kept = entries.filter((e) => {
+    const name = lower(e.name);
+    if (starters.has(name)) return false;
+    if (e.self === true && !who.spells.has(name)) return false;
+    // An own feature's catalog entry does nothing by itself: what it starts does.
+    const own = who.starts.get(name)?.build('');
+    // What it counts as before any answer is given: a choice with no likelier
+    // answer (a potion's damage type) names nothing yet, so an Acid potion on
+    // does not hide the Potion of Resistance, of which a Fire one still adds.
+    const as = own ?? landEntry(e, initialAnswers(e), '').effect;
+    if ([name, ...namesOf(as)].some((n) => on.has(n))) return false;
+    // What it does, each question answered with its first choice.
+    return belongs(tab, e, own ?? landEntry(e, firstAnswers(e), '').effect);
+  });
+  const mine = (e: CatalogEntry) => e.own === true || e.self === true || carries(e, who.carried);
+  return [...kept.filter(mine), ...kept.filter((e) => !mine(e))];
+}
+
 export interface EffectFinderProps {
   doc: CharacterDoc;
   sheet: DerivedSheet;
@@ -147,6 +312,13 @@ export interface EffectFinderProps {
   onDescribe: (name: string | null) => void;
   /** Takes a kept description off the character, by its id; its name is the one shown. */
   onForget: (id: string, name: string) => void;
+  /** The tab + Effect was opened on: with nothing typed, its own effects are listed. */
+  tab?: EffectTab;
+  /** The tab's whole list shows, not only its first few; kept while an entry is open. */
+  allShown?: boolean;
+  onShowAll?: () => void;
+  /** Takes, once, the entry the tab's list opened, so Back puts focus on its row again. */
+  takeReturn?: () => string | null;
 }
 
 export default function EffectFinder({
@@ -159,30 +331,34 @@ export default function EffectFinder({
   describing,
   onDescribe,
   onForget,
+  tab,
+  allShown = false,
+  onShowAll,
+  takeReturn,
 }: EffectFinderProps) {
   const edition = doc.rulesVersion;
   const entries = useMemo(() => catalogFor(edition), [edition]);
   const effects = effectsInPlay(doc.play);
-  const ownNames = useMemo(
-    () =>
-      new Set(
-        sheet.actions.flatMap((a) => {
-          const start = namedStart(a, doc);
-          return start === undefined ? [] : [lower(start.name)];
-        }),
-      ),
-    [sheet.actions, doc],
-  );
+  // What each of the character's own features starts, by name (Rage).
+  const starts = useMemo(() => {
+    const out = new Map<string, NamedStart>();
+    for (const a of sheet.actions) {
+      const start = namedStart(a, doc);
+      if (start !== undefined) out.set(lower(start.name), start);
+    }
+    return out;
+  }, [sheet.actions, doc]);
   const who = doc.name || 'you';
-  // What the character described and kept is found first, then the catalog. A
-  // feature that is not the character's own never lands on them, so it is not found.
+  // A feature that is not the character's own never lands on them, so it is not found.
+  const catalog = useMemo(
+    () => entries.filter((e) => e.own !== true || starts.has(lower(e.name))),
+    [entries, starts],
+  );
+  // What the character described and kept is found first, then the catalog.
   const kept = useMemo(() => keptEffects(doc.keptEffects), [doc.keptEffects]);
   const findable = useMemo(
-    () => [
-      ...kept.map((k) => keptEntry(k, who)),
-      ...entries.filter((e) => e.own !== true || ownNames.has(lower(e.name))),
-    ],
-    [kept, who, entries, ownNames],
+    () => [...kept.map((k) => keptEntry(k, who)), ...catalog],
+    [kept, who, catalog],
   );
   const entry = picked === null ? undefined : findable.find((e) => e.id === picked);
   const found = useMemo(() => searchCatalog(findable, query), [findable, query]);
@@ -232,6 +408,32 @@ export default function EffectFinder({
     );
   }
 
+  // Nothing typed: the tab's own effects, which the sheet's other lists follow.
+  if (trimmed === '') {
+    if (tab === undefined) return null;
+    const carried = doc.equipment.flatMap((i) => {
+      const name = i.ref?.name ?? i.custom?.name;
+      return i.qty > 0 && name !== undefined ? [name] : [];
+    });
+    return (
+      <TabGroup
+        key={tab}
+        title={tabGroupTitle(tab, who)}
+        entries={tabEffects(tab, catalog, {
+          effects,
+          spells: spellsOf(doc, sheet),
+          carried,
+          starts,
+        })}
+        carried={carried}
+        onPick={onPick}
+        allShown={allShown}
+        onShowAll={onShowAll}
+        takeReturn={takeReturn}
+      />
+    );
+  }
+
   const shown = found.slice(0, RESULTS_SHOWN);
   const more = found.length - shown.length;
   return (
@@ -240,20 +442,7 @@ export default function EffectFinder({
         <ul aria-label="Effects found" className="flex flex-col gap-1.5">
           {shown.map((e) => (
             <li key={e.id}>
-              <button
-                type="button"
-                onClick={() => onPick(e.id)}
-                className="flex min-h-tap w-full flex-col items-start gap-0.5 rounded-control bg-surface-raised px-3 py-2.5 text-left hover:bg-surface-hover"
-              >
-                {/* The spaces part the lines when the button's name is read out. */}
-                <span className="font-semibold text-body text-ink">{e.name}</span>{' '}
-                <span className="text-caption text-ink-muted">{metaOf(e)}</span>{' '}
-                <span
-                  className={`text-caption ${e.own === true || e.self === true ? 'text-ink-muted' : 'text-heal'}`}
-                >
-                  {e.sum}
-                </span>
-              </button>
+              <EntryButton entry={e} onClick={() => onPick(e.id)} />
             </li>
           ))}
         </ul>
@@ -270,6 +459,116 @@ export default function EffectFinder({
         <PencilLine size={18} aria-hidden="true" />
         Describe “{trimmed}”
       </Button>
+    </div>
+  );
+}
+
+/** One entry in a list: its name, what it is, and what it does, opening it when tapped. */
+function EntryButton({
+  entry,
+  carried = false,
+  onClick,
+  buttonRef,
+}: {
+  entry: CatalogEntry;
+  /** A potion the character carries, which its line says. */
+  carried?: boolean;
+  onClick: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
+}) {
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      onClick={onClick}
+      className="flex min-h-tap w-full flex-col items-start gap-0.5 rounded-control bg-surface-raised px-3 py-2.5 text-left hover:bg-surface-hover"
+    >
+      {/* The spaces part the lines when the button's name is read out. */}
+      <span className="font-semibold text-body text-ink">{entry.name}</span>{' '}
+      <span className="text-caption text-ink-muted">
+        {carried ? `${entry.what}, carried. ${entry.lastsSay}.` : metaOf(entry)}
+      </span>{' '}
+      <span
+        className={`text-caption ${entry.own === true || entry.self === true ? 'text-ink-muted' : 'text-heal'}`}
+      >
+        {entry.sum}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The tab's own effects, first in the sheet: a few, so Conditions stay near,
+ * and the rest a tap away. Showing them moves focus to the first one shown,
+ * and Back from an entry it opened puts focus on that entry's row again.
+ */
+function TabGroup({
+  title,
+  entries,
+  carried,
+  onPick,
+  allShown,
+  onShowAll,
+  takeReturn,
+}: {
+  title: string;
+  entries: readonly CatalogEntry[];
+  carried: readonly string[];
+  onPick: (id: string) => void;
+  allShown: boolean;
+  onShowAll: (() => void) | undefined;
+  takeReturn: (() => string | null) | undefined;
+}) {
+  const id = useId();
+  const [all, setAll] = useState(allShown);
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  // The row to put focus on once it is drawn: the first shown by Show more.
+  const toRow = useRef<string | null>(null);
+  useEffect(() => {
+    const back = takeReturn?.() ?? null;
+    if (back !== null) toRow.current = back;
+    if (toRow.current === null) return;
+    rows.current.get(toRow.current)?.focus();
+    toRow.current = null;
+  });
+  if (entries.length === 0) return null;
+  const shown = all ? entries : entries.slice(0, TAB_SHOWN);
+  const more = entries.length - shown.length;
+  return (
+    <div className="mb-3 flex flex-col gap-1">
+      <h3 id={id} className="font-semibold text-caption text-ink-muted">
+        {title}
+      </h3>
+      <ul aria-labelledby={id} className="flex flex-col gap-1.5">
+        {shown.map((e) => (
+          <li key={e.id}>
+            <EntryButton
+              entry={e}
+              carried={carries(e, carried)}
+              onClick={() => onPick(e.id)}
+              buttonRef={(el) => {
+                if (el === null) rows.current.delete(e.id);
+                else rows.current.set(e.id, el);
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+      {more > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => {
+            toRow.current = entries[TAB_SHOWN]?.id ?? null;
+            setAll(true);
+            onShowAll?.();
+          }}
+        >
+          <ChevronDown size={16} aria-hidden="true" />
+          Show {more} more
+        </Button>
+      )}
     </div>
   );
 }

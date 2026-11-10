@@ -382,13 +382,14 @@ describe('SheetLayout condition strip (design system)', () => {
     expect(addChip()).toBeNull();
   });
 
-  it('leaves only the add chip on Play when nothing is active, and nothing on another tab', () => {
-    renderAt('/c/x');
-    expect(activeList()).toBeNull();
-    expect(addChip()).not.toBeNull();
-    cleanup();
-    renderAt('/c/x/stats');
-    expect(activeList()).toBeNull();
+  it('leaves only the add chip when nothing is active, on every tab but Build', () => {
+    for (const path of ['/c/x', '/c/x/stats', '/c/x/spells', '/c/x/inventory', '/c/x/features']) {
+      renderAt(path);
+      expect(activeList(), path).toBeNull();
+      expect(addChip()?.closest('header'), path).toBe(screen.getByRole('banner'));
+      cleanup();
+    }
+    renderAt('/c/x/build');
     expect(addChip()).toBeNull();
   });
 });
