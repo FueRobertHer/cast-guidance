@@ -76,7 +76,8 @@ describe('conditionMechanics', () => {
     };
 
     it('never throws, whatever the entry holds', () => {
-      for (const bad of [
+      // Labelled by place: stringifying a 100,000-deep input overflows a smaller stack.
+      for (const [i, bad] of [
         { castGuidance: 'v1' },
         { castGuidance: [] },
         { castGuidance: { v: 1, effects: 'all of them' } },
@@ -84,9 +85,9 @@ describe('conditionMechanics', () => {
         { castGuidance: { v: 1, effects: [{ ...DIS_ATTACKS, on: nested(100_000) }] } },
         { castGuidance: { v: '1', effects: [DIS_ATTACKS] } },
         { castGuidance: nested(100_000) },
-      ]) {
-        expect(() => conditionMechanics(bad), JSON.stringify(bad).slice(0, 80)).not.toThrow();
-        expect(conditionMechanics(bad).parts).toEqual([]);
+      ].entries()) {
+        expect(() => conditionMechanics(bad), `case ${i + 1}`).not.toThrow();
+        expect(conditionMechanics(bad).parts, `case ${i + 1}`).toEqual([]);
       }
     });
 
