@@ -2,6 +2,7 @@ import { type MouseEvent, useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
+import type { D20Ask } from '@/features/sheet/d20Tests';
 import { currentAdvantage } from '@/stores/advMode';
 import { attackInPlay, rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
@@ -21,16 +22,21 @@ export interface RollChipProps {
   variant?: 'dice' | 'damage' | 'd20' | 'heal';
   /**
    * Fires after a successful roll (e.g. to spend a limited-use resource), once
-   * it lands: a roll that waits for a one-use die to be named fires it then,
+   * it lands: a d20 test that waits in the roll prompt fires it then,
    * and one cancelled never does.
    */
   onRolled?: (total: number) => void;
   /**
-   * Makes the roll in place of the chip's own: a sheet's d20 test, which the
-   * character's conditions change (`rollD20Test`). The chip still shows and
-   * logs what it returns.
+   * Asks about a sheet's d20 test in place of the chip's own roll (`d20Ask`):
+   * the roll prompt opens, with the chip's look in its header, and the chip
+   * tapped again or Roll rolls it. The chip still shows and logs what lands.
    */
-  roller?: () => RollResult;
+  roller?: () => D20Ask;
+  /**
+   * An attack chip's damage, which its result offers after a hit (the rolls
+   * canvas): rolled as that damage chip rolls it, so a crit doubles it.
+   */
+  damageAfter?: { expr: string; label?: string; withAttack?: RollChipProps['withAttack'] };
   /**
    * In running text: sized by the line, as WCAG 2.5.8 allows a target in a
    * sentence. Otherwise (a row of controls) the chip is at least 24 by 24.
@@ -60,6 +66,16 @@ export interface RollChipProps {
   withAttack?: { by: string; of?: string; critDice?: { dice: string; source: string } };
 }
 
+/** Can this be rolled? Free text (a custom attack's damage) cannot. */
+function isDice(expr: string): boolean {
+  try {
+    parseDice(expr);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Did the attack this damage goes with crit? */
 function critFor(withAttack: NonNullable<RollChipProps['withAttack']>): boolean {
   const attack = attackInPlay();
@@ -68,6 +84,28 @@ function critFor(withAttack: NonNullable<RollChipProps['withAttack']>): boolean 
     attack.by === withAttack.by &&
     (withAttack.of === undefined || attack.of === withAttack.of)
   );
+}
+
+/**
+ * A chip's own roll: d20-style dice under the dock's mode, and damage that goes
+ * with an attack that crit rolls its dice twice, with `critDice` after them.
+ */
+function chipRoll(
+  expr: string,
+  label: string | undefined,
+  variant: NonNullable<RollChipProps['variant']>,
+  withAttack: RollChipProps['withAttack'],
+): RollResult {
+  const crit = variant === 'damage' && withAttack !== undefined && critFor(withAttack);
+  const result = roll(expr, {
+    label,
+    // d20-style chips honor the global advantage toggle.
+    advantage: variant === 'd20' ? currentAdvantage() : undefined,
+    kind: KIND[variant],
+    ...(crit ? { critical: true } : {}),
+  });
+  const extra = crit ? withAttack?.critDice : undefined;
+  return extra === undefined ? result : withDice(result, extra.dice, extra.source);
 }
 
 /** A roll with dice of its own added after its terms, named for what adds them. */
@@ -128,6 +166,7 @@ export function RollChip({
   variant = 'dice',
   onRolled,
   roller,
+  damageAfter,
   inline,
   wear,
   raisedBy = [],
@@ -138,47 +177,45 @@ export function RollChip({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const valid = useRef<boolean | null>(null);
 
-  if (valid.current === null) {
-    try {
-      parseDice(expr);
-      valid.current = true;
-    } catch {
-      valid.current = false;
-    }
-  }
+  if (valid.current === null) valid.current = isDice(expr);
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
   if (!valid.current) return <span>{display ?? expr}</span>;
 
-  /** The chip's own roll: damage that goes with an attack that crit rolls its dice twice. */
-  const own = (): RollResult => {
-    const crit = variant === 'damage' && withAttack !== undefined && critFor(withAttack);
-    const result = roll(expr, {
-      label,
-      // d20-style chips honor the global advantage toggle.
-      advantage: variant === 'd20' ? currentAdvantage() : undefined,
-      kind: KIND[variant],
-      ...(crit ? { critical: true } : {}),
-    });
-    const extra = crit ? withAttack?.critDice : undefined;
-    return extra === undefined ? result : withDice(result, extra.dice, extra.source);
-  };
+  const raised = raisedBy.length > 0;
 
-  // The roll lands through `rollFrom`, which may hold it for a one-use die
-  // to be named first (the house rule): the total and `onRolled` wait for it.
-  // Damage tapped while an attack waits is made here too, at the tap, so a
-  // crit it goes with is read then and shown only as it lands.
+  // The roll lands through `rollFrom`: a d20 test waits in the roll prompt
+  // first, and the total and `onRolled` wait for it. Damage tapped while an
+  // attack waits, when it goes with one, is made once the attack lands, so a
+  // crit doubles it.
   const onRoll = (event: MouseEvent<HTMLButtonElement>) =>
     rollFrom(
       event.currentTarget,
-      () => roller?.() ?? own(),
+      () => roller?.() ?? chipRoll(expr, label, variant, withAttack),
       (r) => {
         onRolled?.(r.total);
         setResult(r.total);
         setRolls((n) => n + 1);
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setResult(null), TOTAL_MS);
+      },
+      {
+        face: { text: display ?? expr, wear, lift: raised },
+        ...(variant === 'damage' && withAttack !== undefined
+          ? { joins: { label: label ?? 'Damage' } }
+          : {}),
+        ...(damageAfter === undefined || !isDice(damageAfter.expr)
+          ? {}
+          : {
+              afterHit: {
+                expr: damageAfter.expr,
+                go: () =>
+                  rollFrom(null, () =>
+                    chipRoll(damageAfter.expr, damageAfter.label, 'damage', damageAfter.withAttack),
+                  ),
+              },
+            }),
       },
     );
 
@@ -189,7 +226,6 @@ export function RollChip({
       (display ?? expr)
     );
 
-  const raised = raisedBy.length > 0;
   const chip = (
     <button
       type="button"

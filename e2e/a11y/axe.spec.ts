@@ -284,8 +284,14 @@ test.describe('axe: pages and overlays', () => {
     await animationsSettled(page);
     await scanState(page, 'sheet-stats-condition-cues');
 
-    // A cued roll, as the dice tray's history keeps it.
-    await page.getByRole('button', { name: /^Roll STR check/ }).click();
+    // A cued roll waits in the roll prompt, then lands (the check tapped
+    // again), as the dice tray's history keeps it.
+    const strCheck = page.getByRole('button', { name: /^Roll STR check/ });
+    await strCheck.click();
+    await expect(page.getByRole('group', { name: 'STR check, choose and roll' })).toBeVisible();
+    await animationsSettled(page);
+    await scanState(page, 'roll-prompt');
+    await strCheck.click();
     await page.getByRole('button', { name: 'Dice tray' }).click();
     const dice = page.getByRole('dialog', { name: 'Dice' });
     await opened(page, dice);

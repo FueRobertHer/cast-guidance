@@ -22,36 +22,36 @@ afterEach(() => {
 describe('the one-use dice house rule', () => {
   it('is after the roll by default, as written, and says why', () => {
     render(<OneUseDiceSetting />);
-    expect(pressed('After the roll')).toBe('true');
-    expect(pressed('Before the roll')).toBe('false');
-    expect(why()).toMatch(/^As written: both let you wait until you see the d20/);
+    expect(pressed('After too')).toBe('true');
+    expect(pressed('Before only')).toBe('false');
+    expect(why()).toMatch(/^As written: the roll prompt offers them/);
   });
 
   it('switches to before, remembers it, and leaves nothing stored when back to after', () => {
     render(<OneUseDiceSetting />);
-    fireEvent.click(screen.getByRole('button', { name: 'Before the roll' }));
-    expect(pressed('Before the roll')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Before only' }));
+    expect(pressed('Before only')).toBe('true');
     expect(localStorage.getItem(ONE_USE_DICE_KEY)).toBe('before');
     expect(why()).toMatch(/spent even on a natural 1 or 20/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'After the roll' }));
-    expect(pressed('After the roll')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'After too' }));
+    expect(pressed('After too')).toBe('true');
     expect(localStorage.getItem(ONE_USE_DICE_KEY)).toBeNull();
   });
 
   it('starts where this device chose, and follows a choice made in another tab', () => {
     localStorage.setItem(ONE_USE_DICE_KEY, 'before');
     render(<OneUseDiceSetting />);
-    expect(pressed('Before the roll')).toBe('true');
+    expect(pressed('Before only')).toBe('true');
     localStorage.removeItem(ONE_USE_DICE_KEY);
     act(() => {
       window.dispatchEvent(new StorageEvent('storage', { key: ONE_USE_DICE_KEY }));
     });
-    expect(pressed('After the roll')).toBe('true');
+    expect(pressed('After too')).toBe('true');
   });
 
   it('says Bless has nothing to set', () => {
     render(<OneUseDiceSetting />);
-    expect(screen.getByText(/so there is nothing to set/)).toBeTruthy();
+    expect(screen.getByText(/There is nothing to set/)).toBeTruthy();
   });
 });

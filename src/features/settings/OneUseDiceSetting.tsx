@@ -3,13 +3,14 @@ import { ONE_USE_DICE_WHY, setOneUseDice, useOneUseDice } from '@/lib/oneUseDice
 import { SegmentedControl } from '@/ui/SegmentedControl';
 
 const CHOICES = [
-  { value: 'after', label: 'After the roll' },
-  { value: 'before', label: 'Before the roll' },
+  { value: 'after', label: 'After too' },
+  { value: 'before', label: 'Before only' },
 ] as const;
 
 /**
- * The house rule for one-use dice (the buffs canvas, Dice B): after the roll,
- * as written and the default, or before it. One choice for the app; a
+ * The house rule for one-use dice (the rolls canvas, one-use dice B): the roll
+ * prompt offers them before the d20, and as written (the default) any left
+ * come back after it; a table can say before only. One choice for the app; a
  * character can keep its own on Build. Bless has nothing to set, and says so,
  * since a player will look for it here.
  */
@@ -33,14 +34,14 @@ export function OneUseDiceSetting() {
         </p>
         <p className="text-caption text-ink-muted">
           Under 2024 rules Guidance is not one use, and Bardic Inspiration waits for a failed roll,
-          so neither is asked about first.
+          so neither is offered before the roll.
         </p>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-body-strong">Bless</span>
         <p className="text-caption text-ink-muted">
-          Rolls in with every attack and save. 2024 adds it every time, and under 2014 nobody turns
-          down a free d4, so there is nothing to set.
+          Rolls in with every attack and save, and the roll prompt shows it, where you can leave it
+          out of one roll. There is nothing to set.
         </p>
       </div>
     </div>

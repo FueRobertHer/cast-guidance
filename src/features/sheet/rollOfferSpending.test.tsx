@@ -4,7 +4,6 @@
 // and a change to hit points stops the dice waiting.
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { RollResult } from '@/dice/types';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -15,6 +14,7 @@ import { setOneUseDice } from '@/lib/oneUseDice';
 import type { DocUpdater } from '@/stores/characterSession';
 import { heldRollStore, rollFrom } from '@/stores/heldRoll';
 import { rollOffersStore } from '@/stores/rollOffers';
+import { d20Ask } from './d20Tests';
 import { useRollOfferSpending } from './rollOfferSpending';
 
 afterEach(() => {
@@ -109,20 +109,16 @@ describe('the house rule for one-use dice', () => {
 
   it('lets a waiting roll go unseen when the sheet closes', () => {
     const s = openSheet([], (d) => void (d.oneUseDice = 'before'));
-    const held: RollResult = {
-      expr: '1d20',
+    const ask = d20Ask('1d20', {
       label: 'Athletics check',
-      total: 12,
-      at: 0,
-      terms: [],
-      meta: {
-        askFirst: {
-          offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
-          attack: false,
-        },
+      riders: {
+        dice: [],
+        offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
+        advantage: [],
+        disadvantage: [],
       },
-    };
-    act(() => rollFrom(null, () => held));
+    });
+    act(() => rollFrom(null, () => ask));
     expect(heldRollStore.getState().held).not.toBeNull();
     s.hook.unmount();
     expect(heldRollStore.getState().held).toBeNull();

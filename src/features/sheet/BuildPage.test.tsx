@@ -244,18 +244,18 @@ describe('BuildPage one-use dice rule (the buffs canvas, Dice B)', () => {
         .filter((b) => b.getAttribute('aria-pressed') === 'true')
         .map((b) => b.textContent);
     expect(pressed()).toEqual(['As in Settings']);
-    expect(group.textContent).toContain('Settings says after the roll');
+    expect(group.textContent).toContain('Settings says after too');
     act(() => setOneUseDice('before'));
-    expect(group.textContent).toContain('Settings says before the roll');
+    expect(group.textContent).toContain('Settings says before only');
 
-    fireEvent.click(within(group).getByRole('button', { name: 'After the roll' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'After too' }));
     expect(getDoc().oneUseDice).toBe('after');
-    expect(pressed()).toEqual(['After the roll']);
-    expect(group.textContent).toContain('As written: both let you wait');
+    expect(pressed()).toEqual(['After too']);
+    expect(group.textContent).toContain('any you leave come back after the roll');
 
-    fireEvent.click(within(group).getByRole('button', { name: 'Before the roll' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'Before only' }));
     expect(getDoc().oneUseDice).toBe('before');
-    expect(group.textContent).toContain('House rule: you name the die before you roll');
+    expect(group.textContent).toContain('House rule: add them in the roll prompt or not at all');
 
     // Back to Settings leaves no field behind, as a character that never chose.
     fireEvent.click(within(group).getByRole('button', { name: 'As in Settings' }));

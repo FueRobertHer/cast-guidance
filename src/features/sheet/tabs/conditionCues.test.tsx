@@ -83,6 +83,11 @@ function renderTab(
 }
 
 const latest = () => rollLogStore.getState().rolls[0];
+/** A d20 roll from the sheet: the control opens the roll prompt, and tapped again rolls it. */
+const rollOn = (el: HTMLElement) => {
+  fireEvent.click(el);
+  fireEvent.click(el);
+};
 const ignoreOnce = (rolls: string) =>
   screen.getAllByRole('button', { name: `Ignore once: your next ${rolls} without these effects` });
 
@@ -93,7 +98,7 @@ describe('the cue on the Stats tab', () => {
     expect(screen.getAllByText('Disadvantage: Poisoned')).toHaveLength(2);
     expect(namelessControls()).toEqual([]);
 
-    fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
+    rollOn(screen.getByRole('button', { name: /^Roll STR check/ }));
     expect(latest()?.meta).toMatchObject({ advantage: 'dis', cue: 'Disadvantage: Poisoned' });
     expect(latest()?.terms[0]).toMatchObject({ sides: 20 });
     expect((latest()?.terms[0] as { rolls: unknown[] }).rolls).toHaveLength(2);
@@ -110,12 +115,12 @@ describe('the cue on the Stats tab', () => {
     expect(abilities.getAttribute('aria-pressed')).toBe('true');
     expect(skills.getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: /Athletics/ }));
+    rollOn(screen.getByRole('button', { name: /Athletics/ }));
     expect(latest()?.meta?.advantage).toBeUndefined();
     expect(latest()?.meta?.cue).toBe('Conditions ignored for this roll');
     expect(abilities.getAttribute('aria-pressed')).toBe('false');
 
-    fireEvent.click(screen.getByRole('button', { name: /Athletics/ }));
+    rollOn(screen.getByRole('button', { name: /Athletics/ }));
     expect(latest()?.meta?.advantage).toBe('dis');
   });
 
@@ -128,12 +133,12 @@ describe('the cue on the Stats tab', () => {
     expect(screen.getByText('STR and DEX saves fail automatically: Stunned')).toBeTruthy();
     const saves = screen.getByRole('heading', { name: 'Saving throws' }).parentElement;
     if (saves === null) throw new Error('no saves section');
-    fireEvent.click(within(saves).getByRole('button', { name: /^DEX/ }));
+    rollOn(within(saves).getByRole('button', { name: /^DEX/ }));
     expect(latest()?.meta).toMatchObject({ autoFail: true });
     // The toast says it fails, and never celebrates the die.
     expect(screen.getByText('Fails')).toBeTruthy();
     expect(screen.queryByText('Natural 20!')).toBeNull();
-    fireEvent.click(within(saves).getByRole('button', { name: /^WIS/ }));
+    rollOn(within(saves).getByRole('button', { name: /^WIS/ }));
     expect(latest()?.meta?.autoFail).toBeUndefined();
   });
 
@@ -145,9 +150,9 @@ describe('the cue on the Stats tab', () => {
     if (ignore === undefined) throw new Error('no save cue button');
     fireEvent.click(ignore);
     // WIS saves are untouched by Restrained, so the override waits.
-    fireEvent.click(within(saves).getByRole('button', { name: /^WIS/ }));
+    rollOn(within(saves).getByRole('button', { name: /^WIS/ }));
     expect(ignore.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(within(saves).getByRole('button', { name: /^DEX/ }));
+    rollOn(within(saves).getByRole('button', { name: /^DEX/ }));
     expect(latest()?.meta?.advantage).toBeUndefined();
     expect(latest()?.meta?.cue).toBe('Conditions ignored for this roll');
     expect(ignore.getAttribute('aria-pressed')).toBe('false');
@@ -156,14 +161,15 @@ describe('the cue on the Stats tab', () => {
   it("takes 2024 exhaustion's penalty off every check", () => {
     renderTab(<StatsTab />, [{ id: 'Exhaustion', level: 2 }], '2024');
     expect(screen.getAllByText('−4: Exhaustion 2').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: /^Roll WIS check/ }));
+    rollOn(screen.getByRole('button', { name: /^Roll WIS check/ }));
     expect(latest()?.expr).toBe('1d20+0-4');
   });
 
   it('shows nothing for a condition whose effects are switched off', () => {
     renderTab(<StatsTab />, [{ id: 'Poisoned', ignored: true }]);
     expect(screen.queryByText(/Poisoned/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
+    rollOn(screen.getByRole('button', { name: /^Roll STR check/ }));
+    expect(latest()?.label).toBe('STR check');
     expect(latest()?.meta?.advantage).toBeUndefined();
   });
 });
@@ -197,7 +203,7 @@ describe('the attack chips on the Play tab', () => {
     renderTab(<PlayTab />, [{ id: 'Paralyzed' }]);
     const chip = attackChip();
     expect(looksOn(chip)).toEqual(['cx', 'cx-paralyzed']);
-    fireEvent.click(chip);
+    rollOn(chip);
     expect(latest()).toBeDefined();
   });
 
@@ -208,7 +214,7 @@ describe('the attack chips on the Play tab', () => {
     expect(chip.querySelector('.cx')?.classList.contains('cx-ig')).toBe(true);
     expect(chip.querySelector('.cx-ignore-ring')).not.toBeNull();
 
-    fireEvent.click(chip);
+    rollOn(chip);
     expect(latest()?.meta?.cue).toBe('Conditions ignored for this roll');
     // Its total shows on the plain chip it was rolled from.
     expect(chip.querySelector('.cx')?.classList.contains('cx-ig')).toBe(true);
@@ -253,9 +259,9 @@ describe('what a condition wears on the Stats tab', () => {
 
   it('flashes a save it reaches as the roll lands, and not one it does not', () => {
     renderTab(<StatsTab />, [{ id: 'Restrained' }]);
-    fireEvent.click(saveButton(/^WIS/));
+    rollOn(saveButton(/^WIS/));
     expect(wornOn(saveButton(/^WIS/)).querySelector('.cx-surge')).toBeNull();
-    fireEvent.click(saveButton(/^DEX/));
+    rollOn(saveButton(/^DEX/));
     expect(wornOn(saveButton(/^DEX/)).querySelector('.cx-surge')).not.toBeNull();
     expect(wornOn(saveButton(/^DEX/)).querySelector('.cx-chain')).not.toBeNull();
   });
@@ -283,10 +289,10 @@ describe('what a condition wears on the Stats tab', () => {
 
   it('flashes the tile it rolled from, and the Skills strip for any skill', () => {
     renderTab(<StatsTab />, [{ id: 'Poisoned' }]);
-    fireEvent.click(checkButton('STR'));
+    rollOn(checkButton('STR'));
     expect(wornOn(checkButton('STR')).querySelector('.cx-surge')).not.toBeNull();
     expect(wornOn(checkButton('DEX')).querySelector('.cx-surge')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Stealth/ }));
+    rollOn(screen.getByRole('button', { name: /Stealth/ }));
     expect(skillsCard().querySelector('.cx-strip .cx-surge')).not.toBeNull();
   });
 
@@ -344,7 +350,7 @@ describe('what a condition wears on the Play tab’s strip', () => {
   it('flashes Initiative as the roll lands, and tags 2024 exhaustion on it', () => {
     renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 1 }], '2024');
     expect(initiative().querySelector('.cx-tag')?.textContent).toBe('−2');
-    fireEvent.click(initiative());
+    rollOn(initiative());
     expect(initiative().querySelector('.cx-surge')).not.toBeNull();
   });
 
@@ -361,7 +367,7 @@ describe('what a condition wears on the Play tab’s strip', () => {
     renderTab(<PlayTab />, [{ id: 'Exhaustion', level: 2 }], '2024');
     expect(speedCell().className).toContain('cx-exhaustion');
     expect(speedCell().querySelector('.cx-tag')).toBeNull();
-    fireEvent.click(initiative());
+    rollOn(initiative());
     expect(initiative().querySelector('.cx-surge')).not.toBeNull();
     expect(speedCell().querySelector('.cx-surge')).toBeNull();
   });
@@ -380,11 +386,11 @@ describe('the cues on the Play tab', () => {
     expect(within(attacks).getByText('Disadvantage: Prone')).toBeTruthy();
     const chip = within(attacks).getAllByTitle(/ attack$/)[0];
     if (chip === undefined) throw new Error('no attack chip');
-    fireEvent.click(chip);
+    rollOn(chip);
     expect(latest()?.meta).toMatchObject({ advantage: 'dis', cue: 'Disadvantage: Prone' });
 
     fireEvent.click(ignoreOnce('attack roll')[0] as HTMLElement);
-    fireEvent.click(chip);
+    rollOn(chip);
     expect(latest()?.meta?.advantage).toBeUndefined();
   });
 
@@ -408,7 +414,7 @@ describe('the cues on the Play tab', () => {
     expect(screen.getAllByText('Initiative')).toHaveLength(2);
     // Under the strip for initiative, over the attacks for attack rolls.
     expect(screen.getAllByText('Advantage: Invisible')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: /Initiative/ }));
+    rollOn(screen.getByRole('button', { name: /Initiative/ }));
     expect(latest()?.meta).toMatchObject({ advantage: 'adv', cue: 'Advantage: Invisible' });
   });
 
@@ -426,7 +432,7 @@ describe('the cues on the Play tab', () => {
   it('cancels the dock’s advantage against a condition, and says so', () => {
     act(() => advModeStore.getState().set('adv'));
     renderTab(<PlayTab />, [{ id: 'Poisoned' }]);
-    fireEvent.click(screen.getByRole('button', { name: /Initiative/ }));
+    rollOn(screen.getByRole('button', { name: /Initiative/ }));
     expect(latest()?.meta?.advantage).toBeUndefined();
     expect(latest()?.meta?.cue).toBe('Advantage and disadvantage cancel: Poisoned');
   });

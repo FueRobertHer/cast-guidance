@@ -86,6 +86,7 @@ import { conditionLimits } from '../conditionEffects';
 import { DefensesChip } from '../Defenses';
 import {
   conditionWear,
+  d20Ask,
   effectLines,
   noteLines,
   rollD20Test,
@@ -488,7 +489,7 @@ export function Component() {
    * (`attackDamage`) reads that to roll its dice twice.
    */
   const rollAttack = (modifier: number, label: string, test: D20Test, of: string) => () =>
-    rollD20Test(`1d20${fmt(modifier)}`, {
+    d20Ask(`1d20${fmt(modifier)}`, {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
@@ -1172,13 +1173,20 @@ export function Component() {
               rollFrom(
                 event.currentTarget,
                 () =>
-                  rollD20Test(`1d20${fmt(sheet.initiative.value)}`, {
+                  d20Ask(`1d20${fmt(sheet.initiative.value)}`, {
                     label: 'Initiative',
                     effects: initiativeEffects,
                     ignored: ignore.take('initiative', initiativeEffects),
                     riders: rollEffects(sheet, { kind: 'initiative' }),
                   }),
                 initiativeRoll.rolled,
+                {
+                  face: {
+                    text: signed(sheet.initiative.value),
+                    wear: rollWear(conditions, initiativeEffects, ignore.armed('initiative')),
+                    lift: initiativeUp.length > 0,
+                  },
+                },
               )
             }
             className={`${WORN_TILE} rounded-tr-card border-line border-l @min-[18rem]:rounded-tr-none`}
@@ -1666,6 +1674,11 @@ export function Component() {
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
                       onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
+                      damageAfter={{
+                        expr: a.damage,
+                        label: damageLabel(a.label, a.damageType),
+                        withAttack: attackDamage(a.label, savageDie(a, a.damage)),
+                      }}
                     />
                     <RollChip
                       expr={a.damage}

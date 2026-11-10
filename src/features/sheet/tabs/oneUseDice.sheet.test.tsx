@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// The house rule for one-use dice through the real sheet (the buffs canvas,
-// Dice B): a skill with 2014 Guidance on waits to be rolled, the die named
-// lands in it and ends the spell, and damage tapped while an attack waits
-// lands with it. The toast's own controls are covered in RollToast.held.
+// One-use dice in the roll prompt through the real sheet (the rolls canvas):
+// a skill check waits with 2014 Guidance on offer, the die added lands in it
+// and ends the spell, the one left comes back after unless the house rule
+// drops it, and damage tapped while an attack waits lands with it. The
+// prompt's own controls are covered in RollToast.held.
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,21 +62,18 @@ function warrior(effects: ActiveEffect[]) {
 const logged = () => rollLogStore.getState().rolls;
 const held = () => heldRollStore.getState().held;
 
-describe('one-use dice named before the roll', () => {
-  it('holds a skill check for Guidance, then lands it with the die and ends the spell', async () => {
-    const doc = warrior([guidanceEffect('g1', '2014')]);
-    doc.oneUseDice = 'before';
-    const sheet = await renderSheet(doc);
+describe('one-use dice in the roll prompt', () => {
+  it('offers Guidance in a skill check waiting to roll, then lands it with the die and ends the spell', async () => {
+    const sheet = await renderSheet(warrior([guidanceEffect('g1', '2014')]));
     await sheet.tab('Stats');
-    const athletics = screen.getByRole('button', { name: /^Roll STR check/ });
-    nextFaces(12);
-    fireEvent.click(athletics);
+    nextFaces(); // asking rolls nothing
+    fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
     expect(logged()).toHaveLength(0);
-    expect(held()?.result.label).toBe('STR check');
-    expect(held()?.offers.map((o) => o.source)).toEqual(['Guidance']);
+    expect(held()?.ask.label).toBe('STR check');
+    expect(held()?.ask.once.map((o) => o.source)).toEqual(['Guidance']);
 
     act(() => nameHeldDie(0));
-    nextFaces(3);
+    nextFaces(12, 3);
     act(() => rollHeld());
     const [roll] = logged();
     expect(roll?.meta?.from).toEqual([{ term: 2, source: 'Guidance' }]);
@@ -83,53 +81,50 @@ describe('one-use dice named before the roll', () => {
     await waitFor(async () => expect((await sheet.saved()).play.activeEffects).toBeUndefined());
   });
 
-  it('follows the app setting, and asks nothing under the default', async () => {
+  it('offers the die left after the roll as written, and drops it under the house rule', async () => {
     const sheet = await renderSheet(warrior([guidanceEffect('g1', '2014')]));
     await sheet.tab('Stats');
-    nextFaces(12);
     fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
-    expect(held()).toBeNull();
+    nextFaces(12);
+    act(() => rollHeld());
     expect(logged()[0]?.meta?.offers?.map((o) => o.source)).toEqual(['Guidance']);
 
     act(() => setOneUseDice('before'));
-    nextFaces(9);
     fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
-    expect(held()?.result.label).toBe('STR check');
+    nextFaces(9);
+    act(() => rollHeld());
+    expect(logged()[0]?.meta?.offers).toBeUndefined();
   });
 
-  it('holds an attack for Bardic, spends the action only once it lands, and rolls the damage tapped meanwhile with it', async () => {
+  it('holds an attack, spends the action only once it lands, and rolls the damage tapped meanwhile with it', async () => {
     const doc = warrior([bardicEffect('b1', '2014', 'd8')]);
     doc.oneUseDice = 'before';
     const sheet = await renderSheet(doc);
-    const attack = screen.getByTitle('Unarmed Strike attack');
-    nextFaces(14);
-    fireEvent.click(attack);
-    expect(held()?.attack).toBe(true);
-    const damage = screen.getByTitle(/^Unarmed Strike (\w+ )?damage$/);
-    fireEvent.click(damage);
+    nextFaces(); // nothing rolls until the attack does
+    fireEvent.click(screen.getByTitle('Unarmed Strike attack'));
+    expect(held()?.ask.attack).toBe(true);
+    fireEvent.click(screen.getByTitle(/^Unarmed Strike (\w+ )?damage$/));
     expect(logged()).toHaveLength(0);
     expect(held()?.damage).toHaveLength(1);
     expect((await sheet.saved()).play.turn?.action ?? false).toBe(false);
 
+    nextFaces(14);
     act(() => rollHeld());
     const [dealt, swing] = logged();
     expect(swing?.label).toBe('Unarmed Strike attack');
     expect(dealt?.meta?.withRoll).toBe(swing?.id);
-    // Nothing named: Bardic is still there, and not offered after either.
+    // Nothing added, under the house rule: Bardic is still there, and not offered after either.
     expect(swing?.meta?.offers).toBeUndefined();
     const saved = await sheet.saved();
     expect(saved.play.activeEffects?.map((e) => e.id)).toEqual(['b1']);
     expect(saved.play.turn?.action).toBe(true);
   });
 
-  it('spends a named die and the action together, as the attack lands', async () => {
-    const doc = warrior([bardicEffect('b1', '2014', 'd8')]);
-    doc.oneUseDice = 'before';
-    const sheet = await renderSheet(doc);
-    nextFaces(14);
+  it('spends an added die and the action together, as the attack lands', async () => {
+    const sheet = await renderSheet(warrior([bardicEffect('b1', '2014', 'd8')]));
     fireEvent.click(screen.getByTitle('Unarmed Strike attack'));
     act(() => nameHeldDie(0));
-    nextFaces(6);
+    nextFaces(14, 6);
     act(() => rollHeld());
     expect(logged()[0]?.meta?.from?.map((f) => f.source)).toEqual(['Bardic Inspiration']);
     const saved = await sheet.saved();
@@ -138,8 +133,7 @@ describe('one-use dice named before the roll', () => {
   });
 
   it('keeps Ignore once armed through a roll that waits and is cancelled', async () => {
-    const doc = warrior([guidanceEffect('g1', '2014')]);
-    doc.oneUseDice = 'before';
+    const doc = warrior([]);
     doc.play.conditions = [{ id: 'Poisoned' }];
     const sheet = await renderSheet(doc);
     await sheet.tab('Stats');
@@ -149,15 +143,14 @@ describe('one-use dice named before the roll', () => {
       })[0];
     fireEvent.click(ignore() as HTMLElement);
     expect(ignore()?.getAttribute('aria-pressed')).toBe('true');
-    nextFaces(12);
     fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
     expect(held()).not.toBeNull();
     act(() => cancelHeld());
     expect(ignore()?.getAttribute('aria-pressed')).toBe('true');
 
     // Landing spends it, and the roll was made without the effects.
-    nextFaces(12);
     fireEvent.click(screen.getByRole('button', { name: /^Roll STR check/ }));
+    nextFaces(12);
     act(() => rollHeld());
     expect(logged()[0]?.meta?.cue).toBe('Conditions ignored for this roll');
     expect(ignore()?.getAttribute('aria-pressed')).toBe('false');
