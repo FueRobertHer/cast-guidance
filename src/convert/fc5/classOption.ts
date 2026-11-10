@@ -293,6 +293,17 @@ export function convertClassOption(el: XmlElement, ctx: Fc5Context): Fc5Result {
   };
 }
 
+/**
+ * The lists a class option names that are not official ones, as its feature
+ * types are written (`Warmage (Valda): Tricks`), so the class they are for can
+ * offer them.
+ */
+export function homebrewOptionLists(el: XmlElement): string[] {
+  return topLevelParts(childText(el, 'classes') ?? '')
+    .filter((list) => own(OFFICIAL_LISTS, listKey(list)) === undefined)
+    .map(withoutMarkers);
+}
+
 /** Whether a converted option is on an official list, so a class the app has offers it. */
 export function isOnOfficialList(entity: Record<string, unknown>): boolean {
   const types = Array.isArray(entity.featureType) ? entity.featureType : [];

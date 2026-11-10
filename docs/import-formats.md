@@ -35,7 +35,7 @@ page (an HTML listing or a page that links to the file) is named as one.
 | `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
 | `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
 | `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
-| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, and subclasses (see below). Options and counters are not converted yet; a `<class>` with no `<hd>` adds its subclasses to a class of that name |
+| `<class>` | `class`, `classFeature`, `subclass`, `subclassFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, spellcasting, subclasses, options, counters, multiclass requirements and proficiencies, and starting equipment (see below); a `<class>` with no `<hd>` adds its subclasses to a class of that name |
 | `<monster>` | (left out) | The app does not use creatures |
 
 On items, feats, race traits and background traits, a labeled `<roll>` the
@@ -106,7 +106,54 @@ homebrew subclasses to them; a subclass the installed data has on that
 class is left out like any entry. A `<class>` with no `<hd>` adds its
 subclasses to the class of its name in the file, wherever that is, else to
 the installed or rules class of that name; what else it holds is listed in
-the report. Counters named for a subclass are reported on it.
+the report.
+
+A class's or subclass's other choices named `Label: Name`, two or more of a
+label, are its options (`Fighting Style: Archery`, `Metamagic: Careful
+Spell`): each becomes an `optionalfeature` whose feature type names its
+owner and label (`Ember Knight: Fighting Style`), and the owner gets an
+`optionalfeatureProgression` for the label. The count by level comes from a
+counter of the label (`Fighting Styles Known`), else from the label's feature
+("you gain two of the following"; one where it names none) plus each later
+feature of the label (`Metamagic (2nd)`). A list the file repeats at a later
+level (the Champion's styles at 10th level) adds no picks, and an option
+first listed later than the rest needs that level. A label of an official list
+(fighting styles but in a 2024 class, Metamagic, invocations, pact boons,
+maneuvers) offers that list too, so an installed option left out as a
+duplicate is still offered. Options a label names one subclass for
+(`Totem Spirit: Bear` beside the Totem Warrior) go on that subclass. An option
+two classes list is kept once, on both lists, and needs a level only where
+each class lists it late (either level, when both do); one the file also
+stores as a spell keeps that one's prerequisite, its rule. An option on the file's
+own list is kept even when the installed data has one of its name. An
+installed class's options go on its official list, and those whose label has
+none are named in the report.
+Lists the file stores as spells (`Warmage (Valda): Tricks`, `Mystic (UA):
+Psionic Disciplines`) go on their class or subclass when a counter counts
+them (`Tricks Known`; `Hexes Known` counts `Hexes`, not `Grand Hexes`), and
+an official list a counter names (`Eldritch Invocations Known`) is offered
+the same way. A choice that is no label's option is listed in the report.
+
+A class's `<counter>`s become its resources (a subclass's, those that name
+it), keyed as the prose scan keys the feature of that name, so the use count
+shows once: a number by level, `%0` as the proficiency bonus and `%1` to `%6`
+as an ability modifier (at least one), back on a long or short rest, or on a
+long rest and whole on a short rest from the level its rest turns short. A
+counter named for an option goes on that option. A printing of an official
+class or subclass gets none, its own counting. A counter with no rest is a
+number the class tracks: `Spells Known` gives its spells known (a printing's
+too, and its subclass casters' when the class casts nothing itself, as the
+Fighter's is the Eldritch Knight's), one that counts an option list is read as
+above, and any other is reported.
+
+The class's start notes (`Starting Barbarian`, `Multiclass Barbarian`,
+`Becoming a Barbarian as a Multiclass Character`) give 5etools
+`multiclassing`: the ability score minimum (`Strength 13 or Dexterity 13` as
+any one, `and` as all) and the armor, weapons, tools and skills a later class
+gains; a 2024 note with no minimum gives `primaryAbility` instead. The
+starting note's equipment lines become `startingEquipment.default`. A minimum
+that mixes `and` with `or`, and a skill line the converter cannot read, are
+reported.
 
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never
@@ -167,7 +214,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 12, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 13, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

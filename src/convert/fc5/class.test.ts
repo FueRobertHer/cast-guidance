@@ -156,10 +156,20 @@ describe('convertClass', () => {
     });
     expect(reasons).toEqual([
       'levels past 20 are left out',
-      'its options are not converted yet',
-      'its notes on starting equipment and multiclassing are not converted yet',
-      'its counters (Ember) are not converted yet',
+      "its optional features that are no list's options (Fighting Style: Defense) are not converted",
     ]);
+    expect(entity.castGuidance).toEqual({
+      v: 1,
+      effects: [
+        {
+          kind: 'resource',
+          key: 'ember',
+          label: 'Ember',
+          max: { byLevel: { '1': 2 } },
+          reset: 'short',
+        },
+      ],
+    });
   });
 
   it('keeps a fixed feature named like a start note, as a sidekick has one', () => {
@@ -532,7 +542,8 @@ describe('subclasses', () => {
     );
     expect(subs.map((s) => s.name)).toEqual(['Marksman']);
     expect(result.entity.subclassTitle).toBe('Ember Path');
-    expect(result.reasons).toEqual(['its options are not converted yet']);
+    expect(result.options?.map((o) => o.entity.name)).toEqual(['Archery', 'Defense', 'Marksman']);
+    expect(result.reasons).toEqual([]);
   });
 
   it('keeps a label as options when fewer than half its choices share a name with a subclass', () => {
@@ -562,7 +573,10 @@ describe('subclasses', () => {
     );
     expect(subs).toEqual([]);
     expect(result.entity.subclassTitle).toBeUndefined();
-    expect(result.reasons).toEqual(['its options are not converted yet']);
+    expect(result.options?.map((o) => o.entity.name)).toEqual(['Great Bear', 'Swift Eagle']);
+    expect(result.reasons).toEqual([
+      "its optional features that are no list's options (Bear Hug (Bear), Eagle Eye (Eagle)) are not converted",
+    ]);
   });
 
   it('counts two choices of one label at one level in a subclass as its options', () => {
@@ -575,7 +589,20 @@ describe('subclasses', () => {
       'College of Swords',
       'Blade Flourish',
     ]);
-    expect(subs[0]?.reasons).toEqual(['its options are not converted yet']);
+    expect(subs[0]?.options?.map((o) => [o.entity.name, o.entity.featureType, o.official])).toEqual(
+      [
+        ['Dueling', ['Ember Knight (College of Swords): Fighting Style'], 'FS:F'],
+        ['Defense', ['Ember Knight (College of Swords): Fighting Style'], 'FS:F'],
+      ],
+    );
+    expect(subs[0]?.entity.optionalfeatureProgression).toEqual([
+      {
+        name: 'Fighting Style',
+        featureType: ['Ember Knight (College of Swords): Fighting Style', 'FS:F'],
+        progression: { '3': 1 },
+      },
+    ]);
+    expect(subs[0]?.reasons).toEqual([]);
   });
 
   it('takes no label for a subclass when only half its choices name one', () => {
@@ -613,7 +640,11 @@ describe('subclasses', () => {
       'Ash Theurgy',
       'Channel Arcana: Divine Arcana',
     ]);
-    expect(subs[0]?.reasons).toEqual(['its options are not converted yet']);
+    expect(subs[0]?.options?.map((o) => o.entity.name)).toEqual([
+      'Guided Strike (War Domain)',
+      'Preserve Life (Life Domain)',
+    ]);
+    expect(subs[0]?.reasons).toEqual([]);
   });
 
   it('takes a second pick whose features all cite the first one’s book as a repeat', () => {
@@ -726,14 +757,129 @@ describe('subclasses', () => {
     );
   });
 
-  it("reports a subclass's counters on it, and the class's own on the class", () => {
+  const counter = (name: string, value: string, reset = 'L', of = '') =>
+    `<counter><name>${name}</name><value>${value}</value>${reset === '' ? '' : `<reset>${reset}</reset>`}${of === '' ? '' : `<subclass>${of}</subclass>`}</counter>`;
+  const poolNames = (entity: Record<string, unknown> | undefined) => {
+    const g = entity?.castGuidance as { effects?: { label: string }[] } | undefined;
+    return g?.effects?.map((e) => e.label) ?? [];
+  };
+
+  it("makes a subclass's counters its pools, and the class's own the class's", () => {
     const { result, subs } = subclassesOf(
       knight(`
-        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'x', opt)}${feature('Ash Ward (Ash Guard)', 'x', opt)}<counter><name>Ash</name><value>2</value><subclass>Ash Guard</subclass></counter><counter><name>Ember</name><value>2</value></counter><counter><name>Soot</name><value>1</value><subclass>Soot Order</subclass></counter>`)}
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'x', opt)}${feature('Ash Ward (Ash Guard)', 'x', opt)}${counter('Ash', '2', 'L', 'Ash Guard')}${counter('Ember', '2', 'S')}${counter('Soot', '1', 'L', 'Soot Order')}`)}
       `),
     );
-    expect(result.reasons).toEqual(['its counters (Ember, Soot) are not converted yet']);
-    expect(subs[0]?.reasons).toEqual(['its counters (Ash) are not converted yet']);
+    expect(poolNames(result.entity)).toEqual(['Ember']);
+    expect(result.reasons).toEqual([
+      'its counters for a subclass it does not have (Soot) are not converted',
+    ]);
+    expect(poolNames(subs[0]?.entity)).toEqual(['Ash']);
+    expect(subs[0]?.reasons).toEqual([]);
+  });
+
+  it('finds the subclass a counter names by the last words of its name', () => {
+    const { subs } = subclassesOf(
+      knight(`
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Order of the Ash Guard', 'x', opt)}${feature('Ash Ward (Ash Guard)', 'x', opt)}${counter('Ash', '2', 'L', 'Ash Guard')}`)}
+      `),
+    );
+    expect(subs.map((s) => [s.name, poolNames(s.entity)])).toEqual([
+      ['Order of the Ash Guard', ['Ash']],
+    ]);
+  });
+
+  it("gives a subclass a counter the file left on the class, named for that subclass's feature", () => {
+    const { result, subs } = subclassesOf(
+      knight(`
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'x', opt)}${feature('Ash Ward (Ash Guard)', 'x', opt)}${feature('Ember Path: Soot Blade', 'x', opt)}${feature('Soot Edge (Soot Blade)', 'x', opt)}${counter('Ash Ward', '1')}`)}
+      `),
+    );
+    expect(poolNames(result.entity)).toEqual([]);
+    expect(subs.map((s) => [s.name, poolNames(s.entity)])).toEqual([
+      ['Ash Guard', ['Ash Ward']],
+      ['Soot Blade', []],
+    ]);
+  });
+
+  it('leaves out the uses a feature of a pool name would count itself', () => {
+    const { result, subs } = subclassesOf(
+      knight(`
+        ${level(1, `${feature('Ember Burst', 'You can use this feature twice.')}${counter('Ember Burst', '2')}`)}
+        ${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Guard', 'x', opt)}${feature('Ash Ward (Ash Guard)', 'Once per long rest.', opt)}${counter('Ash Ward', '1', 'L', 'Ash Guard')}`)}
+      `),
+    );
+    const drop = { v: 1, drop: [{ kind: 'resource' }] };
+    expect(result.parts?.find((p) => p.entity.name === 'Ember Burst')?.entity.castGuidance).toEqual(
+      drop,
+    );
+    expect(result.parts?.find((p) => p.entity.name === 'Ember Path')?.entity.castGuidance).toBe(
+      undefined,
+    );
+    expect(subs[0]?.parts?.find((p) => p.entity.name === 'Ash Ward')?.entity.castGuidance).toEqual(
+      drop,
+    );
+  });
+
+  it('reads spells known from a Spells Known counter when nothing else gives them', () => {
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      level(
+        i + 1,
+        `<slots>2,${i < 2 ? '2,0' : '4,2'}</slots>${i === 0 || i === 4 ? counter('Spells Known', i === 0 ? '2' : '5', '') : ''}`,
+      ),
+    ).join('');
+    const { result } = subclassesOf(
+      knight(`${rows}${level(1, feature('Spellcasting', 'You cast spells.'))}`),
+    );
+    expect(result.entity.spellsKnownProgression).toEqual([
+      2, 2, 2, 2, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    ]);
+    expect(poolNames(result.entity)).toEqual([]);
+  });
+
+  it("gives a subclass caster the class's Spells Known when the class casts nothing itself", () => {
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      level(
+        i + 1,
+        `<slots optional="YES">2,${i < 2 ? '0' : '2'}</slots>${i === 2 ? counter('Spells Known', '3', '') : ''}`,
+      ),
+    ).join('');
+    const { result, subs } = subclassesOf(
+      knight(
+        `${rows}${level(3, `${feature('Ember Path')}${feature('Ember Path: Ash Mage', 'x', opt)}${feature('Spellcasting (Ash Mage)', 'You cast spells. Intelligence is your spellcasting ability.', opt)}${feature('Ember Path: Soot Blade', 'x', opt)}${feature('Soot Edge (Soot Blade)', 'x', opt)}`)}`,
+      ),
+    );
+    expect(result.entity.spellsKnownProgression).toBeUndefined();
+    expect(subs.map((s) => [s.name, s.entity.spellsKnownProgression])).toEqual([
+      ['Ash Mage', [0, 0, ...Array<number>(18).fill(3)]],
+      ['Soot Blade', undefined],
+    ]);
+  });
+
+  it('reads spells known for a printing of an official class, with no pools', () => {
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      level(
+        i + 1,
+        `<slots>2,${i < 2 ? '2,0' : '4,2'}</slots>${i === 0 ? counter('Spells Known', '4', '') : ''}`,
+      ),
+    ).join('');
+    const { result } = subclassesOf(
+      knight(
+        `<trait><name>Ember Knight</name><text>Knights.\nSource: Player's Handbook (2014) p. 1</text></trait>${rows}${level(1, `${feature('Spellcasting', 'You cast spells.')}${counter('Ember', '2')}`)}`,
+      ),
+    );
+    expect(result.entity.spellsKnownProgression).toEqual(Array<number>(20).fill(4));
+    expect(result.entity.castGuidance).toBeUndefined();
+  });
+
+  it('keeps no pools for a printing of an official class, whose own uses count', () => {
+    const { result } = subclassesOf(
+      knight(
+        `<trait><name>Ember Knight</name><text>Knights.\nSource: Player's Handbook (2014) p. 1</text></trait>${level(1, `${feature('Ember Strike')}${counter('Ember', '2')}`)}`,
+      ),
+    );
+    expect(result.entity.castGuidance).toBeUndefined();
+    expect(result.reasons).toEqual([]);
   });
 
   it('takes an Ability Score Improvement offered at a level marked for one as the class feature', () => {
@@ -789,8 +935,41 @@ describe('convertClassAdditions', () => {
     );
     expect(a.reasons).toEqual([
       'its features in no subclass (Fighting Style: Ember Style, Extra Ember) are not converted: it adds to a class of that name, and only its subclasses convert',
-      'its counters (Ember) are not converted yet',
+      'its own counters (Ember) are not converted: it adds to a class of that name, and only its subclasses convert',
     ]);
+  });
+
+  it('gives a subclass the options its own feature names, as a whole class does', () => {
+    const a = added(
+      level(
+        3,
+        `${feature('Martial Archetype: Totem Guard', 'x', opt)}${feature('Totem (Totem Guard)', 'Choose a totem.', opt)}${feature('Totem: Bear', 'Bear.', opt)}${feature('Totem: Eagle', 'Eagle.', opt)}`,
+      ),
+    );
+    expect(a.reasons).toEqual([]);
+    const [sub] = a.subclasses({ className: 'Fighter', classSource: 'PHB' });
+    expect(sub?.options?.map((o) => [o.entity.name, o.entity.featureType])).toEqual([
+      ['Bear', ['Fighter (Totem Guard): Totem']],
+      ['Eagle', ['Fighter (Totem Guard): Totem']],
+    ]);
+    expect(sub?.entity.optionalfeatureProgression).toEqual([
+      { name: 'Totem', featureType: ['Fighter (Totem Guard): Totem'], progression: { '3': 1 } },
+    ]);
+  });
+
+  it('gives its subclass casters its Spells Known, and says nothing of it', () => {
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      level(
+        i + 1,
+        `<slots>2,${i < 2 ? '0' : '2'}</slots>${i === 2 ? '<counter><name>Spells Known</name><value>3</value></counter>' : ''}`,
+      ),
+    ).join('');
+    const a = added(
+      `${rows}${level(3, `${feature('Martial Archetype: Ash Mage', 'x', opt)}${feature('Spellcasting (Ash Mage)', 'You cast spells. Intelligence is your spellcasting ability.', opt)}`)}`,
+    );
+    expect(a.reasons).toEqual([]);
+    const [sub] = a.subclasses({ className: 'Fighter', classSource: 'PHB' });
+    expect(sub?.entity.spellsKnownProgression).toEqual([0, 0, ...Array<number>(18).fill(3)]);
   });
 
   it('reads the edition a pick marks, which its name drops', () => {
