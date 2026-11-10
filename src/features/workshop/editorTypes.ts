@@ -36,6 +36,12 @@ export interface WriteContext extends WriteInput {
   registry: EntityRegistry;
   /** The entry the editor opened, as stored, when it was saved before. */
   stored?: { name: string; source: string };
+  /**
+   * Every name it was stored under while the editor was open, the one it
+   * opened on first. The registry the editor holds is not rebuilt by a save,
+   * so it can still list the entry under any of them.
+   */
+  storedAs?: ReadonlyArray<{ name: string; source: string }>;
 }
 
 /** What each editor file exports, as `editor`. */
@@ -50,9 +56,10 @@ export interface EditorSpec {
   /**
    * The draft it opens on, from the entry as the Workshop found it (a copy, or
    * one saved before): for an entry that gathers others, such as a subclass's
-   * features, which are entries of their own.
+   * features, which are entries of their own. `file` is the player's file it
+   * is kept in, as stored: the registry leaves out a file the player turned off.
    */
-  open?: (entry: Json, at: { original?: Json; registry: EntityRegistry }) => Json;
+  open?: (entry: Json, at: { original?: Json; registry: EntityRegistry; file?: Json }) => Json;
   /** What Save stores, in place of `writeEntry`, for an entry that owns others. */
   write?: (at: WriteContext) => Written;
   /** The Save bar's line for a copy saved as changes, in place of a count of changes. */

@@ -30,7 +30,7 @@ import { isRecord, own } from '@/engine/castGuidance';
 import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
 import { listClass } from '@/ui/surfaces';
-import { changeCount, copiedFrom, writeEntry } from '../copyWriter';
+import { changeCount, copiedFrom, readStored, writeEntry } from '../copyWriter';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
 import { Field, Section, Select } from '../fields';
@@ -78,19 +78,21 @@ export function parseRef(raw: string) {
   };
 }
 
+/** Whether a feature is the one a ref names, as the sheet tells. */
+function isAt(f: Json, raw: string): boolean {
+  const r = parseRef(raw);
+  return (
+    eq(f.name, r.name) &&
+    eq(f.className, r.className) &&
+    eq(f.subclassShortName, r.shortName) &&
+    eq(f.subclassSource, r.shortSource) &&
+    Number(f.level) === r.level
+  );
+}
+
 /** The feature a ref names, found as the sheet finds it. */
 function findFeature(registry: EntityRegistry, raw: string): Json | undefined {
-  const r = parseRef(raw);
-  return registry
-    .byType(FEATURE)
-    .find(
-      (f) =>
-        eq(f.name, r.name) &&
-        eq(f.className, r.className) &&
-        eq(f.subclassShortName, r.shortName) &&
-        eq(f.subclassSource, r.shortSource) &&
-        f.level === r.level,
-    ) as Json | undefined;
+  return registry.byType(FEATURE).find((f) => isAt(f as Json, raw)) as Json | undefined;
 }
 
 /** The refs a feature's text holds to features under it, at its top level only. */
@@ -180,12 +182,30 @@ function ownGuidance(f: Json): Json {
  */
 export function openSubclass(
   entry: Json,
-  { original, registry }: { original?: Json; registry: EntityRegistry },
+  { original, registry, file }: { original?: Json; registry: EntityRegistry; file?: Json },
 ): Json {
   if (isRecord(entry[KEY])) return entry;
   // A copy whose original is not loaded is shown as it is stored.
   if (original === undefined && isRecord(own(entry, '_copy'))) return entry;
   const nodes = original === undefined ? [] : featureTree(original, registry);
+  // The player's features, from the file the subclass is kept in: the
+  // registry leaves out a file the player turned off. One saved as changes is
+  // read onto the original it names, as the registry would.
+  const stored = Array.isArray(file?.[FEATURE])
+    ? (file[FEATURE] as unknown[]).filter(isRecord)
+    : [];
+  const featureOf = (ref: string): Json | undefined => {
+    const raw = stored.find((f) => isAt(f, ref));
+    const copy = raw === undefined ? undefined : own(raw, '_copy');
+    if (raw === undefined || !isRecord(copy)) return raw ?? findFeature(registry, ref);
+    const target = nodes.find(
+      (n) =>
+        eq(n.entity?.name, copy.name) &&
+        eq(n.entity?.source, copy.source) &&
+        n.level === Number(copy.level ?? raw.level),
+    )?.entity;
+    return target === undefined ? findFeature(registry, ref) : readStored(raw, target).entry;
+  };
   const edits: FeatureEdits = { changed: {}, removed: [], added: [] };
   const present = new Set<string>();
   const keep = (n: FeatureNode) => {
@@ -198,12 +218,18 @@ export function openSubclass(
     seen.add(lower(ref));
     const node = nodes.find((n) => eq(n.ref, ref));
     if (node !== undefined) return keep(node);
-    const f = findFeature(registry, ref);
+    const f = featureOf(ref);
     if (f === undefined) return;
     const g = own(f, 'castGuidance');
     const [name, source] = String(isRecord(g) ? own(g, 'basedOn') : '').split('|');
+    // Save keeps a changed feature at its original's level, and some subclasses
+    // repeat a name at several (Battle Master's Additional Maneuvers).
     const from = nodes.find(
-      (n) => !present.has(n.ref) && eq(n.entity?.name, name) && eq(n.entity?.source, source),
+      (n) =>
+        !present.has(n.ref) &&
+        eq(n.entity?.name, name) &&
+        eq(n.entity?.source, source) &&
+        n.level === Number(f.level),
     );
     // A changed one's pointer is worked out again at Save; a new one keeps any
     // it has (a full copy reopened without its original).
@@ -228,8 +254,10 @@ export function openSubclass(
  * player's for the same class has it (their features would mix), then its name.
  */
 function shortNameFor(at: WriteContext): string {
-  const { draft, registry, source, stored } = at;
+  const { draft, registry, source, stored, storedAs = [] } = at;
   const want = String(draft.shortName ?? draft.name ?? '').trim();
+  // This one, under any name it had since the registry was built.
+  const mine = [...storedAs, ...(stored !== undefined ? [stored] : [])];
   const taken = registry
     .byType('subclass')
     .some(
@@ -237,7 +265,7 @@ function shortNameFor(at: WriteContext): string {
         eq(s.source, source) &&
         eq(s.className, draft.className) &&
         eq(s.shortName, want) &&
-        !(stored !== undefined && eq(s.name, stored.name) && eq(s.source, stored.source)),
+        !mine.some((m) => eq(s.name, m.name) && eq(s.source, m.source)),
     );
   return taken ? String(draft.name).trim() : want;
 }
@@ -291,13 +319,15 @@ export function writeSubclass(at: WriteContext): Written {
     const e = n.entity;
     const now = changedOf(edits, n) ?? n.base;
     // A copy is found by name and book alone; where two features share them,
-    // it could find the other, so this one is written out whole.
+    // it could find the other, so this one is written out whole. So is one the
+    // data holds as a copy of another (the book's features are never resolved):
+    // a copy of it would wait on that forever and lose its changes.
     const alone = registry.get(FEATURE, String(e.name), String(e.source)) === e;
     const f = writeEntry({
       original: e,
       draft: { ...now, ...place(n.level) },
       source,
-      mode: mode === 'full' || !alone ? 'full' : 'changes',
+      mode: mode === 'full' || !alone || isRecord(e._copy) ? 'full' : 'changes',
     });
     Object.assign(f, place(n.level));
     if (isRecord(f._copy)) {

@@ -302,6 +302,65 @@ describe('writeSubclass', () => {
     expect(again.entry.shortName).toBe('Devotion');
   });
 
+  it('keeps the short name on a second save after a rename, with the registry from before', () => {
+    const { registry, sub } = book();
+    loaded(registry, save(registry, sub, {}));
+    // The editor opened on Lantern, saved it as Lamp, and saves again: the
+    // registry it holds was built before the first save, so it still has Lantern.
+    const draft = openSubclass(structuredClone(sub), { original: sub, registry });
+    draft.name = 'Lamp';
+    const again = writeSubclass({
+      original: sub,
+      copied: sub,
+      draft,
+      source: 'MyHomebrew',
+      mode: 'changes',
+      registry,
+      stored: { name: 'Lamp', source: 'MyHomebrew' },
+      storedAs: [
+        { name: 'Lantern', source: 'MyHomebrew' },
+        { name: 'Lamp', source: 'MyHomebrew' },
+      ],
+    });
+    expect(again.entry.shortName).toBe('Devotion');
+  });
+
+  it('writes a feature out whole when the data holds it as a copy it never resolved', () => {
+    const registry = normalizeDataset(
+      new Map([
+        [
+          'class/class-paladin.json',
+          {
+            subclass: [DEVOTION],
+            subclassFeature: [
+              feature('Oath of Devotion', 3, ['Uphold justice.']),
+              feature('Aura of Devotion', 7, ['No charm near you.']),
+              {
+                ...feature('Smite of Protection', 15, []),
+                entries: undefined,
+                _copy: { name: 'Old Smite', source: 'PHB' },
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+    const sub = registry.get('subclass', 'Oath of Devotion', 'XPHB') as Json;
+    const smite = nodeOf(registry, sub, 'Smite of Protection');
+    // The book's features are not resolved, so this one is still a copy.
+    expect(smite.entity?._copy).toBeDefined();
+    const written = save(registry, sub, {
+      changed: { [smite.ref]: { ...smite.base, entries: ['Your smite shields.'] } },
+    });
+    const [f] = written.owned;
+    expect(f?._copy).toBeUndefined();
+    expect(f).toMatchObject({
+      name: 'Smite of Protection',
+      entries: ['Your smite shields.'],
+      castGuidance: { basedOn: 'Smite of Protection|XPHB' },
+    });
+  });
+
   it('writes every feature in full for a full copy', () => {
     const { registry, sub } = book();
     const draft = openSubclass(structuredClone(sub), { original: sub, registry });
@@ -348,6 +407,90 @@ describe('openSubclass', () => {
       name: 'Lantern Weapon',
       entries: ['It glows.'],
     });
+  });
+
+  it('reads the player’s features from their file, so they open with the file turned off', () => {
+    const { registry, sub } = book();
+    const weapon = nodeOf(registry, sub, 'Sacred Weapon');
+    const smite = nodeOf(registry, sub, 'Smite of Protection');
+    const edits: FeatureEdits = {
+      changed: {
+        [weapon.ref]: { ...weapon.base, name: 'Lantern Weapon', entries: ['It glows.'] },
+        [smite.ref]: { ...smite.base, entries: ['Twice.'] },
+      },
+      removed: [ref('Aura of Devotion', 7)],
+      added: [{ name: "Lantern's Reach", level: 3, entries: ['A flare of light.'] }],
+    };
+    const written = save(registry, sub, edits);
+    const file = { subclass: [written.entry], subclassFeature: written.owned };
+    // A registry without the player's file, as when it is turned off.
+    const off = book();
+    const { entry } = readStored(structuredClone(written.entry), off.sub);
+    const back = editsOf(openSubclass(entry, { original: off.sub, registry: off.registry, file }));
+    expect(back.removed).toEqual(edits.removed);
+    expect(back.added).toEqual(edits.added);
+    expect(Object.keys(back.changed).sort()).toEqual([weapon.ref, smite.ref].sort());
+    expect(back.changed[weapon.ref]).toMatchObject({
+      name: 'Lantern Weapon',
+      entries: ['It glows.'],
+    });
+    expect(back.changed[smite.ref]).toMatchObject({ entries: ['Twice.'] });
+  });
+
+  it('pairs a changed feature with the original at its level when names repeat', () => {
+    const at = (level: number): Json => ({
+      ...feature('More Maneuvers', level, [`Two more at ${level}.`]),
+      className: 'Fighter',
+      subclassShortName: 'Battle Master',
+    });
+    const refAt = (level: number) => `More Maneuvers|Fighter|XPHB|Battle Master|XPHB|${level}`;
+    const registry = normalizeDataset(
+      new Map([
+        [
+          'class/class-fighter.json',
+          {
+            subclass: [
+              {
+                name: 'Battle Master',
+                shortName: 'Battle Master',
+                source: 'XPHB',
+                className: 'Fighter',
+                classSource: 'XPHB',
+                subclassFeatures: [refAt(7), refAt(10), refAt(15)],
+              },
+            ],
+            subclassFeature: [at(7), at(10), at(15)],
+          },
+        ],
+      ]),
+    );
+    const sub = registry.get('subclass', 'Battle Master', 'XPHB') as Json;
+    const [seven, ten] = featureTree(sub, registry);
+    if (seven === undefined || ten === undefined) throw new Error('no features');
+    for (const mode of ['changes', 'full'] as const) {
+      const draft = openSubclass(structuredClone(sub), { original: sub, registry });
+      draft.name = `Lantern ${mode}`;
+      draft._features = {
+        changed: { [ten.ref]: { ...ten.base, entries: ['Three more.'] } },
+        removed: [seven.ref],
+        added: [],
+      };
+      const written = writeSubclass({
+        original: sub,
+        copied: sub,
+        draft,
+        source: 'MyHomebrew',
+        mode,
+        registry,
+      });
+      const file = { subclass: [written.entry], subclassFeature: written.owned };
+      const stored = structuredClone(written.entry);
+      const entry = mode === 'full' ? stored : readStored(stored, sub).entry;
+      const back = editsOf(openSubclass(entry, { original: sub, registry, file }));
+      expect(back.removed).toEqual([seven.ref]);
+      expect(Object.keys(back.changed)).toEqual([ten.ref]);
+      expect(back.changed[ten.ref]).toMatchObject({ level: 10, entries: ['Three more.'] });
+    }
   });
 });
 

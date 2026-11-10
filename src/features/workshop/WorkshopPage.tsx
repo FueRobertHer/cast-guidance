@@ -261,10 +261,19 @@ function resolve(
  * subclass's features, entries of their own): its `open` works out what the
  * player did to them. Every other editor opens on the entry as it is.
  */
-function opened(r: Resolved, spec: EditorSpec, registry: EntityRegistry): Resolved {
+function opened(
+  r: Resolved,
+  spec: EditorSpec,
+  registry: EntityRegistry,
+  files: readonly HomebrewFile[],
+): Resolved {
   if (r.state !== 'ready' || spec.open === undefined) return r;
-  const { draft, original } = r.subject;
-  return { ...r, subject: { ...r.subject, draft: spec.open(draft, { original, registry }) } };
+  const { draft, original, fileId } = r.subject;
+  const file = files.find((f) => f.id === fileId)?.json;
+  return {
+    ...r,
+    subject: { ...r.subject, draft: spec.open(draft, { original, registry, file }) },
+  };
 }
 
 function Editor({
@@ -288,6 +297,8 @@ function Editor({
   const [clean, setClean] = useState(subject.draft);
   const [mode, setMode] = useState<SaveMode>(subject.mode);
   const [at, setAt] = useState({ fileId: subject.fileId, stored: subject.stored });
+  // Each name it is stored under while open, for an editor's own writer.
+  const [storedAs, setStoredAs] = useState(subject.stored !== undefined ? [subject.stored] : []);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string>();
   const readOnly = missing !== undefined;
@@ -339,6 +350,7 @@ function Editor({
         mode,
         registry,
         stored: at.stored,
+        storedAs,
       });
       const entry =
         written?.entry ?? (writeEntry({ original: base, draft, source, mode }) as Json & EntryKey);
@@ -352,6 +364,7 @@ function Editor({
         await ensureSourcesVisible([WORKSHOP_SOURCE]).catch(() => undefined);
       }
       setAt({ fileId: saved.fileId, stored: { name: entry.name, source: entry.source } });
+      setStoredAs((s) => [...s, { name: entry.name, source: entry.source }]);
       setClean(draft);
       notify({ title: `Saved ${entry.name}`, tone: 'good' });
       onSaved(`/workshop/edit/${type}/${keyOf(entry.name, entry.source)}`);
@@ -545,6 +558,7 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
             resolve(action, type, uid, spec, reg.registry, entriesOf(owned.files)),
             spec,
             reg.registry,
+            owned.files,
           );
 
   usePageTitle(resolved.state === 'gone' ? 'Not found' : null, 'Workshop');
