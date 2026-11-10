@@ -187,6 +187,18 @@ describe('homebrewLanding', () => {
       expect(entry?.sum.length).toBeLessThanOrEqual(160);
     });
 
+    it('never reads a duration unit from an object prototype', () => {
+      for (const unit of ['constructor', 'toString', '__proto__', 'valueOf']) {
+        const { entry } = homebrewLanding(
+          valor([DIE_ON_ATTACKS], {
+            duration: [{ type: 'timed', duration: { type: unit, amount: 1 } }],
+          }),
+          'spell',
+        );
+        expect(entry?.lasts).toEqual({});
+      }
+    });
+
     it('never reads an inherited castGuidance', () => {
       const inherited = Object.assign(
         Object.create({ castGuidance: { v: 1, effects: [DIE_ON_ATTACKS] } }),

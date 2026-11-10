@@ -1188,7 +1188,11 @@ export interface EntriesByType {
 }
 
 /** Minutes in each unit a spell's duration is written in. A round is too short to count. */
-const UNIT_MINUTES: Readonly<Record<string, number>> = { minute: 1, hour: HOUR, day: 24 * HOUR };
+const UNIT_MINUTES: ReadonlyMap<unknown, number> = new Map([
+  ['minute', 1],
+  ['hour', HOUR],
+  ['day', 24 * HOUR],
+]);
 
 /** How long a spell lasts by its own duration field: its first timed duration. */
 function spellLasts(entry: Record<string, unknown>): EffectDuration {
@@ -1199,7 +1203,7 @@ function spellLasts(entry: Record<string, unknown>): EffectDuration {
   const span = own(first, 'duration');
   const unit = isRecord(span) ? own(span, 'type') : undefined;
   const amount = isRecord(span) ? own(span, 'amount') : undefined;
-  const per = typeof unit === 'string' ? UNIT_MINUTES[unit] : undefined;
+  const per = UNIT_MINUTES.get(unit);
   if (per !== undefined && typeof amount === 'number' && Number.isInteger(amount) && amount > 0) {
     out.minutes = Math.min(amount * per, CAST_GUIDANCE_LIMITS.amountLimit);
   }

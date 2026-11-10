@@ -90,19 +90,19 @@ export function deriveSheet(
     played = read.effects;
     const problems = read.problems;
     for (const problem of problems) col.warn(problem);
-    const counting = countingEffects(played);
-    for (const e of counting.inputs) col.add(e);
-    effectsNotCounted = counting.notCounted;
     // A homebrew condition in force counts as an effect in play does (H5),
-    // unless an immunity collected so far holds it off.
+    // unless an immunity collected so far, or one in play, holds it off.
     const early = new PlayStates(doc, ctx, played);
     const brew = homebrewConditionsInForce(doc.play.conditions, ctx, doc.rulesVersion, () =>
-      effectsOf(col.effects, 'conditionImmune')
-        .filter((e) => early.hold(e, undefined))
-        .map((e) => ({ condition: e.condition, origin: e.origin.label })),
+      effectsOf(
+        [...col.effects.filter((e) => early.hold(e, undefined)), ...countingEffects(played).inputs],
+        'conditionImmune',
+      ).map((e) => ({ condition: e.condition, origin: e.origin.label })),
     );
     for (const problem of brew.problems) col.warn(problem);
-    for (const e of countingEffects(brew.effects).inputs) col.add(e);
+    const counting = countingEffects([...played, ...brew.effects]);
+    for (const e of counting.inputs) col.add(e);
+    effectsNotCounted = counting.notCounted;
   }
 
   const collected = col.effects;

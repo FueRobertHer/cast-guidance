@@ -121,7 +121,7 @@ describe('homebrewConditionEffects', () => {
     poisoned: dazed([{ kind: 'acBonus', amount: -5 }]),
     hollow: { name: 'Hollow', entries: ['Words only.'] },
   };
-  const entryOf = (name: string) => entries[name.toLowerCase()];
+  const entryOf = (name: string) => entries[name.trim().toLowerCase()];
 
   it('turns a homebrew condition in force into an effect in play, named for it', () => {
     const { effects, problems } = homebrewConditionEffects([{ id: 'Dazed' }], entryOf);
@@ -142,8 +142,57 @@ describe('homebrewConditionEffects', () => {
       }).effects;
     expect(none([{ id: 'Dazed', ignored: true }])).toEqual([]);
     expect(none([{ id: 'Dazed' }], ['dazed'])).toEqual([]);
+    // A stored id with spaces round it is the same condition.
+    expect(none([{ id: ' Dazed ' }])).toHaveLength(1);
+    expect(none([{ id: ' Dazed ' }], ['Dazed'])).toEqual([]);
     expect(none([{ id: 'Bewildered' }])).toEqual([]);
     expect(none([{ id: 'Hollow' }])).toEqual([]);
+  });
+
+  it('lets one homebrew condition hold another off, only while it counts itself', () => {
+    const immuneTo = (name: string, to: string) => ({
+      ...dazed([
+        { kind: 'acBonus', amount: 1 },
+        { kind: 'conditionImmune', condition: to },
+      ]),
+      name,
+    });
+    const world: Record<string, unknown> = {
+      dazed: dazed([{ kind: 'acBonus', amount: -2 }]),
+      steeled: immuneTo('Steeled', 'dazed'),
+      calm: immuneTo('Calm', 'Steeled'),
+      hot: immuneTo('Hot', 'Cold'),
+      cold: immuneTo('Cold', 'Hot'),
+    };
+    const names = (...ids: string[]) =>
+      homebrewConditionEffects(
+        ids.map((id) => ({ id })),
+        (n) => world[n.toLowerCase()],
+      ).effects.map((e) => e.name);
+    expect(names('Dazed', 'Steeled')).toEqual(['Steeled']);
+    expect(names('Steeled', 'Dazed')).toEqual(['Steeled']);
+    // Calm holds Steeled off, so Steeled holds nothing off.
+    expect(names('Dazed', 'Steeled', 'Calm')).toEqual(['Dazed', 'Calm']);
+    // A ring: the first in play counts.
+    expect(names('Cold', 'Hot')).toEqual(['Cold']);
+    expect(names('Hot', 'Cold')).toEqual(['Hot']);
+  });
+
+  it('refuses what only an effect in play can use', () => {
+    const read = conditionMechanics(
+      dazed([
+        { kind: 'tempHpEachTurn', amount: 3 },
+        { kind: 'maxHpBonus', amount: -5 },
+        { kind: 'rollOffer', dice: '1d4', on: { rolls: ['attack'] }, once: true },
+        { kind: 'rollOffer', dice: '1d4', on: { rolls: ['save'] } },
+      ]),
+    );
+    expect(read.parts).toEqual([{ kind: 'rollOffer', dice: '1d4', on: { rolls: ['save'] } }]);
+    expect(read.problems).toEqual([
+      { place: 1, why: 'a condition gives no temporary hit points at the start of a turn' },
+      { place: 2, why: 'a condition cannot change the hit point maximum' },
+      { place: 3, why: 'a condition cannot offer a die just once, only on every roll' },
+    ]);
   });
 
   it('counts one of a name once', () => {
@@ -289,6 +338,29 @@ describe('deriveSheet with a homebrew condition', () => {
     ];
     expect(deriveSheet(immune, ctx).ac.value).toBe(base);
     expect(deriveSheet(warrior([{ id: 'Dazed' }]), ctx, { active: false }).ac.value).toBe(base);
+  });
+
+  it('never adds up with an effect in play of its name', () => {
+    const { ctx } = withConditions(dazed([{ kind: 'acBonus', amount: -2 }]));
+    const base = deriveSheet(warrior(), ctx).ac.value;
+    const both = warrior([{ id: 'Dazed' }]);
+    both.play.activeEffects = [
+      { id: 'd1', name: 'Dazed', parts: [{ kind: 'acBonus', amount: -2 }] },
+    ];
+    const sheet = deriveSheet(both, ctx);
+    expect(sheet.ac.value).toBe(base - 2);
+    expect(sheet.effectsNotCounted).toHaveLength(1);
+  });
+
+  it('is held off by another homebrew condition, as the sheet lists it', () => {
+    const { ctx } = withConditions(dazed([{ kind: 'acBonus', amount: -2 }]), {
+      ...dazed([{ kind: 'conditionImmune', condition: 'Dazed' }]),
+      name: 'Steeled',
+    });
+    const base = deriveSheet(warrior(), ctx).ac.value;
+    const sheet = deriveSheet(warrior([{ id: 'Dazed' }, { id: 'Steeled' }]), ctx);
+    expect(sheet.ac.value).toBe(base);
+    expect(sheet.conditionImmunities).toEqual([{ condition: 'Dazed', origin: 'Steeled' }]);
   });
 
   it('warns about what does not count, and counts the rest', () => {

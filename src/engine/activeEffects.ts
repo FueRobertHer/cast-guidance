@@ -286,13 +286,15 @@ const whyOf = (problem: string) => problem.replace(/^effect \d+( \([^)]*\))?: /,
  * An entry's stored effects (`castGuidance`, read by the reader every stored
  * effect goes through) as the parts an effect in play holds: numbers and
  * rolls, in plain amounts, holding for as long as the effect does. `holder`
- * names what holds them in the words a problem uses ("a condition"). Each one
- * that cannot count is a problem by its place in the list, so an editor can
- * put it on its card; nothing here throws.
+ * names what holds them in the words a problem uses ("a condition"), and
+ * `refuse` says why it cannot hold a part it otherwise would. Each one that
+ * cannot count is a problem by its place in the list, so an editor can put it
+ * on its card; nothing here throws.
  */
 export function storedInPlay(
   raw: unknown,
   holder = 'an effect in play',
+  refuse?: (part: EffectPart) => string | undefined,
 ): { parts: EffectPart[]; problems: StoredProblem[] } {
   const parts: EffectPart[] = [];
   const problems: StoredProblem[] = [];
@@ -330,6 +332,11 @@ export function storedInPlay(
       const part = held?.parts.length === 1 ? held.parts[0] : undefined;
       if (part === undefined) {
         problems.push({ place, why: why ?? `${holder} cannot hold it as written` });
+        return;
+      }
+      const refused = refuse?.(part);
+      if (refused !== undefined) {
+        problems.push({ place, why: refused });
         return;
       }
       parts.push(part);

@@ -521,11 +521,26 @@ export interface ConditionMechanics {
 }
 
 /**
+ * What an effect in play can hold but a condition cannot: the sheet gives
+ * turn-start temporary hit points, settles hit points when the maximum moves,
+ * and spends a die offered once, only for an effect in play.
+ */
+function conditionRefuses(part: EffectPart): string | undefined {
+  if (part.kind === 'tempHpEachTurn')
+    return 'a condition gives no temporary hit points at the start of a turn';
+  if (part.kind === 'maxHpBonus') return 'a condition cannot change the hit point maximum';
+  if (part.kind === 'rollOffer' && part.once === true)
+    return 'a condition cannot offer a die just once, only on every roll';
+  return undefined;
+}
+
+/**
  * What a homebrew condition's entry says it does (`castGuidance.effects`), as
- * the parts an effect in play holds (`storedInPlay`). Only those count:
- * numbers and rolls, in plain amounts, which hold for as long as the
- * condition does. Anything else is a problem, worded for the player, and does
- * not count. Nothing here throws.
+ * the parts an effect in play holds (`storedInPlay`), less the few only an
+ * effect in play can use (`conditionRefuses`). Only those count: numbers and
+ * rolls, in plain amounts, which hold for as long as the condition does.
+ * Anything else is a problem, worded for the player, and does not count.
+ * Nothing here throws.
  */
 export function conditionMechanics(entry: unknown): ConditionMechanics {
   if (!isRecord(entry)) return { parts: [], problems: [] };
@@ -539,7 +554,7 @@ export function conditionMechanics(entry: unknown): ConditionMechanics {
   }
   const version = guidanceVersion(guidance);
   if ('problem' in version) return { parts: [], problems: [{ why: version.problem }] };
-  return storedInPlay(own(guidance, 'effects'), 'a condition');
+  return storedInPlay(own(guidance, 'effects'), 'a condition', conditionRefuses);
 }
 
 /** A problem as a sheet warning says it: "Dazed: effect 2 does not count: ...". */
@@ -556,33 +571,51 @@ export function conditionProblemLine(name: string, p: ConditionProblem): string 
  * edition. A built-in condition is the app's own to count, so an entry never
  * changes it; one switched off, or held off by an immunity, counts nothing,
  * as a built-in one does. A name no entry has does nothing.
+ *
+ * One homebrew condition can hold off another with an immunity among its
+ * effects, as Petrified holds off Poisoned. Only one that counts holds
+ * another off, so the immunities the sheet lists are the ones that held.
  */
 export function homebrewConditionEffects(
   conditions: unknown,
   entryOf: (name: string) => unknown,
   options: ConditionOptions = {},
 ): { effects: ActiveEffect[]; problems: string[] } {
-  const effects: ActiveEffect[] = [];
   const problems: string[] = [];
   const held = heldNames(options);
   const seen = new Set<string>();
+  const read: Array<{ id: string; key: string; parts: EffectPart[] }> = [];
   // A stored document: a condition it cannot read does nothing here.
   const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
   for (const raw of list) {
     const id = isRecord(raw) ? own(raw, 'id') : undefined;
     if (!isRecord(raw) || typeof id !== 'string' || id.trim() === '') continue;
-    const c: ActiveCondition = { id, ...(own(raw, 'ignored') === true ? { ignored: true } : {}) };
     const key = id.trim().toLowerCase();
-    if (isBuiltInCondition(id) || seen.has(key) || !applies(c, held)) continue;
+    if (isBuiltInCondition(id) || seen.has(key)) continue;
     seen.add(key);
-    const entry = entryOf(c.id);
+    if (own(raw, 'ignored') === true || held.has(key)) continue;
+    const entry = entryOf(id);
     if (entry === undefined) continue;
-    const read = conditionMechanics(entry);
-    for (const p of read.problems) problems.push(conditionProblemLine(c.id, p));
-    if (read.parts.length > 0) {
-      effects.push({ id: `condition:${c.id}`, name: c.id, parts: read.parts });
-    }
+    const mechanics = conditionMechanics(entry);
+    for (const p of mechanics.problems) problems.push(conditionProblemLine(id, p));
+    if (mechanics.parts.length > 0) read.push({ id, key, parts: mechanics.parts });
   }
+  const holdsOff = (a: (typeof read)[number], b: (typeof read)[number]) =>
+    a !== b &&
+    a.parts.some((p) => p.kind === 'conditionImmune' && p.condition.trim().toLowerCase() === b.key);
+  // Settled in rounds: those nothing still unsettled holds off count, and what
+  // they hold off does not. In a ring, where each is held off by another, the
+  // first in play counts.
+  const counted: typeof read = [];
+  let open = read;
+  while (open.length > 0) {
+    const free = open.filter((c) => !open.some((o) => holdsOff(o, c)));
+    counted.push(...(free.length > 0 ? free : open.slice(0, 1)));
+    open = open.filter((c) => !counted.includes(c) && !counted.some((o) => holdsOff(o, c)));
+  }
+  const effects = read
+    .filter((c) => counted.includes(c))
+    .map((c) => ({ id: `condition:${c.id}`, name: c.id, parts: c.parts }));
   return { effects, problems };
 }
 
