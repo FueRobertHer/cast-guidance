@@ -19,13 +19,16 @@ import {
   recklessAttackEffect,
   recklessAttackOn,
 } from '@/engine/curated/namedEffects';
-import { applyEffect, type HpLimits } from '@/engine/effectLife';
+import { applyEffect, type HpLimits, maxHpFrom, spellCast } from '@/engine/effectLife';
+import type { MomentReport } from '@/engine/moments';
 import { filterReaches } from '@/engine/playRules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
 import { randomId } from '@/lib/randomId';
 import type { DocUpdater } from '@/stores/characterSession';
+import { notify } from '@/stores/notices';
 import { askChoice } from '@/ui/dialogs';
-import { castGranted, castSpell } from './castResources';
+import { castGranted, castSpell, nextCastResource } from './castResources';
+import { momentNotice } from './effectsInPlay';
 
 const lower = (s: string) => s.trim().toLowerCase();
 
@@ -138,10 +141,36 @@ export async function offerSelfBless(
   update((d) => void applyEffect(d.play, blessEffect(randomId(), true), hp));
 }
 
-/** Cast as `castSpell` does, then ask Bless's caster whether they are a target too. */
+/**
+ * Cast as `castSpell` does, firing the `castAtLevel` moments in the same
+ * change (one undo), and say what they did; then ask Bless's caster whether
+ * they are a target too.
+ */
 export function castSpellAsking(...args: Parameters<typeof castSpell>): void {
-  castSpell(...args);
-  const [update, hp, , , spell] = args;
+  const [update, hp, block, level, spell, resource] = args;
+  const inForce = hp.moments;
+  if (inForce === undefined || !inForce.moments.some((m) => m.at === 'castAtLevel')) {
+    castSpell(...args);
+  } else {
+    let said: MomentReport | undefined;
+    const firing: DocUpdater = (recipe, label, opts) =>
+      update(
+        (d) => {
+          // What the cast spends, worked out as `castSpell` does before it spends it.
+          const spent = (resource ?? nextCastResource(block, d.play, level)).level;
+          const maxBefore = maxHpFrom(d.play.activeEffects);
+          recipe(d);
+          // The cast can end what concentration held, a maximum-HP effect among them.
+          const moved = maxHpFrom(d.play.activeEffects) - maxBefore;
+          said = spellCast(d.play, spent, { ...hp, maxHp: hp.maxHp + moved }).moments;
+        },
+        label,
+        opts,
+      );
+    castSpell(firing, hp, block, level, spell, resource);
+    const notice = said === undefined ? null : momentNotice(said);
+    if (notice !== null) notify(notice);
+  }
   if (spell !== undefined) void offerSelfBless(spell.name, update, hp);
 }
 

@@ -15,6 +15,7 @@ import { pickForVersion } from '@/data5e/rulesVersion';
 import { BARDIC_DICE, type BardicDie, bardicEffect } from '@/engine/curated/namedEffects';
 import {
   applyEffect,
+  conditionEnded,
   conditionEndings,
   endEffect,
   type HpLimits,
@@ -46,6 +47,7 @@ import {
   immunityTo,
   lastsLine,
   partLine,
+  withMoments,
 } from './effectsInPlay';
 import { exhaustionLevel, setExhaustionLevel } from './exhaustion';
 import { forget, keepOn } from './keptList';
@@ -99,23 +101,45 @@ const CHIP_X =
 
 /**
  * The condition `id` just came on in this draft: what it ends goes
- * (concentration, Rage; see `conditionEndings`), and the notice says so. Null
- * when nothing ended.
+ * (concentration, Rage; see `conditionEndings`), its moments fire, and the
+ * notice says so. Null when nothing ended and no moment did anything.
  */
 function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Notice | null {
   if (hp === null) return null;
   const focus = d.play.concentratingOn?.label;
-  const { ended } = conditionEndings(d.play, id, hp);
+  const { ended, moments } = conditionEndings(d.play, id, hp);
   const gone = ended.length === 0 ? [] : [`Ended ${andList(ended)}`];
   if (focus !== undefined && d.play.concentratingOn === undefined) {
-    return {
+    const notice: Notice = {
       title: 'Concentration broken',
       detail: [focus, id, ...gone].join(' · '),
       tone: 'warn',
     };
+    return withMoments(notice, moments);
   }
-  if (ended.length === 0) return null;
-  return { title: `Ended ${andList(ended)}`, detail: id, tone: 'warn' };
+  const notice: Notice | null =
+    ended.length === 0 ? null : { title: `Ended ${andList(ended)}`, detail: id, tone: 'warn' };
+  return withMoments(notice, moments);
+}
+
+/**
+ * The condition `was` just came off in this draft: its moments fire, switched
+ * off or not, as its `conditionAdded` ones fired when it was added. The notice
+ * says what they did, or null.
+ */
+function settleEnded(
+  d: CharacterDoc,
+  was: Condition | undefined,
+  hp: HpLimits | null,
+): Notice | null {
+  if (hp === null || was === undefined) return null;
+  return withMoments(null, conditionEnded(d.play, was.id, hp).moments);
+}
+
+/** The limits with no moments in force. */
+function withoutMoments(hp: HpLimits): HpLimits {
+  const { moments: _moments, ...rest } = hp;
+  return rest;
 }
 
 /** "You cannot be poisoned: Periapt of Proof against Poison." */
@@ -296,15 +320,23 @@ export function ConditionStrip({
       if (idx === -1) {
         d.play.conditions.push({ id });
         notice = settleCondition(d, id, hp);
-      } else d.play.conditions.splice(idx, 1);
+      } else {
+        const [was] = d.play.conditions.splice(idx, 1);
+        notice = settleEnded(d, was, hp);
+      }
     });
     if (notice !== null) notify(notice);
   };
   const remove = (id: string, index: number) => {
     refocus.current = index;
+    const hp = limits();
+    let notice: Notice | null = null;
     update((d) => {
+      const was = d.play.conditions.find((x) => x.id === id);
       d.play.conditions = d.play.conditions.filter((x) => x.id !== id);
+      notice = settleEnded(d, was, hp);
     });
+    if (notice !== null) notify(notice);
   };
   const end = (effect: ActiveEffect, index?: number) => {
     const hp = limits();
@@ -391,8 +423,20 @@ export function ConditionStrip({
     if (hp === null) return;
     update((d) => void setEffectOff(d.play, effect.id, !on, hp));
   };
-  const setExhaustion = (level: number) =>
-    update((d) => setExhaustionLevel(d.play.conditions, level));
+  const setExhaustion = (level: number) => {
+    const hp = limits();
+    let notice: Notice | null = null;
+    update((d) => {
+      const was = d.play.conditions.find((x) => x.id === 'Exhaustion');
+      const wasOn = was === undefined ? undefined : { ...was };
+      setExhaustionLevel(d.play.conditions, level);
+      const on = d.play.conditions.some((x) => x.id === 'Exhaustion');
+      // Coming on from none, or going to none, is a condition added or ended.
+      if (wasOn === undefined && on) notice = settleCondition(d, 'Exhaustion', hp);
+      else if (wasOn !== undefined && !on) notice = settleEnded(d, wasOn, hp);
+    });
+    if (notice !== null) notify(notice);
+  };
   const setApplied = (id: string, applied: boolean) => {
     const hp = limits();
     let notice: Notice | null = null;
@@ -401,7 +445,8 @@ export function ConditionStrip({
       if (c === undefined) return;
       if (applied) {
         delete c.ignored;
-        notice = settleCondition(d, id, hp);
+        // Switched back on, it is no new condition: what it ends goes, no moment fires.
+        notice = settleCondition(d, id, hp === null ? null : withoutMoments(hp));
       } else c.ignored = true;
     });
     if (notice !== null) notify(notice);
@@ -413,9 +458,11 @@ export function ConditionStrip({
       d.play.currentHp = 0;
       d.play.tempHp = 0;
       delete d.play.tempHpFrom;
-      // Death ends concentration, the character's own effects it held, and Rage.
+      // Death ends concentration, the character's own effects it held, and
+      // Rage. No 0 HP moment fires: what they give is for a character who
+      // plays on (temporary HP, a level of exhaustion), not a dead one.
       if (hp === null) delete d.play.concentratingOn;
-      else knockedOut(d.play, hp);
+      else knockedOut(d.play, withoutMoments(hp));
     });
     // The 0 HP it sets is on the page behind the sheet, so close it to show
     // what was done rather than leave the button looking unpressed.
