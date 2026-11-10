@@ -263,8 +263,13 @@ work:
   links and prose picks reach them without the official data. Remaining:
   granted spells as `additionalSpells`; choices that only the prose states
   (Dragonborn resistance, Skilled, background picks); item attacks, AC and
-  "following benefits" defenses; spell captions, prose race speeds and
-  language oddities; `<class>` and subclass conversion. `printingOf` does not
+  "following benefits" defenses; spell captions (mostly Fight Club's own
+  omissions) and language oddities; `<class>` and subclass conversion. A race
+  whose text Fight Club takes from another book (Monsters of the Multiverse's
+  Tabaxi climb under Volo's citation, its Aarakocra flight under Elemental
+  Evil's) reads that text's speed. A trait offered in place of another
+  ("Variant: Aquatic", "in place of Skill Versatility") gives no speed, since
+  the race lists both. `printingOf` does not
   reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic
