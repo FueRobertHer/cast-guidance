@@ -13,11 +13,12 @@
  * `name|subclass|source`, feats and optional features `name|source`, all lowercase.
  *
  * A row from `restore` is the other kind of spending: the pool buys a use back, and
- * using the feature costs nothing. Those paid in spell slots or Hit Point Dice stay
- * out, as every cost in them does.
+ * using the feature costs nothing. Those paid in spell slots or Hit Point Dice, and
+ * every cost in them, are `SLOT_LINKS` rows.
  */
 import type { Collector } from '../effects/base';
 import type { ActionBuyBack, ActionCost, ActionEconomy, EffectOrigin } from '../types';
+import { linkSlotCost } from './slotLinks';
 
 type Amount = ActionCost['amount'];
 
@@ -430,9 +431,10 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
 };
 
 /**
- * Hang a feature's cost on the action it already emitted, or add one for a feature
- * that spends a pool with no action row of its own. Runs after the curated entry or
- * the scan, so a table row reaches both. Says whether the table has a row for `key`.
+ * Hang a feature's costs on the action it already emitted, or add one for a feature
+ * that spends with no action row of its own: its pool's from this table, then a
+ * spell slot's or Hit Point Die's from `SLOT_LINKS`. Runs after the curated entry or
+ * the scan, so a table row reaches both. Says whether either table has a row for `key`.
  */
 export function linkSpend(
   col: Collector,
@@ -440,6 +442,12 @@ export function linkSpend(
   label: string,
   origin: EffectOrigin,
 ): boolean {
+  const pool = linkPool(col, key, label, origin);
+  const slot = linkSlotCost(col, key, label, origin);
+  return pool || slot;
+}
+
+function linkPool(col: Collector, key: string, label: string, origin: EffectOrigin): boolean {
   const link = SPEND_LINKS[key.toLowerCase()];
   if (link === undefined) return false;
   if (link.restores !== undefined) {

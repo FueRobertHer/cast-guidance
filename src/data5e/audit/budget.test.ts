@@ -50,7 +50,7 @@ function makeReport(overrides: Partial<AuditReport> = {}): AuditReport {
       notJudged: 0,
       skipped: { notAcrossEditions: 0, targetNotFound: 0 },
     },
-    spend: { linked: 0, skipped: 0, unlinked: 0, noCostYet: 0, unasked: 0 },
+    spend: { linked: 0, skipped: 0, unlinked: 0, unasked: 0 },
     ...overrides,
   };
 }

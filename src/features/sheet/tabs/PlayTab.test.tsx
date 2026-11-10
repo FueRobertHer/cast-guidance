@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
-import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
+import { type CharacterDoc, HIT_DIE_COST, newCharacterDoc, SLOT_COST } from '@/engine/types';
 import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import { castLevelStore } from '@/stores/castLevels';
 import { heldRollStore, pickHeldTile, rollHeld } from '@/stores/heldRoll';
@@ -910,10 +910,14 @@ describe('PlayTab action costs', () => {
   type SheetAction = NonNullable<CharacterSheetState['sheet']>['actions'][number];
   type SheetResource = NonNullable<CharacterSheetState['sheet']>['resources'][number];
 
-  /** A Warrior's Play tab with these actions and one pool, re-read after each save. */
+  /**
+   * A Warrior's Play tab with these actions and one pool, re-read after each save;
+   * `build` changes what the sheet is derived from (another class for slots).
+   */
   function renderCosts(
     actions: Array<Partial<SheetAction>>,
     moreResources: readonly SheetResource[] = [],
+    build?: (doc: CharacterDoc) => void,
   ) {
     const doc = newCharacterDoc('p1', 'Hero', 't');
     doc.abilities.method = 'manual';
@@ -922,6 +926,7 @@ describe('PlayTab action costs', () => {
     ];
     doc.play.hpInitialized = true;
     doc.play.currentHp = 10;
+    build?.(doc);
     let current = doc;
     const sheetNow = () => {
       const sheet = deriveSheet(current, makeTestContext());
@@ -961,6 +966,7 @@ describe('PlayTab action costs', () => {
       used: () => current.play.resources.find((r) => r.key === 'pool')?.used ?? 0,
       usedOf: (key: string) => current.play.resources.find((r) => r.key === key)?.used ?? 0,
       turn: () => current.play.turn,
+      play: () => current.play,
       logged: () => lastLabel,
       spendPool: (amount: number) =>
         update((d) => {
@@ -970,6 +976,11 @@ describe('PlayTab action costs', () => {
       refillUnseen: () => {
         current = structuredClone(current);
         current.play.resources = current.play.resources.filter((r) => r.key !== 'pool');
+      },
+      /** Changes play state with no render, as a tap on the sheet behind a waiting prompt. */
+      changeUnseen: (recipe: (d: CharacterDoc) => void) => {
+        current = structuredClone(current);
+        recipe(current);
       },
     };
   }
@@ -1191,5 +1202,232 @@ describe('PlayTab action costs', () => {
     expect(button.disabled).toBe(true);
     expect(button.title).toBe('Not enough Test Pool');
     expect(usedOf('own')).toBe(1);
+  });
+
+  describe('paid with a spell slot or a Hit Point Die', () => {
+    /** A Warrior 3 / Sorcerer 5: slots [4, 3, 2], three d10 and five d6 Hit Point Dice. */
+    const caster = (doc: CharacterDoc) => {
+      doc.classes.push({
+        ref: { name: 'Sorcerer', source: 'TST' },
+        levels: 5,
+        hp: ['avg', 'avg', 'avg', 'avg', 'avg'],
+      });
+    };
+    const OWN = { key: 'own', label: 'Quick Step', max: 1, resetOn: 'long', origin } as const;
+    /** The faces the next dice show, in order (the roller draws from crypto). */
+    const nextFaces = (...faces: number[]) => {
+      const queue = [...faces];
+      vi.spyOn(crypto, 'getRandomValues').mockImplementation((buf) => {
+        const face = queue.shift();
+        if (face === undefined) throw new Error('rolled more dice than the test set up');
+        if (buf instanceof Uint32Array) buf[0] = face - 1;
+        return buf;
+      });
+    };
+    afterEach(() => vi.restoreAllMocks());
+
+    it('opens the prompt on the slots, and spends the one picked as its dice land', () => {
+      const { play, turn, logged } = renderCosts(
+        [
+          {
+            economy: 'none',
+            label: 'Quick Step',
+            cost: { resource: SLOT_COST, amount: 1, slotDice: { die: 8, base: 1, maxDice: 5 } },
+          },
+        ],
+        [],
+        caster,
+      );
+      expect(screen.getByText('Spell slots: 9 left')).toBeTruthy();
+      fireEvent.click(useButton());
+      expect(tiles()).toEqual([
+        'Level 1 slot, 4 left',
+        'Level 2 slot, 3 left',
+        'Level 3 slot, 2 left',
+      ]);
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 0, 0]);
+      nextFaces(1, 2, 3, 4);
+      castOn('slot-3');
+      expect(rollLogStore.getState().rolls[0]).toMatchObject({ expr: '4d8', total: 10 });
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 0, 1]);
+      expect(turn()?.action ?? false).toBe(false);
+      expect(logged()).toBe('Used Quick Step with a level 3 slot');
+    });
+
+    it('spends nothing when the use or the slot went while the prompt waited', () => {
+      const { play, turn, usedOf, changeUnseen } = renderCosts(
+        [
+          {
+            economy: 'bonus',
+            label: 'Quick Step',
+            cost: { resource: SLOT_COST, amount: 1, ownUseToo: true },
+          },
+        ],
+        [OWN],
+        caster,
+      );
+      fireEvent.click(useButton());
+      changeUnseen((d) => d.play.resources.push({ key: 'own', used: 1 }));
+      castOn('slot-1');
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 0, 0]);
+      expect(turn()?.bonus ?? false).toBe(false);
+
+      changeUnseen((d) => {
+        d.play.resources = [];
+        d.play.slotsSpent = [4, 0, 0];
+      });
+      fireEvent.click(useButton());
+      castOn('slot-1');
+      expect(play().slotsSpent.slice(0, 3)).toEqual([4, 0, 0]);
+      expect(usedOf('own')).toBe(0);
+      expect(turn()?.bonus ?? false).toBe(false);
+    });
+
+    it("refills the pool a slot turns into by the slot's level", () => {
+      const { play, used, spendPool } = renderCosts(
+        [
+          {
+            economy: 'none',
+            label: 'Quick Step',
+            cost: { resource: SLOT_COST, amount: 1, slotRefills: 'pool' },
+          },
+        ],
+        [],
+        caster,
+      );
+      spendPool(3);
+      fireEvent.click(useButton());
+      castOn('slot-2');
+      expect(used()).toBe(1);
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 1, 0]);
+    });
+
+    it('spends no slot when the pool it turns into filled up while the prompt waited', () => {
+      const { play, used, spendPool, refillUnseen } = renderCosts(
+        [
+          {
+            economy: 'none',
+            label: 'Quick Step',
+            cost: { resource: SLOT_COST, amount: 1, slotRefills: 'pool' },
+          },
+        ],
+        [],
+        caster,
+      );
+      spendPool(1);
+      fireEvent.click(useButton());
+      refillUnseen();
+      castOn('slot-1');
+      expect(used()).toBe(0);
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 0, 0]);
+    });
+
+    it('buys a use back with a slot of the level it names, taking nothing from the turn', () => {
+      const { play, turn, usedOf, logged, changeUnseen } = renderCosts(
+        [
+          {
+            economy: 'bonus',
+            label: 'Quick Step',
+            buyBack: { resource: SLOT_COST, amount: 1, minLevel: 2 },
+          },
+        ],
+        [OWN],
+        caster,
+      );
+      fireEvent.click(useButton());
+      expect(usedOf('own')).toBe(1);
+      expect(turn()?.bonus).toBe(true);
+      changeUnseen((d) => {
+        d.play.turn = { action: false, bonus: false, reaction: false };
+      });
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Restore Quick Step, spending a level 2+ spell slot',
+        }),
+      );
+      expect(tiles()).toEqual(['Level 2 slot, 3 left', 'Level 3 slot, 2 left']);
+      castOn();
+      expect(usedOf('own')).toBe(0);
+      expect(play().slotsSpent.slice(0, 3)).toEqual([0, 1, 0]);
+      expect(logged()).toBe('Restored Quick Step with a level 2 slot');
+      expect(turn()?.bonus).toBe(false);
+    });
+
+    it('spends a Hit Point Die and heals by it at once when one size is left', () => {
+      const { play, turn, logged } = renderCosts(
+        [
+          {
+            economy: 'bonus',
+            label: 'Quick Step',
+            cost: { resource: HIT_DIE_COST, amount: 1, hitDieHeals: 'roll' },
+          },
+        ],
+        [],
+        (d) => {
+          caster(d);
+          d.play.hitDiceSpent = { d6: 5 };
+        },
+      );
+      nextFaces(7);
+      fireEvent.click(useButton());
+      expect(heldRollStore.getState().held).toBeNull();
+      expect(play().hitDiceSpent).toEqual({ d6: 5, d10: 1 });
+      expect(play().currentHp).toBe(17);
+      expect(turn()?.bonus).toBe(true);
+      expect(logged()).toBe('Used Quick Step (d10)');
+    });
+
+    it('asks which size with more than one, and heals by the roll once it lands', () => {
+      const { play } = renderCosts(
+        [
+          {
+            economy: 'none',
+            label: 'Quick Step',
+            cost: { resource: HIT_DIE_COST, amount: 1, hitDieHeals: 'rollPlusCon' },
+          },
+        ],
+        [],
+        (d) => {
+          caster(d);
+          d.abilities.base = { str: 10, dex: 10, con: 14, int: 10, wis: 10, cha: 10 };
+        },
+      );
+      fireEvent.click(useButton());
+      expect(waiting().groups[0]?.tiles.map((t) => t.head)).toEqual(['d10', 'd6']);
+      nextFaces(4);
+      castOn('d6');
+      expect(rollLogStore.getState().rolls[0]).toMatchObject({ expr: '1d6+2', total: 6 });
+      expect(play().hitDiceSpent).toEqual({ d6: 1 });
+      expect(play().currentHp).toBe(16);
+    });
+
+    it('heals at least what the feature names, however low the roll', () => {
+      const atLeast = (hitDieAtLeast?: number) => {
+        cleanup();
+        const { play } = renderCosts(
+          [
+            {
+              economy: 'none',
+              label: 'Quick Step',
+              cost: {
+                resource: HIT_DIE_COST,
+                amount: 1,
+                hitDieHeals: 'rollPlusCon',
+                ...(hitDieAtLeast !== undefined ? { hitDieAtLeast } : {}),
+              },
+            },
+          ],
+          [],
+          (d) => {
+            d.abilities.base = { str: 10, dex: 10, con: 6, int: 10, wis: 10, cha: 10 };
+          },
+        );
+        nextFaces(1);
+        fireEvent.click(useButton());
+        return play().currentHp;
+      };
+      expect(atLeast(1)).toBe(11);
+      expect(atLeast()).toBe(10);
+    });
   });
 });

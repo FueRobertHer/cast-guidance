@@ -155,7 +155,7 @@ function printReport(report: AuditReport, budget: AuditBudget): void {
   console.log('\n## features that spend a pool');
   console.log(
     `${spend.linked} linked, ${spend.unlinked} unlinked, ${spend.skipped} left out with a reason, ` +
-      `${spend.noCostYet} on a pool no action can spend yet, ${spend.unasked} not asked`,
+      `${spend.unasked} not asked`,
   );
 }
 

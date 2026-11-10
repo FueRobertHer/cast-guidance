@@ -6,9 +6,12 @@ import {
   type DerivedResource,
   type EffectInput,
   type EffectOrigin,
+  HIT_DIE_COST,
   newCharacterDoc,
+  SLOT_COST,
+  type SpellcastingBlock,
 } from '../types';
-import { calcResources, costOnSheet } from './resources';
+import { calcResources, costOnSheet, slotsAndDice } from './resources';
 
 const origin: EffectOrigin = { label: 'Class', uid: 'class|x', type: 'class' };
 
@@ -138,5 +141,60 @@ describe('costOnSheet', () => {
     const buyBack = { resource: 'focus', amount: 3, own: 'use' };
     expect(costOnSheet(buyBack, [pool('ki')])).toEqual({ ...buyBack, resource: 'ki' });
     expect(costOnSheet(buyBack, [pool('dice')])).toBeUndefined();
+  });
+
+  describe('a spell slot or Hit Point Die price', () => {
+    const slot = (extra: { minLevel?: number; pactOnly?: boolean } = {}) => ({
+      resource: SLOT_COST,
+      amount: 1,
+      ...extra,
+    });
+    const caster = { slotTop: 3, hitDice: 5 };
+    const pactCaster = { slotTop: 0, pactLevel: 3, hitDice: 5 };
+
+    it('keeps a slot price while some slot of its level or higher exists', () => {
+      expect(costOnSheet(slot(), [], caster)).toEqual(slot());
+      expect(costOnSheet(slot({ minLevel: 3 }), [], caster)).toEqual(slot({ minLevel: 3 }));
+      expect(costOnSheet(slot({ minLevel: 5 }), [], caster)).toBeUndefined();
+      expect(costOnSheet(slot(), [])).toBeUndefined();
+    });
+
+    it('lets the pact slot pay any slot price, and only it pay a Pact Magic one', () => {
+      expect(costOnSheet(slot({ minLevel: 3 }), [], pactCaster)).toBeDefined();
+      expect(costOnSheet(slot({ pactOnly: true }), [], pactCaster)).toBeDefined();
+      expect(costOnSheet(slot({ pactOnly: true }), [], caster)).toBeUndefined();
+      expect(costOnSheet(slot({ pactOnly: true, minLevel: 4 }), [], pactCaster)).toBeUndefined();
+    });
+
+    it('keeps a slot turned into points only with that pool, under either name', () => {
+      const refill = (pool: string) => ({ ...slot(), slotRefills: pool });
+      expect(costOnSheet(refill('focus'), [pool('ki')], caster)?.slotRefills).toBe('ki');
+      expect(costOnSheet(refill('focus'), [pool('focus')], caster)?.slotRefills).toBe('focus');
+      expect(costOnSheet(refill('sorcery-points'), [pool('ki')], caster)).toBeUndefined();
+    });
+
+    it('keeps a Hit Point Die price for anyone with a die', () => {
+      const die = { resource: HIT_DIE_COST, amount: 1 };
+      expect(costOnSheet(die, [], caster)).toEqual(die);
+      expect(costOnSheet(die, [], { slotTop: 0, hitDice: 0 })).toBeUndefined();
+    });
+  });
+});
+
+describe('slotsAndDice', () => {
+  const block = (slots: number[], pactSlots?: { count: number; level: number }) =>
+    ({ slots, ...(pactSlots !== undefined ? { pactSlots } : {}) }) as SpellcastingBlock;
+
+  it('finds the highest slot, the pact slot and every Hit Point Die', () => {
+    expect(slotsAndDice([block([4, 3, 2, 0])], { d10: 3, d6: 2 })).toEqual({
+      slotTop: 3,
+      pactLevel: undefined,
+      hitDice: 5,
+    });
+    expect(slotsAndDice([block([0]), block([], { count: 2, level: 4 })], {})).toEqual({
+      slotTop: 0,
+      pactLevel: 4,
+      hitDice: 0,
+    });
   });
 });

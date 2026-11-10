@@ -371,8 +371,40 @@ export type BonusAmount =
  */
 export type ActionEconomy = 'action' | 'bonus' | 'reaction' | 'none';
 
-export interface ActionCost {
-  /** The key of the resource it spends. */
+/**
+ * The `resource` of a cost or a buy-back paid with a spell slot, which the player
+ * picks by level as they pay (Divine Smite, Holy Nimbus's restore).
+ */
+export const SLOT_COST = 'spell-slot';
+/** The `resource` of a cost paid with a Hit Point Die (Durable's Speedy Recovery). */
+export const HIT_DIE_COST = 'hit-die';
+
+/** Which spell slots pay a slot cost. */
+export interface SlotPrice {
+  /** The lowest slot level that pays ("a level 5 spell slot"). */
+  minLevel?: number;
+  /** Only a Pact Magic slot pays (Eldritch Smite, Hurl Through Hell's restore). */
+  pactOnly?: boolean;
+}
+
+/**
+ * Dice a slot cost rolls by the slot's level: `base` plus one a level, of `die`,
+ * up to `maxDice` (Divine Smite: 1, d8, 5 rolls 2d8 at 1st and 5d8 at 4th).
+ */
+export interface SlotDice {
+  die: number;
+  base: number;
+  maxDice?: number;
+  /** Hit points regained (Combat Wild Shape), rather than damage. */
+  heals?: boolean;
+  /** Neither damage nor healing: a damage reduction (Adept of the White Robes). */
+  plain?: boolean;
+  /** What the roll adds past its dice ("+ your spellcasting modifier"), for the line under it. */
+  plus?: string;
+}
+
+export interface ActionCost extends SlotPrice {
+  /** The key of the resource it spends, or `SLOT_COST` or `HIT_DIE_COST`. */
   resource: string;
   /** How many. `varies` is the player's call, so nothing spends by itself. */
   amount: number | 'varies';
@@ -383,14 +415,22 @@ export interface ActionCost {
    * sharing the action's name is not touched.
    */
   ownUseToo?: boolean;
+  /** A slot cost's dice at the level paid. */
+  slotDice?: SlotDice;
+  /** A slot cost gives back this pool's points, as many as the slot's level (Font of Magic). */
+  slotRefills?: string;
+  /** A Hit Die cost's die heals you: the roll, or the roll plus your Constitution modifier. */
+  hitDieHeals?: 'roll' | 'rollPlusCon';
+  /** The least that heal gives, where the feature says so (Dwarven Fortitude: 1). */
+  hitDieAtLeast?: number;
 }
 
 /**
  * Paying a pool to get a use back (Psi-Powered Leap). It sits beside `cost` because
  * using the feature spends none of it: the price is for the next use.
  */
-export interface ActionBuyBack {
-  /** The key of the resource it pays from. */
+export interface ActionBuyBack extends SlotPrice {
+  /** The key of the resource it pays from, or `SLOT_COST`. */
   resource: string;
   amount: number;
   /** The key of the use it gives back, when that use does not share the action's name. */

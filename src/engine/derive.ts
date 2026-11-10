@@ -10,7 +10,7 @@ import { calcAc } from './calc/ac';
 import { calcAttacks } from './calc/attacks';
 import { bonusAmount, dv, effectsOf, inPlay, onTop, withOverride } from './calc/core';
 import { calcMaxHp } from './calc/hp';
-import { calcResources, costOnSheet } from './calc/resources';
+import { calcResources, costOnSheet, slotsAndDice } from './calc/resources';
 import {
   calcChecks,
   calcPassivePerception,
@@ -219,6 +219,7 @@ export function deriveSheet(
       : from === 'strOrDex'
         ? 8 + Math.max(abilities.str.mod, abilities.dex.mod) + profBonus.value
         : from && 8 + abilities[from].mod + profBonus.value;
+  const pays = slotsAndDice(spellcasting, hitDice);
   const actions = [...actionByKey.values()].map((e) => ({
     economy: e.economy,
     label: e.label,
@@ -231,8 +232,8 @@ export function deriveSheet(
       e.save !== undefined
         ? { targetAbility: e.save.targetAbility, dc: saveDc(e.save.dcAbility) }
         : undefined,
-    cost: costOnSheet(e.cost, resources),
-    buyBack: costOnSheet(e.buyBack, resources),
+    cost: costOnSheet(e.cost, resources, pays),
+    buyBack: costOnSheet(e.buyBack, resources, pays),
     regains: e.regains,
     ...(e.spendsNoUse === true ? { spendsNoUse: true } : {}),
   }));

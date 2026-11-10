@@ -5,7 +5,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { d20Ask } from '@/features/sheet/d20Tests';
-import { resetAnnouncer } from '@/stores/announcer';
+import { getAnnouncerState, resetAnnouncer } from '@/stores/announcer';
 import {
   cancelHeld,
   cancelHeldCast,
@@ -101,6 +101,7 @@ const control = (name: string) => {
 const tile = (name: string) => screen.getByRole('button', { name });
 const pressed = (name: string) => tile(name).getAttribute('aria-pressed') === 'true';
 const rolls = () => rollLogStore.getState().rolls;
+const spoken = () => getAnnouncerState().messages.map((m) => m.text);
 
 beforeEach(() => {
   resetAnnouncer();
@@ -135,6 +136,7 @@ describe('the roll prompt casting a spell', () => {
     expect(screen.queryByRole('button', { name: 'Advantage' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Heal' })).toBeTruthy();
     expect(rolls()).toEqual([]);
+    expect(spoken().at(-1)).toBe('Cast Cure Wounds. Spends slot-2. Choose, then Heal.');
   });
 
   it('moves to the tile tapped, and not to one that cannot pay', () => {
@@ -197,6 +199,43 @@ describe('the roll prompt casting a spell', () => {
     );
     expect(screen.getByRole('group', { name: 'Cast Bless, choose and cast' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cast' }));
+    expect(spent).toEqual(['slot-2']);
+    expect(rolls()).toEqual([]);
+  });
+
+  it('says Use for a feature paid with a slot, rolling its dice twice when they ride a crit', () => {
+    render(<RollToast />);
+    const { plan, spent } = cureWounds({
+      spell: 'Divine Smite',
+      verb: 'Use',
+      dice: () => ({ expr: '3d8', label: 'Divine Smite', kind: 'damage', crit: true }),
+      line: () => '2nd level: 3d8',
+    });
+    act(() => castFrom(control('Smite row'), plan));
+    expect(screen.getByRole('group', { name: 'Use Divine Smite, choose and roll' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel this use' })).toBeTruthy();
+    expect(spoken().at(-1)).toBe('Use Divine Smite. Spends slot-2. Choose, then Roll.');
+    nextFaces(1, 2, 3, 4, 5, 6);
+    fireEvent.click(screen.getByRole('button', { name: 'Roll' }));
+    expect(rolls()[0]).toMatchObject({ expr: '3d8', kind: 'damage', total: 21 });
+    expect(rolls()[0]?.meta?.critical).toBe(true);
+    expect(spent).toEqual(['slot-2']);
+  });
+
+  it('says Restore for a use bought back with a slot, which rolls nothing', () => {
+    render(<RollToast />);
+    const { plan, spent } = cureWounds({
+      spell: 'Holy Nimbus',
+      verb: 'Restore',
+      dice: () => undefined,
+      line: () => '5th level',
+    });
+    act(() => castFrom(control('Holy Nimbus row'), plan));
+    expect(
+      screen.getByRole('group', { name: 'Restore Holy Nimbus, choose and restore' }),
+    ).toBeTruthy();
+    expect(spoken().at(-1)).toBe('Restore Holy Nimbus. Spends slot-2. Choose, then Restore.');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
     expect(spent).toEqual(['slot-2']);
     expect(rolls()).toEqual([]);
   });
