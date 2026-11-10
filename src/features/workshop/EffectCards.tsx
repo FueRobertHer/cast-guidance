@@ -6,6 +6,7 @@
  * reader the sheet uses, so a card that would not count says why, here.
  */
 import { CircleAlert, Plus, X } from 'lucide-react';
+import { useId, useState } from 'react';
 import { isRecord, type StoredEffect, type StoredState } from '@/engine/castGuidance';
 import { readStoredEffects } from '@/engine/effects/mechanics';
 import { SKILLS } from '@/engine/types';
@@ -84,6 +85,8 @@ type FieldSpec =
 
 interface KindSpec {
   kinds: readonly string[];
+  /** For a kind two cards share: whether this card is the one for `e`. */
+  is?: (e: Eff) => boolean;
   /** What the add list calls it. */
   add: string;
   make: () => Eff;
@@ -285,6 +288,37 @@ const KINDS: readonly KindSpec[] = [
   },
   {
     kinds: ['attackBonus'],
+    is: (e) => e.attack === 'spell',
+    add: 'Spell attacks',
+    make: () => ({ kind: 'attackBonus', amount: 1, attack: 'spell' }),
+    fields: [amountField],
+    line: (e) => `${amount(e.amount)} to spell attack rolls`,
+  },
+  {
+    kinds: ['spellDcBonus'],
+    add: 'Spell save DC',
+    make: () => ({ kind: 'spellDcBonus', amount: 1 }),
+    fields: [amountField],
+    line: (e) => `${amount(e.amount)} to your spell save DC`,
+  },
+  {
+    kinds: ['grantSpell'],
+    add: 'Cast a spell',
+    make: () => ({ kind: 'grantSpell', spell: '' }),
+    fields: [],
+    line: (e) => {
+      const name = String(e.spell ?? '').split('|')[0] || 'a spell';
+      const how =
+        e.usage === 'prepared'
+          ? ', always prepared'
+          : typeof e.resourceKey === 'string'
+            ? `, spending 1 use of ${e.resourceKey}`
+            : ' at will';
+      return `Cast ${name}${how}`;
+    },
+  },
+  {
+    kinds: ['attackBonus'],
     add: 'Attack rolls',
     make: () => ({ kind: 'attackBonus', amount: 1, scope: 'all' }),
     fields: [amountField, { key: 'scope', label: 'Which', type: 'pick', options: SCOPE }],
@@ -383,7 +417,115 @@ function costOf(e: Eff): string | undefined {
   return typeof cost?.resource === 'string' ? cost.resource : undefined;
 }
 
-const specOf = (kind: string) => KINDS.find((k) => k.kinds.includes(kind));
+const specOf = (e: Eff) => KINDS.find((k) => k.kinds.includes(e.kind) && (k.is?.(e) ?? true));
+
+/** A spell a card can name: the player's data, as `name|source`. */
+export interface SpellOption {
+  name: string;
+  source: string;
+}
+
+/** The resource a grant spends, as the Spells tab counts it: per day back on a long rest. */
+function usageFor(resource: Eff | undefined): string {
+  return `1/${resource?.reset === 'short' ? 'rest' : 'day'}`;
+}
+
+/** A spell grant's own controls: which spell, how it is cast, whose ability sets its numbers. */
+function GrantFields({
+  effect,
+  resources,
+  spells,
+  onChange,
+}: {
+  effect: Eff;
+  resources: readonly Eff[];
+  spells: readonly SpellOption[];
+  onChange: (next: Eff) => void;
+}) {
+  const id = useId();
+  const ref = String(effect.spell ?? '');
+  const [held, setTyped] = useState(ref.split('|')[0] ?? '');
+  const resolve = (name: string) => {
+    const hit = spells.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+    return hit !== undefined ? `${hit.name}|${hit.source}` : name;
+  };
+  // Cards are their place in the list, so this one can be handed another
+  // grant (the one above it removed): then its spell is shown, not what was typed.
+  const typed = resolve(held) === ref ? held : (ref.split('|')[0] ?? '');
+  const how =
+    effect.usage === 'prepared'
+      ? 'prepared'
+      : typeof effect.resourceKey === 'string'
+        ? `use:${effect.resourceKey}`
+        : '';
+  const setHow = (v: string) => {
+    const { usage: _u, resourceKey: _r, ...rest } = effect;
+    if (v === 'prepared') onChange({ ...rest, usage: 'prepared' } as Eff);
+    else if (v.startsWith('use:')) {
+      const key = v.slice(4);
+      onChange({
+        ...rest,
+        resourceKey: key,
+        usage: usageFor(resources.find((r) => r.key === key)),
+      } as Eff);
+    } else onChange(rest as Eff);
+  };
+  return (
+    <>
+      <Field label="Spell">
+        <input
+          aria-label="Cast a spell: Spell"
+          list={id}
+          value={typed}
+          placeholder="Misty Step"
+          onChange={(e) => {
+            const name = e.target.value;
+            setTyped(name);
+            onChange({ ...effect, spell: resolve(name) });
+          }}
+          className={fieldClass}
+        />
+        <datalist id={id}>
+          {spells.map((s) => (
+            <option key={`${s.name}|${s.source}`} value={s.name} />
+          ))}
+        </datalist>
+      </Field>
+      <Field label="Cast">
+        <Select
+          aria-label="Cast a spell: Cast"
+          value={how}
+          onChange={(e) => setHow(e.target.value)}
+        >
+          <option value="">At will</option>
+          <option value="prepared">Always prepared</option>
+          {resources.map((r) => (
+            <option key={String(r.key)} value={`use:${String(r.key)}`}>
+              Spending 1 use of {String(r.label)}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Attack and DC from">
+        <Select
+          aria-label="Cast a spell: Attack and DC from"
+          value={typeof effect.ability === 'string' ? effect.ability : ''}
+          onChange={(e) => {
+            const { ability: _, ...rest } = effect;
+            onChange(e.target.value === '' ? (rest as Eff) : { ...rest, ability: e.target.value });
+          }}
+        >
+          <option value="">No ability</option>
+          {ABILITY.map(([v, text]) => (
+            <option key={v} value={v}>
+              {text}
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </>
+  );
+}
 
 /** A resource's key, from the name a player gives it. */
 const keyOf = (label: string) =>
@@ -414,6 +556,7 @@ function Card({
   effect,
   problems,
   list,
+  spells,
   readOnly,
   onChange,
   onRemove,
@@ -421,11 +564,12 @@ function Card({
   effect: Eff;
   problems: string[];
   list: readonly Eff[];
+  spells: readonly SpellOption[];
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
   onRemove: () => void;
 }) {
-  const spec = specOf(effect.kind);
+  const spec = specOf(effect);
   const title = spec?.add ?? effect.kind;
   const resources = list.filter((x) => x.kind === 'resource' && typeof x.key === 'string');
   const state = typeof effect.while === 'string' ? effect.while : '';
@@ -481,6 +625,14 @@ function Card({
               )}
             </Field>
           ))}
+          {effect.kind === 'grantSpell' && (
+            <GrantFields
+              effect={effect}
+              resources={resources}
+              spells={spells}
+              onChange={onChange}
+            />
+          )}
           {effect.kind === 'action' && resources.length > 0 && (
             <Field label="Spends">
               <Select
@@ -536,7 +688,10 @@ function Card({
       {problems.map((p) => (
         <p key={p} className="flex items-start gap-1.5 pr-2 text-caption text-danger">
           <CircleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />
-          This does not count yet: {p}
+          This does not count yet:{' '}
+          {effect.kind === 'grantSpell' && p.startsWith('"spell"')
+            ? 'pick a spell from the list'
+            : p}
         </p>
       ))}
     </div>
@@ -555,6 +710,8 @@ export function EffectCards({
   inherits,
   replace,
   onReplace,
+  spells,
+  hide,
 }: {
   effects: unknown;
   onChange: (next: Eff[]) => void;
@@ -562,6 +719,10 @@ export function EffectCards({
   inherits?: string;
   replace?: boolean;
   onReplace?: (replace: boolean) => void;
+  /** The spells a "Cast a spell" card can name; without them it is not offered. */
+  spells?: readonly SpellOption[];
+  /** Effects another control of the editor shows, left out of the cards (an item's charges). */
+  hide?: (e: Eff) => boolean;
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const { problems } = readStoredEffects(list);
@@ -573,7 +734,9 @@ export function EffectCards({
   const more = async () => {
     const id = await askChoice({
       title: 'What does it do?',
-      options: KINDS.filter((k) => !FIRST.includes(k.add)).map((k) => ({
+      options: KINDS.filter(
+        (k) => !FIRST.includes(k.add) && (spells !== undefined || k.add !== 'Cast a spell'),
+      ).map((k) => ({
         id: k.add,
         label: k.add,
       })),
@@ -595,30 +758,38 @@ export function EffectCards({
           Also does what {inherits} does on the sheet
         </label>
       )}
-      {list.map((effect, i) => (
-        <Card
-          // Effects have no id of their own; a card is its place in the list.
-          // biome-ignore lint/suspicious/noArrayIndexKey: see above
-          key={i}
-          effect={effect}
-          list={list}
-          problems={problemsOf(i)}
-          readOnly={readOnly}
-          onRemove={() => onChange(list.filter((_, j) => j !== i))}
-          onChange={(next, renamed) =>
-            onChange(
-              list.map((x, j) => {
-                if (j === i) return next;
-                const cost = x.cost as { resource?: unknown } | undefined;
-                return renamed !== undefined && x.kind === 'action' && cost?.resource === renamed[0]
-                  ? { ...x, cost: { ...cost, resource: renamed[1] } }
-                  : x;
-              }),
-            )
-          }
-        />
-      ))}
-      {list.length === 0 && (
+      {list.map((effect, i) =>
+        hide?.(effect) === true ? null : (
+          <Card
+            // Effects have no id of their own; a card is its place in the list.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            key={i}
+            effect={effect}
+            list={list}
+            spells={spells ?? []}
+            problems={problemsOf(i)}
+            readOnly={readOnly}
+            onRemove={() => onChange(list.filter((_, j) => j !== i))}
+            onChange={(next, renamed) =>
+              onChange(
+                list.map((x, j) => {
+                  if (j === i) return next;
+                  if (renamed === undefined) return x;
+                  // What spends the renamed uses follows it: an action's cost,
+                  // a spell cast with them.
+                  const cost = x.cost as { resource?: unknown } | undefined;
+                  if (x.kind === 'action' && cost?.resource === renamed[0])
+                    return { ...x, cost: { ...cost, resource: renamed[1] } };
+                  if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
+                    return { ...x, resourceKey: renamed[1] };
+                  return x;
+                }),
+              )
+            }
+          />
+        ),
+      )}
+      {list.filter((e) => hide?.(e) !== true).length === 0 && (
         <p className="text-caption text-ink-muted">
           Nothing for the sheet to count yet. Add what it does, and the sheet adds it up.
         </p>

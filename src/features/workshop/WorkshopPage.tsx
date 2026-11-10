@@ -183,6 +183,25 @@ interface Subject {
   lost?: number;
 }
 
+/** The file a new entry goes into, and the book it is saved under there. */
+interface Into {
+  fileId: string;
+  source: string;
+}
+
+/**
+ * The file `?file=` names, when it is one the player made and can write to.
+ * The address can be edited, so any other id (an imported file, one gone)
+ * names nothing, and the entry goes to My homebrew as it would without it.
+ */
+function intoFile(search: string, files: readonly HomebrewFile[]): Into | undefined {
+  const id = new URLSearchParams(search).get('file');
+  const file = id === null ? undefined : files.find((f) => f.id === id);
+  const source = file?.sourceIds[0];
+  if (file === undefined || file.editable !== true || source === undefined) return undefined;
+  return { fileId: file.id, source };
+}
+
 type Resolved =
   | { state: 'loading' }
   | { state: 'gone'; text: string }
@@ -281,12 +300,15 @@ function Editor({
   spec,
   subject,
   registry,
+  into,
   onSaved,
 }: {
   type: string;
   spec: EditorSpec;
   subject: Subject;
   registry: EntityRegistry;
+  /** A new entry's file, when it was made from one (`?file=`): else My homebrew. */
+  into?: Into;
   onSaved: (url: string) => void;
 }) {
   const navigate = useNavigate();
@@ -339,7 +361,7 @@ function Editor({
     try {
       // A full copy reopened keeps the mark of the original it was made from.
       const base = mode === 'full' && subject.mode === 'full' ? undefined : original;
-      const source = at.stored?.source ?? WORKSHOP_SOURCE;
+      const source = at.stored?.source ?? into?.source ?? WORKSHOP_SOURCE;
       // An entry that owns others (a subclass's features) is written by its
       // editor, and saved with them in one write.
       const written = spec.write?.({
@@ -355,7 +377,7 @@ function Editor({
       const entry =
         written?.entry ?? (writeEntry({ original: base, draft, source, mode }) as Json & EntryKey);
       const saved = await homebrewRepo.saveEntry(type, entry, {
-        fileId: at.fileId,
+        fileId: at.fileId ?? into?.fileId,
         replaces: at.stored,
         ...(written !== undefined ? { owned: written.owned } : {}),
       });
@@ -611,6 +633,7 @@ function EditorRoute({ action, type, uid }: { action: string; type: string; uid:
       spec={spec as EditorSpec}
       subject={resolved.subject}
       registry={reg.registry as EntityRegistry}
+      into={action === 'new' ? intoFile(location.search, owned?.files ?? []) : undefined}
       onSaved={(next) => {
         setSession({ key, urls: [...(current?.urls ?? [url]), next], subject: resolved.subject });
         if (next !== url) navigate(next, { replace: true });
