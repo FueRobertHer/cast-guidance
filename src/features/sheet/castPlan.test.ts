@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Entity } from '@/data5e/copyMod';
 import { type DerivedSheet, newCharacterDoc } from '@/engine/types';
-import { castDiceAt, castsByPrompt, itemChargeWays, type SpellCast } from './castPlan';
+import {
+  castDamageBonuses,
+  castDiceAt,
+  castsByPrompt,
+  itemChargeWays,
+  type SpellCast,
+} from './castPlan';
 
 const STAFF = { name: 'Staff of Healing', source: 'XDMG' };
 
@@ -63,7 +69,7 @@ describe('the dice a spell rolls at a level', () => {
   };
   const cast = {
     doc: newCharacterDoc('c1', 'Vela', 't'),
-    sheet: { totalLevel: 5, resources: [] } as unknown as DerivedSheet,
+    sheet: { totalLevel: 5, resources: [], spellDamageBonuses: [] } as unknown as DerivedSheet,
     info: { name: 'Ice Shard', source: 'TST' },
     entity: shard,
     level: 1,
@@ -82,5 +88,57 @@ describe('the dice a spell rolls at a level', () => {
       kind: 'damage',
     });
     expect(castDiceAt(cast, 3, 'Ice Shard thunder damage')).toBeUndefined();
+  });
+});
+
+describe('what the character adds to a cast’s damage', () => {
+  const bonuses: DerivedSheet['spellDamageBonuses'] = [
+    { amount: 3, origin: 'Agonizing Blast', spells: ['eldritch blast'] },
+    { amount: 4, origin: 'Potent Spellcasting', className: 'Cleric', cantrips: true },
+    {
+      amount: 2,
+      origin: 'Empowered Evocation',
+      className: 'Wizard',
+      school: 'V',
+      oneRoll: true,
+    },
+  ];
+  const cast = (
+    name: string,
+    level: number,
+    where: { block?: string; className?: string },
+    school = 'V',
+  ) =>
+    ({
+      sheet: { spellDamageBonuses: bonuses },
+      info: { name, source: 'TST' },
+      entity: { name, level, school },
+      level,
+      ...(where.block === undefined ? {} : { block: { className: where.block } }),
+      ...(where.className === undefined ? {} : { className: where.className }),
+    }) as unknown as SpellCast;
+  const from = (c: SpellCast) => castDamageBonuses(c).map((b) => b.amount);
+
+  it('matches a named spell whatever casts it', () => {
+    expect(from(cast('Eldritch Blast', 0, { block: 'Warlock' }))).toEqual([3]);
+    expect(from(cast('Eldritch Blast', 0, {}))).toEqual([3]);
+    expect(from(cast('Fire Bolt', 0, { block: 'Warlock' }))).toEqual([]);
+  });
+
+  it('matches a class by the row’s block, or by the class a granted spell belongs to', () => {
+    expect(from(cast('Sacred Flame', 0, { block: 'Cleric' }))).toEqual([4]);
+    expect(from(cast('Sacred Flame', 0, { className: 'cleric' }))).toEqual([4]);
+    // A species' or a feat's cantrip is no class's.
+    expect(from(cast('Sacred Flame', 0, {}))).toEqual([]);
+    expect(from(cast('Sacred Flame', 0, { block: 'Druid' }))).toEqual([]);
+    // Cantrips only.
+    expect(from(cast('Guiding Bolt', 1, { block: 'Cleric' }))).toEqual([]);
+  });
+
+  it('matches a school, and keeps a one-roll bonus marked', () => {
+    expect(castDamageBonuses(cast('Fireball', 3, { block: 'Wizard' }))).toEqual([
+      { amount: 2, oneRoll: true },
+    ]);
+    expect(from(cast('Chill Touch', 0, { block: 'Wizard' }, 'N'))).toEqual([]);
   });
 });

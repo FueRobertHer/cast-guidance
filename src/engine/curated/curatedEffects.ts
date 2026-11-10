@@ -6,7 +6,7 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
-import { countedSpells, parseSpellRef } from '../effects/additionalSpells';
+import { countedSpells, parseSpellRef, savedPicks } from '../effects/additionalSpells';
 import { asEntityArray, type Collector } from '../effects/base';
 import { basedOn } from '../effects/mechanics';
 import {
@@ -27,6 +27,8 @@ import {
   refUid,
   SKILLS,
 } from '../types';
+import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
+import { BARDIC_DICE } from './namedEffects';
 
 /**
  * `from` is the printing of the feature itself, lowercase, where it can differ from
@@ -258,6 +260,9 @@ function classSkillList(col: Collector, className: string): string[] {
   });
 }
 
+/** The 2014 Draconic Bloodline's dragon, beside the subclass's other picks. */
+const dragonAncestorId = (origin: EffectOrigin) => `${origin.type}:${origin.uid}:ancestor`;
+
 /**
  * Whether a class or subclass feature comes from the printing in `source`. Its
  * origin uid is the class's or subclass's (`bard|xphb`, `champion|phb`), and a
@@ -431,6 +436,74 @@ const capstone =
     }
   };
 
+/**
+ * An ability modifier on the damage of a class's spells: its cantrips (Potent
+ * Spellcasting), or one roll of its spells of a school (Empowered Evocation). The
+ * class is the one the character has, so a reskin's spells (a Mage's) count.
+ */
+const spellDamage =
+  (
+    cls: string,
+    ability: Ability,
+    limits: { cantrips?: boolean; school?: string; oneRoll?: boolean },
+  ): CuratedFn =>
+  (col, origin) => {
+    col.add({
+      kind: 'spellDamageBonus',
+      amount: `abilityMod:${ability}`,
+      className: classEntry(col, cls)?.ref.name ?? cls,
+      ...limits,
+      origin,
+    });
+  };
+
+/** A cleric's cantrips add Wisdom to their damage: the 2014 domains' and 2024's Potent Spellcasting. */
+const potentClericCantrips = spellDamage('Cleric', 'wis', { cantrips: true });
+
+/** One damage roll of a wizard's evocation spell adds Intelligence: both printings. */
+const empoweredEvocation = spellDamage('Wizard', 'int', { school: 'V', oneRoll: true });
+
+/** The 2014 Improved Divine Smite and 2024 Radiant Strikes: 1d8 radiant on a melee hit. */
+const radiantMelee =
+  (weaponsOnly: boolean): CuratedFn =>
+  (col, origin) => {
+    col.add({
+      kind: 'damageDie',
+      scope: 'melee',
+      dice: '1d8',
+      damageType: 'radiant',
+      ...(weaponsOnly ? { weaponsOnly } : {}),
+      origin,
+    });
+  };
+
+/**
+ * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
+ * player picks. The pick sits beside the invocations' prompt, not under it, so
+ * saving that prompt keeps it. The picker lists every Warlock cantrip; the label
+ * says it must deal damage, which the spell lists cannot filter by.
+ */
+const agonizingPick: CuratedFn = (col, origin) => {
+  const id = `${origin.type}:${origin.uid}:cantrip`;
+  const spellQuery = { levels: [0], classes: ['Warlock'], schools: [], ritual: false, attacks: [] };
+  col.choice(
+    {
+      id,
+      origin,
+      kind: 'spell',
+      label: 'Agonizing Blast: a Warlock cantrip that deals damage',
+      count: 1,
+      options: savedPicks(col, id, spellQuery),
+      spellQuery,
+    },
+    (selected) => {
+      const spells = selected.map((ref) => parseSpellRef(ref).name.toLowerCase());
+      if (spells.length === 0) return;
+      col.add({ kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells, origin });
+    },
+  );
+};
+
 /** 2014's table says Unlimited at 20. 2024's stays at 6. */
 function rageUses(level: number, printed2024: boolean): number {
   if (level >= 20 && !printed2024) return 99;
@@ -440,6 +513,116 @@ function rageUses(level: number, printed2024: boolean): number {
   if (level >= 3) return 3;
   return 2;
 }
+
+/** Indomitable's uses by Fighter level: 1, 2 at 13, 3 at 17. */
+const indomitable: CuratedFn = (col, origin) => {
+  const level = classLevel(col, 'Fighter');
+  col.add({
+    kind: 'resource',
+    key: 'indomitable',
+    label: 'Indomitable',
+    max: level >= 17 ? 3 : level >= 13 ? 2 : 1,
+    resetOn: 'long',
+    origin,
+  });
+};
+
+/**
+ * Harness Divine Power's own uses, a long rest, one more at each level given. The
+ * pool shares the chip's name, which is how the chip spends a use of it beside
+ * the Channel Divinity its cost names. A Cleric and Paladin with it from both
+ * classes gets each named for its class, or the sheet keeps one chip of the two.
+ */
+const harnessDivinePower =
+  (className: string, at: readonly number[]): CuratedFn =>
+  (col, origin) => {
+    const level = classLevel(col, className);
+    const both = classLevel(col, 'Cleric') > 0 && classLevel(col, 'Paladin') > 0;
+    const label = `Channel Divinity: Harness Divine Power${both ? ` (${className})` : ''}`;
+    col.add({
+      kind: 'resource',
+      key: `harness-divine-power-${className.toLowerCase()}`,
+      label,
+      max: at.filter((l) => level >= l).length,
+      resetOn: 'long',
+      origin,
+    });
+    col.add({ kind: 'action', economy: 'bonus', label, origin });
+  };
+
+/** A maneuver ridden on a hit that forces a save, at the maneuver DC. */
+const maneuverSave =
+  (label: string, targetAbility: Ability): CuratedFn =>
+  (col, origin) => {
+    col.add({
+      kind: 'action',
+      economy: 'none',
+      label,
+      save: { targetAbility, dcAbility: 'strOrDex' },
+      origin,
+    });
+  };
+
+/** Portent's foretelling rolls, rolled after a long rest: 2, or 3 from Wizard 14. */
+const portent: CuratedFn = (col, origin) => {
+  col.add({
+    kind: 'resource',
+    key: 'portent',
+    label: 'Portent',
+    max: classLevel(col, 'Wizard') >= 14 ? 3 : 2,
+    resetOn: 'long',
+    origin,
+  });
+};
+
+/**
+ * Signature Spells: two level 3 Wizard spells, always prepared, each cast once a
+ * short rest at level 3 without a slot, as a limited innate spell is. The pick
+ * sits beside the class's prompts (`class:wizard|xphb:signature`), not under one,
+ * so saving another prompt keeps it, and a saved pick resolves before the spell
+ * files load.
+ */
+const signatureSpells: CuratedFn = (col, origin) => {
+  const id = `${origin.type}:${origin.uid}:signature`;
+  const spellQuery = { levels: [3], classes: ['Wizard'], schools: [], ritual: false, attacks: [] };
+  col.choice(
+    {
+      id,
+      origin,
+      kind: 'spell',
+      label: 'Signature Spells: two level 3 Wizard spells from your spellbook',
+      count: 2,
+      options: savedPicks(col, id, spellQuery),
+      spellQuery,
+    },
+    (selected) => {
+      for (const ref of selected) {
+        const spell = parseSpellRef(ref);
+        if (spell.name === '') continue;
+        const key = `signature-spells-${spell.name.toLowerCase().replace(/\W+/g, '-')}`;
+        // Capitalized at word starts only, so "Leomund's" keeps its lowercase s.
+        const label = spell.name.replace(/(^|[\s/-])([a-z])/g, (_, at, c) => at + c.toUpperCase());
+        col.add({ kind: 'resource', key, label, max: 1, resetOn: 'short', origin });
+        col.add({
+          kind: 'grantSpell',
+          spell,
+          ability: 'int',
+          usage: 'prepared',
+          slotsOnly: true,
+          origin,
+        });
+        col.add({
+          kind: 'grantSpell',
+          spell,
+          ability: 'int',
+          usage: '1/rest',
+          resourceKey: key,
+          origin,
+        });
+      }
+    },
+  );
+};
 
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
@@ -532,18 +715,29 @@ export const CURATED: Record<string, CuratedFn> = {
   },
   // Superior Technique fighting style (TCE): one d6 superiority die + a maneuver.
   'superior technique|tce': superiorTechnique,
-  // A maneuver that forces a save the scanner did not read. The maneuver DC lives in
-  // Combat Superiority, so the chip names the save alone. Its die is in `SPEND_LINKS`.
+  // Maneuvers that force a save the scanner did not read, at the maneuver DC: 8 +
+  // proficiency + Strength or Dexterity, the same from Combat Superiority, Martial
+  // Adept and Superior Technique. Their die is in `SPEND_LINKS`.
   'heroic leap|wow': (col, origin) => {
     col.add({
       kind: 'action',
       economy: 'bonus',
       label: 'Heroic Leap',
       note: 'bludgeoning, the die rolled · creatures within 5 feet of where you land',
-      save: { targetAbility: 'str' },
+      save: { targetAbility: 'str', dcAbility: 'strOrDex' },
       origin,
     });
   },
+  'disarming attack|phb': maneuverSave('Disarming Attack', 'str'),
+  'disarming attack|xphb': maneuverSave('Disarming Attack', 'str'),
+  'goading attack|phb': maneuverSave('Goading Attack', 'wis'),
+  'goading attack|xphb': maneuverSave('Goading Attack', 'wis'),
+  'menacing attack|phb': maneuverSave('Menacing Attack', 'wis'),
+  'menacing attack|xphb': maneuverSave('Menacing Attack', 'wis'),
+  'pushing attack|phb': maneuverSave('Pushing Attack', 'str'),
+  'pushing attack|xphb': maneuverSave('Pushing Attack', 'str'),
+  'trip attack|phb': maneuverSave('Trip Attack', 'str'),
+  'trip attack|xphb': maneuverSave('Trip Attack', 'str'),
   'healer|phb': (col, origin) => {
     col.add({
       kind: 'action',
@@ -711,6 +905,33 @@ export const CURATED: Record<string, CuratedFn> = {
       col.add({ kind: 'sense', sense: 'blindsight', range: 30, origin });
     }
   },
+  // --- Always-on riders: damage every hit or every cast adds -----------------
+  // 2014 says "with a melee weapon", so an unarmed strike goes without; 2024
+  // names the Unarmed Strike too.
+  'improved divine smite|paladin': radiantMelee(true),
+  'radiant strikes|paladin': radiantMelee(false),
+  'agonizing blast|phb': (col, origin) => {
+    col.add({
+      kind: 'spellDamageBonus',
+      amount: 'abilityMod:cha',
+      spells: ['eldritch blast'],
+      origin,
+    });
+  },
+  'agonizing blast|xphb': agonizingPick,
+  // 2024: one branch of Blessed Strikes (Cleric) or Elemental Fury (Druid).
+  'potent spellcasting|cleric': potentClericCantrips,
+  'potent spellcasting|druid': spellDamage('Druid', 'wis', { cantrips: true }),
+  // 2014: the domains whose 8th-level feature it is, by the subclass's own name.
+  'potent spellcasting|ambition domain (psa)': potentClericCantrips,
+  'potent spellcasting|arcana domain': potentClericCantrips,
+  'potent spellcasting|grave domain': potentClericCantrips,
+  'potent spellcasting|knowledge domain': potentClericCantrips,
+  'potent spellcasting|knowledge domain (psa)': potentClericCantrips,
+  'potent spellcasting|light domain': potentClericCantrips,
+  'potent spellcasting|peace domain': potentClericCantrips,
+  'empowered evocation|school of evocation': empoweredEvocation,
+  'empowered evocation|evoker': empoweredEvocation,
   'rage|barbarian': (col, origin, from) => {
     const printed2024 = printedIn(origin, 'xphb', from);
     col.add({
@@ -885,7 +1106,17 @@ export const CURATED: Record<string, CuratedFn> = {
       resetOn: classLevel(col, 'Bard') >= 5 ? 'short' : 'long',
       origin,
     });
-    col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin });
+    // The die it gives, by Bard level: d6, d8 at 5, d10 at 10, d12 at 15. The
+    // 2014 printing says so in cards of its own, the 2024 one in its table.
+    const level = classLevel(col, 'Bard');
+    const die = BARDIC_DICE[level >= 15 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0];
+    col.add({
+      kind: 'action',
+      economy: 'bonus',
+      label: 'Bardic Inspiration',
+      note: `gives one ${die} · another creature within 60 feet`,
+      origin,
+    });
   },
   "paladin's smite|paladin": freeCast(
     'divine smite|xphb',
@@ -956,6 +1187,62 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
   },
+  // Once a long rest, twice from Fighter 13 and three times from 17. The scan
+  // reads the first sentence's "can't use this feature again" as one use. The
+  // 2014 printing states the later uses in cards of their own, and the 2024 one
+  // repeats the whole card at 13 and 17: each is this one pool.
+  'indomitable|fighter': indomitable,
+  'indomitable (two uses)|fighter': () => {},
+  'indomitable (three uses)|fighter': () => {},
+  // The Warrior sidekick's: once a long rest, twice from 18, where the scan read
+  // twice from 11 and a second pool for Indomitable Improvement.
+  'indomitable|warrior sidekick': (col, origin) => {
+    col.add({
+      kind: 'resource',
+      key: 'indomitable',
+      label: 'Indomitable',
+      max: classLevel(col, 'Warrior Sidekick') >= 18 ? 2 : 1,
+      resetOn: 'long',
+      origin,
+    });
+  },
+  'indomitable improvement|warrior sidekick': () => {},
+  // Wisdom modifier uses (at least one) a long rest. The 2024 Improved Warding
+  // Flare (Cleric 6) brings them back on a short rest too, and its temporary hit
+  // points go on the reaction's chip. The 2014 printing's Improved Flare, which
+  // lets it guard others, changes no number.
+  'warding flare|light domain': (col, origin, from) => {
+    const improved = printedIn(origin, 'xphb', from) && classLevel(col, 'Cleric') >= 6;
+    col.add({
+      kind: 'resource',
+      key: 'warding-flare',
+      label: 'Warding Flare',
+      max: 'abilityMod:wis',
+      resetOn: improved ? 'short' : 'long',
+      origin,
+    });
+    col.add({
+      kind: 'action',
+      economy: 'reaction',
+      label: 'Warding Flare',
+      ...(improved
+        ? { note: 'the target gains 2d6 + your Wisdom modifier temporary hit points' }
+        : {}),
+      origin,
+    });
+  },
+  'improved warding flare|light domain': () => {},
+  // Tasha's Harness Divine Power spends Channel Divinity, and has uses of its own
+  // by class level: the cleric's at 2, 6 and 18, the paladin's at 3, 7 and 15.
+  'channel divinity: harness divine power|cleric': harnessDivinePower('Cleric', [2, 6, 18]),
+  'channel divinity: harness divine power|paladin': harnessDivinePower('Paladin', [3, 7, 15]),
+  // The scan read one pool for both spells, and nothing in the 2024 printing.
+  'signature spells|wizard': signatureSpells,
+  // Two foretelling rolls a long rest, three from Wizard 14 (Greater Portent).
+  'portent|school of divination': portent,
+  'portent|diviner': portent,
+  'greater portent|school of divination': () => {},
+  'greater portent|diviner': () => {},
   'arcane recovery|wizard': (col, origin) => {
     // Recovered ON a short rest but usable once per DAY. The prose scanner
     // reads the 2024 limit, but 2014's "once per day" is no wording it counts,
@@ -1255,6 +1542,59 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'hpPerLevel', amount: 1, origin }),
   ),
   'draconic resilience|draconic sorcery': unarmored(10, 'dex', 'cha'),
+  // The 2014 Dragon Ancestor: a dragon whose damage type later features use,
+  // and Draconic. Its doubled proficiency with dragons stays in the card.
+  'dragon ancestor|draconic bloodline': (col, origin) => {
+    col.add({ kind: 'language', name: 'Draconic', origin });
+    col.choice(
+      {
+        id: dragonAncestorId(origin),
+        origin,
+        kind: 'generic',
+        label: 'Dragon Ancestor',
+        count: 1,
+        options: dragonOptions(DRAGONS),
+      },
+      () => {},
+    );
+  },
+  // The 2014 Elemental Affinity, by the Dragon Ancestor's type: a sorcery point
+  // (its spend link) for an hour's resistance, and a Charisma rider on spells.
+  'elemental affinity|draconic bloodline': (col, origin) => {
+    const picked = col.doc.choices[dragonAncestorId(origin)];
+    const dragon = Array.isArray(picked) ? String(picked[0]).toLowerCase() : undefined;
+    const type = dragon !== undefined ? DRACONIC_ANCESTRY[dragon]?.type : undefined;
+    col.add({
+      kind: 'action',
+      economy: 'none',
+      label: 'Elemental Affinity',
+      ...(type !== undefined
+        ? {
+            note: `resistance to ${type} for 1 hour · ${type} spells add your Charisma modifier to one damage roll`,
+          }
+        : {}),
+      origin,
+    });
+  },
+  // The 2024 Elemental Affinity: a type of the five, resisted for good.
+  'elemental affinity|draconic sorcery': (col, origin) => {
+    col.choice(
+      {
+        id: `${origin.type}:${origin.uid}:affinity`,
+        origin,
+        kind: 'generic',
+        label: 'Elemental Affinity',
+        count: 1,
+        options: ['acid', 'cold', 'fire', 'lightning', 'poison'].map((t) => ({
+          id: t,
+          label: `${t[0]?.toUpperCase() ?? ''}${t.slice(1)}`,
+        })),
+      },
+      (selected) => {
+        for (const damageType of selected) col.add({ kind: 'resist', damageType, origin });
+      },
+    );
+  },
   // The UA Mystic's orders.
   'armor training|order of the avatar': kit({ armor: ['medium', 'shield'] }),
   'martial training|order of the soul knife': kit({ armor: ['medium'], weapons: ['martial'] }),

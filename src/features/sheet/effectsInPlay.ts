@@ -400,7 +400,14 @@ export function attackLift(
   now: AttackRow,
   before: AttackRow | undefined,
 ): { hit: boolean; damage: boolean; versatile: boolean; damageBy: string[]; riders: boolean[] } {
-  const known = new Set(before?.extraDamage.map((x) => `${x.dice}:${x.damageType ?? ''}`));
+  // The build's own riders, by what each adds and what adds it: a rider the row
+  // without effects lacks is an effect's, even one shaped like the build's.
+  const riderKey = (x: AttackRow['extraDamage'][number]) =>
+    `${x.dice}:${x.damageType ?? ''}:${x.label ?? ''}`;
+  const known = new Map<string, number>();
+  for (const x of before?.extraDamage ?? []) {
+    known.set(riderKey(x), (known.get(riderKey(x)) ?? 0) + 1);
+  }
   const more = (a: string | undefined, b: string | undefined) => {
     if (a === undefined || b === undefined) return false;
     const x = average(a);
@@ -415,11 +422,12 @@ export function attackLift(
     damage,
     versatile,
     damageBy: damage || versatile ? (added.length > 0 ? added : ['an effect in play']) : [],
-    riders: now.extraDamage.map(
-      (x) =>
-        before !== undefined &&
-        (x.label !== undefined || !known.has(`${x.dice}:${x.damageType ?? ''}`)),
-    ),
+    riders: now.extraDamage.map((x) => {
+      if (before === undefined) return false;
+      const left = known.get(riderKey(x)) ?? 0;
+      known.set(riderKey(x), left - 1);
+      return left <= 0;
+    }),
   };
 }
 

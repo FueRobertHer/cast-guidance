@@ -863,6 +863,14 @@ describe('deriveSheet with effects in play', () => {
     expect(read({ kind: 'speedBonus', amount: 10, unless: 'raining' })).toEqual([]);
   });
 
+  it('reads a die that only carried weapons get, and nothing but true or false for it', () => {
+    const read = (part: unknown) =>
+      readActiveEffects([{ id: 'a', name: 'A', parts: [part] }]).effects[0]?.parts;
+    const die = { kind: 'damageDie', scope: 'melee', dice: '1d8', weaponsOnly: true };
+    expect(read(die)).toEqual([die]);
+    expect(read({ ...die, weaponsOnly: 'yes' })).toEqual([]);
+  });
+
   it('says on Build what it could not read, and leaves the document alone', () => {
     const doc = warrior();
     const stored = [{ id: 'z', name: 'Future Buff', parts: [{ kind: 'timeStop' }] }];
