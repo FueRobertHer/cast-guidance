@@ -6,7 +6,8 @@
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
 import { summarizeEntries } from '../summarize';
-import type { DataEntity, EffectOrigin } from '../types';
+import type { Ability, DataEntity, EffectOrigin } from '../types';
+import { asSlotCasts, collectAdditionalSpells, withoutPoolCosts } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
 import {
   buildPrereqContext,
@@ -14,7 +15,7 @@ import {
   requiredLevel,
   summarizePrerequisite,
 } from './prerequisites';
-import { proseScanFeature } from './proseScan';
+import { castsWithASlot, proseScanFeature } from './proseScan';
 import { printingOf, tableUids } from './reskin';
 
 /**
@@ -49,13 +50,15 @@ export interface OptionalFeatureSource {
   distinct?: boolean;
   /** Why an option cannot be taken, ahead of the level check. */
   blocked?: (option: DataEntity) => string | undefined;
+  /** What a pick's spells are cast with when it names no ability (a Warlock's invocations). */
+  spellAbility?: Ability;
 }
 
 /** One prompt per progression in `entity`, whose picks add feature cards and their effects. */
 export function readOptionalFeatures(
   col: Collector,
   entity: DataEntity,
-  { idBase, origin, level, distinct, blocked }: OptionalFeatureSource,
+  { idBase, origin, level, distinct, blocked, spellAbility }: OptionalFeatureSource,
 ): void {
   for (const prog of asEntityArray(entity.optionalfeatureProgression)) {
     const name = str(prog.name) ?? 'Optional feature';
@@ -95,9 +98,10 @@ export function readOptionalFeatures(
         };
       });
 
+    const promptId = `${idBase}:optfeature:${featureTypes.join('+')}`;
     col.choice(
       {
-        id: `${idBase}:optfeature:${featureTypes.join('+')}`,
+        id: promptId,
         origin,
         kind: 'optionalfeature',
         label: name,
@@ -120,6 +124,20 @@ export function readOptionalFeatures(
             type: origin.type,
           };
           col.features.push({ name: ofOrigin.label, origin: ofOrigin, entries: of.entries });
+          // The spells it gives (an invocation's, a pact's), gated by the host's level.
+          // Read before the prose, which then leaves a limit these already count. A
+          // cast that spends a slot is cast with the class's, and the prose counts it.
+          // Their picks sit beside the prompt, not under it: saving the prompt clears
+          // what is under it, and adding an invocation must not clear Pact of the Tome's.
+          const spells = withoutPoolCosts(of.additionalSpells);
+          collectAdditionalSpells(
+            col,
+            castsWithASlot(of.entries) ? asSlotCasts(spells) : spells,
+            ofOrigin,
+            spellAbility,
+            `${idBase}:spells-of:${uid}`,
+            level,
+          );
           // A copy of an official option (`printingOf`) reads that option's rows after its own.
           const uids = tableUids(of, uid.toLowerCase());
           const printed = printingOf(of)?.source.toLowerCase();

@@ -7,7 +7,14 @@ import {
   newCharacterDoc,
   refUid,
 } from '../types';
-import { collectAdditionalSpells, hasChosenSpell, parseSpellRef } from './additionalSpells';
+import {
+  asSlotCasts,
+  collectAdditionalSpells,
+  countedSpells,
+  hasChosenSpell,
+  parseSpellRef,
+  withoutPoolCosts,
+} from './additionalSpells';
 import { Collector } from './base';
 
 const origin: EffectOrigin = { label: 'Tiefling', uid: 'race|tiefling', type: 'race' };
@@ -44,6 +51,82 @@ describe('hasChosenSpell', () => {
     ['an expanded list', [{ expanded: { s1: [pick] } }]],
   ])('does not count %s', (_where, raw) => {
     expect(hasChosenSpell(raw)).toBe(false);
+  });
+});
+
+describe('withoutPoolCosts', () => {
+  it("drops the spells bought with a pool's points, and keeps the rest as written", () => {
+    const pick = { choose: 'level=0' };
+    const raw = [
+      {
+        ability: 'wis',
+        resourceName: 'Ki',
+        innate: {
+          3: { resource: { 2: ['fake bought'] }, will: ['fake free'] },
+          5: ['fake listed'],
+        },
+        known: { _: pick },
+        prepared: { 1: { daily: { 1: ['fake daily'] }, resource: { 1: ['fake also bought'] } } },
+      },
+    ];
+    expect(withoutPoolCosts(raw)).toEqual([
+      {
+        ability: 'wis',
+        resourceName: 'Ki',
+        innate: { 3: { will: ['fake free'] }, 5: ['fake listed'] },
+        known: { _: pick },
+        prepared: { 1: { daily: { 1: ['fake daily'] } } },
+      },
+    ]);
+    expect(raw[0]?.innate[3]).toHaveProperty('resource');
+  });
+
+  it('reads nothing as nothing', () => {
+    expect(withoutPoolCosts(undefined)).toEqual([]);
+  });
+});
+
+describe('asSlotCasts', () => {
+  it('reads counted innate spells as prepared, and keeps the rest of the entry', () => {
+    const raw = [
+      {
+        ability: 'cha',
+        innate: {
+          _: { daily: { '1e': ['fake call'] }, will: ['fake free'] },
+          5: { rest: { 1: ['fake rest'] } },
+          7: ['fake listed'],
+        },
+      },
+    ];
+    expect(asSlotCasts(raw)).toEqual([
+      {
+        ability: 'cha',
+        innate: { _: { will: ['fake free'] }, 7: ['fake listed'] },
+        prepared: { _: ['fake call'], 5: ['fake rest'] },
+      },
+    ]);
+  });
+
+  it('leaves an entry with nothing counted, or with prepared spells of its own, as written', () => {
+    const plain = [{ innate: { _: ['fake listed'] } }];
+    const both = [
+      { innate: { _: { daily: { 1: ['fake call'] } } }, prepared: { 1: ['fake own'] } },
+    ];
+    expect(asSlotCasts(plain)).toEqual(plain);
+    expect(asSlotCasts(both)).toEqual(both);
+  });
+});
+
+describe('countedSpells', () => {
+  it('names the spells cast a counted number of times, at any level', () => {
+    const raw = [
+      {
+        prepared: { 2: { daily: { 1: ['fake strike|hb'] } }, 5: ['fake prepared'] },
+        innate: { 9: { rest: { '1e': ['Fake Rest#c'] }, will: ['fake will'] } },
+        known: { 1: ['fake known'] },
+      },
+    ];
+    expect([...countedSpells(raw)]).toEqual(['fake rest', 'fake strike']);
   });
 });
 
@@ -869,10 +952,10 @@ describe('collectAdditionalSpells: a chosen spell beyond feats', () => {
       ]);
     });
 
-    it('reads a class for its picks alone, not what it names or expands', () => {
+    it('grants what a class names beside its picks, and leaves its expanded list out', () => {
       const raw = [{ known: { 1: ['fake fixed', anyUpToThird] }, expanded: { 1: ['fake wide'] } }];
       const made = collectFor('Knower', 'class', raw, { [id]: ['Fake One|HB'] });
-      expect(granted(made.effects).map((e) => e.spell.name)).toEqual(['Fake One']);
+      expect(granted(made.effects).map((e) => e.spell.name)).toEqual(['fake fixed', 'Fake One']);
       expect(made.warnings).toEqual([]);
     });
 

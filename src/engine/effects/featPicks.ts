@@ -3,7 +3,7 @@
  * only in their prose, with no field in the data, so a table names them. Those
  * picks change no number on the sheet, so the feat's card says what was picked.
  */
-import type { ChoiceOption, ChoicePrompt, DataEntity, EffectOrigin } from '../types';
+import type { Ability, ChoiceOption, ChoicePrompt, DataEntity, EffectOrigin } from '../types';
 import { type Collector, str } from './base';
 import { readOptionalFeatures } from './optionalFeatures';
 import { weaponMasteryOptions } from './readers';
@@ -65,22 +65,33 @@ function rowFor<T>(table: Readonly<Record<string, T>>, uids: readonly string[]):
   return uid === undefined ? undefined : table[uid];
 }
 
+/** What a prose pick settled on: its label for the feat's card, and an ability to cast with. */
+export interface ProsePicked {
+  label: string;
+  ability?: Ability;
+}
+
 /**
  * The prompt for a pick only the prose asks for, if this feat has one. Returns
- * what was picked, for its card, once it has been.
+ * what was picked once it has been.
  */
 export function readProsePick(
   col: Collector,
   uids: readonly string[],
   origin: EffectOrigin,
   idBase: string,
-): string | undefined {
+): ProsePicked | undefined {
   const pick = rowFor(PROSE_PICKS, uids);
   if (pick === undefined) return undefined;
   const offer = offerFor(col, pick, origin);
-  let shown: string | undefined;
+  let shown: ProsePicked | undefined;
   col.choice({ ...offer, id: `${idBase}:${pick}`, origin, count: 1 }, (selected) => {
-    shown = offer.options.find((o) => o.id === selected[0])?.label;
+    const option = offer.options.find((o) => o.id === selected[0]);
+    if (option === undefined) return;
+    shown =
+      pick === 'castingAbility'
+        ? { label: option.label, ability: option.id as Ability }
+        : { label: option.label };
   });
   return shown;
 }
@@ -92,6 +103,7 @@ export function readFeatOptionalFeatures(
   uids: readonly string[],
   origin: EffectOrigin,
   idBase: string,
+  spellAbility?: Ability,
 ): void {
   const needClass = rowFor(PREREQUISITES_NEED_CLASS, uids);
   const levels = col.doc.classes.filter(
@@ -103,6 +115,7 @@ export function readFeatOptionalFeatures(
     origin,
     level,
     distinct: true,
+    spellAbility,
     blocked: (option) =>
       needClass !== undefined && level === 0 && option.prerequisite !== undefined
         ? `Has a prerequisite, so only a ${needClass} who meets it can take this`

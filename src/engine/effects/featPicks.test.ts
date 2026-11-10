@@ -75,6 +75,13 @@ const secrets: DataEntity[] = [
     prerequisite: [{ pact: 'Blade' }],
     entries: ['Only sworn.'],
   },
+  {
+    name: 'Spoken Secret',
+    source: 'HB',
+    featureType: ['ZZ'],
+    additionalSpells: [{ innate: { _: ['fake whisper'] } }],
+    entries: ['Say it aloud.'],
+  },
 ];
 const weapons: DataEntity[] = [
   {
@@ -361,5 +368,16 @@ describe('the invocation pick', () => {
     expect(prompt?.options.map((o) => o.id)).toEqual(['int', 'wis', 'cha']);
     doc.choices[abilityId] = ['cha'];
     expect(deriveSheet(doc, ctx).features.map((f) => f.name)).toContain('Eldritch Adept (CHA)');
+  });
+
+  it("casts an invocation's spell with the ability it picked", () => {
+    const doc = docWith([invoker, 'i1']);
+    doc.choices[promptId] = ['spoken secret|hb'];
+    const whisper = () =>
+      deriveSheet(doc, ctx).grantedSpells.find((g) => g.name === 'fake whisper');
+    expect(whisper()).toMatchObject({ origin: 'Eldritch Invocations: Spoken Secret' });
+    expect(whisper()?.ability).toBeUndefined();
+    doc.choices[abilityId] = ['wis'];
+    expect(whisper()).toMatchObject({ ability: 'wis', usage: undefined });
   });
 });

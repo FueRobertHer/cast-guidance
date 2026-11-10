@@ -3,7 +3,7 @@ import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
 import { summarizeEntries } from '../summarize';
 import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
-import { collectAdditionalSpells, hasChosenSpell } from './additionalSpells';
+import { collectAdditionalSpells } from './additionalSpells';
 import { asiFeatInstance } from './asiFeatInstance';
 import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
@@ -330,7 +330,7 @@ function collectFeatureWithNested(
       emitCurated(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing),
     ),
   );
-  if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin);
+  if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
   names.some((n) =>
     labels.some((label) =>
       sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
@@ -729,11 +729,11 @@ export function collectClasses(col: Collector): void {
         ? (classAbility as Ability)
         : undefined;
 
-    // The class's own chosen spells (a 2014 Bard's Magical Secrets). An entry with
-    // none would only ask for a branch or an ability that then gives nothing.
+    // The class's own spells: those it always has prepared (a 2024 Ranger's
+    // Hunter's Mark) and those it chooses (a 2014 Bard's Magical Secrets).
     collectAdditionalSpells(
       col,
-      asEntityArray(cls.additionalSpells).filter((list) => hasChosenSpell([list])),
+      cls.additionalSpells,
       origin,
       spellAbility,
       `class:${classUid}`,
@@ -816,11 +816,17 @@ export function collectClasses(col: Collector): void {
           origin: subOrigin,
           level: classLevel,
           distinct: true,
+          spellAbility,
         });
       }
     }
 
-    readOptionalFeatures(col, cls, { idBase: `class:${classUid}`, origin, level: classLevel });
+    readOptionalFeatures(col, cls, {
+      idBase: `class:${classUid}`,
+      origin,
+      level: classLevel,
+      spellAbility,
+    });
 
     // Rogue/Bard "Expertise" is prose-only in the data, so emit the choice. It
     // comes after the subclass, so it can take a skill the subclass grants (a
