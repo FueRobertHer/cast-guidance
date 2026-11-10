@@ -1,8 +1,28 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
+import { isArmor, isShield, itemTypeCode, lookupItem } from '../effects/item';
 import { baseSubraceFor, subraceFor } from '../effects/race';
-import type { CharacterDoc, DerivedSheet, DerivedValue, EffectInput } from '../types';
+import type {
+  CharacterDoc,
+  DerivedSheet,
+  DerivedValue,
+  EffectInput,
+  SpeedBonusUnless,
+} from '../types';
 import { atLeast, dv, effectsOf, inPlay, onTop, withOverride } from './core';
+
+/** What a speed bonus with `unless` cannot be worn with: heavy armor, or any armor or a shield. */
+function wornGear(doc: CharacterDoc, col: Collector): Set<SpeedBonusUnless> {
+  const worn = new Set<SpeedBonusUnless>();
+  for (const entry of doc.equipment) {
+    if (!entry.equipped || entry.ref === undefined) continue;
+    const e = lookupItem(col, entry.ref.name, entry.ref.source);
+    if (e === undefined) continue;
+    if (isArmor(e) || isShield(e)) worn.add('armorOrShield');
+    if (isArmor(e) && itemTypeCode(e) === 'HA') worn.add('heavyArmor');
+  }
+  return worn;
+}
 
 export function calcWalkSpeed(
   doc: CharacterDoc,
@@ -24,7 +44,11 @@ export function calcWalkSpeed(
     }
   }
   const parts = [{ label, amount: raceSpeed }];
-  const bonuses = effectsOf(effects, 'speedBonus');
+  // A bonus that holds only out of armor (Fast Movement) does not count in it.
+  const worn = wornGear(doc, col);
+  const bonuses = effectsOf(effects, 'speedBonus').filter(
+    (b) => b.unless === undefined || !worn.has(b.unless),
+  );
   for (const b of bonuses) {
     if (!inPlay(b)) parts.push({ label: b.origin.label, amount: b.amount });
   }

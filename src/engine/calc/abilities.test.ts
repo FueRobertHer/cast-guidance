@@ -49,6 +49,42 @@ describe('calcAbilities', () => {
     expect(out.con.parts).toContainEqual({ label: 'Cap (20)', amount: -3 });
   });
 
+  it('lets a bonus with a max go past 20, after the rest is held to 20', () => {
+    const champion: EffectOrigin = { label: 'Primal Champion', uid: 'class|x', type: 'class' };
+    const raise: EffectInput = {
+      origin: champion,
+      kind: 'abilityBonus',
+      ability: 'str',
+      amount: 4,
+      max: 24,
+    };
+    // 19 + 2 is held to 20 before the 4 goes on.
+    const over = calcAbilities(doc({ str: 19 }), [
+      { origin, kind: 'abilityBonus', ability: 'str', amount: 2 },
+      raise,
+    ]);
+    expect(over.str.value).toBe(24);
+    expect(over.str.parts).toContainEqual({ label: 'Cap (20)', amount: -1 });
+    expect(over.str.parts).toContainEqual({ label: 'Primal Champion', amount: 4 });
+    // A base over 20 is held to 20 first too.
+    expect(calcAbilities(doc({ str: 22 }), [raise]).str.value).toBe(24);
+    // Under the cap it is a plain +4.
+    expect(calcAbilities(doc({ str: 15 }), [raise]).str.value).toBe(19);
+    // Its own cap holds.
+    const capped = calcAbilities(doc({ str: 20 }), [{ ...raise, amount: 6 }]);
+    expect(capped.str.value).toBe(24);
+    expect(capped.str.parts).toContainEqual({ label: 'Cap (24)', amount: -2 });
+  });
+
+  it('applies the lowest raised cap first, so a higher one keeps its room', () => {
+    const at = (label: string): EffectOrigin => ({ label, uid: label, type: 'feat' });
+    const effects: EffectInput[] = [
+      { origin: at('Boon'), kind: 'abilityBonus', ability: 'str', amount: 1, max: 30 },
+      { origin: at('Champion'), kind: 'abilityBonus', ability: 'str', amount: 4, max: 24 },
+    ];
+    expect(calcAbilities(doc({ str: 20 }), effects).str.value).toBe(25);
+  });
+
   it('raises a score to an abilityMin floor', () => {
     const effects: EffectInput[] = [{ origin, kind: 'abilityMin', ability: 'wis', min: 13 }];
     const out = calcAbilities(doc({ wis: 10 }), effects);

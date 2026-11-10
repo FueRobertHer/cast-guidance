@@ -12,19 +12,27 @@ import { calcWalkSpeed } from './speed';
 
 const origin: EffectOrigin = { label: 'Boots', uid: 'item|boots', type: 'item' };
 
-function ctx(entities: { race?: DataEntity; subrace?: DataEntity }): EngineContext {
+interface Entities {
+  race?: DataEntity;
+  subrace?: DataEntity;
+  items?: DataEntity[];
+}
+
+function ctx(entities: Entities): EngineContext {
   return {
     byType: () => [],
-    get: (type) =>
-      type === 'race' ? entities.race : type === 'subrace' ? entities.subrace : undefined,
+    get: (type, name) =>
+      type === 'race'
+        ? entities.race
+        : type === 'subrace'
+          ? entities.subrace
+          : type === 'item'
+            ? entities.items?.find((i) => i.name === name)
+            : undefined,
   };
 }
 
-function speed(
-  d: CharacterDoc,
-  entities: { race?: DataEntity; subrace?: DataEntity },
-  effects: EffectInput[] = [],
-) {
+function speed(d: CharacterDoc, entities: Entities, effects: EffectInput[] = []) {
   return calcWalkSpeed(d, new Collector(d, ctx(entities)), effects);
 }
 
@@ -56,5 +64,51 @@ describe('calcWalkSpeed', () => {
     const d = docWithRace();
     d.overrides = { 'speed.walk': { value: 15 } };
     expect(speed(d, { race: { name: 'R', speed: 30 } }).value).toBe(15);
+  });
+
+  it('leaves out a bonus that holds only without the armor worn', () => {
+    const items: DataEntity[] = [
+      { name: 'Plate', type: 'HA', ac: 18 },
+      { name: 'Breastplate', type: 'MA', ac: 14 },
+      { name: 'Shield', type: 'S', ac: 2 },
+    ];
+    const effects: EffectInput[] = [
+      { origin, kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
+      { origin, kind: 'speedBonus', amount: 15, unless: 'armorOrShield' },
+    ];
+    const wearing = (...names: string[]) => {
+      const d = docWithRace();
+      d.equipment = names.map((name, i) => ({
+        id: `e${i}`,
+        ref: { name, source: 'T' },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      }));
+      return speed(d, { race: { name: 'R', speed: 30 }, items }, effects).value;
+    };
+    expect(wearing()).toBe(55);
+    expect(wearing('Breastplate')).toBe(40);
+    expect(wearing('Shield')).toBe(40);
+    expect(wearing('Plate')).toBe(30);
+    // Gear the data does not have, or a custom entry, is not armor.
+    expect(wearing('Mystery Mail')).toBe(55);
+    const custom = docWithRace();
+    custom.equipment = [
+      {
+        id: 'c',
+        custom: { name: 'Tin Plate', acBonus: 2 },
+        qty: 1,
+        equipped: true,
+        attuned: false,
+      },
+    ];
+    expect(speed(custom, { race: { name: 'R', speed: 30 }, items }, effects).value).toBe(55);
+    // Carried, not worn, it counts for nothing.
+    const d = docWithRace();
+    d.equipment = [
+      { id: 'e', ref: { name: 'Plate', source: 'T' }, qty: 1, equipped: false, attuned: false },
+    ];
+    expect(speed(d, { race: { name: 'R', speed: 30 }, items }, effects).value).toBe(55);
   });
 });

@@ -7,7 +7,7 @@ import {
   type EngineContext,
   newCharacterDoc,
 } from '../types';
-import { emitCuratedEffects } from './curatedEffects';
+import { emitCuratedEffects, emitCuratedTrait } from './curatedEffects';
 
 const ctx: EngineContext = { get: () => undefined, byType: () => [] };
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
@@ -426,5 +426,94 @@ describe('free casts of a spell the class always has prepared', () => {
 
   it("adds nothing where the class's own data counts the casts", () => {
     expect(cast('faithful steed|paladin', 'Knight', 'HB', 5, 'xphb')).toEqual([]);
+  });
+});
+
+describe('standing numbers of core class features', () => {
+  const printed = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
+  const emit = (key: string, uid: string, className?: string, levels?: number) => {
+    const c = col(className, levels);
+    expect(emitCuratedEffects(c, key, printed(uid))).toBe(true);
+    return c.effects.map(({ origin: _, ...rest }) => rest);
+  };
+
+  it('gives Unarmored Movement by Monk level, out of armor and shield', () => {
+    const bonus = (levels: number) => emit('unarmored movement|monk', 'monk|phb', 'Monk', levels);
+    expect(bonus(2)).toEqual([{ kind: 'speedBonus', amount: 10, unless: 'armorOrShield' }]);
+    expect(bonus(6)[0]).toMatchObject({ amount: 15 });
+    expect(bonus(13)[0]).toMatchObject({ amount: 20 });
+    expect(bonus(14)[0]).toMatchObject({ amount: 25 });
+    expect(bonus(20)[0]).toMatchObject({ amount: 30 });
+  });
+
+  it('gives Fast Movement and 2024 Roving out of heavy armor, and Roving climbs and swims', () => {
+    expect(emit('fast movement|barbarian', 'barbarian|phb')).toEqual([
+      { kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
+    ]);
+    expect(emit('roving|ranger', 'ranger|xphb')).toEqual([
+      { kind: 'speedBonus', amount: 10, unless: 'heavyArmor' },
+      { kind: 'moveSpeed', mode: 'climb', speed: 'walk' },
+      { kind: 'moveSpeed', mode: 'swim', speed: 'walk' },
+    ]);
+    // A 2024 Roving lent to another book's class still reads as 2024.
+    expect(emit('roving|ranger', 'hunter|wow')).toEqual([]);
+    const lent = col();
+    emitCuratedEffects(lent, 'roving|ranger', printed('hunter|wow'), 'xphb');
+    expect(lent.effects).toHaveLength(3);
+  });
+
+  it('gives the save proficiencies each printing of Slippery Mind names, and every save at Monk 14', () => {
+    const saves = (key: string, uid: string) =>
+      emit(key, uid).flatMap((e) => (e.kind === 'saveProf' ? [e.ability] : []));
+    expect(saves('slippery mind|rogue', 'rogue|phb')).toEqual(['wis']);
+    expect(saves('slippery mind|rogue', 'rogue|xphb')).toEqual(['wis', 'cha']);
+    const all = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+    expect(saves('diamond soul|monk', 'monk|phb')).toEqual(all);
+    expect(saves('disciplined survivor|monk', 'monk|xphb')).toEqual(all);
+  });
+
+  it('raises two scores by 4 to each printing’s new maximum', () => {
+    expect(emit('primal champion|barbarian', 'barbarian|phb')).toEqual([
+      { kind: 'abilityBonus', ability: 'str', amount: 4, max: 24 },
+      { kind: 'abilityBonus', ability: 'con', amount: 4, max: 24 },
+    ]);
+    expect(emit('primal champion|barbarian', 'barbarian|xphb')[0]).toMatchObject({ max: 25 });
+    expect(emit('body and mind|monk', 'monk|xphb')).toEqual([
+      { kind: 'abilityBonus', ability: 'dex', amount: 4, max: 25 },
+      { kind: 'abilityBonus', ability: 'wis', amount: 4, max: 25 },
+    ]);
+  });
+
+  it('gives the paladin’s own aura and the immunities', () => {
+    expect(emit('aura of protection|paladin', 'paladin|xphb')).toEqual([
+      { kind: 'saveBonus', amount: 'abilityModMin1:cha' },
+    ]);
+    expect(emit('aura of courage|paladin', 'paladin|phb')).toEqual([
+      { kind: 'conditionImmune', condition: 'frightened', note: 'while conscious' },
+    ]);
+    expect(emit('aura of courage|paladin', 'paladin|xphb')[0]).toMatchObject({
+      note: 'not while incapacitated',
+    });
+    expect(emit('divine health|paladin', 'paladin|phb')).toEqual([
+      { kind: 'conditionImmune', condition: 'disease' },
+    ]);
+    expect(emit('purity of body|monk', 'monk|phb')).toEqual([
+      { kind: 'immune', damageType: 'poison' },
+      { kind: 'conditionImmune', condition: 'poisoned' },
+      { kind: 'conditionImmune', condition: 'disease' },
+    ]);
+  });
+
+  it('gives a Warforged’s Integrated Protection +1 AC', () => {
+    const c = col();
+    expect(emitCuratedTrait(c, 'Integrated Protection', origin)).toBe(true);
+    expect(c.effects).toEqual([{ kind: 'acBonus', amount: 1, origin }]);
+  });
+
+  it('gives 2024 Feral Senses blindsight, and the 2014 one nothing to show', () => {
+    expect(emit('feral senses|ranger', 'ranger|xphb')).toEqual([
+      { kind: 'sense', sense: 'blindsight', range: 30 },
+    ]);
+    expect(emit('feral senses|ranger', 'ranger|phb')).toEqual([]);
   });
 });

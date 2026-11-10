@@ -683,6 +683,14 @@ describe('deriveSheet with effects in play', () => {
     expect(read({ kind: 'checkBonus', amount: 1, every: false })).toEqual([]);
   });
 
+  it('reads a speed bonus that holds only out of armor, and no other condition', () => {
+    const read = (part: unknown) =>
+      readActiveEffects([{ id: 'a', name: 'A', parts: [part] }]).effects[0]?.parts;
+    const out = { kind: 'speedBonus', amount: 10, unless: 'armorOrShield' };
+    expect(read(out)).toEqual([out]);
+    expect(read({ kind: 'speedBonus', amount: 10, unless: 'raining' })).toEqual([]);
+  });
+
   it('says on Build what it could not read, and leaves the document alone', () => {
     const doc = warrior();
     const stored = [{ id: 'z', name: 'Future Buff', parts: [{ kind: 'timeStop' }] }];

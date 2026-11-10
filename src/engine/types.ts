@@ -320,9 +320,16 @@ export interface ActionRegain {
   amount: number;
 }
 
+/** What a walking speed bonus does not hold with (`speedBonus.unless`). */
+export type SpeedBonusUnless = 'heavyArmor' | 'armorOrShield';
+
 export type EffectInput = { origin: EffectOrigin } & (
-  | { kind: 'abilityBonus'; ability: Ability; amount: number }
   | { kind: 'abilityMin'; ability: Ability; min: number }
+  /**
+   * `max`: the score may go this high with it, past the usual 20 (Primal Champion's 24).
+   * What else adds to the score is held to 20 first.
+   */
+  | { kind: 'abilityBonus'; ability: Ability; amount: number; max?: number }
   | { kind: 'skillProf'; skill: string; level: ProfLevel }
   | { kind: 'saveProf'; ability: Ability }
   | { kind: 'toolProf'; name: string }
@@ -338,7 +345,11 @@ export type EffectInput = { origin: EffectOrigin } & (
   /** A flat rise in the hit point maximum (Aid). */
   | { kind: 'maxHpBonus'; amount: number }
   | { kind: 'initiativeBonus'; amount: BonusAmount }
-  | { kind: 'speedBonus'; amount: number }
+  /**
+   * `unless` the character wears heavy armor, or any armor or a shield: a bonus that
+   * holds only without them (Fast Movement, Unarmored Movement).
+   */
+  | { kind: 'speedBonus'; amount: number; unless?: SpeedBonusUnless }
   /**
    * Walking speed times this, after every addition and after what conditions
    * take away (Haste). Two of them do not multiply: the largest counts.
