@@ -8,9 +8,40 @@
  *
  * Entries the app cannot read (written by a newer version) are left exactly as
  * stored, unless ended by id.
+ *
+ * Moments (H9, `moments.ts`) fire here when `HpLimits.moments` is given: at 0
+ * HP (`knockedOut`), as a condition comes on (`conditionEndings`) or comes off
+ * (`conditionEnded`), and at the start of a turn (`newTurn`). Without it,
+ * nothing fires and every result is as it was.
  */
 import { countingEffects, readActiveEffects } from './activeEffects';
-import { type ConditionImmunity, conditionMaxHp, type Edition, outOfAction } from './conditions';
+import type { MomentId } from './castGuidance';
+import {
+  type ConditionImmunity,
+  conditionMaxHp,
+  type Edition,
+  heldOff,
+  outOfAction,
+} from './conditions';
+import {
+  amountNow,
+  CHAIN_DEPTH,
+  effectNow,
+  emptyReport,
+  joinReports,
+  levelsOf,
+  type MomentChain,
+  type MomentDetail,
+  type MomentReport,
+  type MomentsInForce,
+  momentsAt,
+  newChain,
+  poolNamed,
+  type ReadMoment,
+  type ReadOutcome,
+  reportIsEmpty,
+  scopeFor,
+} from './moments';
 import type { ActiveEffect, PlayState } from './types';
 
 /** What changing effects needs to know of the sheet, to keep current HP within the maximum. */
@@ -20,6 +51,8 @@ export interface HpLimits {
   edition: Edition;
   /** `DerivedSheet.conditionImmunities`: an exhaustion held off halves nothing. */
   immune?: ReadonlyArray<ConditionImmunity>;
+  /** The character's moments (`momentsInForce`). Absent, no moment fires. */
+  moments?: MomentsInForce;
 }
 
 /** What a change to the effects in play did. */
@@ -31,6 +64,8 @@ export interface EffectChange {
    * hit points refills to the maximum plus this, so Aid does not outlive it.
    */
   maxHpChange: number;
+  /** What the moments it set off did, for the sheet to say. Absent when none fired. */
+  moments?: MomentReport;
 }
 
 const isEffect = (e: unknown): e is ActiveEffect =>
@@ -254,23 +289,226 @@ function endOutOfAction(
  * held and 2024 Rage; Unconscious ends 2014 Rage too. One switched off or held
  * off ends nothing. Only `id` counts: what the player kept up under a
  * condition already on (the sheet warns, never blocks) stays.
+ *
+ * Then the `conditionAdded` moments for it fire, unless it is switched off or
+ * held off.
  */
 export function conditionEndings(play: PlayState, id: string, hp: HpLimits): EffectChange {
+  return conditionCame(play, id, hp, newChain());
+}
+
+function conditionCame(
+  play: PlayState,
+  id: string,
+  hp: HpLimits,
+  chain: MomentChain,
+): EffectChange {
   const came = play.conditions.filter((c) => c.id === id);
   const out = outOfAction(came, hp.edition, { immune: hp.immune });
-  return endOutOfAction(
+  const change = endOutOfAction(
     play,
     { incapacitated: out.incapacitated.length > 0, unconscious: out.unconscious },
     hp,
   );
+  const applied = came.filter((c) => c.ignored !== true);
+  if (applied.length === 0 || heldOff(applied, { immune: hp.immune }).length > 0) return change;
+  return fire(play, 'conditionAdded', { condition: id }, hp, chain, change);
+}
+
+/**
+ * The condition `id` came off (removed, not switched off): its
+ * `conditionEnded` moments fire. Call it after taking the condition out.
+ */
+export function conditionEnded(play: PlayState, id: string, hp: HpLimits): EffectChange {
+  return fire(play, 'conditionEnded', { condition: id }, hp, newChain(), {
+    ended: [],
+    maxHpChange: 0,
+  });
 }
 
 /**
  * Dropping to 0 hit points, or dying: the character falls unconscious in both
  * rules versions, so their concentration and Rage end as Unconscious ends them.
+ * Then the `zeroHp` moments fire, so call it once for each drop.
  */
 export function knockedOut(play: PlayState, hp: HpLimits): EffectChange {
-  return endOutOfAction(play, { incapacitated: true, unconscious: true }, hp);
+  const change = endOutOfAction(play, { incapacitated: true, unconscious: true }, hp);
+  return fire(play, 'zeroHp', {}, hp, newChain(), change);
+}
+
+/**
+ * The character cast a spell, spending a slot of `level` (0 for a cantrip, the
+ * spell's own level for a cast that spends no slot): its `castAtLevel` moments
+ * fire. Call it in the same change as the cast.
+ */
+export function spellCast(play: PlayState, level: number, hp: HpLimits): EffectChange {
+  return fire(play, 'castAtLevel', { level }, hp, newChain(), { ended: [], maxHpChange: 0 });
+}
+
+// ---------------------------------------------------------------------------
+// Moments (H9)
+// ---------------------------------------------------------------------------
+
+/** Join a later change onto an earlier one: what ended, the maximum's move, and moments. */
+function joinChanges(into: EffectChange, more: EffectChange): EffectChange {
+  into.ended.push(...more.ended);
+  into.maxHpChange += more.maxHpChange;
+  if (more.moments !== undefined) {
+    const report = into.moments ?? emptyReport();
+    joinReports(report, more.moments);
+    into.moments = report;
+  }
+  return into;
+}
+
+/**
+ * Fire the moments `at` sets off, after `before` (what the step that set them
+ * off already did, joined into the result). Each fires once a chain, in order,
+ * and each outcome reads the HP maximum as the outcomes before it left it.
+ */
+function fire(
+  play: PlayState,
+  at: MomentId,
+  detail: MomentDetail,
+  hp: HpLimits,
+  chain: MomentChain,
+  before: EffectChange,
+): EffectChange {
+  const inForce = hp.moments;
+  if (inForce === undefined) return before;
+  const due = momentsAt(inForce, at, detail).filter((m) => !chain.fired.has(m));
+  if (due.length === 0) return before;
+  const report = emptyReport();
+  if (chain.depth >= CHAIN_DEPTH) {
+    report.problems.push(`Moments set each other off ${CHAIN_DEPTH} deep; the rest did not happen`);
+    return joinChanges(before, { ended: [], maxHpChange: 0, moments: report });
+  }
+  const change: EffectChange = { ended: [], maxHpChange: 0, moments: report };
+  chain.depth++;
+  for (const m of due) {
+    chain.fired.add(m);
+    for (const o of m.do) {
+      const now = { ...hp, maxHp: hp.maxHp + before.maxHpChange + change.maxHpChange };
+      joinChanges(change, outcome(play, o, m, inForce, now, chain));
+    }
+  }
+  chain.depth--;
+  if (reportIsEmpty(report)) delete change.moments;
+  return joinChanges(before, change);
+}
+
+/** What one outcome does to the play state. */
+function outcome(
+  play: PlayState,
+  o: ReadOutcome,
+  m: ReadMoment,
+  inForce: MomentsInForce,
+  hp: HpLimits,
+  chain: MomentChain,
+): EffectChange {
+  const report = emptyReport();
+  const change: EffectChange = { ended: [], maxHpChange: 0, moments: report };
+  const from = m.from;
+  const scope = () => scopeFor(inForce, m, { hp: play.currentHp, maxHp: hp.maxHp });
+  switch (o.kind) {
+    case 'addCondition':
+      joinChanges(change, addCondition(play, o.condition, o.level, from, hp, chain));
+      break;
+    case 'addEffect': {
+      // One of the same name already in play (not the character's own casting) is replaced.
+      const same = (play.activeEffects ?? []).find(
+        (e) => isEffect(e) && !heldByMe(e) && answersTo(e, o.name),
+      );
+      const effect = effectNow(o, scope(), chain, same?.id);
+      if (effect === undefined) {
+        report.problems.push(`${from}: ${o.name} has nothing an effect in play can do`);
+        break;
+      }
+      const added = applyEffect(play, effect, hp);
+      change.ended.push(...added.ended);
+      change.maxHpChange += added.maxHpChange;
+      report.done.push({ text: effect.name, from });
+      break;
+    }
+    case 'regain':
+    case 'spend': {
+      const pool = poolNamed(inForce, o.resource);
+      if (pool === undefined) {
+        report.problems.push(`${from}: no pool named ${o.resource}`);
+        break;
+      }
+      const amount = amountNow(o.amount, scope(), chain);
+      const entry = play.resources.find((r) => r.key === pool.key);
+      const used = entry?.used ?? 0;
+      const next =
+        o.kind === 'regain' ? Math.max(0, used - amount) : Math.min(pool.max, used + amount);
+      if (next === used) break;
+      if (entry !== undefined) entry.used = next;
+      else play.resources.push({ key: pool.key, used: next });
+      const moved = Math.abs(next - used);
+      report.done.push({
+        text: `${pool.label}: ${o.kind === 'regain' ? 'regained' : 'spent'} ${moved}`,
+        from,
+      });
+      break;
+    }
+    case 'tempHp': {
+      const amount = amountNow(o.amount, scope(), chain);
+      if (amount > 0 && keepHigherTemp(play, amount)) {
+        report.done.push({ text: `${amount} temporary hit points`, from });
+      }
+      break;
+    }
+    case 'cue':
+      report.cues.push({ text: o.text, tone: o.tone, from });
+      break;
+    case 'offer':
+      report.offers.push({
+        label: o.label,
+        ...(o.dice !== undefined ? { dice: o.dice } : {}),
+        from,
+      });
+      break;
+  }
+  if (reportIsEmpty(report)) delete change.moments;
+  return change;
+}
+
+/**
+ * Put a condition on, as the condition strip does: one the character cannot
+ * have is held off and not added; Exhaustion gains `levels`, up to its sixth;
+ * any other already on stays as it is. One newly on ends what it ends
+ * (`conditionEndings`) and sets off its own moments.
+ */
+function addCondition(
+  play: PlayState,
+  name: string,
+  levels: number,
+  from: string,
+  hp: HpLimits,
+  chain: MomentChain,
+): EffectChange {
+  const report = emptyReport();
+  const none: EffectChange = { ended: [], maxHpChange: 0, moments: report };
+  const by = heldOff([{ id: name }], { immune: hp.immune })[0]?.by;
+  if (by !== undefined) {
+    report.problems.push(`${from}: you cannot be ${name.toLowerCase()} (${by.join(', ')})`);
+    return none;
+  }
+  const most = levelsOf(name);
+  const on = play.conditions.find((c) => c.id.toLowerCase() === name.toLowerCase());
+  if (on !== undefined) {
+    if (most === 1) return { ended: [], maxHpChange: 0 };
+    const level = Math.min(most, (on.level ?? 1) + levels);
+    if (level === (on.level ?? 1)) return { ended: [], maxHpChange: 0 };
+    on.level = level;
+    report.done.push({ text: `${on.id} ${level}`, from });
+    return none;
+  }
+  const level = Math.min(most, levels);
+  play.conditions.push(most === 1 ? { id: name } : { id: name, level });
+  report.done.push({ text: most === 1 ? name : `${name} ${level}`, from });
+  return joinChanges(none, conditionCame(play, name, hp, chain));
 }
 
 /**
@@ -305,8 +543,9 @@ export function endEffects(play: PlayState, ids: ReadonlySet<string>, hp: HpLimi
 
 /**
  * The start of the character's turn: each effect counting turns has one fewer
- * (one at 1 ends now), and then the best temporary hit points an effect gives
- * each turn are offered, kept only if more than the character has.
+ * (one at 1 ends now), then the `turnStart` moments fire, and then the best
+ * temporary hit points an effect gives each turn are offered, kept only if
+ * more than the character has.
  */
 export function newTurn(
   play: PlayState,
@@ -321,7 +560,14 @@ export function newTurn(
     if (left <= 1) ending.add(e);
     else e.turnsLeft = left - 1;
   }
-  const change = endWhere(play, (e) => ending.has(e), hp);
+  const change = fire(
+    play,
+    'turnStart',
+    {},
+    hp,
+    newChain(),
+    endWhere(play, (e) => ending.has(e), hp),
+  );
 
   let best: { amount: number; source: string; id: string } | undefined;
   for (const e of countingEffects(readActiveEffects(play.activeEffects).effects).inputs) {

@@ -13,12 +13,14 @@ import {
   rageEffect,
   rageHeavyArmor,
 } from '@/engine/curated/namedEffects';
-import { applyEffect, type HpLimits } from '@/engine/effectLife';
+import { applyEffect, type HpLimits, spellCast } from '@/engine/effectLife';
+import type { MomentReport } from '@/engine/moments';
 import type { ActiveEffect, CharacterDoc, DerivedSheet } from '@/engine/types';
 import { randomId } from '@/lib/randomId';
 import type { DocUpdater } from '@/stores/characterSession';
+import { type Notice, notify } from '@/stores/notices';
 import { askChoice } from '@/ui/dialogs';
-import { castGranted, castSpell } from './castResources';
+import { castGranted, castSpell, nextCastResource } from './castResources';
 
 const lower = (s: string) => s.trim().toLowerCase();
 
@@ -92,11 +94,55 @@ export async function offerSelfBless(
   update((d) => void applyEffect(d.play, blessEffect(randomId(), true), hp));
 }
 
-/** Cast as `castSpell` does, then ask Bless's caster whether they are a target too. */
+/**
+ * Cast as `castSpell` does, firing the `castAtLevel` moments in the same
+ * change (one undo), and say what they did; then ask Bless's caster whether
+ * they are a target too.
+ */
 export function castSpellAsking(...args: Parameters<typeof castSpell>): void {
-  castSpell(...args);
-  const [update, hp, , , spell] = args;
+  const [update, hp, block, level, spell, resource] = args;
+  const inForce = hp.moments;
+  if (inForce === undefined || !inForce.moments.some((m) => m.at === 'castAtLevel')) {
+    castSpell(...args);
+  } else {
+    let said: MomentReport | undefined;
+    const firing: DocUpdater = (recipe, label, opts) =>
+      update(
+        (d) => {
+          // What the cast spends, worked out as `castSpell` does before it spends it.
+          const spent = (resource ?? nextCastResource(block, d.play, level)).level;
+          recipe(d);
+          said = spellCast(d.play, spent, hp).moments;
+        },
+        label,
+        opts,
+      );
+    castSpell(firing, hp, block, level, spell, resource);
+    const notice = said === undefined ? null : momentNotice(said);
+    if (notice !== null) notify(notice);
+  }
   if (spell !== undefined) void offerSelfBless(spell.name, update, hp);
+}
+
+/** A notice for what moments did: cues first, then offers, changes and what could not happen. */
+export function momentNotice(r: MomentReport): Notice | null {
+  const lines = [
+    ...r.cues.map((c) => c.text),
+    ...r.offers.map((o) => (o.dice === undefined ? o.label : `${o.label}: ${o.dice}`)),
+    ...r.done.map((d) => d.text),
+    ...r.problems,
+  ];
+  const [title, ...rest] = lines;
+  if (title === undefined) return null;
+  const from = [...new Set([...r.cues, ...r.offers, ...r.done].map((x) => x.from))];
+  const tone =
+    r.problems.length > 0 || r.cues.some((c) => c.tone === 'warn')
+      ? 'warn'
+      : r.cues.some((c) => c.tone === 'help') || r.done.length > 0
+        ? 'good'
+        : 'info';
+  const detail = [...rest, ...from].join(' · ');
+  return detail === '' ? { title, tone } : { title, detail, tone };
 }
 
 /** Cast an innate grant as `castGranted` does, then ask as `castSpellAsking` does. */
