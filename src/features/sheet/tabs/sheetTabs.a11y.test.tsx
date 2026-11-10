@@ -33,6 +33,7 @@ vi.mock('@/data5e/spellLookup', () => ({
   getSpellClassLookup: () => Promise.resolve({}),
   classSpellUids: () => new Set(['searing bolt|tst', 'quick bolt|tst']),
   classSpellUidsFromEntities: () => new Set(),
+  classListCheck: () => () => false,
 }));
 
 afterEach(cleanup);

@@ -171,6 +171,7 @@ describe('collectAdditionalSpells', () => {
       const col = gated(raw, 17, 1);
       expect(granted(col.effects).map((e) => e.spell.name)).toEqual(['fake early']);
       expect(col.effects.some((e) => e.kind === 'resource')).toBe(false);
+      expect(col.effects.some((e) => e.kind === 'spellListAdd')).toBe(false);
       expect(col.warnings).toEqual([]);
     });
 
@@ -182,7 +183,10 @@ describe('collectAdditionalSpells', () => {
         'fake early',
         'fake prepared',
       ]);
-      expect(col.warnings.join()).toContain('fake expanded');
+      expect(col.effects).toContainEqual(
+        expect.objectContaining({ kind: 'spellListAdd', spells: ['fake expanded'], filters: [] }),
+      );
+      expect(col.warnings).toEqual([]);
     });
 
     it('does not ask about a chosen spell its key has not reached', () => {
@@ -233,7 +237,7 @@ describe('collectAdditionalSpells', () => {
     expect(parseSpellRef(ref)).toEqual(expected);
   });
 
-  it('surfaces expanded lists and {choose} filters as warnings, not grants', () => {
+  it('adds an expanded list to the spell list, and leaves {choose} a warning, granting neither', () => {
     const col = collect([
       {
         expanded: { '1': ['armor of agathys'] },
@@ -241,20 +245,116 @@ describe('collectAdditionalSpells', () => {
       },
     ]);
     expect(granted(col.effects)).toHaveLength(0);
-    expect(col.warnings.some((w) => /expands your spell options/.test(w))).toBe(true);
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'spellListAdd', spells: ['armor of agathys'], filters: [] }),
+    );
     expect(col.warnings.some((w) => /choose a spell/.test(w))).toBe(true);
+    expect(col.warnings.some((w) => /cannot read/.test(w))).toBe(false);
   });
 
-  it('surfaces spell-level-keyed expanded lists (sN) instead of dropping them', () => {
+  it('reads spell-level-keyed expanded lists (sN) instead of dropping them', () => {
     // Witherbloom/Lorehold Student backgrounds key `expanded` by spell level
-    // (s1…s5, case-insensitive), which used to parse to NaN and vanish. They are
-    // not gated by character level, so they surface even at level 1.
+    // (s1 to s5, any case), which used to parse to NaN and vanish. They are
+    // not gated by character level, so they apply even at level 1.
     const col = collect([{ expanded: { s1: ['armor of agathys'], S5: ['cone of cold'] } }], 1);
     expect(granted(col.effects)).toHaveLength(0);
-    const warning = col.warnings.find((w) => /expands your spell options/.test(w));
-    expect(warning).toBeDefined();
-    expect(warning).toContain('armor of agathys');
-    expect(warning).toContain('cone of cold');
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'spellListAdd',
+        spells: ['armor of agathys', 'cone of cold'],
+        filters: [],
+      }),
+    );
+  });
+
+  it("opens a class's own spell-level keys (sN) at the class level that casts them", () => {
+    // The 2024 Bard's Magical Secrets: levels 1 to 5 at Bard 10, then s6 to s9.
+    const raw = [
+      {
+        expanded: {
+          '10': [{ all: 'level=1;2;3;4;5|class=Cleric' }],
+          s6: [{ all: 'level=6|class=Cleric' }],
+          s9: [{ all: 'level=9|class=Cleric' }],
+        },
+      },
+    ];
+    const bard: EffectOrigin = { label: 'Bard', uid: 'bard|xphb', type: 'class' };
+    const filtersAt = (level: number) => {
+      const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+      collectAdditionalSpells(col, raw, bard, 'cha', 'class:bard|xphb', level);
+      return col.effects.flatMap((e) => (e.kind === 'spellListAdd' ? e.filters : []));
+    };
+    expect(filtersAt(9)).toEqual([]);
+    // An s0 key (cantrips, a GGR guild's) is open from the first level.
+    const cantrips = [{ expanded: { s0: [{ all: 'level=0|class=Cleric' }] } }];
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+    collectAdditionalSpells(col, cantrips, bard, 'cha', 'class:bard|xphb', 1);
+    expect(col.effects.flatMap((e) => (e.kind === 'spellListAdd' ? e.filters : []))).toEqual([
+      'level=0|class=Cleric',
+    ]);
+    expect(filtersAt(10)).toEqual(['level=1;2;3;4;5|class=Cleric']);
+    expect(filtersAt(11)).toEqual(['level=1;2;3;4;5|class=Cleric', 'level=6|class=Cleric']);
+    expect(filtersAt(17)).toHaveLength(3);
+  });
+
+  it("opens a subclass's spell-level keys the same way (a Warlock patron's)", () => {
+    const raw = [{ expanded: { s1: ['burning hands'], s2: ['scorching ray'] } }];
+    const fiend: EffectOrigin = { label: 'The Fiend', uid: 'the fiend|phb', type: 'subclass' };
+    const spellsAt = (level: number) => {
+      const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+      collectAdditionalSpells(col, raw, fiend, 'cha', 'subclass:the fiend|phb', level);
+      return col.effects.flatMap((e) => (e.kind === 'spellListAdd' ? e.spells : []));
+    };
+    expect(spellsAt(2)).toEqual(['burning hands']);
+    expect(spellsAt(3)).toEqual(['burning hands', 'scorching ray']);
+  });
+
+  it('reads an expanded filter ({all}) as a filter, by the level it opens at', () => {
+    // Divine Soul's "Cleric list" and the 2024 Bard's Magical Secrets.
+    const raw = [
+      {
+        expanded: {
+          '1': [{ all: 'level=0|class=Cleric' }],
+          '3': [{ all: 'level=1;2|class=Cleric' }, 'fake extra'],
+        },
+      },
+    ];
+    expect(collect(raw, 1).effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'spellListAdd',
+        spells: [],
+        filters: ['level=0|class=Cleric'],
+      }),
+    );
+    expect(collect(raw, 3).effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'spellListAdd',
+        spells: ['fake extra'],
+        filters: ['level=0|class=Cleric', 'level=1;2|class=Cleric'],
+      }),
+    );
+    expect(collect(raw, 3).warnings).toEqual([]);
+  });
+
+  it('reads a book filter (Chronurgy and Graviturgy) as a filter', () => {
+    const col = collect([{ expanded: { '1': [{ all: 'source=EGW;!XGE' }] } }]);
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'spellListAdd', spells: [], filters: ['source=EGW;!XGE'] }),
+    );
+    expect(col.warnings).toEqual([]);
+  });
+
+  it('warns about an expanded entry it cannot read, and keeps the rest', () => {
+    const col = collect([{ expanded: { '1': ['shield', { all: 'nonsense' }, { odd: 1 }] } }]);
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({ kind: 'spellListAdd', spells: ['shield'], filters: [] }),
+    );
+    expect(col.warnings.join()).toMatch(/cannot read: nonsense, \{"odd":1\}/);
+  });
+
+  it('adds nothing when the expanded list has not opened yet', () => {
+    const col = collect([{ expanded: { '5': ['fireball'] } }], 4);
+    expect(col.effects.some((e) => e.kind === 'spellListAdd')).toBe(false);
   });
 
   it('does NOT treat sN keys as ungated for grant maps (known/prepared)', () => {

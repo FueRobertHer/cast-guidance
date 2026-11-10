@@ -430,6 +430,14 @@ export type EffectInput = {
   | { kind: 'weaponProf'; name: string }
   | { kind: 'weaponProfFilter'; filter: string } // "type=martial weapon|property=light"
   /**
+   * Spells added to a spellcasting class's list (an expanded spell list: a Warlock
+   * patron's, Divine Soul's, a dragonmark's), to learn or prepare as the class's
+   * own. `spells` are refs as the data writes them ("burning hands",
+   * "armor of agathys|xphb"); `filters` are spell filters ("level=1|class=Cleric").
+   * A class's or subclass's widens that class; any other origin's, every one.
+   */
+  | { kind: 'spellListAdd'; spells: string[]; filters: string[] }
+  /**
    * A kind of weapon whose mastery property the character can use, by its base
    * item's name ("Longsword"): a 2024 class's Weapon Mastery pick, Weapon Master's.
    */
@@ -796,6 +804,9 @@ export interface SpellQuery {
   ritual: boolean;
   /** Spell attack codes, in lower case. */
   attacks: string[];
+  /** The books a spell is printed in, in capitals, and the books it is not. */
+  sources?: string[];
+  notSources?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -942,6 +953,11 @@ export interface SpellcastingBlock {
    * casters — the UI surfaces the over-limit cue for those modes only.
    */
   spellsKnownMax?: number;
+  /**
+   * What widens this class's spell list (`spellListAdd`), by what gives it: a
+   * Warlock's patron, a Divine Soul, a dragonmark. The picker offers these too.
+   */
+  expanded?: Array<{ from: string; spells: string[]; filters: string[] }>;
 }
 
 export interface DerivedResource {

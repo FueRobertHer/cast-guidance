@@ -111,21 +111,30 @@ export function withoutPoolCosts(raw: unknown): DataEntity[] {
   });
 }
 
-/** The parts of a level-keyed map open at this level. */
+/**
+ * The parts of a level-keyed map open at this level. Spell-level buckets ("s1",
+ * "s2", any `sN`) appear only on `expanded` lists, which may sort additions by
+ * spell level rather than character level; without reading them an entire list
+ * (Witherbloom or Lorehold Student) parses to NaN and vanishes. `spellLevels`
+ * says how: skipped, open at once (a background's or a race's, which widen
+ * whatever class you have), or by the class level that first casts that spell
+ * level on the full and pact tables (2N - 1), for a class's or subclass's own.
+ */
 function reachedLevels(
   map: unknown,
   gateLevel: number,
-  includeSpellLevels = false,
+  spellLevels: 'skip' | 'open' | 'byClassLevel' = 'skip',
 ): Array<[levelKey: string, value: unknown]> {
   if (map === null || typeof map !== 'object') return [];
   return Object.entries(map).filter(([key]) => {
-    // "_" is always ungated. Spell-level buckets ("s1", "s2", … — any `sN`)
-    // appear only on `expanded` lists that organize additions by spell level
-    // rather than character level, so include them there; without this an
-    // entire expanded list (e.g. Witherbloom/Lorehold Student) parses to NaN
-    // and silently vanishes. Numeric keys gate by the level passed in.
-    const ungated = key === '_' || (includeSpellLevels && /^s\d+$/i.test(key));
-    const gate = ungated ? 0 : Number.parseInt(key, 10);
+    // "_" is always ungated; numeric keys gate by the level passed in.
+    if (key === '_') return true;
+    const spellLevel = /^s(\d+)$/i.exec(key)?.[1];
+    if (spellLevel !== undefined) {
+      if (spellLevels === 'skip') return false;
+      return spellLevels === 'open' || 2 * Number(spellLevel) - 1 <= gateLevel;
+    }
+    const gate = Number.parseInt(key, 10);
     return !Number.isNaN(gate) && gate <= gateLevel;
   });
 }
@@ -504,17 +513,43 @@ function grantSpellEntry(
     });
   }
 
-  // Expanded spell list (Warlock patron): widens what you can learn rather than
-  // granting anything. Without a picker we surface it so the option is visible.
-  const expanded: string[] = [];
-  if (origin.type !== 'class') {
-    for (const [, val] of reachedLevels(entry.expanded, gateLevel, true)) {
-      collectStrings(val, expanded, []);
+  // Expanded spell list (a Warlock patron's, Divine Soul's, a dragonmark's): grants
+  // nothing, but adds to what a spellcasting class can learn or prepare. The class
+  // spell picker reads it off the spellcasting block (`SpellcastingBlock.expanded`).
+  const spells: string[] = [];
+  const filters: string[] = [];
+  const unread: string[] = [];
+  const sort = (val: unknown): void => {
+    if (typeof val === 'string') spells.push(val);
+    else if (Array.isArray(val)) for (const v of val) sort(v);
+    else if (val !== null && typeof val === 'object') {
+      const all = (val as DataEntity).all;
+      if (typeof all === 'string' && parseSpellFilter(all) !== undefined) filters.push(all);
+      else unread.push(typeof all === 'string' ? all : JSON.stringify(val));
     }
+  };
+  // A Warlock patron's s2 opens at Warlock 3; the 2024 Bard's s6 (Magical Secrets)
+  // at Bard 11, after its own "10" key.
+  const ownClass = origin.type === 'class' || origin.type === 'subclass';
+  for (const [, val] of reachedLevels(
+    entry.expanded,
+    gateLevel,
+    ownClass ? 'byClassLevel' : 'open',
+  )) {
+    sort(val);
   }
-  const expandedNames = [...new Set(expanded)].map((n) => parseSpellRef(n).name);
-  if (expandedNames.length > 0) {
-    col.warn(`${origin.label}: expands your spell options: ${expandedNames.join(', ')}.`);
+  if (spells.length + filters.length > 0) {
+    col.add({
+      kind: 'spellListAdd',
+      spells: [...new Set(spells)],
+      filters: [...new Set(filters)],
+      origin,
+    });
+  }
+  if (unread.length > 0) {
+    col.warn(
+      `${origin.label}: also adds spells to your list the app cannot read: ${unread.join(', ')}.`,
+    );
   }
 
   if (unoffered) {

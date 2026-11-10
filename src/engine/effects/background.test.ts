@@ -175,15 +175,18 @@ describe('collectBackground', () => {
     );
   });
 
-  it('surfaces a background expanded list keyed by spell level (Strixhaven student)', () => {
+  it('adds a background expanded list keyed by spell level (Strixhaven student)', () => {
     const col = collect({
       name: 'Custom',
       additionalSpells: [{ expanded: { s1: ['shield|tst'], s5: ['flame strike|tst'] } }],
       entries: ['x'],
     });
-    const warning = col.warnings.find((w) => /expands your spell options/.test(w));
-    expect(warning).toBeDefined();
-    expect(warning).toContain('shield');
-    expect(warning).toContain('flame strike');
+    expect(col.effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'spellListAdd',
+        spells: ['shield|tst', 'flame strike|tst'],
+        filters: [],
+      }),
+    );
   });
 });

@@ -422,18 +422,33 @@ describe('deriveSheet — innate spells (additionalSpells)', () => {
     expect(sheet.grantedSpells.find((g) => g.name === 'aid')?.ability).toBe('wis');
   });
 
-  it('grants subclass always-prepared spells and surfaces expanded ones', () => {
+  it('grants subclass always-prepared spells and adds expanded ones to the list', () => {
     const sheet = deriveSheet(warriorDoc(), ctx); // Warrior 5 / Path of Tests
     expect(sheet.grantedSpells.find((g) => g.name === 'bless')?.usage).toBe('prepared');
     expect(sheet.grantedSpells.find((g) => g.name === 'cure wounds')?.usage).toBe('prepared');
     // Level-gated: flame strike is a "9" entry, character is level 5.
     expect(sheet.grantedSpells.some((g) => g.name === 'flame strike')).toBe(false);
-    // Expanded lists can't be auto-granted without a picker — surfaced as a note.
-    expect(
-      sheet.warnings.some(
-        (w) => w.toLowerCase().includes('expands your spell options') && w.includes('shield'),
-      ),
-    ).toBe(true);
+    // An expanded list grants nothing; it widens its own class's list, and the
+    // Warrior casts nothing, so it lands nowhere and says nothing.
+    expect(sheet.grantedSpells.some((g) => g.name === 'shield')).toBe(false);
+    expect(sheet.spellcasting).toEqual([]);
+    expect(sheet.warnings.some((w) => w.includes('shield'))).toBe(false);
+  });
+
+  it("keeps a subclass's expanded list off another class's spell list", () => {
+    const doc = warriorDoc();
+    doc.classes = [
+      { ref: { name: 'Mage', source: 'TST' }, levels: 3, hp: [] },
+      {
+        ref: { name: 'Warrior', source: 'TST' },
+        subclass: { name: 'Path of Tests', source: 'TST' },
+        levels: 3,
+        hp: [],
+      },
+    ];
+    const sheet = deriveSheet(doc, ctx);
+    expect(sheet.spellcasting.map((b) => b.className)).toEqual(['Mage']);
+    expect(sheet.spellcasting[0]?.expanded).toBeUndefined();
   });
 
   describe('on a multiclass character', () => {
