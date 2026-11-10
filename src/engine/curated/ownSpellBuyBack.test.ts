@@ -28,7 +28,12 @@ type Printing = keyof typeof PRINTINGS;
 const featureRef = (name: string, source: Printing, level: number) =>
   `${name}|Fighter|${PRINTINGS[source].refClassSource}|Psi Warrior|${source}|${level}`;
 
-const feature = (name: string, source: Printing, level: number, entries = PROSE): DataEntity => ({
+const feature = (
+  name: string,
+  source: Printing,
+  level: number,
+  entries: unknown[] = PROSE,
+): DataEntity => ({
   name,
   source,
   className: 'Fighter',
