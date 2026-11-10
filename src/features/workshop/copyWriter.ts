@@ -115,7 +115,16 @@ export function diffEntries(was: unknown, now: unknown): { ops: Json[] } | { who
   if (new Set(names).size !== names.length) return whole;
 
   const ops: Json[] = [];
-  const wasText = was.filter((b) => partName(b) === undefined);
+  // Blocks with no name taken out and nothing else (a paragraph, the reference a
+  // subclass feature holds to another) are removed by their exact value, when
+  // only one block has it. A block reworded is replaced by its text, below.
+  const unnamed = (l: unknown[]) => l.filter((b) => partName(b) === undefined);
+  const out = unnamed(was).filter(
+    (b) => !now.some((n) => same(n, b)) && was.filter((x) => same(x, b)).length === 1,
+  );
+  const gone = unnamed(was).length - out.length === unnamed(now).length ? out : [];
+  if (gone.length > 0) ops.push({ mode: 'removeArr', items: gone });
+  const wasText = was.filter((b) => partName(b) === undefined && !gone.includes(b));
   const nowText = now.filter((b) => partName(b) === undefined);
   if (wasText.length !== nowText.length) return whole;
   wasText.forEach((b, i) => {

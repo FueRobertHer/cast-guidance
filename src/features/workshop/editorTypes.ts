@@ -7,6 +7,7 @@
  */
 import type { ComponentType } from 'react';
 import type { EntityRegistry } from '@/data5e/normalize';
+import type { WriteInput } from './copyWriter';
 
 export type Json = Record<string, unknown>;
 
@@ -22,6 +23,21 @@ export interface EditorProps {
   readOnly: boolean;
 }
 
+/** What Save stores for an entry that owns others: it, and them (a subclass's features). */
+export interface Written {
+  entry: Json & { name: string; source: string };
+  owned: Json[];
+}
+
+/** What an editor's own writer is given at Save. */
+export interface WriteContext extends WriteInput {
+  /** The entry the copy was made from, even where `original` is left out to keep its mark. */
+  copied?: Json;
+  registry: EntityRegistry;
+  /** The entry the editor opened, as stored, when it was saved before. */
+  stored?: { name: string; source: string };
+}
+
 /** What each editor file exports, as `editor`. */
 export interface EditorSpec {
   /** What one is called in a sentence: "feat", "species". */
@@ -31,6 +47,16 @@ export interface EditorSpec {
   Body: ComponentType<EditorProps>;
   /** Why the entry cannot be saved as it stands, if it cannot. */
   check?: (draft: Json) => string | undefined;
+  /**
+   * The draft it opens on, from the entry as the Workshop found it (a copy, or
+   * one saved before): for an entry that gathers others, such as a subclass's
+   * features, which are entries of their own.
+   */
+  open?: (entry: Json, at: { original?: Json; registry: EntityRegistry }) => Json;
+  /** What Save stores, in place of `writeEntry`, for an entry that owns others. */
+  write?: (at: WriteContext) => Written;
+  /** The Save bar's line for a copy saved as changes, in place of a count of changes. */
+  summary?: (draft: Json, original: Json, registry: EntityRegistry) => string;
 }
 
 const FILES = import.meta.glob<{ editor: EditorSpec }>('./editors/*Editor.tsx');
