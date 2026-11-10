@@ -93,6 +93,7 @@ import {
 } from '../d20Tests';
 import {
   andList,
+  attackDrop,
   attackLift,
   conditionsInForce,
   defendedTypes,
@@ -101,8 +102,10 @@ import {
   effectsInPlay,
   hpLimits,
   immunityTo,
+  loweredBy,
   newTurnLines,
   raisedBy,
+  saveDcLoweredBy,
   saveDcRaisedBy,
   withMoments,
 } from '../effectsInPlay';
@@ -440,6 +443,10 @@ export function Component() {
   );
   const acUp = raisedBy(sheet.ac, built.ac);
   const initiativeUp = raisedBy(sheet.initiative, built.initiative);
+  // And the ones an effect lowered wear the same edge in red (a homebrew
+  // condition's -2 to AC).
+  const acDown = loweredBy(sheet.ac, built.ac);
+  const initiativeDown = loweredBy(sheet.initiative, built.initiative);
   // A condition on that only an effect holds off (Freedom of Movement while
   // grappled): what raised the number when no part of it says so.
   const heldOffBy = [
@@ -462,8 +469,12 @@ export function Component() {
           ),
         )
       : [];
+  // Only the largest multiplier counts, and it starts at 1, so none slows.
+  const speedDown =
+    speed.value < builtSpeed.value ? loweredBy(sheet.speedWalk, built.speedWalk) : [];
   const maxHpUp =
     maxHp.value > builtMaxHp.value ? orHeldOff(raisedBy(sheet.maxHp, built.maxHp)) : [];
+  const maxHpDown = maxHp.value < builtMaxHp.value ? loweredBy(sheet.maxHp, built.maxHp) : [];
   // What could change the damage the character takes: theirs, and their conditions'.
   const defenses = defensesInForce(sheet, conditions, doc.rulesVersion);
   const builtDefenses = defensesInForce(built, builtConditions, doc.rulesVersion);
@@ -851,8 +862,9 @@ export function Component() {
             <div className="text-stat tabular-nums min-[360px]:text-stat-hero">
               {play.currentHp}{' '}
               <Lift
-                on={maxHpUp.length > 0}
-                className={`rounded-chip ${maxHpUp.length > 0 ? 'px-1' : ''}`}
+                on={maxHpUp.length + maxHpDown.length > 0}
+                down={maxHpDown.length > 0}
+                className={`rounded-chip ${maxHpUp.length + maxHpDown.length > 0 ? 'px-1' : ''}`}
               >
                 <span className="whitespace-nowrap text-title-sheet text-ink-muted">
                   / {maxHp.value}
@@ -863,6 +875,7 @@ export function Component() {
               <span className="sr-only">
                 hit points
                 {maxHpUp.length > 0 && `, maximum raised by ${maxHpUp.join(', ')}`}
+                {maxHpDown.length > 0 && `, maximum lowered by ${maxHpDown.join(', ')}`}
               </span>
             </div>
             {maxHp.source !== undefined && (
@@ -1158,13 +1171,17 @@ export function Component() {
                   wear={NOT_WORN}
                   rolls={0}
                   showing={false}
-                  lift={acUp.length > 0}
+                  lift={acUp.length + acDown.length > 0}
+                  down={acDown.length > 0}
                 >
                   <span className="block text-stat tabular-nums">{sheet.ac.value}</span>
                   <span className={`block ${TILE_LABEL}`}>
                     Armor Class{sheet.ac.overridden ? ' •' : ''}
                     {acUp.length > 0 && (
                       <span className="sr-only">, raised by {acUp.join(', ')}</span>
+                    )}
+                    {acDown.length > 0 && (
+                      <span className="sr-only">, lowered by {acDown.join(', ')}</span>
                     )}
                   </span>
                 </ChipFace>
@@ -1203,7 +1220,8 @@ export function Component() {
                   face: {
                     text: signed(sheet.initiative.value),
                     wear: rollWear(conditions, initiativeEffects, ignore.armed('initiative')),
-                    lift: initiativeUp.length > 0,
+                    lift: initiativeUp.length + initiativeDown.length > 0,
+                    down: initiativeDown.length > 0,
                   },
                 },
               )
@@ -1215,7 +1233,8 @@ export function Component() {
               wear={rollWear(conditions, initiativeEffects, ignore.armed('initiative'))}
               rolls={initiativeRoll.rolls}
               showing={initiativeRoll.showing}
-              lift={initiativeUp.length > 0}
+              lift={initiativeUp.length + initiativeDown.length > 0}
+              down={initiativeDown.length > 0}
             >
               <span className="cx-ink block text-roll text-stat tabular-nums">
                 {signed(sheet.initiative.value)}
@@ -1224,6 +1243,9 @@ export function Component() {
                 Initiative <D20Icon size={14} className="shrink-0" />
                 {initiativeUp.length > 0 && (
                   <span className="sr-only">, raised by {initiativeUp.join(', ')}</span>
+                )}
+                {initiativeDown.length > 0 && (
+                  <span className="sr-only">, lowered by {initiativeDown.join(', ')}</span>
                 )}
               </span>
             </ChipFace>
@@ -1248,7 +1270,8 @@ export function Component() {
                   wear={conditionWear(conditions, speed.sources)}
                   rolls={0}
                   showing={false}
-                  lift={speedUp.length > 0}
+                  lift={speedUp.length + speedDown.length > 0}
+                  down={speedDown.length > 0}
                 >
                   <span className="block text-stat tabular-nums">
                     {speed.value}
@@ -1274,6 +1297,9 @@ export function Component() {
                     )}
                     {speedUp.length > 0 && (
                       <span className="sr-only">, raised by {speedUp.join(', ')}</span>
+                    )}
+                    {speedDown.length > 0 && (
+                      <span className="sr-only">, lowered by {speedDown.join(', ')}</span>
                     )}
                   </span>
                 </ChipFace>
@@ -1646,6 +1672,7 @@ export function Component() {
             {sheet.attacks.map((a) => {
               const before = built.attacks.find((b) => b.label === a.label);
               const lift = attackLift(a, before);
+              const drop = attackDrop(a, before);
               return (
                 <div key={a.label} className={`min-h-15 ${ROW} py-2 pr-3 pl-4`}>
                   <div className="min-w-0 flex-1 basis-18">
@@ -1692,6 +1719,7 @@ export function Component() {
                       )}
                       wear={attackChipWear}
                       raisedBy={lift.hit ? raisedBy(a.toHit, before?.toHit) : []}
+                      loweredBy={drop.hit}
                       onRolled={() => markUsed('action', `Attacked with ${a.label}`)}
                       damageAfter={{
                         expr: a.damage,
@@ -1704,6 +1732,7 @@ export function Component() {
                       label={damageLabel(a.label, a.damageType)}
                       variant="damage"
                       raisedBy={lift.damage ? lift.damageBy : []}
+                      loweredBy={drop.damage}
                       withAttack={attackDamage(a.label, savageDie(a, a.damage))}
                     />
                     {a.versatileDamage !== undefined && (
@@ -1712,6 +1741,7 @@ export function Component() {
                         label={`${damageLabel(a.label, a.damageType)} (two-handed)`}
                         variant="damage"
                         raisedBy={lift.versatile ? lift.damageBy : []}
+                        loweredBy={drop.versatile}
                         withAttack={attackDamage(a.label, savageDie(a, a.versatileDamage))}
                       />
                     )}
@@ -2008,7 +2038,11 @@ export function Component() {
           <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <span className="text-heading">{sc.className} spellcasting</span>
             <span className="flex flex-wrap gap-1">
-              <SaveDcBadge value={sc.saveDc.value} raisedBy={saveDcRaisedBy(sc, built)} />
+              <SaveDcBadge
+                value={sc.saveDc.value}
+                raisedBy={saveDcRaisedBy(sc, built)}
+                loweredBy={saveDcLoweredBy(sc, built)}
+              />
               <Badge tone="arcane">
                 Attack <strong>{signed(sc.attackMod.value)}</strong>
               </Badge>

@@ -91,6 +91,40 @@ export function effectMark(effect: ActiveEffect): string | undefined {
   return undefined;
 }
 
+/**
+ * Which way a part works on its holder: down for a number below zero,
+ * disadvantage, a vulnerability, a slower pace or a warning; up for a bonus, a
+ * die, a defense, help or anything else it gives. A plain note works neither way.
+ */
+function partWay(p: EffectPart): 'up' | 'down' | undefined {
+  switch (p.kind) {
+    case 'cue':
+      // A described effect's reroll, action or narrowed bonus is a help cue.
+      return p.tone === 'warn' ? 'down' : p.tone === 'info' ? undefined : 'up';
+    case 'rollAdvantage':
+      return p.mode === 'dis' ? 'down' : 'up';
+    case 'vulnerable':
+      return 'down';
+    case 'speedMultiplier':
+      return p.factor < 1 ? 'down' : p.factor > 1 ? 'up' : undefined;
+    default:
+      return 'amount' in p ? (p.amount < 0 ? 'down' : p.amount > 0 ? 'up' : undefined) : 'up';
+  }
+}
+
+/**
+ * Which way an effect or a homebrew condition works on its holder, as its strip
+ * chip shows it: down when every part that works a way works against them, up
+ * when every one works for them, and `mixed` otherwise. An effect in play is
+ * mixed up (a buff, as the strip has always drawn one); a homebrew condition is
+ * mixed down, a debuff unless it only helps.
+ */
+export function effectWay(parts: readonly EffectPart[], mixed: 'up' | 'down'): 'up' | 'down' {
+  const ways = new Set(parts.map(partWay));
+  ways.delete(undefined);
+  return ways.size === 1 ? (ways.has('down') ? 'down' : 'up') : mixed;
+}
+
 /** The rolls a filter reaches, in words: "melee weapon attack rolls made with Strength". */
 export function rollsWords(on: RollFilter): string {
   const abilities = on.abilities?.map((a) => ABILITY[a]).join(' or ');
@@ -294,6 +328,25 @@ export function raisedBy(now: DerivedValue, before: DerivedValue | undefined): s
 }
 
 /**
+ * The effects in play that lowered a number (a homebrew condition's -2 to AC),
+ * by name: the parts below zero the build alone lacks. Empty when nothing
+ * lowered it. A number one effect raises and another lowers is raised or
+ * lowered as its total moved, so it wears one edge, never both.
+ */
+export function loweredBy(now: DerivedValue, before: DerivedValue | undefined): string[] {
+  if (before === undefined || !raised(before, now)) return [];
+  const had = new Set(before.parts.map((p) => p.label));
+  const names = now.parts.filter((p) => !had.has(p.label) && p.amount < 0).map((p) => p.label);
+  return names.length > 0 ? [...new Set(names)] : ['an effect in play'];
+}
+
+/** The class's save DC in the build alone. */
+const builtSaveDc = (
+  block: Pick<SpellcastingBlock, 'classUid'>,
+  built: Pick<DerivedSheet, 'spellcasting'> | null | undefined,
+) => built?.spellcasting.find((b) => b.classUid === block.classUid)?.saveDc;
+
+/**
  * What raised a casting class's save DC (Innate Sorcery), by name, against the
  * same class in the build alone. None without the build to compare.
  */
@@ -301,10 +354,15 @@ export function saveDcRaisedBy(
   block: Pick<SpellcastingBlock, 'classUid' | 'saveDc'>,
   built: Pick<DerivedSheet, 'spellcasting'> | null | undefined,
 ): string[] {
-  return raisedBy(
-    block.saveDc,
-    built?.spellcasting.find((b) => b.classUid === block.classUid)?.saveDc,
-  );
+  return raisedBy(block.saveDc, builtSaveDc(block, built));
+}
+
+/** What lowered a casting class's save DC, by name, as `saveDcRaisedBy` finds a raise. */
+export function saveDcLoweredBy(
+  block: Pick<SpellcastingBlock, 'classUid' | 'saveDc'>,
+  built: Pick<DerivedSheet, 'spellcasting'> | null | undefined,
+): string[] {
+  return loweredBy(block.saveDc, builtSaveDc(block, built));
 }
 
 /** A dice expression's average, for telling a raised damage roll from a lowered one. */
@@ -317,6 +375,20 @@ function average(expr: string): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The damage bonuses an attack has that its row without effects lacks, split by
+ * which way each pushes: Rage's +2 raises, a homebrew condition's -2 lowers.
+ */
+function addedDamage(now: AttackRow, before: AttackRow | undefined) {
+  const had = new Set(before?.damageFrom);
+  const against = new Set(now.damageAgainst);
+  const added = (now.damageFrom ?? []).filter((n) => !had.has(n));
+  return {
+    raising: added.filter((n) => !against.has(n)),
+    lowering: added.filter((n) => against.has(n)),
+  };
 }
 
 /**
@@ -337,8 +409,7 @@ export function attackLift(
   };
   const damage = more(now.damage, before?.damage);
   const versatile = more(now.versatileDamage, before?.versatileDamage);
-  const had = new Set(before?.damageFrom);
-  const added = (now.damageFrom ?? []).filter((n) => !had.has(n));
+  const added = addedDamage(now, before).raising;
   return {
     hit: raised(now.toHit, before?.toHit),
     damage,
@@ -349,6 +420,30 @@ export function attackLift(
         before !== undefined &&
         (x.label !== undefined || !known.has(`${x.dice}:${x.damageType ?? ''}`)),
     ),
+  };
+}
+
+/**
+ * What lowered an attack's chips, by name, from its row without effects: its
+ * hit as `loweredBy` finds it, and its damage when its average fell, by the
+ * bonuses the build alone lacks. A rider is only ever added, so none is lowered.
+ */
+export function attackDrop(
+  now: AttackRow,
+  before: AttackRow | undefined,
+): { hit: string[]; damage: string[]; versatile: string[] } {
+  const less = (a: string | undefined, b: string | undefined) => {
+    if (a === undefined || b === undefined) return false;
+    const x = average(a);
+    const y = average(b);
+    return x !== undefined && y !== undefined && x < y;
+  };
+  const added = addedDamage(now, before).lowering;
+  const by = added.length > 0 ? added : ['an effect in play'];
+  return {
+    hit: loweredBy(now.toHit, before?.toHit),
+    damage: less(now.damage, before?.damage) ? by : [],
+    versatile: less(now.versatileDamage, before?.versatileDamage) ? by : [],
   };
 }
 

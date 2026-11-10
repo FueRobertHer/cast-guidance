@@ -1,23 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import type { Defenses } from '@/engine/playRules';
-import type { ActiveEffect, AttackRow, DerivedSheet, DerivedValue } from '@/engine/types';
+import type {
+  ActiveEffect,
+  AttackRow,
+  DerivedSheet,
+  DerivedValue,
+  EffectPart,
+} from '@/engine/types';
 import {
   andList,
+  attackDrop,
   attackLift,
   conditionsInForce,
   defendedTypes,
   defensesRaisedBy,
   defenseView,
   effectMark,
+  effectWay,
   hpLimits,
   immunityTo,
   lastsLine,
+  loweredBy,
   momentNotice,
   newTurnLines,
   partLine,
   raised,
   raisedBy,
   restLasts,
+  saveDcLoweredBy,
+  saveDcRaisedBy,
   withMoments,
 } from './effectsInPlay';
 
@@ -198,6 +209,148 @@ describe('raised and raisedBy', () => {
 
   it('says an effect in play when the parts name nothing new (a floor or a multiplier)', () => {
     expect(raisedBy(value(16), value(13))).toEqual(['an effect in play']);
+  });
+});
+
+describe('loweredBy', () => {
+  it('finds a number an effect lowered, and names the effect', () => {
+    const before = value(15, [
+      ['Chain shirt', 13],
+      ['DEX', 2],
+    ]);
+    const now = value(13, [
+      ['Chain shirt', 13],
+      ['DEX', 2],
+      ['Dazed', -2],
+    ]);
+    expect(loweredBy(now, before)).toEqual(['Dazed']);
+    expect(raisedBy(now, before)).toEqual([]);
+  });
+
+  it('finds nothing without a build to compare, or when the number rose or held', () => {
+    expect(loweredBy(value(12), undefined)).toEqual([]);
+    expect(loweredBy(value(16, [['Shield of Faith', 2]]), value(14))).toEqual([]);
+    expect(
+      loweredBy(
+        value(14, [
+          ['Bane-ish', -2],
+          ['Shield of Faith', 2],
+        ]),
+        value(14),
+      ),
+    ).toEqual([]);
+  });
+
+  it('follows the total when one effect raises a number and another lowers it', () => {
+    const before = value(14);
+    const net = value(13, [
+      ['Shield of Faith', 2],
+      ['Dazed', -3],
+    ]);
+    expect(loweredBy(net, before)).toEqual(['Dazed']);
+    expect(raisedBy(net, before)).toEqual([]);
+  });
+
+  it('says an effect in play when the parts name nothing new (a lower score)', () => {
+    expect(loweredBy(value(10), value(13))).toEqual(['an effect in play']);
+  });
+
+  it("finds a class's lowered save DC against the same class built", () => {
+    const block = { classUid: 'wiz', saveDc: value(12, [['Muddled', -1]]) };
+    const built = { spellcasting: [{ classUid: 'wiz', saveDc: value(13) }] } as Pick<
+      DerivedSheet,
+      'spellcasting'
+    >;
+    expect(saveDcLoweredBy(block, built)).toEqual(['Muddled']);
+    expect(saveDcRaisedBy(block, built)).toEqual([]);
+    expect(saveDcLoweredBy(block, null)).toEqual([]);
+  });
+});
+
+describe('attackDrop', () => {
+  const row = (over: Partial<AttackRow>): AttackRow =>
+    ({ toHit: value(5), damage: '1d8+3', extraDamage: [], ...over }) as AttackRow;
+
+  it('names what lowered the hit and both damage rolls', () => {
+    const before = row({ versatileDamage: '1d10+3', damageFrom: ['Dueling'] });
+    const now = row({
+      toHit: value(3, [['Shaken', -2]]),
+      damage: '1d8+1',
+      versatileDamage: '1d10+1',
+      damageFrom: ['Dueling', 'Shaken'],
+      damageAgainst: ['Shaken'],
+    });
+    expect(attackDrop(now, before)).toEqual({
+      hit: ['Shaken'],
+      damage: ['Shaken'],
+      versatile: ['Shaken'],
+    });
+    expect(attackLift(now, before)).toMatchObject({ hit: false, damage: false, versatile: false });
+  });
+
+  it('names only the bonuses that pushed each way when a buff and a debuff meet', () => {
+    const before = row({});
+    const both = { damageFrom: ['Rage', 'Weakened'], damageAgainst: ['Weakened'] };
+    // Rage +2 and Weakened -3: lowered, by Weakened alone.
+    expect(attackDrop(row({ damage: '1d8+2', ...both }), before).damage).toEqual(['Weakened']);
+    // Rage +2 and Weakened -1: raised, by Rage alone.
+    expect(attackLift(row({ damage: '1d8+4', ...both }), before).damageBy).toEqual(['Rage']);
+  });
+
+  it('finds nothing for a raised or unchanged attack, or without a row to compare', () => {
+    expect(attackDrop(row({ damage: '1d8+5' }), row({}))).toEqual({
+      hit: [],
+      damage: [],
+      versatile: [],
+    });
+    expect(attackDrop(row({ toHit: value(1) }), undefined)).toEqual({
+      hit: [],
+      damage: [],
+      versatile: [],
+    });
+  });
+});
+
+describe('effectWay', () => {
+  const parts = (...p: EffectPart[]) => p;
+
+  it('is down for penalties, disadvantage, a vulnerability and a slower pace', () => {
+    expect(effectWay(parts({ kind: 'acBonus', amount: -2 }), 'up')).toBe('down');
+    expect(
+      effectWay(parts({ kind: 'rollAdvantage', mode: 'dis', on: { rolls: ['attack'] } }), 'up'),
+    ).toBe('down');
+    expect(effectWay(parts({ kind: 'vulnerable', damageType: 'fire' }), 'up')).toBe('down');
+    expect(effectWay(parts({ kind: 'speedMultiplier', factor: 0.5 }), 'up')).toBe('down');
+  });
+
+  it('is up for bonuses, dice and defenses', () => {
+    expect(effectWay(parts({ kind: 'acBonus', amount: 2 }), 'down')).toBe('up');
+    expect(
+      effectWay(parts({ kind: 'rollDie', dice: '1d4', on: { rolls: ['save'] } }), 'down'),
+    ).toBe('up');
+    expect(effectWay(parts({ kind: 'resist', damageType: 'fire' }), 'down')).toBe('up');
+  });
+
+  it('counts help and ward notes as helping, a warning as hindering, and info as neither', () => {
+    const cue = (tone: 'help' | 'ward' | 'warn' | 'info') =>
+      ({ kind: 'cue', tone, text: 'x' }) as EffectPart;
+    // A described reroll with a cost works both ways: an effect in play stays a buff.
+    expect(effectWay([cue('help'), cue('warn')], 'up')).toBe('up');
+    // A condition that only wards is a buff, not the default debuff.
+    expect(effectWay([cue('ward')], 'down')).toBe('up');
+    expect(effectWay([cue('warn')], 'up')).toBe('down');
+    expect(effectWay([cue('info')], 'down')).toBe('down');
+  });
+
+  it('takes the given way when it works both ways or neither', () => {
+    const both = parts(
+      { kind: 'attackBonus', scope: 'all', amount: 2 },
+      { kind: 'acBonus', amount: -2 },
+    );
+    expect(effectWay(both, 'down')).toBe('down');
+    expect(effectWay(both, 'up')).toBe('up');
+    expect(effectWay([], 'down')).toBe('down');
+    expect(effectWay(parts({ kind: 'cue', tone: 'info', text: 'Note' }), 'up')).toBe('up');
   });
 });
 

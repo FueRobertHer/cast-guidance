@@ -644,6 +644,18 @@ export function conditionEntries(
 }
 
 /**
+ * Whether a condition in play is not one of the built-in ones, so it may count
+ * as an effect in play does (H5). Switched off or not, as derive reads it.
+ */
+export function hasHomebrewCondition(conditions: unknown): boolean {
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  return list.some((raw) => {
+    const id = isRecord(raw) ? own(raw, 'id') : undefined;
+    return typeof id === 'string' && id.trim() !== '' && !isBuiltInCondition(id);
+  });
+}
+
+/**
  * The homebrew conditions in force, for derive (H5): `homebrewConditionEffects`
  * over the data's conditions in the character's edition. The data and the
  * immunities are read only when a condition in play is not built in, so a
@@ -655,12 +667,8 @@ export function homebrewConditionsInForce(
   edition: Edition,
   immune: () => ReadonlyArray<ConditionImmunity>,
 ): { effects: ActiveEffect[]; problems: string[] } {
-  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
-  const homebrew = list.some((raw) => {
-    const id = isRecord(raw) ? own(raw, 'id') : undefined;
-    return typeof id === 'string' && id.trim() !== '' && !isBuiltInCondition(id);
-  });
-  if (!homebrew) return { effects: [], problems: [] };
+  if (!hasHomebrewCondition(conditions)) return { effects: [], problems: [] };
+  const list = Array.from(conditions as unknown[]);
   return homebrewConditionEffects(list, conditionEntries(data.byType('condition'), edition), {
     immune: immune(),
   });

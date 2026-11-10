@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ChevronsDown,
   ChevronsUp,
   CircleAlert,
   PencilLine,
@@ -53,6 +54,7 @@ import {
   countedInstead,
   effectMark,
   effectsInPlay,
+  effectWay,
   hpLimits,
   immunityTo,
   lastsLine,
@@ -104,6 +106,12 @@ const SHEET_CLEARS_MS = 300;
 
 /** A chip in the strip: its name opens its sheet, its x takes it away. */
 const CHIP = 'flex h-8 shrink-0 items-center rounded-full bg-surface-raised';
+/**
+ * A debuff's chip while it counts: a homebrew condition, unless it only helps,
+ * or an effect in play that only hinders. The red edge of the numbers it
+ * lowered, around the chip, with its chevrons down.
+ */
+const DEBUFF = 'ring-[1.5px] ring-danger ring-inset';
 const CHIP_NAME =
   '-my-1.5 flex min-h-tap items-center gap-1.5 whitespace-nowrap rounded-l-full pl-3 text-ink text-label underline-offset-2 [--tap-inset:0.375rem] hover:underline';
 const CHIP_X =
@@ -555,8 +563,17 @@ export function ConditionStrip({
                 const { name, level } = conditionLabel(c);
                 const by = immunityTo(c.id, immune);
                 const held = by.length > 0;
+                // A homebrew condition is a debuff by default (its red edge),
+                // and a buff only when everything it does helps.
+                const way = isBuiltInCondition(c.id)
+                  ? undefined
+                  : effectWay(conditionMechanics(rules(c.id)).parts, 'down');
+                const counts = c.ignored !== true && !held;
                 return (
-                  <li key={`c:${c.id}`} className={CHIP}>
+                  <li
+                    key={`c:${c.id}`}
+                    className={`${CHIP} ${way === 'down' && counts ? DEBUFF : ''}`}
+                  >
                     <button
                       type="button"
                       ref={(el) => {
@@ -570,6 +587,14 @@ export function ConditionStrip({
                     >
                       {held ? (
                         <ShieldCheck size={16} aria-hidden="true" className="shrink-0 text-ward" />
+                      ) : way === 'down' ? (
+                        <ChevronsDown
+                          size={16}
+                          aria-hidden="true"
+                          className="shrink-0 text-danger"
+                        />
+                      ) : way === 'up' ? (
+                        <ChevronsUp size={16} aria-hidden="true" className="shrink-0 text-heal" />
                       ) : (
                         <CircleAlert size={16} aria-hidden="true" className="shrink-0" />
                       )}
@@ -605,8 +630,12 @@ export function ConditionStrip({
               })}
               {effects.map((e, i) => {
                 const mark = effectMark(e);
+                const down = effectWay(e.parts, 'up') === 'down';
                 return (
-                  <li key={`e:${e.id}`} className={CHIP}>
+                  <li
+                    key={`e:${e.id}`}
+                    className={`${CHIP} ${down && e.off !== true ? DEBUFF : ''}`}
+                  >
                     <button
                       type="button"
                       ref={(el) => {
@@ -623,6 +652,12 @@ export function ConditionStrip({
                         <>
                           <span className="font-bold text-heal tabular-nums">{mark}</span>{' '}
                         </>
+                      ) : down ? (
+                        <ChevronsDown
+                          size={16}
+                          aria-hidden="true"
+                          className="shrink-0 text-danger"
+                        />
                       ) : (
                         <ChevronsUp size={16} aria-hidden="true" className="shrink-0 text-heal" />
                       )}

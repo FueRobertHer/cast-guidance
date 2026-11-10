@@ -58,6 +58,11 @@ export interface RollChipProps {
    */
   raisedBy?: readonly string[];
   /**
+   * The effects in play that lowered this roll (a homebrew condition's -2 to
+   * hit): the same edge in danger red, chevrons down, and its name says who.
+   */
+  loweredBy?: readonly string[];
+  /**
    * The attack a damage chip's roll goes with: the character's (`by`) attack
    * named `of` (a weapon's or a spell's), or any of theirs when `of` is absent
    * (Sneak Attack). When the attack in play (`attackInPlay`) is that one and
@@ -180,6 +185,7 @@ export function RollChip({
   inline,
   wear,
   raisedBy = [],
+  loweredBy = [],
   withAttack,
   cast,
 }: RollChipProps) {
@@ -195,6 +201,7 @@ export function RollChip({
   if (!valid.current) return <span>{display ?? expr}</span>;
 
   const raised = raisedBy.length > 0;
+  const lowered = !raised && loweredBy.length > 0;
 
   // The roll lands through `rollFrom`: a d20 test waits in the roll prompt
   // first, and the total and `onRolled` wait for it. Damage tapped while an
@@ -207,7 +214,13 @@ export function RollChip({
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setResult(null), TOTAL_MS);
   };
-  const face = { text: display ?? expr, wear, lift: raised, tone: FACE_TONE[variant] };
+  const face = {
+    text: display ?? expr,
+    wear,
+    lift: raised || lowered,
+    down: lowered,
+    tone: FACE_TONE[variant],
+  };
   const onRoll = (event: MouseEvent<HTMLButtonElement>) => {
     // A spell with no d20 waits in the prompt with its ways to cast.
     if (cast !== undefined && roller === undefined) {
@@ -274,12 +287,14 @@ export function RollChip({
           rolls={rolls}
           showing={result !== null}
           tone={FACE_TONE[variant]}
-          lift={inline ? undefined : raised}
+          lift={inline ? undefined : raised || lowered}
+          down={lowered}
         >
           {text}
         </ChipFace>
       )}
       {raised && <span className="sr-only">, raised by {raisedBy.join(', ')}</span>}
+      {lowered && <span className="sr-only">, lowered by {loweredBy.join(', ')}</span>}
     </button>
   );
   // Always wrapped in a row, so the ring can draw in as an effect arrives; a
@@ -287,7 +302,7 @@ export function RollChip({
   return inline || wear !== undefined ? (
     chip
   ) : (
-    <Lift on={raised} className="rounded-chip">
+    <Lift on={raised || lowered} down={lowered} className="rounded-chip">
       {chip}
     </Lift>
   );

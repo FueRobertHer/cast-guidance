@@ -649,6 +649,20 @@ describe('deriveSheet with effects in play', () => {
     expect(row(sheet, 'Longsword').damageFrom).toEqual(['Rage']);
     expect(row(base, 'Longsword')).not.toHaveProperty('damageFrom');
     expect(row(sheet, 'Shortbow')).not.toHaveProperty('damageFrom');
+    expect(row(sheet, 'Longsword')).not.toHaveProperty('damageAgainst');
+  });
+
+  it('names the damage bonuses that come to less than zero apart', () => {
+    const sheet = derive(
+      withEffects(
+        warrior(),
+        fx('Rage', [{ kind: 'damageBonus', scope: 'melee', amount: 2, ability: 'str' }]),
+        fx('Weakened', [{ kind: 'damageBonus', scope: 'all', amount: -3 }]),
+      ),
+    );
+    expect(row(sheet, 'Longsword').damage).toBe('1d8+2');
+    expect(row(sheet, 'Longsword').damageFrom).toEqual(['Rage', 'Weakened']);
+    expect(row(sheet, 'Longsword').damageAgainst).toEqual(['Weakened']);
   });
 
   it('adds a weapon bonus to weapons, never to spell attacks, and a spell bonus the other way', () => {

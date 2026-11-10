@@ -216,11 +216,14 @@ export function calcAttacks(
 
     let dmgMod = mod + magicBonus;
     const damageFrom: string[] = [];
+    const bySource = new Map<string, number>();
     for (const b of damageBonuses) {
       if (!reaches(b, ranged, ability, weaponId)) continue;
       dmgMod += b.amount;
       if (b.amount !== 0 && !damageFrom.includes(b.origin.label)) damageFrom.push(b.origin.label);
+      bySource.set(b.origin.label, (bySource.get(b.origin.label) ?? 0) + b.amount);
     }
+    const damageAgainst = damageFrom.filter((label) => (bySource.get(label) ?? 0) < 0);
     const riders = [
       ...extraDamage,
       ...riderDice
@@ -239,6 +242,7 @@ export function calcAttacks(
       damageType,
       versatileDamage: versatile !== undefined ? `${versatile}${dmgSuffix}` : undefined,
       ...(damageFrom.length > 0 ? { damageFrom } : {}),
+      ...(damageAgainst.length > 0 ? { damageAgainst } : {}),
       // Riders are flat dice: `dmgSuffix` is deliberately not applied. You add
       // your Strength to the sword, not to the flames.
       extraDamage: riders,

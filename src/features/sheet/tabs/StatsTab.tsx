@@ -21,7 +21,7 @@ import {
   saveEffectLines,
   useIgnoreOnce,
 } from '../d20Tests';
-import { conditionsInForce, defenseView, raised, raisedBy } from '../effectsInPlay';
+import { conditionsInForce, defenseView, loweredBy, raised, raisedBy } from '../effectsInPlay';
 import { RollEffectCue } from '../RollEffectCue';
 import type { CharacterSheetState } from '../useCharacterSheet';
 
@@ -66,6 +66,7 @@ function AbilityTile({
   check,
   wear,
   lifted,
+  lowered,
   onRoll,
 }: {
   name: Ability;
@@ -74,12 +75,18 @@ function AbilityTile({
   wear: ChipWear;
   /** The effects in play that raised its score or its check. */
   lifted: readonly string[];
+  /** The ones that lowered it, when none raised it: its edge in red. */
+  lowered: readonly string[];
   /** Rolls from this control; `landed` plays the face's moment once the roll lands. */
   onRoll: (from: HTMLElement, landed: () => void) => void;
 }) {
   const moment = useRollMoment();
   return (
-    <Lift on={lifted.length > 0} className="flex min-w-0 rounded-card">
+    <Lift
+      on={lifted.length + lowered.length > 0}
+      down={lowered.length > 0}
+      className="flex min-w-0 rounded-card"
+    >
       <div className={`relative flex min-w-0 flex-1 rounded-card ${TILE}`}>
         <ChipFace surface="tile" wear={wear} rolls={moment.rolls} showing={moment.showing}>
           {/* The mark stays outside the uppercase label, so its words are not
@@ -95,7 +102,7 @@ function AbilityTile({
             onClick={(event) => onRoll(event.currentTarget, moment.rolled)}
             aria-label={`Roll ${name.toUpperCase()} check (${signed(check.total.value)})${
               lifted.length > 0 ? `, raised by ${lifted.join(', ')}` : ''
-            }`}
+            }${lowered.length > 0 ? `, lowered by ${lowered.join(', ')}` : ''}`}
             className={`min-h-tap min-w-tap rounded-control px-2 text-stat tabular-nums ${ROLLS}`}
             title={`Roll ${name.toUpperCase()} check`}
           >
@@ -149,6 +156,7 @@ function SaveButton({
   save,
   wear,
   lifted,
+  lowered,
   onRoll,
 }: {
   name: Ability;
@@ -156,6 +164,8 @@ function SaveButton({
   wear: ChipWear;
   /** The effects in play that raised it. */
   lifted: readonly string[];
+  /** The ones that lowered it: its edge in red. */
+  lowered: readonly string[];
   /** Rolls from this control; `landed` plays the face's moment once the roll lands. */
   onRoll: (from: HTMLElement, landed: () => void) => void;
 }) {
@@ -172,7 +182,8 @@ function SaveButton({
         wear={wear}
         rolls={moment.rolls}
         showing={moment.showing}
-        lift={lifted.length > 0}
+        lift={lifted.length + lowered.length > 0}
+        down={lowered.length > 0}
       >
         <span className="inline-flex items-center gap-2 text-label">
           <ProfDot level={save.prof ? 1 : 0} decorative />
@@ -180,6 +191,7 @@ function SaveButton({
         </span>{' '}
         <span className="font-bold tabular-nums">{signed(save.total.value)}</span>
         {lifted.length > 0 && <span className="sr-only">, raised by {lifted.join(', ')}</span>}
+        {lowered.length > 0 && <span className="sr-only">, lowered by {lowered.join(', ')}</span>}
       </ChipFace>
     </button>
   );
@@ -257,12 +269,18 @@ export function Component() {
       d20Effects(conditions, edition, { kind: 'save', ability: a }, immune),
     ]),
   ) as Record<Ability, D20Effects>;
-  // The build alone, so the numbers an effect raised wear its ring.
+  // The build alone, so the numbers an effect raised wear its ring, and the
+  // ones it lowered the red one.
   const built = builtSheet ?? sheet;
   const abilityLift = (a: Ability) =>
     raised(sheet.abilities[a], built.abilities[a])
       ? raisedBy(sheet.abilities[a], built.abilities[a])
       : raisedBy(sheet.checks[a].total, built.checks[a].total);
+  const abilityDrop = (a: Ability) => {
+    if (abilityLift(a).length > 0) return [];
+    const score = loweredBy(sheet.abilities[a], built.abilities[a]);
+    return score.length > 0 ? score : loweredBy(sheet.checks[a].total, built.checks[a].total);
+  };
   // No condition singles out one ability's checks, so any one speaks for all.
   const checkCue = (
     <RollEffectCue
@@ -314,6 +332,7 @@ export function Component() {
               check={sheet.checks[a]}
               wear={rollWear(conditions, checkEffects(a), ignore.armed('check'))}
               lifted={abilityLift(a)}
+              lowered={abilityDrop(a)}
               onRoll={rollTest(
                 `${a.toUpperCase()} check`,
                 sheet.checks[a].total.value,
@@ -342,6 +361,7 @@ export function Component() {
               save={sheet.saves[a]}
               wear={rollWear(conditions, saveEffects[a], ignore.armed('save'))}
               lifted={raisedBy(sheet.saves[a].total, built.saves[a].total)}
+              lowered={loweredBy(sheet.saves[a].total, built.saves[a].total)}
               onRoll={rollTest(
                 `${a.toUpperCase()} save`,
                 sheet.saves[a].total.value,

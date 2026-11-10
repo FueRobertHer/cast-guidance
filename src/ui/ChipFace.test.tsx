@@ -599,6 +599,32 @@ describe('ChipFace, raised by an effect in play', () => {
     const { container } = render(raised(worn('Prone')));
     expect(container.querySelector('.cx-lift')).toBeNull();
   });
+
+  it('draws the red edge, chevrons down, on both layers for a number an effect lowered', () => {
+    const { container } = render(
+      <ChipFace wear={worn('Prone')} rolls={0} showing={false} lift down>
+        +3
+      </ChipFace>,
+    );
+    const layers = [...container.querySelectorAll<HTMLElement>('.cx-lift')];
+    expect(layers).toHaveLength(2);
+    for (const layer of layers) expect(layer.classList.contains('fx-down')).toBe(true);
+    expect(container.querySelector('.cx')?.classList.contains('cx-lifted')).toBe(true);
+    // The chevrons point down: the first path starts at the top.
+    expect(container.querySelector('.fx-lift-mark path')?.getAttribute('d')).toBe(
+      'm18 4.5-6 6-6-6',
+    );
+  });
+
+  it('keeps the green edge when lowered is said without a ring', () => {
+    const { container } = render(
+      <ChipFace wear={PLAIN} rolls={0} showing={false} lift={false} down>
+        +3
+      </ChipFace>,
+    );
+    expect(container.querySelector('.fx-down')).toBeNull();
+    expect(container.querySelector('.fx-lift-ring')).toBeNull();
+  });
 });
 
 describe('RollChip, wearing conditions', () => {
@@ -657,6 +683,21 @@ describe('RollChip, wearing conditions', () => {
     const plain = render(<RollChip expr="1d8+3" variant="damage" raisedBy={['Rage']} />);
     expect(plain.container.querySelector('.fx-lift-on')).not.toBeNull();
     expect(plain.container.querySelector('.cx-lift')).toBeNull();
+  });
+
+  it('wears the red edge for what lowered it, the green one winning over it', () => {
+    const { container } = render(<RollChip {...props} wear={PLAIN} loweredBy={['Shaken']} />);
+    expect(screen.getByRole('button').textContent).toBe('+5, lowered by Shaken');
+    expect(container.querySelector('.cx-lift.fx-down .fx-lift-ring')).not.toBeNull();
+    cleanup();
+    const plain = render(<RollChip expr="1d8+3" variant="damage" loweredBy={['Shaken']} />);
+    expect(plain.container.querySelector('.fx-lift-on.fx-down')).not.toBeNull();
+    cleanup();
+    const both = render(
+      <RollChip expr="1d8+3" variant="damage" raisedBy={['Rage']} loweredBy={['Shaken']} />,
+    );
+    expect(both.container.querySelector('.fx-down')).toBeNull();
+    expect(screen.getByRole('button').textContent).toBe('1d8+3, raised by Rage');
   });
 
   it('keeps a casting chip’s damage or healing tone on the face', () => {

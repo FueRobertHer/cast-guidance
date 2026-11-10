@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { engineContextFor } from '@/data5e/engineAdapter';
 import { type AsyncStatus, useRegistryState } from '@/data5e/hooks';
+import { hasHomebrewCondition } from '@/engine/conditions';
 import { deriveSheet } from '@/engine/derive';
 import type { CharacterDoc, DerivedSheet } from '@/engine/types';
 import {
@@ -85,7 +86,10 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
     if (doc === null || registry === null || !dataReady) return null;
     const context = engineContextFor(registry, appRules);
     const sheet = deriveSheet(doc, context);
-    const inPlay = (doc.play.activeEffects ?? []).length > 0;
+    // A homebrew condition counts as an effect in play does, so the build alone
+    // is worked out for it too, and what it lowered wears the red edge.
+    const inPlay =
+      (doc.play.activeEffects ?? []).length > 0 || hasHomebrewCondition(doc.play.conditions);
     return { sheet, built: inPlay ? deriveSheet(doc, context, { active: false }) : sheet };
   }, [doc, registry, rev, dataReady, appRules]);
   const sheet = sheets?.sheet ?? null;
