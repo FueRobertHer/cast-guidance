@@ -313,6 +313,59 @@ describe('writeClass', () => {
     );
   });
 
+  it('finds a renamed feature by its name as stored, without the spaces around it', () => {
+    const { registry, cls } = book();
+    const arts = nodeOf(registry, cls, 'Martial Arts');
+    const flurry = nodeOf(registry, cls, 'Flurry of Blows');
+    const written = save(registry, cls, {
+      changed: {
+        [arts.ref]: { ...arts.base, name: 'Lantern Arts ' },
+        [flurry.ref]: { ...flurry.base, name: ' Lantern Flurry' },
+      },
+    });
+    expect((written.entry.classFeatures as unknown[])[0]).toBe(mine('Lantern Arts', 1));
+    loaded(registry, written);
+    expect(find(registry, mine('Lantern Arts', 1))?.name).toBe('Lantern Arts');
+    const focus = find(registry, mine("Monk's Focus", 2));
+    expect(JSON.stringify(focus?.entries)).toContain(mine('Lantern Flurry', 2));
+  });
+
+  it('follows a held feature under entry, as the sheet does', () => {
+    const sage = (name: string, level: number) => ref(name, level, 'Sage');
+    const registry = normalizeDataset(
+      new Map([
+        [
+          'class/class-sage.json',
+          {
+            class: [{ name: 'Sage', source: 'XPHB', classFeatures: [sage('Lore', 1)] }],
+            classFeature: [
+              {
+                ...feature('Lore', 1, [
+                  'You know things.',
+                  { type: 'item', name: 'Recall', entry: refBlock(sage('Recall', 1)) },
+                ]),
+                className: 'Sage',
+              },
+              { ...feature('Recall', 1, ['Remember.']), className: 'Sage' },
+            ],
+          },
+        ],
+      ]),
+    );
+    const cls = registry.get('class', 'Sage', 'XPHB') as Json;
+    expect(featureTree(cls, registry).map((n) => n.ref)).toEqual([
+      sage('Lore', 1),
+      sage('Recall', 1),
+    ]);
+    const lore = nodeOf(registry, cls, 'Lore');
+    expect(lore.base.entries).toEqual(['You know things.']);
+    const written = save(registry, cls, { removed: [sage('Recall', 1)] });
+    expect(written.owned.map((f) => f.name)).toEqual(['Lore']);
+    expect(readStored(written.owned[0] as Json, lore.entity as Json).entry.entries).toEqual([
+      'You know things.',
+    ]);
+  });
+
   it('writes every feature in full for a full copy, held ones still held', () => {
     const { registry, cls } = book();
     const written = save(registry, cls, {}, 'full');
@@ -362,6 +415,56 @@ describe('openClass', () => {
       });
     });
   }
+
+  it("reopens a class started from one of the player's own with the edits it was saved with", () => {
+    const { registry, cls } = book();
+    const lantern = loaded(registry, save(registry, cls, edits(registry, cls)));
+    const theirs = nodeOf(registry, lantern, 'Lantern Flurry');
+    const draft = openClass(structuredClone(lantern), { original: lantern, registry });
+    Object.assign(draft, { name: 'Lantern B' });
+    draft._features = {
+      ...editsOf(draft),
+      changed: { [theirs.ref]: { ...theirs.base, entries: ['Four.'] } },
+    };
+    const b = writeClass({
+      original: lantern,
+      copied: lantern,
+      draft,
+      source: 'MyHomebrew',
+      mode: 'changes',
+      registry,
+    });
+    // Written whole: a copy of the player's own feature would share its name and book.
+    const flurry = b.owned.find((f) => f.name === 'Lantern Flurry');
+    expect(flurry?._copy).toBeUndefined();
+    expect(flurry?.castGuidance).toMatchObject({ basedOn: 'Flurry of Blows|XPHB' });
+    const file = { class: [b.entry], classFeature: b.owned };
+    const { entry } = readStored(structuredClone(b.entry), lantern);
+    const back = editsOf(openClass(entry, { original: lantern, registry, file }));
+    expect(back).toMatchObject({ removed: [], added: [] });
+    expect(Object.keys(back.changed)).toEqual([theirs.ref]);
+  });
+
+  it('keeps what a feature holds in it when a full copy opens without its original', () => {
+    const { registry, cls } = book();
+    const written = save(registry, cls, edits(registry, cls), 'full');
+    const file = { class: [written.entry], classFeature: written.owned };
+    const draft = openClass(structuredClone(written.entry), { registry: book().registry, file });
+    const again = () =>
+      writeClass({ draft, source: 'MyHomebrew', mode: 'full', registry: book().registry });
+    const first = again();
+    const list = first.entry.classFeatures as unknown[];
+    expect(list).not.toContain(mine('Lantern Flurry', 2));
+    expect(list).not.toContain(mine('Patient Defense', 2));
+    const focus = first.owned.find((f) => f.name === "Monk's Focus");
+    expect(focus?.entries).toEqual(written.owned.find((f) => f.name === "Monk's Focus")?.entries);
+    // Taken out with what held it gone, a held one is listed on the class.
+    const ed = editsOf(draft);
+    draft._features = { ...ed, added: ed.added.filter((a) => a.name !== "Monk's Focus") };
+    const second = again().entry.classFeatures as unknown[];
+    expect(second).toContain(mine('Lantern Flurry', 2));
+    expect(second).toContain(mine('Patient Defense', 2));
+  });
 
   it('does not count a holder written only to point at a changed feature as changed', () => {
     const { registry, cls } = book();
@@ -433,6 +536,44 @@ describe('tableGroupsFor', () => {
     );
   });
 
+  it('takes out a spell count column the class no longer has', () => {
+    const known = {
+      ...MONK,
+      casterProgression: 'full',
+      spellcastingAbility: 'wis',
+      spellsKnownProgression: Array.from({ length: 20 }, () => 4),
+      classTableGroups: [
+        { colLabels: ['Spells Known'], rows: Array.from({ length: 20 }, () => [4]) },
+      ],
+    };
+    const { spellsKnownProgression: _, ...prepared } = {
+      ...known,
+      preparedSpellsProgression: Array.from({ length: 20 }, () => 5),
+    };
+    const labels = (tableGroupsFor(prepared, known) as Json[]).flatMap((g) => g.colLabels);
+    expect(labels).toContain('Prepared Spells');
+    expect(labels).not.toContain('Spells Known');
+  });
+
+  it('replaces a slot table only shown with the one the sheet reads', () => {
+    const ordinals = ['1st', '2nd', '3rd', '4th', '5th'];
+    const shown = {
+      ...MONK,
+      casterProgression: '1/2',
+      spellcastingAbility: 'wis',
+      classTableGroups: [
+        {
+          title: 'Spell Slots per Spell Level',
+          colLabels: ordinals.map((o) => `{@filter ${o}|spells|level=1}`),
+          rows: Array.from({ length: 20 }, () => [1, 0, 0, 0, 0]),
+        },
+      ],
+    };
+    const groups = tableGroupsFor({ ...shown, casterProgression: 'full' }, shown) as Json[];
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.rowsSpellProgression).toBeDefined();
+  });
+
   it('leaves the table as the book has it when the spellcasting did not change', () => {
     expect(tableGroupsFor(structuredClone(MONK), MONK)).toEqual(MONK.classTableGroups);
   });
@@ -467,6 +608,30 @@ describe('summarize and check', () => {
     const pool = (label: string) => ({ kind: 'resource', key: label, label, max: { byLevel: {} } });
     expect(check({ name: 'L', castGuidance: { v: 1, effects: [pool('A'), pool('a')] } })).toBe(
       'Two pools have the same name.',
+    );
+  });
+
+  it('asks for names Save would write twice, a book feature it has to write among them', () => {
+    const check = editor.check ?? (() => undefined);
+    const { registry, cls } = book();
+    const flurry = nodeOf(registry, cls, 'Flurry of Blows');
+    const draft = openClass(structuredClone(cls), { original: cls, registry });
+    draft.name = 'Lantern';
+    // Changing what Monk's Focus holds writes Monk's Focus too.
+    draft._features = {
+      ...editsOf(draft),
+      changed: { [flurry.ref]: { ...flurry.base, entries: ['Three.'] } },
+      added: [{ name: "Monk's Focus", level: 2, entries: [] }],
+    };
+    const at = { original: cls, copied: cls, source: 'MyHomebrew', registry };
+    expect(check(draft)).toBeUndefined();
+    expect(check(draft, { ...at, mode: 'changes' })).toBe(
+      "Two features at level 2 are called Monk's Focus.",
+    );
+    draft._features = { ...editsOf(draft), changed: {} };
+    expect(check(draft, { ...at, mode: 'changes' })).toBeUndefined();
+    expect(check(draft, { ...at, mode: 'full' })).toBe(
+      "Two features at level 2 are called Monk's Focus.",
     );
   });
 });

@@ -15,7 +15,9 @@
  *   `castGuidance.basedOn` names the class they are keyed under);
  * - a changed one is the player's own entry, `_copy` of the original with its
  *   changes and a `basedOn` of its own, or whole where the original's name and
- *   book do not find it alone (every class has an Ability Score Improvement);
+ *   book do not find it alone (every class has an Ability Score Improvement),
+ *   or where the original is in the player's own book (a class started from
+ *   one of theirs), which the copy would share;
  * - a feature whose text holds one that was changed or removed is written too,
  *   its refs pointed at the feature now (or taken out), so what it holds stays
  *   in it: the sheet reads a held feature with the others it holds, an
@@ -43,7 +45,7 @@ import { SegmentedControl } from '@/ui/SegmentedControl';
 import { listClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import type { TableColumn } from '../ClassTable';
-import { changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
+import { basedOnKey, changeCount, copiedFrom, readStored, same, writeEntry } from '../copyWriter';
 import type { EditorProps, EditorSpec, Json, WriteContext, Written } from '../editorTypes';
 import { FeatureRow, type FeatureStatus } from '../FeatureRow';
 import { ABILITY_WORDS, ChipPicks, Field, Kept, NumberField, Section, Select } from '../fields';
@@ -55,6 +57,15 @@ const KEY = '_features';
 const SUB = 'gainSubclassFeature';
 const FEATURE = 'classFeature';
 const REF = 'refClassFeature';
+/**
+ * A class opened without its original (a full copy, its book turned off) has
+ * no features of the original's to keep its own in: each is a new one, and
+ * one whose text holds others keeps, under `HOLDS`, its text as stored and the
+ * refs to them; each it holds keeps, under `WAS`, the ref it was stored under.
+ * Save puts them back where they were.
+ */
+const HOLDS = '_holds';
+const WAS = '_heldAs';
 export const LEVELS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 /** What the player did to a class's features, kept in its draft. */
@@ -163,13 +174,51 @@ function withoutRefs(v: unknown, refs: ReadonlySet<string>): unknown {
     return out;
   }
   if (!isRecord(v) || isPick(v)) return v;
+  return inBlock(
+    v,
+    (x) => withoutRefs(x, refs),
+    (x) => refs.has(String(x.classFeature)),
+  );
+}
+
+/**
+ * A block with `step` run over what it holds (`entries`, `items`, `entry`, as
+ * the sheet reads them), or GONE where that took out all it held. `drops` says
+ * whether a lone `entry` ref goes.
+ */
+function inBlock(
+  v: Json,
+  step: (x: unknown) => unknown,
+  drops: (ref: Json) => boolean,
+  swap?: (ref: Json) => Json,
+): Json | typeof GONE {
   const o: Json = { ...v };
+  let held = 0;
+  let left = 0;
   for (const k of ['entries', 'items']) {
-    if (!Array.isArray(v[k])) continue;
-    o[k] = withoutRefs(v[k], refs);
-    if ((v[k] as unknown[]).length > 0 && (o[k] as unknown[]).length === 0) return GONE;
+    if (!Array.isArray(v[k]) || (v[k] as unknown[]).length === 0) continue;
+    o[k] = step(v[k]);
+    held += 1;
+    if ((o[k] as unknown[]).length > 0) left += 1;
   }
-  return o;
+  if (isRecord(v.entry)) {
+    held += 1;
+    const x = v.entry;
+    if (x.type === REF && typeof x.classFeature === 'string') {
+      if (drops(x)) delete o.entry;
+      else {
+        o.entry = swap?.(x) ?? x;
+        left += 1;
+      }
+    } else {
+      const y = step([x]) as unknown[];
+      if (y.length > 0) {
+        o.entry = y[0];
+        left += 1;
+      } else delete o.entry;
+    }
+  }
+  return held > 0 && left === 0 ? GONE : o;
 }
 
 /**
@@ -191,13 +240,16 @@ function rewriteRefs(v: unknown, to: ReadonlyMap<string, string | null>): unknow
     return out;
   }
   if (!isRecord(v) || isPick(v)) return v;
-  const o: Json = { ...v };
-  for (const k of ['entries', 'items']) {
-    if (!Array.isArray(v[k])) continue;
-    o[k] = rewriteRefs(v[k], to);
-    if ((v[k] as unknown[]).length > 0 && (o[k] as unknown[]).length === 0) return GONE;
-  }
-  return o;
+  const next = (x: Json) => to.get(String(x.classFeature));
+  return inBlock(
+    v,
+    (x) => rewriteRefs(x, to),
+    (x) => to.has(String(x.classFeature)) && (next(x) ?? null) === null,
+    (x) => {
+      const r = next(x);
+      return typeof r === 'string' ? { ...x, classFeature: r } : x;
+    },
+  );
 }
 
 /**
@@ -366,10 +418,27 @@ function cellText(cell: unknown): string {
   return '';
 }
 
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
+
+/**
+ * A table of slots per spell level: the one the sheet reads
+ * (`rowsSpellProgression`), or one only shown, with a column per spell level
+ * (the Spellcaster Sidekick's).
+ */
+function isSlotGroup(g: Json): boolean {
+  if (Array.isArray(g.rowsSpellProgression)) return true;
+  const labels = Array.isArray(g.colLabels) ? g.colLabels : [];
+  return (
+    labels.length > 0 &&
+    labels.every((l) => ORDINALS.includes(plainEntryText(String(l ?? '')).trim()))
+  );
+}
+
 /** What the book's table says at each level, leaving out the spell columns the editor shows. */
 export function bookAt(draft: Json): (level: number) => Array<[string, string]> {
   const groups = (Array.isArray(draft.classTableGroups) ? draft.classTableGroups : []).filter(
-    (g): g is Json => isRecord(g) && Array.isArray(g.colLabels) && Array.isArray(g.rows),
+    (g): g is Json =>
+      isRecord(g) && Array.isArray(g.colLabels) && Array.isArray(g.rows) && !isSlotGroup(g),
   );
   return (level) =>
     groups.flatMap((g) => {
@@ -382,8 +451,6 @@ export function bookAt(draft: Json): (level: number) => Array<[string, string]> 
       });
     });
 }
-
-const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
 
 /** Slots per spell level at each class level, as the sheet works them out. */
 export function slotRows(draft: Json): number[][] | undefined {
@@ -461,14 +528,13 @@ export function tableGroupsFor(draft: Json, original: Json | undefined): unknown
     groups = groups.map((g) => {
       if (!Array.isArray(g.colLabels) || !Array.isArray(g.rows)) return g;
       const kinds = g.colLabels.map(columnKind);
-      // A column the class no longer has goes; one the sheet does not count
-      // from a list (a 2014 prepared formula) stays as the book has it.
+      // A column the class no longer has goes.
       const drop = kinds.map((k) =>
         k === undefined
           ? false
           : k === 'pactSlots' || k === 'slotLevel'
             ? p !== 'pact'
-            : !caster || (want[k] === undefined && k !== 'prepared' && k !== 'known'),
+            : !caster || want[k] === undefined,
       );
       const rows = (g.rows as unknown[]).map((row, i) =>
         Array.isArray(row)
@@ -495,7 +561,7 @@ export function tableGroupsFor(draft: Json, original: Json | undefined): unknown
       });
     }
     // The slot table the sheet reads, as the progression has it.
-    groups = groups.filter((g) => !Array.isArray(g.rowsSpellProgression));
+    groups = groups.filter((g) => !isSlotGroup(g));
     const slots = slotRows({ casterProgression: p });
     if (slots !== undefined) {
       const top = Math.max(0, ...slots.map((r) => r.findLastIndex((n) => n > 0) + 1));
@@ -555,7 +621,8 @@ export function openClass(
     for (const k of nodes) if (k.parent === n.ref) keep(k);
   };
   const seen = new Set<string>();
-  const visit = (ref: string, item?: unknown) => {
+  /** `held`: the feature is in the text of one with nothing of the original's to pair with. */
+  const visit = (ref: string, item?: unknown, held = false) => {
     if (seen.has(lower(ref))) return;
     seen.add(lower(ref));
     const node = nodes.find((n) => eq(n.ref, ref));
@@ -563,16 +630,21 @@ export function openClass(
     const f = featureOf(ref);
     if (f === undefined) return;
     const g = own(f, 'castGuidance');
-    const [name, source] = String(isRecord(g) ? (own(g, 'basedOn') ?? '') : '').split('|');
+    const based = isRecord(g) ? own(g, 'basedOn') : undefined;
     // Save keeps a changed feature at its original's level, and a name can
-    // repeat at several (Ability Score Improvement).
-    const from = nodes.find(
-      (n) =>
-        !present.has(n.ref) &&
-        eq(n.entity?.name, name) &&
-        eq(n.entity?.source, source) &&
-        n.level === Number(f.level),
-    );
+    // repeat at several (Ability Score Improvement). Its `basedOn` names the
+    // official feature, as Save worked it out, also where the original is a
+    // copy of the player's own (a class started from one of theirs).
+    const from =
+      typeof based !== 'string'
+        ? undefined
+        : nodes.find(
+            (n) =>
+              !present.has(n.ref) &&
+              n.entity !== undefined &&
+              eq(basedOnKey(n.entity), based) &&
+              n.level === Number(f.level),
+          );
     const now = from?.entity !== undefined ? ownGuidance(structuredClone(f)) : structuredClone(f);
     for (const k of PLACE) delete now[k];
     // What it holds is shown as features of their own, as the original's are.
@@ -584,9 +656,14 @@ export function openClass(
       if (changeCount(from.base, now) > 0) edits.changed[from.ref] = now;
     } else {
       if (isRecord(item) && item[SUB] === true) now[SUB] = true;
+      // The sheet shows a feature as its ref spells it ("Subclass Feature").
+      const listedAs = parseRef(ref).name;
+      if (eq(listedAs, now.name)) now.name = listedAs;
+      if (held) now[WAS] = ref;
+      if (kids.length > 0) now[HOLDS] = { entries: structuredClone(f.entries), kids };
       edits.added.push(now);
     }
-    for (const k of kidRefs(f)) visit(k);
+    for (const k of kids) visit(k, undefined, from?.entity === undefined);
   };
   for (const item of listOf(entry)) {
     const ref = refOf(item);
@@ -645,7 +722,8 @@ export function writeClass(at: WriteContext): Written {
   for (const n of nodes) {
     if (!written(n)) continue;
     const was = parseRef(n.ref).name;
-    const name = String((changedOf(edits, n) ?? n.base).name ?? was);
+    // Trimmed, as the entry stores its name.
+    const name = String((changedOf(edits, n) ?? n.base).name ?? was).trim();
     refFor.set(n.ref, `${eq(name, was) ? was : name}|${className}|${source}|${n.level}|${source}`);
   }
   const target = (r: string): string | null => (removed.has(r) ? null : (refFor.get(r) ?? r));
@@ -680,8 +758,10 @@ export function writeClass(at: WriteContext): Written {
     const now = changedOf(edits, n) ?? n.base;
     // A copy is found by name and book alone; where two features share them
     // (every class's Ability Score Improvement), it could find the other, so
-    // this one is written out whole, as is one the data holds as a copy.
-    const alone = registry.get(FEATURE, String(e.name), String(e.source)) === e;
+    // this one is written out whole, as is one the data holds as a copy, and
+    // one in the player's own book, which this one would share it with.
+    const alone =
+      registry.get(FEATURE, String(e.name), String(e.source)) === e && !eq(e.source, source);
     const f = writeEntry({
       original: e,
       draft: { ...now, entries: heldText(n, now), ...place(n.level) },
@@ -699,14 +779,46 @@ export function writeClass(at: WriteContext): Written {
     if (!held) items.push({ item: itemFor(n.item, refFor.get(n.ref) as string), level: n.level });
   }
 
-  // A new feature goes after the last of its level.
+  // Where each new feature another holds is now (see HOLDS).
+  const levelOf = (a: Json) => Number(a.level) || 1;
+  const newRef = (a: Json) =>
+    `${String(a.name ?? '').trim()}|${className}|${source}|${levelOf(a)}|${source}`;
+  const moved = new Map<string, string>();
+  for (const a of edits.added) if (typeof a[WAS] === 'string') moved.set(a[WAS], newRef(a));
+  const heldNow = new Set(
+    edits.added.flatMap((a) => {
+      const h = a[HOLDS];
+      return isRecord(h) && Array.isArray(h.kids) ? h.kids : [];
+    }),
+  );
+
+  // A new feature goes after the last of its level, unless another holds it.
   for (const a of edits.added) {
-    const level = Number(a.level) || 1;
-    const { [SUB]: sub, ...rest } = a;
-    const f = writeEntry({ draft: { ...rest, ...place(level) }, source, mode: 'changes' });
+    const level = levelOf(a);
+    const { [SUB]: sub, [WAS]: was, [HOLDS]: holds, ...rest } = a;
+    const draftOf: Json = { ...rest, ...place(level) };
+    if (isRecord(holds) && Array.isArray(holds.kids)) {
+      const kids = holds.kids.filter((k): k is string => typeof k === 'string');
+      const to = new Map(
+        kids.map((k) => [k, moved.get(k) ?? (byRef.has(k) ? target(k) : null)] as const),
+      );
+      draftOf.entries = same(rest.entries, withoutRefs(holds.entries, new Set(kids)))
+        ? rewriteRefs(holds.entries, to)
+        : [
+            ...(Array.isArray(rest.entries) ? rest.entries : []),
+            ...kids.flatMap((k) => {
+              const r = to.get(k);
+              return typeof r === 'string' ? [{ type: REF, classFeature: r }] : [];
+            }),
+          ];
+    }
+    const f = writeEntry({ draft: draftOf, source, mode: 'changes' });
     Object.assign(f, place(level));
+    const ref = ownRef(f);
+    // Held, unless the player took out what held it.
+    if (typeof was === 'string' && heldNow.has(was)) continue;
     const after = items.findLastIndex((i) => i.level <= level);
-    items.splice(after + 1, 0, { item: itemFor(undefined, ownRef(f), sub === true), level });
+    items.splice(after + 1, 0, { item: itemFor(undefined, ref, sub === true), level });
   }
 
   const { [KEY]: _, ...rest } = draft;
@@ -753,7 +865,7 @@ export function summarize(draft: Json, original: Json, registry: EntityRegistry)
 }
 
 /** Why it cannot be saved: a feature without a name, two the sheet could not tell apart, a caster without an ability. */
-function check(draft: Json): string | undefined {
+function check(draft: Json, at?: Omit<WriteContext, 'draft'>): string | undefined {
   const edits = editsOf(draft);
   const mine: Json[] = [
     ...Object.entries(edits.changed)
@@ -769,6 +881,17 @@ function check(draft: Json): string | undefined {
     const key = `${lower(name)}|${String(f.level)}`;
     if (names.has(key)) return `Two features at level ${String(f.level)} are called ${name}.`;
     names.add(key);
+  }
+  // Save also writes the book's features it has to (one holding a changed
+  // feature, or every one in a full copy): two of those can share a name too.
+  if (at !== undefined) {
+    const written = new Set<string>();
+    for (const f of writeClass({ ...at, draft }).owned) {
+      const key = `${lower(String(f.name))}|${String(f.level)}`;
+      if (written.has(key))
+        return `Two features at level ${String(f.level)} are called ${String(f.name)}.`;
+      written.add(key);
+    }
   }
   if (typeof draft.casterProgression === 'string' && typeof draft.spellcastingAbility !== 'string')
     return 'Pick the ability it casts its spells with.';
@@ -1324,6 +1447,17 @@ function ClassBody(props: EditorProps) {
     if (p === undefined) return undefined;
     return `Part of ${String((edits.changed[p.ref] ?? p.base).name ?? p.entity?.name)}`;
   };
+  /** A new feature's line: one another holds says which (see HOLDS). */
+  const addedMeta = (a: Json): string => {
+    const was = a[WAS];
+    const holder = edits.added.find((h) => {
+      const holds = h[HOLDS];
+      return isRecord(holds) && Array.isArray(holds.kids) && holds.kids.includes(was);
+    });
+    if (typeof was === 'string' && holder !== undefined)
+      return `Your own feature, part of ${String(holder.name ?? '')}`;
+    return a[SUB] === true ? 'Your own feature, a subclass level' : 'Your own feature';
+  };
 
   /** The names at a level, as its row shows them. */
   const namesAt = (level: number) => [
@@ -1380,7 +1514,7 @@ function ClassBody(props: EditorProps) {
               key={`new:${i}`}
               name={String(a.name ?? '')}
               noun="feature"
-              meta={a[SUB] === true ? 'Your own feature, a subclass level' : 'Your own feature'}
+              meta={addedMeta(a)}
               status="new"
               value={a}
               editing
@@ -1526,7 +1660,8 @@ function ClassBody(props: EditorProps) {
             {original !== undefined && (
               <p className="flex items-start gap-2 rounded-control bg-surface-raised px-3 py-2 text-caption">
                 <Info size={16} aria-hidden className="mt-px shrink-0 text-ink-muted" />
-                {String(original.name)}'s own subclasses are kept for it.
+                {String(original.name)}'s own subclasses stay with it, and a character of this class
+                can take them too.
               </p>
             )}
           </Section>

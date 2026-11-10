@@ -51,8 +51,11 @@ export interface EditorSpec {
   /** The fields a new one starts with, besides its name and book. */
   blank: () => Json;
   Body: ComponentType<EditorProps>;
-  /** Why the entry cannot be saved as it stands, if it cannot. */
-  check?: (draft: Json) => string | undefined;
+  /**
+   * Why the entry cannot be saved as it stands, if it cannot. `at` is what
+   * Save would be given, for an editor whose writer decides what is written.
+   */
+  check?: (draft: Json, at?: Omit<WriteContext, 'draft'>) => string | undefined;
   /**
    * The draft it opens on, from the entry as the Workshop found it (a copy, or
    * one saved before): for an entry that gathers others, such as a subclass's
