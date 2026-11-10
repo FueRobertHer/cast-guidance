@@ -8,6 +8,7 @@ import {
   newCharacterDoc,
 } from '../types';
 import { emitCuratedEffects, emitCuratedTrait } from './curatedEffects';
+import { linkSpend } from './spendLinks';
 
 const ctx: EngineContext = { get: () => undefined, byType: () => [] };
 const origin: EffectOrigin = { label: 'Feature', uid: 'x', type: 'class' };
@@ -426,6 +427,210 @@ describe('free casts of a spell the class always has prepared', () => {
 
   it("adds nothing where the class's own data counts the casts", () => {
     expect(cast('faithful steed|paladin', 'Knight', 'HB', 5, 'xphb')).toEqual([]);
+  });
+});
+
+describe('pools, dice and DCs only class prose states', () => {
+  const pools = (c: Collector) =>
+    c.effects.flatMap((e) =>
+      e.kind === 'resource' ? [`${e.key} ${e.label} ${String(e.max)} ${e.resetOn}`] : [],
+    );
+  const run = (key: string, c: Collector, o: EffectOrigin = origin, from?: string) => {
+    expect(emitCuratedEffects(c, key, o, from)).toBe(true);
+    return c;
+  };
+
+  it('gives Indomitable one use, two from Fighter 13 and three from 17, in one pool', () => {
+    const uses = (l: number) => pools(run('indomitable|fighter', col('Fighter', l)));
+    expect([9, 12, 13, 16, 17].map(uses)).toEqual(
+      [1, 1, 2, 2, 3].map((n) => [`indomitable Indomitable ${n} long`]),
+    );
+    // The 2014 cards for the later uses add nothing of their own.
+    expect(run('indomitable (two uses)|fighter', col('Fighter', 13)).effects).toEqual([]);
+    expect(run('indomitable (three uses)|fighter', col('Fighter', 17)).effects).toEqual([]);
+  });
+
+  it('gives the Warrior sidekick one Indomitable use, and two from 18', () => {
+    const key = 'indomitable|warrior sidekick';
+    expect(pools(run(key, col('Warrior Sidekick', 17)))).toEqual([
+      'indomitable Indomitable 1 long',
+    ]);
+    expect(pools(run(key, col('Warrior Sidekick', 18)))).toEqual([
+      'indomitable Indomitable 2 long',
+    ]);
+    const improvement = run(
+      'indomitable improvement|warrior sidekick',
+      col('Warrior Sidekick', 18),
+    );
+    expect(improvement.effects).toEqual([]);
+  });
+
+  it('gives Portent two foretelling rolls a long rest, three from Wizard 14', () => {
+    for (const key of ['portent|school of divination', 'portent|diviner']) {
+      expect(pools(run(key, col('Wizard', 3)))).toEqual(['portent Portent 2 long']);
+      expect(pools(run(key, col('Wizard', 13)))).toEqual(['portent Portent 2 long']);
+      expect(pools(run(key, col('Wizard', 14)))).toEqual(['portent Portent 3 long']);
+    }
+    expect(run('greater portent|diviner', col('Wizard', 14)).effects).toEqual([]);
+  });
+
+  it('brings the 2024 Warding Flare back on a short rest from Cleric 6, with its temporary hit points', () => {
+    const light = (uid: string): EffectOrigin => ({
+      label: 'Warding Flare',
+      uid,
+      type: 'subclass',
+    });
+    const flare = (levels: number, uid: string, from: string) =>
+      run('warding flare|light domain', col('Cleric', levels), light(uid), from).effects;
+    expect(flare(6, 'light domain|xphb', 'xphb')).toEqual([
+      expect.objectContaining({
+        kind: 'resource',
+        key: 'warding-flare',
+        max: 'abilityMod:wis',
+        resetOn: 'short',
+      }),
+      expect.objectContaining({
+        kind: 'action',
+        economy: 'reaction',
+        label: 'Warding Flare',
+        note: 'the target gains 2d6 + your Wisdom modifier temporary hit points',
+      }),
+    ]);
+    expect(flare(5, 'light domain|xphb', 'xphb')).toEqual([
+      expect.objectContaining({ kind: 'resource', resetOn: 'long' }),
+      {
+        kind: 'action',
+        economy: 'reaction',
+        label: 'Warding Flare',
+        origin: light('light domain|xphb'),
+      },
+    ]);
+    // The 2014 domain, under either Cleric, keeps a long rest.
+    expect(flare(6, 'light domain|phb', 'phb')[0]).toEqual(
+      expect.objectContaining({ kind: 'resource', resetOn: 'long' }),
+    );
+  });
+
+  it('asks for two level 3 Wizard spells for Signature Spells, each free once a short rest', () => {
+    const wizard: EffectOrigin = { label: 'Signature Spells', uid: 'wizard|xphb', type: 'class' };
+    const open = run('signature spells|wizard', col('Wizard', 20), wizard);
+    expect(open.effects).toEqual([]);
+    expect(open.pending).toEqual([
+      expect.objectContaining({
+        id: 'class:wizard|xphb:signature',
+        kind: 'spell',
+        count: 2,
+        spellQuery: expect.objectContaining({ levels: [3], classes: ['Wizard'] }),
+      }),
+    ]);
+    const picked = col('Wizard', 20);
+    picked.doc.choices['class:wizard|xphb:signature'] = ['fireball|xphb', 'counterspell|xphb'];
+    run('signature spells|wizard', picked, wizard);
+    expect(pools(picked)).toEqual([
+      'signature-spells-fireball Fireball 1 short',
+      'signature-spells-counterspell Counterspell 1 short',
+    ]);
+    const grants = picked.effects.flatMap((e) =>
+      e.kind === 'grantSpell'
+        ? [
+            `${e.spell.name} ${e.usage} ${e.ability} ${e.resourceKey ?? '-'}${e.slotsOnly ? ' slots' : ''}`,
+          ]
+        : [],
+    );
+    expect(grants).toEqual([
+      'fireball prepared int - slots',
+      'fireball 1/rest int signature-spells-fireball',
+      'counterspell prepared int - slots',
+      'counterspell 1/rest int signature-spells-counterspell',
+    ]);
+    // A pick as the picker stores it keeps its own capitals.
+    const named = col('Wizard', 20);
+    named.doc.choices['class:wizard|xphb:signature'] = ["Leomund's Tiny Hut|PHB", 'Fireball|PHB'];
+    expect(pools(run('signature spells|wizard', named, wizard))).toEqual([
+      "signature-spells-leomund-s-tiny-hut Leomund's Tiny Hut 1 short",
+      'signature-spells-fireball Fireball 1 short',
+    ]);
+  });
+
+  it('gives Harness Divine Power its own uses by class level, on a chip of the same name', () => {
+    const name = 'Channel Divinity: Harness Divine Power';
+    const uses = (cls: string, levels: number[]) =>
+      levels.map((l) => pools(run(`${name.toLowerCase()}|${cls}`, col(cls, l))));
+    const pool = (cls: string, n: number) => [`harness-divine-power-${cls} ${name} ${n} long`];
+    expect(uses('cleric', [2, 5, 6, 17, 18])).toEqual(
+      [1, 1, 2, 2, 3].map((n) => pool('cleric', n)),
+    );
+    expect(uses('paladin', [3, 6, 7, 14, 15])).toEqual(
+      [1, 1, 2, 2, 3].map((n) => pool('paladin', n)),
+    );
+    // The chip spends a Channel Divinity and one of these uses: the pool its name shares.
+    for (const [cls, resource] of [
+      ['Cleric', 'channel-divinity'],
+      ['Paladin', 'channel-divinity-paladin'],
+    ] as const) {
+      const linked = run(`${name.toLowerCase()}|${cls.toLowerCase()}`, col(cls, 7));
+      expect(linkSpend(linked, `${name}|${cls}|TCE`, name, origin)).toBe(true);
+      expect(linked.effects).toContainEqual(
+        expect.objectContaining({
+          kind: 'action',
+          economy: 'bonus',
+          label: name,
+          cost: { resource, amount: 1, ownUseToo: true },
+        }),
+      );
+    }
+  });
+
+  it('names each Harness Divine Power for its class when a character has both', () => {
+    const both = col();
+    both.doc.classes = [
+      { ref: { name: 'Cleric', source: 'PHB' }, levels: 6, hp: [] },
+      { ref: { name: 'Paladin', source: 'PHB' }, levels: 7, hp: [] },
+    ];
+    const name = 'channel divinity: harness divine power';
+    run(`${name}|cleric`, both);
+    run(`${name}|paladin`, both);
+    const labels = both.effects.map((e) => `${e.kind} ${'label' in e ? e.label : ''}`);
+    expect(labels).toEqual([
+      'resource Channel Divinity: Harness Divine Power (Cleric)',
+      'action Channel Divinity: Harness Divine Power (Cleric)',
+      'resource Channel Divinity: Harness Divine Power (Paladin)',
+      'action Channel Divinity: Harness Divine Power (Paladin)',
+    ]);
+  });
+
+  it('puts the Bardic Inspiration die on its chip: d6, d8 at 5, d10 at 10, d12 at 15', () => {
+    const note = (levels: number) =>
+      run('bardic inspiration|bard', col('Bard', levels)).effects.flatMap((e) =>
+        e.kind === 'action' ? [e.note] : [],
+      );
+    expect([1, 4, 5, 9, 10, 14, 15].map(note)).toEqual(
+      ['d6', 'd6', 'd8', 'd8', 'd10', 'd10', 'd12'].map((d) => [
+        `gives one ${d} · another creature within 60 feet`,
+      ]),
+    );
+  });
+
+  it('gives the maneuvers that force a save the maneuver DC, Strength or Dexterity', () => {
+    const saves = (key: string) =>
+      run(key, col()).effects.flatMap((e) => (e.kind === 'action' ? [[e.label, e.save]] : []));
+    const SAVES: Array<[string, string]> = [
+      ['Disarming Attack', 'str'],
+      ['Goading Attack', 'wis'],
+      ['Menacing Attack', 'wis'],
+      ['Pushing Attack', 'str'],
+      ['Trip Attack', 'str'],
+    ];
+    for (const [label, targetAbility] of SAVES) {
+      for (const source of ['phb', 'xphb']) {
+        expect(saves(`${label.toLowerCase()}|${source}`)).toEqual([
+          [label, { targetAbility, dcAbility: 'strOrDex' }],
+        ]);
+      }
+    }
+    expect(saves('heroic leap|wow')).toEqual([
+      ['Heroic Leap', { targetAbility: 'str', dcAbility: 'strOrDex' }],
+    ]);
   });
 });
 
