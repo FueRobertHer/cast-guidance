@@ -7,6 +7,7 @@
  * restore preview (current → snapshot) and an undo (now → before).
  */
 import { characterSourceList } from '@/data5e/sourceNames';
+import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
 import { addedSpellsOf } from '@/engine/effects/addedSpells';
 import {
   ABILITIES,
@@ -27,6 +28,7 @@ export type ChangeKind =
   | 'background'
   | 'hpRule'
   | 'diceRule'
+  | 'tableRule'
   | 'variantRule'
   | 'feats'
   | 'abilities'
@@ -96,6 +98,7 @@ const FAMILY: Record<ChangeKind, string | undefined> = {
   background: undefined,
   hpRule: undefined,
   diceRule: undefined,
+  tableRule: undefined,
   variantRule: undefined,
   feats: undefined,
   other: undefined,
@@ -211,7 +214,26 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
   if (addedSpellsOf(doc).length === 0) delete clone.addedSpells;
   // Optional class features off reads as absent, as a character from before them.
   if (doc.optionalClassFeatures !== true) delete clone.optionalClassFeatures;
-  clone.hpMethod = doc.hpMethod ?? 'average';
+  // No HP rule of its own keys as "average", as it always has, so the save
+  // journal still knows rows from before; one chosen keys apart, an average
+  // too, since the app's rule may say otherwise.
+  clone.hpMethod =
+    doc.hpMethod === undefined
+      ? 'average'
+      : doc.hpMethod === 'average'
+        ? 'own average'
+        : doc.hpMethod;
+  // No rules of its own reads as absent, as a character from before them.
+  // Only an empty set, as taking back the last own rule leaves none; an
+  // unreadable value (null from an import) hashes as it is, never throws.
+  if (
+    doc.tableRules === undefined ||
+    (typeof doc.tableRules === 'object' &&
+      doc.tableRules !== null &&
+      Object.keys(doc.tableRules).length === 0)
+  ) {
+    delete clone.tableRules;
+  }
   return sortedJson(clone);
 }
 
@@ -303,9 +325,70 @@ export function effectChanges(
   return out;
 }
 
+/** Each table rule's name, as history and the rule screens say it. */
+export const RULE_NAMES: Readonly<Record<TableRuleId, string>> = {
+  critDamage: 'Critical hits',
+  restLength: 'Rest length',
+  hpEachLevel: 'HP each level',
+  hpOnLongRest: 'HP on a long rest',
+  flanking: 'Flanking',
+  oneUseDice: 'One-use dice',
+};
+
+/** Each value of each table rule in a few words, lower case. */
+export const RULE_WORDS: {
+  readonly [K in TableRuleId]: Readonly<Record<TableRuleChoices[K], string>>;
+} = {
+  critDamage: {
+    doubleDice: 'double the dice',
+    maxPlusRoll: 'max the dice, then roll',
+    doubleTotal: 'double the total',
+  },
+  restLength: { standard: 'standard', gritty: 'gritty', heroic: 'heroic' },
+  hpEachLevel: {
+    average: 'the fixed amount',
+    rolled: 'rolled',
+    max: 'the maximum',
+    rolledAtLeastAverage: 'rolled, at least the fixed amount',
+  },
+  hpOnLongRest: { all: 'all of it', half: 'half the maximum', hitDice: 'none, hit dice heal' },
+  flanking: { off: 'off', advantage: 'advantage', plusTwo: '+2 to hit' },
+  oneUseDice: { after: 'after the roll', before: 'before the roll' },
+};
+
+/** A character's own choice of a rule in words, or that the app's holds (absent). */
+export function ruleWords(id: TableRuleId, value: unknown): string {
+  if (value === undefined) return 'as in Settings';
+  const words: Readonly<Record<string, string>> = RULE_WORDS[id];
+  return typeof value === 'string' && Object.hasOwn(words, value)
+    ? (words[value] as string)
+    : String(value);
+}
+
 /** When a character's one-use dice are offered, in words: its own rule, or the app's. */
 export function diceRuleWords(rule: CharacterDoc['oneUseDice']): string {
-  return rule === undefined ? 'as in Settings' : `${rule} the roll`;
+  return ruleWords('oneUseDice', rule);
+}
+
+/** A character's own rules, as stored: HP each level and one-use dice have fields of their own. */
+function ownRules(doc: CharacterDoc): Partial<Record<TableRuleId, unknown>> {
+  const rules: Record<string, unknown> =
+    typeof doc.tableRules === 'object' && doc.tableRules !== null ? { ...doc.tableRules } : {};
+  rules.hpEachLevel = doc.hpMethod;
+  rules.oneUseDice = doc.oneUseDice;
+  return rules;
+}
+
+/** Each of the character's own rules that changed: its name and its new words. */
+export function ownRuleChanges(
+  from: CharacterDoc,
+  to: CharacterDoc,
+): Array<{ id: TableRuleId; from: string; to: string }> {
+  const a = ownRules(from);
+  const b = ownRules(to);
+  return (Object.keys(RULE_NAMES) as TableRuleId[])
+    .filter((id) => a[id] !== b[id])
+    .map((id) => ({ id, from: ruleWords(id, a[id]), to: ruleWords(id, b[id]) }));
 }
 
 /** Whether a character uses optional class features, in words. Absent is off. */
@@ -581,17 +664,10 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
   refChange(out, 'species', 'Species', from.race, to.race);
   refChange(out, 'species', 'Subrace', from.subrace, to.subrace);
   refChange(out, 'background', 'Background', from.background, to.background);
-  const hpRule = (d: CharacterDoc) => d.hpMethod ?? 'average';
-  if (hpRule(from) !== hpRule(to))
+  for (const c of ownRuleChanges(from, to))
     out.push({
-      kind: 'hpRule',
-      line: `HP rule: ${hpRule(from)} → ${hpRule(to)}`,
-      structural: true,
-    });
-  if (from.oneUseDice !== to.oneUseDice)
-    out.push({
-      kind: 'diceRule',
-      line: `One-use dice: ${diceRuleWords(from.oneUseDice)} → ${diceRuleWords(to.oneUseDice)}`,
+      kind: c.id === 'hpEachLevel' ? 'hpRule' : c.id === 'oneUseDice' ? 'diceRule' : 'tableRule',
+      line: `${RULE_NAMES[c.id]}: ${c.from} → ${c.to}`,
       structural: true,
     });
   if (variantRuleWords(from) !== variantRuleWords(to))

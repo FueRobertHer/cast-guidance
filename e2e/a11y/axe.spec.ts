@@ -580,8 +580,8 @@ test.describe('axe: banners and toasts', () => {
     await gotoSheetTab(page, id, 'Play');
 
     // A confirm that is not destructive, so its button is the red fill.
-    await page.getByRole('button', { name: 'Long rest' }).click();
-    const rest = page.getByRole('dialog', { name: 'Long rest' });
+    await page.getByRole('button', { name: 'Long rest', exact: true }).click();
+    const rest = page.getByRole('dialog', { name: 'Long rest', exact: true });
     await opened(page, rest);
     await scanState(page, 'long-rest-confirm');
     await rest.getByRole('button', { name: 'Cancel' }).click();

@@ -95,7 +95,13 @@ interface RowContext {
    * A spell attack chip's roll, marked as the attack `of` (the spell's name);
    * `className` is whose spell it is (Innate Sorcery).
    */
-  rollAttack: (modifier: number, label: string, of: string, className?: string) => () => D20Ask;
+  rollAttack: (
+    modifier: number,
+    label: string,
+    of: string,
+    className?: string,
+    range?: 'melee' | 'ranged',
+  ) => () => D20Ask;
   /** The conditions on the attack chips. */
   wear: ChipWear;
   /** On Cast and the dice chip that casts: only what stops casting. */
@@ -110,6 +116,16 @@ interface RowContext {
 
 const hasSpellAttack = (entity: Entity | undefined) =>
   Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
+
+/**
+ * A spell attack's range when the spell makes only the one kind (`M` melee,
+ * `R` ranged), for what asks it: flanking is offered on melee attacks.
+ */
+const spellAttackRange = (entity: Entity | undefined): 'melee' | 'ranged' | undefined => {
+  const kinds = new Set(Array.isArray(entity?.spellAttack) ? entity.spellAttack : []);
+  if (kinds.size !== 1) return undefined;
+  return kinds.has('M') ? 'melee' : kinds.has('R') ? 'ranged' : undefined;
+};
 
 /** A `guide` mark for a spell the character's conditions would stop them casting. */
 function VerbalMark({
@@ -247,6 +263,7 @@ function SlotSpellRow({
                       `${name} spell attack`,
                       name,
                       spell.className,
+                      spellAttackRange(entity),
                     ),
                   }
             }
@@ -367,6 +384,7 @@ function InnateSpellRow({
                       `${name} spell attack`,
                       name,
                       spell.className,
+                      spellAttackRange(entity),
                     ),
                   }
             }
@@ -628,19 +646,23 @@ export function YourSpells({
     { kind: 'attack' },
     { immune: sheet.conditionImmunities },
   );
-  const rollAttack = (modifier: number, label: string, of: string, className?: string) => () =>
-    d20Ask(`1d20${fmt(modifier)}`, {
-      label,
-      effects: attackEffects,
-      ignored: ignore.take('attack', attackEffects),
-      riders: rollEffects(sheet, {
-        kind: 'attack',
-        attack: 'spell',
-        ...(className === undefined ? {} : { className }),
-      }),
-      settlesOnNatural: true,
-      attack: { by: doc.id, of, critFrom: sheet.critRange?.min },
-    });
+  const rollAttack =
+    (modifier: number, label: string, of: string, className?: string, range?: 'melee' | 'ranged') =>
+    () =>
+      d20Ask(`1d20${fmt(modifier)}`, {
+        label,
+        effects: attackEffects,
+        ignored: ignore.take('attack', attackEffects),
+        riders: rollEffects(sheet, {
+          kind: 'attack',
+          attack: 'spell',
+          ...(className === undefined ? {} : { className }),
+          // A melee spell attack is a melee attack (flanking, a melee rider).
+          ...(range === undefined ? {} : { range }),
+        }),
+        settlesOnNatural: true,
+        attack: { by: doc.id, of, critFrom: sheet.critRange?.min },
+      });
   const limits = conditionLimits(conditions, doc.rulesVersion);
   const entityOf = (ref: { name: string; source: string }) =>
     findSpell(registry, ref.name, ref.source, doc.rulesVersion);

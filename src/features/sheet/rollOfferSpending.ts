@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { setTableCrit } from '@/dice/roll';
-import type { CritDamage } from '@/dice/types';
-import { endEffect } from '@/engine/effectLife';
+import type { CritDamage, RollResult } from '@/dice/types';
+import { endEffect, naturalRolled } from '@/engine/effectLife';
+import { type MomentReport, momentsAt } from '@/engine/moments';
 import { sheetRules } from '@/engine/rules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, PlayState } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { cancelHeld } from '@/stores/heldRoll';
+import { noticeStore, notify } from '@/stores/notices';
+import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
-import { hpLimits } from './effectsInPlay';
+import { hpLimits, momentLines, withMoments } from './effectsInPlay';
 
 /**
  * Lets the roll toast spend the dice it offers while a sheet is open
@@ -101,6 +104,63 @@ export function useRollOfferSpending(
       cancelHeld();
     };
   }, [before]);
+
+  // A natural 20 or 1 on a d20 test the sheet rolled (one that says its kind,
+  // `meta.test`) fires the character's `natural20` or `natural1` moments, once
+  // a roll: rolls already in the log when the sheet opens or the character
+  // changes are passed over, and a roll put back in place (a die added after
+  // it) is the same roll, not a new one. A roll the tray or a rules chip makes
+  // says no kind and sets nothing off, and so does a save that failed
+  // automatically (Paralyzed): its die decides nothing. It fires after the step
+  // that logged the roll (a concentration save is logged inside an update), in
+  // a change with no name of its own, so the history row keeps the step's name
+  // ("Attacked with Longsword") when the two land together.
+  const docId = doc?.id;
+  useEffect(() => {
+    if (docId === undefined) return;
+    let seq = rollLogStore.getState().seq;
+    // `noticed`: the notice count as the roll was logged. A notice after it is
+    // the step's own (a concentration save's), and the toast shows one notice,
+    // so the moment joins it rather than taking its place.
+    const landed = (r: RollResult, noticed: number) => {
+      const natural = r.meta?.d20?.natural;
+      const test = r.meta?.test;
+      if ((natural !== 20 && natural !== 1) || test === undefined) return;
+      if (r.meta?.autoFail === true) return;
+      const { doc, sheet, update } = latest.current;
+      if (doc === null || sheet === null || doc.id !== docId) return;
+      const hp = hpLimits(sheet, doc.rulesVersion);
+      const at = natural === 20 ? 'natural20' : 'natural1';
+      if (hp.moments === undefined || momentsAt(hp.moments, at, { roll: test }).length === 0)
+        return;
+      let moments: MomentReport | undefined;
+      update((d) => {
+        moments = naturalRolled(d.play, natural, test, hp).moments;
+      });
+      // Said only when a moment did something to say.
+      if (moments === undefined || momentLines(moments).length === 0) return;
+      const now = noticeStore.getState();
+      const step = now.seq !== noticed ? now.notice : null;
+      const title = `Natural ${natural}`;
+      const own = withMoments({ title, tone: 'info' }, moments);
+      if (own === null) return;
+      // Said in its own words: the step's notice was just said.
+      notify(own);
+      // Shown joined with the step's, which it would otherwise replace.
+      if (step !== null) {
+        const detail = [step.detail, title].filter((x) => x !== undefined && x !== '').join(' · ');
+        const joined = withMoments({ ...step, detail }, moments);
+        if (joined !== null) noticeStore.getState().push(joined);
+      }
+    };
+    return rollLogStore.subscribe((s) => {
+      if (s.seq === seq) return;
+      const fresh = s.rolls.slice(0, Math.max(0, Math.min(s.seq - seq, s.rolls.length)));
+      seq = s.seq;
+      const noticed = noticeStore.getState().seq;
+      for (const r of fresh.reverse()) queueMicrotask(() => landed(r, noticed));
+    });
+  }, [docId]);
 
   const hp = doc === null ? undefined : `${doc.play.currentHp}/${doc.play.tempHp}`;
   const seen = useRef(hp);

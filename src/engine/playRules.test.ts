@@ -97,12 +97,16 @@ describe('rollEffects', () => {
       ],
       advantage: ['Reckless Attack'],
       disadvantage: [],
+      test: 'attack',
     });
   });
 
   it('gives a death save Bless, and initiative Guidance', () => {
     expect(rollEffects(sheet, { kind: 'save' }).dice.map((d) => d.source)).toEqual(['Bless']);
     const initiative = rollEffects(sheet, { kind: 'initiative' });
+    // The kind its roll carries, for a natural 20 or 1's moments: initiative is a check.
+    expect(rollEffects(sheet, { kind: 'save' }).test).toBe('save');
+    expect(initiative.test).toBe('check');
     expect(initiative.offers.map((o) => o.source)).toEqual(['Guidance', 'Bardic Inspiration']);
     expect(initiative.offers[0]).toEqual({
       dice: '1d4',

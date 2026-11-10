@@ -57,4 +57,29 @@ describe('rollDetail', () => {
     expect(detail(roll('1d4×10', { rng: seq(3) }))).toBe('d4 [3] × 10');
     expect(detail(roll('1d10×1d10', { rng: seq(3, 7) }))).toBe('d10 [3] × d10 [7]');
   });
+
+  it('brackets what a critical hit doubled under the double-the-total rule, extra dice after', () => {
+    const hit = roll('1d12+4', { rng: seq(9), critical: true, crit: 'doubleTotal' });
+    expect(detail(hit)).toBe('(d12 [9] + 4) × 2');
+    expect(hit.total).toBe(26);
+    // Savage Attacks' die joins after the doubling (RollChip's withDice), undoubled.
+    const savage = roll('1d12', { rng: seq(5) });
+    const both = { ...hit, terms: [...hit.terms, ...savage.terms] };
+    expect(detail(both)).toBe('(d12 [9] + 4) × 2 + d12 [5]');
+    // A multiplier of the dice's own is no crit, and keeps no brackets.
+    expect(detail(roll('1d4×10', { rng: seq(3), critical: true }))).toBe('2d4 [3, 3] × 10');
+  });
+
+  it('says which dice a critical hit set to their maximum before the ones it rolled', () => {
+    expect(detail(roll('1d8+3', { rng: seq(3), critical: true, crit: 'maxPlusRoll' }))).toBe(
+      '2d8 [max 8; rolled 3] + 3',
+    );
+    expect(detail(roll('2d6', { rng: seq(4, 1), critical: true, crit: 'maxPlusRoll' }))).toBe(
+      '4d6 [max 6, 6; rolled 4, 1]',
+    );
+    // As written the dice are rolled twice, none set.
+    expect(detail(roll('1d8+3', { rng: seq(3, 6), critical: true, crit: 'doubleDice' }))).toBe(
+      '2d8 [3, 6] + 3',
+    );
+  });
 });

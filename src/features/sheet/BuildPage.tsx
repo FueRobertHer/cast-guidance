@@ -9,12 +9,14 @@ import { filterByRulesVersion, type RulesVersion } from '@/data5e/rulesVersion';
 import { subclassOptions } from '@/data5e/subclassOptions';
 import { subraceOptions } from '@/data5e/subraceOptions';
 import { roll } from '@/dice/roll';
+import type { TableRuleId } from '@/engine/castGuidance';
 import { basedOn } from '@/engine/effects/mechanics';
 import {
   meetsMulticlassRequirements,
   multiclassRequirementText,
   subclassUnlockLevel,
 } from '@/engine/multiclass';
+import { ruleSources, sheetRules } from '@/engine/rules';
 import {
   ABILITIES,
   type CharacterDoc,
@@ -32,9 +34,10 @@ import {
   makeSubclassEntries,
   raceBlurb,
 } from '@/features/creator/pickerHints';
+import { RuleRow } from '@/features/settings/HouseRulesSection';
+import { choiceTitle, RULE_ORDER, RuleSheet } from '@/features/settings/RuleSheet';
 import { classRemovalParts, firstClassShift, listJoin, picksCleared } from '@/lib/describeRemoval';
 import { scrollBehavior } from '@/lib/motion';
-import { ONE_USE_DICE_WHY, useOneUseDice } from '@/lib/oneUseDice';
 import { pruneChoicesFor, pruneClass, pruneOrigin } from '@/lib/pruneChoices';
 import { signed } from '@/lib/signed';
 import { useStickyHeight } from '@/lib/useStickyHeight';
@@ -48,6 +51,7 @@ import { EntityCardList } from '@/ui/EntityCardList';
 import { PackProblem } from '@/ui/PackProblem';
 import { ProfDot } from '@/ui/ProfDot';
 import { ProfPicker } from '@/ui/ProfPicker';
+import { listClass } from '@/ui/surfaces';
 import { TextField } from '@/ui/TextField';
 import { UndoBar } from '@/ui/UndoBar';
 import { CharacterSourcesSection } from './CharacterSourcesSection';
@@ -261,10 +265,9 @@ export function Component() {
   // Everything below picks from the class files; a download that cannot
   // happen says so beside the list it leaves empty.
   const classPacks = useTypePacks('class');
-  // The house rule for one-use dice: the app's, and the id of what it means here.
-  const appDiceRule = useOneUseDice();
-  const diceRuleWhy = useId();
   const variantRuleWhy = useId();
+  // The table rule whose sheet is open, for this character or every one.
+  const [ruleOpen, setRuleOpen] = useState<TableRuleId | null>(null);
 
   if (sheet === null || doc === null || registry === null) {
     return <p className="text-body text-ink-muted">Loading…</p>;
@@ -331,7 +334,25 @@ export function Component() {
 
   const subclassLevelOf = (ref: { name: string; source: string }): number =>
     subclassUnlockLevel(registry.get('class', ref.name, ref.source));
-  const hpMethod = doc.hpMethod ?? 'average';
+  // The table rules this character plays by (their own, a pack's, the app's),
+  // and what decides each, for the rule rows.
+  const rules = sheetRules(sheet, doc.rulesVersion);
+  const ruleFrom = ruleSources(doc, { byType: (type) => registry.byType(type as never) });
+  const fromWords = (id: TableRuleId) => {
+    const f = ruleFrom[id];
+    return f.from === 'own' ? 'Your own' : f.from === 'pack' ? f.pack : 'As in Settings';
+  };
+  const ruleRow = (id: TableRuleId) => (
+    <RuleRow
+      key={id}
+      id={id}
+      value={choiceTitle(id, rules[id])}
+      from={fromWords(id)}
+      onOpen={setRuleOpen}
+    />
+  );
+  // HP each level counts a roll for each level under these, so a level-up rolls one.
+  const rollsHp = rules.hpEachLevel === 'rolled' || rules.hpEachLevel === 'rolledAtLeastAverage';
   const totalLevels = doc.classes.reduce((s, c) => s + c.levels, 0);
   const finalScores = Object.fromEntries(
     ABILITIES.map((a) => [a, sheet.abilities[a].value]),
@@ -342,7 +363,7 @@ export function Component() {
       const c = d.classes[idx];
       if (c === undefined || totalLevels >= 20) return;
       c.levels += 1;
-      if ((d.hpMethod ?? 'average') === 'rolled') {
+      if (rollsHp) {
         const faces = hdFacesOf(c.ref);
         // Hit points gained, so a heal (DS-001), not the damage red.
         const r = roll(`1d${faces}`, {
@@ -538,40 +559,14 @@ export function Component() {
             ))}
           </div>
         </fieldset>
-        <fieldset className="min-w-0" aria-describedby={diceRuleWhy}>
-          <legend className="mb-1.5 text-caption text-ink-muted">
-            Guidance and Bardic Inspiration: when this character adds a one-use die.
-          </legend>
-          <div className={SEGMENTS}>
-            {(
-              [
-                [undefined, 'As in Settings'],
-                ['after', 'After too'],
-                ['before', 'Before only'],
-              ] as const
-            ).map(([rule, label]) => (
-              <button
-                key={label}
-                type="button"
-                aria-pressed={doc.oneUseDice === rule}
-                onClick={() =>
-                  update((d) => {
-                    if (rule === undefined) delete d.oneUseDice;
-                    else d.oneUseDice = rule;
-                  })
-                }
-                className={SEGMENT}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-caption text-ink-muted">
+            House rules: this character follows Settings, unless it has its own.
+          </span>
+          <div className={listClass}>
+            {RULE_ORDER.filter((id) => id !== 'hpEachLevel').map(ruleRow)}
           </div>
-          <p id={diceRuleWhy} className="mt-1.5 text-caption text-ink-muted">
-            {doc.oneUseDice === undefined
-              ? `Settings says ${appDiceRule === 'after' ? 'after too' : 'before only'}, for every character without its own.`
-              : ONE_USE_DICE_WHY[doc.oneUseDice]}
-          </p>
-        </fieldset>
+        </div>
         {cueNotes.length > 0 && (
           <div className="flex flex-col gap-1 rounded-control p-3 ring-1 ring-line ring-inset">
             <span className="text-label text-ink-muted">Mixed editions ({cueNotes.length})</span>
@@ -591,33 +586,8 @@ export function Component() {
         summary={doc.classes.map((c) => `${c.ref.name} ${c.levels}`).join(' / ') || 'none'}
         defaultOpen
       >
-        {/* A fieldset's default min-width is min-content, which at large
-            text sizes holds it wider than the screen; min-w-0 lets it and
-            its legend wrap, and the choices wrap rather than overflow. */}
-        <fieldset className="flex min-w-0 flex-col gap-1.5">
-          <legend className="mb-1.5 text-caption text-ink-muted">
-            HP per level (level 1 of your first class is always the full die)
-          </legend>
-          <div className={SEGMENTS}>
-            {(
-              [
-                ['average', 'Average'],
-                ['rolled', 'Rolled'],
-                ['max', 'Max'],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={hpMethod === m}
-                onClick={() => update((d) => void (d.hpMethod = m))}
-                className={SEGMENT}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </fieldset>
+        {/* Level 1 of the first class is always the full die; the rule is the rest. */}
+        <div className={listClass}>{ruleRow('hpEachLevel')}</div>
 
         {/* Only where a class has some at its level, or the rule is on already. */}
         {(sheet.classVariantCount > 0 || doc.optionalClassFeatures === true) && (
@@ -716,7 +686,7 @@ export function Component() {
                 </p>
               )}
 
-              {hpMethod === 'rolled' && (
+              {rollsHp && (
                 <div className="flex flex-wrap gap-1.5">
                   {entry.hp.map((v, i) =>
                     idx === 0 && i === 0 ? (
@@ -1334,6 +1304,12 @@ export function Component() {
           ))}
         </details>
       )}
+      <RuleSheet
+        rule={ruleOpen}
+        onClose={() => setRuleOpen(null)}
+        character={{ doc, update }}
+        mine
+      />
     </div>
   );
 }

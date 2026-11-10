@@ -11,11 +11,13 @@ import {
   keepHigherTemp,
   knockedOut,
   maxHpFrom,
+  naturalRolled,
   newTurn,
   restEndings,
   setConcentration,
   setEffectOff,
 } from './effectLife';
+import { readMoments } from './moments';
 import { type ActiveEffect, newCharacterDoc, type PlayState } from './types';
 
 /** A character at 30 of 40 HP, in play. */
@@ -586,5 +588,53 @@ describe('keepHigherTemp', () => {
     expect(p.tempHpFrom).toBe('heroism');
     expect(keepHigherTemp(p, 6)).toBe(true);
     expect(p).not.toHaveProperty('tempHpFrom');
+  });
+});
+
+describe('naturalRolled', () => {
+  // A natural 20 on a save gives temporary hit points; any natural 1 says so.
+  const read = readMoments(
+    [
+      { at: 'natural20', rolls: ['save'], do: [{ kind: 'tempHp', amount: 5 }] },
+      { at: 'natural1', do: [{ kind: 'cue', text: 'Ouch', tone: 'warn' }] },
+    ],
+    'Gritty',
+  );
+  const withMoments = (p: PlayState): HpLimits => ({
+    ...limits(p),
+    moments: {
+      moments: read.moments,
+      scope: {
+        level: 5,
+        classLevel: 5,
+        prof: 3,
+        hp: 30,
+        maxHp: 40,
+        mod: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+        score: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      },
+      pools: [],
+      hpWhenDerived: 30,
+    },
+  });
+
+  it('fires a natural 20 moment that names saves on a save, and not on an attack or a check', () => {
+    expect(read.problems).toEqual([]);
+    const p = play();
+    expect(naturalRolled(p, 20, 'attack', withMoments(p)).moments).toBeUndefined();
+    expect(naturalRolled(p, 20, 'check', withMoments(p)).moments).toBeUndefined();
+    expect(p.tempHp).toBe(0);
+    expect(naturalRolled(p, 20, 'save', withMoments(p)).moments?.done.length).toBe(1);
+    expect(p.tempHp).toBe(5);
+  });
+
+  it('fires a natural 1 moment that names no rolls on every kind, and nothing with no moments', () => {
+    const p = play();
+    for (const kind of ['attack', 'save', 'check'] as const) {
+      expect(naturalRolled(p, 1, kind, withMoments(p)).moments?.cues.map((c) => c.text)).toEqual([
+        'Ouch',
+      ]);
+    }
+    expect(naturalRolled(p, 1, 'save', limits(p))).toEqual({ ended: [], maxHpChange: 0 });
   });
 });

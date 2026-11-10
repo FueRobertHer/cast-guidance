@@ -14,12 +14,13 @@ import {
   ShieldCheck,
   Star,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import type { RulesVersion } from '@/data5e/rulesVersion';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollResult } from '@/dice/types';
+import type { TableRuleChoices, TableRuleId } from '@/engine/castGuidance';
 import {
   attacksAgainst,
   conditionMaxHp,
@@ -48,6 +49,7 @@ import type {
   DerivedSheet,
   PlayState,
 } from '@/engine/types';
+import { choiceTitle, RuleSheet } from '@/features/settings/RuleSheet';
 import { randomId } from '@/lib/randomId';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
@@ -103,6 +105,7 @@ import {
   hpLimits,
   immunityTo,
   loweredBy,
+  momentLines,
   newTurnLines,
   raisedBy,
   saveDcLoweredBy,
@@ -193,9 +196,16 @@ const TILE_LABEL = 'wrap-anywhere text-[0.75rem] text-ink-muted leading-4';
  * mark can sit on its corner, and a cell on the card's corner rounds its own.
  */
 const WORN_TILE = 'relative flex min-h-19 min-w-0 flex-col';
-/** What a long rest does, said before it is taken. */
-const LONG_REST_DETAIL =
-  'Full HP, all spell slots and resources restored; regain half your hit dice.';
+/** What a long rest does, said before it is taken, under the table's HP on a long rest rule. */
+function longRestDetail(hp: TableRuleChoices['hpOnLongRest']): string {
+  const back =
+    hp === 'all'
+      ? 'Full HP'
+      : hp === 'half'
+        ? 'Half your maximum HP back'
+        : 'No HP back (spend hit dice to heal)';
+  return `${back}, all spell slots and resources restored; regain half your hit dice.`;
+}
 /** No effects to end. */
 const NONE: ReadonlySet<string> = new Set();
 /** A point pool's −5 / −1 / +1 / +5 (sorcery points, Lay on Hands). */
@@ -285,6 +295,36 @@ function rollConcentration(
  * offers no way to cast it. The name still opens the rules sheet, which says what
  * became of the file and can ask again. The slot pips above still work.
  */
+/**
+ * One table rule a rest follows, as a chip on the rest card (the Rules board,
+ * C): the rule's value in words, opening its sheet.
+ */
+function RestRule({
+  id,
+  value,
+  onOpen,
+}: {
+  id: 'restLength' | 'hpOnLongRest';
+  value: string;
+  onOpen: (id: TableRuleId) => void;
+}) {
+  const words =
+    id === 'restLength'
+      ? choiceTitle(id, value as TableRuleChoices['restLength'])
+      : `Long rest HP: ${choiceTitle(id, value as TableRuleChoices['hpOnLongRest']).replace(/^./, (c) => c.toLowerCase())}`;
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      onClick={() => onOpen(id)}
+      className="inline-flex min-h-tap items-center gap-1 rounded-full bg-surface-raised px-3 text-label text-ink hover:bg-surface-hover"
+    >
+      {words}
+      <span className="text-ink-muted">· Change</span>
+    </button>
+  );
+}
+
 function PendingSpellRow({
   name,
   source,
@@ -341,6 +381,9 @@ export function Component() {
     rest: 'short',
     open: false,
   });
+  // The rest card's rule chip opened, if one is: its sheet sets the rule here.
+  const [ruleOpen, setRuleOpen] = useState<TableRuleId | null>(null);
+  const restId = useId();
   const [hpSheet, setHpSheet] = useState<{ open: boolean; mode: HpMode }>({
     open: false,
     mode: 'damage',
@@ -364,6 +407,7 @@ export function Component() {
     castingEconomy(spellEntity(name, source));
 
   const play = doc.play;
+  const rules = sheetRules(sheet, doc.rulesVersion);
   // What ending or switching effects needs, to keep current HP within the maximum.
   const hpNow = hpLimits(sheet, doc.rulesVersion);
   const inPlay = effectsInPlay(play);
@@ -566,6 +610,17 @@ export function Component() {
   );
   const hasSpellAttack = (entity: ReturnType<typeof spellEntity>) =>
     Array.isArray(entity?.spellAttack) && entity.spellAttack.length > 0;
+  // A spell attack's range when the spell makes only the one kind (`M` melee,
+  // `R` ranged): a melee spell attack is a melee attack (flanking, a melee rider).
+  const spellRange = (entity: ReturnType<typeof spellEntity>) => {
+    const kinds = new Set(Array.isArray(entity?.spellAttack) ? entity.spellAttack : []);
+    if (kinds.size !== 1) return {};
+    return kinds.has('M')
+      ? { range: 'melee' as const }
+      : kinds.has('R')
+        ? { range: 'ranged' as const }
+        : {};
+  };
 
   // After a build change lowers a limit, stored play state can hold values above
   // the new maxima — surface them and offer a non-destructive clamp (GAME-007).
@@ -699,6 +754,7 @@ export function Component() {
         confirmLabel: 'Stay at 1 HP',
       }));
     let notice: Notice | null = null;
+    let out: ReturnType<typeof knockedOut> | undefined;
     update((d) => {
       applyHp(d.play, delta, maxHp.value);
       if (useRelentless && d.play.currentHp === 0) {
@@ -709,13 +765,16 @@ export function Component() {
       }
       // Dropping to 0 knocks the character out: concentration and what it
       // held end, and Rage with them.
-      if (d.play.currentHp === 0) knockedOut(d.play, hpNow);
+      if (d.play.currentHp === 0) out = knockedOut(d.play, hpNow);
       notice = rollConcentration(d.play, -delta, rollConcentrationSave, hpNow);
       after.currentHp = d.play.currentHp;
       after.tempHp = d.play.tempHp;
     });
     sayHp(after);
-    if (notice !== null) notify(notice);
+    // What dropping to 0 set off (a moment's cue, an effect it ended), with the
+    // concentration save's notice when there is one: the toast shows one at a time.
+    const said = withMoments(notice, out?.moments);
+    if (said !== null) notify(said);
     else if (useRelentless) {
       notify({
         title: 'Relentless Endurance',
@@ -1457,14 +1516,21 @@ export function Component() {
             size="sm"
             onClick={() => {
               // What starts or ends with the turn, said in the toast after.
-              let said: string[] = [];
+              let said: Notice | null = null;
               update((d) => {
                 const extraBack = d.play.turn?.extra ?? [];
                 d.play.turn = { action: false, bonus: false, reaction: false };
-                said = newTurnLines(newTurn(d.play, hpNow), extraBack, d.play.tempHp);
+                // A start-of-turn moment's lines join the rest, with its tone
+                // (a warning warns) and where it came from.
+                const { moments, ...turn } = newTurn(d.play, hpNow);
+                const lines = newTurnLines(turn, extraBack, d.play.tempHp);
+                if (lines.length > 0 || (moments !== undefined && momentLines(moments).length > 0))
+                  said = withMoments(
+                    { title: 'New turn', detail: lines.join(' · '), tone: 'info' },
+                    moments,
+                  );
               }, 'New turn');
-              if (said.length > 0)
-                notify({ title: 'New turn', detail: said.join(' · '), tone: 'info' });
+              if (said !== null) notify(said);
             }}
             className="-my-1 -mr-1 ml-auto"
             title="Reset action, bonus action, and reaction"
@@ -2179,7 +2245,12 @@ export function Component() {
                                   roller: rollAttack(
                                     sc.attackMod.value,
                                     `${ref.name} spell attack`,
-                                    { kind: 'attack', attack: 'spell', className: sc.className },
+                                    {
+                                      kind: 'attack',
+                                      attack: 'spell',
+                                      className: sc.className,
+                                      ...spellRange(entity),
+                                    },
                                     ref.name,
                                   ),
                                 }
@@ -2361,7 +2432,12 @@ export function Component() {
                               roller: rollAttack(
                                 attackModifier,
                                 `${g.name} spell attack`,
-                                { kind: 'attack', attack: 'spell', className: g.className },
+                                {
+                                  kind: 'attack',
+                                  attack: 'spell',
+                                  className: g.className,
+                                  ...spellRange(entity),
+                                },
                                 g.name,
                               ),
                             }
@@ -2384,45 +2460,57 @@ export function Component() {
       )}
 
       {/* Rests, last: they end a stretch of play rather than take part in a
-          turn, and a long rest should not be a thumb's slip from the slots. */}
-      <section className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          // With effects in play, a sheet asks which ones the rest ends.
-          onClick={() =>
-            inPlay.length > 0
-              ? setRestAsked({ rest: 'short', open: true })
-              : finishRest('short', NONE)
-          }
-          className={buttonClass({ variant: 'outline' })}
-        >
-          <Hourglass size={18} /> Short rest
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            if (inPlay.length > 0) {
-              setRestAsked({ rest: 'long', open: true });
-              return;
+          turn, and a long rest should not be a thumb's slip from the slots.
+          How long each takes and what a long one heals follow the table's
+          rules, each a chip opening its sheet (the Rules board, C). */}
+      <section aria-labelledby={`${restId}-h`} className="flex flex-col gap-2">
+        <h2 id={`${restId}-h`} className="sr-only">
+          Rests
+        </h2>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            // With effects in play, a sheet asks which ones the rest ends.
+            onClick={() =>
+              inPlay.length > 0
+                ? setRestAsked({ rest: 'short', open: true })
+                : finishRest('short', NONE)
             }
-            const ok = await askConfirm({
-              title: 'Long rest',
-              detail: LONG_REST_DETAIL,
-              confirmLabel: 'Rest',
-            });
-            if (ok) finishRest('long', NONE);
-          }}
-          className={buttonClass({ variant: 'outline' })}
-        >
-          <Moon size={18} /> Long rest
-        </button>
+            className={buttonClass({ variant: 'outline' })}
+          >
+            <Hourglass size={18} /> Short rest
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (inPlay.length > 0) {
+                setRestAsked({ rest: 'long', open: true });
+                return;
+              }
+              const ok = await askConfirm({
+                title: 'Long rest',
+                detail: longRestDetail(rules.hpOnLongRest),
+                confirmLabel: 'Rest',
+              });
+              if (ok) finishRest('long', NONE);
+            }}
+            className={buttonClass({ variant: 'outline' })}
+          >
+            <Moon size={18} /> Long rest
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <RestRule id="restLength" value={rules.restLength} onOpen={setRuleOpen} />
+          <RestRule id="hpOnLongRest" value={rules.hpOnLongRest} onOpen={setRuleOpen} />
+        </div>
       </section>
+      <RuleSheet rule={ruleOpen} onClose={() => setRuleOpen(null)} character={{ doc, update }} />
       <RestSheet
         rest={restAsked.rest}
-        length={sheetRules(sheet, doc.rulesVersion).restLength}
+        length={rules.restLength}
         open={restAsked.open}
         effects={inPlay}
-        {...(restAsked.rest === 'long' ? { detail: LONG_REST_DETAIL } : {})}
+        {...(restAsked.rest === 'long' ? { detail: longRestDetail(rules.hpOnLongRest) } : {})}
         onOpenChange={(open) => setRestAsked((was) => ({ ...was, open }))}
         onRest={(rest, ends) => {
           setRestAsked((was) => ({ ...was, open: false }));

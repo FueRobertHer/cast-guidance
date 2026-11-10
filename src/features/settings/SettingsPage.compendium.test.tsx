@@ -27,6 +27,8 @@ vi.mock('@/db/dataCacheRepo', () => ({
 vi.mock('@/db/reset', () => ({ resetAppData: vi.fn() }));
 vi.mock('@/ui/dialogs', () => ({ askConfirm: () => Promise.resolve(true) }));
 vi.mock('./SourcesSection', () => ({ SourcesSection: () => null }));
+// House rules read rule packs from the registry; with none, every rule is as written.
+vi.mock('@/data5e/hooks', () => ({ useRegistry: () => null }));
 
 import { dataStatusStore } from '@/stores/dataStatus';
 import { Component as SettingsPage } from './SettingsPage';

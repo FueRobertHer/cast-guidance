@@ -38,6 +38,17 @@ describe('historyLabel', () => {
     expect(historyLabel(before, base())).toBe('One-use dice: as in Settings');
   });
 
+  it("names the character's own table rules and HP each level, absent as Settings", () => {
+    const own = base();
+    own.hpMethod = 'average';
+    expect(historyLabel(base(), own)).toBe('HP each level: the fixed amount');
+    expect(historyLabel(own, base())).toBe('HP each level: as in Settings');
+    const crit = base();
+    crit.tableRules = { critDamage: 'doubleTotal' };
+    expect(historyLabel(base(), crit)).toBe('Critical hits: double the total');
+    expect(historyLabel(crit, base())).toBe('Critical hits: as in Settings');
+  });
+
   it('names the optional class features rule', () => {
     const on = base();
     on.optionalClassFeatures = true;

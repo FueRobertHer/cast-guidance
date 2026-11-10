@@ -25,6 +25,8 @@ import {
 import type { CharacterDoc, DerivedSheet, EngineContext } from './types';
 
 type Layer = Partial<TableRuleChoices>;
+/** The pack that set each rule, by name. */
+type Names = Partial<Record<TableRuleId, string>>;
 
 /** Every rule as written for an edition (both editions agree today). */
 export function asWritten(edition: string): Readonly<TableRuleChoices> {
@@ -52,33 +54,43 @@ function characterRules(doc: Pick<CharacterDoc, 'tableRules' | 'hpMethod' | 'one
 
 /**
  * The table rules of the packs that reach this character, in the player's
- * order (the later wins): applied to them, or made the app's default. A pack
- * with no `appliesTo` reaches nobody. A version the app cannot read counts
- * nothing; the mechanics reader already says so.
+ * order (the later wins): applied to them, or made the app's default, and
+ * which pack set each. A pack with no `appliesTo` reaches nobody. A version
+ * the app cannot read counts nothing; the mechanics reader already says so.
+ * With no character (`undefined`), only the app's default packs count.
  */
 function packRules(
   ctx: Pick<EngineContext, 'byType'>,
-  characterId: string,
-): { mine: Layer; appDefault: Layer; problems: string[] } {
+  characterId: string | undefined,
+): {
+  mine: Layer;
+  appDefault: Layer;
+  named: Record<'mine' | 'appDefault', Names>;
+  problems: string[];
+} {
   const mine: Layer = {};
   const appDefault: Layer = {};
+  const named = { mine: {} as Names, appDefault: {} as Names };
   const problems: string[] = [];
   for (const pack of ctx.byType(RULE_PACK_TYPE)) {
     const to = own(pack, 'appliesTo');
     const characters = isRecord(to) ? own(to, 'characters') : undefined;
-    const forMe = Array.isArray(characters) && characters.includes(characterId);
+    const forMe =
+      characterId !== undefined && Array.isArray(characters) && characters.includes(characterId);
     if (!forMe && !(isRecord(to) && own(to, 'appDefault') === true)) continue;
     const guidance = own(pack, 'castGuidance');
     if (!isRecord(guidance)) continue;
     if ('problem' in guidanceVersion(guidance)) continue;
     const read = readTableRules(own(guidance, 'tableRules'));
-    const named = own(pack, 'name');
+    const label = own(pack, 'name');
     const name =
-      typeof named === 'string' && named.trim() !== '' ? clip(named.trim()) : 'A rule pack';
+      typeof label === 'string' && label.trim() !== '' ? clip(label.trim()) : 'A rule pack';
     for (const p of read.problems) problems.push(`${name}: ${p}`);
     Object.assign(forMe ? mine : appDefault, read.rules);
+    for (const id of Object.keys(read.rules))
+      named[forMe ? 'mine' : 'appDefault'][id as TableRuleId] = name;
   }
-  return { mine, appDefault, problems };
+  return { mine, appDefault, named, problems };
 }
 
 /** The rules a character plays by, with what in their own choices or their packs did not read. */
@@ -130,6 +142,85 @@ export function sheetRules(
   edition: string,
 ): Readonly<TableRuleChoices> {
   return sheet.rules ?? asWritten(edition);
+}
+
+/**
+ * The app's rules, which every character without its own plays by: the
+ * choice in Settings, else a pack made the app's default, else as written.
+ * `packs` names the app-default pack that sets each rule it sets, which
+ * decides only where Settings has no choice (`ctx.rules`).
+ */
+export function appRulesFor(
+  ctx: Pick<EngineContext, 'byType' | 'rules'>,
+  edition: string,
+): { rules: TableRuleChoices; packs: Names } {
+  const packs = packRules(ctx, undefined);
+  const app = readTableRules(ctx.rules).rules;
+  return {
+    rules: { ...asWritten(edition), ...packs.appDefault, ...app },
+    packs: packs.named.appDefault,
+  };
+}
+
+/**
+ * Where a character's rule comes from: their own choice, a pack applied to
+ * them (named), or the app (Settings, an app-default pack, or as written).
+ */
+export type RuleFrom = { from: 'own' } | { from: 'pack'; pack: string } | { from: 'app' };
+
+/** Where each rule a character plays by comes from (`tableRulesFor`'s order). */
+export function ruleSources(
+  doc: Parameters<typeof tableRulesFor>[0],
+  ctx: Pick<EngineContext, 'byType'>,
+): Record<TableRuleId, RuleFrom> {
+  const own = characterRules(doc).rules;
+  const packs = packRules(ctx, doc.id).named.mine;
+  const out = {} as Record<TableRuleId, RuleFrom>;
+  for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+    const pack = packs[id];
+    out[id] =
+      own[id] !== undefined
+        ? { from: 'own' }
+        : pack !== undefined
+          ? { from: 'pack', pack }
+          : { from: 'app' };
+  }
+  return out;
+}
+
+/**
+ * A character's own choice of a rule, absent when they follow the rest:
+ * `hpMethod` for HP each level, `oneUseDice` for one-use dice, else
+ * `tableRules`. Read as stored data, so a value the app does not know is none.
+ */
+export function ownRule<K extends TableRuleId>(
+  doc: Pick<CharacterDoc, 'tableRules' | 'hpMethod' | 'oneUseDice'>,
+  id: K,
+): TableRuleChoices[K] | undefined {
+  return characterRules(doc).rules[id] as TableRuleChoices[K] | undefined;
+}
+
+/** Give a character their own choice of a rule, or (`undefined`) take it back. */
+export function setOwnRule<K extends TableRuleId>(
+  doc: Pick<CharacterDoc, 'tableRules' | 'hpMethod' | 'oneUseDice'>,
+  id: K,
+  value: TableRuleChoices[K] | undefined,
+): void {
+  if (id === 'hpEachLevel') {
+    if (value === undefined) delete doc.hpMethod;
+    else doc.hpMethod = value as TableRuleChoices['hpEachLevel'];
+    return;
+  }
+  if (id === 'oneUseDice') {
+    if (value === undefined) delete doc.oneUseDice;
+    else doc.oneUseDice = value as TableRuleChoices['oneUseDice'];
+    return;
+  }
+  const rules: Record<string, unknown> = { ...(isRecord(doc.tableRules) ? doc.tableRules : {}) };
+  if (value === undefined) delete rules[id];
+  else rules[id] = value;
+  if (Object.keys(rules).length === 0) delete doc.tableRules;
+  else doc.tableRules = rules as CharacterDoc['tableRules'];
 }
 
 /**

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { AS_WRITTEN, RULE_PACK_TYPE, TABLE_RULES, type TableRuleChoices } from './castGuidance';
 import {
+  appRulesFor,
   asWritten,
+  ownRule,
   REST_MINUTES,
   restTakes,
+  ruleSources,
   rulesFor,
+  setOwnRule,
   sheetRules,
   sheetRulesField,
   tableRulesFor,
@@ -203,5 +207,93 @@ describe('rest lengths', () => {
         (length) => `${restTakes(length, 'short')}, ${restTakes(length, 'long')}`,
       ),
     ).toEqual(['1 hour, 8 hours', '8 hours, 7 days', '5 minutes, 1 hour']);
+  });
+});
+
+describe('the app’s rules, for the Settings screen', () => {
+  const appPack = pack(
+    'Gritty Table',
+    { restLength: 'gritty', flanking: 'advantage' },
+    {
+      to: { appDefault: true },
+    },
+  );
+
+  it('are Settings, else an app-default pack (named), else as written', () => {
+    const { rules, packs } = appRulesFor(ctx([appPack], { restLength: 'heroic' }), '2024');
+    // Settings chose the rest length, so only flanking is the pack's.
+    expect(rules).toEqual({ ...AS_WRITTEN['2024'], restLength: 'heroic', flanking: 'advantage' });
+    expect(packs).toEqual({ restLength: 'Gritty Table', flanking: 'Gritty Table' });
+  });
+
+  it('leave out packs applied to a character', () => {
+    const mine = pack('Hild only', { critDamage: 'doubleTotal' });
+    expect(appRulesFor(ctx([mine]), '2014')).toEqual({ rules: AS_WRITTEN['2014'], packs: {} });
+  });
+
+  it('count an explicit as-written choice in Settings over an app-default pack', () => {
+    const { rules } = appRulesFor(ctx([appPack], { restLength: 'standard' }), '2014');
+    expect(rules.restLength).toBe('standard');
+  });
+});
+
+describe('where each of a character’s rules comes from', () => {
+  it('is their own, a pack applied to them, or the app', () => {
+    const doc = hero('2014', (d) => {
+      d.hpMethod = 'max';
+      d.tableRules = { critDamage: 'maxPlusRoll' };
+    });
+    const from = ruleSources(
+      doc,
+      ctx([pack('Hild only', { critDamage: 'doubleTotal', flanking: 'plusTwo' })]),
+    );
+    expect(from.hpEachLevel).toEqual({ from: 'own' });
+    expect(from.critDamage).toEqual({ from: 'own' });
+    expect(from.flanking).toEqual({ from: 'pack', pack: 'Hild only' });
+    expect(from.restLength).toEqual({ from: 'app' });
+    expect(from.oneUseDice).toEqual({ from: 'app' });
+  });
+});
+
+describe('a character’s own rule', () => {
+  it('reads from and writes to the field each rule keeps', () => {
+    const doc = hero();
+    for (const id of Object.keys(TABLE_RULES) as Array<keyof TableRuleChoices>) {
+      expect(ownRule(doc, id)).toBeUndefined();
+      setOwnRule(doc, id, TABLE_RULES[id][1]);
+      expect(ownRule(doc, id)).toBe(TABLE_RULES[id][1]);
+    }
+    expect(doc.hpMethod).toBe('rolled');
+    expect(doc.oneUseDice).toBe('before');
+    expect(doc.tableRules).toEqual({
+      critDamage: 'maxPlusRoll',
+      restLength: 'gritty',
+      hpOnLongRest: 'half',
+      flanking: 'advantage',
+    });
+    // The character now plays by them.
+    expect(rulesFor(doc, ctx([], { critDamage: 'doubleTotal' })).critDamage).toBe('maxPlusRoll');
+  });
+
+  it('is taken back to follow the rest, leaving no empty field behind', () => {
+    const doc = hero('2014', (d) => {
+      d.hpMethod = 'average';
+      d.oneUseDice = 'after';
+      d.tableRules = { flanking: 'off' };
+    });
+    setOwnRule(doc, 'hpEachLevel', undefined);
+    setOwnRule(doc, 'oneUseDice', undefined);
+    setOwnRule(doc, 'flanking', undefined);
+    expect('hpMethod' in doc).toBe(false);
+    expect('oneUseDice' in doc).toBe(false);
+    expect('tableRules' in doc).toBe(false);
+    expect(rulesFor(doc, ctx([], { hpEachLevel: 'rolled' })).hpEachLevel).toBe('rolled');
+  });
+
+  it('reads a value it does not know as none', () => {
+    const doc = hero('2014', (d) => {
+      (d as { tableRules: unknown }).tableRules = { critDamage: 'triple' };
+    });
+    expect(ownRule(doc, 'critDamage')).toBeUndefined();
   });
 });

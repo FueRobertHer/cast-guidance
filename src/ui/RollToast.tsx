@@ -1,7 +1,17 @@
-import { Check, ChevronsUp, HeartCrack, HeartPlus, Sparkles, X } from 'lucide-react';
 import {
+  Check,
+  ChevronsUp,
+  HeartCrack,
+  HeartPlus,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import {
+  lazy,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -10,8 +20,12 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { roll } from '@/dice/roll';
-import type { DiceRollDetail, RollOffer, RollResult } from '@/dice/types';
+import type { CritDamage, DiceRollDetail, RollOffer, RollResult } from '@/dice/types';
+import type { CharacterDoc } from '@/engine/types';
+import { RULE_WORDS } from '@/lib/docDiff';
+import { signed } from '@/lib/signed';
 import { announce } from '@/stores/announcer';
+import { characterSessionStore, useCharacterSession } from '@/stores/characterSession';
 import { diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import {
   cancelHeld,
@@ -50,22 +64,34 @@ const TONE: Record<RollTone, { edge: string; tile: string }> = {
 
 type Term = RollResult['terms'][number];
 
-/** One die group in words: the kept faces, then any dropped ones. */
-function diceSpeech(rolls: Array<{ v: number; kept: boolean }>): string {
+/**
+ * One die group in words: the kept faces, then any dropped ones. Dice a
+ * critical hit set to their maximum come first, said so ("maximum 8, rolled 3").
+ */
+function diceSpeech(term: Pick<DiceRollDetail, 'rolls' | 'maxed'>): string {
+  const maxed = term.maxed ?? 0;
+  const rolls = term.rolls.slice(maxed);
   const kept = rolls.filter((r) => r.kept).map((r) => r.v);
   const dropped = rolls.filter((r) => !r.kept).map((r) => r.v);
   const said = kept.length > 0 ? kept.join(', ') : 'none kept';
-  return dropped.length > 0 ? `${said}, dropped ${dropped.join(', ')}` : said;
+  const top =
+    maxed > 0
+      ? `maximum ${term.rolls
+          .slice(0, maxed)
+          .map((r) => r.v)
+          .join(', ')}, rolled `
+      : '';
+  return `${top}${dropped.length > 0 ? `${said}, dropped ${dropped.join(', ')}` : said}`;
 }
 
 /** One term in words, signed as "plus" or "minus" after the first. */
 function termSpeech(term: Term, first: boolean): string {
   if (term.kind === 'multiplier') {
-    const by = term.detail.kind === 'dice' ? diceSpeech(term.detail.rolls) : String(term.value);
+    const by = term.detail.kind === 'dice' ? diceSpeech(term.detail) : String(term.value);
     return `times ${by}`;
   }
   const negative = term.kind === 'dice' ? term.sign < 0 : term.value < 0;
-  const body = term.kind === 'dice' ? diceSpeech(term.rolls) : String(Math.abs(term.value));
+  const body = term.kind === 'dice' ? diceSpeech(term) : String(Math.abs(term.value));
   if (first) return negative ? `minus ${body}` : body;
   return `${negative ? 'minus' : 'plus'} ${body}`;
 }
@@ -207,6 +233,56 @@ function keyboardFocus(el: HTMLElement): boolean {
  * show together; a hit with nothing joined offers its damage instead.
  */
 export function RollToast() {
+  // The critical hit rule's sheet, opened from a crit's chip: loaded only then,
+  // so the entry chunk carries none of it.
+  const [rule, setRule] = useState<{
+    open: boolean;
+    mine: boolean;
+    back: HTMLElement | null;
+  } | null>(null);
+  const doc = useCharacterSession((s) => s.doc);
+  return (
+    <>
+      <RollResultToast
+        sheetDoc={doc}
+        onRule={(mine, back) => setRule({ open: true, mine, back })}
+      />
+      {rule !== null && (
+        <Suspense fallback={null}>
+          <RuleSheet
+            rule={rule.open ? 'critDamage' : null}
+            onClose={() => setRule({ ...rule, open: false })}
+            character={
+              doc === null ? null : { doc, update: characterSessionStore.getState().update }
+            }
+            mine={rule.mine}
+            returnFocus={rule.back}
+          />
+        </Suspense>
+      )}
+    </>
+  );
+}
+
+const RuleSheet = lazy(() =>
+  import('@/features/settings/RuleSheet').then((m) => ({ default: m.RuleSheet })),
+);
+
+/** The rule a critical roll was counted under, and whether it is the open character's own. */
+function critRuleOf(rolls: readonly RollResult[]): CritDamage | undefined {
+  const crit = rolls.find((r) => r.meta?.critical === true);
+  return crit === undefined ? undefined : (crit.meta?.critRule ?? 'doubleDice');
+}
+
+function RollResultToast({
+  sheetDoc,
+  onRule,
+}: {
+  /** The open character, whose rule a crit's chip names when it is their own. */
+  sheetDoc: CharacterDoc | null;
+  /** Open the rule's sheet; `back` takes focus as it closes, since the toast is gone by then. */
+  onRule: (mine: boolean, back: HTMLElement | null) => void;
+}) {
   const seq = useRollLog((s) => s.seq);
   const opensTray = useDiceTray((s) => s.mounted > 0);
   const [visible, setVisible] = useState<RollResult | null>(null);
@@ -240,6 +316,12 @@ export function RollToast() {
   const before = useRef<HTMLElement | null>(null);
   // What last pressed the toast: a tap leaves `:hover` behind.
   const pressedBy = useRef<string | null>(null);
+  /** Keep `el` as what had focus before the toast, when it is outside it. */
+  const keepBefore = (el: EventTarget | null) => {
+    if (el instanceof HTMLElement && el !== document.body && !toast.current?.contains(el)) {
+      before.current = el;
+    }
+  };
 
   useEffect(() => {
     if (seq === shown.current) return;
@@ -516,11 +598,51 @@ export function RollToast() {
     </div>
   );
 
+  // A critical hit's rule (the Rules board, C's chip): what counted the damage,
+  // opening the same sheet as Settings, for the open character or everyone.
+  const critRule = opensTray ? critRuleOf([current, ...joined]) : undefined;
+  // Their own only when it is a value the app reads (a stored one it does not
+  // know counts nothing), and only for the character who rolled, when the roll says.
+  const ownValue = sheetDoc?.tableRules?.critDamage;
+  const ownCrit = ownValue !== undefined && Object.hasOwn(RULE_WORDS.critDamage, ownValue);
+  const rolledBy = [current, ...joined].find((r) => r.meta?.attack !== undefined)?.meta?.attack?.by;
+  const ruleRow = critRule !== undefined &&
+    sheetDoc !== null &&
+    (rolledBy === undefined || rolledBy === sheetDoc.id) && (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-line border-t pt-2">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          // The chip goes with its toast, so the sheet hands focus back to what
+          // had it before: read on the press, or as focus arrives from the keys.
+          onPointerDown={() => keepBefore(document.activeElement)}
+          onFocus={(event) => keepBefore(event.relatedTarget)}
+          onClick={() => {
+            const back = returnTo.current ?? before.current;
+            setVisible(null);
+            setHovered(false);
+            setFocused(false);
+            onRule(ownCrit, back);
+          }}
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-full bg-surface-raised px-3 font-semibold text-label text-ink hover:bg-surface-hover"
+        >
+          <SlidersHorizontal size={14} aria-hidden="true" className="shrink-0 text-ink-muted" />
+          {ownCrit
+            ? sheetDoc.name.trim()
+              ? `${sheetDoc.name.trim()}’s rule`
+              : 'Their rule'
+            : 'Rule'}
+          : {RULE_WORDS.critDamage[critRule]}
+          <span className="font-normal text-ink-muted">· Change</span>
+        </button>
+      </div>
+    );
+
   // Keyed on the roll counter so a second roll while the first is still up
   // replays the animation instead of silently swapping the number. The dice
   // button marks itself `data-dice-dock` (DiceTray); its top is 128px up, and
   // the toast clears it by 8.
-  const grouped = offerRow !== false || damageRows !== false;
+  const grouped = offerRow !== false || damageRows !== false || ruleRow !== false;
   const history = opensTray && (
     <button
       type="button"
@@ -596,6 +718,7 @@ export function RollToast() {
       {history !== false ? history : <div className={ROW}>{body}</div>}
       {damageRows}
       {offerRow}
+      {ruleRow}
     </div>
   );
 }
@@ -615,22 +738,33 @@ const ROW = 'flex items-center gap-3 text-left';
 function Extra({
   on,
   dice,
+  bonus,
   source,
   when,
+  holds,
   onClick,
 }: {
   on: boolean;
   dice?: string;
+  /** What it adds to the roll with no die of its own (flanking's +2). */
+  bonus?: number | undefined;
   source: string;
   when: string;
+  /** When it holds, for one the app cannot see (flanking), said to a screen reader. */
+  holds?: string | undefined;
   onClick: () => void;
 }) {
-  const name = dice === undefined ? source : `+${dieWord(dice)} ${source}`;
+  const name =
+    dice !== undefined
+      ? `+${dieWord(dice)} ${source}`
+      : bonus !== undefined && bonus !== 0
+        ? `${signed(bonus)} ${source}`
+        : source;
   return (
     <button
       type="button"
       aria-pressed={on}
-      aria-label={`${name}, ${when}`}
+      aria-label={`${name}, ${when}${holds === undefined ? '' : `: ${holds}`}`}
       onClick={onClick}
       className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-label ${
         on
@@ -794,9 +928,15 @@ function RollPrompt({
   const named = once.filter((_, i) => held.named[i] === true);
   const left = once.length - named.length;
   // What declaring costs comes first: it lasts past this roll.
+  // One that holds for this roll alone says when it holds, by its name, since
+  // it costs nothing ("Flanking: only with an ally next to the target ...").
   const costs = (ask?.thisTurn ?? [])
     .filter((_, i) => held.declared[i] === true)
-    .map((t) => `${t.cost}.`);
+    .map((t) =>
+      t.thisRoll === true
+        ? `${t.source}: ${t.cost.charAt(0).toLowerCase()}${t.cost.slice(1)}.`
+        : `${t.cost}.`,
+    );
   const spends = named.length > 0 ? `Spends ${andWords(named.map((o) => o.source))}.` : '';
   const leftNote =
     left === 0
@@ -953,8 +1093,11 @@ function RollPrompt({
                 // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
                 key={`turn${i}`}
                 on={held.declared[i] === true}
+                bonus={t.bonus}
                 source={t.source}
-                when="this turn"
+                // Flanking holds for this roll alone, when an ally stands across.
+                when={t.thisRoll === true ? 'this roll' : 'this turn'}
+                holds={t.thisRoll === true ? t.cost : undefined}
                 onClick={() => declareHeld(i)}
               />
             ))}

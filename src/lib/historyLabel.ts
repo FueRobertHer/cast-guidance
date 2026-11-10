@@ -2,12 +2,13 @@
 import type { CharacterDoc } from '@/engine/types';
 import {
   addedSpellNames,
-  diceRuleWords,
   effectChanges,
   firstWithMore,
   humanKey,
   keptChanges,
   nameDiff,
+  ownRuleChanges,
+  RULE_NAMES,
   spellNames,
   variantRuleWords,
 } from './docDiff';
@@ -258,10 +259,7 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
     labels.push(`Subrace: ${next.subrace?.name ?? 'none'}`);
   if (prev.background?.name !== next.background?.name)
     labels.push(`Background: ${next.background?.name ?? 'none'}`);
-  if ((prev.hpMethod ?? 'average') !== (next.hpMethod ?? 'average'))
-    labels.push(`HP rule: ${next.hpMethod ?? 'average'}`);
-  if (prev.oneUseDice !== next.oneUseDice)
-    labels.push(`One-use dice: ${diceRuleWords(next.oneUseDice)}`);
+  for (const c of ownRuleChanges(prev, next)) labels.push(`${RULE_NAMES[c.id]}: ${c.to}`);
   if (variantRuleWords(prev) !== variantRuleWords(next))
     labels.push(`Optional class features: ${variantRuleWords(next)}`);
 

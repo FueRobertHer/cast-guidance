@@ -407,13 +407,22 @@ export function d20Ask(
             (o) => !named.includes(o) && !(choice?.dropUnnamed === true && namedFirst(o)),
           );
       const cue = cueFor(mode, choice);
-      if (cue === '' && from.length === 0 && after.length === 0 && attack === undefined) {
+      // The kind of roll, for a natural 20 or 1's moments (`useRollOfferSpending`).
+      const test = riders?.test;
+      if (
+        cue === '' &&
+        from.length === 0 &&
+        after.length === 0 &&
+        attack === undefined &&
+        test === undefined
+      ) {
         return result;
       }
       return {
         ...result,
         meta: {
           ...result.meta,
+          ...(test === undefined ? {} : { test }),
           ...(attack === undefined ? {} : { attack: { by: attack.by, of: attack.of, crit } }),
           ...(cue === '' ? {} : { cue }),
           ...(resolution.autoFail ? { autoFail: true } : {}),

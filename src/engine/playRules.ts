@@ -38,6 +38,8 @@ export interface RollEffects {
    * advantage (`mode`) or a bonus to hit. `when` says when it holds.
    */
   declare?: Array<{ source: string; mode?: 'adv'; bonus?: number; when: string }>;
+  /** The kind of roll the test is (initiative is a check), which its roll carries. */
+  test?: RollFilter['rolls'][number];
 }
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -83,7 +85,13 @@ export function rollEffects(
   sheet: Pick<DerivedSheet, 'rollRiders' | 'rules'>,
   test: D20Test,
 ): RollEffects {
-  const out: RollEffects = { dice: [], offers: [], advantage: [], disadvantage: [] };
+  const out: RollEffects = {
+    dice: [],
+    offers: [],
+    advantage: [],
+    disadvantage: [],
+    test: test.kind === 'initiative' ? 'check' : test.kind,
+  };
   const flanking = sheet.rules?.flanking ?? 'off';
   if (flanking !== 'off' && test.kind === 'attack' && test.range === 'melee') {
     out.declare = [

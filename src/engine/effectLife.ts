@@ -344,6 +344,24 @@ export function knockedOut(play: PlayState, hp: HpLimits): EffectChange {
 }
 
 /**
+ * A d20 test the character rolled came up a natural 20 or a natural 1: its
+ * `natural20` or `natural1` moments fire, one that names the rolls it holds
+ * for only on those (`roll`: attack, save or check). Call it once a roll, in a
+ * change of its own after the roll lands.
+ */
+export function naturalRolled(
+  play: PlayState,
+  natural: 20 | 1,
+  roll: NonNullable<MomentDetail['roll']>,
+  hp: HpLimits,
+): EffectChange {
+  return fire(play, natural === 20 ? 'natural20' : 'natural1', { roll }, hp, newChain(), {
+    ended: [],
+    maxHpChange: 0,
+  });
+}
+
+/**
  * The character cast a spell, spending a slot of `level` (0 for a cantrip, the
  * spell's own level for a cast that spends no slot): its `castAtLevel` moments
  * fire. Call it in the same change as the cast.
