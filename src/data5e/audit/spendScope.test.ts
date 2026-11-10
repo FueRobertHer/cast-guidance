@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HIT_DIE_COST, SLOT_COST } from '../../engine/types';
 import type { Entity } from '../copyMod';
 import {
   emptyJudgments,
@@ -102,11 +103,11 @@ describe('spendRuns', () => {
     expect(run?.subjects.map((s) => (s as { name?: string }).name)).toEqual(['Slot Burner']);
   });
 
-  it('has a pool with no resource only where a use is a choice of level or die', () => {
-    expect(SPEND_POOLS.filter((p) => p.resources.length === 0).map((p) => p.id)).toEqual([
-      'slots',
-      'hitdice',
-    ]);
+  it('gives every pool a cost to link, a slot or a Hit Point Die for the two chosen as paid', () => {
+    expect(SPEND_POOLS.filter((p) => p.resources.length === 0)).toEqual([]);
+    const resources = (id: string) => SPEND_POOLS.find((p) => p.id === id)?.resources;
+    expect(resources('slots')).toEqual([SLOT_COST]);
+    expect(resources('hitdice')).toEqual([HIT_DIE_COST]);
   });
 });
 
@@ -126,8 +127,7 @@ describe('spendCounts', () => {
     expect(spendCounts(registry, answered())).toEqual({
       linked: 1,
       skipped: 1,
-      unlinked: 1,
-      noCostYet: 1,
+      unlinked: 2,
       unasked: 0,
     });
   });
@@ -156,7 +156,7 @@ describe('spendCounts', () => {
     const subject = proseSubjects(both)[0];
     if (subject === undefined) throw new Error('no subject');
     saveAnswers(file, 'slots', subject, { [SPENDS]: 0.9 });
-    expect(spendCounts(both, file)).toMatchObject({ linked: 0, noCostYet: 1 });
+    expect(spendCounts(both, file)).toMatchObject({ linked: 0, unlinked: 1 });
   });
 
   it('takes a row in one pool and a reason in another for the same feature', () => {
@@ -207,9 +207,19 @@ describe('spendReport', () => {
     expect(report).not.toContain('Trip Attack (optional feature|PHB)');
   });
 
-  it('says which pools no action can spend yet', () => {
-    expect(spendReport(registry, emptyJudgments())).toContain(
-      '# slots: 0 answered, 1 not asked, 0 linked. No action can spend this pool yet.',
-    );
+  it('counts a slot or Hit Point Die row as linked in its own pool', () => {
+    const file = emptyJudgments();
+    const options = [
+      option('Eldritch Smite', 'XGE', 'You can expend a warlock spell slot to deal extra damage.'),
+    ];
+    const smite = {
+      byType: (t: string) => (t === 'optionalfeature' ? options : []),
+      get: () => undefined,
+    };
+    const subject = proseSubjects(smite)[0];
+    if (subject === undefined) throw new Error('no subject');
+    saveAnswers(file, 'slots', subject, { [SPENDS]: 0.95 });
+    expect(spendCounts(smite, file)).toMatchObject({ linked: 1, unlinked: 0 });
+    expect(spendReport(smite, file)).toContain('# slots: 1 answered, 0 not asked, 1 linked.');
   });
 });

@@ -1,5 +1,14 @@
-import type { DerivedResource, DerivedSheet, PlayState } from '@/engine/types';
+import {
+  type ActionCost,
+  type DerivedResource,
+  type DerivedSheet,
+  HIT_DIE_COST,
+  type PlayState,
+  SLOT_COST,
+  type SlotPrice,
+} from '@/engine/types';
 import { stripTrailingParenthetical } from '@/lib/trailingParenthetical';
+import { slotPriceWords } from './slotCost';
 
 type SheetAction = DerivedSheet['actions'][number];
 
@@ -14,7 +23,9 @@ export interface ActionRestore {
   /** The use it gives back, as the Resources row names it. */
   label: string;
   own: { key: string; max: number };
-  spend: ActionSpend;
+  /** The pool it pays from; none when a spell slot pays (`slot`), picked in the roll prompt. */
+  spend?: ActionSpend;
+  slot?: SlotPrice;
   ariaLabel: string;
   disabled: boolean;
   title: string;
@@ -40,6 +51,25 @@ export interface ActionUse {
   restore?: ActionRestore;
   /** What tapping Use gives back, as well as what it spends. */
   regains?: { key: string; max: number; amount: number };
+  /** Use pays with a spell slot as well, picked in the roll prompt: the price and what it buys. */
+  slot?: ActionCost;
+  /** Use pays with a Hit Point Die as well, and heals by it. */
+  hitDie?: ActionCost;
+}
+
+/** What the character has left to pay a spell slot or Hit Point Die price with. */
+export interface Paying {
+  slotsLeft: (price: SlotPrice) => number;
+  hitDiceLeft: number;
+}
+
+const NOTHING_TO_PAY: Paying = { slotsLeft: () => 0, hitDiceLeft: 0 };
+
+/** "Spell slots: level 5+", "Pact slots", as a caption starts. */
+function slotHeading(price: SlotPrice): string {
+  const name = price.pactOnly === true ? 'Pact slots' : 'Spell slots';
+  const min = price.minLevel ?? 1;
+  return min > 1 ? `${name}: level ${String(min)}+` : name;
 }
 
 const SLOT_WORD = { action: 'action', bonus: 'bonus action', reaction: 'reaction' } as const;
@@ -64,20 +94,46 @@ function buyBackOf(
   action: SheetAction,
   resources: readonly DerivedResource[],
   leftOf: (r: DerivedResource) => number,
+  paying: Paying,
 ): { caption: string; restore?: ActionRestore } | undefined {
   const { buyBack, label } = action;
   if (buyBack === undefined) return undefined;
-  const pool = resources.find((r) => r.key === buyBack.resource);
   const use =
     buyBack.own !== undefined
       ? resources.find((r) => r.key === buyBack.own)
       : sharingName(resources, label);
-  if (pool === undefined || use === undefined) return undefined;
+  if (use === undefined) return undefined;
+  const which = use.label.toLowerCase() === label.toLowerCase() ? '' : ` ${use.label}`;
+  if (buyBack.resource === SLOT_COST) {
+    const left = paying.slotsLeft(buyBack);
+    const words = slotPriceWords(buyBack);
+    const caption = `${slotHeading(buyBack)} to restore${which}, ${String(left)} left`;
+    if (leftOf(use) > 0) return { caption };
+    const price: SlotPrice = {
+      ...(buyBack.minLevel !== undefined ? { minLevel: buyBack.minLevel } : {}),
+      ...(buyBack.pactOnly === true ? { pactOnly: true } : {}),
+    };
+    return {
+      caption,
+      restore: {
+        label: use.label,
+        own: { key: use.key, max: use.max },
+        slot: price,
+        ariaLabel: `Restore ${use.label}, spending ${words}`,
+        disabled: left === 0,
+        title:
+          left === 0
+            ? `No slot left to pay: it takes ${words}`
+            : `Restore: spends ${words} for one more use`,
+      },
+    };
+  }
+  const pool = resources.find((r) => r.key === buyBack.resource);
+  if (pool === undefined) return undefined;
 
   const { amount } = buyBack;
   const name = stripTrailingParenthetical(pool.label);
   const poolLeft = leftOf(pool);
-  const which = use.label.toLowerCase() === label.toLowerCase() ? '' : ` ${use.label}`;
   const caption = `${name}: ${amount} to restore${which}, ${poolLeft} of ${pool.max} left`;
   if (leftOf(use) > 0) return { caption };
 
@@ -135,11 +191,12 @@ export function actionUse(
   action: SheetAction,
   resources: readonly DerivedResource[],
   usedOf: (key: string) => number,
+  paying: Paying = NOTHING_TO_PAY,
 ): ActionUse {
   // Uses can sit past the maximum after a character loses a level, until the player clamps them.
   const leftOf = (r: DerivedResource) => Math.max(0, r.max - usedOf(r.key));
-  const use = withRegain(spendingOf(action, resources, leftOf), action, resources, leftOf);
-  const buyBack = buyBackOf(action, resources, leftOf);
+  const use = withRegain(spendingOf(action, resources, leftOf, paying), action, resources, leftOf);
+  const buyBack = buyBackOf(action, resources, leftOf, paying);
   if (buyBack === undefined) return use;
   return {
     ...use,
@@ -151,18 +208,21 @@ export function actionUse(
 /**
  * Pay for a use and get it back, in one update. All of it or none: a tap that beat
  * the last render must not take the price for a use that is already back, or a price
- * the pool no longer has. A count past the maximum comes back to one use left.
+ * the pool no longer has. A count past the maximum comes back to one use left. A
+ * slot's price is the caller's to spend, once this says the use came back.
  */
-export function applyRestore(entries: PlayState['resources'], restore: ActionRestore): void {
+export function applyRestore(entries: PlayState['resources'], restore: ActionRestore): boolean {
   const entryOf = (key: string) => entries.find((r) => r.key === key);
   const { own, spend } = restore;
   const ownEntry = entryOf(own.key);
-  const poolEntry = entryOf(spend.key);
-  if (ownEntry === undefined || ownEntry.used < own.max) return;
-  if ((poolEntry?.used ?? 0) + spend.amount > spend.max) return;
+  const poolEntry = spend !== undefined ? entryOf(spend.key) : undefined;
+  if (ownEntry === undefined || ownEntry.used < own.max) return false;
+  if (spend !== undefined && (poolEntry?.used ?? 0) + spend.amount > spend.max) return false;
   ownEntry.used = own.max - 1;
+  if (spend === undefined) return true;
   if (poolEntry !== undefined) poolEntry.used += spend.amount;
   else entries.push({ key: spend.key, used: spend.amount });
+  return true;
 }
 
 /**
@@ -177,6 +237,7 @@ function spendingOf(
   action: SheetAction,
   resources: readonly DerivedResource[],
   leftOf: (r: DerivedResource) => number,
+  paying: Paying,
 ): ActionUse {
   const { cost, economy, label } = action;
   const pool = cost !== undefined ? resources.find((r) => r.key === cost.resource) : undefined;
@@ -191,6 +252,15 @@ function spendingOf(
   const ownWords = own !== undefined ? [`a ${own.label} use`] : [];
   const outOfUses = ownLeft === 0;
   const uses = own !== undefined ? [`${ownLeft} of ${own.max} left`] : [];
+
+  if (cost?.resource === SLOT_COST || cost?.resource === HIT_DIE_COST) {
+    return paidInSlotOrDie(cost, economy, resources, leftOf, paying, {
+      ownSpend,
+      ownWords,
+      outOfUses,
+      uses,
+    });
+  }
 
   if (pool === undefined || cost === undefined) {
     return {
@@ -245,5 +315,53 @@ function spendingOf(
     disabled: outOfUses || short,
     title: outOfUses || short ? blockedTitle : titleFor(economy, [...ownWords, words]),
     caption: [...uses, `${name}: ${amount}, ${inPool}`],
+  };
+}
+
+/**
+ * Use paying with a spell slot or a Hit Point Die, picked as it is paid: what
+ * is left of them, and the pool a slot refills (Font of Magic), which must have
+ * points spent for a slot to turn into.
+ */
+function paidInSlotOrDie(
+  cost: ActionCost,
+  economy: SheetAction['economy'],
+  resources: readonly DerivedResource[],
+  leftOf: (r: DerivedResource) => number,
+  paying: Paying,
+  own: { ownSpend: ActionSpend[]; ownWords: string[]; outOfUses: boolean; uses: string[] },
+): ActionUse {
+  const slot = cost.resource === SLOT_COST;
+  const left = slot ? paying.slotsLeft(cost) : paying.hitDiceLeft;
+  const words = slot ? slotPriceWords(cost) : 'a Hit Point Die';
+  const refill =
+    slot && cost.slotRefills !== undefined
+      ? resources.find((r) => r.key === cost.slotRefills)
+      : undefined;
+  const refillName = refill !== undefined ? stripTrailingParenthetical(refill.label) : '';
+  const blocked = own.outOfUses
+    ? 'No uses left'
+    : left === 0
+      ? `None left to pay: it takes ${words}`
+      : refill !== undefined && leftOf(refill) >= refill.max
+        ? `No ${refillName} to regain`
+        : undefined;
+  const regains =
+    refill !== undefined ? ` and regains as many ${refillName} as the slot's level` : '';
+  return {
+    spends: own.ownSpend,
+    noButton: false,
+    disabled: blocked !== undefined,
+    title: blocked ?? `${titleFor(economy, [...own.ownWords, words])}${regains}`,
+    caption: [
+      ...own.uses,
+      `${slot ? slotHeading(cost) : 'Hit Point Dice'}: ${String(left)} left`,
+      ...(refill !== undefined
+        ? [
+            `${refillName}: regains the slot's level, ${String(leftOf(refill))} of ${String(refill.max)} left`,
+          ]
+        : []),
+    ],
+    ...(slot ? { slot: cost } : { hitDie: cost }),
   };
 }

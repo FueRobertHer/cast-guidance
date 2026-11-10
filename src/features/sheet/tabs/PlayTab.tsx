@@ -43,17 +43,19 @@ import { defensesInForce, rollEffects } from '@/engine/playRules';
 import type { RestDone } from '@/engine/rest';
 import { sheetRules } from '@/engine/rules';
 import type {
+  ActionCost,
   ActionEconomy,
   AttackRow,
   CharacterDoc,
   DerivedSheet,
   PlayState,
+  SlotPrice,
 } from '@/engine/types';
 import { choiceTitle, RuleSheet } from '@/features/settings/RuleSheet';
 import { randomId } from '@/lib/randomId';
 import { signed } from '@/lib/signed';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
-import { rollFrom } from '@/stores/heldRoll';
+import { attackInPlay, castFrom, rollFrom } from '@/stores/heldRoll';
 import { type Notice, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { Badge, badgeClass } from '@/ui/Badge';
@@ -79,7 +81,7 @@ import {
   applyRestore,
 } from '../actionUse';
 import { castsByPrompt, type SpellCast } from '../castPlan';
-import { castingEconomy, isConcentratingOn } from '../castResources';
+import { castingEconomy, isConcentratingOn, type SlotSpent, spendSlot } from '../castResources';
 import { capabilityKey, collectCapabilityCards } from '../combatCapabilities';
 import { conditionLimits } from '../conditionEffects';
 import { DefensesChip } from '../Defenses';
@@ -122,6 +124,7 @@ import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
 import { SpellSlots } from '../SpellSlots';
+import { hitDiceLeft, hitDiePlan, hitDieRoll, slotLeft, slotPlan, slotsLeftFor } from '../slotCost';
 import { NoSpellsCue, raging, SaveDcBadge } from '../spellcastingMarks';
 import { findSpell, useSpellData } from '../spellData';
 import { spellSaves } from '../spellMeta';
@@ -689,7 +692,154 @@ export function Component() {
     );
   /** Buy a use back. It takes nothing from the turn: "no action required". */
   const restoreUse = (restore: ActionRestore) =>
-    update((d) => applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
+    update((d) => void applyRestore(d.play.resources, restore), `Restored ${restore.label}`);
+  /** What is left to pay a spell slot or Hit Point Die price with. */
+  const paying = {
+    slotsLeft: (price: SlotPrice) => slotsLeftFor(sheet, play, price),
+    hitDiceLeft: hitDiceLeft(sheet, play).reduce((n, s) => n + s.left, 0),
+  };
+  /** A slot as the history names it. */
+  const slotWords = (r: SlotSpent) =>
+    r.kind === 'pact' ? 'a pact slot' : `a level ${String(r.level)} slot`;
+  /**
+   * Spend what Use takes beside a slot or a die, in the update that spends that:
+   * the slice of the turn and the uses. False, spending nothing, when a use is gone.
+   */
+  const spendUses = (d: CharacterDoc, economy: ActionEconomy, spends: readonly ActionSpend[]) => {
+    const entryOf = (key: string) => d.play.resources.find((r) => r.key === key);
+    if (spends.some((x) => (entryOf(x.key)?.used ?? 0) + x.amount > x.max)) return false;
+    if (economy !== 'none') {
+      const turn = d.play.turn ?? { action: false, bonus: false, reaction: false };
+      turn[economy] = true;
+      d.play.turn = turn;
+    }
+    for (const { key, amount } of spends) {
+      const entry = entryOf(key);
+      if (entry !== undefined) entry.used += amount;
+      else d.play.resources.push({ key, used: amount });
+    }
+    return true;
+  };
+  /**
+   * Use paid with a spell slot (Divine Smite, Song of Defense): the prompt offers
+   * the slots that pay as tiles, and rolls what the level picked buys. Paying
+   * marks the turn, spends the uses and the slot, and refills the pool a slot
+   * turns into (Font of Magic), all in one update or none of it.
+   */
+  const payWithSlot = (
+    from: HTMLElement | null,
+    label: string,
+    economy: ActionEconomy,
+    spends: readonly ActionSpend[],
+    cost: ActionCost,
+    rowKey: string,
+  ) =>
+    castFrom(
+      from,
+      slotPlan({
+        id: `${doc.id}|slot|${rowKey}`,
+        title: label,
+        verb: 'Use',
+        sheet,
+        play,
+        price: cost,
+        dice: cost.slotDice,
+        crit: () => {
+          const attack = attackInPlay();
+          return attack?.crit === true && attack.by === doc.id;
+        },
+        pay: (r) =>
+          update(
+            (d) => {
+              // A slot turned into points needs points spent to come back (Font of Magic),
+              // checked here too: the pool may have refilled behind the waiting prompt.
+              const refill = sheet.resources.find((x) => x.key === cost.slotRefills);
+              const entry = d.play.resources.find((x) => x.key === refill?.key);
+              if (cost.slotRefills !== undefined && (entry === undefined || entry.used <= 0))
+                return;
+              if (!slotLeft(sheet, d.play, r) || !spendUses(d, economy, spends)) return;
+              spendSlot(d.play, r);
+              if (refill !== undefined && entry !== undefined) giveBack(entry, refill.max, r.level);
+            },
+            `Used ${label} with ${slotWords(r)}`,
+          ),
+      }),
+    );
+  /**
+   * Use paid with a Hit Point Die, which heals as the HP card's chip does: at once
+   * with one size of die, else the prompt offers a tile a size.
+   */
+  const payWithHitDie = (
+    from: HTMLElement | null,
+    label: string,
+    economy: ActionEconomy,
+    spends: readonly ActionSpend[],
+    cost: ActionCost,
+    rowKey: string,
+  ) => {
+    const heals = cost.hitDieHeals ?? 'roll';
+    const conMod = sheet.abilities.con.mod;
+    const spendDie = (die: string, rolled?: number) =>
+      update((d) => {
+        const spent = d.play.hitDiceSpent[die] ?? 0;
+        if (spent >= (sheet.hitDice[die] ?? 0) || !spendUses(d, economy, spends)) return;
+        d.play.hitDiceSpent[die] = spent + 1;
+        let total = rolled;
+        if (total === undefined) {
+          const r = roll(hitDieRoll(die, heals, conMod), {
+            label: `${label} (${die})`,
+            kind: 'heal',
+          });
+          rollLogStore.getState().append(r);
+          total = r.total;
+        }
+        applyHp(d.play, Math.max(cost.hitDieAtLeast ?? 0, total), maxHp.value);
+      }, `Used ${label} (${die})`);
+    const sizes = hitDiceLeft(sheet, play).filter((x) => x.left > 0);
+    const only = sizes.length === 1 ? sizes[0] : undefined;
+    if (only !== undefined) {
+      spendDie(only.die);
+      return;
+    }
+    // The roll lands before the die is paid: the heal waits for the payment's update.
+    let rolled: number | undefined;
+    castFrom(
+      from,
+      hitDiePlan({
+        id: `${doc.id}|hit-die|${rowKey}`,
+        title: label,
+        sheet,
+        play,
+        heals,
+        conMod,
+        pay: (die) => spendDie(die, rolled),
+      }),
+      (r) => {
+        rolled = r.total;
+      },
+    );
+  };
+  /** Buy a use back with a spell slot, picked in the prompt. */
+  const restoreWithSlot = (from: HTMLElement | null, restore: ActionRestore, rowKey: string) =>
+    castFrom(
+      from,
+      slotPlan({
+        id: `${doc.id}|restore|${rowKey}`,
+        title: restore.label,
+        verb: 'Restore',
+        sheet,
+        play,
+        price: restore.slot ?? {},
+        pay: (r) =>
+          update(
+            (d) => {
+              if (!slotLeft(sheet, d.play, r) || !applyRestore(d.play.resources, restore)) return;
+              spendSlot(d.play, r);
+            },
+            `Restored ${restore.label} with ${slotWords(r)}`,
+          ),
+      }),
+    );
   // What the active conditions stop you doing — shown as warnings, never blocks.
   const limits = conditionLimits(conditions, doc.rulesVersion);
   /** The conditions on the attack chips, as the cue over them says them. */
@@ -1858,7 +2008,7 @@ export function Component() {
               const info = findFeatureInfo(sheet.features, a.label, a.origin);
               // What it spends: a use of the pool sharing its name, and the pool
               // its cost names. See `actionUse`.
-              const use = actionUse(a, sheet.resources, usedOf);
+              const use = actionUse(a, sheet.resources, usedOf, paying);
               // What its Use puts in play (Rage, Innate Sorcery), and that
               // effect while it lasts, when the Use button becomes End.
               const starts = namedStart(a, doc);
@@ -1871,7 +2021,15 @@ export function Component() {
               const stamp = () => startedAt.current.set(rowKey, Date.now());
               // Using it marks the right slice of the turn and spends the pips,
               // and puts in play what it starts, in the same update.
-              const trigger = async () => {
+              const trigger = async (from: HTMLElement | null = null) => {
+                if (use.slot !== undefined) {
+                  payWithSlot(from, a.label, a.economy, use.spends, use.slot, rowKey);
+                  return;
+                }
+                if (use.hitDie !== undefined) {
+                  payWithHitDie(from, a.label, a.economy, use.spends, use.hitDie, rowKey);
+                  return;
+                }
                 if (starts === undefined) {
                   triggerAction(a.economy, use.spends, a.label, use.regains);
                   return;
@@ -2013,7 +2171,7 @@ export function Component() {
                             ? `${useVerb} ${a.label}`
                             : `${useVerb} ${a.label}, ${economyLabel}`
                         }
-                        onClick={() => void trigger()}
+                        onClick={(event) => void trigger(event.currentTarget)}
                         disabled={use.disabled}
                         className="-my-1.5"
                         title={use.title}
@@ -2042,7 +2200,13 @@ export function Component() {
                         variant="outline"
                         size="sm"
                         aria-label={use.restore.ariaLabel}
-                        onClick={() => use.restore !== undefined && restoreUse(use.restore)}
+                        onClick={(event) => {
+                          const { restore } = use;
+                          if (restore === undefined) return;
+                          if (restore.slot !== undefined) {
+                            restoreWithSlot(event.currentTarget, restore, rowKey);
+                          } else restoreUse(restore);
+                        }}
                         disabled={use.restore.disabled}
                         className="-my-1.5"
                         title={use.restore.title}

@@ -78,6 +78,8 @@ export interface CastDice {
   expr: string;
   label: string;
   kind: 'damage' | 'heal' | undefined;
+  /** Damage riding on an attack that crit, asked as it rolls: its dice roll twice (a smite). */
+  crit?: boolean;
 }
 
 /**
@@ -89,6 +91,11 @@ export interface HeldCast {
   /** The row it is cast from, so that row alone refreshes it (`refreshHeldCast`). */
   id: string;
   spell: string;
+  /**
+   * What the prompt calls doing it, when it is no spell: Use for a feature paid with
+   * a slot (Divine Smite), Restore for a use bought back with one. Absent: Cast.
+   */
+  verb?: 'Use' | 'Restore';
   groups: readonly CastGroupView[];
   /** The tile it starts on: null when nothing can pay, and the cast spends nothing. */
   picked: string | null;
@@ -337,7 +344,11 @@ export function castFrom(
       afterHit: undefined,
     },
   }));
-  announce(`Cast ${cast.spell}. ${cast.note(cast.picked)} Choose, then Roll.`, {
+  // The word the prompt's button says (RollToast's go word).
+  const dice = cast.dice(cast.picked);
+  const verb = cast.verb ?? 'Cast';
+  const go = dice === undefined ? verb : dice.kind === 'heal' ? 'Heal' : 'Roll';
+  announce(`${verb} ${cast.spell}. ${cast.note(cast.picked)} Choose, then ${go}.`, {
     key: 'roll',
     repeat: true,
   });
@@ -460,7 +471,7 @@ export function rollHeld(): void {
     const dice = cast?.dice(picked);
     if (dice !== undefined) {
       land({
-        result: { ...rollCastDice(dice, false), id },
+        result: { ...rollCastDice(dice, dice.crit === true), id },
         onLanded: held.onLanded,
         effects: held.effects,
       });

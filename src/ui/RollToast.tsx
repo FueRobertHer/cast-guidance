@@ -969,12 +969,13 @@ function RollPrompt({
       ? { ...held.face, text: dice?.expr ?? held.face.text }
       : held.face;
   const line = cast?.line(picked);
-  const label = ask?.label ?? `Cast ${cast?.spell ?? ''}`;
+  const verb = cast?.verb ?? 'Cast';
+  const label = ask?.label ?? `${verb} ${cast?.spell ?? ''}`;
   const go =
     ask !== null
       ? { word: 'Roll', icon: D20Icon, tone: GO.roll }
       : dice === undefined
-        ? { word: 'Cast', icon: Sparkles, tone: GO.roll }
+        ? { word: verb, icon: Sparkles, tone: GO.roll }
         : dice.kind === 'heal'
           ? { word: 'Heal', icon: HeartPlus, tone: GO.heal }
           : { word: 'Roll', icon: dice.kind === 'damage' ? HeartCrack : D20Icon, tone: GO.roll };
@@ -1045,7 +1046,7 @@ function RollPrompt({
         </span>
         <button
           type="button"
-          aria-label={ask === null ? 'Cancel this cast' : 'Cancel this roll'}
+          aria-label={ask === null ? `Cancel this ${verb.toLowerCase()}` : 'Cancel this roll'}
           onClick={() => leave(cancelHeld)}
           className="-mt-1 -mr-2 inline-flex size-11 shrink-0 items-center justify-center self-start rounded-full text-ink-muted hover:bg-surface-hover"
         >

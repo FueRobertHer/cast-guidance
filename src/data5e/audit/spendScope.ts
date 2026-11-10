@@ -17,8 +17,10 @@
  *
  * Relative imports only: `scripts/data-judge.ts` loads this under plain Bun.
  */
+import { SLOT_LINKS } from '../../engine/curated/slotLinks';
 import { SPEND_LINKS } from '../../engine/curated/spendLinks';
 import { chipPhrase } from '../../engine/effects/proseScan';
+import { HIT_DIE_COST, SLOT_COST } from '../../engine/types';
 import { answersFor, type JudgeSet, type JudgeSubject, type JudgmentFile } from './judgments';
 import { type ByType, type ProseSubject, proseSubjects } from './proseSubjects';
 import { type Answers, pOf, reportSection, saysYes, showP, YES_MEANS } from './scoping';
@@ -34,8 +36,8 @@ export interface SpendPool {
   /** A narrower net, for a pool that a lot of prose names without spending it. */
   inNet?: (state: string) => boolean;
   /**
-   * Its keys in `SPEND_LINKS`. None: there is no row to spend from, because using one
-   * means choosing a slot's level or a die's size.
+   * Its keys in `SPEND_LINKS`, or the cost `SLOT_LINKS` names for a spell slot or a
+   * Hit Point Die (using one means choosing a slot's level or a die's size).
    */
   resources: readonly string[];
 }
@@ -69,7 +71,7 @@ export const SPEND_POOLS: readonly SpendPool[] = [
     many: 'spell slots',
     names: SLOT,
     inNet: spendsSlotWording,
-    resources: [],
+    resources: [SLOT_COST],
   },
   {
     id: 'sorcery',
@@ -118,7 +120,7 @@ export const SPEND_POOLS: readonly SpendPool[] = [
     one: 'one Hit Point Die',
     many: 'Hit Point Dice',
     names: /\bhit (?:point )?di(?:e|ce)\b/i,
-    resources: [],
+    resources: [HIT_DIE_COST],
   },
   {
     id: 'rage',
@@ -202,13 +204,14 @@ const DIE_SIZE = 'grows the die, which the sheet does not show yet';
 const TRIGGERED = 'regains on a trigger, which stays a pip tap for the player';
 const SLOT_BACK = 'buys a use back with a spell slot';
 const ROLLS = 'rolls a d6 instead of spending it';
+const ON_ANOTHER_ROLL =
+  "adds its dice to a spell's roll or a save, which the roll prompt does not offer yet";
+const SLOT_OR_POOL = 'a slot or a use of another pool pays for it, which no chip offers yet';
 
 /**
  * Features that name a pool and are no cost on an action, per pool. Each was read,
- * so what the report still lists stays worth reading. The two pools no action can
- * spend hold only the lines Jev was unsure of: their confident spenders and buy-backs
- * stay listed until those costs have a way onto the sheet. That work needs `SLOT_BACK`
- * too, since those are real buy-backs that the report's buy-back list does not show.
+ * so what the report still lists stays worth reading. Spell slots and Hit Point
+ * Dice are `SLOT_LINKS` rows, read on the same terms (data function pass item 10).
  */
 export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   focus: {
@@ -229,13 +232,23 @@ export const SPEND_SKIPPED: Readonly<Record<string, Readonly<Record<string, stri
     'empowered spells|spellcaster sidekick|tce': FOLLOWS,
     'awakened spellbook|order of scribes|tce': FOLLOWS,
     'twinned spell|xphb': PASSING,
-    'fortified position|artillerist|efa': SLOT_BACK,
-    'reanimated companion|reanimator|rhw': SLOT_BACK,
-    'divine reaper|grave domain|rhw': SLOT_BACK,
-    'distant transposition|conjurer|au': SLOT_BACK,
-    'splintered summons|conjurer|au': SLOT_BACK,
+    'fortified position|artillerist|efa': 'a second cannon costs a second slot, not a use back',
+    'magic item tinker|artificer|efa': 'recharges an item, whose charges no pool counts',
+    'wild companion|druid|xphb': SLOT_OR_POOL,
+    "death's master|necromancer|au": 'a rider on its own explosion, which has no chip',
   },
   hitdice: {
+    'trait:healing machine': "a race trait's cost, which no table reaches yet",
+    'crown of spellfire|spellfire sorcery|frhof': ON_ANOTHER_ROLL,
+    "death's master|necromancer|au": 'a rider on its own explosion, which has no chip',
+    'aberrant dragonmark|efa': ON_ANOTHER_ROLL,
+    'aberrant dragonmark|erlw': ON_ANOTHER_ROLL,
+    'adept of the black robes|dsotdq': ON_ANOTHER_ROLL,
+    'evocation adept|au': ON_ANOTHER_ROLL,
+    'greater aberrant mark|efa': ON_ANOTHER_ROLL,
+    'necromancy adept|au': ON_ANOTHER_ROLL,
+    'spellfire adept|frhof': ON_ANOTHER_ROLL,
+    'symbiotic being|rhw': ON_ANOTHER_ROLL,
     'trait:black blood healing': FOLLOWS,
     'song of rest (d6)|bard|phb': FOLLOWS,
     'boon of bountiful health|frhof': FOLLOWS,
@@ -377,7 +390,13 @@ function proposal(state: string, answers: Answers): string {
 const isLinked = (s: ProseSubject, pool: SpendPool) =>
   s.spendKeys.some((k) => {
     const link = SPEND_LINKS[k];
-    return link !== undefined && pool.resources.includes(link.resource);
+    const slot = SLOT_LINKS[k];
+    const slotResource =
+      slot === undefined ? undefined : slot.kind === 'restore' ? SLOT_COST : slot.cost.resource;
+    return (
+      (link !== undefined && pool.resources.includes(link.resource)) ||
+      (slotResource !== undefined && pool.resources.includes(slotResource))
+    );
   });
 const skipReason = (s: ProseSubject, pool: SpendPool) =>
   s.spendKeys.map((k) => SPEND_SKIPPED[pool.id]?.[k]).find((r) => r !== undefined);
@@ -387,10 +406,8 @@ export interface SpendCounts {
   linked: number;
   /** Features read and left out, with a reason. */
   skipped: number;
-  /** Confident spenders on a pool the table covers, with no row and no reason. */
+  /** Confident spenders with no row and no reason. */
   unlinked: number;
-  /** Confident spenders of a pool no action can spend yet. */
-  noCostYet: number;
   /** Subjects with no saved answers at all. */
   unasked: number;
 }
@@ -416,14 +433,13 @@ function poolRows(registry: ByType, file: JudgmentFile) {
 }
 
 export function spendCounts(registry: ByType, file: JudgmentFile): SpendCounts {
-  const counts: SpendCounts = { linked: 0, skipped: 0, unlinked: 0, noCostYet: 0, unasked: 0 };
+  const counts: SpendCounts = { linked: 0, skipped: 0, unlinked: 0, unasked: 0 };
   for (const { pool, rows, unasked } of poolRows(registry, file)) {
     counts.unasked += unasked;
     for (const { subject, answers } of rows) {
       if (isLinked(subject, pool)) counts.linked++;
       else if (skipReason(subject, pool) !== undefined) counts.skipped++;
       else if (!saysYes(answers, SPENDS)) continue;
-      else if (pool.resources.length === 0) counts.noCostYet++;
       else counts.unlinked++;
     }
   }
@@ -453,10 +469,7 @@ export function spendReport(registry: ByType, file: JudgmentFile): string {
       else if (looksLikeRestore(answers)) restores.push(line);
       else if (pOf(answers, SPENDS) >= 0.25) toRead.push(line);
     }
-    const noCost = pool.resources.length === 0 ? ' No action can spend this pool yet.' : '';
-    out.push(
-      `# ${pool.id}: ${rows.length} answered, ${unasked} not asked, ${linked} linked.${noCost}`,
-    );
+    out.push(`# ${pool.id}: ${rows.length} answered, ${unasked} not asked, ${linked} linked.`);
     out.push(reportSection('Spends, with no row', unlinked));
     out.push(reportSection('Left out, with a reason', skipped));
     out.push(reportSection('Looks like buying back its own use', restores));

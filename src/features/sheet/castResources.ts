@@ -543,6 +543,19 @@ export function isConcentratingOn(play: PlayState, name: string): boolean {
   return play.concentratingOn?.label.toLowerCase() === name.toLowerCase();
 }
 
+/** A slot or the pact slot: what casting at a level, or a slot price, spends. */
+export type SlotSpent = Extract<CastResource, { kind: 'slot' | 'pact' }>;
+
+/** Spends a slot, or the pact slot. */
+export function spendSlot(play: PlayState, resource: SlotSpent): void {
+  if (resource.kind === 'pact') {
+    play.pactSlotsSpent += 1;
+    return;
+  }
+  const at = play.slotsSpent[resource.level - 1] ?? 0;
+  play.slotsSpent[resource.level - 1] = at + 1;
+}
+
 /**
  * Cast a spell, spending `resource` when given (an explicit slot/upcast/pool
  * choice) or else the lowest available slot ≥ `level` (pact-aware). Marks the
@@ -602,11 +615,8 @@ export function castSpell(
         else d.play.resources.push({ key: spend.key, used: cost });
       } else if (spend.kind === 'arcanum') {
         setArcanumUsed(d.play, spend.level, true);
-      } else if (spend.kind === 'pact') {
-        d.play.pactSlotsSpent += 1;
-      } else if (spend.kind === 'slot') {
-        const at = d.play.slotsSpent[spend.level - 1] ?? 0;
-        d.play.slotsSpent[spend.level - 1] = at + 1;
+      } else if (spend.kind === 'pact' || spend.kind === 'slot') {
+        spendSlot(d.play, spend);
       }
       if (turnUsed) d.play.turn = turn;
     },
