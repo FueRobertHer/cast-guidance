@@ -432,6 +432,74 @@ const capstone =
     }
   };
 
+/**
+ * An ability modifier on the damage of a class's spells: its cantrips (Potent
+ * Spellcasting), or one roll of its spells of a school (Empowered Evocation). The
+ * class is the one the character has, so a reskin's spells (a Mage's) count.
+ */
+const spellDamage =
+  (
+    cls: string,
+    ability: Ability,
+    limits: { cantrips?: boolean; school?: string; oneRoll?: boolean },
+  ): CuratedFn =>
+  (col, origin) => {
+    col.add({
+      kind: 'spellDamageBonus',
+      amount: `abilityMod:${ability}`,
+      className: classEntry(col, cls)?.ref.name ?? cls,
+      ...limits,
+      origin,
+    });
+  };
+
+/** A cleric's cantrips add Wisdom to their damage: the 2014 domains' and 2024's Potent Spellcasting. */
+const potentClericCantrips = spellDamage('Cleric', 'wis', { cantrips: true });
+
+/** One damage roll of a wizard's evocation spell adds Intelligence: both printings. */
+const empoweredEvocation = spellDamage('Wizard', 'int', { school: 'V', oneRoll: true });
+
+/** The 2014 Improved Divine Smite and 2024 Radiant Strikes: 1d8 radiant on a melee hit. */
+const radiantMelee =
+  (weaponsOnly: boolean): CuratedFn =>
+  (col, origin) => {
+    col.add({
+      kind: 'damageDie',
+      scope: 'melee',
+      dice: '1d8',
+      damageType: 'radiant',
+      ...(weaponsOnly ? { weaponsOnly } : {}),
+      origin,
+    });
+  };
+
+/**
+ * The 2024 Agonizing Blast: Charisma on the damage of a Warlock cantrip the
+ * player picks. The pick sits beside the invocations' prompt, not under it, so
+ * saving that prompt keeps it. The picker lists every Warlock cantrip; the label
+ * says it must deal damage, which the spell lists cannot filter by.
+ */
+const agonizingPick: CuratedFn = (col, origin) => {
+  const id = `${origin.type}:${origin.uid}:cantrip`;
+  const spellQuery = { levels: [0], classes: ['Warlock'], schools: [], ritual: false, attacks: [] };
+  col.choice(
+    {
+      id,
+      origin,
+      kind: 'spell',
+      label: 'Agonizing Blast: a Warlock cantrip that deals damage',
+      count: 1,
+      options: savedPicks(col, id, spellQuery),
+      spellQuery,
+    },
+    (selected) => {
+      const spells = selected.map((ref) => parseSpellRef(ref).name.toLowerCase());
+      if (spells.length === 0) return;
+      col.add({ kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells, origin });
+    },
+  );
+};
+
 /** 2014's table says Unlimited at 20. 2024's stays at 6. */
 function rageUses(level: number, printed2024: boolean): number {
   if (level >= 20 && !printed2024) return 99;
@@ -833,6 +901,33 @@ export const CURATED: Record<string, CuratedFn> = {
       col.add({ kind: 'sense', sense: 'blindsight', range: 30, origin });
     }
   },
+  // --- Always-on riders: damage every hit or every cast adds -----------------
+  // 2014 says "with a melee weapon", so an unarmed strike goes without; 2024
+  // names the Unarmed Strike too.
+  'improved divine smite|paladin': radiantMelee(true),
+  'radiant strikes|paladin': radiantMelee(false),
+  'agonizing blast|phb': (col, origin) => {
+    col.add({
+      kind: 'spellDamageBonus',
+      amount: 'abilityMod:cha',
+      spells: ['eldritch blast'],
+      origin,
+    });
+  },
+  'agonizing blast|xphb': agonizingPick,
+  // 2024: one branch of Blessed Strikes (Cleric) or Elemental Fury (Druid).
+  'potent spellcasting|cleric': potentClericCantrips,
+  'potent spellcasting|druid': spellDamage('Druid', 'wis', { cantrips: true }),
+  // 2014: the domains whose 8th-level feature it is, by the subclass's own name.
+  'potent spellcasting|ambition domain (psa)': potentClericCantrips,
+  'potent spellcasting|arcana domain': potentClericCantrips,
+  'potent spellcasting|grave domain': potentClericCantrips,
+  'potent spellcasting|knowledge domain': potentClericCantrips,
+  'potent spellcasting|knowledge domain (psa)': potentClericCantrips,
+  'potent spellcasting|light domain': potentClericCantrips,
+  'potent spellcasting|peace domain': potentClericCantrips,
+  'empowered evocation|school of evocation': empoweredEvocation,
+  'empowered evocation|evoker': empoweredEvocation,
   'rage|barbarian': (col, origin, from) => {
     const printed2024 = printedIn(origin, 'xphb', from);
     col.add({

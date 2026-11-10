@@ -58,13 +58,16 @@ export function calcAbilities(
     const raising = bonuses
       .filter((b) => b.ability === a && b.max !== undefined)
       .sort((x, y) => (x.max ?? 0) - (y.max ?? 0));
+    // A cap stops the bonus, never takes the score below where it stood: a
+    // maximum of 18 on a score of 20 leaves it 20.
     for (const b of raising) {
       const max = b.max ?? 20;
+      const cap = Math.max(max, value);
       parts.push({ label: b.origin.label, amount: b.amount });
       value += b.amount;
-      if (value > max) {
-        parts.push({ label: `Cap (${max})`, amount: max - value });
-        value = max;
+      if (value > cap) {
+        parts.push({ label: `Cap (${max})`, amount: cap - value });
+        value = cap;
       }
     }
     for (const m of mins) {

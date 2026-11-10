@@ -535,6 +535,8 @@ export function readAbilityBlock(
   }
 
   for (const entry of entries) {
+    // A score this block raises can go past 20, up to `max` (an Epic Boon's 30).
+    const max = typeof entry.max === 'number' ? { max: entry.max } : {};
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'choose') {
         const c = (value ?? {}) as {
@@ -560,7 +562,13 @@ export function readAbilityBlock(
               selected.forEach((abil, i) => {
                 const amount = weights[i];
                 if (amount !== undefined && (ABILITIES as string[]).includes(abil)) {
-                  col.add({ kind: 'abilityBonus', ability: abil as Ability, amount, origin });
+                  col.add({
+                    kind: 'abilityBonus',
+                    ability: abil as Ability,
+                    amount,
+                    ...max,
+                    origin,
+                  });
                 }
               });
             },
@@ -581,14 +589,20 @@ export function readAbilityBlock(
             (selected) => {
               for (const abil of selected) {
                 if ((ABILITIES as string[]).includes(abil)) {
-                  col.add({ kind: 'abilityBonus', ability: abil as Ability, amount, origin });
+                  col.add({
+                    kind: 'abilityBonus',
+                    ability: abil as Ability,
+                    amount,
+                    ...max,
+                    origin,
+                  });
                 }
               }
             },
           );
         }
       } else if ((ABILITIES as string[]).includes(key) && typeof value === 'number') {
-        col.add({ kind: 'abilityBonus', ability: key as Ability, amount: value, origin });
+        col.add({ kind: 'abilityBonus', ability: key as Ability, amount: value, ...max, origin });
       }
     }
   }

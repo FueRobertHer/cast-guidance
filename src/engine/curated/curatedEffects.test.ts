@@ -722,3 +722,86 @@ describe('standing numbers of core class features', () => {
     expect(emit('feral senses|ranger', 'ranger|phb')).toEqual([]);
   });
 });
+
+describe('always-on riders', () => {
+  const printed = (uid: string): EffectOrigin => ({ label: 'Feature', uid, type: 'class' });
+  const emit = (key: string, uid: string, c = col()) => {
+    expect(emitCuratedEffects(c, key, printed(uid))).toBe(true);
+    return c.effects.map(({ origin: _, ...rest }) => rest);
+  };
+
+  it('adds 1d8 radiant to melee hits: carried weapons in 2014, unarmed strikes too in 2024', () => {
+    const die = { kind: 'damageDie', scope: 'melee', dice: '1d8', damageType: 'radiant' };
+    expect(emit('improved divine smite|paladin', 'paladin|phb')).toEqual([
+      { ...die, weaponsOnly: true },
+    ]);
+    expect(emit('radiant strikes|paladin', 'paladin|xphb')).toEqual([die]);
+  });
+
+  it('adds Charisma to the 2014 Agonizing Blast’s Eldritch Blast', () => {
+    expect(emit('agonizing blast|phb', 'agonizing blast|phb')).toEqual([
+      { kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells: ['eldritch blast'] },
+    ]);
+  });
+
+  it('asks which Warlock cantrip the 2024 Agonizing Blast boosts, and adds Charisma to it', () => {
+    const open = col();
+    expect(emit('agonizing blast|xphb', 'agonizing blast|xphb', open)).toEqual([]);
+    expect(open.pending).toEqual([
+      expect.objectContaining({
+        id: 'class:agonizing blast|xphb:cantrip',
+        kind: 'spell',
+        count: 1,
+        spellQuery: { levels: [0], classes: ['Warlock'], schools: [], ritual: false, attacks: [] },
+      }),
+    ]);
+    const picked = col();
+    picked.doc.choices['class:agonizing blast|xphb:cantrip'] = ['Chill Touch|XPHB'];
+    expect(emit('agonizing blast|xphb', 'agonizing blast|xphb', picked)).toEqual([
+      { kind: 'spellDamageBonus', amount: 'abilityMod:cha', spells: ['chill touch'] },
+    ]);
+    expect(picked.pending).toEqual([]);
+  });
+
+  it('adds Wisdom to a cleric’s or druid’s cantrips, named as the character’s class', () => {
+    const cantrips = (className: string) => ({
+      kind: 'spellDamageBonus',
+      amount: 'abilityMod:wis',
+      className,
+      cantrips: true,
+    });
+    expect(emit('potent spellcasting|cleric', 'cleric|xphb', col('Cleric', 8))).toEqual([
+      cantrips('Cleric'),
+    ]);
+    expect(emit('potent spellcasting|druid', 'druid|xphb', col('Druid', 8))).toEqual([
+      cantrips('Druid'),
+    ]);
+    for (const domain of [
+      'ambition domain (psa)',
+      'arcana domain',
+      'grave domain',
+      'knowledge domain',
+      'knowledge domain (psa)',
+      'light domain',
+      'peace domain',
+    ]) {
+      expect(emit(`potent spellcasting|${domain}`, 'x|phb', col('Cleric', 8))).toEqual([
+        cantrips('Cleric'),
+      ]);
+    }
+  });
+
+  it('adds Intelligence to one damage roll of a wizard’s evocation spells, in both printings', () => {
+    const roll = {
+      kind: 'spellDamageBonus',
+      amount: 'abilityMod:int',
+      className: 'Wizard',
+      school: 'V',
+      oneRoll: true,
+    };
+    expect(emit('empowered evocation|school of evocation', 'x|phb', col('Wizard', 10))).toEqual([
+      roll,
+    ]);
+    expect(emit('empowered evocation|evoker', 'x|xphb', col('Wizard', 10))).toEqual([roll]);
+  });
+});
