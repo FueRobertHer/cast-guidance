@@ -441,11 +441,15 @@ function toolName(part: string): string | undefined {
   return own(TOOL_SPELLINGS, name) ?? (KNOWN_TOOLS.has(single) ? single : name);
 }
 
-/** An option of a tool list without its "and" or its count: "one type of gaming set" is "gaming set". */
+/**
+ * An option of a tool list without its "and" or its count: "one type of gaming
+ * set" and "any one musical instrument" are "gaming set" and "musical instrument".
+ */
 const clean = (part: string) =>
   part
     .trim()
     .replace(/^and /i, '')
+    .replace(/^any (?=one |an? )/i, '')
     .replace(/^(?:one (?:type |kind |set )?of |an? |one )/i, '');
 
 /** A kind of tool in a `from` list is its group's name, which the engine expands; else the tool's name. */

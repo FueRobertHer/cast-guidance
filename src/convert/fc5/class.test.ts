@@ -353,6 +353,14 @@ describe('convertClass spellcasting', () => {
     expect(entity.preparedSpells).toBe('<$level$> + <$int_mod$>');
   });
 
+  it('reads a 2024 spellbook, whose book is two words where spells are added', () => {
+    const book2024 =
+      'The book contains the level 1+ spells you know. It starts with six level 1 Wizard spells of your choice. Whenever you gain a Wizard level after 1, add two Wizard spells of your choice to your spell book.';
+    const rows = ['Level | Spells Prepared', '1st | 4', '5th | 9'].join('\n');
+    const { entity } = converted(caster(`${book2024}\n${rows}`));
+    expect(entity.spellsKnownProgressionFixed).toEqual([6, ...Array(19).fill(2)]);
+  });
+
   it('leaves out a spellbook with no count prepared, which would read as spells known', () => {
     const { entity, reasons } = converted(caster(BOOK));
     expect(entity.spellsKnownProgressionFixed).toBeUndefined();
