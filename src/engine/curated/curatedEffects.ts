@@ -23,6 +23,7 @@ import {
   type ChoiceOption,
   type DataEntity,
   type EffectOrigin,
+  type EntityRef,
   refUid,
   SKILLS,
 } from '../types';
@@ -225,20 +226,20 @@ const skillPick =
     featureSkillPick(col, origin, count, from);
 
 /**
- * The character's class of this name, or else the class reskinning or copying
- * it (a Warrior for "Fighter", a Workshop copy of the Fighter), whose features
- * are that class's and read its level as theirs.
+ * The character's class of this name, or else the class reskinning it (a
+ * Warrior for "Fighter"), or else the class copying it (a Workshop copy of the
+ * Fighter), in that order, whose features are that class's and read its level
+ * as theirs. A class is checked for both: a copy of the Demon Hunter is a Demon
+ * Hunter, for the rows written under that name, and the Ranger it reskins.
  */
 function classEntry(col: Collector, className: string) {
   const name = className.toLowerCase();
+  const by = (of: (cls: DataEntity | undefined) => EntityRef | undefined) =>
+    col.doc.classes.find(
+      (c) => of(col.ctx.get('class', c.ref.name, c.ref.source))?.name.toLowerCase() === name,
+    );
   return (
-    col.doc.classes.find((c) => c.ref.name.toLowerCase() === name) ??
-    col.doc.classes.find((c) => {
-      // Both count, not the first found: a copy of the Demon Hunter is a Demon
-      // Hunter, for the rows written under that name, and the Ranger it reskins.
-      const cls = col.ctx.get('class', c.ref.name, c.ref.source);
-      return [reskinOf(cls), basedOn(cls)].some((r) => r?.name.toLowerCase() === name);
-    })
+    col.doc.classes.find((c) => c.ref.name.toLowerCase() === name) ?? by(reskinOf) ?? by(basedOn)
   );
 }
 

@@ -559,6 +559,14 @@ describe('a class copied in the Workshop', () => {
     copyOf(FIGHTER, 'Warden'),
     copyOf(DH, 'Felblade'),
     copyOf(DEATH_KNIGHT, 'Deathlord'),
+    // A class of the player's own made from the Paladin, with no reskin.
+    {
+      name: 'Oathkeeper',
+      source: 'HB',
+      hd: { number: 1, faces: 10 },
+      castGuidance: { v: 1, basedOn: 'Paladin|XPHB' },
+      classFeatures: ['Channel Divinity|Paladin|XPHB|3'],
+    },
   ];
   const withCopies: EngineContext = {
     get: (type, name, source) =>
@@ -594,6 +602,19 @@ describe('a class copied in the Workshop', () => {
     );
     expect(pool(deathlord, 'channel-divinity-paladin')).toMatchObject({
       label: 'Channel Divinity (Deathlord)',
+      max: 3,
+    });
+  });
+
+  it('reads a class that reskins before one that copies, whichever was taken first', () => {
+    const sheet = deriveCopy(
+      build(DEATH_KNIGHT, 11, {
+        subclass: wow('Oath of the Ebon Blade'),
+        after: { cls: hb('Oathkeeper'), levels: 5 },
+      }),
+    );
+    expect(pool(sheet, 'channel-divinity-paladin')).toMatchObject({
+      label: 'Channel Divinity (Death Knight)',
       max: 3,
     });
   });
