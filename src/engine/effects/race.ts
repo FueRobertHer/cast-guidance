@@ -1,7 +1,12 @@
 import { subraceBelongsTo } from '../../data5e/subraceOptions';
 import { emitCuratedTrait } from '../curated/curatedEffects';
 import {
-  type Ability,
+  ancestryDragons,
+  DRACONIC_ANCESTRY,
+  dragonOptions,
+  namedDragon,
+} from '../curated/draconicAncestry';
+import {
   type CharacterDoc,
   type DataEntity,
   type EffectOrigin,
@@ -11,7 +16,7 @@ import {
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { basedOn, mechanicsOf } from './mechanics';
-import { proseScanFeature } from './proseScan';
+import { DAMAGE_TYPES, proseScanFeature } from './proseScan';
 import {
   genericOptions,
   languageOptions,
@@ -280,55 +285,109 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   }
 }
 
+/** A Dragonborn's dragon, whether it was asked for, and the dragons it could be. */
+type Ancestry = { dragon?: string; asked: boolean; among: readonly string[] };
+
 /**
- * PHB Draconic Ancestry table (curated): the ancestry color fixes the breath
- * weapon's damage type, area, and save. This is a *fallback* for printings
+ * A Dragonborn's dragon: the one its race or subrace names (2014 color
+ * subraces, the 2024 and Fizban's versions), else the one picked when neither
+ * names one. A Dragonborn with no named dragon is asked for it: the bare race,
+ * or a Draconblood or Ravenite with no color.
+ */
+function draconicAncestry(col: Collector, origin: EffectOrigin): Ancestry {
+  const raceName = col.doc.race?.name ?? '';
+  const among = ancestryDragons(raceName);
+  if (among === undefined || col.doc.race === undefined) return { asked: false, among: [] };
+  const named = namedDragon(`${raceName} ${col.doc.subrace?.name ?? ''}`, among);
+  if (named !== undefined) return { dragon: named, asked: false, among };
+  let dragon: string | undefined;
+  col.choice(
+    {
+      id: `race:${refUid(col.doc.race)}:ancestry`,
+      origin,
+      kind: 'generic',
+      label: 'Draconic Ancestry',
+      count: 1,
+      options: dragonOptions(among),
+    },
+    (selected) => {
+      dragon = selected[0];
+    },
+  );
+  return { dragon, asked: true, among };
+}
+
+/**
+ * A Dragonborn's resistance follows its dragon. The data gives some a free
+ * pick among the types even where the dragon fixes it (Fizban's Chromatic
+ * versions) or where the dragon is still to be picked (the bare race): a known
+ * dragon fixes it, and an unknown one leaves it to the ancestry pick, unless a
+ * resistance was picked before that pick was asked. A pick that leaves out a
+ * type of the race's dragons is the race's own (a homebrew Dragonborn's), and
+ * stays.
+ */
+function resistOfAncestry(
+  col: Collector,
+  own: DataEntity,
+  idBase: string,
+  ancestry: Ancestry,
+): DataEntity {
+  if (!Array.isArray(own.resist) || (ancestry.dragon === undefined && !ancestry.asked)) return own;
+  const type = ancestry.dragon !== undefined ? DRACONIC_ANCESTRY[ancestry.dragon]?.type : undefined;
+  const picked = Object.keys(col.doc.choices).some((k) => k.startsWith(`${idBase}:resist:`));
+  const resist = own.resist.flatMap((entry: unknown) => {
+    if (!isEntity(entry) || !isEntity(entry.choose)) return [entry];
+    const from = Array.isArray(entry.choose.from) ? entry.choose.from.map(String) : [];
+    const ofTheDragons = ancestry.among.every((d) => {
+      const t = DRACONIC_ANCESTRY[d]?.type;
+      return t === undefined || from.includes(t);
+    });
+    if (!ofTheDragons) return [entry];
+    if (type !== undefined) return from.includes(type) ? [type] : [entry];
+    return picked ? [entry] : [];
+  });
+  return { ...own, resist };
+}
+
+/**
+ * The breath weapon a Dragonborn's dragon shapes. A *fallback* for printings
  * whose prose can't be scanned (base PHB Dragonborn names its type via a table;
  * the 2024 XPHB race states a save but no single area to breathe in). Printings
- * that DO state everything inline — every Fizban's (FTD) Chromatic/Metallic/Gem
- * variant, whose `_versions` substitute the real damage type — are left to the
- * prose scanner, so this table must never clobber a value it already produced.
+ * that DO state everything inline (every Fizban's (FTD) Chromatic/Metallic/Gem
+ * variant, whose `_versions` substitute the real damage type) are left to the
+ * prose scanner, so this must never clobber a value it already produced.
  */
-const DRACONIC_ANCESTRY: Record<string, { type: string; area: string; targetAbility: Ability }> = {
-  black: { type: 'acid', area: '5 by 30 ft line', targetAbility: 'dex' },
-  blue: { type: 'lightning', area: '5 by 30 ft line', targetAbility: 'dex' },
-  brass: { type: 'fire', area: '5 by 30 ft line', targetAbility: 'dex' },
-  bronze: { type: 'lightning', area: '5 by 30 ft line', targetAbility: 'dex' },
-  copper: { type: 'acid', area: '5 by 30 ft line', targetAbility: 'dex' },
-  gold: { type: 'fire', area: '15 ft cone', targetAbility: 'dex' },
-  green: { type: 'poison', area: '15 ft cone', targetAbility: 'con' },
-  red: { type: 'fire', area: '15 ft cone', targetAbility: 'dex' },
-  silver: { type: 'cold', area: '15 ft cone', targetAbility: 'con' },
-  white: { type: 'cold', area: '15 ft cone', targetAbility: 'con' },
-};
+const NAMES_A_TYPE = new RegExp(`\\b(?:${DAMAGE_TYPES})\\b`, 'i');
 
-function linkDraconicAncestry(col: Collector): void {
-  const raceName = col.doc.race?.name.toLowerCase() ?? '';
-  if (!raceName.includes('dragonborn')) return;
-  // The ancestry color lives in the subrace name (2014 PHB) or the race name
-  // itself (2024 XPHB versioned races like "Dragonborn (Blue)").
-  const hay = `${raceName} ${col.doc.subrace?.name.toLowerCase() ?? ''}`;
-  const color = hay.match(/\b(black|blue|brass|bronze|copper|gold|green|red|silver|white)\b/)?.[1];
-  const ancestry = color !== undefined ? DRACONIC_ANCESTRY[color] : undefined;
+function linkDraconicAncestry(
+  col: Collector,
+  dragon: string | undefined,
+  race: DataEntity | undefined,
+): void {
+  const ancestry = dragon !== undefined ? DRACONIC_ANCESTRY[dragon] : undefined;
   if (ancestry === undefined) return;
   // 2024 breath weapon is a DEX save and the player picks cone or line each
-  // use; 2014 fixes the shape and save per ancestry.
-  const is2024 = col.doc.rulesVersion === '2024';
+  // use; 2014 fixes the shape and save per ancestry. A 2024 race keeps its
+  // own on a character under 2014 rules.
+  const is2024 = col.doc.rulesVersion === '2024' || race?.edition === 'one';
   const eitherShape = `${ancestry.type} · 15 ft cone or 30 ft line`;
-  const note = is2024 ? eitherShape : `${ancestry.type} · ${ancestry.area}`;
-  const targetAbility = is2024 ? ('dex' as const) : ancestry.targetAbility;
+  const note =
+    is2024 || ancestry.area === undefined ? eitherShape : `${ancestry.type} · ${ancestry.area}`;
+  const targetAbility = is2024 ? ('dex' as const) : (ancestry.targetAbility ?? 'dex');
   for (const e of col.effects) {
     if (e.kind === 'action' && e.label.toLowerCase() === 'breath weapon') {
       // Fill only gaps: a prose-scanned FTD variant already carries the correct
-      // (often different — e.g. a chromatic LINE where this table says cone)
+      // (often different, e.g. a chromatic LINE where this table says cone)
       // damage type, area, and save, and must not be overwritten. A note holding
       // only the type this table already knows still has a gap, and that means
       // the XPHB printing: it names the type but lets the player pick the shape
       // ("in either a 15-foot cone or a 30-foot line"), which the scanner does
       // not read as one area. That holds on a character switched to 2014 rules,
-      // who keeps the race.
+      // who keeps the race. A note with the shape alone and no damage type (a
+      // Fizban's race whose dragon was picked) gains the type.
       if (e.note === undefined) e.note = note;
       else if (e.note === ancestry.type) e.note = eitherShape;
+      else if (!NAMES_A_TYPE.test(e.note)) e.note = `${ancestry.type} · ${e.note}`;
       if (e.save?.dcAbility === undefined) e.save = { targetAbility, ...e.save, dcAbility: 'con' };
     }
   }
@@ -336,6 +395,7 @@ function linkDraconicAncestry(col: Collector): void {
 
 export function collectRace(col: Collector): void {
   const { race, subrace } = raceEntity(col);
+  let ancestry: Ancestry = { asked: false, among: [] };
   if (race !== undefined && col.doc.race !== undefined) {
     const origin: EffectOrigin = {
       label: str(race.name) ?? col.doc.race.name,
@@ -349,7 +409,13 @@ export function collectRace(col: Collector): void {
     // the race's name and its traits go on the race's card.
     const base = baseSubraceFor(col.ctx, col.doc);
     const over = subrace !== undefined && subraceBelongsTo(subrace, col.doc.race) ? subrace : base;
-    const own = over !== undefined ? raceUnderSubrace(race, over) : race;
+    ancestry = draconicAncestry(col, origin);
+    const own = resistOfAncestry(
+      col,
+      over !== undefined ? raceUnderSubrace(race, over) : race,
+      `race:${origin.uid}`,
+      ancestry,
+    );
     collectFrom(col, own, origin, `race:${origin.uid}`);
     if (base !== undefined) collectFrom(col, base, origin, `race:${origin.uid}:base`);
     const entries =
@@ -372,5 +438,5 @@ export function collectRace(col: Collector): void {
       col.features.push({ name: origin.label, origin, entries: subrace.entries });
     }
   }
-  linkDraconicAncestry(col);
+  linkDraconicAncestry(col, ancestry.dragon, race);
 }

@@ -49,6 +49,7 @@ import type {
   FormulaSlot,
   NotCounted,
   RollRider,
+  SpellDamageBonus,
 } from './types';
 import { ABILITIES, refUid } from './types';
 
@@ -209,12 +210,15 @@ export function deriveSheet(
     if (cur === undefined || richness(e) > richness(cur)) actionByKey.set(key, e);
   }
   // "Your spell save DC" is only one number with one caster's block to read it from.
-  const saveDc = (from: Ability | 'spell' | undefined) =>
+  // A maneuver's DC takes Strength or Dexterity, the player's choice: the higher.
+  const saveDc = (from: Ability | 'strOrDex' | 'spell' | undefined) =>
     from === 'spell'
       ? spellcasting[1]
         ? undefined
         : spellcasting[0]?.saveDc.value
-      : from && 8 + abilities[from].mod + profBonus.value;
+      : from === 'strOrDex'
+        ? 8 + Math.max(abilities.str.mod, abilities.dex.mod) + profBonus.value
+        : from && 8 + abilities[from].mod + profBonus.value;
   const actions = [...actionByKey.values()].map((e) => ({
     economy: e.economy,
     label: e.label,
@@ -275,11 +279,7 @@ export function deriveSheet(
     hitDice,
     totalLevel,
     classLabel,
-    senses: effectsOf(effects, 'sense').map((e) => ({
-      sense: e.sense,
-      range: e.range,
-      origin: e.origin.label,
-    })),
+    senses: longestSenses(effectsOf(effects, 'sense')),
     resists: effectsOf(effects, 'resist').map((e) => ({
       damageType: e.damageType,
       origin: e.origin.label,
@@ -309,6 +309,17 @@ export function deriveSheet(
       (best, e) =>
         best === undefined || e.min < best.min ? { min: e.min, origin: e.origin.label } : best,
       undefined,
+    ),
+    spellDamageBonuses: sameNamedOnce(
+      effectsOf(effects, 'spellDamageBonus').map((e) => ({
+        amount: bonusAmount(e.amount, abilities, profBonus.value),
+        origin: e.origin.label,
+        ...(e.spells === undefined ? {} : { spells: e.spells }),
+        ...(e.className === undefined ? {} : { className: e.className }),
+        ...(e.cantrips === true ? { cantrips: true as const } : {}),
+        ...(e.school === undefined ? {} : { school: e.school }),
+        ...(e.oneRoll === true ? { oneRoll: true as const } : {}),
+      })),
     ),
     tempHpEachTurn: effectsOf(effects, 'tempHpEachTurn').reduce<DerivedSheet['tempHpEachTurn']>(
       (best, e) =>
@@ -499,6 +510,24 @@ function rollRiders(effects: readonly EffectInput[]): RollRider[] {
 }
 
 /**
+ * One line a sense: the longest range any source gives it, from that source. A
+ * race's darkvision 60 and a feature's 120 read as darkvision 120.
+ */
+function longestSenses(
+  effects: ReadonlyArray<{ sense: string; range: number; origin: { label: string } }>,
+): Array<{ sense: string; range: number; origin: string }> {
+  const best = new Map<string, { sense: string; range: number; origin: string }>();
+  for (const e of effects) {
+    const key = e.sense.toLowerCase();
+    const had = best.get(key);
+    if (had === undefined || e.range > had.range) {
+      best.set(key, { sense: e.sense, range: e.range, origin: e.origin.label });
+    }
+  }
+  return [...best.values()];
+}
+
+/**
  * Proficiency names once each, the first spelling kept: a race's pick keeps the
  * data's "smith's tools" while a subclass grants "Smith's Tools".
  */
@@ -510,6 +539,22 @@ function uniqueNames(names: readonly string[]): string[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * One of each spell damage bonus a same-named feature gives, the highest: a 2024
+ * Cleric with a 2014 domain can have Potent Spellcasting from Blessed Strikes and
+ * from the domain, and the same feature does not add twice.
+ */
+function sameNamedOnce(bonuses: readonly SpellDamageBonus[]): SpellDamageBonus[] {
+  const best = new Map<string, SpellDamageBonus>();
+  for (const b of bonuses) {
+    const { amount, ...rest } = b;
+    const key = JSON.stringify(rest);
+    const held = best.get(key);
+    if (held === undefined || amount > held.amount) best.set(key, b);
+  }
+  return [...best.values()];
 }
 
 /** Collapse repeated collector notes while preserving the first useful wording. */

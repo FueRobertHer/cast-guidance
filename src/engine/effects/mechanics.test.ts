@@ -89,8 +89,17 @@ describe('readMechanics', () => {
     { kind: 'moveSpeed', mode: 'fly', speed: 'walk' },
     { kind: 'attackBonus', amount: 1, attack: 'spell' },
     { kind: 'damageBonus', scope: 'melee', amount: 2, ability: 'str' },
-    { kind: 'damageDie', dice: '1d6', damageType: 'fire' },
+    { kind: 'damageDie', dice: '1d6', damageType: 'fire', weaponsOnly: true },
     { kind: 'spellDcBonus', amount: 1 },
+    {
+      kind: 'spellDamageBonus',
+      amount: { f: 'mod.cha' },
+      spells: ['Eldritch Blast'],
+      className: 'Warlock',
+      cantrips: true,
+      school: 'V',
+      oneRoll: true,
+    },
     { kind: 'saveBonus', amount: 1, abilities: ['con', 'con'] },
     { kind: 'halfProf' },
     { kind: 'checkBonus', amount: 2, skills: ['perception'] },
@@ -645,6 +654,44 @@ describe('formulas at fold time', () => {
     ]);
     expect(sheet.abilities.cha.value).toBe(18);
     expect(sheet.resources.find((r) => r.key === 'gift')?.max).toBe(4);
+  });
+
+  it('works out a spell damage bonus from the final ability modifier, with its limits', () => {
+    const sheet = sheetWith([
+      { kind: 'spellDamageBonus', amount: { f: 'mod.cha' }, spells: ['Hex Bolt'], oneRoll: true },
+      { kind: 'spellDamageBonus', amount: 2, className: 'Warlock', cantrips: true, school: 'V' },
+    ]);
+    expect(sheet.spellDamageBonuses).toEqual([
+      { amount: 3, origin: 'Gift', spells: ['Hex Bolt'], oneRoll: true },
+      { amount: 2, origin: 'Gift', className: 'Warlock', cantrips: true, school: 'V' },
+    ]);
+    expect(sheetWith([{ kind: 'spellDamageBonus', amount: 2, school: 'Fire' }]).warnings).toEqual([
+      expect.stringContaining('"school"'),
+    ]);
+  });
+
+  it('reads a spell given as "name|source" by its name, which casts match on', () => {
+    const sheet = sheetWith([
+      { kind: 'spellDamageBonus', amount: 1, spells: ['Eldritch Blast|PHB', ' Hex Bolt '] },
+    ]);
+    expect(sheet.spellDamageBonuses).toEqual([
+      { amount: 1, origin: 'Gift', spells: ['Eldritch Blast', 'Hex Bolt'] },
+    ]);
+    expect(sheetWith([{ kind: 'spellDamageBonus', amount: 1, spells: ['|PHB'] }]).warnings).toEqual(
+      [expect.stringContaining('"spells"')],
+    );
+  });
+
+  it('adds a same-named feature’s spell damage bonus once, the highest', () => {
+    const sheet = sheetWith([
+      { kind: 'spellDamageBonus', amount: 2, cantrips: true },
+      { kind: 'spellDamageBonus', amount: { f: 'mod.cha' }, cantrips: true },
+      { kind: 'spellDamageBonus', amount: 1, cantrips: true, oneRoll: true },
+    ]);
+    expect(sheet.spellDamageBonuses).toEqual([
+      { amount: 3, origin: 'Gift', cantrips: true },
+      { amount: 1, origin: 'Gift', cantrips: true, oneRoll: true },
+    ]);
   });
 
   it('works out an ability bonus from the proficiency bonus before the scores fold', () => {
