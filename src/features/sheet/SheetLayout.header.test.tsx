@@ -87,7 +87,6 @@ vi.mock('./HistoryDrawer', () => ({
     open ? <div role="dialog" aria-label="History" /> : null,
 }));
 vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
-vi.mock('@/ui/AdvToggle', () => ({ AdvToggle: () => null }));
 
 afterEach(() => {
   cleanup();

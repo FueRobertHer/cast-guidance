@@ -3,7 +3,6 @@ import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import type { D20Ask } from '@/features/sheet/d20Tests';
-import { currentAdvantage } from '@/stores/advMode';
 import { attackInPlay, rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
@@ -87,8 +86,8 @@ function critFor(withAttack: NonNullable<RollChipProps['withAttack']>): boolean 
 }
 
 /**
- * A chip's own roll: d20-style dice under the dock's mode, and damage that goes
- * with an attack that crit rolls its dice twice, with `critDice` after them.
+ * A chip's own roll, made at once. Damage that goes with an attack that crit
+ * rolls its dice twice, with `critDice` after them.
  */
 function chipRoll(
   expr: string,
@@ -99,8 +98,6 @@ function chipRoll(
   const crit = variant === 'damage' && withAttack !== undefined && critFor(withAttack);
   const result = roll(expr, {
     label,
-    // d20-style chips honor the global advantage toggle.
-    advantage: variant === 'd20' ? currentAdvantage() : undefined,
     kind: KIND[variant],
     ...(crit ? { critical: true } : {}),
   });

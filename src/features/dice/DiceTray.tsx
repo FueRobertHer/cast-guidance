@@ -4,20 +4,21 @@ import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
 import { relativeTime } from '@/lib/relativeTime';
-import { ADV_MODES, type AdvMode, useAdvMode } from '@/stores/advMode';
+import { useScrollHidden } from '@/lib/useScrollHidden';
 import { type DiceTrayView, diceTrayStore, useDiceTray } from '@/stores/diceTray';
 import { rollLogStore, useRollLog } from '@/stores/rollLog';
-import { MODE_LABELS, MODE_NAMES, useDockHidden } from '@/ui/AdvToggle';
 import { Button } from '@/ui/Button';
 import { D20Icon } from '@/ui/D20Icon';
 import { RollDetail } from '@/ui/RollDetail';
+import { ROLL_MODES } from '@/ui/rollModes';
 import { ROLL_INK, rollTone } from '@/ui/rollTone';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Sheet } from '@/ui/sheet';
 import { listClass, listRowClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 
-const QUICK = [4, 6, 8, 10, 12, 20, 100];
+/** The dice in the grid: every one but the d20, which sits apart with its mode. */
+const QUICK = [4, 6, 8, 10, 12, 100];
 
 /** How many of the latest rolls the Roll view shows under the dice. */
 const RECENT = 3;
@@ -25,21 +26,10 @@ const RECENT = 3;
 /** How often the rows' "2 min ago" moves on, while the tray is open. */
 export const TICK_MS = 15_000;
 
-/**
- * The dock's words, named in full as there. The whole words ran past the
- * sheet at 320px and with large text.
- */
-const MODES: ReadonlyArray<{ value: AdvMode; label: string; name: string }> = ADV_MODES.map(
-  (mode) => ({ value: mode, label: MODE_LABELS[mode], name: MODE_NAMES[mode] }),
-);
-
 const VIEWS: ReadonlyArray<{ value: DiceTrayView; label: string }> = [
   { value: 'roll', label: 'Roll' },
   { value: 'history', label: 'History' },
 ];
-
-/** A die and its use: a d20 is a d20 roll, any other die damage (DS-001 DiceTray). */
-const kindOf = (sides: number): RollKind => (sides === 20 ? 'd20' : 'damage');
 
 /** The time now, moving on every TICK_MS while `active`. */
 function useNow(active: boolean): number {
@@ -56,24 +46,32 @@ function useNow(active: boolean): number {
 /**
  * The dice tray (DS-001 DiceTray): a bottom sheet for rolls the sheet does
  * not know about, and the history of every roll, as two views picked in its
- * header. Opened from the dice dock's button on Play and Stats (`dock`), and
- * on any of the sheet's pages from a tap on the roll toast, which opens it on
+ * header. Opened from the dice button on Play and Stats (`dock`), and on any
+ * of the sheet's pages from a tap on the roll toast, which opens it on
  * History. It is open while `diceTrayStore` says so.
+ *
+ * The d20 sits first, beside its own Dis, Normal and Adv, so the mode plainly
+ * belongs to it; every other die, and dice typed in the field, roll as they
+ * are (a d20 roll is a d20 roll, any other die damage).
  */
 export function DiceTray({ dock = false }: { dock?: boolean }) {
   const open = useDiceTray((s) => s.open);
   const view = useDiceTray((s) => s.view);
   const rolls = useRollLog((s) => s.rolls);
   const [expr, setExpr] = useState('');
-  const advMode = useAdvMode((s) => s.mode);
-  const setAdvMode = useAdvMode((s) => s.set);
+  const mode = useDiceTray((s) => s.mode);
   const [error, setError] = useState<string>();
   const field = useRef<HTMLInputElement>(null);
   const now = useNow(open);
 
   useEffect(() => diceTrayStore.getState().mount(), []);
 
-  const doRoll = (expression: string, label?: string, kind?: RollKind) => {
+  const doRoll = (
+    expression: string,
+    label?: string,
+    kind?: RollKind,
+    advantage?: 'adv' | 'dis',
+  ) => {
     try {
       parseDice(expression);
     } catch (e) {
@@ -81,13 +79,9 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
       return;
     }
     setError(undefined);
-    rollLogStore.getState().append(
-      roll(expression, {
-        label,
-        kind,
-        advantage: advMode === 'normal' ? undefined : advMode,
-      }),
-    );
+    rollLogStore
+      .getState()
+      .append(roll(expression, { label, kind, ...(advantage === undefined ? {} : { advantage }) }));
   };
 
   return (
@@ -128,26 +122,42 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
             {view === 'roll' ? (
               <>
                 <div className="mb-3 flex flex-col gap-3">
-                  {/* Adv/dis for d20 rolls, in the same order as the dock's */}
-                  <SegmentedControl
-                    label="Roll mode"
-                    options={MODES}
-                    value={advMode}
-                    onChange={setAdvMode}
-                    block
-                  />
+                  {/* The d20 and its own mode, in the prompt's order. The
+                      control wraps under the die where large text will not
+                      fit it beside. */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        doRoll('1d20', 'd20', 'd20', mode === 'normal' ? undefined : mode)
+                      }
+                      className={`${TILE_SHAPE} w-24 shrink-0 bg-roll-soft text-roll hover:brightness-112`}
+                    >
+                      <D20Icon size={18} />
+                      d20
+                    </button>
+                    <div className="min-w-48 flex-1">
+                      <SegmentedControl
+                        label="d20 roll mode"
+                        options={ROLL_MODES}
+                        value={mode}
+                        onChange={(next) => diceTrayStore.getState().setMode(next)}
+                        block
+                      />
+                    </div>
+                  </div>
 
                   {/*
                    * Four across with room to hit (DS-001): seven across gave each
                    * die a sliver of a label. Equal columns keep every die the same
-                   * size, and the eighth tile, custom, takes the field below.
+                   * size, and Custom, across the last two, takes the field below.
                    */}
                   <div className="grid grid-cols-4 gap-2">
                     {QUICK.map((d) => (
                       <button
                         key={d}
                         type="button"
-                        onClick={() => doRoll(`1d${d}`, `d${d}`, kindOf(d))}
+                        onClick={() => doRoll(`1d${d}`, `d${d}`, 'damage')}
                         className={TILE}
                       >
                         d{d}
@@ -157,7 +167,7 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                       type="button"
                       aria-label="Custom dice"
                       onClick={() => field.current?.focus()}
-                      className={TILE}
+                      className={`${TILE} col-span-2`}
                     >
                       <Plus size={18} aria-hidden="true" />
                       <small className={TILE_CAPTION}>Custom</small>
@@ -224,32 +234,38 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
   );
 }
 
-/** A die tile: `surface-raised`, the die's name over a small caption. */
-const TILE =
-  'flex min-h-15 flex-col items-center justify-center gap-0.5 rounded-control bg-surface-raised px-1 py-2 font-bold text-body transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-97';
+/** A die tile's shape: the die's name over a small caption. */
+const TILE_SHAPE =
+  'flex min-h-15 flex-col items-center justify-center gap-0.5 rounded-control px-1 py-2 font-bold text-body transition-[background-color,filter,transform] duration-120 active:scale-97';
+/** A die tile: `surface-raised`. The d20 is `roll-soft`, as a d20 chip is. */
+const TILE = `${TILE_SHAPE} bg-surface-raised hover:bg-surface-hover`;
 const TILE_CAPTION = 'font-semibold text-[0.6875rem] text-ink-muted leading-3.5';
 
 /**
- * The dice dock's button (DS-001): it sits in the end of the capsule
- * AdvToggle draws, 2px in from its right and bottom, so the two read as one
- * control. A 44px tap, the brand circle 40px inside it. Hidden by scroll, it
- * is still in the tab order: keyboard focus in either half brings the whole
- * dock back (useDockHidden).
+ * The dice button (DS-001 DiceDock), alone where rolls start: 52px, round,
+ * `brand` with the d20, floating above the tab bar. It tucks away while the
+ * page scrolls down, and is still in the tab order: keyboard focus brings it
+ * back, so the keyboard never lands on an invisible button. `data-dice-dock`
+ * lets the roll toast and notices rise above it.
  */
 function DockButton() {
-  const hidden = useDockHidden();
+  const scrolledAway = useScrollHidden();
+  const [focused, setFocused] = useState(false);
+  const hidden = scrolledAway && !focused;
   return (
     <Sheet.Trigger asChild>
       <button
         type="button"
         aria-label="Dice tray"
         title="Dice tray"
-        data-dice-dock-button=""
-        className={`fixed right-[calc(1rem+2px)] bottom-[calc(78px+env(safe-area-inset-bottom))] z-20 flex size-tap items-center justify-center rounded-full border-2 border-transparent bg-brand bg-clip-padding text-on-brand transition-all duration-200 [--tap-inset:2px] hover:bg-brand-hover active:scale-92 lg:bottom-[calc(1.5rem+2px)] ${
+        data-dice-dock=""
+        onFocus={(event) => setFocused(event.currentTarget.matches(':focus-visible'))}
+        onBlur={() => setFocused(false)}
+        className={`fixed right-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 flex size-dock items-center justify-center rounded-full bg-brand text-on-brand shadow-float transition-all duration-200 hover:bg-brand-hover active:scale-92 lg:bottom-6 ${
           hidden ? 'pointer-events-none translate-x-20 opacity-0' : ''
         }`}
       >
-        <D20Icon size={22} />
+        <D20Icon size={24} />
       </button>
     </Sheet.Trigger>
   );

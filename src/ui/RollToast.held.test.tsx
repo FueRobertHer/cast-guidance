@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RollOffer, RollResult } from '@/dice/types';
 import type { RollEffects } from '@/engine/playRules';
 import { d20Ask } from '@/features/sheet/d20Tests';
-import { advModeStore } from '@/stores/advMode';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { cancelHeld, followUpStore, rollFrom } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
@@ -84,7 +83,6 @@ const roll = () => screen.getByRole('button', { name: 'Roll' });
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   resetAnnouncer();
-  advModeStore.getState().set('normal');
 });
 
 afterEach(() => {
@@ -123,21 +121,24 @@ describe('the roll prompt', () => {
   });
 
   it('presets the mode the sheet sets, and says why a mode picked over it was chosen', () => {
-    advModeStore.getState().set('adv');
     render(<RollToast />);
-    act(() => rollFrom(control('Athletics'), check));
+    act(() =>
+      rollFrom(control('Athletics'), () =>
+        d20Ask('1d20+3', { label: 'Athletics check', advantageFrom: ['Rage'] }),
+      ),
+    );
     expect(screen.getByRole('button', { name: 'Advantage' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
     fireEvent.click(screen.getByRole('button', { name: 'Disadvantage' }));
     const group = prompt('Athletics check');
-    expect(group.textContent).toContain('Disadvantage chosen for this roll');
+    expect(group.textContent).toContain('Disadvantage chosen for this roll, over Rage');
     expect(group.textContent).toContain('d20 +3, disadvantage');
     nextFaces(15, 4);
     fireEvent.click(roll());
     expect(rollLogStore.getState().rolls[0]).toMatchObject({
       total: 7,
-      meta: { advantage: 'dis', cue: 'Disadvantage chosen for this roll' },
+      meta: { advantage: 'dis', cue: 'Disadvantage chosen for this roll, over Rage' },
     });
   });
 

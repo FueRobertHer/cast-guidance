@@ -623,8 +623,8 @@ export function Component() {
   /** Does the character have one of these feats/features (by `name|source` uid)? */
   const hasFeature = (...uids: string[]) => sheet.features.some((f) => uids.includes(f.origin.uid));
   const concentrationEffects = effectsFor({ kind: 'save', ability: 'con' });
-  // War Caster: advantage on concentration saves, which the dock's mode and
-  // the character's conditions combine with and can cancel.
+  // War Caster: advantage on concentration saves, which the character's
+  // conditions combine with and can cancel.
   const warCaster = hasFeature('war caster|phb', 'war caster|xphb') ? ['War Caster'] : [];
   // Durable (2024): advantage on death saves.
   const durable = hasFeature('durable|xphb') ? ['Durable'] : [];
