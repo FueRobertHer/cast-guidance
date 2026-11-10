@@ -1508,14 +1508,26 @@ export function readText(blocks: readonly string[]): ReadText {
   return sourceLine === undefined ? { entries } : { entries, sourceLine };
 }
 
-/** All prose in entries, flattened, for the text scans (saves, attacks, mastery). */
-export function plainText(entries: readonly Entry[]): string {
+/**
+ * All prose in entries, flattened, for the text scans (saves, attacks,
+ * mastery). `rows` writes each table row on a line of its own, its cells
+ * together, for a scan that reads a row as one.
+ */
+export function plainText(entries: readonly Entry[], opts: { rows?: boolean } = {}): string {
   const out: string[] = [];
   const walk = (e: unknown) => {
     if (typeof e === 'string') out.push(e);
     else if (Array.isArray(e)) e.forEach(walk);
     else if (e !== null && typeof e === 'object') {
       const o = e as Record<string, unknown>;
+      if (opts.rows === true && o.type === 'table') {
+        // A row a line, its cells kept together: `1st | command, ensnaring strike`.
+        for (const row of Array.isArray(o.rows) ? o.rows : []) {
+          const cells = Array.isArray(row) ? row : [row];
+          out.push(cells.map((c) => plainText([c as Entry]).replace(/\n/g, ' ')).join(' | '));
+        }
+        return;
+      }
       if (typeof o.name === 'string') out.push(o.name);
       walk(o.entries);
       walk(o.items);

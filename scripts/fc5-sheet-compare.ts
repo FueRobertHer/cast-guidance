@@ -426,6 +426,12 @@ function traitNames(entries: unknown): string[] {
     .filter((n) => !RESTATED.test(n));
 }
 
+/** A prompt's label without its origin's name before it. */
+function ownLabel(p: { label: string; origin: { label: string } }): string {
+  const lead = `${p.origin.label}: `;
+  return p.label.startsWith(lead) ? p.label.slice(lead.length) : p.label;
+}
+
 /** What the sheet shows, by field, ready to compare. */
 function view(s: DerivedSheet): Record<string, unknown> {
   return {
@@ -455,7 +461,11 @@ function view(s: DerivedSheet): Record<string, unknown> {
         ability: g.ability ?? '',
       })),
     ),
-    resources: norm(s.resources),
+    // A free cast's key names its origin (`spell:tiefling|phb:darkness`), which
+    // a converted entry names its own way; the spell, uses and rest are compared.
+    resources: norm(
+      s.resources.map((r) => ({ ...r, key: r.key.replace(/^spell:[^:]*:/, 'spell:') })),
+    ),
     actions: norm(s.actions),
     rollRiders: norm(s.rollRiders),
     extraActions: norm(s.extraActions),
@@ -470,10 +480,12 @@ function view(s: DerivedSheet): Record<string, unknown> {
           : [`${f.name} @${f.level ?? 0}`],
       ),
     ),
+    // A prompt's label opens with its origin's name (`Elf; Drow Lineage:
+    // spellcasting ability`), which a converted entry words its own way.
     choices: norm({
-      pending: s.pending.map((p) => `${p.kind}: ${p.label} x${p.count}`),
+      pending: s.pending.map((p) => `${p.kind}: ${ownLabel(p)} x${p.count}`),
       resolved: s.resolvedChoices.map(
-        (r) => `${r.prompt.kind}: ${r.prompt.label} x${r.selected.length}`,
+        (r) => `${r.prompt.kind}: ${ownLabel(r.prompt)} x${r.selected.length}`,
       ),
     }),
     warnings: norm(s.warnings),

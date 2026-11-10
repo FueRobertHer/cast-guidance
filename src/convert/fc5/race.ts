@@ -17,6 +17,7 @@
  */
 import { childElements, childText, childTexts, type XmlElement } from '../xml';
 import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './context';
+import { readSpellGrants, spellsKept } from './spellGrants';
 import {
   ABILITIES,
   type AbilityKey,
@@ -344,6 +345,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const traitTags = new Set<string>();
   const abilityTexts: string[] = [];
   const grantedLines: string[] = [];
+  const spellTexts: string[] = [];
   let defenses: Defenses = {};
   for (const trait of childElements(el, 'trait')) {
     const traitName = childText(trait, 'name') ?? '';
@@ -367,6 +369,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     const lines = traitLines(traitName, text.entries);
     prose.push(traitRules(traitName, plain, lines));
     grantedLines.push(...lines);
+    spellTexts.push(plainText(text.entries, { rows: true }));
     defenses = addDefenses(defenses, standingDefenses(text.entries));
   }
 
@@ -531,8 +534,18 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     race.languageProficiencies = [addsPick ? proseLanguages : tagLanguages];
   else if (Object.keys(proseLanguages).length > 0) race.languageProficiencies = [proseLanguages];
   else if (rawLanguages !== undefined) reasons.push('its languages are kept as text');
-  if (childText(el, 'spellability') !== undefined || childText(el, 'spells') !== undefined) {
-    reasons.push('its innate spells are kept as text');
+  // Innate spells from the traits' words, the tag's ability for a trait that names none.
+  const spellAbility = abilityKey(childText(el, 'spellability') ?? '');
+  const spells = readSpellGrants(spellTexts, ctx.spells, {
+    prepares: false,
+    firstLevel: '1',
+    ...(spellAbility === undefined ? {} : { ability: spellAbility }),
+  });
+  // A spellcasting tag says the race has spells, read or not.
+  const tagged = spellAbility !== undefined || childText(el, 'spells') !== undefined;
+  if (spells.blocks !== undefined) race.additionalSpells = spells.blocks;
+  if (spells.unread || (tagged && spells.blocks === undefined)) {
+    reasons.push(spellsKept(spells.blocks !== undefined));
   }
   const rawConditions = childText(el, 'conditionimmune');
   const conditions = new Set(defenses.conditionImmune);

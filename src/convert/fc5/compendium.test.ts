@@ -650,6 +650,26 @@ describe('copies of other entries', () => {
     ]);
   });
 
+  it("gives a feat split per choice a block of spells per copy, and says what any copy's text kept", () => {
+    const feat = (cls: string, text: string) =>
+      `<feat><name>Ember Dabbler (${cls})</name><text>${text}</text></feat>`;
+    const { json, report } = convert(
+      `${feat('Bard', 'You learn two bard cantrips of your choice.')}${feat('Wizard', 'You learn two wizard cantrips of your choice and one 1st-level spell based on the school you choose.')}`,
+    );
+    expect(list(json, 'feat').map((f) => [f.name, f.additionalSpells])).toEqual([
+      [
+        'Ember Dabbler',
+        [
+          { name: 'Bard Spells', known: { _: [{ choose: 'level=0|class=Bard', count: 2 }] } },
+          { name: 'Wizard Spells', known: { _: [{ choose: 'level=0|class=Wizard', count: 2 }] } },
+        ],
+      ],
+    ]);
+    expect(report.notes.find((n) => n.name === 'Ember Dabbler')?.reasons).toContain(
+      'some of its spells are kept as text',
+    );
+  });
+
   it('leaves out every choice of a feat the game data has', () => {
     const { json, report } = convert(
       '<feat><name>Ember Fear (Strength)</name><text>Roar.</text></feat><feat><name>Ember Fear (Charisma)</name><text>Roar.</text></feat>',

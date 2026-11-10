@@ -2,6 +2,7 @@ import type { RulesVersion } from '../../data5e/rulesVersion';
 import type { ConvertedKind, OfficialFeat } from '../types';
 import type { Book, HomebrewSource } from './books';
 import { officialName } from './renames';
+import type { SpellIndex } from './spellGrants';
 
 /**
  * Where an entry belongs: the source it carries, its rules edition, and the
@@ -55,6 +56,12 @@ export interface Fc5Context {
    * starred copy (`Hold Person*`) adds them the same way.
    */
   extraClasses?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The spells this file defines and the installed data holds, so a trait's
+   * text can name one without the word "spell" (`can cast jump`). Whole only
+   * in the second pass.
+   */
+  spells?: SpellIndex;
 }
 
 /** A feat the file's output holds: its name and source as written, and whether it is under another name. */

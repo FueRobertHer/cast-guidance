@@ -63,7 +63,16 @@ import { convertItem } from './item';
 import { convertRace } from './race';
 import { nameVariants } from './renames';
 import { convertSpell, readClasses } from './spell';
-import { abilityKey, entryName, lastGroup, sourceLineEdition, splitName } from './text';
+import { readSpellGrants, type SpellBlock, spellsKept } from './spellGrants';
+import {
+  abilityKey,
+  type Entry,
+  entryName,
+  lastGroup,
+  plainText,
+  sourceLineEdition,
+  splitName,
+} from './text';
 
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
@@ -257,10 +266,23 @@ function mergeChoices(group: readonly Converted[], base: string): Converted {
     reasons.push('its ability choice is kept as text');
   }
 
+  // A block of spells per copy is a choice between them, named as the copy's
+  // choice is: `Magic Initiate (Bard)` gives "Bard Spells", as the data names them.
+  const blocks = entities.map((e) =>
+    Array.isArray(e.additionalSpells) && e.additionalSpells.length === 1
+      ? (e.additionalSpells[0] as SpellBlock)
+      : undefined,
+  );
+  const spellsPerChoice =
+    !sameJson('additionalSpells') && blocks.every((b) => b !== undefined && b.name === undefined)
+      ? blocks.map((b, i) => ({ name: `${choices[i]} Spells`, ...b }))
+      : undefined;
+
   const differs: string[] = [];
   const keys = new Set(entities.flatMap((e) => Object.keys(e)));
   for (const key of keys) {
     if (key === 'name' || key === 'ability' || key === 'entries' || key === 'page') continue;
+    if (key === 'additionalSpells' && spellsPerChoice !== undefined) continue;
     if (!sameJson(key)) {
       delete merged[key];
       differs.push(key);
@@ -270,7 +292,17 @@ function mergeChoices(group: readonly Converted[], base: string): Converted {
     reasons.push(`what differs per choice (${choices.join(', ')}) is kept as text`);
   }
   if (!sameJson('entries')) reasons.push('the copies per choice differ in text; the first is kept');
-  return { ...first, result: { ...first.result, name: base, entity: merged, reasons } };
+  if (spellsPerChoice !== undefined) merged.additionalSpells = spellsPerChoice;
+  // Spells any copy left as text, said once of the merged feat.
+  const kept = [spellsKept(true), spellsKept(false)];
+  const ownReasons = reasons.filter((r) => !kept.includes(r));
+  if (group.some((c) => c.result.reasons.some((r) => kept.includes(r)))) {
+    ownReasons.push(spellsKept(merged.additionalSpells !== undefined));
+  }
+  return {
+    ...first,
+    result: { ...first.result, name: base, entity: merged, reasons: ownReasons },
+  };
 }
 
 /** A context for converting entries one at a time, as the compendium does. */
@@ -335,6 +367,17 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     ...(opts.rulesBooks === undefined ? {} : { rulesBooks: opts.rulesBooks }),
     ...(opts.officialFeat === undefined ? {} : { officialFeat: opts.officialFeat }),
   });
+  // The spells the file defines in full, by lowercased name, with their level
+  // (null when the file gives none), filled in the first pass; then the
+  // installed data's, of a level the converter does not know.
+  const spellLevels = new Map<string, number | null>();
+  const installedSpell = (name: string) =>
+    opts.isInstalled !== undefined &&
+    (opts.isInstalled('spell', name, '2014') || opts.isInstalled('spell', name, '2024'));
+  ctx.spells = {
+    level: (name) =>
+      spellLevels.has(name) ? spellLevels.get(name) : installedSpell(name) ? null : undefined,
+  };
 
   // Whether the game data has an entry, when the data holds its book: in its
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
@@ -382,6 +425,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       const named = entryName(childText(el, 'name') ?? '');
       if (isFull(el)) {
         const key = named.name.toLowerCase();
+        const level = Number(childText(el, 'level'));
+        if (!spellLevels.has(key)) spellLevels.set(key, Number.isInteger(level) ? level : null);
         const editions = fullEditions.get(key);
         if (editions === undefined) fullEditions.set(key, new Set([named.edition]));
         else editions.add(named.edition);
@@ -414,6 +459,13 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   const prepare = (): void => {
     prepared = true;
     fullSpells = new Set(fullEditions.keys());
+    // A feat's spells once every spell is known, before its copies per choice merge.
+    for (const { result } of allFeats) {
+      const text = plainText(result.entity.entries as Entry[], { rows: true });
+      const spells = readSpellGrants([text], ctx.spells, { prepares: true, firstLevel: '_' });
+      if (spells.blocks !== undefined) result.entity.additionalSpells = spells.blocks;
+      if (spells.unread) result.reasons.push(spellsKept(spells.blocks !== undefined));
+    }
     for (const copy of spellCopies) {
       const editions = fullEditions.get(copy.name.toLowerCase());
       if (editions === undefined) {

@@ -32,15 +32,32 @@ page (an HTML listing or a page that links to the file) is named as one.
 | --- | --- | --- |
 | `<spell>` | `spell` | Time, range (a 2024 cone or emanation as 5etools writes it), components, duration, classes, saves, attacks, damage dice, cantrip and upcast dice (from `<roll>`s, run to 9th level unless the text names a cap such as "maximum 6d10", or from text such as "increases by 1d6 for each slot level above 1st") |
 | `<item>` | `item` | Type, weapon and armor fields (every staff a quarterstaff, as both Dungeon Master's Guides say), rarity, attunement, value, bonuses (and a bonus to AC or to attack and damage rolls its text states for good, when no `<modifier>` gives one), speed, the resistances and immunities its text states while you wear or are attuned to it |
-| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers |
-| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`) |
-| `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers |
+| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
+| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
+| `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
 | `<class>` | (left out) | Not converted yet |
 | `<monster>` | (left out) | The app does not use creatures |
 
 On items, feats, race traits and background traits, a labeled `<roll>` the
 text never shows as dice becomes a line of roll tags at the end, so the sheet
 can roll it.
+
+Fight Club has no field for the spells a race, feat or background grants, so
+they are read from its text into 5etools `additionalSpells`
+(`src/convert/fc5/spellGrants.ts`): a named spell or cantrip (`You know the
+thaumaturgy cantrip`, or `can cast jump` when the file or the installed data
+has a spell of that name), one of a list, the level a trait gates it at, how
+often it is cast without a slot (at will, per short or long rest, a number of
+times equal to the proficiency bonus), a pick by level, class list, school or
+ritual tag, the spellcasting ability, a lineage's table of spells by
+character level (`Level 3 | Command`), and a table of spells by spell level
+added to a class's list. A table of options (the 2024 Elf's lineages) grants
+nothing on its own. "Always prepared" is `prepared` on a feat or background and
+`innate` on a race, as the data writes each. Magic Initiate's "the same list"
+becomes a block per class. A pick a table decides (Strixhaven Initiate), a
+list another feat chose (Magic Connoisseur), a swap or a fallback is not read,
+and the report says so. A background's `Feat:` trait is the feat's text, so its
+spells come from the feat.
 
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never
