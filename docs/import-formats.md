@@ -78,27 +78,33 @@ classes taken in place of a class level, convert as classes, and the report
 says nothing stops a second level.
 
 A class's subclasses are its choices (`optional="YES"`) named `Label: Name`
-(`Martial Archetype: Champion`, `Fighter Subclass: Champion`) where most
-choices of that label have features ending in the name (`Improved Critical
-(Champion)`, `Level 3: Protector (Bogatyr (HB) [5.5e])`), or in its last
-words where the class has a feature named for the label (`(Ghostslayer)` for
-`Blood Hunter Order: Order of the Ghostslayer`). Each becomes a `subclass`
-whose first feature, at the level it is picked, is the pick's own text, then
-one `subclassFeature` per feature. The label is the class's
-`subclassTitle`, and the class's feature of that name (or one added where no
-such feature exists) opens the choice on the sheet. A subclass is placed by its
-own `Source:` line, else its first feature's, else the class's. Two choices
-of one label at one level within a subclass (`Fighting Style: Dueling
-(College of Swords)`) are options. A subclass with a spellcasting feature
-casts by the class's optional slot rows, as the Eldritch Knight does. A
-subclass goes on its class when the class is kept, and on the installed
-class when the class is left out as installed (in a book the class cites,
-the edition's core book, or the Artificer's), so a file of official classes
-still adds its homebrew subclasses to them; a subclass the installed data
-has is left out like any entry. A `<class>` with no `<hd>` adds its
+(`Martial Archetype: Champion`, `Fighter Subclass: Champion`) where more
+than half the choices of that label have features ending in the name
+(`Improved Critical (Champion)`, `Level 3: Protector (Bogatyr (HB) [5.5e])`),
+or in its last words where the class has a feature named for the label
+(`(Ghostslayer)` for `Blood Hunter Order: Order of the Ghostslayer`). Each
+becomes a `subclass` whose first feature, at the level it is picked, is the
+pick's own text, then one `subclassFeature` per feature. Two picks of one
+name whose `Source:` lines cite two books are two subclasses, each with the
+features that cite its book. The label is the class's `subclassTitle`, and
+the class's feature of that name (or one added where no such feature exists)
+opens the choice on the sheet. A subclass is placed by its own `Source:`
+line, else by the first of its features that has one, else by the class's
+place, in the edition its pick's name marks. Two choices of one label at one
+level within a subclass (`Fighting Style: Dueling (College of Swords)`) are
+options, except a Channel Divinity (or another `Channel` label), which a
+subclass gains all of. A subclass with a spellcasting feature (named for
+spellcasting or pact magic, or one ending in `Magic` or `casting` that names
+a spellcasting ability) casts by the class's optional slot rows, as the
+Eldritch Knight does, and they come back on a short rest when the class's
+do. A subclass goes on its class when the class is kept, and on the
+installed class when the class is left out as installed (the game data's
+own book for that class), so a file of official classes still adds its
+homebrew subclasses to them; a subclass the installed data has on that
+class is left out like any entry. A `<class>` with no `<hd>` adds its
 subclasses to the class of its name in the file, wherever that is, else to
-the installed or rules class of that name. Counters named for a subclass are
-reported on it.
+the installed or rules class of that name; what else it holds is listed in
+the report. Counters named for a subclass are reported on it.
 
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never

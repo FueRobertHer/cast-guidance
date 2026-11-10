@@ -5,12 +5,13 @@
 import type { Entity } from '../data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../data5e/normalize';
 import { editionOf, type RulesVersion } from '../data5e/rulesVersion';
-import type {
-  ConvertedKind,
-  ConvertOptions,
-  InstalledCheck,
-  OfficialClass,
-  OfficialFeat,
+import {
+  type ConvertedKind,
+  type ConvertOptions,
+  type InstalledCheck,
+  type OfficialClass,
+  type OfficialFeat,
+  subclassKey,
 } from './types';
 
 /**
@@ -174,9 +175,14 @@ function kindKeys(reg: EntityRegistry, kind: ConvertedKind): KindKeys {
     for (const e of reg.byType(type).slice(0, reg.officialCount(type))) {
       const ed = editionOf(e);
       const books = entityBooks(e);
-      const names = officialNames(type, e);
+      // A subclass is its class's (`subclassKey`).
+      const of =
+        kind === 'subclass' && typeof e.className === 'string'
+          ? (n: string) => subclassKey(n, String(e.className).toLowerCase())
+          : (n: string) => n;
+      const names = officialNames(type, e).map(of);
       if (anyBook) for (const n of names) built.byEdition.add(`${n}|${ed}`);
-      for (const n of [...names, ...bookNames(type, e)]) {
+      for (const n of [...names, ...bookNames(type, e).map(of)]) {
         for (const b of books) {
           built.byBook.add(`${n}|${b}`);
           built.byBook.add(`~${compact(n)}|${b}`);

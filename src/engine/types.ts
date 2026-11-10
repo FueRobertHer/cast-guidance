@@ -1104,6 +1104,28 @@ export function refUid(ref: EntityRef): string {
   return `${ref.name}|${ref.source}`.toLowerCase();
 }
 
+/**
+ * The subclass a class's levels picked, by its name and book; of several with
+ * that name and book (a book's subclass offered to two classes, as a Fight
+ * Club file's Mage of Silverquill is to the bard and the warlock), the one on
+ * that class, else the first.
+ */
+export function subclassOf(ctx: EngineContext, entry: ClassLevelEntry): DataEntity | undefined {
+  const ref = entry.subclass;
+  if (ref === undefined) return undefined;
+  const first = ctx.get('subclass', ref.name, ref.source);
+  const className = entry.ref.name.toLowerCase();
+  const onClass = (s: DataEntity) =>
+    typeof s.className === 'string' && s.className.toLowerCase() === className;
+  if (first === undefined || onClass(first)) return first;
+  const uid = refUid(ref);
+  const same = (s: DataEntity) =>
+    typeof s.name === 'string' &&
+    typeof s.source === 'string' &&
+    refUid({ name: s.name, source: s.source }) === uid;
+  return ctx.byType('subclass').find((s) => same(s) && onClass(s)) ?? first;
+}
+
 export function emptyPlayState(): PlayState {
   return {
     currentHp: 0,

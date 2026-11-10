@@ -2,7 +2,14 @@ import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
 import { summarizeEntries } from '../summarize';
-import { ABILITIES, type Ability, type DataEntity, type EffectOrigin, refUid } from '../types';
+import {
+  ABILITIES,
+  type Ability,
+  type DataEntity,
+  type EffectOrigin,
+  refUid,
+  subclassOf,
+} from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asiFeatInstance } from './asiFeatInstance';
 import { asEntityArray, type Collector, str } from './base';
@@ -755,7 +762,7 @@ export function collectClasses(col: Collector): void {
 
     // Subclass features
     if (entry.subclass !== undefined) {
-      const sub = col.ctx.get('subclass', entry.subclass.name, entry.subclass.source);
+      const sub = subclassOf(col.ctx, entry);
       if (sub === undefined) {
         col.warn(`Subclass not found: ${refUid(entry.subclass)}`);
       } else {

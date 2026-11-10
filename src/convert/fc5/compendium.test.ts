@@ -5,6 +5,7 @@ import {
   convertedTotal,
   type InstalledCheck,
   notesWith,
+  subclassKey,
 } from '../types';
 import { parseXml } from '../xml';
 import { convertFc5Compendium, FC5_CONVERTER_VERSION, isSpellStub, sourceFor } from './compendium';
@@ -953,7 +954,7 @@ describe('subclasses', () => {
     const { calls, check } = recorder(
       (kind, name, _edition, book) =>
         (kind === 'class' && name === 'Fighter' && (book === undefined || book === 'PHB')) ||
-        (kind === 'subclass' && name === 'Champion'),
+        (kind === 'subclass' && name === subclassKey('Champion', 'Fighter')),
     );
     const { json, report } = convert(
       withSubclasses('Fighter', at("Player's Handbook (2014) p. 70"), ['Champion', 'Ash Guard']),
@@ -974,6 +975,78 @@ describe('subclasses', () => {
     expect(calls.filter(([kind]) => kind === 'class')).toEqual([
       ['class', 'Fighter', '2014'],
       ['class', 'Fighter', '2014', 'PHB'],
+    ]);
+  });
+
+  it("keeps a subclass that has the name of another class's installed one", () => {
+    const { calls, check } = recorder(
+      (kind, name) => kind === 'subclass' && name === subclassKey('Champion', 'Fighter'),
+    );
+    const { json } = convert(withSubclasses('Ember Knight', '', ['Champion']), {
+      fileName: FILE,
+      isInstalled: check,
+    });
+    expect(list(json, 'subclass').map((s) => [s.name, s.className])).toEqual([
+      ['Champion', 'Ember Knight'],
+    ]);
+    expect(calls.filter(([kind]) => kind === 'subclass')).toEqual([
+      ['subclass', subclassKey('Champion', 'Ember Knight'), '2014'],
+    ]);
+  });
+
+  it('keeps two subclasses of one name from two books apart, each with its own features', () => {
+    const pick = (book: string) =>
+      `${f('Martial Archetype: Ash Guard', `Guards.\nSource: ${book} p. 1`)}${f('Ash Strike (Ash Guard)', `Strikes.\nSource: ${book} p. 2`)}`;
+    const { json, report } = convert(`
+      <class><name>Ember Knight</name><hd>10</hd>
+        <autolevel level="3">${f('Martial Archetype', 'Choose.', '')}${pick('Ember Codex')}${pick('Ash Codex')}</autolevel>
+      </class>`);
+    expect(list(json, 'subclass').map((s) => [s.name, s.source, s.subclassFeatures])).toEqual([
+      [
+        'Ash Guard',
+        'FCEmberCodex',
+        [
+          'Ash Guard|Ember Knight|FCEmberHomebrew|Ash Guard|FCEmberCodex|3',
+          'Ash Strike|Ember Knight|FCEmberHomebrew|Ash Guard|FCEmberCodex|3',
+        ],
+      ],
+      [
+        'Ash Guard',
+        'FCAshCodex',
+        [
+          'Ash Guard|Ember Knight|FCEmberHomebrew|Ash Guard|FCAshCodex|3',
+          'Ash Strike|Ember Knight|FCEmberHomebrew|Ash Guard|FCAshCodex|3',
+        ],
+      ],
+    ]);
+    expect(notesWith(report, 'duplicate')).toEqual([]);
+  });
+
+  it('says what a class entry with no hit die holds besides its subclasses', () => {
+    const { json, report } = convert(`
+      <class><name>Fighter</name>
+        <autolevel level="3">${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}${f('Extra Ember', 'x', '')}</autolevel>
+      </class>`);
+    expect(list(json, 'subclass').map((s) => [s.name, s.className, s.classSource])).toEqual([
+      ['Ash Guard', 'Fighter', 'PHB'],
+    ]);
+    expect(report.notes.filter((n) => n.kind === 'class')).toEqual([
+      {
+        kind: 'class',
+        name: 'Fighter',
+        status: 'partial',
+        reasons: [
+          'its features in no subclass (Extra Ember) are not converted: it adds to a class of that name, and only its subclasses convert',
+        ],
+      },
+    ]);
+  });
+
+  it('says a class entry with no hit die and no name has no name', () => {
+    const { report } = convert(`
+      <class><autolevel level="3">${f('Martial Archetype: Ash Guard')}${f('Ash Strike (Ash Guard)')}</autolevel></class>`);
+    expect(report.notes).toEqual([
+      { kind: 'class', name: '(no name)', status: 'skipped', reasons: ['it has no name'] },
     ]);
   });
 

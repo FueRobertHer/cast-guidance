@@ -24,8 +24,14 @@ export type ConvertedKind =
  * (its code, any edition), or without one, anywhere in that edition. A
  * converter leaves such entries out: the installed one is the better copy
  * (curated mechanics, structured data), and two of the same thing in a picker
- * is noise.
+ * is noise. A subclass is asked about as `Name|Class` ({@link subclassKey}):
+ * two classes may each have one of a name.
  */
+/** The name an {@link InstalledCheck} asks about a subclass under: its own and its class's. */
+export function subclassKey(name: string, className: string): string {
+  return `${name}|${className}`;
+}
+
 export type InstalledCheck = (
   kind: ConvertedKind,
   name: string,

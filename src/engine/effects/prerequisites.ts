@@ -1,7 +1,7 @@
 import { calcAbilities } from '../calc/abilities';
 import { classSpellcastingMode } from '../calc/slots';
 import { summarizeEntries } from '../summarize';
-import { ABILITIES, type Ability, type ChoiceOption, type DataEntity } from '../types';
+import { ABILITIES, type Ability, type ChoiceOption, type DataEntity, subclassOf } from '../types';
 import { type Collector, str } from './base';
 
 /** Name of a race/feat/background prerequisite entry (string `name|source` or object). */
@@ -203,11 +203,8 @@ export function buildPrereqContext(col: Collector): PrereqContext {
     if (classSpellcastingMode(col.ctx.get('class', c.ref.name, c.ref.source)) !== 'none') {
       return true;
     }
-    const sub = c.subclass;
-    return (
-      sub !== undefined &&
-      classSpellcastingMode(col.ctx.get('subclass', sub.name, sub.source)) !== 'none'
-    );
+    const sub = subclassOf(col.ctx, c);
+    return sub !== undefined && classSpellcastingMode(sub) !== 'none';
   });
 
   return {

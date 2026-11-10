@@ -9,6 +9,7 @@ import {
   refUid,
   type SpellcastingBlock,
   type SpellcastingMode,
+  subclassOf,
 } from '../types';
 import { dv } from './core';
 
@@ -205,8 +206,7 @@ function casterOf(
   if (cls === undefined) return undefined;
   const own = str(cls.casterProgression);
   if (own !== undefined) return { cls, caster: cls, progression: own };
-  const ref = entry.subclass;
-  const sub = ref !== undefined ? col.ctx.get('subclass', ref.name, ref.source) : undefined;
+  const sub = subclassOf(col.ctx, entry);
   const progression = str(sub?.casterProgression);
   if (sub === undefined || progression === undefined) return undefined;
   return { cls, caster: sub, progression, sub };

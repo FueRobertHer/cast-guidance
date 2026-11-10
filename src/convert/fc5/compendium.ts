@@ -36,13 +36,14 @@
  * JSON and a second import is caught as a duplicate.
  */
 import type { RulesVersion } from '../../data5e/rulesVersion';
-import type {
-  ConversionReport,
-  ConversionResult,
-  ConvertedKind,
-  ConvertOptions,
-  EntryNote,
-  OfficialFeat,
+import {
+  type ConversionReport,
+  type ConversionResult,
+  type ConvertedKind,
+  type ConvertOptions,
+  type EntryNote,
+  type OfficialFeat,
+  subclassKey,
 } from '../types';
 import { childElements, childText, type XmlElement } from '../xml';
 import { addFeatSource, convertBackground } from './background';
@@ -53,7 +54,13 @@ import {
   type HomebrewSource,
   readSourceLine,
 } from './books';
-import { classHitDie, classIdentity, convertClass, convertClassAdditions } from './class';
+import {
+  type ClassAdditions,
+  classHitDie,
+  classIdentity,
+  convertClass,
+  convertClassAdditions,
+} from './class';
 import { BASE_CLASSES, convertClassOption, isClassOption, isOnOfficialList } from './classOption';
 import {
   type ClassBinding,
@@ -403,21 +410,30 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
   // its name or one Fight Club words differently. An entry from a book the
   // data does not hold is a printing of its own.
-  const installed = (kind: ConvertedKind, name: string, placement: Placement): boolean => {
+  const installed = (
+    kind: ConvertedKind,
+    name: string,
+    placement: Placement,
+    className?: string,
+  ): boolean => {
     const check = opts.isInstalled;
     if (check === undefined) return false;
+    // A subclass is the installed one only on the same class.
+    const asked = (n: string) => (className === undefined ? n : subclassKey(n, className));
     const book = placement.book;
-    if (book === undefined) return check(kind, name, placement.edition);
+    if (book === undefined) return check(kind, asked(name), placement.edition);
     const held = (code: string | undefined): code is string =>
       code !== undefined && opts.hasBook?.(code) !== false;
     // A free rules text has its entries in the books the data has them under.
-    if (!held(book.code)) return book.reference === true && check(kind, name, placement.edition);
-    if (check(kind, name, placement.edition)) return true;
+    if (!held(book.code)) {
+      return book.reference === true && check(kind, asked(name), placement.edition);
+    }
+    if (check(kind, asked(name), placement.edition)) return true;
     // In the books it cites, under any name Fight Club gives it (`renames.ts`).
     const codes = [...new Set(placement.books.flatMap((b) => (held(b.code) ? [b.code] : [])))];
     const titles = placement.books.map((b) => b.title);
     return nameVariants(kind, name, titles).some((n) =>
-      codes.some((code) => check(kind, n, placement.edition, code)),
+      codes.some((code) => check(kind, asked(n), placement.edition, code)),
     );
   };
 
@@ -639,7 +655,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       return found.bound;
     };
   };
-  const additions: { name: string; edition: RulesVersion; subclasses: SubclassBinder }[] = [];
+  const additions: ClassAdditions[] = [];
 
   /**
    * The installed class of a name in an edition, as its subclasses name it:
@@ -676,7 +692,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       return 'duplicate';
     }
     seen.add(key);
-    if (installed(kind, name, placement)) {
+    const className = kind === 'subclass' ? String(e.className) : undefined;
+    if (installed(kind, name, placement, className)) {
       leave(c, 'installed', WHY.installed);
       return 'installed';
     }
@@ -753,9 +770,10 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     if (isSpellStub(el)) return;
     if (el.name === 'class' && classHitDie(el) === undefined) {
       const added = convertClassAdditions(el, ctx);
-      if (added === undefined) {
+      if (added === undefined || 'skip' in added) {
         const name = childText(el, 'name') ?? '(no name)';
-        notes.push({ kind: 'class', name, status: 'skipped', reasons: [WHY.noSubclasses] });
+        const why = added?.skip ?? WHY.noSubclasses;
+        notes.push({ kind: 'class', name, status: 'skipped', reasons: [why] });
       } else additions.push(added);
       return;
     }
@@ -818,6 +836,11 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         bindingsByName.get(key)?.() ??
         officialClass(added.name, added.edition) ??
         bindingsByName.get(`${added.name.toLowerCase()}|${other}`)?.();
+      // What it holds besides its subclasses.
+      if (added.reasons.length > 0) {
+        const status = bound === undefined ? 'skipped' : 'partial';
+        notes.push({ kind: 'class', name: added.name, status, reasons: added.reasons });
+      }
       if (bound !== undefined) {
         keepSubclasses(added.subclasses, bound);
         continue;

@@ -7,7 +7,7 @@ import {
   officialClassLookup,
   officialKeys,
 } from '@/convert/official';
-import { notesWith } from '@/convert/types';
+import { notesWith, subclassKey } from '@/convert/types';
 import { normalizeDataset } from '@/data5e/normalize';
 
 /** The 2014 Dwarf and its Hill subrace, and the 2024 Elf's lineages. */
@@ -65,6 +65,38 @@ describe('installedCheck', () => {
     expect(isInstalled('feat', 'Ember Adept', '2014', 'XGE')).toBe(true);
     expect(isInstalled('feat', 'Ember Adept', '2014', 'EEPC')).toBe(true);
     expect(isInstalled('feat', 'Ember Adept', '2014', 'TCE')).toBe(false);
+  });
+
+  it('finds a subclass on its own class only', () => {
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        [
+          'class/class-test.json',
+          {
+            class: [{ name: 'Fighter', source: 'PHB' }],
+            subclass: [
+              {
+                name: 'Champion',
+                shortName: 'Champion',
+                source: 'PHB',
+                className: 'Fighter',
+                classSource: 'PHB',
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+    const direct = installedCheck(reg);
+    const copied = officialChecks(structuredClone(officialKeys(reg))).isInstalled;
+    for (const isInstalled of [direct, copied]) {
+      expect(isInstalled('subclass', subclassKey('Champion', 'Fighter'), '2014')).toBe(true);
+      expect(isInstalled('subclass', subclassKey('Champion', 'Fighter'), '2014', 'PHB')).toBe(true);
+      expect(isInstalled('subclass', subclassKey('Champion', 'Barbarian'), '2014')).toBe(false);
+      expect(isInstalled('subclass', subclassKey('Champion', 'Barbarian'), '2014', 'PHB')).toBe(
+        false,
+      );
+    }
   });
 
   it('finds a fighting style filed as a feat, in its book only', () => {
