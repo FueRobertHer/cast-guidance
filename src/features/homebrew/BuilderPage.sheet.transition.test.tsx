@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-// TEST-003: a homebrew edit reaching a character that uses it. The builder
-// writes the file and invalidates the registry; nothing tells the sheet
-// directly, so what is under test is the whole path: the real homebrew row in
-// IndexedDB, the registry rebuilding on the content revision, and the sheet
-// re-deriving from it when the player goes back to the character.
+// TEST-003: a homebrew edit reaching a character that uses it. A collection's
+// entries open in the Workshop, which writes the file and invalidates the
+// registry; nothing tells the sheet directly, so what is under test is the
+// whole path: the real homebrew row in IndexedDB, the registry rebuilding on
+// the content revision, and the sheet re-deriving from it when the player
+// goes back to the character.
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,7 +32,7 @@ afterEach(resetSheetHarness);
 /** How long a lazily loaded page or an IndexedDB write may take on a loaded runner. */
 const WAIT = 30_000;
 
-/** An editable file holding a spell and a ring, as the builder would have made it. */
+/** An editable file holding a spell and a ring, as the Builder's forms made them. */
 async function brewFile() {
   const row = await homebrewRepo.createEditable('My Brews', 'HBX');
   await homebrewRepo.saveEditable(row.id, {
@@ -74,10 +75,20 @@ function brewUser() {
 /** The Armor Class tile's number. */
 const armorClass = () => Number(screen.getByText(/^Armor Class/).previousSibling?.textContent);
 
-/** Open an entity's form in the builder, change one field, and save it. */
-async function edit(entity: string, field: string, value: string) {
-  fireEvent.click(await screen.findByRole('button', { name: entity }, { timeout: WAIT }));
-  fireEvent.change(screen.getByLabelText(field), { target: { value } });
+/** Open an entry from its collection in the Workshop, change one field, and save it. */
+async function edit(
+  sheet: { visit: (to: string) => Promise<void> },
+  fileId: string,
+  entity: string,
+  field: string,
+  value: string,
+) {
+  await sheet.visit(`/homebrew/edit/${fileId}`);
+  // A lazily loaded route, so it can take a moment on a cold run.
+  fireEvent.click(await screen.findByRole('link', { name: `Edit ${entity}` }, { timeout: WAIT }));
+  fireEvent.change(await screen.findByLabelText(field, {}, { timeout: WAIT }), {
+    target: { value },
+  });
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(notice()).toBe(`Saved ${entity}`), { timeout: WAIT });
 }
@@ -90,14 +101,16 @@ describe('a homebrew edit on a character that uses it (TEST-003)', () => {
     expect(armorClass()).toBe(12);
     expect(screen.getByRole('button', { name: '2d6' })).toBeTruthy();
 
+    // The damage card's dice, and the ring's AC bonus.
+    await edit(sheet, fileId, 'Ember Lance', 'Dice', '4d8');
+    await edit(sheet, fileId, 'Ring of Warding', 'AC', '+2');
+    // A new spell from the collection: made in the Workshop, kept in that file.
     await sheet.visit(`/homebrew/edit/${fileId}`);
-    // A lazily loaded route, so it can take a moment on a cold run.
-    await screen.findByRole('heading', { level: 1, name: 'My Brews' }, { timeout: WAIT });
-    await edit('Ember Lance', 'Description', 'A lance deals {@damage 4d8} fire damage.');
-    await edit('Ring of Warding', 'AC bonus', '+2');
-    fireEvent.click(screen.getByRole('button', { name: /New spell/ }));
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Glow Ward' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Sorcerer' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'New spell' }, { timeout: WAIT }));
+    fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
+      target: { value: 'Glow Ward' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sorcerer' }, { timeout: WAIT }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(notice()).toBe('Saved Glow Ward'), { timeout: WAIT });
 
@@ -117,5 +130,46 @@ describe('a homebrew edit on a character that uses it (TEST-003)', () => {
     const { file } = await homebrewRepo.getSafe(fileId);
     expect(file?.rev).toBe(4);
     expect(file?.counts).toEqual({ spell: 2, item: 1 });
+    expect(file?.json.spell).toContainEqual(
+      expect.objectContaining({ name: 'Glow Ward', source: 'HBX' }),
+    );
+    // Nothing went to a file of the Workshop's own.
+    expect((await homebrewRepo.ownedSafe()).files.map((f) => f.id)).toEqual([fileId]);
+  });
+
+  it('never writes a new entry into a file the address names but the player did not make', async () => {
+    const imported = await homebrewRepo.importJson(
+      {
+        _meta: { sources: [{ json: 'IMP', full: 'Imported Brews' }] },
+        spell: [{ name: 'Old Spark', source: 'IMP', level: 0, school: 'V', entries: ['A spark.'] }],
+      },
+      'imported.json',
+    );
+    const sheet = await renderSheet(brewUser());
+    for (const [id, name] of [
+      [imported.id, 'Stray Ward'],
+      ['no-such-file', 'Lost Ward'],
+    ] as const) {
+      // From the Workshop's home, as a player gets to New: the editor keeps
+      // what it saved through its own address change, by path alone.
+      await sheet.visit('/workshop');
+      await sheet.visit(`/workshop/new/spell?file=${encodeURIComponent(id)}`);
+      fireEvent.change(await screen.findByLabelText('Name', {}, { timeout: WAIT }), {
+        target: { value: name },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(notice()).toBe(`Saved ${name}`), { timeout: WAIT });
+    }
+    const { file } = await homebrewRepo.getSafe(imported.id);
+    expect(file?.rev).toBe(imported.rev);
+    expect(file?.json.spell).toEqual([expect.objectContaining({ name: 'Old Spark' })]);
+    // Both went to My homebrew, as a new entry without `?file=` does.
+    const mine = (await homebrewRepo.ownedSafe()).files;
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.sourceIds).toEqual(['MyHomebrew']);
+    expect((mine[0]?.json.spell as Array<{ name: string }>).map((s) => s.name)).toEqual([
+      'Stray Ward',
+      'Lost Ward',
+    ]);
   });
 });

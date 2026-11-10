@@ -6,14 +6,40 @@
  */
 import { ChevronDown } from 'lucide-react';
 import { type ReactNode, type SelectHTMLAttributes, useId, useState } from 'react';
+import type { Entity } from '@/data5e/copyMod';
 import { plainEntryText } from '@/data5e/entries/plainText';
 import { EntriesView } from '@/data5e/entries/renderEntries';
+import { editionOf } from '@/data5e/rulesVersion';
 import { isRecord } from '@/engine/castGuidance';
 import { entriesToText, textToEntries } from '@/lib/entriesText';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { fieldClass } from '@/ui/TextField';
 import { partName, same } from './copyWriter';
+
+/**
+ * One printing of each name, for a list to pick from: the one in the entry's
+ * own rules edition where the data has it (a 2014 spell's Wizard is the PHB
+ * one), else the first. Sorted by name.
+ */
+export function onePerName(
+  entities: readonly Entity[],
+  entry: Entity,
+): Array<{ name: string; source: string }> {
+  const want = editionOf(entry);
+  const byName = new Map<string, { name: string; source: string; fits: boolean }>();
+  for (const e of entities) {
+    if (typeof e.name !== 'string' || typeof e.source !== 'string') continue;
+    const key = e.name.toLowerCase();
+    const fits = editionOf(e) === want;
+    const had = byName.get(key);
+    if (had === undefined || (fits && !had.fits))
+      byName.set(key, { name: e.name, source: e.source, fits });
+  }
+  return [...byName.values()]
+    .map(({ name, source }) => ({ name, source }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /** The six abilities, by the key the data uses. */
 export const ABILITY_WORDS: ReadonlyArray<readonly [string, string]> = [

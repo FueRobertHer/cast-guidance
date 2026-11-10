@@ -559,7 +559,8 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4">
-      <header className="flex items-center gap-2">
+      {/* Wraps so "Make your own" drops below a long title with text at 200%. */}
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <Link to="/library" aria-label="Back to the library" className={`-ml-3 ${BACK_ICON}`}>
           <ArrowLeft size={20} aria-hidden />
         </Link>
