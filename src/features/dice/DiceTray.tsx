@@ -136,7 +136,7 @@ export function DiceTray({ dock = false }: { dock?: boolean }) {
                       <D20Icon size={18} />
                       d20
                     </button>
-                    <div className="min-w-48 flex-1">
+                    <div className="min-w-44 flex-1">
                       <SegmentedControl
                         label="d20 roll mode"
                         options={ROLL_MODES}

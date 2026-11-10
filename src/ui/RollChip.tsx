@@ -2,7 +2,7 @@ import { type MouseEvent, useEffect, useRef, useState } from 'react';
 import { parseDice } from '@/dice/parse';
 import { roll } from '@/dice/roll';
 import type { RollKind, RollResult } from '@/dice/types';
-import type { D20Ask } from '@/features/sheet/d20Tests';
+import { type D20Ask, d20Ask } from '@/features/sheet/d20Tests';
 import { attackInPlay, rollFrom } from '@/stores/heldRoll';
 import { ChipFace, type ChipWear, TOTAL_MS } from './ChipFace';
 import { Lift } from './Lift';
@@ -29,6 +29,8 @@ export interface RollChipProps {
    * Asks about a sheet's d20 test in place of the chip's own roll (`d20Ask`):
    * the roll prompt opens, with the chip's look in its header, and the chip
    * tapped again or Roll rolls it. The chip still shows and logs what lands.
+   * Without one, a `d20` chip of a d20 and a modifier (`{@hit}` in rules text)
+   * asks plainly: nothing on a sheet reaches it, and its mode is the prompt's.
    */
   roller?: () => D20Ask;
   /**
@@ -84,6 +86,9 @@ function critFor(withAttack: NonNullable<RollChipProps['withAttack']>): boolean 
     (withAttack.of === undefined || attack.of === withAttack.of)
   );
 }
+
+/** A d20 and a modifier, which a plain d20 test's prompt can ask about (`d20Ask`). */
+const PLAIN_D20 = /^1d20([+-]\d+)?$/;
 
 /**
  * A chip's own roll, made at once. Damage that goes with an attack that crit
@@ -189,7 +194,11 @@ export function RollChip({
   const onRoll = (event: MouseEvent<HTMLButtonElement>) =>
     rollFrom(
       event.currentTarget,
-      () => roller?.() ?? chipRoll(expr, label, variant, withAttack),
+      () =>
+        roller?.() ??
+        (variant === 'd20' && PLAIN_D20.test(expr)
+          ? d20Ask(expr, { label: label ?? expr })
+          : chipRoll(expr, label, variant, withAttack)),
       (r) => {
         onRolled?.(r.total);
         setResult(r.total);

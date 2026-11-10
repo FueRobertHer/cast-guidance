@@ -1077,32 +1077,38 @@ export function Component() {
             <Button
               variant="brand"
               size="sm"
-              onClick={() =>
-                update((d) => {
-                  const r = rollD20Test('1d20', {
-                    label: 'Death save',
-                    effects: deathEffects,
-                    ignored: ignore.take('death', deathEffects),
-                    advantageFrom: durable,
-                    // Bless reaches a death save; it is settled on the spot,
-                    // so nothing is offered after it.
-                    riders: { ...rollEffects(sheet, { kind: 'save' }), offers: [] },
-                  });
-                  rollLogStore.getState().append(r);
-                  const nat = r.meta?.d20?.natural;
-                  const saves = d.play.deathSaves;
-                  if (nat === 20) {
-                    // Natural 20: back up with 1 hit point.
-                    d.play.currentHp = 1;
-                    d.play.deathSaves = { success: 0, fail: 0 };
-                  } else if (nat === 1) {
-                    saves.fail = Math.min(3, saves.fail + 2);
-                  } else if (r.total >= 10) {
-                    saves.success = Math.min(3, saves.success + 1);
-                  } else {
-                    saves.fail = Math.min(3, saves.fail + 1);
-                  }
-                })
+              // Asked in the roll prompt like any d20 test, so a DM's
+              // advantage can be picked there; tapped again, it rolls.
+              onClick={(event) =>
+                rollFrom(
+                  event.currentTarget,
+                  () =>
+                    d20Ask('1d20', {
+                      label: 'Death save',
+                      effects: deathEffects,
+                      ignored: ignore.take('death', deathEffects),
+                      advantageFrom: durable,
+                      // Bless reaches a death save; it is settled on the
+                      // spot, so nothing is offered after it.
+                      riders: { ...rollEffects(sheet, { kind: 'save' }), offers: [] },
+                    }),
+                  (r) =>
+                    update((d) => {
+                      const nat = r.meta?.d20?.natural;
+                      const saves = d.play.deathSaves;
+                      if (nat === 20) {
+                        // Natural 20: back up with 1 hit point.
+                        d.play.currentHp = 1;
+                        d.play.deathSaves = { success: 0, fail: 0 };
+                      } else if (nat === 1) {
+                        saves.fail = Math.min(3, saves.fail + 2);
+                      } else if (r.total >= 10) {
+                        saves.success = Math.min(3, saves.success + 1);
+                      } else {
+                        saves.fail = Math.min(3, saves.fail + 1);
+                      }
+                    }),
+                )
               }
               title="Roll a death save: successes and failures fill in automatically (nat 1 = two failures, nat 20 = back up on 1 HP)"
             >

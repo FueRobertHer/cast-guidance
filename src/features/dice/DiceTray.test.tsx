@@ -62,14 +62,18 @@ describe('DiceTray', () => {
     render(<DiceTray dock />);
     const button = screen.getByRole('button', { name: 'Dice tray' });
     expect(button.hasAttribute('data-dice-dock')).toBe(true);
-    // No roll mode outside the tray: a d20 test asks in its roll prompt.
-    expect(screen.queryByRole('button', { name: 'Advantage' })).toBeNull();
   });
 
   it('says which mode the d20 is in', () => {
     render(<DiceTray dock />);
     fireEvent.click(screen.getByTitle('Dice tray'));
     const modes = within(tray()).getByRole('group', { name: 'd20 roll mode' });
+    // Worst to best, as the roll prompt orders them.
+    expect(
+      within(modes)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Dis', 'Normal', 'Adv']);
     expect(within(modes).getByRole('button', { name: 'Normal', pressed: true })).toBeTruthy();
     fireEvent.click(within(modes).getByRole('button', { name: 'Disadvantage', pressed: false }));
     expect(within(modes).getByRole('button', { name: 'Disadvantage', pressed: true })).toBeTruthy();

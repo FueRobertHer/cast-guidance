@@ -12,6 +12,7 @@ import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announc
 import { cancelHeld, followUpStore, rollFrom } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
+import { RollChip } from './RollChip';
 import { OFFER_WAIT_MS, RollToast, withItsDamage } from './RollToast';
 
 /** The faces the next dice show, in order (the roller draws from crypto). */
@@ -217,6 +218,31 @@ describe('the roll prompt', () => {
     act(() => rollFrom(from, check));
     expect(screen.queryByRole('group', { name: /choose and roll/ })).toBeNull();
     expect(container.textContent).toContain('d20 [12] + 3');
+  });
+});
+
+describe('a d20 chip in rules text', () => {
+  it('asks plainly in the prompt, so its mode can be picked, then rolls under it', () => {
+    render(
+      <>
+        <RollChip expr="1d20+5" display="+5" variant="d20" label="Attack roll +5" inline />
+        <RollToast />
+      </>,
+    );
+    fireEvent.click(screen.getByTitle('Attack roll +5'));
+    const group = prompt('Attack roll +5');
+    expect(rollLogStore.getState().rolls).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Normal' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Advantage' }));
+    expect(group.textContent).toContain('d20 +5, advantage');
+    nextFaces(4, 16);
+    fireEvent.click(roll());
+    expect(rollLogStore.getState().rolls[0]).toMatchObject({
+      total: 21,
+      meta: { advantage: 'adv' },
+    });
   });
 });
 
