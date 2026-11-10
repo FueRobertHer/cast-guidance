@@ -480,10 +480,48 @@ describe('convertSpell', () => {
           type: 'entries',
           name: 'Using a Higher-Level Spell Slot',
           entries: [
-            'The damage increases by {@scaledamage 2d8+5|1-3|1d8} for each slot level above 1.',
+            'The damage increases by {@scaledamage 2d8+5|1-9|1d8} for each slot level above 1.',
           ],
         },
       ]);
+    });
+
+    it("runs the upcast tag to 9th level past the file's last roll, unless the text names a cap", () => {
+      const lance = (higher: string) =>
+        JSON.stringify(
+          spell(`
+            <name>Ember Lance</name>${BASE}
+            <text>At Higher Levels. ${higher}</text>
+            ${rolls('Fire Damage', [
+              [1, '1d10'],
+              [2, '2d10'],
+              [3, '3d10'],
+            ])}
+          `).entity.entriesHigherLevel,
+        );
+      expect(lance('The damage increases by 1d10 for each slot level above 1st.')).toContain(
+        '{@scaledamage 1d10|1-9|1d10}',
+      );
+      expect(
+        lance('The damage increases by 1d10 for each slot level above 1st (maximum 3d10).'),
+      ).toContain('{@scaledamage 1d10|1-3|1d10}');
+      expect(
+        lance('The damage increases by 1d10 for each slot level above 1st, up to 3d10.'),
+      ).toContain('{@scaledamage 1d10|1-3|1d10}');
+    });
+
+    it('tags no upcast from a level out of range, which reads as a cantrip', () => {
+      const result = spell(`
+        <name>Ember Lance</name><level>12</level><school>EV</school><time>1 action</time><range>60 feet</range><components>V</components><duration>Instantaneous</duration><classes>Wizard</classes>
+        <text>A lance of fire.</text>
+        <text>At Higher Levels. The damage increases by 1d10 for each slot level above 12th.</text>
+        ${rolls('Fire Damage', [
+          [12, '1d10'],
+          [13, '2d10'],
+        ])}
+      `);
+      expect(result.entity.level).toBe(0);
+      expect(JSON.stringify(result.entity)).not.toContain('{@scaledamage');
     });
 
     it('drops a placeholder bonus from the upcast tag', () => {
@@ -496,7 +534,7 @@ describe('convertSpell', () => {
         ])}
       `);
       expect(JSON.stringify(result.entity.entriesHigherLevel)).toContain(
-        '{@scaledamage 1d10|1-2|1d10}',
+        '{@scaledamage 1d10|1-9|1d10}',
       );
     });
 
