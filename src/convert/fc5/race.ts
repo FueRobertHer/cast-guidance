@@ -389,10 +389,13 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   // A resistance picked from a list, or from the race's own ancestry table.
   const ancestry = tableDamageTypes(entries);
   const resistPicks: Record<string, unknown>[] = [];
+  const seenPicks = new Set<string>();
   for (const line of traitTexts.flatMap((t) => sentences(t))) {
     const pick = resistChoice(line, ancestry);
-    if (pick !== undefined && !resistPicks.some((p) => JSON.stringify(p) === JSON.stringify(pick)))
-      resistPicks.push(pick);
+    const key = JSON.stringify(pick);
+    if (pick === undefined || seenPicks.has(key)) continue;
+    seenPicks.add(key);
+    resistPicks.push(pick);
   }
   for (const [field, key] of [
     ['resist', 'resist'],

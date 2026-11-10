@@ -229,4 +229,20 @@ describe('choices read from prose', () => {
   ])('reads %s in linear time', (_label, xml) => {
     expect(convert(xml).report.converted).not.toEqual({});
   });
+
+  it('keeps each distinct resistance pick once, in linear time', () => {
+    const types = ['acid', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'poison', 'psychic'];
+    // Picks that differ only in order: none is a repeat of another.
+    const lines = Array.from({ length: 20_000 }, (_, i) => {
+      const t = [...types];
+      for (let pos = 0; pos < 4; pos += 1) {
+        const d = Math.floor(i / 8 ** pos) % 8;
+        [t[pos], t[d]] = [t[d] ?? '', t[pos] ?? ''];
+      }
+      return `You have resistance to one of the following damage types: ${t.slice(0, 7).join(', ')}, or ${t[7]}.`;
+    });
+    const { json } = convert(race(lines.join(' '), 1));
+    const [r] = json.race as Record<string, unknown>[];
+    expect((r?.resist as unknown[]).length).toBeGreaterThan(1000);
+  });
 });
