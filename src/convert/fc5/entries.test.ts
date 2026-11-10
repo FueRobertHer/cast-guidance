@@ -10,7 +10,7 @@ import {
 import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result, FeatRef } from './context';
 import { abilityFromProse, convertFeat, featCategory, readPrerequisite } from './feat';
-import { convertRace, raceAbility } from './race';
+import { convertRace, raceAbility, traitLines, traitRules } from './race';
 
 const ctx: Fc5Context = fc5Context('test.xml');
 
@@ -812,6 +812,83 @@ describe('races', () => {
         ),
       );
       expect(result.entity.toolProficiencies).toBeUndefined();
+    });
+
+    it('reads a speed in any sentence of a trait, and none a condition governs', () => {
+      const speedOf = (...traits: string[]) =>
+        done(
+          convertRace(
+            parseXml(`<race><name>Oddkin</name><speed>30</speed>${traits.join('')}</race>`),
+            ctx,
+          ),
+        ).entity.speed;
+      expect(
+        speedOf(
+          trait(
+            'Speed',
+            'Your walking speed is 30 feet, and you have a swimming speed equal to your walking speed.',
+          ),
+        ),
+      ).toEqual({ walk: 30, swim: true });
+      expect(
+        speedOf(
+          trait(
+            'Speed',
+            'Your base walking speed is 30 feet. You also have a swimming speed of 40 feet.',
+          ),
+          trait(
+            'Flight',
+            "Because of your wings, you have a flying speed equal to your walking speed. You can't use this flying speed if you're wearing medium or heavy armor.",
+          ),
+          trait(
+            'Climber',
+            'Your base walking speed is 30 feet. You also have a climbing speed of 30 feet as long as you are not encumbered or wearing heavy armor.',
+          ),
+        ),
+      ).toEqual({ walk: 30, swim: 40, fly: true, climb: 30 });
+      for (const text of [
+        'While in your beast form, you have a climbing speed of 30 feet.',
+        'You have a flying speed of 30 feet until the end of your turn.',
+        'As a bonus action, you can sprout wings. You have a flying speed of 30 feet.',
+        'You have a swimming speed of 30 feet, and you can breathe air and water only while submerged.',
+        'You have a climbing speed of 30 feet while you are raging.',
+        // A lead sentence on a level, a time or a place sets terms over the rest.
+        'At 5th level, your wings grow strong enough to carry you. You have a flying speed of 30 feet.',
+        'Underwater, your gills open. You have a swimming speed of 40 feet.',
+        // A form or state named in the lead.
+        'Because of your beast form, you have a climbing speed of 30 feet.',
+        // An option, or a speed that passes, in a later sentence.
+        'Your wings are leathery. You have a flying speed of 30 feet. You can choose this trait in place of Infernal Legacy.',
+        "You have a flying speed of 30 feet if you're not wearing heavy armor. This replaces the Infernal Legacy trait.",
+        'You have a flying speed equal to your walking speed. This benefit works only in short bursts.',
+      ]) {
+        expect(speedOf(trait('Shift', text)), text).toBe(30);
+      }
+      // A standing clause beside the speed, and a later sentence about something else.
+      expect(
+        speedOf(
+          trait(
+            'Child of the Sea',
+            'You have a swimming speed of 30 feet, and you can breathe air and water.',
+          ),
+        ),
+      ).toEqual({ walk: 30, swim: 30 });
+      expect(
+        speedOf(
+          trait(
+            "Cat's Claws",
+            'Because of your claws, you have a climbing speed of 20 feet. In addition, your claws are natural weapons, which deal slashing damage instead of the bludgeoning damage normal for an unarmed strike.',
+          ),
+        ),
+      ).toEqual({ walk: 30, climb: 20 });
+    });
+
+    it('reads a speed after a first sentence that grants a proficiency', () => {
+      const text =
+        'You have proficiency in the Athletics skill. You also have a climbing speed of 30 feet.';
+      expect(traitRules('Climber', text, traitLines('Climber', [text]))).toMatchObject({
+        speed: { climb: 30 },
+      });
     });
 
     it('reads the edition from a Source line in a trait', () => {
