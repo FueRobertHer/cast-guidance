@@ -456,23 +456,42 @@ describe('class options in a file', () => {
     expect(list(json, 'optionalfeature').filter((o) => o.name === 'Defense')).toHaveLength(1);
   });
 
-  it('keeps apart copies whose numbers differ in sign only', () => {
+  it('reads signs and numbers apart, and hyphens and dashes as spacing', () => {
     const style = (name: string, text: string) =>
       `<class><name>${name}</name><hd>10</hd><autolevel level="1">${f('Fighting Style', 'Adopt one.', '')}${f('Fighting Style: Archery', text)}${f('Fighting Style: Defense', 'Armor.')}</autolevel></class>`;
-    const { json } = convertFc5Compendium(
-      parseXml(
-        `<compendium>${style('Ember Knight', 'AC changes by +1.')}${style('Ash Warden', 'AC changes by -1.')}</compendium>`,
-      ),
-      { fileName: FILE },
-    );
-    expect(
-      list(json, 'optionalfeature')
-        .filter((o) => String(o.name).startsWith('Archery'))
-        .map((o) => [o.name, o.entries]),
-    ).toEqual([
-      ['Archery', ['AC changes by +1.']],
-      ['Archery (Fighting Style)', ['AC changes by -1.']],
-    ]);
+    const archeries = (one: string, two: string) =>
+      list(
+        convertFc5Compendium(
+          parseXml(
+            `<compendium>${style('Ember Knight', one)}${style('Ash Warden', two)}</compendium>`,
+          ),
+          { fileName: FILE },
+        ).json,
+        'optionalfeature',
+      ).filter((o) => String(o.name).startsWith('Archery')).length;
+    const minus = String.fromCharCode(0x2212);
+    const enDash = String.fromCharCode(0x2013);
+    const emDash = String.fromCharCode(0x2014);
+    const apart: [string, string][] = [
+      ['AC changes by +1.', 'AC changes by -1.'],
+      ['A 1, 2 or 3.', 'A 12 or 3.'],
+    ];
+    for (const [one, two] of apart) {
+      expect(archeries(one, two), `${one} | ${two}`).toBe(2);
+    }
+    const same: [string, string][] = [
+      ['Your AC+1 here.', 'Your AC + 1 here.'],
+      ['A -1 penalty.', `A ${minus}1 penalty.`],
+      ['Range 1-4 feet.', `Range 1${enDash}4 feet.`],
+      ['Two-weapon fighting.', 'Two weapon fighting.'],
+      ['Non-magical attacks.', 'Nonmagical attacks.'],
+      ['A 1st-level spell.', 'A 1st level spell.'],
+      [`Reach 5 feet${emDash}or more.`, 'Reach 5 feet -- or more.'],
+      ['Reach 5 feet - or more.', 'Reach 5 feet, or more.'],
+    ];
+    for (const [one, two] of same) {
+      expect(archeries(one, two), `${one} | ${two}`).toBe(1);
+    }
   });
 
   it('finds a copy that says the same under another label', () => {

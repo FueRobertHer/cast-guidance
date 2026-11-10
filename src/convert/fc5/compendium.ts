@@ -256,10 +256,21 @@ function withPrinting(
 }
 
 /**
+ * A plus or minus sign before a number: `+`, the hyphen, the minus sign
+ * (U+2212) or the en dash (U+2013), built from code points so the source
+ * holds no dash character a formatter could rewrite.
+ */
+const SIGN_BEFORE_NUMBER = new RegExp(
+  `([+${String.fromCharCode(0x2212, 0x2013)}-])\\s*(?=\\d)`,
+  'g',
+);
+
+/**
  * What an option says, to compare two classes' copies of it: its text
- * without the source line, lowercased, its words, numbers and signs apart
- * from other punctuation and spacing, so `+1` and `+ 1` say the same but
- * `-1` does not.
+ * without the source line, lowercased, its letters and digits alone, but for
+ * the sign before a number and what keeps two numbers apart. `+1` and `+ 1`
+ * say the same, `-1` and `−1` too, but not `+1` and `-1`, or `1, 2` and `12`;
+ * `two-weapon` and `two weapon` say the same.
  */
 function sameText(entries: unknown): string {
   const said = Array.isArray(entries)
@@ -267,9 +278,9 @@ function sameText(entries: unknown): string {
     : [];
   return JSON.stringify(said)
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}+-]+/gu, ' ')
-    .replace(/([+-]) /g, '$1')
-    .trim();
+    .replace(SIGN_BEFORE_NUMBER, (_, sign: string) => (sign === '+' ? '_p' : '_m'))
+    .replace(/(\d)[^\p{L}\p{N}_]+(?=\d)/gu, '$1_')
+    .replace(/[^\p{L}\p{N}_]+/gu, '');
 }
 
 /** One converted entry, before the checks decide whether it is kept. */

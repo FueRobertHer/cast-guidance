@@ -123,7 +123,8 @@ maneuvers) offers that list too, so an installed option left out as a
 duplicate is still offered. Options a label names one subclass for
 (`Totem Spirit: Bear` beside the Totem Warrior) go on that subclass. An option
 two classes list is kept once, on both lists, when both say the same (apart
-from the source line, case, spacing and punctuation other than signs), and
+from the source line, case, spacing, hyphens and punctuation; a sign before a
+number counts, and `1, 2` is not `12`), and
 needs a level only where each class lists it late (either level, when both
 do). Options of one name that say different things are each kept, the later
 named for its label (`Aspect of the Beast: Bear` as `Bear (Aspect of the
