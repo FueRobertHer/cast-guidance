@@ -319,7 +319,11 @@ const UPCAST_STEP =
  * 1d8|1-9|1d8}`). A text that caps the increase says nothing reliable about
  * the top slot, so it stays as it is.
  */
-function textUpcastTag(entries: Entry[], higher: Entry[], spellLevel: number): string | undefined {
+export function textUpcastTag(
+  entries: Entry[],
+  higher: Entry[],
+  spellLevel: number,
+): string | undefined {
   const higherText = plainText(higher);
   if (/\bmaximum\b/i.test(higherText)) return undefined;
   // Two steps ("the initial damage increases by 1d8 and the later damage by 1d6") are more than one tag holds.
@@ -348,7 +352,7 @@ const CANTRIP_STEPS = new RegExp(
  * without a roll per level ({@link cantripScaling}). The 1st-level dice must
  * be the text's one damage roll of that die, so the ladder is this spell's.
  */
-function textCantripScaling(
+export function textCantripScaling(
   entries: Entry[],
   higher: Entry[],
 ): Record<string, unknown> | undefined {
@@ -429,9 +433,9 @@ function withUpcastTag(higher: Entry[], tag: string): Entry[] | undefined {
  * Wisdom saving throw". Not "Advantage on Wisdom saving throws", which is a
  * benefit the spell gives, and which 5etools does not list either.
  */
-const SAVE =
+export const SAVE =
   /\b(?:an?|one|another|makes?|succeeds? on|fails?)\s+(?:DC \d+\s+)?(strength|dexterity|constitution|intelligence|wisdom|charisma) saving throws?\b/gi;
-const ATTACK = /\b(melee|ranged) spell attack/gi;
+export const ATTACK = /\b(melee|ranged) spell attack/gi;
 
 export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
