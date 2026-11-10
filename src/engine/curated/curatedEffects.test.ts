@@ -351,6 +351,61 @@ describe('pools a cost spends', () => {
   });
 });
 
+describe('the Draconic sorcerer’s dragon', () => {
+  const bloodline: EffectOrigin = {
+    label: 'Dragon Ancestor',
+    uid: 'draconic bloodline|phb',
+    type: 'subclass',
+  };
+  const sorcery: EffectOrigin = {
+    label: 'Elemental Affinity',
+    uid: 'draconic sorcery|xphb',
+    type: 'subclass',
+  };
+  const run = (key: string, c: Collector, o: EffectOrigin) => {
+    expect(emitCuratedEffects(c, key, o)).toBe(true);
+    return c;
+  };
+
+  it('asks the 2014 Dragon Ancestor for a dragon, and gives Draconic', () => {
+    const c = run('dragon ancestor|draconic bloodline', col('Sorcerer', 1), bloodline);
+    expect(c.effects).toEqual([{ kind: 'language', name: 'Draconic', origin: bloodline }]);
+    expect(c.pending.map((p) => [p.id, p.label, p.options.length])).toEqual([
+      ['subclass:draconic bloodline|phb:ancestor', 'Dragon Ancestor', 10],
+    ]);
+  });
+
+  it('names the ancestor’s type on the 2014 Elemental Affinity chip', () => {
+    const affinity = { ...bloodline, label: 'Elemental Affinity' };
+    const note = (c: Collector) =>
+      run('elemental affinity|draconic bloodline', c, affinity).effects.flatMap((e) =>
+        e.kind === 'action' ? [[e.economy, e.note]] : [],
+      );
+    expect(note(col('Sorcerer', 6))).toEqual([['none', undefined]]);
+    const picked = col('Sorcerer', 6);
+    picked.doc.choices['subclass:draconic bloodline|phb:ancestor'] = ['silver'];
+    expect(note(picked)).toEqual([
+      [
+        'none',
+        'resistance to cold for 1 hour · cold spells add your Charisma modifier to one damage roll',
+      ],
+    ]);
+  });
+
+  it('resists the type the 2024 Elemental Affinity picks', () => {
+    const open = run('elemental affinity|draconic sorcery', col('Sorcerer', 6), sorcery);
+    expect(open.effects).toEqual([]);
+    expect(open.pending.map((p) => [p.id, p.options.map((o) => o.id)])).toEqual([
+      ['subclass:draconic sorcery|xphb:affinity', ['acid', 'cold', 'fire', 'lightning', 'poison']],
+    ]);
+    const picked = col('Sorcerer', 6);
+    picked.doc.choices['subclass:draconic sorcery|xphb:affinity'] = ['lightning'];
+    expect(run('elemental affinity|draconic sorcery', picked, sorcery).effects).toEqual([
+      { kind: 'resist', damageType: 'lightning', origin: sorcery },
+    ]);
+  });
+});
+
 describe('free casts of a spell the class always has prepared', () => {
   const classes: DataEntity[] = [
     { name: 'Ranger', source: 'XPHB', spellcastingAbility: 'wis' },

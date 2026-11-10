@@ -27,6 +27,7 @@ import {
   refUid,
   SKILLS,
 } from '../types';
+import { DRACONIC_ANCESTRY, DRAGONS, dragonOptions } from './draconicAncestry';
 import { BARDIC_DICE } from './namedEffects';
 
 /**
@@ -258,6 +259,9 @@ function classSkillList(col: Collector, className: string): string[] {
     return Array.isArray(from) ? from.map(String) : [];
   });
 }
+
+/** The 2014 Draconic Bloodline's dragon, beside the subclass's other picks. */
+const dragonAncestorId = (origin: EffectOrigin) => `${origin.type}:${origin.uid}:ancestor`;
 
 /**
  * Whether a class or subclass feature comes from the printing in `source`. Its
@@ -1538,6 +1542,59 @@ export const CURATED: Record<string, CuratedFn> = {
     col.add({ kind: 'hpPerLevel', amount: 1, origin }),
   ),
   'draconic resilience|draconic sorcery': unarmored(10, 'dex', 'cha'),
+  // The 2014 Dragon Ancestor: a dragon whose damage type later features use,
+  // and Draconic. Its doubled proficiency with dragons stays in the card.
+  'dragon ancestor|draconic bloodline': (col, origin) => {
+    col.add({ kind: 'language', name: 'Draconic', origin });
+    col.choice(
+      {
+        id: dragonAncestorId(origin),
+        origin,
+        kind: 'generic',
+        label: 'Dragon Ancestor',
+        count: 1,
+        options: dragonOptions(DRAGONS),
+      },
+      () => {},
+    );
+  },
+  // The 2014 Elemental Affinity, by the Dragon Ancestor's type: a sorcery point
+  // (its spend link) for an hour's resistance, and a Charisma rider on spells.
+  'elemental affinity|draconic bloodline': (col, origin) => {
+    const picked = col.doc.choices[dragonAncestorId(origin)];
+    const dragon = Array.isArray(picked) ? String(picked[0]).toLowerCase() : undefined;
+    const type = dragon !== undefined ? DRACONIC_ANCESTRY[dragon]?.type : undefined;
+    col.add({
+      kind: 'action',
+      economy: 'none',
+      label: 'Elemental Affinity',
+      ...(type !== undefined
+        ? {
+            note: `resistance to ${type} for 1 hour · ${type} spells add your Charisma modifier to one damage roll`,
+          }
+        : {}),
+      origin,
+    });
+  },
+  // The 2024 Elemental Affinity: a type of the five, resisted for good.
+  'elemental affinity|draconic sorcery': (col, origin) => {
+    col.choice(
+      {
+        id: `${origin.type}:${origin.uid}:affinity`,
+        origin,
+        kind: 'generic',
+        label: 'Elemental Affinity',
+        count: 1,
+        options: ['acid', 'cold', 'fire', 'lightning', 'poison'].map((t) => ({
+          id: t,
+          label: `${t[0]?.toUpperCase() ?? ''}${t.slice(1)}`,
+        })),
+      },
+      (selected) => {
+        for (const damageType of selected) col.add({ kind: 'resist', damageType, origin });
+      },
+    );
+  },
   // The UA Mystic's orders.
   'armor training|order of the avatar': kit({ armor: ['medium', 'shield'] }),
   'martial training|order of the soul knife': kit({ armor: ['medium'], weapons: ['martial'] }),
