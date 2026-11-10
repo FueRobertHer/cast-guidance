@@ -53,6 +53,8 @@ export type ReadOutcome =
       kind: 'addEffect';
       name: string;
       effects: readonly EffectTemplate[];
+      /** Each effect's place in the stored list (1 for the first), for problems to name. */
+      places: readonly number[];
       lasts?: EffectDuration;
     }
   | { kind: 'regain' | 'spend'; resource: string; amount: Amount }
@@ -192,35 +194,40 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
     }
     case 'addEffect': {
       const name = words(raw, 'name');
-      const read = readStoredEffects(own(raw, 'effects'));
+      const stored = own(raw, 'effects');
+      const read = readStoredEffects(stored);
       for (const p of read.problems) problems.push(`${where}: ${p}`);
-      const effects = read.effects.filter((t, i) => {
-        if (t.while !== undefined) {
-          problems.push(
-            `${where}: effect ${i + 1} (${t.effect.kind}): an effect in play has no "while"`,
-          );
-          return false;
-        }
-        if (!PART_KINDS.has(t.effect.kind)) {
-          problems.push(
-            `${where}: effect ${i + 1} (${t.effect.kind}): an effect in play reaches only numbers and rolls`,
-          );
-          return false;
-        }
+      // Where each effect read sits in the stored list: the reader leaves bad ones out.
+      const readAt = Array.isArray(stored)
+        ? stored
+            .slice(0, L.effectsPerEntry)
+            .flatMap((x, i) => (readStoredEffects([x]).effects.length === 1 ? [i + 1] : []))
+        : [];
+      const effects: EffectTemplate[] = [];
+      const places: number[] = [];
+      for (const [i, t] of read.effects.entries()) {
+        const place = readAt[i] ?? i + 1;
         // Effects in play are stricter than an entry's own: plain dice ("1d6",
         // never "1d6 + 2"), a critical range from 2 to 20, no negative amounts.
         // A part with a formula is checked once its numbers are worked out.
-        if (t.formulas === undefined && !holds(t.effect)) {
-          problems.push(
-            `${where}: effect ${i + 1} (${t.effect.kind}): an effect in play cannot hold it as written`,
-          );
-          return false;
+        const why =
+          t.while !== undefined
+            ? 'an effect in play has no "while"'
+            : !PART_KINDS.has(t.effect.kind)
+              ? 'an effect in play reaches only numbers and rolls'
+              : t.formulas === undefined && !holds(t.effect)
+                ? 'an effect in play cannot hold it as written'
+                : undefined;
+        if (why !== undefined) {
+          problems.push(`${where}: effect ${place} (${t.effect.kind}): ${why}`);
+          continue;
         }
-        return true;
-      });
+        effects.push(t);
+        places.push(place);
+      }
       if (effects.length === 0) throw new Bad('"effects" has nothing an effect in play can do');
       const lasts = readLasts(own(raw, 'lasts'));
-      return { kind, name, effects, ...(lasts !== undefined ? { lasts } : {}) };
+      return { kind, name, effects, places, ...(lasts !== undefined ? { lasts } : {}) };
     }
     case 'regain':
     case 'spend':
@@ -555,7 +562,7 @@ export function effectNow(
     const part: Record<string, unknown> = structuredClone(t.effect);
     for (const slot of t.formulas ?? []) part[slot.field] = work(slot.formula, scope, chain);
     if (holds(part)) parts.push(part);
-    else dropped.push(`${i + 1} (${t.effect.kind})`);
+    else dropped.push(`${o.places[i] ?? i + 1} (${t.effect.kind})`);
   });
   const candidate = {
     id,

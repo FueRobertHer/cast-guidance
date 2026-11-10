@@ -404,6 +404,47 @@ describe('what a condition coming on ends', () => {
       detail: 'Grim Resolve',
       tone: 'info',
     });
+    noticeStore.getState().clear();
+    cleanup();
+
+    // Removed while switched off, it still came off.
+    renderStrip([{ id: 'Prone', ignored: true }], {
+      moments: { moments: read.moments, scope, pools: [], hpWhenDerived: 20 },
+    });
+    fireEvent.click(button('Remove Prone'));
+    expect(noticeStore.getState().notice).toMatchObject({ title: 'Back up' });
+  });
+
+  it('sets off no 0 HP moment on Apply death', async () => {
+    const read = readMoments(
+      [
+        {
+          at: 'zeroHp',
+          do: [
+            { kind: 'tempHp', amount: 5 },
+            { kind: 'cue', text: 'Fight on' },
+          ],
+        },
+      ],
+      'Grim Resolve',
+    );
+    const scope = {
+      level: 3,
+      classLevel: 3,
+      prof: 2,
+      hp: 20,
+      maxHp: 20,
+      mod: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+      score: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    };
+    renderStrip([{ id: 'Exhaustion', level: 6 }], {
+      moments: { moments: read.moments, scope, pools: [], hpWhenDerived: 20 },
+    });
+    fireEvent.click(button('Exhausted 6'));
+    const sheet = within(await screen.findByRole('dialog'));
+    fireEvent.click(sheet.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
+    expect(screen.getByText('HP 0')).toBeTruthy();
+    expect(noticeStore.getState().notice).toBeNull();
   });
 
   it('ends 2024 Rage under Incapacitated, and 2014 Rage only when knocked unconscious', async () => {

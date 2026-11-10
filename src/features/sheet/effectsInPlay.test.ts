@@ -517,7 +517,7 @@ describe('what moments did', () => {
     expect(momentNotice({ done: [], cues: [], offers: [], problems: [] })).toBeNull();
   });
 
-  it('joins onto a notice already being shown, as one', () => {
+  it('joins onto a notice already being shown, as one, still naming where they came from', () => {
     const broken = {
       title: 'Concentration broken',
       detail: 'Bless · Stunned',
@@ -525,7 +525,7 @@ describe('what moments did', () => {
     };
     expect(withMoments(broken, report)).toEqual({
       title: 'Concentration broken',
-      detail: 'Bless · Stunned · Tell the DM · Last stand: 1d6 · Exhaustion 1',
+      detail: 'Bless · Stunned · Tell the DM · Last stand: 1d6 · Exhaustion 1 · Gritty · Heroic',
       tone: 'warn',
     });
     expect(withMoments(broken, undefined)).toBe(broken);

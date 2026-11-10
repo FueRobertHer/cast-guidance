@@ -317,9 +317,9 @@ function conditionCame(
 }
 
 /**
- * The condition `id` came off (removed, not switched off): its
- * `conditionEnded` moments fire, unless the character could not have it. Call
- * it after taking the condition out, for one that was not switched off.
+ * The condition `id` came off (removed, whether or not it was switched off):
+ * its `conditionEnded` moments fire, unless the character could not have it.
+ * Call it after taking the condition out.
  */
 export function conditionEnded(play: PlayState, id: string, hp: HpLimits): EffectChange {
   const none: EffectChange = { ended: [], maxHpChange: 0 };
@@ -449,16 +449,15 @@ function outcome(
       }
       const amount = amountNow(o.amount, scope(), chain);
       const entry = play.resources.find((r) => r.key === pool.key);
-      const used = entry?.used ?? 0;
-      // A pool already spent past its maximum (the maximum shrank) spends nothing more.
+      // A pool spent past its maximum (the maximum shrank) counts as all spent:
+      // it spends nothing more, and regains from its maximum down.
+      const was = Math.min(entry?.used ?? 0, pool.max);
       const next =
-        o.kind === 'regain'
-          ? Math.max(0, used - amount)
-          : Math.max(used, Math.min(pool.max, used + amount));
-      if (next === used) break;
+        o.kind === 'regain' ? Math.max(0, was - amount) : Math.min(pool.max, was + amount);
+      const moved = Math.abs(next - was);
+      if (moved === 0) break;
       if (entry !== undefined) entry.used = next;
       else play.resources.push({ key: pool.key, used: next });
-      const moved = Math.abs(next - used);
       report.done.push({
         text: `${pool.label}: ${o.kind === 'regain' ? 'regained' : 'spent'} ${moved}`,
         from,

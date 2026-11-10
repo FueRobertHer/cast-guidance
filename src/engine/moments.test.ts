@@ -195,6 +195,7 @@ describe('readMoments', () => {
               kind: 'addEffect',
               name: 'Fury',
               effects: [
+                { kind: 'nope' },
                 { kind: 'acBonus', amount: 1 },
                 { kind: 'damageDie', scope: 'melee', dice: '1d6 + 2' },
                 { kind: 'critRange', min: 1 },
@@ -210,10 +211,13 @@ describe('readMoments', () => {
     expect(fury?.kind === 'addEffect' && fury.effects.map((t) => t.effect.kind)).toEqual([
       'acBonus',
     ]);
+    expect(fury?.kind === 'addEffect' && fury.places).toEqual([2]);
+    // Each is named by its place in the stored list, though the first was left out.
     expect(read.problems).toEqual([
-      'moment 1 (turnStart), outcome 1: effect 2 (damageDie): an effect in play cannot hold it as written',
-      'moment 1 (turnStart), outcome 1: effect 3 (critRange): an effect in play cannot hold it as written',
-      'moment 1 (turnStart), outcome 1: effect 4 (tempHpEachTurn): an effect in play cannot hold it as written',
+      'moment 1 (turnStart), outcome 1: effect 1 (nope): has no kind "nope"',
+      'moment 1 (turnStart), outcome 1: effect 3 (damageDie): an effect in play cannot hold it as written',
+      'moment 1 (turnStart), outcome 1: effect 4 (critRange): an effect in play cannot hold it as written',
+      'moment 1 (turnStart), outcome 1: effect 5 (tempHpEachTurn): an effect in play cannot hold it as written',
     ]);
   });
 
@@ -725,28 +729,34 @@ describe('each outcome', () => {
   });
 
   it('says which effects come out where an effect in play cannot hold them, and adds the rest', () => {
-    const moments = inForce([
-      {
-        at: 'turnStart',
-        do: [
-          {
-            kind: 'addEffect',
-            name: 'Dim',
-            effects: [
-              { kind: 'acBonus', amount: { f: 'mod.dex' } },
-              { kind: 'tempHpEachTurn', amount: { f: 'mod.str - 5' } },
-            ],
-          },
-        ],
-      },
-    ]);
+    const read = readMoments(
+      [
+        {
+          at: 'turnStart',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Dim',
+              effects: [
+                { kind: 'skillProf', skill: 'Stealth' },
+                { kind: 'acBonus', amount: { f: 'mod.dex' } },
+                { kind: 'tempHpEachTurn', amount: { f: 'mod.str - 5' } },
+              ],
+            },
+          ],
+        },
+      ],
+      'Gritty',
+    );
+    expect(read.problems).toHaveLength(1);
+    const moments = { moments: read.moments, scope: SCOPE, pools: [], hpWhenDerived: 30 };
     const p = play();
     expect(newTurn(p, limits(p, moments)).moments).toEqual({
       done: [{ text: 'Dim', from: 'Gritty' }],
       cues: [],
       offers: [],
       problems: [
-        'Gritty: Dim, effect 2 (tempHpEachTurn): an effect in play cannot hold it with these numbers',
+        'Gritty: Dim, effect 3 (tempHpEachTurn): an effect in play cannot hold it with these numbers',
       ],
     });
     expect(p.activeEffects?.[0]?.parts).toEqual([{ kind: 'acBonus', amount: 2 }]);
@@ -789,15 +799,20 @@ describe('each outcome', () => {
     ]);
   });
 
-  it('spends nothing from a pool already spent past its maximum', () => {
+  it('counts a pool spent past its maximum as all spent: none to spend, regained from the top', () => {
     const moments = inForce([
       { at: 'turnStart', do: [{ kind: 'spend', resource: 'grit', amount: 1 }] },
+      { at: 'zeroHp', do: [{ kind: 'regain', resource: 'grit', amount: 1 }] },
     ]);
     const p = play();
-    // The maximum shrank since these were spent.
+    // The maximum (4) shrank since these were spent.
     p.resources = [{ key: 'grit', used: 6 }];
     expect(newTurn(p, limits(p, moments)).moments).toBeUndefined();
     expect(p.resources).toEqual([{ key: 'grit', used: 6 }]);
+    expect(knockedOut(p, limits(p, moments)).moments?.done).toEqual([
+      { text: 'Grit: regained 1', from: 'Gritty' },
+    ]);
+    expect(p.resources).toEqual([{ key: 'grit', used: 3 }]);
   });
 
   it('gives temporary hit points only when more than the character has', () => {

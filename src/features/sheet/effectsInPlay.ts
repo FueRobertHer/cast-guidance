@@ -567,12 +567,16 @@ function momentTone(r: MomentReport): Notice['tone'] {
   return r.cues.some((c) => c.tone === 'help') || r.done.length > 0 ? 'good' : 'info';
 }
 
+/** Where what moments did came from, each named once. */
+const momentSources = (r: MomentReport): string[] => [
+  ...new Set([...r.cues, ...r.offers, ...r.done].map((x) => x.from)),
+];
+
 /** A notice for what moments did, led by its first line and naming where they came from. */
 export function momentNotice(r: MomentReport): Notice | null {
   const [title, ...rest] = momentLines(r);
   if (title === undefined) return null;
-  const from = [...new Set([...r.cues, ...r.offers, ...r.done].map((x) => x.from))];
-  const detail = [...rest, ...from].join(' · ');
+  const detail = [...rest, ...momentSources(r)].join(' · ');
   const tone = momentTone(r);
   return detail === '' ? { title, tone } : { title, detail, tone };
 }
@@ -586,7 +590,9 @@ export function withMoments(notice: Notice | null, r: MomentReport | undefined):
   if (notice === null) return momentNotice(r);
   const lines = momentLines(r);
   if (lines.length === 0) return notice;
-  const detail = [notice.detail, ...lines].filter((x) => x !== undefined && x !== '').join(' · ');
+  const detail = [notice.detail, ...lines, ...momentSources(r)]
+    .filter((x) => x !== undefined && x !== '')
+    .join(' · ');
   const tone = notice.tone === 'warn' || momentTone(r) === 'warn' ? 'warn' : notice.tone;
   return { title: notice.title, detail, tone };
 }

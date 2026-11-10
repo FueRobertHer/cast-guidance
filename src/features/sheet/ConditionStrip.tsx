@@ -123,15 +123,16 @@ function settleCondition(d: CharacterDoc, id: string, hp: HpLimits | null): Noti
 }
 
 /**
- * The condition `id`, on and not switched off, just came off in this draft:
- * its moments fire. The notice says what they did, or null.
+ * The condition `was` just came off in this draft: its moments fire, switched
+ * off or not, as its `conditionAdded` ones fired when it was added. The notice
+ * says what they did, or null.
  */
 function settleEnded(
   d: CharacterDoc,
   was: Condition | undefined,
   hp: HpLimits | null,
 ): Notice | null {
-  if (hp === null || was === undefined || was.ignored === true) return null;
+  if (hp === null || was === undefined) return null;
   return withMoments(null, conditionEnded(d.play, was.id, hp).moments);
 }
 
@@ -452,18 +453,17 @@ export function ConditionStrip({
   };
   const applyDeath = () => {
     const hp = limits();
-    let notice: Notice | null = null;
     update((d) => {
       d.play.hpInitialized = true; // deliberate 0 HP must stick (no auto-fill)
       d.play.currentHp = 0;
       d.play.tempHp = 0;
       delete d.play.tempHpFrom;
-      // Death ends concentration, the character's own effects it held, and Rage;
-      // dropping from above 0 sets off the 0 HP moments.
+      // Death ends concentration, the character's own effects it held, and
+      // Rage. No 0 HP moment fires: what they give is for a character who
+      // plays on (temporary HP, a level of exhaustion), not a dead one.
       if (hp === null) delete d.play.concentratingOn;
-      else notice = withMoments(null, knockedOut(d.play, hp).moments);
+      else knockedOut(d.play, withoutMoments(hp));
     });
-    if (notice !== null) notify(notice);
     // The 0 HP it sets is on the page behind the sheet, so close it to show
     // what was done rather than leave the button looking unpressed.
     setInfoOpen(false);
