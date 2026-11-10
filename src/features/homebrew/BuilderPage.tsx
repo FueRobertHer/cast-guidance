@@ -388,18 +388,25 @@ export function Component() {
                     action={remove}
                   >
                     <div className="flex items-center gap-1 pr-1">
-                      {name !== undefined ? (
+                      {name !== undefined && typeof e.source === 'string' && !name.includes('|') ? (
                         <Link
-                          to={workshopEditUrl(
-                            type,
-                            name,
-                            typeof e.source === 'string' ? e.source : sourceId,
-                          )}
+                          to={workshopEditUrl(type, name, e.source)}
                           aria-label={`Edit ${name}`}
                           className="flex min-h-tap min-w-0 flex-1 items-center truncate py-2 pl-4 decoration-line-strong underline-offset-3 hover:underline"
                         >
                           {name}
                         </Link>
+                      ) : name !== undefined ? (
+                        // The Workshop finds an entry by its name and its own
+                        // book; one written by hand without them is listed only.
+                        <span className="min-w-0 flex-1 py-2 pl-4">
+                          <span className="block truncate">{name}</span>
+                          <span className="block text-caption text-ink-muted">
+                            {name.includes('|')
+                              ? 'A name with | in it cannot open in the Workshop.'
+                              : 'No source of its own, so it cannot open in the Workshop.'}
+                          </span>
+                        </span>
                       ) : (
                         // Nothing to find it by in the Workshop: a name is how it is opened.
                         <span className="min-w-0 flex-1 truncate py-2 pl-4 text-ink-muted">

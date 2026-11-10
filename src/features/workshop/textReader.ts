@@ -63,7 +63,8 @@ export function wordsOf(text: string): string {
   return text.replace(KEPT, (_, kind: string, body: string) => tagWords(kind, body));
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** `s` as a pattern that matches it literally. */
+export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** `words` as a pattern: whole words, any case, a sign in a roll with or without spaces. */
 const wordsPattern = (words: string) =>
@@ -148,8 +149,8 @@ export function swapTag(entries: unknown, kind: string, from: string, to: string
 
 /** `entries` with each `{@kind body}` back to its words: a card taken off. */
 export function untag(entries: unknown, kind: string, body: string): unknown {
-  const re = new RegExp(`\\{@${kind} ${escapeRe(body)}(?:\\|[^{}]*)?\\}`, 'gi');
-  return mapStrings(entries, (s) => s.replace(re, body));
+  const re = new RegExp(`\\{@${kind} (${escapeRe(body)})(?:\\|[^{}]*)?\\}`, 'gi');
+  return mapStrings(entries, (s) => s.replace(re, '$1'));
 }
 
 /** A sentence added to the end of the text, for a card added by hand. */
@@ -215,14 +216,50 @@ function isHigherText(e: unknown): boolean {
   return isHigherBlock(e) || (typeof e === 'string' && HIGHER_WORDS.test(wordsOf(e)));
 }
 
-/** `tagFirst` over the spell's own paragraphs, leaving what it says of higher levels alone. */
-function tagInMain(entries: unknown[], words: string, kind: string): unknown[] {
+/**
+ * The `nth` untagged `words` in the spell's own paragraphs tagged `kind`,
+ * leaving what it says of higher levels alone: Flame Strike's second 4d6 is
+ * its radiant damage, not its fire.
+ */
+function tagInMain(entries: unknown[], words: string, kind: string, nth = 0): unknown[] {
+  let left = nth;
   let done = false;
   return entries.map((e) => {
     if (done || isHigherText(e)) return e;
-    const next = (tagFirst([e], words, kind) as unknown[])[0];
-    if (next !== e) done = true;
-    return next;
+    return mapStrings(e, (s) => {
+      if (done) return s;
+      for (let m = findWords(s, words, 0); m !== undefined; m = findWords(s, words, m.index + 1)) {
+        if (left > 0) {
+          left -= 1;
+          continue;
+        }
+        done = true;
+        return (
+          s.slice(0, m.index) +
+          tagged(kind, m[0].replace(/\s+/g, '')) +
+          s.slice(m.index + m[0].length)
+        );
+      }
+      return s;
+    });
+  });
+}
+
+/**
+ * A paragraph that ends on how the spell grows, split there: "...3d8 fire
+ * damage. The damage increases by 1d8 for each slot level above 1st." reads
+ * as the spell's own sentence and its higher-level one, as the books print
+ * them. A paragraph led in as the books lead it, or wholly about higher
+ * levels, stays whole.
+ */
+function splitHigher(entries: unknown[]): unknown[] {
+  return entries.flatMap((e) => {
+    if (typeof e !== 'string' || isHigherBlock(e)) return [e];
+    const m = HIGHER_WORDS.exec(e);
+    if (m === null) return [e];
+    const cut = e.slice(0, m.index).search(/[.!?]\s+(?=[^.!?]*$)/);
+    if (cut === -1) return [e];
+    return [e.slice(0, cut + 1), e.slice(cut + 1).trimStart()];
   });
 }
 
@@ -275,7 +312,8 @@ function rollsIn(
  * grows at higher levels. Each comes with the fields that take it.
  */
 export function readSpellText(spell: Json): Finding[] {
-  const entries = list(spell.entries);
+  // A finding taken writes the text with its higher-level sentence apart.
+  const entries = splitHigher(list(spell.entries));
   const level = typeof spell.level === 'number' ? spell.level : 0;
   const out: Finding[] = [];
   const seen = new Set<string>();
@@ -288,10 +326,13 @@ export function readSpellText(spell: Json): Finding[] {
   const main = entries.filter((e) => !isHigherText(e));
   const higherInText = entries.filter(isHigherText);
 
-  for (const r of rollsIn(main)) {
+  const rolls = rollsIn(main);
+  rolls.forEach((r, i) => {
     const type = TYPE_AFTER.exec(r.after)?.[1]?.toLowerCase();
+    // Which of the untagged rolls of these dice this is, in reading order.
+    const nth = rolls.slice(0, i).filter((x) => x.dice === r.dice).length;
     if (r.kind === 'damage') {
-      const tagged = tagInMain(entries, r.dice, 'damage');
+      const tagged = tagInMain(entries, r.dice, 'damage', nth);
       add({
         kind: 'damage',
         what: `${r.dice}${type ? ` ${type}` : ''} damage`,
@@ -308,12 +349,12 @@ export function readSpellText(spell: Json): Finding[] {
         what: heal ? `${r.dice} healing` : `A roll of ${r.dice}`,
         quote: r.dice,
         patch: {
-          entries: tagInMain(entries, r.dice, 'dice'),
+          entries: tagInMain(entries, r.dice, 'dice', nth),
           ...(heal ? { miscTags: [...new Set([...strings(spell.miscTags), 'HL'])] } : {}),
         },
       });
     }
-  }
+  });
 
   const words = wordsOf(plainText(main as Entry[]));
   const saves = strings(spell.savingThrow);

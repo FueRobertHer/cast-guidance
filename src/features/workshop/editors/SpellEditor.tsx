@@ -35,6 +35,7 @@ import {
   TextBlocks,
 } from '../fields';
 import {
+  escapeRe,
   type Finding,
   mapStrings,
   ordinal,
@@ -76,18 +77,51 @@ const CONDITIONS = [
 // The cards, read from the spell and written back to it
 // ---------------------------------------------------------------------------
 
-/** Each damage roll the text tags, once per dice, with the type its words name. */
-export function damageRolls(spell: Json): Array<{ dice: string; type?: string }> {
-  const out: Array<{ dice: string; type?: string }> = [];
+/** A damage roll as a card shows it: its dice, and the type its words name. */
+export interface Roll {
+  dice: string;
+  type?: string;
+}
+
+/**
+ * Each damage roll the text tags, once per dice and type: Flame Strike's 4d6
+ * fire and 4d6 radiant are two rolls, a roll the text names twice is one.
+ */
+export function damageRolls(spell: Json): Roll[] {
+  const out: Roll[] = [];
   const re = new RegExp(`\\{@damage ([^{}|]+)[^{}]*\\}(?:\\s+(${TYPES})\\b)?`, 'gi');
   for (const s of stringsOf(spell.entries)) {
     for (const m of s.matchAll(re)) {
       const dice = (m[1] ?? '').trim();
-      if (out.some((r) => r.dice === dice)) continue;
-      out.push(m[2] === undefined ? { dice } : { dice, type: m[2].toLowerCase() });
+      const type = m[2]?.toLowerCase();
+      if (out.some((r) => r.dice === dice && r.type === type)) continue;
+      out.push(type === undefined ? { dice } : { dice, type });
     }
   }
   return out;
+}
+
+/**
+ * `entries` with each tag of `roll` (its dice, followed by its type or by no
+ * type) changed by `fn`, which gets the tag and the words after it. A roll of
+ * the same dice in another type is left alone.
+ */
+export function mapRoll(
+  entries: unknown,
+  roll: Roll,
+  fn: (tag: string, after: string) => string,
+): unknown {
+  const re = new RegExp(
+    `\\{@damage ${escapeRe(roll.dice)}(?:\\|[^{}]*)?\\}((?:\\s+(?:${TYPES})\\b)?)`,
+    'gi',
+  );
+  return mapStrings(entries, (s) =>
+    s.replace(re, (whole: string, after: string) => {
+      const type = /\S+/.exec(after)?.[0]?.toLowerCase();
+      if (type !== roll.type) return whole;
+      return fn(whole.slice(0, whole.length - after.length), after);
+    }),
+  );
 }
 
 const MOD = /^\s*(?:\+|plus)\s+your spellcasting ability modifier/i;
@@ -177,23 +211,65 @@ export function higherBlock(spell: Json, base: string, step: string, heal: boole
   ];
 }
 
-/** A damage roll's dice changed: in the text, the slot scaling and a cantrip's ladder. */
-export function withDamageDice(spell: Json, from: string, to: string): Json {
+/**
+ * `block` added to what the spell already says of higher levels: its sentence
+ * at the end of the first named part (Scorching Ray's "one additional ray"
+ * stays), else the block after the rest.
+ */
+export function withHigher(existing: unknown, block: unknown[]): unknown[] {
+  const had = list(existing);
+  const first = had[0];
+  const add = block.flatMap((b) => (isRecord(b) ? list(b.entries) : [b]));
+  if (isRecord(first) && Array.isArray(first.entries)) {
+    return [{ ...first, entries: [...first.entries, ...add] }, ...had.slice(1)];
+  }
+  return [...had, ...block];
+}
+
+/** The sentence a cantrip's damage grows by, as `higherBlock` and the books write it. */
+const LADDER = /\bincreases? by \S+ when you reach (?:5th level|levels? 5)\b/i;
+
+/** What the spell says of higher levels without the scaling sentence a card stands for. */
+export function withoutScaling(existing: unknown): unknown[] | undefined {
+  const keep = (e: unknown): unknown => {
+    if (typeof e === 'string') return e.includes('{@scale') || LADDER.test(e) ? undefined : e;
+    if (!isRecord(e) || !Array.isArray(e.entries)) return e;
+    const entries = e.entries.map(keep).filter((x) => x !== undefined);
+    return entries.length > 0 ? { ...e, entries } : undefined;
+  };
+  const left = list(existing)
+    .map(keep)
+    .filter((x) => x !== undefined);
+  return left.length > 0 ? left : undefined;
+}
+
+/**
+ * A damage roll's dice changed: in the text, and in the slot scaling and a
+ * cantrip's ladder unless another roll still has the old dice.
+ */
+export function withDamageDice(spell: Json, roll: Roll, to: string): Json {
+  const from = roll.dice;
+  const entries = mapRoll(
+    spell.entries,
+    roll,
+    (tag, after) => `${tag.replace(/^(\{@damage )[^{}|]+/i, `$1${to}`)}${after}`,
+  );
+  const shared = damageRolls({ ...spell, entries }).some((r) => r.dice === from);
   const patch: Json = {
-    entries: swapTag(spell.entries, 'damage', from, to),
-    ...(spell.entriesHigherLevel !== undefined
+    entries,
+    ...(spell.entriesHigherLevel !== undefined && !shared
       ? { entriesHigherLevel: swapTag(spell.entriesHigherLevel, 'scaledamage', from, to) }
       : {}),
   };
   const ladder = spell.scalingLevelDice;
   if (
+    !shared &&
     spell.level === 0 &&
     isRecord(ladder) &&
     isRecord(ladder.scaling) &&
     ladder.scaling[1] === from
   ) {
-    const type = damageRolls(spell).find((r) => r.dice === from)?.type;
-    patch.scalingLevelDice = { ...cantripLadder(to, type), label: ladder.label };
+    patch.scalingLevelDice = { ...cantripLadder(to, roll.type), label: ladder.label };
     // The upgrade sentence the card wrote follows the dice; one the author wrote is theirs.
     if (
       JSON.stringify(spell.entriesHigherLevel) ===
@@ -205,27 +281,16 @@ export function withDamageDice(spell: Json, from: string, to: string): Json {
 }
 
 /** A damage roll's type changed: the word after its dice, and `damageInflict`. */
-export function withDamageType(spell: Json, dice: string, to: string): Json {
-  const re = new RegExp(
-    `(\\{@damage ${dice.replace(/[+]/g, '\\+')}[^{}]*\\})(\\s+)(${TYPES})\\b`,
-    'gi',
-  );
-  let found = false;
-  const entries = mapStrings(spell.entries, (s) =>
-    s.replace(re, (_, tag: string, space: string, was: string) => {
-      found = true;
-      return `${tag}${space}${was[0] === was[0]?.toUpperCase() ? cap(to) : to}`;
-    }),
-  );
-  const next = found
-    ? entries
-    : mapStrings(spell.entries, (s) =>
-        s.replace(new RegExp(`(\\{@damage ${dice.replace(/[+]/g, '\\+')}[^{}]*\\})`), `$1 ${to}`),
-      );
-  const was = damageRolls(spell).find((r) => r.dice === dice)?.type;
-  const patch: Json = { entries: next, ...inflictSwap(spell, next, was, to) };
+export function withDamageType(spell: Json, roll: Roll, to: string): Json {
+  const next = mapRoll(spell.entries, roll, (tag, after) => {
+    const m = /^(\s+)(\S+)$/.exec(after);
+    if (m === null) return `${tag} ${to}`;
+    const was = m[2] ?? '';
+    return `${tag}${m[1]}${was[0] === was[0]?.toUpperCase() ? cap(to) : to}`;
+  });
+  const patch: Json = { entries: next, ...inflictSwap(spell, next, roll.type, to) };
   const ladder = spell.scalingLevelDice;
-  if (isRecord(ladder) && isRecord(ladder.scaling) && ladder.scaling[1] === dice) {
+  if (isRecord(ladder) && isRecord(ladder.scaling) && ladder.scaling[1] === roll.dice) {
     patch.scalingLevelDice = { ...ladder, label: `${to} damage` };
   }
   return patch;
@@ -551,8 +616,13 @@ function SpellText({ draft, change, readOnly }: EditorProps) {
     );
   }
   const tags = tagsIn(stored);
-  // Text set from outside (a card, a finding) replaces what was typed.
-  const shown = retag(typed, tags) === stored ? typed : wordsOf(stored);
+  // Text set from outside (a card, a finding) replaces what was typed. Compared
+  // as blocks, as `TextBlocks` does: turning text into blocks trims each one,
+  // so a space or blank line just typed would not match the stored text.
+  const shown =
+    JSON.stringify(textToEntries(retag(typed, tags))) === JSON.stringify(list(draft.entries))
+      ? typed
+      : wordsOf(stored);
   return (
     <Field label="Text">
       <textarea
@@ -777,10 +847,13 @@ function Cards({ draft, change, readOnly }: EditorProps) {
       </Card>,
     );
   }
-  for (const r of damage) {
+  // Cards are keyed by place: a key that held the dice would remount the card,
+  // and lose the box being typed in, each time the dice change.
+  damage.forEach((r, i) => {
     cards.push(
       <Card
-        key={`damage:${r.dice}`}
+        // biome-ignore lint/suspicious/noArrayIndexKey: see above
+        key={`damage:${i}`}
         title="Damage"
         line={`${r.dice}${r.type ? ` ${r.type}` : ''} damage`}
         sub={
@@ -790,19 +863,19 @@ function Cards({ draft, change, readOnly }: EditorProps) {
         }
         readOnly={readOnly}
         onRemove={() => {
-          const entries = untag(draft.entries, 'damage', r.dice);
+          const entries = mapRoll(draft.entries, r, (_, after) => `${r.dice}${after}`);
           set({ entries, ...inflictSwap(draft, entries, r.type) });
         }}
       >
         <DiceField
           label="Dice"
           value={r.dice}
-          onChange={(to) => set(withDamageDice(draft, r.dice, to))}
+          onChange={(to) => set(withDamageDice(draft, r, to))}
         />
         <Field label="Type">
           <Select
             value={r.type ?? ''}
-            onChange={(e) => set(withDamageType(draft, r.dice, e.target.value))}
+            onChange={(e) => set(withDamageType(draft, r, e.target.value))}
           >
             {r.type === undefined && <option value="">Not said</option>}
             {DAMAGE_OPTIONS.map(([v, t]) => (
@@ -814,11 +887,12 @@ function Cards({ draft, change, readOnly }: EditorProps) {
         </Field>
       </Card>,
     );
-  }
-  for (const h of heals) {
+  });
+  heals.forEach((h, i) => {
     cards.push(
       <Card
-        key={`heal:${h.dice}`}
+        // biome-ignore lint/suspicious/noArrayIndexKey: as the damage cards
+        key={`heal:${i}`}
         title="Healing"
         line={`${h.dice}${h.mod ? ' + your spellcasting modifier' : ''} hit points`}
         readOnly={readOnly}
@@ -847,7 +921,7 @@ function Cards({ draft, change, readOnly }: EditorProps) {
         </label>
       </Card>,
     );
-  }
+  });
   conditions.forEach((c, i) => {
     cards.push(
       <Card
@@ -870,10 +944,12 @@ function Cards({ draft, change, readOnly }: EditorProps) {
               const to = e.target.value;
               set({
                 conditionInflict: conditions.map((x, j) => (j === i ? to : x)),
+                // The tag keeps its book (`|XPHB`) and the case it was written in.
                 entries: mapStrings(draft.entries, (s) =>
                   s.replace(
-                    new RegExp(`\\{@condition ${c}(\\|[^{}]*)?\\}`, 'gi'),
-                    `{@condition ${to}}`,
+                    new RegExp(`\\{@condition (${c})((?:\\|[^{}]*)?)\\}`, 'gi'),
+                    (_, was: string, rest: string) =>
+                      `{@condition ${was[0] === was[0]?.toUpperCase() ? cap(to) : to}${rest}}`,
                   ),
                 ),
               });
@@ -966,7 +1042,12 @@ function Cards({ draft, change, readOnly }: EditorProps) {
             : `${up?.step ?? ''} more for each slot level above ${ordinal(level)}`
         }
         readOnly={readOnly}
-        onRemove={() => set({ entriesHigherLevel: undefined, scalingLevelDice: undefined })}
+        onRemove={() =>
+          set({
+            entriesHigherLevel: withoutScaling(draft.entriesHigherLevel),
+            scalingLevelDice: undefined,
+          })
+        }
       >
         {level > 0 && up !== undefined && (
           <DiceField
@@ -1029,13 +1110,22 @@ function Cards({ draft, change, readOnly }: EditorProps) {
       () => {
         const heal = damage.length === 0;
         const step = /^\d+(d\d+)/.exec(roll.dice)?.[1] ?? 'd6';
+        // Added to what the spell already says of higher levels, never in its place.
         set(
           level === 0
             ? {
                 scalingLevelDice: cantripLadder(roll.dice, damage[0]?.type),
-                entriesHigherLevel: higherBlock(draft, roll.dice, roll.dice, false),
+                entriesHigherLevel: withHigher(
+                  draft.entriesHigherLevel,
+                  higherBlock(draft, roll.dice, roll.dice, false),
+                ),
               }
-            : { entriesHigherLevel: higherBlock(draft, roll.dice, `1${step}`, heal) },
+            : {
+                entriesHigherLevel: withHigher(
+                  draft.entriesHigherLevel,
+                  higherBlock(draft, roll.dice, `1${step}`, heal),
+                ),
+              },
         );
       },
     ]);

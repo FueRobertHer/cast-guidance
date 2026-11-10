@@ -444,7 +444,14 @@ function GrantFields({
 }) {
   const id = useId();
   const ref = String(effect.spell ?? '');
-  const [typed, setTyped] = useState(ref.split('|')[0] ?? '');
+  const [held, setTyped] = useState(ref.split('|')[0] ?? '');
+  const resolve = (name: string) => {
+    const hit = spells.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+    return hit !== undefined ? `${hit.name}|${hit.source}` : name;
+  };
+  // Cards are their place in the list, so this one can be handed another
+  // grant (the one above it removed): then its spell is shown, not what was typed.
+  const typed = resolve(held) === ref ? held : (ref.split('|')[0] ?? '');
   const how =
     effect.usage === 'prepared'
       ? 'prepared'
@@ -474,8 +481,7 @@ function GrantFields({
           onChange={(e) => {
             const name = e.target.value;
             setTyped(name);
-            const hit = spells.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
-            onChange({ ...effect, spell: hit !== undefined ? `${hit.name}|${hit.source}` : name });
+            onChange({ ...effect, spell: resolve(name) });
           }}
           className={fieldClass}
         />
@@ -768,12 +774,15 @@ export function EffectCards({
               onChange(
                 list.map((x, j) => {
                   if (j === i) return next;
+                  if (renamed === undefined) return x;
+                  // What spends the renamed uses follows it: an action's cost,
+                  // a spell cast with them.
                   const cost = x.cost as { resource?: unknown } | undefined;
-                  return renamed !== undefined &&
-                    x.kind === 'action' &&
-                    cost?.resource === renamed[0]
-                    ? { ...x, cost: { ...cost, resource: renamed[1] } }
-                    : x;
+                  if (x.kind === 'action' && cost?.resource === renamed[0])
+                    return { ...x, cost: { ...cost, resource: renamed[1] } };
+                  if (x.kind === 'grantSpell' && x.resourceKey === renamed[0])
+                    return { ...x, resourceKey: renamed[1] };
+                  return x;
                 }),
               )
             }

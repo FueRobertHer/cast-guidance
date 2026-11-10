@@ -68,10 +68,10 @@ describe('BuilderPage opens entries in the Workshop', () => {
     expect(screen.getByRole('link', { name: 'Edit Old blade' }).getAttribute('href')).toBe(
       '/workshop/edit/item/Old%20blade%7CHB',
     );
-    // No source of its own: the file's.
-    expect(screen.getByRole('link', { name: 'Edit Odd | name?' }).getAttribute('href')).toBe(
-      `/workshop/edit/item/${encodeURIComponent('Odd | name?|HB')}`,
-    );
+    // The Workshop finds an entry by its name and its own book, so one it
+    // could not find gets no link that would lead nowhere.
+    expect(screen.queryByRole('link', { name: 'Edit Odd | name?' })).toBeNull();
+    expect(screen.getByText(/cannot open in the Workshop/)).toBeTruthy();
   });
 
   it('makes a new one in the Workshop, into this file', () => {
@@ -101,7 +101,7 @@ describe('BuilderPage writes', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Could not delete Old blade');
-    expect(screen.getByRole('link', { name: 'Edit Old blade' })).toBeTruthy();
+    expect(screen.getByText('Old blade')).toBeTruthy();
   });
 
   it('retries a delete against the file as it stands now, not as it was', async () => {
@@ -148,7 +148,7 @@ describe('BuilderPage reads a file it did not write', () => {
     row.json.item = [null, { name: 'Old blade' }];
     renderBuilder();
 
-    expect(screen.getByRole('link', { name: 'Edit Old blade' })).toBeTruthy();
+    expect(screen.getByText('Old blade')).toBeTruthy();
     expect(screen.getByText(/could not be read/)).toBeTruthy();
   });
 

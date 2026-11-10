@@ -26,13 +26,16 @@ import {
 import {
   damageRolls,
   healRolls,
+  higherBlock,
   inflictSwap,
   editor as spell,
   upcastOf,
   withDamageDice,
   withDamageType,
   withHeal,
+  withHigher,
   withLevel,
+  withoutScaling,
 } from './editors/SpellEditor';
 import { EDITORS, type EditorSpec, type Json } from './editorTypes';
 
@@ -107,16 +110,65 @@ describe('spell cards, as fields', () => {
   });
 
   it('changes the dice in the text and in the scaling tag', () => {
-    const patch = withDamageDice(BOLT, '4d6', '5d6');
+    const patch = withDamageDice(BOLT, { dice: '4d6', type: 'radiant' }, '5d6');
     expect(JSON.stringify(patch.entries)).toContain('{@damage 5d6} radiant');
     expect(JSON.stringify(patch.entriesHigherLevel)).toContain('{@scaledamage 5d6|1-9|1d6}');
   });
 
   it("changes the type's word, keeping the book's capital, and the types it lists", () => {
     const xphb = { ...BOLT, entries: ['The target takes {@damage 4d6} Radiant damage.'] };
-    const patch = withDamageType(xphb, '4d6', 'fire');
+    const patch = withDamageType(xphb, { dice: '4d6', type: 'radiant' }, 'fire');
     expect(patch.entries).toEqual(['The target takes {@damage 4d6} Fire damage.']);
     expect(patch.damageInflict).toEqual(['fire']);
+  });
+
+  it('keeps two rolls of the same dice in two types apart', () => {
+    const flame = {
+      level: 5,
+      entries: [
+        'Each creature takes {@damage 4d6} fire damage and {@damage 4d6} radiant damage on a failed save.',
+      ],
+      damageInflict: ['fire', 'radiant'],
+      entriesHigherLevel: [
+        {
+          type: 'entries',
+          name: 'At Higher Levels',
+          entries: ['The fire damage increases by {@scaledamage 4d6|5-9|1d6} for each slot level.'],
+        },
+      ],
+    };
+    const fire = { dice: '4d6', type: 'fire' };
+    expect(damageRolls(flame)).toEqual([fire, { dice: '4d6', type: 'radiant' }]);
+    const cold = withDamageType(flame, fire, 'cold');
+    expect(cold.entries).toEqual([
+      'Each creature takes {@damage 4d6} cold damage and {@damage 4d6} radiant damage on a failed save.',
+    ]);
+    expect(cold.damageInflict).toEqual(['radiant', 'cold']);
+    const more = withDamageDice(flame, fire, '5d6');
+    expect(more.entries).toEqual([
+      'Each creature takes {@damage 5d6} fire damage and {@damage 4d6} radiant damage on a failed save.',
+    ]);
+    // The radiant roll still has 4d6, so the scaling stays on it.
+    expect(more.entriesHigherLevel).toBeUndefined();
+  });
+
+  it('adds slot scaling to what a spell already says of higher levels, and takes only it away', () => {
+    const ray = [{ type: 'entries', name: 'At Higher Levels', entries: ['One more ray.'] }];
+    const block = higherBlock({ level: 2 }, '2d6', '1d6', false);
+    const both = withHigher(ray, block);
+    expect(both).toEqual([
+      {
+        type: 'entries',
+        name: 'At Higher Levels',
+        entries: [
+          'One more ray.',
+          'The damage increases by {@scaledamage 2d6|2-9|1d6} for each spell slot level above 2nd.',
+        ],
+      },
+    ]);
+    expect(withoutScaling(both)).toEqual(ray);
+    expect(withoutScaling(block)).toBeUndefined();
+    expect(withHigher(undefined, block)).toEqual(block);
   });
 
   it('keeps a listed type no roll names when another changes', () => {
@@ -190,6 +242,39 @@ describe('SpellEditor', () => {
     // Nothing the cards do not own was touched.
     expect(draft().miscTags).toEqual(['ADV']);
     expect(draft().duration).toEqual(BOLT.duration);
+  });
+
+  it('takes the text one key at a time, spaces and new paragraphs included', () => {
+    const draft = mount(spell, { name: 'Glow', ...spell.blank() });
+    for (const ch of 'Each creature\n\nIt glows.') {
+      const box = screen.getByLabelText('Text') as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: box.value + ch } });
+    }
+    expect(draft().entries).toEqual(['Each creature', 'It glows.']);
+  });
+
+  it('keeps the dice box while the dice are typed one key at a time', () => {
+    const draft = mount(spell, {
+      name: 'Bolt',
+      ...spell.blank(),
+      entries: ['It takes {@damage 1d8} fire damage.'],
+    });
+    const box = screen.getByLabelText('Dice') as HTMLInputElement;
+    for (const value of ['1d', '1d1', '1d10']) fireEvent.change(box, { target: { value } });
+    expect(box.isConnected).toBe(true);
+    expect(draft().entries).toEqual(['It takes {@damage 1d10} fire damage.']);
+  });
+
+  it("changes a condition, keeping its tag's book and capital", () => {
+    const draft = mount(spell, {
+      name: 'Fear',
+      ...spell.blank(),
+      conditionInflict: ['frightened'],
+      entries: ['The target is {@condition Frightened|XPHB}.'],
+    });
+    type('Condition', 'charmed');
+    expect(draft().entries).toEqual(['The target is {@condition Charmed|XPHB}.']);
+    expect(draft().conditionInflict).toEqual(['charmed']);
   });
 
   it('offers what the text says, and applies it only when accepted', () => {
@@ -367,6 +452,58 @@ describe('ItemEditor', () => {
     expect(readStoredEffects(effects).problems).toEqual([]);
     // The charges show under Charges, not again among the cards.
     expect(screen.queryByText(/^Charges: 3 uses/)).toBeNull();
+  });
+
+  it('keeps the granted spell box while its name is cleared and typed again', () => {
+    const draft = mount(item, {
+      name: 'Ring',
+      type: 'RG',
+      additionalSpells: [{ known: { _: ['blink'] } }],
+      entries: [],
+    });
+    type('Spell', '');
+    expect(draft().additionalSpells).toBeUndefined();
+    type('Spell', 'shield');
+    expect(JSON.stringify(draft().additionalSpells)).toContain('shield');
+  });
+
+  it('keeps a cast spell on the uses it spends when they are renamed', () => {
+    const draft = mount(item, {
+      name: 'Wand',
+      type: 'WD',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'resource', key: 'uses', label: 'Uses', max: 3, reset: 'long' },
+          { kind: 'grantSpell', spell: 'Shield|PHB', resourceKey: 'uses', usage: '1/day' },
+        ],
+      },
+    });
+    type('Uses per rest: Name', 'Sparks');
+    const effects = (draft().castGuidance as Json).effects as Json[];
+    expect(effects[0]).toMatchObject({ key: 'sparks', label: 'Sparks' });
+    expect(effects[1]).toMatchObject({ resourceKey: 'sparks' });
+    expect(readStoredEffects(effects).problems).toEqual([]);
+  });
+
+  it('shows the spell a Cast a spell card holds after the card above it goes', () => {
+    mount(item, {
+      name: 'Staff',
+      type: 'ST',
+      entries: [],
+      castGuidance: {
+        v: 1,
+        effects: [
+          { kind: 'grantSpell', spell: 'Shield|PHB' },
+          { kind: 'grantSpell', spell: 'Misty Step|PHB' },
+        ],
+      },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove/ })[0] as HTMLElement);
+    expect((screen.getByLabelText('Cast a spell: Spell') as HTMLInputElement).value).toBe(
+      'Misty Step',
+    );
   });
 
   it('opens an item the Builder made, its granted spell included, and changes nothing', () => {

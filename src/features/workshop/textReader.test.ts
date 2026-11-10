@@ -177,6 +177,43 @@ describe('readSpellText', () => {
       readSpellText({ level: 1, entries: ['You have advantage on Wisdom saving throws.'] }),
     ).toEqual([]);
   });
+
+  it('tags each of two rolls of the same dice where its own type stands', () => {
+    const flame = {
+      level: 5,
+      entries: ['Each creature takes 4d6 fire damage and 4d6 radiant damage.'],
+    };
+    const [fire, radiant] = readSpellText(flame);
+    expect(fire?.what).toBe('4d6 fire damage');
+    expect(fire?.patch.entries).toEqual([
+      'Each creature takes {@damage 4d6} fire damage and 4d6 radiant damage.',
+    ]);
+    expect(radiant?.what).toBe('4d6 radiant damage');
+    expect(radiant?.patch.entries).toEqual([
+      'Each creature takes 4d6 fire damage and {@damage 4d6} radiant damage.',
+    ]);
+    expect(radiant?.patch.damageInflict).toEqual(['radiant']);
+    expect(acceptAll(flame)).toMatchObject({
+      entries: ['Each creature takes {@damage 4d6} fire damage and {@damage 4d6} radiant damage.'],
+      damageInflict: ['fire', 'radiant'],
+    });
+  });
+
+  it('reads a spell that says how it grows in the same paragraph', () => {
+    const one = {
+      level: 1,
+      entries: [
+        'A bolt deals 3d8 fire damage to the target. The damage increases by 1d8 for each slot level above 1st.',
+      ],
+    };
+    expect(brief(readSpellText(one))).toEqual([
+      'damage: 3d8 fire damage',
+      'higher: 1d8 more for each slot level above 1st',
+    ]);
+    const spell = acceptAll(one);
+    expect(spell.entries).toEqual(['A bolt deals {@damage 3d8} fire damage to the target.']);
+    expect(JSON.stringify(spell.entriesHigherLevel)).toContain('{@scaledamage 3d8|1-9|1d8}');
+  });
 });
 
 describe('typing over tagged text', () => {

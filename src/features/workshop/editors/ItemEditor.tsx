@@ -534,7 +534,10 @@ function GrantedSpell({ draft, change, readOnly }: EditorProps) {
   const [grant, setGrant] = useState<SpellGrant>(() =>
     parsed !== undefined && parsed !== COMPLEX ? parsed : { spell: '' },
   );
-  if (draft.additionalSpells === undefined) return null;
+  // Shown while the editor is open once the item had one: emptying the box to
+  // type another name takes the grant out of the data, not the field off screen.
+  const [had] = useState(() => draft.additionalSpells !== undefined);
+  if (!had) return null;
   if (parsed === COMPLEX) {
     return (
       <Kept label="Spells it grants">
