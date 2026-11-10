@@ -54,8 +54,9 @@ export interface OptionHost {
   counters: ReadonlyMap<string, FileCounter>;
 }
 
-/** An option part, and the official list its label maps to, if any. */
+/** An option part, the label it is listed under, and the official list that label maps to, if any. */
 export interface OptionPart extends Fc5Part {
+  label: string;
   official?: string;
 }
 
@@ -331,6 +332,7 @@ export function convertOptions(choices: readonly OptionChoice[], host: OptionHos
         kind: 'optionalfeature',
         entity,
         placement,
+        label,
         ...(official !== undefined && { official }),
       });
     }

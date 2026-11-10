@@ -117,10 +117,11 @@ export type Fc5Result =
       /** Entries that belong to this one ({@link Fc5Part}). */
       parts?: Fc5Part[];
       /**
-       * A class's or subclass's options, each checked on its own, and the
-       * official list its label is, which offers it when its class is installed.
+       * A class's or subclass's options, each checked on its own, with the
+       * label it is listed under and the official list that label is, which
+       * offers it when its class is installed.
        */
-      options?: (Fc5Part & { official?: string })[];
+      options?: (Fc5Part & { label: string; official?: string })[];
       /**
        * A class's subclasses, each converted and checked on its own: they are
        * kept when the class is left out as installed, on the installed class.

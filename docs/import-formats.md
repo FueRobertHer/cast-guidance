@@ -122,9 +122,13 @@ first listed later than the rest needs that level. A label of an official list
 maneuvers) offers that list too, so an installed option left out as a
 duplicate is still offered. Options a label names one subclass for
 (`Totem Spirit: Bear` beside the Totem Warrior) go on that subclass. An option
-two classes list is kept once, on both lists, and needs a level only where
-each class lists it late (either level, when both do); one the file also
-stores as a spell keeps that one's prerequisite, its rule. An option on the file's
+two classes list is kept once, on both lists, when both say the same (apart
+from the source line, case, spacing and punctuation), and needs a level only
+where each class lists it late (either level, when both do). Options of one
+name that say different things are each kept, the later named for its label
+(`Aspect of the Beast: Bear` as `Bear (Aspect of the Beast)`, then numbered:
+`Archery (Fighting Style 2)`). One the file also stores as a spell is that option,
+whatever its text, and keeps that one's prerequisite, its rule. An option on the file's
 own list is kept even when the installed data has one of its name. An
 installed class's options go on its official list, and those whose label has
 none are named in the report.

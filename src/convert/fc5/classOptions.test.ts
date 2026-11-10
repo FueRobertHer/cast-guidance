@@ -415,6 +415,47 @@ describe('class options in a file', () => {
     ]);
   });
 
+  it('keeps apart options of one name under two labels that say different things', () => {
+    const totem = `
+      <class><name>Ember Knight</name><hd>10</hd>
+        <autolevel level="3">${f('Totem Spirit', 'Choose one.', '')}${f('Totem Spirit: Bear', 'Resist.')}${f('Totem Spirit: Wolf', 'Pack.')}</autolevel>
+        <autolevel level="6">${f('Aspect of the Beast', 'Choose one.', '')}${f('Aspect of the Beast: Bear', 'Carry more.')}${f('Aspect of the Beast: Wolf', 'Track.')}</autolevel>
+      </class>`;
+    const { json } = convertFc5Compendium(parseXml(`<compendium>${totem}</compendium>`), {
+      fileName: FILE,
+    });
+    expect(list(json, 'optionalfeature').map((o) => [o.name, o.featureType, o.entries])).toEqual([
+      ['Bear', ['Ember Knight: Totem Spirit'], ['Resist.']],
+      ['Wolf', ['Ember Knight: Totem Spirit'], ['Pack.']],
+      ['Bear (Aspect of the Beast)', ['Ember Knight: Aspect of the Beast'], ['Carry more.']],
+      ['Wolf (Aspect of the Beast)', ['Ember Knight: Aspect of the Beast'], ['Track.']],
+    ]);
+  });
+
+  it("keeps one of two classes' options only when they say the same", () => {
+    const style = (name: string, text: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="1">${f('Fighting Style', 'Adopt one.', '')}${f('Fighting Style: Archery', text)}${f('Fighting Style: Defense', 'Armor.')}</autolevel></class>`;
+    const { json } = convertFc5Compendium(
+      parseXml(
+        `<compendium>${style('Ember Knight', 'Gain +1.')}${style('Ash Warden', 'gain + 1')}${style('Iron Guard', 'Gain +2.')}${style('Stone Guard', 'Gain +3.')}${style('Oak Guard', 'Gain + 2.')}</compendium>`,
+      ),
+      { fileName: FILE },
+    );
+    const archery = list(json, 'optionalfeature').filter((o) =>
+      String(o.name).startsWith('Archery'),
+    );
+    expect(archery.map((o) => [o.name, o.featureType, o.entries])).toEqual([
+      ['Archery', ['Ember Knight: Fighting Style', 'Ash Warden: Fighting Style'], ['Gain +1.']],
+      [
+        'Archery (Fighting Style)',
+        ['Iron Guard: Fighting Style', 'Oak Guard: Fighting Style'],
+        ['Gain +2.'],
+      ],
+      ['Archery (Fighting Style 2)', ['Stone Guard: Fighting Style'], ['Gain +3.']],
+    ]);
+    expect(list(json, 'optionalfeature').filter((o) => o.name === 'Defense')).toHaveLength(1);
+  });
+
   it("puts an installed class's options on its official list, and names those no list offers", () => {
     const check: InstalledCheck = (kind, name) =>
       (kind === 'class' && name === 'Fighter') ||

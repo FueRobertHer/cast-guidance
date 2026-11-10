@@ -255,6 +255,20 @@ function withPrinting(
   return entity;
 }
 
+/**
+ * What an option says, to compare two classes' copies of it: its text
+ * without the source line, letters and digits only, lowercased, so `+1` and
+ * `+ 1` say the same.
+ */
+function sameText(entries: unknown): string {
+  const said = Array.isArray(entries)
+    ? entries.filter((e) => !(typeof e === 'string' && e.startsWith('{@i Source: ')))
+    : [];
+  return JSON.stringify(said)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
 /** One converted entry, before the checks decide whether it is kept. */
 interface Converted {
   /** The element's name, for the report. */
@@ -703,25 +717,37 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // Options kept from a class's own list, whose prerequisite (or none) is the
   // level the class lists it at, not a rule of the option's.
   const byListing = new WeakSet<Record<string, unknown>>();
+  // What each of those says, as `sameText` reads it: every class's that it
+  // stands for.
+  const said = new WeakMap<Record<string, unknown>, Set<string>>();
 
   /**
-   * Add an option's lists to the one of its name and book kept already; false
-   * for none. `listed` is true for a class's own option, whose prerequisite is
-   * the level the class lists it at; a stored option's is its rule.
+   * Add an option's lists to the one of its name and book kept already:
+   * 'none' when there is none, 'other' when that one is another option. Two
+   * classes' options of one name are one when they say the same; a totem
+   * warrior's `Totem Spirit: Bear` and `Aspect of the Beast: Bear` are two.
+   * One the file stores is the option itself, which any class's of its name
+   * stands for. `listed` is true for a class's own option, whose
+   * prerequisite is the level the class lists it at; a stored option's is
+   * its rule.
    */
   const mergeOption = (
     entity: Record<string, unknown>,
     placement: Placement,
     edition: RulesVersion,
     listed: boolean,
-  ): boolean => {
+  ): 'merged' | 'none' | 'other' => {
     const had = optionsKept.get(optionKey(String(entity.name), placement, edition));
-    if (had === undefined) return false;
+    if (had === undefined) return 'none';
+    const text = listed ? sameText(entity.entries) : undefined;
+    if (text !== undefined && byListing.has(had) && said.get(had)?.has(text) !== true) {
+      return 'other';
+    }
     const types = [...(had.featureType as string[]), ...((entity.featureType ?? []) as string[])];
     had.featureType = [...new Set(types)];
     const was = had.prerequisite;
     const now = entity.prerequisite;
-    if (!byListing.has(had)) return true;
+    if (!byListing.has(had)) return 'merged';
     if (!listed) {
       // The option's own rule stands over the levels classes list it at.
       if (now === undefined) delete had.prerequisite;
@@ -736,6 +762,27 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       const all = [...(was as unknown[]), ...(now as unknown[])];
       had.prerequisite = [...new Map(all.map((p) => [JSON.stringify(p), p])).values()];
     }
+    if (text !== undefined) said.get(had)?.add(text);
+    return 'merged';
+  };
+
+  /**
+   * Keep a class's option under the first name that is free or is already
+   * this option: its own, else its label's (`Bear (Aspect of the Beast)`),
+   * then that numbered. False when it joined one kept already.
+   */
+  const keepListed = (o: Fc5Part & { label: string }): boolean => {
+    const name = String(o.entity.name);
+    for (let n = 1; ; n++) {
+      const candidate = n === 1 ? name : `${name} (${o.label}${n === 2 ? '' : ` ${n - 1}`})`;
+      o.entity.name = candidate;
+      const found = mergeOption(o.entity, o.placement, o.placement.edition, true);
+      if (found === 'merged') return false;
+      if (found === 'none') break;
+    }
+    optionsKept.set(optionKey(String(o.entity.name), o.placement, o.placement.edition), o.entity);
+    byListing.add(o.entity);
+    said.set(o.entity, new Set([sameText(o.entity.entries)]));
     return true;
   };
 
@@ -746,7 +793,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
    * the names of those whose label has none, which nothing offers.
    */
   const keepOptions = (
-    options: readonly (Fc5Part & { official?: string })[],
+    options: readonly (Fc5Part & { label: string; official?: string })[],
     ownerKept: boolean,
   ): string[] => {
     const unoffered: string[] = [];
@@ -762,9 +809,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         }
         o.entity.featureType = [o.official];
       }
-      if (mergeOption(o.entity, o.placement, o.placement.edition, true)) continue;
-      optionsKept.set(optionKey(name, o.placement, o.placement.edition), o.entity);
-      byListing.add(o.entity);
+      if (!keepListed(o)) continue;
       out.optionalfeature.push(withPrinting('optionalfeature', o.entity, o.placement));
       sources.set(o.placement.source.json, o.placement.source);
     }
@@ -803,7 +848,7 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     }
     if (
       kind === 'optionalfeature' &&
-      mergeOption(c.result.entity, placement, c.result.edition, false)
+      mergeOption(c.result.entity, placement, c.result.edition, false) === 'merged'
     ) {
       return 'duplicate';
     }
