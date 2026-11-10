@@ -9,11 +9,12 @@ import { asEntityArray, type Collector, str } from './base';
 import { VariantGate } from './classVariants';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
+import { basedOn, mechanicsOf, officialOf } from './mechanics';
 import { readOptionalFeatures } from './optionalFeatures';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import { proseScanFeature } from './proseScan';
 import { expertiseOptions, readProficiencyList, skillOptions } from './readers';
-import { printingOf, reskinOf } from './reskin';
+import { reskinOf } from './reskin';
 
 /** "Rage|Barbarian||1" or "...|1|TCE" -> parts. Empty classSource = PHB. */
 export interface ClassFeatureRef {
@@ -239,11 +240,12 @@ interface FeatureWalk {
   cardOrigin: EffectOrigin;
   curatedLabel: string;
   /**
-   * The class a reskinned class stands for (`reskinOf`), whose curated rows and
-   * spend links reach the features it lends: a Warrior's Second Wind is the
-   * Fighter's. Tried after `curatedLabel`, on a class's own walk only.
+   * Other names its curated rows and spend links are found under, tried after
+   * `curatedLabel`: the class a reskinned class stands for (`reskinOf`; a
+   * Warrior's Second Wind is the Fighter's), on a class's own walk only, and
+   * the class or subclass a homebrew copy is `basedOn`.
    */
-  curatedAlias?: string;
+  curatedAliases: readonly string[];
   classLevel: number;
   ledger: FeatureLedger;
 }
@@ -311,31 +313,41 @@ function collectFeatureWithNested(
   key: string,
   choicePrefix: string,
 ): void {
-  const { col, cardOrigin, curatedLabel, curatedAlias, ledger } = walk;
+  const { col, cardOrigin, curatedLabel, curatedAliases, ledger } = walk;
   if (ledger.collected.has(key)) return;
   ledger.collected.add(key);
   col.features.push({ name, level, origin: cardOrigin, entries: feature.entries });
   const featureOrigin: EffectOrigin = { ...cardOrigin, label: name };
-  const labels = curatedAlias !== undefined ? [curatedLabel, curatedAlias] : [curatedLabel];
+  const labels = [curatedLabel, ...curatedAliases];
   // The feature's own printing as well as its card's: a reskin or a copied subclass
   // is a book of its own that lends a 2024 class's features. A copy of an official
-  // feature (`printingOf`) is that feature as printed, under its name and book.
-  const printed = printingOf(feature);
+  // feature (`officialOf`: its `basedOn`, or a converted file's `printingOf`) is
+  // that feature as printed, under its name and book.
+  const printed = officialOf(feature);
   const printing = (printed?.source ?? String(feature.source)).toLowerCase();
   const names = printed !== undefined && printed.name !== name ? [name, printed.name] : [name];
   const sources =
     printed !== undefined ? [String(feature.source), printed.source] : [String(feature.source)];
-  const curated = names.some((n) =>
-    labels.some((label) =>
-      emitCurated(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing),
-    ),
-  );
-  if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
-  names.some((n) =>
-    labels.some((label) =>
-      sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
-    ),
-  );
+  mechanicsOf(col, {
+    entry: feature,
+    label: name,
+    origin: featureOrigin,
+    target: `${name}|${curatedLabel}`,
+    classLevel: walk.classLevel,
+    inherited: () => {
+      const curated = names.some((n) =>
+        labels.some((label) =>
+          emitCurated(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing),
+        ),
+      );
+      if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
+      names.some((n) =>
+        labels.some((label) =>
+          sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
+        ),
+      );
+    },
+  });
   const identity = featureIdentity(feature);
   const { refs, picks } = PICK_ONE.has(identity)
     ? { refs: [], picks: [{ count: 1, branches: featureBranches(feature.entries) }] }
@@ -655,11 +667,12 @@ export function collectClasses(col: Collector): void {
     const featureRefs = Array.isArray(cls.classFeatures) ? cls.classFeatures : [];
     const ledger: FeatureLedger = { claimed: new Set(), collected: new Set(), picked: new Map() };
     const reskin = reskinOf(cls);
+    const classBasedOn = basedOn(cls);
     const classWalk: FeatureWalk = {
       col,
       cardOrigin: origin,
       curatedLabel: origin.label,
-      ...(reskin !== undefined ? { curatedAlias: reskin.name } : {}),
+      curatedAliases: [reskin?.name, classBasedOn?.name].filter((n) => n !== undefined),
       classLevel,
       ledger,
     };
@@ -762,13 +775,23 @@ export function collectClasses(col: Collector): void {
           classLevel,
         );
         // A subclass keeps its own name under a reskin (a Warrior's Champion), so
-        // its rows are found by that alone.
-        const { curatedAlias: _classOnly, ...walked } = classWalk;
+        // its rows are found by that, and by the subclass a homebrew copy is
+        // `basedOn`, whose kept features keep their curated rows.
+        const subBasedOn = basedOn(sub);
         const subWalk: FeatureWalk = {
-          ...walked,
+          ...classWalk,
           cardOrigin: subOrigin,
           curatedLabel: subOrigin.label,
+          curatedAliases: subBasedOn !== undefined ? [subBasedOn.name] : [],
         };
+        // A subclass's own mechanics, beside its features'.
+        mechanicsOf(col, {
+          entry: sub,
+          label: subOrigin.label,
+          origin: subOrigin,
+          target: subOrigin.uid,
+          classLevel,
+        });
         const subRefs = Array.isArray(sub.subclassFeatures) ? sub.subclassFeatures : [];
         for (const rawRef of subRefs) {
           if (typeof rawRef !== 'string') continue;
@@ -850,6 +873,17 @@ export function collectClasses(col: Collector): void {
         },
       );
     }
-    emitCurated(col, `class:${classUid}`, origin);
+    // The class's own row, or the row of the class a homebrew copy is `basedOn`.
+    const rowKeys = classBasedOn !== undefined ? [classUid, refUid(classBasedOn)] : [classUid];
+    mechanicsOf(col, {
+      entry: cls,
+      label: origin.label,
+      origin,
+      target: classUid,
+      classLevel,
+      inherited: () => {
+        rowKeys.some((k) => emitCurated(col, `class:${k}`, origin));
+      },
+    });
   });
 }

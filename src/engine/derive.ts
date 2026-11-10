@@ -21,26 +21,31 @@ import {
 } from './calc/skills';
 import { calcSpellcasting } from './calc/slots';
 import { calcOtherSpeeds, calcSpeedMultiplier, calcWalkSpeed } from './calc/speed';
+import { CAST_GUIDANCE_LIMITS, EARLY_KINDS } from './castGuidance';
 import { settleInheritedAbilities } from './effects/additionalSpells';
 import { collectBackground } from './effects/background';
 import { Collector } from './effects/base';
 import { collectClasses } from './effects/class';
 import { collectFeats } from './effects/feat';
 import { markHeldPicks } from './effects/heldPicks';
-import { collectItems } from './effects/item';
+import { collectItems, isArmor, isShield, lookupItem } from './effects/item';
 import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
+import { Formula } from './formula';
 import type {
   Ability,
+  ActiveEffect,
   CharacterDoc,
   ChoicePrompt,
   DerivedSheet,
   EffectInput,
   EngineContext,
+  FormulaScope,
+  FormulaSlot,
   NotCounted,
   RollRider,
 } from './types';
-import { refUid } from './types';
+import { ABILITIES, refUid } from './types';
 
 export interface DeriveOptions {
   /**
@@ -74,19 +79,21 @@ export function deriveSheet(
   settleInheritedAbilities(col);
   // Effects in play come last: they reach numbers and rolls, never a pick.
   let effectsNotCounted: NotCounted[] = [];
+  let played: ActiveEffect[] = [];
   if (options.active !== false) {
-    const { effects: played, problems } = readActiveEffects(doc.play.activeEffects);
+    const read = readActiveEffects(doc.play.activeEffects);
+    played = read.effects;
+    const problems = read.problems;
     for (const problem of problems) col.warn(problem);
     const counting = countingEffects(played);
     for (const e of counting.inputs) col.add(e);
     effectsNotCounted = counting.notCounted;
   }
 
-  const effects = col.effects;
+  const collected = col.effects;
 
-  // 2. Fold in fixed order
-  const abilities = calcAbilities(doc, effects);
-
+  // 2. Fold in fixed order. The proficiency bonus needs only the level, so it
+  // comes first: formulas read it.
   const totalLevel = doc.classes.reduce((sum, c) => sum + c.levels, 0);
   const pbBase = totalLevel > 0 ? 2 + Math.floor((totalLevel - 1) / 4) : 2;
   const profBonus = withOverride(
@@ -94,12 +101,42 @@ export function deriveSheet(
     doc.overrides.profBonus,
   );
 
+  // Formulas fill their numbers stage by stage, as what they read becomes known
+  // (each kind reads only names known by its stage), and effects held `while` a
+  // state count only while it holds (H10). Bloodied needs the hit point maximum,
+  // which the kinds folded before it never hold while.
+  const scope: FormulaScope = {
+    level: totalLevel,
+    classLevel: totalLevel,
+    prof: profBonus.value,
+    hp: 0,
+    maxHp: 0,
+    mod: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+    score: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+  };
+  const budget = { left: CAST_GUIDANCE_LIMITS.formulaStepsPerDerive, warned: false };
+  const states = new PlayStates(doc, ctx, played);
+  fillFormulas(col, (k) => k === 'abilityBonus' || k === 'abilityMin', scope, budget);
+  const early = collected.filter((e) => states.hold(e, undefined));
+  const abilities = calcAbilities(doc, early);
+  for (const a of ABILITIES) {
+    scope.mod[a] = abilities[a].mod;
+    scope.score[a] = abilities[a].value;
+  }
+  fillFormulas(col, (k) => k === 'hpPerLevel' || k === 'maxHpBonus', scope, budget);
+  const { maxHp, hitDice } = calcMaxHp(doc, col, early, abilities.con.mod);
+  scope.maxHp = maxHp.value;
+  scope.hp = doc.play.hpInitialized === false ? maxHp.value : doc.play.currentHp;
+  fillFormulas(col, (k) => !EARLY_KINDS.has(k), scope, budget);
+  const effects = collected.filter((e) => states.hold(e, scope));
+  // What reads the collector from here on (spellcasting) sees only these too.
+  if (effects.length !== col.effects.length) col.effects.splice(0, col.effects.length, ...effects);
+
   const saves = calcSaves(doc, effects, abilities, profBonus.value);
   const checks = calcChecks(effects, abilities, profBonus.value);
   const skills = calcSkills(doc, effects, abilities, profBonus.value, fromBackground);
   const passivePerception = calcPassivePerception(doc, skills, effects);
   const speedWalk = calcWalkSpeed(doc, col, effects);
-  const { maxHp, hitDice } = calcMaxHp(doc, col, effects, abilities.con.mod);
   const {
     ac,
     label: acFormulaLabel,
@@ -278,6 +315,130 @@ export function deriveSheet(
     pending: col.pending,
     resolvedChoices: col.resolved,
   };
+}
+
+/**
+ * Fill the numbers formulas give the effects of the kinds `stage` takes, in
+ * place: each effect with formulas is a fresh copy made for this derive
+ * (`mechanicsOf`). Past the per-derive budget, a formula counts as 0.
+ */
+function fillFormulas(
+  col: Collector,
+  stage: (kind: EffectInput['kind']) => boolean,
+  scope: FormulaScope,
+  budget: { left: number; warned: boolean },
+): void {
+  for (const e of col.effects) {
+    // Only `formula.ts` makes a Formula; a slot read from a stored document never counts.
+    if (!Array.isArray(e.formulas) || !stage(e.kind)) continue;
+    for (const slot of e.formulas as readonly unknown[]) {
+      if (typeof slot !== 'object' || slot === null) continue;
+      if (!((slot as Partial<FormulaSlot>).formula instanceof Formula)) continue;
+      const { field, formula, classLevel } = slot as FormulaSlot;
+      let value = 0;
+      if (budget.left >= formula.cost) {
+        budget.left -= formula.cost;
+        value = formula.evaluate({ ...scope, classLevel });
+      } else if (!budget.warned) {
+        budget.warned = true;
+        col.warn('This character has too many formulas to work out; the rest count as 0.');
+      }
+      // Only an amount may be below zero: a penalty. A range, a speed or a maximum may not.
+      (e as Record<string, unknown>)[field] = field === 'amount' ? value : Math.max(0, value);
+    }
+  }
+}
+
+/**
+ * The states effects may hold `while` (H10), read from play once per derive.
+ * `effect` reads the effects in play as `readActiveEffects` read them (none
+ * when the derive leaves them out); the rest are the character's state
+ * whatever is in play.
+ */
+class PlayStates {
+  private readonly doc: CharacterDoc;
+  private readonly ctx: EngineContext;
+  private readonly played: readonly ActiveEffect[];
+  private seen?: {
+    conditions: Set<string>;
+    effects: Set<string>;
+    armor: boolean;
+    shield: boolean;
+  };
+
+  constructor(doc: CharacterDoc, ctx: EngineContext, played: readonly ActiveEffect[]) {
+    this.doc = doc;
+    this.ctx = ctx;
+    this.played = played;
+  }
+
+  /** Whether every state `e` holds while holds; `hp` is unknown before the maximum is. */
+  hold(e: EffectInput, hp: { hp: number; maxHp: number } | undefined): boolean {
+    if (!Array.isArray(e.while)) return true;
+    return (e.while as readonly unknown[]).every((w) => this.holds(w, e.kind, hp));
+  }
+
+  private holds(
+    w: unknown,
+    kind: EffectInput['kind'],
+    hp: { hp: number; maxHp: number } | undefined,
+  ): boolean {
+    if (typeof w !== 'object' || w === null) return false;
+    const state = w as Partial<Record<'state' | 'name' | 'condition', unknown>>;
+    const play = this.doc.play;
+    switch (state.state) {
+      case 'bloodied':
+        return hp !== undefined && !EARLY_KINDS.has(kind) && hp.maxHp > 0 && hp.hp <= hp.maxHp / 2;
+      case 'zeroHp':
+        return play.hpInitialized !== false && play.currentHp <= 0;
+      case 'concentrating':
+        return play.concentratingOn !== undefined && play.concentratingOn !== null;
+      case 'noArmor':
+        return !this.read().armor;
+      case 'shield':
+        return this.read().shield;
+      case 'effect':
+        return typeof state.name === 'string' && this.read().effects.has(state.name.toLowerCase());
+      case 'condition':
+        return (
+          typeof state.condition === 'string' &&
+          this.read().conditions.has(state.condition.toLowerCase())
+        );
+      default:
+        return false;
+    }
+  }
+
+  private read(): NonNullable<PlayStates['seen']> {
+    if (this.seen !== undefined) return this.seen;
+    const play = this.doc.play;
+    const worn = this.doc.equipment.flatMap((entry) => {
+      if (!entry.equipped || entry.ref === undefined) return [];
+      const item = lookupItem({ ctx: this.ctx }, entry.ref.name, entry.ref.source);
+      return item === undefined ? [] : [item];
+    });
+    // Stored play is not checked on load: read only what is the shape it should be.
+    const conditions: unknown[] = Array.isArray(play.conditions) ? play.conditions : [];
+    this.seen = {
+      conditions: new Set(
+        conditions.flatMap((c) => {
+          const { id, ignored } = (typeof c === 'object' && c !== null ? c : {}) as {
+            id?: unknown;
+            ignored?: unknown;
+          };
+          return typeof id === 'string' && ignored !== true ? [id.toLowerCase()] : [];
+        }),
+      ),
+      effects: new Set(
+        this.played
+          .filter((x) => x.off !== true)
+          .flatMap((x) => [x.name, x.same ?? x.name].map((n) => n.toLowerCase())),
+      ),
+      armor: worn.some(isArmor),
+      shield: worn.some(isShield),
+    };
+    return this.seen;
+  }
 }
 
 /** Dice and advantage for rolls, each under its source and, from an effect in play, its id. */

@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
+import { basedOn, mechanicsOf } from './mechanics';
 import { proseScanFeature } from './proseScan';
 import {
   genericOptions,
@@ -259,13 +260,23 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 
   // Named traits (Relentless Endurance, Breath Weapon, …) carry their mechanics
-  // only in prose — curated table first, generic prose scan for the long tail.
+  // only in prose: the curated table first (by its name, or the trait a homebrew
+  // copy is `basedOn`), the generic prose scan for the long tail.
   for (const entry of asEntityArray(e.entries)) {
     const traitName = str(entry.name);
     if (traitName === undefined) continue;
-    if (!emitCuratedTrait(col, traitName, origin)) {
-      proseScanFeature(col, traitName, entry.entries, origin);
-    }
+    const names = [traitName, basedOn(entry)?.name].filter((n) => n !== undefined);
+    mechanicsOf(col, {
+      entry,
+      label: traitName,
+      origin,
+      target: `${traitName}|${origin.label}`,
+      inherited: () => {
+        if (!names.some((n) => emitCuratedTrait(col, n, origin))) {
+          proseScanFeature(col, traitName, entry.entries, origin);
+        }
+      },
+    });
   }
 }
 
