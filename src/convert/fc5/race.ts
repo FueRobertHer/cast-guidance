@@ -27,6 +27,7 @@ import {
   type Defenses,
   type Entry,
   entryName,
+  NOT_STANDING,
   own,
   type ProficiencyGrant,
   plainText,
@@ -37,6 +38,7 @@ import {
   readText,
   readTools,
   readWeapons,
+  sentences,
   splitList,
   standingDefenses,
   withRolls,
@@ -117,6 +119,41 @@ export function otherSpeeds(raw: string): Record<string, number> | undefined {
     out[mode] = Number(m[2]);
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * "You have a swimming speed of 30 feet", "Because of your wings, you have a
+ * flying speed equal to your walking speed". Terms of armor or load (the
+ * Kor's "as long as you are not encumbered or wearing heavy armor") are the
+ * reader's, as the official data leaves them; any other terms are not read.
+ */
+const SPEED_CLAUSE =
+  /^(?:(?:because of|thanks to) your [a-z' -]{1,30}, |in addition, )?you (?:also )?have an? (flying|swimming|climbing|burrowing|fly|swim|climb|burrow) speed (?:of (\d{1,3}) feet|equal to your (?:walking )?speed)(?: (?:as long as|while|if) you(?: are|'re) not (?:encumbered or )?wearing (?:medium or )?heavy armor)?$/;
+/** "Your base walking speed is 30 feet": the `<speed>` tag's to say. */
+const WALK_CLAUSE = /^your (?:base )?walking speed is \d{1,3} feet$/;
+
+/**
+ * The speeds a trait's text gives for good, in any of its sentences: "Your
+ * walking speed is 30 feet, and you have a swimming speed equal to your
+ * walking speed". A sentence read must hold speeds alone; one that sets terms
+ * ("While in beast form, …", "You can't use this flying speed if …") ends
+ * the reading, since what follows may hang on it.
+ */
+export function traitSpeeds(text: string): Record<string, number | true> {
+  const out: Record<string, number | true> = {};
+  for (const sentence of sentences(text.replace(/\s+/g, ' '))) {
+    const found: Record<string, number | true> = {};
+    const clauses = sentence.split(/,? and (?=you )/);
+    for (const clause of clauses) {
+      const m = SPEED_CLAUSE.exec(clause);
+      const mode = m === null ? undefined : own(MOVES, m[1] ?? '');
+      if (m !== null && mode !== undefined) found[mode] = m[2] === undefined ? true : Number(m[2]);
+    }
+    const speedsAlone = clauses.every((c) => SPEED_CLAUSE.test(c) || WALK_CLAUSE.test(c));
+    if (speedsAlone) Object.assign(out, found);
+    else if (NOT_STANDING.test(sentence)) break;
+  }
+  return out;
 }
 
 /** The first sentence of a trait, lowercased, its full stop dropped; spaces made single. */
@@ -223,13 +260,8 @@ export function traitRules(traitName: string, text: string): TraitRules {
   }
   const grant = proficiencySentence(sentence, /\btools?\b/i.test(traitName) ? 'any' : 'none');
   if (grant !== undefined) return grant;
-  const speed =
-    /^you have an? (flying|swimming|climbing|burrowing|fly|swim|climb|burrow) speed (?:of (\d{1,3}) feet|equal to your (?:walking )?speed)$/.exec(
-      sentence,
-    );
-  const mode = speed === null ? undefined : own(MOVES, speed[1] ?? '');
-  if (speed === null || mode === undefined) return {};
-  return { speed: { [mode]: speed[2] === undefined ? true : Number(speed[2]) } };
+  const speed = traitSpeeds(text);
+  return Object.keys(speed).length > 0 ? { speed } : {};
 }
 
 /** A Fight Club `<special>` that names a 5etools trait tag. */

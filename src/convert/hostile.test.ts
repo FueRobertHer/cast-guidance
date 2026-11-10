@@ -140,6 +140,10 @@ describe('more input that once scanned to the end per character', () => {
       `<compendium><item><name>I</name><type>W</type><modifier category="bonus">ac${' '.repeat(200_000)}x</modifier></item></compendium>`,
     ],
     [
+      'a speed trait of many joined clauses and a long lead-in',
+      `<compendium><race><name>R</name><speed>30</speed><trait><name>Speed</name><text>${'you have a swimming speed of 30 feet, and '.repeat(20_000)}because of your ${'a '.repeat(100_000)}, you have a flying speed of 30 feet as long as you are not ${'encumbered or '.repeat(50_000)}wearing heavy armor.</text></trait></race></compendium>`,
+    ],
+    [
       'many class-list stubs for one spell',
       `<compendium><spell><name>Test</name><level>1</level></spell>${'<spell><name>Test</name><classes>Wizard</classes></spell>'.repeat(50_000)}</compendium>`,
     ],

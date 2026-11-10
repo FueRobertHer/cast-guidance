@@ -265,9 +265,12 @@ function cantripScaling(el: XmlElement): Record<string, unknown> | undefined {
 
 /**
  * The upcast tag the sheet reads (`{@scaledamage 4d4|2-9|1d4}`), when the
- * rolls grow by the same dice every slot level.
+ * rolls grow by the same dice every slot level. The file's rolls often stop
+ * short of 9th level (Color Spray's at 8th), so the tag runs to 9th, as the
+ * official data writes it, unless the text names a cap (`capped`: Hail of
+ * Thorns' "maximum 6d10"), where it stops at the file's last roll.
  */
-function upcastTag(el: XmlElement, spellLevel: number): string | undefined {
+function upcastTag(el: XmlElement, spellLevel: number, capped: boolean): string | undefined {
   const { rolls } = levelRolls(el);
   const first = rolls[0];
   const second = rolls[1];
@@ -281,7 +284,7 @@ function upcastTag(el: XmlElement, spellLevel: number): string | undefined {
     if (cur.sides !== first.sides || cur.bonus !== first.bonus) return undefined;
     if (cur.count - prev.count !== step * (cur.level - prev.level)) return undefined;
   }
-  const last = rolls[rolls.length - 1]?.level ?? 9;
+  const last = capped ? (rolls[rolls.length - 1]?.level ?? 9) : 9;
   const base = `${first.count}d${first.sides}${first.bonus}`;
   return `{@scaledamage ${base}|${spellLevel}-${last}|${step}d${first.sides}}`;
 }
@@ -535,7 +538,9 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
     const scaling = perLevel ? cantripScaling(el) : textCantripScaling(entries, higher);
     if (scaling !== undefined) spell.scalingLevelDice = scaling;
   } else if (higher.length > 0) {
-    const tag = perLevel ? upcastTag(el, level) : textUpcastTag(entries, higher, level);
+    const tag = perLevel
+      ? upcastTag(el, level, /\bmaximum\b/i.test(plainText(higher)))
+      : textUpcastTag(entries, higher, level);
     const tagged = tag === undefined ? undefined : withUpcastTag(higher, tag);
     if (tagged !== undefined) higher = tagged;
   }

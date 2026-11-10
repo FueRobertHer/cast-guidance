@@ -807,6 +807,49 @@ describe('races', () => {
       expect(result.entity.toolProficiencies).toBeUndefined();
     });
 
+    it('reads a speed in any sentence of a trait, and none a condition governs', () => {
+      const speedOf = (...traits: string[]) =>
+        done(
+          convertRace(
+            parseXml(`<race><name>Oddkin</name><speed>30</speed>${traits.join('')}</race>`),
+            ctx,
+          ),
+        ).entity.speed;
+      expect(
+        speedOf(
+          trait(
+            'Speed',
+            'Your walking speed is 30 feet, and you have a swimming speed equal to your walking speed.',
+          ),
+        ),
+      ).toEqual({ walk: 30, swim: true });
+      expect(
+        speedOf(
+          trait(
+            'Speed',
+            'Your base walking speed is 30 feet. You also have a swimming speed of 40 feet.',
+          ),
+          trait(
+            'Flight',
+            "Because of your wings, you have a flying speed equal to your walking speed. You can't use this flying speed if you're wearing medium or heavy armor.",
+          ),
+          trait(
+            'Climber',
+            'Your base walking speed is 30 feet. You also have a climbing speed of 30 feet as long as you are not encumbered or wearing heavy armor.',
+          ),
+        ),
+      ).toEqual({ walk: 30, swim: 40, fly: true, climb: 30 });
+      for (const text of [
+        'While in your beast form, you have a climbing speed of 30 feet.',
+        'You have a flying speed of 30 feet until the end of your turn.',
+        'As a bonus action, you can sprout wings. You have a flying speed of 30 feet.',
+        'You have a swimming speed of 30 feet, and you can breathe air and water only while submerged.',
+        'You have a climbing speed of 30 feet while you are raging.',
+      ]) {
+        expect(speedOf(trait('Shift', text)), text).toBe(30);
+      }
+    });
+
     it('reads the edition from a Source line in a trait', () => {
       const result = done(
         convertRace(
