@@ -94,6 +94,20 @@ describe('where packs disagree', () => {
     ]);
   });
 
+  it('wins by order over a pack that also names the character', () => {
+    const party = pack('Party', rest('standard'), to('hild', 'bram'));
+    const everyone = pack('Everyone', rest('gritty'), every);
+    const bram = pack('Bram', rest('gritty'), to('bram'));
+    expect(packConflicts([party, everyone, bram]).map(describeConflict)).toEqual([
+      'Party and Everyone both set rest length. Party wins: it is applied to those characters, over every character.',
+      'Party, Everyone and Bram all set rest length. Bram wins: it comes later in your pack order.',
+    ]);
+    expect(packConflicts([bram, party, everyone]).map(describeConflict)).toEqual([
+      'Bram, Party and Everyone all set rest length. Party wins: it comes later in your pack order.',
+      'Party and Everyone both set rest length. Party wins: it is applied to those characters, over every character.',
+    ]);
+  });
+
   it('a rule chosen in Settings is over every pack applied to every character', () => {
     const settings = { restLength: 'standard' } as const;
     expect(

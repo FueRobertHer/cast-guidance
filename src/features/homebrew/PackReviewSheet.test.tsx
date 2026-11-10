@@ -30,7 +30,7 @@ import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import grittyTable from '../../../tests-fixtures/packs/gritty-table.json';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
-import { savePackLocal } from './PackReviewSheet';
+import { clashLines, savePackLocal } from './PackReviewSheet';
 
 beforeAll(() => {
   window.matchMedia = (query: string) =>
@@ -181,6 +181,27 @@ describe('adding a rule pack', () => {
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(['Cancel']);
+  });
+});
+
+describe('clash lines', () => {
+  it('says a clash once where two packs share a name', () => {
+    const rest = (restLength: string) => ({ v: 1, tableRules: { restLength } });
+    const gritty = (id: string, character: string) => ({
+      id,
+      name: 'Gritty Table',
+      guidance: rest('gritty'),
+      appliesTo: { characters: [character] },
+    });
+    const everyone = {
+      id: 'e',
+      name: 'Everyone',
+      guidance: rest('heroic'),
+      appliesTo: { characters: [], appDefault: true as const },
+    };
+    expect(clashLines([gritty('g1', 'hild'), gritty('g2', 'bram'), everyone], 'e', false)).toEqual([
+      'Gritty Table and Everyone both set rest length. Gritty Table wins: it is applied to those characters, over every character.',
+    ]);
   });
 });
 

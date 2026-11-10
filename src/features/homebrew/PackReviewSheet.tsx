@@ -9,7 +9,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
 import {
   type PackLocal,
@@ -81,13 +81,9 @@ export function packsHere(files: readonly HomebrewFile[]): PackHere[] {
     .filter((p): p is PackHere => p !== undefined);
 }
 
-/**
- * Each stored file as last read for packs, by id: which content it was (when
- * it was added and its revision, as a file deleted and added again is a new
- * one), and the file when it holds a pack (null when it holds none, so its
- * content is not kept).
- */
-const READ_FILES = new Map<string, { version: string; pack: HomebrewFile | null }>();
+/** A stored file as last read for packs; `pack` is null when it holds none, so its content is not kept. */
+type ReadFile = { version: string; pack: HomebrewFile | null };
+/** Which content a file is: when it was added and its revision, as a file deleted and added again is a new one. */
 const versionOf = (f: Pick<HomebrewFileMeta, 'addedAt' | 'rev'>) => `${f.addedAt}:${f.rev ?? 0}`;
 
 /**
@@ -108,14 +104,17 @@ export function usePacksHere(
           rows.filter((r) => r.book === undefined).map((r) => [r.id, versionOf(r), r.enabled]),
         );
   const [read, setRead] = useState<{ key: string; packs: PackHere[] }>();
+  // Each file's last read, by id, for as long as the page is open.
+  const cache = useRef(new Map<string, ReadFile>());
   useEffect(() => {
     if (key === undefined) return;
     let live = true;
+    const readFiles = cache.current;
     const wanted = JSON.parse(key) as Array<[string, string, boolean]>;
     void (async () => {
       const files: HomebrewFile[] = [];
       for (const [id, version, enabled] of wanted) {
-        let known = READ_FILES.get(id);
+        let known = readFiles.get(id);
         if (known?.version !== version) {
           try {
             const { file } = await homebrewRepo.getSafe(id);
@@ -124,7 +123,7 @@ export function usePacksHere(
               version: versionOf(file),
               pack: packGuidance(file.json) === undefined ? null : file,
             };
-            READ_FILES.set(id, known);
+            readFiles.set(id, known);
           } catch {
             // Unreadable: the page lists it among the files that could not be read.
             continue;
@@ -134,7 +133,7 @@ export function usePacksHere(
       }
       // A file no longer here is not kept.
       const here = new Set(wanted.map(([id]) => id));
-      for (const id of READ_FILES.keys()) if (!here.has(id)) READ_FILES.delete(id);
+      for (const id of readFiles.keys()) if (!here.has(id)) readFiles.delete(id);
       if (live) setRead({ key, packs: packsHere(files) });
     })();
     return () => {
@@ -175,8 +174,8 @@ function Rows({ heading, rows }: { heading: string; rows: readonly PackReviewRow
           // Two rows can say the same: a pack may hold a moment twice.
           // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed while shown
           <div key={i} className="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-2">
-            <dt className="text-body-strong">{r.key}</dt>
-            <dd className="text-ink-muted">{r.value}</dd>
+            <dt className="min-w-0 text-body-strong wrap-anywhere">{r.key}</dt>
+            <dd className="min-w-0 text-ink-muted wrap-anywhere">{r.value}</dd>
           </div>
         ))}
       </dl>
@@ -313,9 +312,11 @@ export function clashLines(
   incoming: boolean,
   app: AppTableRules = {},
 ): string[] {
-  return packConflicts(packs, app)
+  const lines = packConflicts(packs, app)
     .filter((c) => c.ids.includes(id))
     .map((c) => (incoming ? describeIncomingConflict(c, id) : describeConflict(c)));
+  // Two packs may share a name, so two clashes can read the same: each is said once.
+  return [...new Set(lines)];
 }
 
 /**

@@ -361,12 +361,16 @@ export function Component() {
   const packs = usePacksHere(rows);
   const packById = new Map((packs ?? []).map((p) => [p.id, p]));
   const appRules = useAppTableRules();
+  // Two packs may share a name, so two clashes can read the same: each is said once.
   const conflicts = useMemo(
-    () =>
-      packConflicts(
-        (packs ?? []).filter((p) => p.enabled).map((p) => inPlay(p)),
-        appRules,
+    () => [
+      ...new Set(
+        packConflicts(
+          (packs ?? []).filter((p) => p.enabled).map((p) => inPlay(p)),
+          appRules,
+        ).map(describeConflict),
       ),
+    ],
     [packs, appRules],
   );
   const [reviewing, setReviewing] = useState<string>();
@@ -780,7 +784,7 @@ export function Component() {
             </BannerAction>
           }
         >
-          {conflicts.slice(0, 3).map(describeConflict).join(' ')}
+          {conflicts.slice(0, 3).join(' ')}
           {conflicts.length > 3 && ` And ${conflicts.length - 3} more.`}
         </Banner>
       )}

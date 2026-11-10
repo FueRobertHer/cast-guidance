@@ -1091,7 +1091,12 @@ export function packConflicts(
       if (counted.length < 2 || new Set(counted.map((l) => l.sets.rules[id])).size === 1) continue;
       const winner = mine[mine.length - 1] ?? defaults[defaults.length - 1];
       if (winner === undefined) continue;
-      const why = mine.length > 0 && defaults.length > 0 ? 'chosen' : 'order';
+      // Chosen only when every pack it overrules is applied to every character;
+      // one that also names the character it beats by order alone.
+      const value = winner.sets.rules[id];
+      const overruled = counted.filter((l) => l.sets.rules[id] !== value);
+      const why =
+        mine.includes(winner) && overruled.every((l) => defaults.includes(l)) ? 'chosen' : 'order';
       say(
         ruleName(id).toLowerCase(),
         counted.map((l) => l.pack),
