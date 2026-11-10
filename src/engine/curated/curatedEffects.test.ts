@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Collector } from '../effects/base';
-import { type EffectInput, type EffectOrigin, type EngineContext, newCharacterDoc } from '../types';
+import {
+  type DataEntity,
+  type EffectInput,
+  type EffectOrigin,
+  type EngineContext,
+  newCharacterDoc,
+} from '../types';
 import { emitCuratedEffects } from './curatedEffects';
 
 const ctx: EngineContext = { get: () => undefined, byType: () => [] };
@@ -341,5 +347,84 @@ describe('pools a cost spends', () => {
 
   it('lets Stunning Strike ride on a hit, with no slot of its own', () => {
     expect(action(emit('stunning strike|monk', 'Monk', 5, origin))?.economy).toBe('none');
+  });
+});
+
+describe('free casts of a spell the class always has prepared', () => {
+  const classes: DataEntity[] = [
+    { name: 'Ranger', source: 'XPHB', spellcastingAbility: 'wis' },
+    { name: 'Ranger', source: 'PHB', spellcastingAbility: 'wis' },
+    { name: 'Paladin', source: 'XPHB', spellcastingAbility: 'cha' },
+    { name: 'Warlock', source: 'XPHB', spellcastingAbility: 'cha' },
+    // A class whose own data counts the casts, as a Death Knight's does.
+    {
+      name: 'Knight',
+      source: 'HB',
+      spellcastingAbility: 'cha',
+      additionalSpells: [{ prepared: { 5: { daily: { 1: ['find steed|xphb'] } } } }],
+    },
+  ];
+  const world: EngineContext = {
+    get: (type, name, source) =>
+      type === 'class' ? classes.find((c) => c.name === name && c.source === source) : undefined,
+    byType: () => [],
+  };
+  const cast = (key: string, name: string, source: string, levels: number, from = source) => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.classes = [{ ref: { name, source }, levels, hp: [] }];
+    const c = new Collector(doc, world);
+    const uid = `${name}|${source}`.toLowerCase();
+    emitCuratedEffects(c, key, { label: 'Feature', uid, type: 'class' }, from.toLowerCase());
+    return c.effects;
+  };
+  const resource = (effects: EffectInput[], key: string) =>
+    effects.find((e) => e.kind === 'resource' && e.key === key) as
+      | Extract<EffectInput, { kind: 'resource' }>
+      | undefined;
+
+  it("gives 2024 Favored Enemy Hunter's Mark casts by Ranger level", () => {
+    const at = (levels: number) => cast('favored enemy|ranger', 'Ranger', 'XPHB', levels);
+    expect(at(1)).toEqual([
+      expect.objectContaining({ kind: 'resource', key: 'favored-enemy', max: 2, resetOn: 'long' }),
+      expect.objectContaining({
+        kind: 'grantSpell',
+        spell: { name: "hunter's mark", source: 'xphb' },
+        ability: 'wis',
+        usage: '2/day',
+        resourceKey: 'favored-enemy',
+      }),
+    ]);
+    expect([4, 5, 9, 13, 17, 20].map((l) => resource(at(l), 'favored-enemy')?.max)).toEqual([
+      2, 3, 4, 5, 6, 6,
+    ]);
+  });
+
+  it('gives the 2014 Favored Enemy nothing, as its prose scan did', () => {
+    expect(cast('favored enemy|ranger', 'Ranger', 'PHB', 5)).toEqual([]);
+  });
+
+  it.each([
+    ["paladin's smite|paladin", 'Paladin', 'divine smite', 'paladin-s-smite', "Paladin's Smite"],
+    ['faithful steed|paladin', 'Paladin', 'find steed', 'faithful-steed', 'Faithful Steed'],
+    [
+      'contact patron|warlock',
+      'Warlock',
+      'contact other plane',
+      'contact-patron',
+      'Contact Patron',
+    ],
+  ])('ties %s to its spell, under the pool the prose scan made', (key, cls, spell, pool, label) => {
+    const made = cast(key, cls, 'XPHB', 9);
+    expect(resource(made, pool)).toMatchObject({ label, max: 1, resetOn: 'long' });
+    expect(made.find((e) => e.kind === 'grantSpell')).toMatchObject({
+      spell: { name: spell },
+      ability: 'cha',
+      usage: '1/day',
+      resourceKey: pool,
+    });
+  });
+
+  it("adds nothing where the class's own data counts the casts", () => {
+    expect(cast('faithful steed|paladin', 'Knight', 'HB', 5, 'xphb')).toEqual([]);
   });
 });

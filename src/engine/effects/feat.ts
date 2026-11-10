@@ -116,8 +116,9 @@ export function collectFeatEntity(
   readDefenses(col, e, origin, idBase);
   // A copy of an official feat (`printingOf`) reads that feat's rows after its own.
   const uids = tableUids(e, uid);
-  readFeatOptionalFeatures(col, e, uids, origin, idBase);
+  // Asked first, since an invocation Eldritch Adept gives casts with the ability it picks.
   const picked = readProsePick(col, uids, origin, idBase);
+  readFeatOptionalFeatures(col, e, uids, origin, idBase, picked?.ability);
 
   // expertise: [{ anyProficientSkill: 1 }] — options limited at prompt-render
   // time is complex; offer all skills and validate visually via prof dots.
@@ -164,7 +165,7 @@ export function collectFeatEntity(
   );
 
   col.features.push({
-    name: picked !== undefined ? `${origin.label} (${picked})` : origin.label,
+    name: picked !== undefined ? `${origin.label} (${picked.label})` : origin.label,
     origin,
     entries: e.entries,
   });

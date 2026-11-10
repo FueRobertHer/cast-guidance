@@ -238,9 +238,17 @@ function usesCounted(before: string[], counted: string[]): boolean {
  * only be a spell's limit: those count for any spell the origin counts, picks too,
  * since feats that say "this feat's spell" would otherwise show every use twice.
  */
-function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOrigin): boolean {
+function limitsOnlyCountedSpells(
+  text: string,
+  col: Collector,
+  origin: EffectOrigin,
+  owner: string | undefined,
+): boolean {
   const counted = col.effects.flatMap((e) =>
-    e.kind === 'grantSpell' && e.resourceKey !== undefined && e.origin.uid === origin.uid
+    e.kind === 'grantSpell' &&
+    e.resourceKey !== undefined &&
+    e.origin.uid === origin.uid &&
+    (owner === undefined || e.origin.label === origin.label || e.origin.label === owner)
       ? [e.spell.name.toLowerCase()]
       : [],
   );
@@ -256,7 +264,7 @@ function limitsOnlyCountedSpells(text: string, col: Collector, origin: EffectOri
     const before = sentences.slice(0, at);
     if (
       FREE_CAST.test(sentence) &&
-      /\b(?:can|may|to) cast\b/.test(`${before.at(-1) ?? ''} ${sentence}`)
+      /\b(?:can|may|to)(?: also)? cast\b/.test(`${before.at(-1) ?? ''} ${sentence}`)
     ) {
       found = true;
       continue;
@@ -739,20 +747,36 @@ function emitStandingBonuses(col: Collector, entries: unknown, origin: EffectOri
 }
 
 /**
+ * Whether the prose casts its spell with a spell slot ("you can cast compulsion once
+ * using a warlock spell slot"), where a count in the data is only how often.
+ */
+export function castsWithASlot(entries: unknown): boolean {
+  return /(?<!without )\busing an? (?:[a-z]+ )?spell slot\b/.test(flattenEntries(entries));
+}
+
+/**
  * Scan one named trait/feature and emit resource / action / HP / bonus effects.
  * Safe to call on anything — no-ops when no usage wording is found.
+ *
+ * @param owner the label of the class or subclass whose many features share the
+ *   origin's uid. A spell counts as this feature's when the feature or that list
+ *   counts it, and not when a sibling feature does (2024 Contact Patron's free
+ *   cast is not Mystic Arcanum's). A subclass's list is read before its features;
+ *   a class's comes after them, so only a curated row sees what it counts.
  */
 export function proseScanFeature(
   col: Collector,
   name: string,
   entries: unknown,
   origin: EffectOrigin,
+  owner?: string,
 ): void {
   const text = flattenEntries(entries);
   if (text.length === 0) return;
 
   const detected = detectUses(text);
-  const uses = detected === 1 && limitsOnlyCountedSpells(text, col, origin) ? undefined : detected;
+  const uses =
+    detected === 1 && limitsOnlyCountedSpells(text, col, origin, owner) ? undefined : detected;
   if (uses !== undefined) {
     // The clauses that return uses decide, when there are any, and a short rest
     // that returns even one counts. Any other rest a trait mentions is about

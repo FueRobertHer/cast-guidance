@@ -88,6 +88,29 @@ export function hasChosenSpell(raw: unknown): boolean {
   return chooses.length > 0;
 }
 
+/**
+ * An entry's lists without their `resource` buckets: spells bought with a pool's
+ * points (a Four Elements discipline's Ki) rather than given. The feature's own
+ * action already spends the points, so a grant here would be a free cast.
+ */
+export function withoutPoolCosts(raw: unknown): DataEntity[] {
+  const strip = (val: unknown): unknown =>
+    val !== null && typeof val === 'object' && !Array.isArray(val) && !('choose' in val)
+      ? Object.fromEntries(Object.entries(val).filter(([bucket]) => bucket !== 'resource'))
+      : val;
+  return asEntityArray(raw).map((entry) => {
+    const out: DataEntity = { ...entry };
+    for (const list of ['innate', 'known', 'prepared'] as const) {
+      const byLevel = entry[list];
+      if (byLevel === null || typeof byLevel !== 'object' || Array.isArray(byLevel)) continue;
+      out[list] = Object.fromEntries(
+        Object.entries(byLevel).map(([level, val]) => [level, strip(val)]),
+      );
+    }
+    return out;
+  });
+}
+
 /** The parts of a level-keyed map open at this level. */
 function reachedLevels(
   map: unknown,
@@ -172,6 +195,65 @@ function walkBuckets(val: unknown, emit: (group: SpellGroup) => void): void {
       });
     }
   }
+}
+
+/**
+ * An entry's counted innate spells as spells cast with the class's slots, for a
+ * feature whose prose spends a slot on each cast (2014 Bewitching Whispers). The
+ * data writes how often as a `daily` bucket; read as one, the cast would be free.
+ * How often stays the prose's to count. An entry that already lists prepared
+ * spells is left as written.
+ */
+export function asSlotCasts(raw: unknown): DataEntity[] {
+  return asEntityArray(raw).map((entry) => {
+    const { innate } = entry;
+    if (entry.prepared !== undefined || innate === null || typeof innate !== 'object') {
+      return entry;
+    }
+    const kept: Record<string, unknown> = {};
+    const prepared: Record<string, string[]> = {};
+    for (const [level, val] of Object.entries(innate)) {
+      if (val === null || typeof val !== 'object' || Array.isArray(val) || 'choose' in val) {
+        kept[level] = val;
+        continue;
+      }
+      const left: Record<string, unknown> = {};
+      for (const [bucket, spells] of Object.entries(val)) {
+        if (
+          (bucket !== 'daily' && bucket !== 'rest') ||
+          spells === null ||
+          typeof spells !== 'object'
+        ) {
+          left[bucket] = spells;
+          continue;
+        }
+        const names: string[] = [];
+        collectStrings(Object.values(spells), names, []);
+        prepared[level] = [...(prepared[level] ?? []), ...names];
+      }
+      if (Object.keys(left).length > 0) kept[level] = left;
+    }
+    return Object.keys(prepared).length === 0 ? entry : { ...entry, innate: kept, prepared };
+  });
+}
+
+/**
+ * The spells an entry list lets its holder cast a counted number of times
+ * (`daily`, `rest`), at any level, by lowercase name: casts its own data counts.
+ */
+export function countedSpells(raw: unknown): Set<string> {
+  const out = new Set<string>();
+  for (const entry of asEntityArray(raw)) {
+    for (const list of [entry.innate, entry.prepared]) {
+      for (const [, val] of reachedLevels(list, Number.POSITIVE_INFINITY)) {
+        walkBuckets(val, (group) => {
+          if (group.limit === undefined) return;
+          for (const name of group.names) out.add(parseSpellRef(name).name.toLowerCase());
+        });
+      }
+    }
+  }
+  return out;
 }
 
 /** Title Case for a resource card, since spell refs are written lowercase. */
@@ -325,10 +407,7 @@ function grantSpellEntry(
     plainUsage: string | undefined,
   ) => {
     const picked = group.chooses.flatMap((raw) => pick(raw, slot, group, plainUsage));
-    // A class's own list is read for its picks alone. The spells it names are not
-    // granted yet on any class, and doing so is a change of its own.
-    const named = origin.type === 'class' ? [] : group.names;
-    const spells = [...named, ...picked].map(parseSpellRef).filter((spell) => {
+    const spells = [...group.names, ...picked].map(parseSpellRef).filter((spell) => {
       const dedupe = `${spell.name}|${spell.source}`.toLowerCase();
       if (seen.has(dedupe)) return false;
       seen.add(dedupe);

@@ -6,6 +6,7 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
+import { countedSpells, parseSpellRef } from '../effects/additionalSpells';
 import { asEntityArray, type Collector } from '../effects/base';
 import {
   LANGUAGE_OPTIONS,
@@ -16,10 +17,12 @@ import {
 } from '../effects/readers';
 import { reskinOf } from '../effects/reskin';
 import {
+  ABILITIES,
   type Ability,
   type ChoiceOption,
   type DataEntity,
   type EffectOrigin,
+  refUid,
   SKILLS,
 } from '../types';
 
@@ -260,6 +263,39 @@ function classSkillList(col: Collector, className: string): string[] {
 function printedIn(origin: EffectOrigin, source: string, from?: string): boolean {
   return origin.uid.endsWith(`|${source}`) || from === source;
 }
+
+/**
+ * A spell a class feature lets you cast without a slot, `max` times a long rest,
+ * beside the copy the class always has prepared. Its pool keeps the key and label
+ * the prose scan gave it, so uses already marked carry over. A class whose own data
+ * counts those casts (a Death Knight's Rune Strike) has them from there instead.
+ */
+const freeCast =
+  (spellRef: string, key: string, label: string, max: (col: Collector) => number): CuratedFn =>
+  (col, origin) => {
+    const entry = col.doc.classes.find((c) => refUid(c.ref) === origin.uid);
+    const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
+    const spell = parseSpellRef(spellRef);
+    if (countedSpells(cls?.additionalSpells).has(spell.name)) return;
+    const ability = String(cls?.spellcastingAbility);
+    col.add({ kind: 'resource', key, label, max: max(col), resetOn: 'long', origin });
+    col.add({
+      kind: 'grantSpell',
+      spell,
+      ...((ABILITIES as readonly string[]).includes(ability)
+        ? { ability: ability as Ability }
+        : {}),
+      usage: `${max(col)}/day`,
+      resourceKey: key,
+      origin,
+    });
+  };
+
+/** 2024 Favored Enemy: free Hunter's Mark casts by Ranger level (2, then 3 to 6 at 5, 9, 13 and 17). */
+const favoredEnemyCasts = (col: Collector): number => {
+  const level = classLevel(col, 'Ranger');
+  return level >= 17 ? 6 : level >= 13 ? 5 : level >= 9 ? 4 : level >= 5 ? 3 : 2;
+};
 
 /**
  * The 2014 and FRHoF printings share this pick. FRHoF adds a kind of artisan's
@@ -773,6 +809,35 @@ export const CURATED: Record<string, CuratedFn> = {
       origin,
     });
     col.add({ kind: 'action', economy: 'bonus', label: 'Bardic Inspiration', origin });
+  },
+  "paladin's smite|paladin": freeCast(
+    'divine smite|xphb',
+    'paladin-s-smite',
+    "Paladin's Smite",
+    () => 1,
+  ),
+  'faithful steed|paladin': freeCast(
+    'find steed|xphb',
+    'faithful-steed',
+    'Faithful Steed',
+    () => 1,
+  ),
+  'runic smite|death knight': freeCast('rune strike|wow', 'runic-smite', 'Runic Smite', () => 1),
+  'contact patron|warlock': freeCast(
+    'contact other plane|xphb',
+    'contact-patron',
+    'Contact Patron',
+    () => 1,
+  ),
+  // The 2014 printing gives no casts, and its prose scan finds nothing either.
+  'favored enemy|ranger': (col, origin, from) => {
+    if (!printedIn(origin, 'xphb', from)) return;
+    freeCast(
+      "hunter's mark|xphb",
+      'favored-enemy',
+      'Favored Enemy',
+      favoredEnemyCasts,
+    )(col, origin);
   },
   // Lay on Hands is a POOL of hit points (5 x paladin level), not a use count,
   // so the prose scanner's "times per rest" patterns can never see it.

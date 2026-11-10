@@ -4,7 +4,7 @@ import { emitCuratedEffects } from '../curated/curatedEffects';
 import { deriveSheet } from '../derive';
 import { type EffectInput, type EffectOrigin, newCharacterDoc } from '../types';
 import { Collector } from './base';
-import { flattenEntries, proseScanFeature } from './proseScan';
+import { castsWithASlot, flattenEntries, proseScanFeature } from './proseScan';
 import { collectRace } from './race';
 
 const origin: EffectOrigin = { label: 'Trait', uid: 'race|x', type: 'race' };
@@ -528,6 +528,18 @@ describe('proseScanFeature — limited-use detection', () => {
   });
 });
 
+describe('castsWithASlot', () => {
+  it.each([
+    ['You can cast {@spell fake ward} once using a warlock spell slot.', true],
+    ['You can cast fake ward using a spell slot, once a day.', true],
+    ['You can cast fake ward without using a spell slot.', false],
+    ['You can cast fake ward without expending a spell slot.', false],
+    ['You can cast fake ward at will.', false],
+  ])('reads %s as %s', (text, slot) => {
+    expect(castsWithASlot([text])).toBe(slot);
+  });
+});
+
 describe('proseScanFeature beside a counted spell', () => {
   /** A scan on a sheet whose additionalSpells already count these spells for this origin. */
   function scanBeside(spells: string[], text: string, from: EffectOrigin = origin) {
@@ -604,6 +616,10 @@ describe('proseScanFeature beside a counted spell', () => {
         'You can cast fake ward once with no slot. You regain the ability to do so after a long rest.',
       ],
       [
+        'a free cast a sentence on from "can also cast"',
+        'You can also cast fake ward once with no slot. You regain the ability to do so after a long rest.',
+      ],
+      [
         'a free cast that says "to cast" alone',
         'Fake ward needs no slot here, but you must finish a long rest to cast it again.',
       ],
@@ -622,6 +638,33 @@ describe('proseScanFeature beside a counted spell', () => {
     it('that limit, keeping an action of its own, which no longer spends a use', () => {
       const text = `You may cast fake ward here. While it lasts, you can make a strike as a bonus action. ${CAST_LIMIT}`;
       expect(scanBeside(['fake ward'], text)).toMatchObject([{ kind: 'action', economy: 'bonus' }]);
+    });
+  });
+
+  describe('on a subclass, whose features share its uid', () => {
+    const classOrigin: EffectOrigin = { label: 'Keeper', uid: 'keeper|hb', type: 'subclass' };
+    /** A free cast another feature of the subclass, or its own list, counts. */
+    function scanFeature(countedBy: string, owner: string | undefined) {
+      const col = new Collector(newCharacterDoc('c', 'H', 't'), makeTestContext());
+      col.add({
+        kind: 'grantSpell',
+        spell: { name: 'fake ward', source: 'HB' },
+        usage: '1/day',
+        resourceKey: 'fake-ward',
+        origin: { ...classOrigin, label: countedBy },
+      });
+      const text =
+        'You can cast your arcanum spell once with no slot. You regain the ability to do so after a long rest.';
+      proseScanFeature(col, 'Arcanum', [text], { ...classOrigin, label: 'Arcanum' }, owner);
+      return col.effects.filter((e) => e.kind === 'resource');
+    }
+
+    it("keeps the tracker of a feature beside another feature's free cast", () => {
+      expect(scanFeature('Patron Call', 'Keeper')).toMatchObject([{ key: 'arcanum', max: 1 }]);
+    });
+
+    it("reads no second tracker for a spell the subclass's own list counts", () => {
+      expect(scanFeature('Keeper', 'Keeper')).toEqual([]);
     });
   });
 
