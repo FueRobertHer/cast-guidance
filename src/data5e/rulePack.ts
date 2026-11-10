@@ -19,8 +19,8 @@ import {
   own,
   type PackAppliesTo,
   type RulePackEntry,
-} from '@/engine/castGuidance';
-import { parseFormula } from '@/engine/formula';
+} from '../engine/castGuidance';
+import { parseFormula } from '../engine/formula';
 
 /** Where in `_meta` a stored pack keeps what is this device's alone. */
 export const PACK_LOCAL_KEY = 'castGuidanceLocal';

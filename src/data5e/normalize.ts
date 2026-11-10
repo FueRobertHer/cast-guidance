@@ -4,7 +4,8 @@
  * the data-audit script exercises exactly the code the app runs.
  */
 
-import { RULE_PACK_TYPE } from '@/engine/castGuidance';
+// Relative, not `@/`: the data-audit script runs this file under plain Bun.
+import { RULE_PACK_TYPE } from '../engine/castGuidance';
 import {
   type CopyModWarning,
   type CopyRef,
