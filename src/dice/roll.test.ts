@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { cryptoRng, roll } from './roll';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cryptoRng, roll, setTableCrit } from './roll';
+
+afterEach(() => setTableCrit('doubleDice'));
 
 /** RNG stub that returns a fixed sequence regardless of sides. */
 function seq(...values: number[]): (sides: number) => number {
@@ -129,6 +131,47 @@ describe('roll', () => {
       const dice = r.terms[0];
       if (dice?.kind !== 'dice') throw new Error('expected dice term');
       expect(dice.rolls).toHaveLength(4);
+      expect(dice.maxed).toBeUndefined();
+      expect(r.meta?.critRule).toBeUndefined();
+    });
+
+    // The Rules board's greataxe: 1d12 + 4, the d12 showing 9 (and 5 when rolled again).
+    it('as written, rolls the dice twice: 2d12 + 4', () => {
+      expect(roll('1d12+4', { critical: true, rng: seq(9, 5) }).total).toBe(18);
+    });
+
+    it('under max then roll, counts each die at its maximum and rolls it: 12 + 1d12 + 4', () => {
+      const r = roll('1d12+4', { critical: true, crit: 'maxPlusRoll', rng: seq(5) });
+      expect(r.total).toBe(12 + 5 + 4);
+      expect(r.meta).toMatchObject({ critical: true, critRule: 'maxPlusRoll' });
+      const dice = r.terms[0];
+      if (dice?.kind !== 'dice') throw new Error('expected dice term');
+      expect(dice.rolls).toEqual([
+        { v: 12, kept: true },
+        { v: 5, kept: true },
+      ]);
+      expect(dice.maxed).toBe(1);
+    });
+
+    it('under double the total, rolls once and doubles the dice and modifiers: (1d12 + 4) x 2', () => {
+      const r = roll('1d12+4', { critical: true, crit: 'doubleTotal', rng: seq(9) });
+      expect(r.total).toBe((9 + 4) * 2);
+      expect(r.terms.at(-1)).toEqual({
+        kind: 'multiplier',
+        value: 2,
+        detail: { kind: 'mod', value: 2 },
+      });
+      expect(r.meta?.critRule).toBe('doubleTotal');
+    });
+
+    it('follows the table’s rule unless the roll names its own, and only on a critical', () => {
+      setTableCrit('maxPlusRoll');
+      expect(roll('1d6+1', { critical: true, rng: seq(2) }).total).toBe(6 + 2 + 1);
+      expect(roll('1d6+1', { critical: true, crit: 'doubleDice', rng: seq(2, 3) }).total).toBe(6);
+      expect(roll('1d6+1', { rng: seq(2) }).total).toBe(3);
+      setTableCrit('doubleTotal');
+      expect(roll('1d6+1', { critical: true, rng: seq(2) }).total).toBe(6);
+      expect(roll('1d6+1', { rng: seq(2) }).meta).toBeUndefined();
     });
   });
 

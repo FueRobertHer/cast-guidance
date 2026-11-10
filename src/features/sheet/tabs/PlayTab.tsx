@@ -39,6 +39,8 @@ import {
   setConcentration,
 } from '@/engine/effectLife';
 import { defensesInForce, rollEffects } from '@/engine/playRules';
+import type { RestDone } from '@/engine/rest';
+import { sheetRules } from '@/engine/rules';
 import type {
   ActionEconomy,
   AttackRow,
@@ -102,13 +104,14 @@ import {
   newTurnLines,
   raisedBy,
   saveDcRaisedBy,
+  withMoments,
 } from '../effectsInPlay';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
-import { backCaption, giveBack, longRest, shortRest } from '../rest';
+import { backCaption, giveBack, restWith } from '../rest';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
@@ -361,33 +364,31 @@ export function Component() {
   // What ending or switching effects needs, to keep current HP within the maximum.
   const hpNow = hpLimits(sheet, doc.rulesVersion);
   const inPlay = effectsInPlay(play);
-  /** Take a rest, ending the effects ticked first, so Aid's +5 does not outlive it. */
+  /**
+   * Take a rest, ending the effects ticked first, so Aid's +5 does not outlive
+   * it, then the rest's moments (H9), once its recovery is done.
+   */
   const finishRest = (rest: 'short' | 'long', ends: ReadonlySet<string>) => {
-    let restored: string[] = [];
-    let ended: string[] = [];
+    let done: RestDone | undefined;
+    let full = true;
     update(
       (d) => {
-        const change = endEffects(d.play, ends, hpNow);
-        ended = change.ended;
-        restored =
-          rest === 'short'
-            ? shortRest(d.play, sheet)
-            : longRest(
-                d.play,
-                sheet,
-                doc.rulesVersion,
-                change.maxHpChange,
-                undefined,
-                idleChargePools(d.equipment, sheet.resources),
-              );
+        done = restWith(d.play, sheet, rest, doc.rulesVersion, {
+          before: endEffects(d.play, ends, hpNow),
+          idle: idleChargePools(d.equipment, sheet.resources),
+        });
+        // A table that heals less on a long rest can leave it short of full.
+        full = d.play.currentHp >= hpNow.maxHp + done.change.maxHpChange;
       },
       rest === 'short' ? 'Short rest' : 'Long rest',
     );
+    const restored = done?.restored ?? [];
+    const ended = done?.change.ended ?? [];
     const said = [
       ...(restored.length > 0 ? [`Restored ${restored.join(', ')}`] : []),
       ...(ended.length > 0 ? [`Ended ${andList(ended)}`] : []),
     ];
-    notify(
+    const notice: Notice =
       rest === 'short'
         ? {
             title: 'Short rest',
@@ -396,10 +397,11 @@ export function Component() {
           }
         : {
             title: 'Long rest complete',
-            detail: said.length > 0 ? said.join(' · ') : 'Already at full',
+            detail:
+              said.length > 0 ? said.join(' · ') : full ? 'Already at full' : 'Nothing to restore',
             tone: 'good',
-          },
-    );
+          };
+    notify(withMoments(notice, done?.change.moments) ?? notice);
   };
 
   // What the character's conditions do to their own rolls, speed and hit
@@ -2383,6 +2385,7 @@ export function Component() {
       </section>
       <RestSheet
         rest={restAsked.rest}
+        length={sheetRules(sheet, doc.rulesVersion).restLength}
         open={restAsked.open}
         effects={inPlay}
         {...(restAsked.rest === 'long' ? { detail: LONG_REST_DETAIL } : {})}

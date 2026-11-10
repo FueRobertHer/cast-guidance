@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 // The roll toast spending a die it offered through the open sheet: adding
 // Bardic Inspiration ends it, taking the die off puts it back where it was,
-// and a change to hit points stops the dice waiting.
+// and a change to hit points stops the dice waiting. The open character's
+// table rules reach the dice through its derived sheet.
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { roll } from '@/dice/roll';
+import { sheetRulesField } from '@/engine/rules';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -14,12 +17,14 @@ import { setOneUseDice } from '@/lib/oneUseDice';
 import type { DocUpdater } from '@/stores/characterSession';
 import { heldRollStore, rollFrom } from '@/stores/heldRoll';
 import { rollOffersStore } from '@/stores/rollOffers';
+import { setAppTableRule, useAppTableRules } from '@/stores/tableRules';
 import { d20Ask } from './d20Tests';
 import { useRollOfferSpending } from './rollOfferSpending';
 
 afterEach(() => {
   cleanup();
   act(() => setOneUseDice('after'));
+  act(() => setAppTableRule('critDamage', undefined));
   rollOffersStore.setState({ spend: null, expired: 0, before: false });
 });
 
@@ -29,13 +34,18 @@ const sheet = {
   conditionImmunities: [],
 } as unknown as DerivedSheet;
 
-/** A sheet holding a doc, whose updates apply and re-render, with their labels kept. */
+/**
+ * A sheet holding a doc, whose updates apply and re-render, with their labels
+ * kept. Its sheet carries the rules derive would give it, again when the app's
+ * change, as the sheet re-derives then.
+ */
 function openSheet(effects: ActiveEffect[], build?: (doc: CharacterDoc) => void) {
   let doc: CharacterDoc = newCharacterDoc('c', 'Hero', 't');
   build?.(doc);
   doc.play.currentHp = 20;
   doc.play.activeEffects = effects;
   const labels: string[] = [];
+  let derived = true;
   const update: DocUpdater = (recipe, label) => {
     const next = structuredClone(doc);
     recipe(next);
@@ -43,8 +53,18 @@ function openSheet(effects: ActiveEffect[], build?: (doc: CharacterDoc) => void)
     if (typeof label === 'string') labels.push(label);
     hook.rerender();
   };
-  const hook = renderHook(() => useRollOfferSpending(doc, sheet, update));
-  return { doc: () => doc, labels, hook, update };
+  const hook = renderHook(() => {
+    const app = useAppTableRules();
+    const { rules } = sheetRulesField(doc, { byType: () => [], rules: app });
+    const shown = rules === undefined ? sheet : { ...sheet, rules };
+    return useRollOfferSpending(doc, derived ? shown : null, update);
+  });
+  /** The sheet gone while it re-derives (`false`), or back (`true`). */
+  const derive = (on: boolean) => {
+    derived = on;
+    hook.rerender();
+  };
+  return { doc: () => doc, labels, hook, update, derive };
 }
 
 const spend = (id: string, taken: boolean) =>
@@ -94,6 +114,17 @@ describe('useRollOfferSpending', () => {
 
 describe('the house rule for one-use dice', () => {
   const namesFirst = () => rollOffersStore.getState().before;
+  /** An Athletics check that offers Guidance's die. */
+  const guidanceAsk = () =>
+    d20Ask('1d20', {
+      label: 'Athletics check',
+      riders: {
+        dice: [],
+        offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
+        advantage: [],
+        disadvantage: [],
+      },
+    });
 
   it('follows the app choice, unless the character keeps its own', () => {
     const s = openSheet([]);
@@ -107,21 +138,47 @@ describe('the house rule for one-use dice', () => {
     expect(namesFirst()).toBe(true);
   });
 
+  it('keeps a waiting roll while the sheet re-derives', () => {
+    const s = openSheet([], (d) => void (d.oneUseDice = 'before'));
+    act(() => rollFrom(null, () => guidanceAsk()));
+    expect(heldRollStore.getState().held).not.toBeNull();
+    act(() => s.derive(false));
+    expect(namesFirst()).toBe(true);
+    act(() => s.derive(true));
+    expect(heldRollStore.getState().held).not.toBeNull();
+    expect(namesFirst()).toBe(true);
+  });
+
   it('lets a waiting roll go unseen when the sheet closes', () => {
     const s = openSheet([], (d) => void (d.oneUseDice = 'before'));
-    const ask = d20Ask('1d20', {
-      label: 'Athletics check',
-      riders: {
-        dice: [],
-        offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
-        advantage: [],
-        disadvantage: [],
-      },
-    });
-    act(() => rollFrom(null, () => ask));
+    act(() => rollFrom(null, () => guidanceAsk()));
     expect(heldRollStore.getState().held).not.toBeNull();
     s.hook.unmount();
     expect(heldRollStore.getState().held).toBeNull();
     expect(namesFirst()).toBe(false);
+  });
+});
+
+describe("the open character's critical hits", () => {
+  // A 1d6 + 1 crit with the d6 showing 2, and 3 when rolled again.
+  const crit = () => {
+    const faces = [2, 3];
+    return roll('1d6+1', { critical: true, rng: () => faces.shift() ?? 1 }).total;
+  };
+
+  it('count by the character’s rule while the sheet is open, and as written once it closes', () => {
+    const s = openSheet([], (d) => void (d.tableRules = { critDamage: 'maxPlusRoll' }));
+    expect(crit()).toBe(6 + 2 + 1);
+    act(() => s.update((d) => void (d.tableRules = { critDamage: 'doubleTotal' })));
+    expect(crit()).toBe((2 + 1) * 2);
+    s.hook.unmount();
+    expect(crit()).toBe(2 + 3 + 1);
+  });
+
+  it('follow the app’s rule when the character has none', () => {
+    openSheet([]);
+    expect(crit()).toBe(2 + 3 + 1);
+    act(() => setAppTableRule('critDamage', 'maxPlusRoll'));
+    expect(crit()).toBe(6 + 2 + 1);
   });
 });

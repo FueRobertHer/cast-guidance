@@ -264,18 +264,25 @@ export interface StoredCue {
 
 /**
  * The table rules and their values, the as-written one first. One engine
- * function reads each (Phase 4). `hpEachLevel` takes the per-character
- * `hpMethod`'s values and `oneUseDice` the per-character field of that name.
+ * function reads each (`rules.ts` resolves them). `hpEachLevel` takes the
+ * per-character `hpMethod`'s values and `oneUseDice` the per-character field
+ * of that name; the Rules board's other values are added after Phase 1's.
  */
 export const TABLE_RULES = {
   /** Critical damage: double the dice, the dice's maximum plus a roll, or double the total. */
   critDamage: ['doubleDice', 'maxPlusRoll', 'doubleTotal'],
   /** Rests: standard, gritty (8 hours and 7 days), heroic (5 minutes and 1 hour). */
   restLength: ['standard', 'gritty', 'heroic'],
-  /** Hit points each level after the first. */
-  hpEachLevel: ['average', 'rolled', 'max'],
-  /** Hit points back on a long rest: all of them, or only what spent hit dice heal. */
-  hpOnLongRest: ['all', 'hitDice'],
+  /**
+   * Hit points each level after the first: the fixed amount, the roll, the
+   * die's maximum, or the roll but never under the fixed amount.
+   */
+  hpEachLevel: ['average', 'rolled', 'max', 'rolledAtLeastAverage'],
+  /**
+   * Hit points back on a long rest: all of them, half the maximum, or none
+   * (only what spending hit dice heals).
+   */
+  hpOnLongRest: ['all', 'half', 'hitDice'],
   /** Flanking: off, advantage, or +2 to hit (offered on melee attacks). */
   flanking: ['off', 'advantage', 'plusTwo'],
   /** Guidance and Bardic Inspiration: offered after the roll, or before it. */

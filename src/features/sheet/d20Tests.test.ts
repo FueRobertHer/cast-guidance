@@ -594,6 +594,64 @@ describe('rollD20Test with effects in play', () => {
       expect(declare).not.toHaveBeenCalled();
     });
   });
+
+  describe('flanking, under the table’s rule (riders.declare)', () => {
+    const when = 'Only with an ally next to the target, on its opposite side';
+    const swing = (flank: { mode?: 'adv'; bonus?: number }) =>
+      d20Ask('1d20+5', {
+        label: 'Greataxe attack',
+        thisTurn: [
+          {
+            source: 'Reckless Attack',
+            mode: 'adv',
+            cost: 'Attacks against you',
+            declare: () => {},
+          },
+        ],
+        riders: riders({ declare: [{ source: 'Flanking', ...flank, when }] }),
+      });
+
+    it('is offered after what is declared for the turn, for this roll alone', () => {
+      const ask = swing({ mode: 'adv' });
+      expect(ask.thisTurn.map((t) => [t.source, t.thisRoll === true, t.cost])).toEqual([
+        ['Reckless Attack', false, 'Attacks against you'],
+        ['Flanking', true, when],
+      ]);
+    });
+
+    it('brings advantage once declared, under the advantage rule', () => {
+      const ask = swing({ mode: 'adv' });
+      expect(ask.presetFor()).toBe('normal');
+      const declared = { declared: [false, true] };
+      expect(ask.presetFor(declared)).toBe('adv');
+      expect(ask.cueFor('adv', declared)).toBe('Advantage: Flanking');
+      nextFaces(4, 16);
+      expect(ask.roll(declared).total).toBe(21);
+    });
+
+    it('adds 2 to hit once declared, under the +2 rule, in the formula, the cue and the total', () => {
+      const ask = swing({ bonus: 2 });
+      const declared = { declared: [false, true] };
+      expect(ask.presetFor(declared)).toBe('normal');
+      expect(ask.formula(declared)).toBe('d20 +5 +2 Flanking');
+      expect(ask.cueFor('normal', declared)).toBe('+2: Flanking');
+      nextFaces(10);
+      const r = ask.roll(declared);
+      expect(r.total).toBe(17);
+      expect(r.meta?.cue).toBe('+2: Flanking');
+      nextFaces(10);
+      expect(ask.roll().total).toBe(15);
+    });
+
+    it('goes with Reckless Attack, and puts nothing in play', () => {
+      const ask = swing({ bonus: 2 });
+      nextFaces(3, 12);
+      const r = ask.roll({ declared: [true, true] });
+      expect(r.total).toBe(12 + 5 + 2);
+      expect(r.meta?.cue).toBe('Advantage: Reckless Attack · +2: Flanking');
+      expect(() => ask.thisTurn[1]?.declare()).not.toThrow();
+    });
+  });
 });
 
 describe('cue lines', () => {
