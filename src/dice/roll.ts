@@ -1,5 +1,6 @@
 import { parseDice } from './parse';
 import type {
+  CritDamage,
   DiceAst,
   DiceRollDetail,
   DiceTermAst,
@@ -63,24 +64,41 @@ function keptFlags(values: number[], term: DiceTermAst): boolean[] {
   return kept;
 }
 
+/**
+ * The open character's critical damage rule (`TABLE_RULES.critDamage`), which
+ * a critical roll follows unless it names its own. The sheet sets it while a
+ * character is open; as written, the dice count twice.
+ */
+let tableCrit: CritDamage = 'doubleDice';
+
+export function setTableCrit(rule: CritDamage): void {
+  tableCrit = rule;
+}
+
+/**
+ * One term's value. On a critical hit its dice count twice: rolled again, or
+ * (`maxPlusRoll`) at their maximum and then rolled.
+ */
 function evaluateTerm(
   term: TermAst,
   rng: (sides: number) => number,
-  critical: boolean,
+  crit?: 'doubleDice' | 'maxPlusRoll',
 ): { value: number; detail: DiceRollDetail | ModDetail } {
   if (term.kind === 'mod') {
     const value = term.sign * term.value;
     return { value, detail: { kind: 'mod', value } };
   }
-  const count = critical ? term.count * 2 : term.count;
+  const count = crit !== undefined ? term.count * 2 : term.count;
+  const maxed = crit === 'maxPlusRoll' ? term.count : 0;
   const values: number[] = [];
-  for (let i = 0; i < count; i++) values.push(rng(term.sides));
+  for (let i = 0; i < count; i++) values.push(i < maxed ? term.sides : rng(term.sides));
   const kept = keptFlags(values, { ...term, count });
   const detail: DiceRollDetail = {
     kind: 'dice',
     sign: term.sign,
     sides: term.sides,
     rolls: values.map((v, idx) => ({ v, kept: kept[idx] ?? true })),
+    ...(maxed > 0 ? { maxed } : {}),
   };
   let sum = 0;
   for (let idx = 0; idx < values.length; idx++) {
@@ -97,9 +115,12 @@ export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResul
   const terms: RollResult['terms'] = [];
   let total = 0;
   let d20Natural: number | undefined;
+  const critRule = opts.critical === true ? (opts.crit ?? tableCrit) : undefined;
+  // Doubling the total rolls the dice once and doubles the sum after.
+  const termCrit = critRule === 'doubleTotal' ? undefined : critRule;
 
   for (const term of ast.terms) {
-    const evaluated = evaluateTerm(term, rng, opts.critical === true);
+    const evaluated = evaluateTerm(term, rng, termCrit);
     total += evaluated.value;
     const detail = evaluated.detail;
     terms.push(detail);
@@ -116,9 +137,13 @@ export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResul
   }
 
   if (ast.multiplier !== undefined) {
-    const factor = evaluateTerm(ast.multiplier, rng, opts.critical === true);
+    const factor = evaluateTerm(ast.multiplier, rng, termCrit);
     total *= factor.value;
     terms.push({ kind: 'multiplier', value: factor.value, detail: factor.detail });
+  }
+  if (critRule === 'doubleTotal') {
+    total *= 2;
+    terms.push({ kind: 'multiplier', value: 2, detail: { kind: 'mod', value: 2 } });
   }
 
   const meta: RollResult['meta'] =
@@ -126,6 +151,7 @@ export function roll(input: string | DiceAst, opts: RollOptions = {}): RollResul
       ? {
           ...(opts.advantage ? { advantage: opts.advantage } : {}),
           ...(opts.critical ? { critical: true } : {}),
+          ...(critRule === 'maxPlusRoll' || critRule === 'doubleTotal' ? { critRule } : {}),
           ...(d20Natural !== undefined ? { d20: { natural: d20Natural } } : {}),
         }
       : undefined;

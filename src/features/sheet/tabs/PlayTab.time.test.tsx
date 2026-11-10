@@ -115,6 +115,17 @@ describe('a rest with effects in play', () => {
     expect((await sheet.history())[0]).toBe('Long rest');
   });
 
+  it('ticks by the table’s rest length: a gritty short rest ends 8 hours', async () => {
+    const doc = warrior([aid]);
+    doc.tableRules = { restLength: 'gritty' };
+    await renderSheet(doc);
+    press('Short rest');
+    const ask = await dialog('Short rest');
+    expect(restRows()).toEqual([{ name: 'Aid8 hours', ticked: true }]);
+    await ask.press('Take the short rest');
+    expect(notice()).toMatch(/Ended Aid$/);
+  });
+
   it('keeps what the player unticks, and rests at once with nothing in play', async () => {
     const sheet = await renderSheet(warrior([bless]));
     press('Short rest');

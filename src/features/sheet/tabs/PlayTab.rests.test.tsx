@@ -6,6 +6,8 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DataEntity } from '@/engine/types';
+import { setAppTableRule } from '@/stores/tableRules';
 import {
   classEntry,
   dialog,
@@ -176,5 +178,54 @@ describe('long rest (TEST-003)', () => {
     const saved = await sheet.saved();
     expect(saved.play.hitDiceSpent).toEqual({ d6: 1 });
     expect(saved.play.slotsSpent.every((n) => n === 0)).toBe(true);
+  });
+});
+
+describe('table rules and moments at a rest (Homebrew Workshop phase 4)', () => {
+  afterEach(() => setAppTableRule('hpOnLongRest', undefined));
+
+  it('gives back half the maximum under the app’s rule, chosen before or while the sheet is open', async () => {
+    setAppTableRule('hpOnLongRest', 'half');
+    await renderSheet(sorcerer());
+    for (let i = 0; i < 4; i++) press('Damage 5 hit points');
+    expect(hp().current).toBe(7);
+
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+
+    // Half of 27, rounded down, on top of the 7 left.
+    expect(hp().current).toBe(20);
+    expect(notice()).toBe('Long rest complete: Restored +13 HP');
+
+    setAppTableRule('hpOnLongRest', 'hitDice');
+    press('Damage 5 hit points');
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+    // Spent hit dice heal instead, so the rest leaves HP where it was, and says so.
+    expect(hp().current).toBe(15);
+    expect(notice()).toBe('Long rest complete: Nothing to restore');
+  });
+
+  it('fires the long rest’s moments once it is done, and says them in its notice', async () => {
+    const dawnwatch: DataEntity = {
+      name: 'Dawnwatch',
+      source: 'TST',
+      entries: ['You wake ready.'],
+      castGuidance: { v: 1, moments: [{ at: 'longRest', do: [{ kind: 'tempHp', amount: 5 }] }] },
+    };
+    const doc = sorcerer();
+    doc.feats = [{ ref: { name: 'Dawnwatch', source: 'TST' }, instanceId: 'f1' }];
+    const sheet = await renderSheet(doc, { extra: { feat: [dawnwatch] } });
+    press('Damage 5 hit points');
+
+    press('Long rest');
+    await (await dialog('Long rest')).press('Rest');
+
+    // The rest takes temporary HP away, so the moment's 5 come after it.
+    expect(hp()).toEqual({ current: 27, max: 27, temp: 5 });
+    expect(notice()).toBe(
+      'Long rest complete: Restored +5 HP · 5 temporary hit points · Dawnwatch',
+    );
+    expect((await sheet.saved()).play.tempHp).toBe(5);
   });
 });

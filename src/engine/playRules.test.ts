@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTestContext } from '../../tests-fixtures/testWorld';
+import { AS_WRITTEN } from './castGuidance';
 import type { D20Test } from './conditions';
 import { deriveSheet } from './derive';
 import {
@@ -111,6 +112,39 @@ describe('rollEffects', () => {
     });
     expect(initiative.disadvantage).toEqual(['Curse']);
     expect(initiative.dice).toEqual([]);
+  });
+
+  describe('flanking, under the table’s rule', () => {
+    const melee: D20Test = { kind: 'attack', attack: 'weapon', range: 'melee', ability: 'str' };
+    const when = 'Only with an ally next to the target, on its opposite side';
+    const under = (flanking: 'off' | 'advantage' | 'plusTwo') => ({
+      rollRiders: [],
+      rules: { ...AS_WRITTEN['2014'], flanking },
+    });
+
+    it('is not offered as written, nor with no rules on the sheet', () => {
+      expect(rollEffects(under('off'), melee).declare).toBeUndefined();
+      expect(rollEffects({ rollRiders: [] }, melee).declare).toBeUndefined();
+    });
+
+    it('is offered on a melee attack as advantage, or as +2 to hit', () => {
+      expect(rollEffects(under('advantage'), melee).declare).toEqual([
+        { source: 'Flanking', mode: 'adv', when },
+      ]);
+      expect(rollEffects(under('plusTwo'), melee).declare).toEqual([
+        { source: 'Flanking', bonus: 2, when },
+      ]);
+    });
+
+    it('is offered on no other roll: a ranged attack, one of unknown range, a save', () => {
+      for (const test of [
+        { kind: 'attack', attack: 'weapon', range: 'ranged' },
+        { kind: 'attack', attack: 'spell' },
+        { kind: 'save', ability: 'dex' },
+      ] as D20Test[]) {
+        expect(rollEffects(under('advantage'), test).declare).toBeUndefined();
+      }
+    });
   });
 
   it('reads the riders deriveSheet lists for effects in play', () => {

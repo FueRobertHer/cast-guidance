@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { setTableCrit } from '@/dice/roll';
 import { endEffect } from '@/engine/effectLife';
+import { sheetRules } from '@/engine/rules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, PlayState } from '@/engine/types';
-import { useOneUseDice } from '@/lib/oneUseDice';
 import type { DocUpdater } from '@/stores/characterSession';
 import { cancelHeld } from '@/stores/heldRoll';
 import { rollOffersStore } from '@/stores/rollOffers';
@@ -15,9 +16,11 @@ import { hpLimits } from './effectsInPlay';
  * Any change to hit points stops the toast's dice waiting: a roll made before
  * a hit is no longer the moment to add to.
  *
- * It also says when the open character's one-use dice are named: its own
- * rule on Build, else the app's in Settings. A roll still waiting for them
- * when the sheet closes, or the rule changes, is let go unseen.
+ * It also says how the open character's table rules reach the dice
+ * (`DerivedSheet.rules`): when its one-use dice are named (its own rule on
+ * Build, else a pack's, the app's in Settings, or as written), and how its
+ * critical hits count. A roll still waiting for one-use dice when the sheet
+ * closes, or the rule changes, is let go unseen.
  */
 export function useRollOfferSpending(
   doc: CharacterDoc | null,
@@ -73,8 +76,13 @@ export function useRollOfferSpending(
     };
   }, []);
 
-  const app = useOneUseDice();
-  const before = doc !== null && (doc.oneUseDice ?? app) === 'before';
+  const rules = doc === null || sheet === null ? undefined : sheetRules(sheet, doc.rulesVersion);
+  const before = rules?.oneUseDice === 'before';
+  const crit = rules?.critDamage ?? 'doubleDice';
+  useEffect(() => {
+    setTableCrit(crit);
+    return () => setTableCrit('doubleDice');
+  }, [crit]);
   useEffect(() => {
     rollOffersStore.getState().setBefore(before);
     return () => {

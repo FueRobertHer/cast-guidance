@@ -11,6 +11,7 @@ import {
   type DocUpdater,
   useCharacterSession,
 } from '@/stores/characterSession';
+import { useAppTableRules } from '@/stores/tableRules';
 import { type CharacterDataState, useCharacterData } from './useCharacterData';
 
 export interface CharacterSheetState {
@@ -76,15 +77,17 @@ export function useCharacterSheet(id: string | undefined): CharacterSheetState {
 
   const characterData = useCharacterData(doc, registry, rev);
   const dataReady = characterData.status === 'ready';
+  // The app's table rules: choosing one in Settings re-derives every sheet.
+  const appRules = useAppTableRules();
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: rev tracks doc mutations
   const sheets = useMemo(() => {
     if (doc === null || registry === null || !dataReady) return null;
-    const context = engineContextFor(registry);
+    const context = engineContextFor(registry, appRules);
     const sheet = deriveSheet(doc, context);
     const inPlay = (doc.play.activeEffects ?? []).length > 0;
     return { sheet, built: inPlay ? deriveSheet(doc, context, { active: false }) : sheet };
-  }, [doc, registry, rev, dataReady]);
+  }, [doc, registry, rev, dataReady, appRules]);
   const sheet = sheets?.sheet ?? null;
 
   // While a character is still being built (HP never manually touched),

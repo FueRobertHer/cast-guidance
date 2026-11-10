@@ -28,7 +28,19 @@ export interface DiceRollDetail {
   sign: 1 | -1;
   sides: number;
   rolls: Array<{ v: number; kept: boolean }>;
+  /**
+   * How many of the first `rolls` were set to the die's maximum, not rolled:
+   * a critical hit under the max-then-roll rule. Absent when none were.
+   */
+  maxed?: number;
 }
+
+/**
+ * How a critical hit's damage is counted (the table's `critDamage` rule):
+ * every die twice, as written; each die's maximum and then the dice rolled;
+ * or the whole roll, modifiers too, doubled.
+ */
+export type CritDamage = 'doubleDice' | 'maxPlusRoll' | 'doubleTotal';
 
 export interface ModDetail {
   kind: 'mod';
@@ -80,6 +92,8 @@ export interface RollResult {
   meta?: {
     advantage?: 'adv' | 'dis';
     critical?: boolean;
+    /** A critical roll's house rule, when not the dice twice (`CritDamage`), for the toast to name. */
+    critRule?: Exclude<CritDamage, 'doubleDice'>;
     /** Present when the roll leads with a d20 — powers nat 20/1 highlighting. */
     d20?: { natural: number };
     /**
@@ -108,8 +122,13 @@ export interface RollResult {
 export interface RollOptions {
   /** Rewrites a leading plain 1d20 into 2d20kh1 / 2d20kl1. */
   advantage?: 'adv' | 'dis';
-  /** Doubles dice counts (never modifiers) — damage crits. */
+  /**
+   * A critical hit's damage: as written its dice count twice (never the
+   * modifiers), else as `crit` or the table's rule (`setTableCrit`) says.
+   */
   critical?: boolean;
+  /** The critical damage rule for this roll, over the table's. */
+  crit?: CritDamage;
   label?: string;
   origin?: string;
   kind?: RollKind;

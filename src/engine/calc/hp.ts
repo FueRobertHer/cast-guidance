@@ -1,5 +1,6 @@
 import type { Collector } from '../effects/base';
 import { num } from '../effects/base';
+import { rulesFor } from '../rules';
 import type { CharacterDoc, DerivedValue, EffectInput } from '../types';
 import { atLeast, effectsOf, inPlay, onTop, withOverride } from './core';
 
@@ -12,6 +13,10 @@ export function calcMaxHp(
   const parts: Array<{ label: string; amount: number }> = [];
   const hitDice: Record<string, number> = {};
   let totalLevel = 0;
+  // The table's HP each level rule: the character's own (`hpMethod`), else a
+  // pack's, the app's, or as written (the fixed amount).
+  const method = rulesFor(doc, col.ctx).hpEachLevel;
+  const said = method === 'rolledAtLeastAverage' ? 'rolled, at least the average' : method;
 
   doc.classes.forEach((entry, classIndex) => {
     const cls = col.ctx.get('class', entry.ref.name, entry.ref.source);
@@ -21,20 +26,23 @@ export function calcMaxHp(
     hitDice[die] = (hitDice[die] ?? 0) + entry.levels;
     totalLevel += entry.levels;
 
-    const method = doc.hpMethod ?? 'average';
+    const average = Math.floor(faces / 2) + 1; // rounded up
     let classHp = 0;
     for (let lvl = 0; lvl < entry.levels; lvl++) {
       const isVeryFirstLevel = classIndex === 0 && lvl === 0;
       const rolled = entry.hp[lvl];
+      const roll = typeof rolled === 'number' ? Math.max(1, Math.min(faces, rolled)) : undefined;
       if (isVeryFirstLevel || method === 'max') {
         classHp += faces; // level 1 is always the max die; 'max' rule applies it throughout
-      } else if (method === 'rolled' && typeof rolled === 'number') {
-        classHp += Math.max(1, Math.min(faces, rolled));
+      } else if (method === 'rolled' && roll !== undefined) {
+        classHp += roll;
+      } else if (method === 'rolledAtLeastAverage' && roll !== undefined) {
+        classHp += Math.max(average, roll);
       } else {
-        classHp += Math.floor(faces / 2) + 1; // average, rounded up
+        classHp += average; // a level not rolled yet counts the average under every rule
       }
     }
-    parts.push({ label: `${entry.ref.name} levels (${die}, ${method})`, amount: classHp });
+    parts.push({ label: `${entry.ref.name} levels (${die}, ${said})`, amount: classHp });
   });
 
   if (totalLevel > 0 && conMod !== 0) {

@@ -2,7 +2,6 @@
  * What effects in play do at the table: the dice and advantage one roll takes
  * (`rollEffects`), and how much of a hit gets through (`damageTaken`). Pure:
  * the sheet asks, shows the answer, and the player can still say otherwise.
- * Nothing calls these yet; the sheet's rolls and damage keypad will.
  */
 import {
   type ActiveCondition,
@@ -33,6 +32,12 @@ export interface RollEffects {
   /** Sources of advantage, which reach the roll as a feature's do (`advantageFrom`). */
   advantage: string[];
   disadvantage: string[];
+  /**
+   * What the player may say holds for this roll, which the app cannot see:
+   * flanking, under the table's rule, on a melee attack. Said, it brings
+   * advantage (`mode`) or a bonus to hit. `when` says when it holds.
+   */
+  declare?: Array<{ source: string; mode?: 'adv'; bonus?: number; when: string }>;
 }
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -67,9 +72,28 @@ export function filterReaches(on: RollFilter, test: D20Test): boolean {
   return true;
 }
 
-/** The dice, offers and advantage the effects in play bring to one d20 test. */
-export function rollEffects(sheet: Pick<DerivedSheet, 'rollRiders'>, test: D20Test): RollEffects {
+/** When flanking holds, said in the roll prompt (2014 DMG, optional rule). */
+const FLANKING_WHEN = 'Only with an ally next to the target, on its opposite side';
+
+/**
+ * The dice, offers and advantage the effects in play bring to one d20 test,
+ * and flanking on a melee attack when the table plays with it (`sheet.rules`).
+ */
+export function rollEffects(
+  sheet: Pick<DerivedSheet, 'rollRiders' | 'rules'>,
+  test: D20Test,
+): RollEffects {
   const out: RollEffects = { dice: [], offers: [], advantage: [], disadvantage: [] };
+  const flanking = sheet.rules?.flanking ?? 'off';
+  if (flanking !== 'off' && test.kind === 'attack' && test.range === 'melee') {
+    out.declare = [
+      {
+        source: 'Flanking',
+        ...(flanking === 'advantage' ? { mode: 'adv' as const } : { bonus: 2 }),
+        when: FLANKING_WHEN,
+      },
+    ];
+  }
   for (const r of sheet.rollRiders) {
     if (!filterReaches(r.on, test)) continue;
     const id = r.effectId === undefined ? {} : { effectId: r.effectId };
