@@ -28,8 +28,14 @@ export interface TableColumn {
 const LEVELS = Array.from({ length: 20 }, (_, i) => i + 1);
 const bonusAt = (level: number) => 2 + Math.floor((level - 1) / 4);
 
-/** The cells after Features: narrower once there are several. */
-const cellClass = (n: number) => `${n > 3 ? 'w-10' : 'w-12'} shrink-0 text-center tabular-nums`;
+/** A number cell: narrower once there are several. */
+const cellClass = (n: number) => `${n > 3 ? 'w-11' : 'w-12'} shrink-0 text-center tabular-nums`;
+
+/**
+ * Past two number columns a phone has no room for the names beside them: they
+ * go on a line of their own under the numbers.
+ */
+const INLINE = 2;
 
 export function ClassTable({
   name,
@@ -56,6 +62,7 @@ export function ClassTable({
   const [open, setOpen] = useState<number | null>(1);
   const id = useId();
   const cell = cellClass(columns.length);
+  const stacked = columns.length > INLINE;
   return (
     <div className="flex flex-col overflow-hidden rounded-card bg-surface ring-1 ring-line ring-inset">
       <div
@@ -64,7 +71,7 @@ export function ClassTable({
       >
         <span className="w-6 shrink-0">Lv</span>
         <span className="w-8 shrink-0">PB</span>
-        <span className="min-w-0 flex-1">Features</span>
+        <span className="min-w-0 flex-1">{stacked ? '' : 'Features'}</span>
         {columns.map((c) => (
           <span key={c.key} className={`${cell} truncate`}>
             {c.label}
@@ -86,6 +93,13 @@ export function ClassTable({
             ...(subAt(level) ? ['a subclass level'] : []),
             ...columns.map((c) => `${c.label} ${c.values[level - 1] ?? ''}`),
           ].join(', ');
+          const features = (
+            <span
+              className={`min-w-0 flex-1 break-words ${isOpen ? '' : 'truncate'} ${subAt(level) ? 'text-guide' : ''}`}
+            >
+              {names.length > 0 ? names.join(', ') : '-'}
+            </span>
+          );
           return (
             <li key={level} className="border-line border-b last:border-b-0">
               <button
@@ -94,28 +108,32 @@ export function ClassTable({
                 aria-expanded={isOpen}
                 aria-controls={panel}
                 onClick={() => setOpen(isOpen ? null : level)}
-                className="flex min-h-12 w-full items-center gap-2 px-3 py-2 text-left text-body hover:bg-surface-hover"
+                className="flex min-h-12 w-full flex-col justify-center gap-0.5 px-3 py-2 text-left text-body hover:bg-surface-hover"
               >
-                <span className="w-6 shrink-0 text-body-strong tabular-nums">{level}</span>
-                <span className="w-8 shrink-0 text-ink-muted tabular-nums">+{bonusAt(level)}</span>
-                <span
-                  className={`min-w-0 flex-1 ${isOpen ? '' : 'truncate'} ${subAt(level) ? 'text-guide' : ''}`}
-                >
-                  {names.length > 0 ? names.join(', ') : '-'}
-                </span>
-                {columns.map((c) => (
-                  <span key={c.key} className={cell}>
-                    {c.values[level - 1] ?? ''}
+                <span className="flex w-full items-center gap-2">
+                  <span className="w-6 shrink-0 text-body-strong tabular-nums">{level}</span>
+                  <span className="w-8 shrink-0 text-ink-muted tabular-nums">
+                    +{bonusAt(level)}
                   </span>
-                ))}
-                <ChevronDown
-                  size={16}
-                  aria-hidden
-                  className={`shrink-0 text-ink-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                />
+                  {stacked ? <span className="flex-1" /> : features}
+                  {columns.map((c) => (
+                    <span key={c.key} className={cell}>
+                      {c.values[level - 1] ?? ''}
+                    </span>
+                  ))}
+                  <ChevronDown
+                    size={16}
+                    aria-hidden
+                    className={`shrink-0 text-ink-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                  />
+                </span>
+                {stacked && <span className="flex w-full pl-16">{features}</span>}
               </button>
               {isOpen && (
-                <div id={panel} className="flex flex-col gap-3 bg-surface-raised px-3 pt-1 pb-3">
+                <div
+                  id={panel}
+                  className="flex flex-col gap-3 border-line border-t bg-bg px-3 pt-3 pb-3"
+                >
                   {!readOnly && columns.some((c) => c.set !== undefined) && (
                     <div className="grid grid-cols-2 gap-2">
                       {columns.map((c) =>

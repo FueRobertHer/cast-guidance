@@ -1013,6 +1013,23 @@ function Basics({ draft, change, readOnly, registry }: EditorProps) {
                 <option value="known">Knows a set number</option>
               </Select>
             </Field>
+            <label className="flex min-h-tap items-center gap-2.5 text-body">
+              <input
+                type="checkbox"
+                className="size-4.5 accent-ink"
+                disabled={readOnly}
+                checked={Array.isArray(draft.cantripProgression)}
+                onChange={(e) =>
+                  change({
+                    cantripProgression: e.target.checked
+                      ? (countsFrom(registry, progression, 'cantripProgression')
+                          ?.cantripProgression ?? LEVELS.map(() => 2))
+                      : undefined,
+                  })
+                }
+              />
+              Knows cantrips
+            </label>
             {typeof draft.preparedSpells === 'string' && (
               <Kept label="Prepared spells">
                 {plainEntryText(
@@ -1143,7 +1160,7 @@ function columnsOf(draft: Json, change: EditorProps['change']): TableColumn[] {
       ['spellsKnownProgression', 'Known'],
     ] as const) {
       const list = draft[field];
-      if (field === 'cantripProgression' ? false : !Array.isArray(list)) continue;
+      if (!Array.isArray(list)) continue;
       const values = LEVELS.map((_, i) =>
         Array.isArray(list) && typeof list[i] === 'number' ? (list[i] as number) : 0,
       );
