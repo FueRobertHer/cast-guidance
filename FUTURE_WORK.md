@@ -260,15 +260,21 @@ work:
   `docs/export-format.md`).
 - Fight Club 5e imports working like official data. Copies of official
   entries name the entry they print (`printingOf`), so curated rows, spend
-  links and prose picks reach them without the official data. Remaining:
-  granted spells as `additionalSpells`; choices that only the prose states
+  links and prose picks reach them without the official data, and granted
+  spells are read from the text. Remaining: choices that only the prose states
   (Dragonborn resistance, Skilled, background picks); item attacks, AC and
   "following benefits" defenses; spell captions, prose race speeds and
   language oddities; `<class>` and subclass conversion. `printingOf` does not
   reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic
-  variants such as `Battleaxe +1`).
+  variants such as `Battleaxe +1`). Granted spells left as text: picks a
+  table decides (Strixhaven Initiate, the Adept feats' slot-level tables), a
+  count that grows with the proficiency bonus (Ritual Caster), a list another
+  feat chose, and a spell cast without "can cast" (`drop to 1 Hit Point and
+  cast Gaseous Form`). The engine reads a `pb` count (`daily: { pb: [...] }`,
+  written by the official 2024 Forest Gnome and by the converter alike) as
+  unlimited casts, since `additionalSpells.ts` parses the count as a number.
 
 ### Maintainability and diagnostics
 
