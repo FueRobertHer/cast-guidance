@@ -44,7 +44,7 @@ describe('2024 Cleric: Blessed Strikes and Divine Order', () => {
     expect(featureNames(sheet)).toContain('Blessed Strikes');
     expect(featureNames(sheet)).not.toContain('Divine Strike');
     expect(featureNames(sheet)).not.toContain('Potent Spellcasting');
-    expect(sheet.actions.some((a) => a.label === 'Potent Spellcasting')).toBe(false);
+    expect(sheet.spellDamageBonuses).toEqual([]);
   });
 
   it('shows the picked branch, its effects, and not the other', () => {
@@ -53,9 +53,9 @@ describe('2024 Cleric: Blessed Strikes and Divine Order', () => {
     );
     expect(featureNames(sheet)).toContain('Potent Spellcasting');
     expect(featureNames(sheet)).not.toContain('Divine Strike');
-    expect(sheet.actions).toContainEqual(
-      expect.objectContaining({ label: 'Potent Spellcasting', economy: 'reaction' }),
-    );
+    expect(sheet.spellDamageBonuses).toEqual([
+      { amount: 0, origin: 'Potent Spellcasting', className: 'Cleric', cantrips: true },
+    ]);
     expect(sheet.pending.some((p) => p.id === BLESSED)).toBe(false);
     expect(sheet.resolvedChoices).toContainEqual(
       expect.objectContaining({ selected: ['potent spellcasting'] }),

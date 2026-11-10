@@ -368,6 +368,34 @@ describe('calcAttacks', () => {
     expect(row(rows, 'Unarmed Strike')?.weaponId).toBeUndefined();
   });
 
+  it('gives a weapons-only die to carried weapons, not an unarmed strike or a natural weapon', () => {
+    const smite: EffectOrigin = { label: 'Improved Divine Smite', uid: 'p', type: 'class' };
+    const die = { kind: 'damageDie', scope: 'melee', dice: '1d8', damageType: 'radiant' } as const;
+    const horns = {
+      kind: 'naturalWeapon',
+      label: 'Horns',
+      dice: '1d6',
+      damageType: 'piercing',
+      ability: 'str',
+      origin: smite,
+    } as const;
+    const riders = (weaponsOnly: boolean) =>
+      attacks(docWith('Longsword'), abilities(3, 1), 2, undefined, [
+        horns,
+        { ...die, ...(weaponsOnly ? { weaponsOnly } : {}), origin: smite },
+      ]).map((r) => [r.label, r.extraDamage.length]);
+    expect(riders(true)).toEqual([
+      ['Longsword', 1],
+      ['Horns', 0],
+      ['Unarmed Strike', 0],
+    ]);
+    expect(riders(false)).toEqual([
+      ['Longsword', 1],
+      ['Horns', 1],
+      ['Unarmed Strike', 1],
+    ]);
+  });
+
   it('always includes an unarmed strike', () => {
     const r = row(attacks(newCharacterDoc('c', 'H', 't'), abilities(2, 0)), 'Unarmed Strike');
     expect(r?.toHit.value).toBe(4); // str 2 + prof 2

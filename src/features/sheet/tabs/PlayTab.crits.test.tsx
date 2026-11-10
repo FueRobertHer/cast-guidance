@@ -386,6 +386,65 @@ describe('Savage Attacks', () => {
   });
 });
 
+describe('Brutal Critical', () => {
+  /** Feats that carry the 2014 barbarian's cards by name, one die each, as the class's do. */
+  const cards = ['Brutal Critical (1 die)', 'Brutal Critical (2 dice)'];
+  const featNamed = (name: string): DataEntity => ({
+    name,
+    source: 'TST',
+    entries: ['Roll additional weapon damage dice on a melee critical hit.'],
+  });
+  const brute = (names: string[], race?: boolean) =>
+    fighter((d) => {
+      d.feats = names.map((name, i) => ({
+        ref: { name, source: 'TST' },
+        instanceId: `f${i}`,
+      }));
+      if (race === true) d.race = { name: 'Tuskfolk', source: 'TST' };
+    });
+  const tuskfolk: DataEntity = {
+    name: 'Tuskfolk',
+    source: 'TST',
+    speed: 30,
+    entries: [
+      {
+        name: 'Savage Attacks',
+        type: 'entries',
+        entries: ['On a melee critical hit, roll one weapon damage die again and add it.'],
+      },
+    ],
+  };
+
+  it('adds a weapon die on a melee crit for each of its cards, and nothing ranged', async () => {
+    await renderSheet(brute(cards), { extra: { feat: cards.map(featNamed) } });
+    nextFaces(20);
+    rollOn(attack('Longsword'));
+    nextFaces(3, 5, 8, 1);
+    fireEvent.click(damage('Longsword', 'slashing'));
+    const dealt = newest();
+    expect(dice(dealt)).toEqual(['d8 [3, 5]', 'd8 [8, 1]']);
+    expect(dealt?.meta?.from).toEqual([{ term: 2, source: 'Brutal Critical' }]);
+    nextFaces(20);
+    rollOn(attack('Shortbow'));
+    nextFaces(2, 4);
+    fireEvent.click(damage('Shortbow', 'piercing'));
+    expect(dice(newest())).toEqual(['d6 [2, 4]']);
+  });
+
+  it('stacks with Savage Attacks', async () => {
+    await renderSheet(brute(cards.slice(0, 1), true), {
+      extra: { feat: [featNamed(cards[0] as string)], race: [tuskfolk] },
+    });
+    nextFaces(20);
+    rollOn(attack('Longsword'));
+    nextFaces(3, 5, 8, 1);
+    fireEvent.click(damage('Longsword', 'slashing'));
+    const dealt = newest();
+    expect(dice(dealt)).toEqual(['d8 [3, 5]', 'd8 [8, 1]']);
+    expect(dealt?.meta?.from).toEqual([{ term: 2, source: 'Savage Attacks and Brutal Critical' }]);
+  });
+});
+
 describe('damage that waits with its attack', () => {
   it('rolls doubled when the attack it waits on crit, unseen until it lands', async () => {
     await renderSheet(fighter());

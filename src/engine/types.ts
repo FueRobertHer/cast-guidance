@@ -479,6 +479,8 @@ export type EffectInput = {
   /**
    * A die of extra damage on every weapon hit, rolled apart (Enlarge), or on
    * one carried weapon's when `weapon` names it (Elemental Weapon).
+   * `weaponsOnly`: on carried weapons' hits alone, not an unarmed strike's or a
+   * natural weapon's (the 2014 Improved Divine Smite's "melee weapon").
    */
   | {
       kind: 'damageDie';
@@ -486,9 +488,25 @@ export type EffectInput = {
       dice: string;
       damageType?: string;
       weapon?: string;
+      weaponsOnly?: boolean;
     }
   /** Spell save DC; `className` limits it to that class's spells (2024 Innate Sorcery). */
   | { kind: 'spellDcBonus'; amount: number; className?: string }
+  /**
+   * Added to a spell's damage rolls (Agonizing Blast's Charisma). Every limit
+   * given must hold: a spell named in `spells`, one cast as a spell of the class
+   * `className`, a cantrip when `cantrips`, one of the `school` ("V"). `oneRoll`:
+   * to one damage roll of each cast, not to each (Empowered Evocation).
+   */
+  | {
+      kind: 'spellDamageBonus';
+      amount: BonusAmount;
+      spells?: string[];
+      className?: string;
+      cantrips?: boolean;
+      school?: string;
+      oneRoll?: boolean;
+    }
   /** A flat bonus to saving throws, every one or those of `abilities`. */
   | { kind: 'saveBonus'; amount: BonusAmount; abilities?: Ability[] }
   | {
@@ -848,6 +866,17 @@ export interface AttackRow {
   magical?: true;
 }
 
+/** A `spellDamageBonus` on the sheet: its amount worked out, and its limits as written. */
+export interface SpellDamageBonus {
+  amount: number;
+  origin: string;
+  spells?: string[];
+  className?: string;
+  cantrips?: true;
+  school?: string;
+  oneRoll?: true;
+}
+
 export interface FeatureCard {
   name: string;
   level?: number;
@@ -991,6 +1020,8 @@ export interface DerivedSheet {
   extraActions: Array<{ label: string; note?: string; origin: string }>;
   /** The lowest d20 that crits on an attack, when something lowers it from 20. */
   critRange?: { min: number; origin: string };
+  /** What adds to spells' damage, worked out, with the limits of each (`spellDamageBonus`). */
+  spellDamageBonuses: SpellDamageBonus[];
   /** The most temporary hit points offered at the start of each turn. */
   tempHpEachTurn?: { amount: number; origin: string };
   cues: Array<{ tone: 'help' | 'ward' | 'warn' | 'info'; text: string; origin: string }>;

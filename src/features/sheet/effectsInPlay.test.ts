@@ -383,6 +383,19 @@ describe('attackLift', () => {
     });
   });
 
+  it('rings a rider an effect added beside the same one from the build, and never the build’s', () => {
+    const smite = { dice: '1d8', damageType: 'radiant', label: 'Radiant Strikes' };
+    const before = row({ extraDamage: [smite] });
+    expect(attackLift(row({ extraDamage: [smite] }), before).riders).toEqual([false]);
+    // Two of one rider: the build has one, an effect in play adds the other.
+    expect(attackLift(row({ extraDamage: [smite, smite] }), before).riders).toEqual([false, true]);
+    const enlarge = { dice: '1d8', damageType: 'radiant', label: 'Enlarge' };
+    expect(attackLift(row({ extraDamage: [smite, enlarge] }), before).riders).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it('says an effect in play when no bonus it names raised the damage (a Strength floor)', () => {
     expect(attackLift(row({ damage: '1d8+5' }), row({})).damageBy).toEqual(['an effect in play']);
   });
