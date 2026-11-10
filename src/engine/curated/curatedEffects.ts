@@ -399,6 +399,32 @@ function psionicEnergyDice(
   });
 }
 
+/** Both printings' Monk table: +10 feet at 2, then 5 more at 6, 10, 14 and 18. */
+function unarmoredMovement(level: number): number {
+  if (level >= 18) return 30;
+  if (level >= 14) return 25;
+  if (level >= 10) return 20;
+  if (level >= 6) return 15;
+  return 10;
+}
+
+/** Proficiency in these saving throws (Diamond Soul). */
+const saveProfs =
+  (...abilities: Ability[]): CuratedFn =>
+  (col, origin) => {
+    for (const ability of abilities) col.add({ kind: 'saveProf', ability, origin });
+  };
+
+/** Two scores up by 4, to a new maximum (Primal Champion, Body and Mind). */
+const capstone =
+  (abilities: readonly Ability[], max: (printed2024: boolean) => number): CuratedFn =>
+  (col, origin, from) => {
+    const cap = max(printedIn(origin, 'xphb', from));
+    for (const ability of abilities) {
+      col.add({ kind: 'abilityBonus', ability, amount: 4, max: cap, origin });
+    }
+  };
+
 /** 2014's table says Unlimited at 20. 2024's stays at 6. */
 function rageUses(level: number, printed2024: boolean): number {
   if (level >= 20 && !printed2024) return 99;
@@ -633,6 +659,51 @@ export const CURATED: Record<string, CuratedFn> = {
       addAbilities: ['dex', 'wis'],
       origin,
     });
+  },
+  // --- Standing numbers: speeds, saves, scores and defenses ----------------
+  'fast movement|barbarian': (col, origin) => {
+    col.add({ kind: 'speedBonus', amount: 10, unless: 'heavyArmor', origin });
+  },
+  'unarmored movement|monk': (col, origin) => {
+    const amount = unarmoredMovement(classLevel(col, 'Monk'));
+    col.add({ kind: 'speedBonus', amount, unless: 'armorOrShield', origin });
+  },
+  // The 2024 feature. Tasha's Roving is a part of Deft Explorer Improvement, not read yet.
+  'roving|ranger': (col, origin, from) => {
+    if (!printedIn(origin, 'xphb', from)) return;
+    col.add({ kind: 'speedBonus', amount: 10, unless: 'heavyArmor', origin });
+    col.add({ kind: 'moveSpeed', mode: 'climb', speed: 'walk', origin });
+    col.add({ kind: 'moveSpeed', mode: 'swim', speed: 'walk', origin });
+  },
+  // An ally's aura is an effect in play; this is the paladin's own.
+  'aura of protection|paladin': (col, origin) => {
+    col.add({ kind: 'saveBonus', amount: 'abilityModMin1:cha', origin });
+  },
+  'aura of courage|paladin': (col, origin, from) => {
+    const note = printedIn(origin, 'xphb', from) ? 'not while incapacitated' : 'while conscious';
+    col.add({ kind: 'conditionImmune', condition: 'frightened', note, origin });
+  },
+  'divine health|paladin': (col, origin) => {
+    col.add({ kind: 'conditionImmune', condition: 'disease', origin });
+  },
+  'purity of body|monk': (col, origin) => {
+    col.add({ kind: 'immune', damageType: 'poison', origin });
+    col.add({ kind: 'conditionImmune', condition: 'poisoned', origin });
+    col.add({ kind: 'conditionImmune', condition: 'disease', origin });
+  },
+  'slippery mind|rogue': (col, origin, from) => {
+    col.add({ kind: 'saveProf', ability: 'wis', origin });
+    if (printedIn(origin, 'xphb', from)) col.add({ kind: 'saveProf', ability: 'cha', origin });
+  },
+  'diamond soul|monk': saveProfs(...ABILITIES),
+  'disciplined survivor|monk': saveProfs(...ABILITIES),
+  'primal champion|barbarian': capstone(['str', 'con'], (printed2024) => (printed2024 ? 25 : 24)),
+  'body and mind|monk': capstone(['dex', 'wis'], () => 25),
+  // 2014's Feral Senses is about attacking what you can't see: no number to show.
+  'feral senses|ranger': (col, origin, from) => {
+    if (printedIn(origin, 'xphb', from)) {
+      col.add({ kind: 'sense', sense: 'blindsight', range: 30, origin });
+    }
   },
   'rage|barbarian': (col, origin, from) => {
     const printed2024 = printedIn(origin, 'xphb', from);
@@ -1358,6 +1429,10 @@ export const CURATED: Record<string, CuratedFn> = {
       roll: '2d6',
       origin,
     });
+  },
+  // Warforged, both printings.
+  'trait:integrated protection': (col, origin) => {
+    col.add({ kind: 'acBonus', amount: 1, origin });
   },
   'trait:hare-trigger': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 'profBonus', origin });

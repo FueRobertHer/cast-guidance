@@ -91,7 +91,8 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
     isNum(p.amount) && (p.abilities === undefined || listOf(p.abilities, isAbility)),
   sense: (p) => isStr(p.sense) && isNum(p.range) && p.range >= 0,
   spellDcBonus: (p) => isNum(p.amount) && optStr(p.className),
-  speedBonus: (p) => isNum(p.amount),
+  speedBonus: (p) =>
+    isNum(p.amount) && (p.unless === undefined || oneOf('heavyArmor', 'armorOrShield')(p.unless)),
   speedMultiplier: (p) => isNum(p.factor) && p.factor > 0,
   tempHpEachTurn: (p) => isNum(p.amount) && p.amount >= 0,
   vulnerable: (p) => isStr(p.damageType),

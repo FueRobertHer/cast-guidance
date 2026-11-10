@@ -44,12 +44,28 @@ export function calcAbilities(
       { label: 'Base', amount: doc.abilities.base[a] },
     ];
     for (const b of bonuses) {
-      if (b.ability === a) parts.push({ label: b.origin.label, amount: b.amount });
+      if (b.ability === a && b.max === undefined) {
+        parts.push({ label: b.origin.label, amount: b.amount });
+      }
     }
     let value = parts.reduce((s, p) => s + p.amount, 0);
     if (value > 20) {
       parts.push({ label: 'Cap (20)', amount: 20 - value });
       value = 20;
+    }
+    // A bonus that raises the cap goes on top of a score held to 20, the lowest
+    // cap first, so a higher one later (an Epic Boon's 30) still has room.
+    const raising = bonuses
+      .filter((b) => b.ability === a && b.max !== undefined)
+      .sort((x, y) => (x.max ?? 0) - (y.max ?? 0));
+    for (const b of raising) {
+      const max = b.max ?? 20;
+      parts.push({ label: b.origin.label, amount: b.amount });
+      value += b.amount;
+      if (value > max) {
+        parts.push({ label: `Cap (${max})`, amount: max - value });
+        value = max;
+      }
     }
     for (const m of mins) {
       if (m.ability === a && !inPlay(m) && value < m.min) {
