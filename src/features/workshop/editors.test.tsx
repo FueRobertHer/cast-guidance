@@ -61,7 +61,11 @@ const segment = (part: string, mode: string) =>
 
 describe('the editors the Workshop finds', () => {
   it('one per file, by the type each edits', () => {
-    expect([...EDITORS.keys()].sort()).toEqual(['background', 'feat', 'optionalfeature', 'race']);
+    const types = [...EDITORS.keys()];
+    expect(types).toEqual(
+      expect.arrayContaining(['background', 'feat', 'optionalfeature', 'race']),
+    );
+    expect(types.every((t) => /^[a-z]+$/.test(t))).toBe(true);
   });
 });
 

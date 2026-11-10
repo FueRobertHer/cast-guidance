@@ -10,7 +10,10 @@
  * the roll is about, which the sheet cannot know (a check that needs sight, an
  * attack on anyone but the grappler).
  */
-import type { Ability } from './types';
+import { pickForVersion } from '../data5e/rulesVersion';
+import { type StoredProblem, storedInPlay } from './activeEffects';
+import { guidanceVersion, isRecord, own } from './castGuidance';
+import type { Ability, ActiveEffect, EffectPart, RollFilter } from './types';
 
 export type Edition = '2014' | '2024';
 
@@ -183,6 +186,18 @@ const RULES: Record<Edition, Record<string, ConditionRules>> = {
   '2014': RULES_2014,
   '2024': RULES_2024,
 };
+
+/**
+ * The conditions the app counts by its own rules, as the sheet spells their
+ * ids. Any other name is homebrew: what it does is its entry's to say (H5).
+ */
+export const BUILT_IN_CONDITIONS: readonly string[] = [...Object.keys(RULES_2014), 'Exhaustion'];
+const BUILT_IN_LOWER = new Set(BUILT_IN_CONDITIONS.map((c) => c.toLowerCase()));
+
+/** One of the conditions the app counts by its own rules, whatever its case. */
+export function isBuiltInCondition(name: string): boolean {
+  return BUILT_IN_LOWER.has(name.trim().toLowerCase());
+}
 
 const clampLevel = (level: number | undefined) => Math.max(0, Math.min(6, level ?? 0));
 
@@ -490,4 +505,241 @@ export function conditionDefenses(
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Homebrew conditions (H5)
+// ---------------------------------------------------------------------------
+
+/** A stored effect of a homebrew condition that does not count, and why. */
+export type ConditionProblem = StoredProblem;
+
+/** What a homebrew condition does, read from its entry. */
+export interface ConditionMechanics {
+  parts: EffectPart[];
+  problems: ConditionProblem[];
+}
+
+/**
+ * What an effect in play can hold but a condition cannot: the sheet gives
+ * turn-start temporary hit points, settles hit points when the maximum moves,
+ * and spends a die offered once, only for an effect in play.
+ */
+function conditionRefuses(part: EffectPart): string | undefined {
+  if (part.kind === 'tempHpEachTurn')
+    return 'a condition gives no temporary hit points at the start of a turn';
+  if (part.kind === 'maxHpBonus') return 'a condition cannot change the hit point maximum';
+  if (part.kind === 'rollOffer' && part.once === true)
+    return 'a condition cannot offer a die just once, only on every roll';
+  return undefined;
+}
+
+/**
+ * What a homebrew condition's entry says it does (`castGuidance.effects`), as
+ * the parts an effect in play holds (`storedInPlay`), less the few only an
+ * effect in play can use (`conditionRefuses`). Only those count: numbers and
+ * rolls, in plain amounts, which hold for as long as the condition does.
+ * Anything else is a problem, worded for the player, and does not count.
+ * Nothing here throws.
+ */
+export function conditionMechanics(entry: unknown): ConditionMechanics {
+  if (!isRecord(entry)) return { parts: [], problems: [] };
+  const guidance = own(entry, 'castGuidance');
+  if (guidance === undefined) return { parts: [], problems: [] };
+  if (!isRecord(guidance)) {
+    return {
+      parts: [],
+      problems: [{ why: 'what it does could not be read, so none of it counts' }],
+    };
+  }
+  const version = guidanceVersion(guidance);
+  if ('problem' in version) return { parts: [], problems: [{ why: version.problem }] };
+  return storedInPlay(own(guidance, 'effects'), 'a condition', conditionRefuses);
+}
+
+/** A problem as a sheet warning says it: "Dazed: effect 2 does not count: ...". */
+export function conditionProblemLine(name: string, p: ConditionProblem): string {
+  return p.place === undefined
+    ? `${name}: ${p.why}.`
+    : `${name}: effect ${p.place} does not count: ${p.why}.`;
+}
+
+/**
+ * The homebrew conditions in force, as effects in play for derive to count
+ * with the rest (`countingEffects`, so one never adds up with an effect of
+ * its name). `entryOf` finds a condition's entry by name, in the character's
+ * edition. A built-in condition is the app's own to count, so an entry never
+ * changes it; one switched off, or held off by an immunity, counts nothing,
+ * as a built-in one does. A name no entry has does nothing.
+ *
+ * One homebrew condition can hold off another with an immunity among its
+ * effects, as Petrified holds off Poisoned. Only one that counts holds
+ * another off, so the immunities the sheet lists are the ones that held.
+ */
+export function homebrewConditionEffects(
+  conditions: unknown,
+  entryOf: (name: string) => unknown,
+  options: ConditionOptions = {},
+): { effects: ActiveEffect[]; problems: string[] } {
+  const problems: string[] = [];
+  const held = heldNames(options);
+  const seen = new Set<string>();
+  const read: Array<{ id: string; key: string; parts: EffectPart[] }> = [];
+  // A stored document: a condition it cannot read does nothing here.
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  for (const raw of list) {
+    const id = isRecord(raw) ? own(raw, 'id') : undefined;
+    if (!isRecord(raw) || typeof id !== 'string' || id.trim() === '') continue;
+    const key = id.trim().toLowerCase();
+    if (isBuiltInCondition(id) || seen.has(key)) continue;
+    seen.add(key);
+    if (own(raw, 'ignored') === true || held.has(key)) continue;
+    const entry = entryOf(id);
+    if (entry === undefined) continue;
+    const mechanics = conditionMechanics(entry);
+    for (const p of mechanics.problems) problems.push(conditionProblemLine(id, p));
+    if (mechanics.parts.length > 0) read.push({ id, key, parts: mechanics.parts });
+  }
+  const holdsOff = (a: (typeof read)[number], b: (typeof read)[number]) =>
+    a !== b &&
+    a.parts.some((p) => p.kind === 'conditionImmune' && p.condition.trim().toLowerCase() === b.key);
+  // Settled in rounds: those nothing still unsettled holds off count, and what
+  // they hold off does not. In a ring, where each is held off by another, the
+  // first in play counts.
+  const counted: typeof read = [];
+  let open = read;
+  while (open.length > 0) {
+    const free = open.filter((c) => !open.some((o) => holdsOff(o, c)));
+    counted.push(...(free.length > 0 ? free : open.slice(0, 1)));
+    open = open.filter((c) => !counted.includes(c) && !counted.some((o) => holdsOff(o, c)));
+  }
+  const effects = read
+    .filter((c) => counted.includes(c))
+    .map((c) => ({ id: `condition:${c.id}`, name: c.id, parts: c.parts }));
+  return { effects, problems };
+}
+
+/**
+ * Finds a condition's entry by name, in a rules edition: of the entries with
+ * that name (any case), the one printed for the edition, else the first.
+ * Built once per derive from the data's conditions.
+ */
+export function conditionEntries(
+  entries: readonly unknown[],
+  edition: Edition,
+): (name: string) => unknown {
+  const byName = new Map<string, Array<Record<string, unknown>>>();
+  for (const e of entries) {
+    const name = isRecord(e) ? own(e, 'name') : undefined;
+    if (!isRecord(e) || typeof name !== 'string' || isBuiltInCondition(name)) continue;
+    const key = name.trim().toLowerCase();
+    const list = byName.get(key) ?? [];
+    if (list.length === 0) byName.set(key, list);
+    list.push(e);
+  }
+  return (name) => {
+    const list = byName.get(name.trim().toLowerCase());
+    return list === undefined ? undefined : pickForVersion(list, edition);
+  };
+}
+
+/**
+ * The homebrew conditions in force, for derive (H5): `homebrewConditionEffects`
+ * over the data's conditions in the character's edition. The data and the
+ * immunities are read only when a condition in play is not built in, so a
+ * character with none costs nothing and derives as it always has.
+ */
+export function homebrewConditionsInForce(
+  conditions: unknown,
+  data: { byType(type: string): readonly unknown[] },
+  edition: Edition,
+  immune: () => ReadonlyArray<ConditionImmunity>,
+): { effects: ActiveEffect[]; problems: string[] } {
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  const homebrew = list.some((raw) => {
+    const id = isRecord(raw) ? own(raw, 'id') : undefined;
+    return typeof id === 'string' && id.trim() !== '' && !isBuiltInCondition(id);
+  });
+  if (!homebrew) return { effects: [], problems: [] };
+  return homebrewConditionEffects(list, conditionEntries(data.byType('condition'), edition), {
+    immune: immune(),
+  });
+}
+
+const ABILITY_NAMES: Record<Ability, string> = {
+  str: 'Strength',
+  dex: 'Dexterity',
+  con: 'Constitution',
+  int: 'Intelligence',
+  wis: 'Wisdom',
+  cha: 'Charisma',
+};
+const TEST_WORDS: Record<TestKind, string> = {
+  attack: 'attack rolls',
+  check: 'ability checks',
+  initiative: 'initiative',
+  save: 'saving throws',
+};
+const andWords = (words: readonly string[]) =>
+  words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** One built-in condition's rules, as the parts a homebrew copy starts from. */
+function partsOfRules(name: string, rules: ConditionRules, out: EffectPart[]): void {
+  for (const rule of rules.rolls ?? []) {
+    if (rule.mode === 'fail') {
+      const abilities = andWords((rule.abilities ?? []).map((a) => ABILITY_NAMES[a]));
+      const what = abilities === '' ? TEST_WORDS[rule.on] : `${abilities} ${TEST_WORDS[rule.on]}`;
+      out.push({ kind: 'cue', tone: 'warn', text: `You fail ${what}` });
+    } else if (rule.on === 'initiative') {
+      // A filter on Dexterity checks reaches every one of them, not initiative alone.
+      out.push({
+        kind: 'cue',
+        tone: rule.mode === 'adv' ? 'help' : 'warn',
+        text: `${rule.mode === 'adv' ? 'Advantage' : 'Disadvantage'} on initiative`,
+      });
+    } else {
+      const on: RollFilter = { rolls: [rule.on] };
+      if (rule.abilities !== undefined) on.abilities = [...rule.abilities];
+      out.push({ kind: 'rollAdvantage', mode: rule.mode, on });
+    }
+  }
+  if (name === 'Incapacitated') {
+    out.push({ kind: 'cue', tone: 'warn', text: "You can't take actions or reactions" });
+  }
+  if (rules.immobile === true) out.push({ kind: 'cue', tone: 'warn', text: 'Your speed is 0' });
+  for (const damageType of rules.resist ?? []) out.push({ kind: 'resist', damageType });
+  for (const condition of rules.suppresses ?? []) out.push({ kind: 'conditionImmune', condition });
+  for (const note of rules.notes ?? []) {
+    const on = andWords(note.on.map((k) => TEST_WORDS[k]));
+    out.push({ kind: 'cue', tone: 'info', text: `${capital(on)}: ${note.text}` });
+  }
+  for (const text of rules.against ?? []) out.push({ kind: 'cue', tone: 'info', text });
+}
+
+/**
+ * What a built-in condition does in the app, as parts a homebrew copy of it
+ * can start from: the advantage and disadvantage the sheet counts, and
+ * reminders for what it cannot (failing a save, speed 0, attacks against the
+ * character). What it brings with it comes too (Paralyzed is Incapacitated).
+ * Empty for a name that is not built in, and for Exhaustion, counted by level.
+ */
+export function builtInConditionParts(name: string, edition: Edition): EffectPart[] {
+  const id = BUILT_IN_CONDITIONS.find((c) => c.toLowerCase() === name.trim().toLowerCase());
+  const table = RULES[edition];
+  const rules = id === undefined ? undefined : table[id];
+  if (id === undefined || rules === undefined) return [];
+  const out: EffectPart[] = [];
+  partsOfRules(id, rules, out);
+  for (const included of rules.includes ?? []) {
+    const more = table[included];
+    if (more !== undefined) partsOfRules(included, more, out);
+  }
+  const seen = new Set<string>();
+  return out.filter((p) => {
+    const key = JSON.stringify(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

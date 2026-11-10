@@ -12,6 +12,8 @@
  * the effect does between them. An entry another one grants (a Potion of
  * Speed is Haste) builds from that one's parts rather than copying them.
  */
+import { storedInPlay } from '../activeEffects';
+import { CAST_GUIDANCE_LIMITS, guidanceVersion, isRecord, own } from '../castGuidance';
 import type { Ability, ActiveEffect, EffectDuration, EffectPart } from '../types';
 import { BARDIC_DICE, bardicEffect, blessEffect, guidanceEffect } from './namedEffects';
 
@@ -1174,6 +1176,150 @@ function specs(edition: Edition): Spec[] {
 /** The whole table in a rules version, in a fixed order. */
 export function catalogFor(edition: Edition): CatalogEntry[] {
   return specs(edition).map((s) => ({ ...s, asks: s.asks ?? [], lastsSay: lastsWords(s) }));
+}
+
+// ---------------------------------------------------------------------------
+// Homebrew spells and potions (H6)
+// ---------------------------------------------------------------------------
+
+/** What the entries come from: the registry, or anything that lists entries by type. */
+export interface EntriesByType {
+  byType(type: string): readonly unknown[];
+}
+
+/** Minutes in each unit a spell's duration is written in. A round is too short to count. */
+const UNIT_MINUTES: ReadonlyMap<unknown, number> = new Map([
+  ['minute', 1],
+  ['hour', HOUR],
+  ['day', 24 * HOUR],
+]);
+
+/** How long a spell lasts by its own duration field: its first timed duration. */
+function spellLasts(entry: Record<string, unknown>): EffectDuration {
+  const durations = own(entry, 'duration');
+  const first = Array.isArray(durations) ? durations[0] : undefined;
+  if (!isRecord(first) || own(first, 'type') !== 'timed') return {};
+  const out: EffectDuration = {};
+  const span = own(first, 'duration');
+  const unit = isRecord(span) ? own(span, 'type') : undefined;
+  const amount = isRecord(span) ? own(span, 'amount') : undefined;
+  const per = UNIT_MINUTES.get(unit);
+  if (per !== undefined && typeof amount === 'number' && Number.isInteger(amount) && amount > 0) {
+    out.minutes = Math.min(amount * per, CAST_GUIDANCE_LIMITS.amountLimit);
+  }
+  if (own(first, 'concentration') === true) out.concentration = true;
+  return out;
+}
+
+/** The first sentence of an entry's text, its tags read as their words, for a result's line. */
+function firstLine(entry: Record<string, unknown>): string {
+  const entries = own(entry, 'entries');
+  const text = Array.isArray(entries) ? entries.find((x) => typeof x === 'string') : undefined;
+  if (typeof text !== 'string') return 'What its maker says it does';
+  const plain = text
+    .slice(0, 600)
+    .replaceAll(/\{@\w+ ([^|}]*)[^}]*\}/g, '$1')
+    .replaceAll(/\s+/g, ' ')
+    .trim();
+  const sentence = /^.*?[.!?](\s|$)/.exec(plain)?.[0].trim() ?? plain;
+  return sentence.length > 160 ? `${sentence.slice(0, 157).trimEnd()}...` : sentence;
+}
+
+/** A homebrew spell or potion that puts an effect on a target, read; or why it is not offered. */
+export interface HomebrewLanding {
+  entry?: CatalogEntry;
+  problems: string[];
+}
+
+/** A potion, by its item type ("P", or "P|XDMG" in newer data): drunk, not worn. */
+function isPotion(entry: Record<string, unknown>): boolean {
+  const type = own(entry, 'type');
+  return typeof type === 'string' && (type === 'P' || type.startsWith('P|'));
+}
+
+/** A spell whose range is Self lands only on its caster (Shield). */
+function onSelfOnly(entry: Record<string, unknown>): boolean {
+  const range = own(entry, 'range');
+  const distance = isRecord(range) ? own(range, 'distance') : undefined;
+  return isRecord(distance) && own(distance, 'type') === 'self';
+}
+
+/**
+ * One homebrew spell or potion as + Effect offers it: what its own
+ * `castGuidance.effects` put on a target (`storedInPlay`, so only what an
+ * effect in play holds), for as long as a spell's own duration says. A spell
+ * with a range of Self lands only on its caster. Any other item's effects are
+ * what it does while worn, which the sheet already counts, so it is not one.
+ */
+export function homebrewLanding(raw: unknown, type: 'spell' | 'item'): HomebrewLanding {
+  const problems: string[] = [];
+  if (!isRecord(raw) || (type === 'item' && !isPotion(raw))) return { problems };
+  const name = own(raw, 'name');
+  const source = own(raw, 'source');
+  const guidance = own(raw, 'castGuidance');
+  if (typeof name !== 'string' || name.trim() === '' || !isRecord(guidance)) return { problems };
+  const stored = own(guidance, 'effects');
+  if (stored === undefined) return { problems };
+  const say = (why: string) => problems.push(`${name.trim()}: ${why}.`);
+  const version = guidanceVersion(guidance);
+  if ('problem' in version) {
+    say(version.problem);
+    return { problems };
+  }
+  const read = storedInPlay(stored, 'an effect on a target');
+  for (const p of read.problems) {
+    say(p.place === undefined ? p.why : `effect ${p.place} does not count: ${p.why}`);
+  }
+  if (read.parts.length === 0) return { problems };
+  const level = own(raw, 'level');
+  const what =
+    type === 'item'
+      ? 'Potion'
+      : typeof level === 'number' && Number.isInteger(level) && level >= 0 && level <= 9
+        ? spell(level)
+        : 'Spell';
+  const parts = read.parts;
+  const spec: Spec = {
+    id: `homebrew:${type}:${lower(name.trim())}|${lower(String(source ?? ''))}`,
+    name: name.trim(),
+    what,
+    keywords: `homebrew ${typeof source === 'string' ? source : ''}`,
+    sum: firstLine(raw),
+    lasts: type === 'spell' ? spellLasts(raw) : {},
+    ...(type === 'spell' && onSelfOnly(raw) ? { self: true as const } : {}),
+    // A fresh copy each time, so one landed effect never shares parts with the next.
+    build: () => ({ parts: structuredClone(parts) }),
+  };
+  return { entry: { ...spec, asks: [], lastsSay: lastsWords(spec) }, problems };
+}
+
+/**
+ * + Effect's entries for the homebrew spells and potions that put an effect
+ * on a target (H6), found by their own `castGuidance.effects`: official
+ * entries have none. One per name and kind, the first found, as the registry
+ * keeps one copy per name and book. Problems are for whoever wants to say them.
+ */
+export function homebrewCatalog(data: EntriesByType | null | undefined): {
+  entries: CatalogEntry[];
+  problems: string[];
+} {
+  const entries: CatalogEntry[] = [];
+  const problems: string[] = [];
+  if (data === null || data === undefined) return { entries, problems };
+  const seen = new Set<string>();
+  for (const type of ['spell', 'item'] as const) {
+    for (const raw of data.byType(type)) {
+      if (!isRecord(raw)) continue;
+      if (own(raw, 'castGuidance') === undefined) continue;
+      const read = homebrewLanding(raw, type);
+      problems.push(...read.problems);
+      const key = `${type}:${read.entry?.name.toLowerCase()}`;
+      if (read.entry === undefined || seen.has(key)) continue;
+      seen.add(key);
+      entries.push(read.entry);
+    }
+  }
+  return { entries, problems };
 }
 
 /** The questions an entry asks with these answers: one shown only for some answers comes and goes. */

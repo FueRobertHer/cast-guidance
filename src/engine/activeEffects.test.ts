@@ -168,6 +168,164 @@ describe('readActiveEffects', () => {
     });
   });
 
+  describe('hostile input', () => {
+    const partsOf = (part: unknown) =>
+      readActiveEffects([{ id: 'a', name: 'A', parts: [part] }]).effects[0]?.parts;
+    /** An object nested `depth` levels down, built without recursion. */
+    const nested = (depth: number) => {
+      let x: Record<string, unknown> = { end: true };
+      for (let i = 0; i < depth; i++) x = { next: x };
+      return x;
+    };
+
+    it('builds a part from the known fields of its kind only', () => {
+      expect(
+        partsOf({
+          kind: 'acBonus',
+          amount: 1,
+          origin: { type: 'feat' },
+          while: ['bloodied'],
+          formulas: [{ field: 'amount', formula: 'x' }],
+          label: 'stray',
+          extra: nested(10),
+        }),
+      ).toEqual([{ kind: 'acBonus', amount: 1 }]);
+    });
+
+    it('builds a filter from its known fields only, and keeps them', () => {
+      const parts = partsOf({
+        kind: 'rollDie',
+        dice: '1d4',
+        same: 'Bless',
+        on: {
+          rolls: ['attack'],
+          abilities: ['str'],
+          skilled: true,
+          attack: 'weapon',
+          range: 'melee',
+          className: 'Sorcerer',
+          evil: nested(10),
+        },
+      });
+      expect(parts).toEqual([
+        {
+          kind: 'rollDie',
+          dice: '1d4',
+          same: 'Bless',
+          on: {
+            rolls: ['attack'],
+            abilities: ['str'],
+            skilled: true,
+            attack: 'weapon',
+            range: 'melee',
+            className: 'Sorcerer',
+          },
+        },
+      ]);
+    });
+
+    it('copies what it keeps, so the stored part is not shared', () => {
+      const stored = {
+        kind: 'acFormula',
+        label: 'Mage Armor',
+        base: 13,
+        addAbilities: ['dex'],
+      };
+      const [part] = partsOf(stored) ?? [];
+      expect(part).toEqual(stored);
+      expect(part).not.toBe(stored);
+      expect((part as typeof stored).addAbilities).not.toBe(stored.addAbilities);
+    });
+
+    it('reads a part nested far too deep in an unknown key, and counts it', () => {
+      const deep = { kind: 'acBonus', amount: 2, junk: nested(100_000) };
+      const read = readActiveEffects([{ id: 'd', name: 'Deep', parts: [deep] }]);
+      expect(read.effects[0]?.parts).toEqual([{ kind: 'acBonus', amount: 2 }]);
+      expect(() => countingEffects(read.effects)).not.toThrow();
+    });
+
+    it('refuses a value nested where a plain one belongs', () => {
+      expect(partsOf({ kind: 'acBonus', amount: nested(100_000) })).toEqual([]);
+      expect(partsOf({ kind: 'rollDie', dice: '1d4', on: nested(100_000) })).toEqual([]);
+      expect(
+        partsOf({ kind: 'rollDie', dice: '1d4', on: { rolls: ['attack'], skills: [nested(5)] } }),
+      ).toEqual([]);
+      expect(partsOf({ kind: 'acFormula', label: 'X', base: 10, addAbilities: [['dex']] })).toEqual(
+        [],
+      );
+    });
+
+    it('refuses fields of the wrong type', () => {
+      for (const bad of [
+        { kind: 'acBonus', amount: '2' },
+        { kind: 'acBonus', amount: Number.NaN },
+        { kind: 'acBonus', amount: Number.POSITIVE_INFINITY },
+        { kind: 'acBonus', amount: 1, same: 3 },
+        { kind: 'critRange', min: 19.5 },
+        { kind: 'cue', tone: 'help', text: ['x'] },
+        { kind: 'rollDie', dice: 4, on: { rolls: ['attack'] } },
+        { kind: 'rollDie', dice: '1d4', on: { rolls: 'attack' } },
+        { kind: 'rollDie', dice: '1d4', on: [{ rolls: ['attack'] }] },
+        { kind: 'saveBonus', amount: 1, abilities: 'str' },
+        { kind: 'speedMultiplier', factor: 0 },
+        { kind: 'moveSpeed', mode: 'fly', speed: -10 },
+        { kind: ['acBonus'], amount: 1 },
+        'acBonus',
+        null,
+        7,
+      ]) {
+        expect(partsOf(bad), JSON.stringify(bad)).toEqual([]);
+      }
+    });
+
+    it('reads a gap in a list as a missing value, not as nothing', () => {
+      // A structured clone (IndexedDB) keeps an array's gaps, which `every` skips.
+      const gappy = ['dex'];
+      gappy.length = 3;
+      expect(partsOf({ kind: 'acFormula', label: 'X', base: 10, addAbilities: gappy })).toEqual([]);
+      const parts: unknown[] = [{ kind: 'acBonus', amount: 1 }];
+      parts.length = 2;
+      const read = readActiveEffects([{ id: 'g', name: 'Gaps', parts }]);
+      expect(read.effects[0]?.parts).toEqual([{ kind: 'acBonus', amount: 1 }]);
+      expect(read.problems).toHaveLength(1);
+    });
+
+    it('never reads an inherited field', () => {
+      const proto = { kind: 'acBonus', amount: 5, id: 'p', name: 'P', parts: [] };
+      expect(partsOf(Object.create(proto))).toEqual([]);
+      const part = Object.assign(Object.create({ every: true }), { kind: 'checkBonus', amount: 1 });
+      expect(partsOf(part)).toEqual([]);
+      const read = readActiveEffects([Object.create(proto)]);
+      expect(read.effects).toEqual([]);
+      expect(read.problems).toHaveLength(1);
+      const lasts = Object.create({ minutes: 10 });
+      const timed = readActiveEffects([{ id: 't', name: 'T', parts: [], lasts }]);
+      expect(timed.effects[0]?.lasts).toEqual({});
+    });
+
+    it('takes a __proto__ key as data, never as a prototype', () => {
+      const stored = JSON.parse(
+        '[{"id":"x","name":"X","__proto__":{"off":true},"parts":[{"kind":"acBonus","amount":1,"__proto__":{"amount":9}}]}]',
+      );
+      const read = readActiveEffects(stored);
+      expect(read.effects).toEqual([
+        { id: 'x', name: 'X', parts: [{ kind: 'acBonus', amount: 1 }] },
+      ]);
+      expect(Object.getPrototypeOf(read.effects[0]?.parts[0])).toBe(Object.prototype);
+      expect(({} as Record<string, unknown>).off).toBeUndefined();
+    });
+
+    it('compares effects built elsewhere, nested past any depth, without running out of stack', () => {
+      const built = (id: string, amount: number) =>
+        fx(id, [{ kind: 'acBonus', amount, deep: nested(100_000) } as unknown as EffectPart], {
+          same: 'Same',
+        });
+      const counted = countingEffects([built('one', 1), built('two', 3)]);
+      expect(counted.inputs).toHaveLength(1);
+      expect(counted.notCounted).toHaveLength(1);
+    });
+  });
+
   it('keeps what ends an effect early (Rage), and drops an ending it does not know', () => {
     const read = readActiveEffects([
       { id: 'a', name: 'Rage', parts: [], lasts: { minutes: 1, endsWhen: 'unconscious' } },

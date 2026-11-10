@@ -22,6 +22,7 @@ import {
 import { calcSpellcasting } from './calc/slots';
 import { calcOtherSpeeds, calcSpeedMultiplier, calcWalkSpeed } from './calc/speed';
 import { CAST_GUIDANCE_LIMITS, EARLY_KINDS } from './castGuidance';
+import { homebrewConditionsInForce } from './conditions';
 import { collectAddedSpells } from './effects/addedSpells';
 import { settleInheritedAbilities } from './effects/additionalSpells';
 import { collectBackground } from './effects/background';
@@ -90,7 +91,17 @@ export function deriveSheet(
     played = read.effects;
     const problems = read.problems;
     for (const problem of problems) col.warn(problem);
-    const counting = countingEffects(played);
+    // A homebrew condition in force counts as an effect in play does (H5),
+    // unless an immunity collected so far, or one in play, holds it off.
+    const early = new PlayStates(doc, ctx, played);
+    const brew = homebrewConditionsInForce(doc.play.conditions, ctx, doc.rulesVersion, () =>
+      effectsOf(
+        [...col.effects.filter((e) => early.hold(e, undefined)), ...countingEffects(played).inputs],
+        'conditionImmune',
+      ).map((e) => ({ condition: e.condition, origin: e.origin.label })),
+    );
+    for (const problem of brew.problems) col.warn(problem);
+    const counting = countingEffects([...played, ...brew.effects]);
     for (const e of counting.inputs) col.add(e);
     effectsNotCounted = counting.notCounted;
   }

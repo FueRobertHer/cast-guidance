@@ -8,6 +8,7 @@
  */
 import { ArrowLeft, ChevronDown, Dices, PencilLine } from 'lucide-react';
 import { type Ref, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useRegistry } from '@/data5e/hooks';
 import { roll } from '@/dice/roll';
 import { countsAs, namedEffect } from '@/engine/activeEffects';
 import {
@@ -16,6 +17,7 @@ import {
   type CatalogAsk,
   type CatalogEntry,
   catalogFor,
+  homebrewCatalog,
   initialAnswers,
   landEntry,
   rollRange,
@@ -337,7 +339,12 @@ export default function EffectFinder({
   takeReturn,
 }: EffectFinderProps) {
   const edition = doc.rulesVersion;
-  const entries = useMemo(() => catalogFor(edition), [edition]);
+  const registry = useRegistry();
+  // The built-in catalog, then homebrew spells and potions that land on a target (H6).
+  const entries = useMemo(
+    () => [...catalogFor(edition), ...homebrewCatalog(registry).entries],
+    [edition, registry],
+  );
   const effects = effectsInPlay(doc.play);
   // What each of the character's own features starts, by name (Rage).
   const starts = useMemo(() => {
