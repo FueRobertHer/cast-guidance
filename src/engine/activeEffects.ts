@@ -3,6 +3,8 @@
  * them back from a stored document, and the rule that effects of one name
  * never add up. Pure: derive folds what counts in beside the build's own.
  */
+import { CAST_GUIDANCE_LIMITS } from './castGuidance';
+import { readStoredEffects } from './effects/mechanics';
 import {
   ABILITIES,
   ACTIVE_PART_KINDS,
@@ -98,20 +100,87 @@ const VALID: Record<ActivePartKind, (p: Raw) => boolean> = {
   vulnerable: (p) => isStr(p.damageType),
 };
 
+/** A field the object holds itself: an inherited one is never read. */
+const own = (o: Raw, key: string): unknown => (Object.hasOwn(o, key) ? o[key] : undefined);
+
+/**
+ * Each kind's fields besides `kind` and `same`. A part is built from these
+ * alone, so a key this version does not know never rides into derive.
+ */
+const FIELDS: Record<ActivePartKind, readonly string[]> = {
+  abilityMin: ['ability', 'min'],
+  acBonus: ['amount'],
+  acFormula: ['label', 'base', 'addAbilities', 'dexMax'],
+  acMin: ['min'],
+  attackBonus: ['scope', 'amount', 'attack', 'ability', 'weapon'],
+  checkBonus: ['amount', 'skills', 'ability', 'every'],
+  conditionImmune: ['condition', 'note'],
+  critRange: ['min'],
+  cue: ['tone', 'text'],
+  damageBonus: ['scope', 'amount', 'ability', 'weapon'],
+  damageDie: ['scope', 'dice', 'damageType', 'weapon'],
+  extraAction: ['label', 'note'],
+  immune: ['damageType', 'note'],
+  initiativeBonus: ['amount'],
+  maxHpBonus: ['amount'],
+  moveSpeed: ['mode', 'speed'],
+  resist: ['damageType', 'note'],
+  rollAdvantage: ['mode', 'on'],
+  rollDie: ['dice', 'on'],
+  rollOffer: ['dice', 'on', 'once', 'ifFailed'],
+  saveBonus: ['amount', 'abilities'],
+  sense: ['sense', 'range'],
+  spellDcBonus: ['amount', 'className'],
+  speedBonus: ['amount', 'unless'],
+  speedMultiplier: ['factor'],
+  tempHpEachTurn: ['amount'],
+  vulnerable: ['damageType'],
+};
+
+/** A roll filter's fields (`RollFilter`). */
+const FILTER_FIELDS = ['rolls', 'abilities', 'skills', 'skilled', 'attack', 'range', 'className'];
+
+/**
+ * A field's value, copied: a list as a new list (a gap in it reads as a
+ * missing value, which fails its check), a filter from its own known fields.
+ * Anything else is kept as it is, and its kind's check refuses what is not a
+ * plain value, so a valid part holds no object but its filter.
+ */
+function copyValue(v: unknown, filter: boolean): unknown {
+  if (Array.isArray(v)) return Array.from(v);
+  if (!filter || !isObj(v)) return v;
+  const out: Raw = {};
+  for (const key of FILTER_FIELDS) {
+    const field = own(v, key);
+    if (field !== undefined) out[key] = copyValue(field, false);
+  }
+  return out;
+}
+
 function readPart(raw: unknown): EffectPart | undefined {
-  if (!isObj(raw) || !ACTIVE_PART_KINDS.includes(raw.kind as never)) return undefined;
-  if (!optStr(raw.same) || !VALID[raw.kind as ActivePartKind](raw)) return undefined;
-  return { ...raw } as EffectPart;
+  if (!isObj(raw)) return undefined;
+  const kind = own(raw, 'kind');
+  if (!ACTIVE_PART_KINDS.includes(kind as never)) return undefined;
+  const part: Raw = { kind };
+  for (const key of [...FIELDS[kind as ActivePartKind], 'same']) {
+    const v = own(raw, key);
+    if (v !== undefined) part[key] = copyValue(v, key === 'on');
+  }
+  if (!optStr(part.same) || !VALID[kind as ActivePartKind](part)) return undefined;
+  return part as EffectPart;
 }
 
 function readDuration(raw: unknown): EffectDuration | undefined {
   if (!isObj(raw)) return undefined;
   const out: EffectDuration = {};
-  if (isNum(raw.minutes) && raw.minutes >= 0) out.minutes = raw.minutes;
-  if (raw.rest === 'short' || raw.rest === 'long') out.rest = raw.rest;
-  if (typeof raw.concentration === 'boolean') out.concentration = raw.concentration;
-  if (raw.endsWhen === 'unconscious' || raw.endsWhen === 'incapacitated')
-    out.endsWhen = raw.endsWhen;
+  const minutes = own(raw, 'minutes');
+  if (isNum(minutes) && minutes >= 0) out.minutes = minutes;
+  const rest = own(raw, 'rest');
+  if (rest === 'short' || rest === 'long') out.rest = rest;
+  const concentration = own(raw, 'concentration');
+  if (typeof concentration === 'boolean') out.concentration = concentration;
+  const endsWhen = own(raw, 'endsWhen');
+  if (endsWhen === 'unconscious' || endsWhen === 'incapacitated') out.endsWhen = endsWhen;
   return out;
 }
 
@@ -137,40 +206,117 @@ export function readActiveEffects(raw: unknown): ReadEffects {
     return { effects, problems };
   }
   const ids = new Set<string>();
-  for (const item of raw) {
-    if (!isObj(item) || !isStr(item.id) || !isStr(item.name) || !Array.isArray(item.parts)) {
+  for (const item of Array.from(raw as unknown[])) {
+    const id = isObj(item) ? own(item, 'id') : undefined;
+    const name = isObj(item) ? own(item, 'name') : undefined;
+    const stored = isObj(item) ? own(item, 'parts') : undefined;
+    if (!isObj(item) || !isStr(id) || !isStr(name) || !Array.isArray(stored)) {
       problems.push('An effect in play could not be read, so it does not count.');
       continue;
     }
-    if (ids.has(item.id)) {
-      problems.push(
-        `${item.name}: it is in play twice under one id, so the second does not count.`,
-      );
+    if (ids.has(id)) {
+      problems.push(`${name}: it is in play twice under one id, so the second does not count.`);
       continue;
     }
-    ids.add(item.id);
+    ids.add(id);
     const parts: EffectPart[] = [];
-    for (const p of item.parts) {
+    // Array.from, so a gap in the list reads as a part that is not there.
+    const all = Array.from(stored as unknown[]);
+    for (const p of all) {
       const part = readPart(p);
       if (part !== undefined) parts.push(part);
     }
-    const skipped = item.parts.length - parts.length;
+    const skipped = all.length - parts.length;
     if (skipped > 0) {
       problems.push(
-        `${item.name}: ${skipped === 1 ? 'one part' : `${skipped} parts`} of it this version of the app cannot read, so ${skipped === 1 ? 'that part does' : 'those do'} not count.`,
+        `${name}: ${skipped === 1 ? 'one part' : `${skipped} parts`} of it this version of the app cannot read, so ${skipped === 1 ? 'that part does' : 'those do'} not count.`,
       );
     }
-    const effect: ActiveEffect = { id: item.id, name: item.name, parts };
-    if (isStr(item.same)) effect.same = item.same;
-    const lasts = readDuration(item.lasts);
+    const effect: ActiveEffect = { id, name, parts };
+    const same = own(item, 'same');
+    if (isStr(same)) effect.same = same;
+    const lasts = readDuration(own(item, 'lasts'));
     if (lasts !== undefined) effect.lasts = lasts;
-    if (Number.isInteger(item.turnsLeft) && (item.turnsLeft as number) >= 0)
-      effect.turnsLeft = item.turnsLeft as number;
-    if (item.mine === true) effect.mine = true;
-    if (item.off === true) effect.off = true;
+    const turnsLeft = own(item, 'turnsLeft');
+    if (Number.isInteger(turnsLeft) && (turnsLeft as number) >= 0)
+      effect.turnsLeft = turnsLeft as number;
+    if (own(item, 'mine') === true) effect.mine = true;
+    if (own(item, 'off') === true) effect.off = true;
     effects.push(effect);
   }
   return { effects, problems };
+}
+
+/** How long an effect lasts, read from stored data by known keys; none when it is not an object. */
+export function readEffectDuration(raw: unknown): EffectDuration | undefined {
+  return readDuration(raw);
+}
+
+/** A stored effect that an effect in play cannot hold, and why. */
+export interface StoredProblem {
+  /** Its place in the stored list, from 1; none when the whole list is at fault. */
+  place?: number;
+  why: string;
+  /** The stored reader refused it, as it would for any entry (not only for an effect in play). */
+  unreadable?: true;
+}
+
+/** A stored reader's problem without its "effect 3 (kind): " lead. */
+const whyOf = (problem: string) => problem.replace(/^effect \d+( \([^)]*\))?: /, '');
+
+/**
+ * An entry's stored effects (`castGuidance`, read by the reader every stored
+ * effect goes through) as the parts an effect in play holds: numbers and
+ * rolls, in plain amounts, holding for as long as the effect does. `holder`
+ * names what holds them in the words a problem uses ("a condition"). Each one
+ * that cannot count is a problem by its place in the list, so an editor can
+ * put it on its card; nothing here throws.
+ */
+export function storedInPlay(
+  raw: unknown,
+  holder = 'an effect in play',
+): { parts: EffectPart[]; problems: StoredProblem[] } {
+  const parts: EffectPart[] = [];
+  const problems: StoredProblem[] = [];
+  // The list as a whole (not a list, too long) is said once, with no place.
+  for (const p of readStoredEffects(raw).problems) {
+    if (!/^effect \d+/.test(p)) problems.push({ why: p });
+  }
+  if (!Array.isArray(raw)) return { parts, problems };
+  Array.from(raw as unknown[])
+    .slice(0, CAST_GUIDANCE_LIMITS.effectsPerEntry)
+    .forEach((x, i) => {
+      const place = i + 1;
+      const one = readStoredEffects([x]);
+      const t = one.effects[0];
+      if (t === undefined) {
+        problems.push({
+          place,
+          why: whyOf(one.problems[0] ?? 'it could not be read'),
+          unreadable: true,
+        });
+        return;
+      }
+      const why =
+        t.while !== undefined
+          ? `${holder} does what it does for as long as it lasts, with no "When" of its own`
+          : !ACTIVE_PART_KINDS.includes(t.effect.kind as never)
+            ? `${holder} changes only numbers and rolls, not proficiencies, uses or actions`
+            : t.formulas !== undefined
+              ? `${holder} takes a plain number, not a formula`
+              : undefined;
+      const [held] =
+        why === undefined
+          ? readActiveEffects([{ id: 'part', name: 'part', parts: [t.effect] }]).effects
+          : [];
+      const part = held?.parts.length === 1 ? held.parts[0] : undefined;
+      if (part === undefined) {
+        problems.push({ place, why: why ?? `${holder} cannot hold it as written` });
+        return;
+      }
+      parts.push(part);
+    });
+  return { parts, problems };
 }
 
 /** The named effect a part counts as, for the rule that one name never adds up twice. */
@@ -248,14 +394,22 @@ function strength(part: EffectPart): number {
   return MEASURE[part.kind] === 'amount' ? Math.abs(v) : v;
 }
 
+/**
+ * How deep `canonical` looks. A part read by `readActiveEffects` is two levels
+ * deep at most (a filter's list); one built some other way and nested deeper
+ * compares only down to here, rather than running out of stack.
+ */
+const SHAPE_DEPTH = 8;
+
 /** Keys in order at every depth, so a filter written in another order is the same filter. */
-function canonical(x: unknown): unknown {
-  if (Array.isArray(x)) return x.map(canonical);
+function canonical(x: unknown, depth = 0): unknown {
+  if (depth > SHAPE_DEPTH) return '...';
+  if (Array.isArray(x)) return x.map((v) => canonical(v, depth + 1));
   if (!isObj(x)) return x;
   return Object.fromEntries(
     Object.keys(x)
       .sort()
-      .map((k) => [k, canonical(x[k])]),
+      .map((k) => [k, canonical(x[k], depth + 1)]),
   );
 }
 
