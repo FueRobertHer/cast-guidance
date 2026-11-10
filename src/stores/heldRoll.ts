@@ -11,8 +11,10 @@ import { rollOffersStore } from './rollOffers';
  * The roll prompt (the rolls canvas, picked 2026-11-09): every d20 test the
  * sheet makes waits here before its d20 is rolled. The toast's place shows it
  * with what the sheet sets (the mode, and why), the dice that roll in (Bless),
- * and the one-use dice that may be added first (2014 Guidance and Bardic
- * Inspiration). Roll, or the same control tapped again, rolls it.
+ * the one-use dice that may be added first (2014 Guidance and Bardic
+ * Inspiration), and what may be declared for the turn (Reckless Attack, which
+ * goes in play as the roll lands). Roll, or the same control tapped again,
+ * rolls it.
  *
  * A one-use die added here rolls in and is spent, a natural 1 or 20 included.
  * The ones not added come back after the roll, as written, unless the table's
@@ -133,10 +135,14 @@ export interface HeldRoll {
   /** The control that rolled it: tapped again it rolls, and focus goes back there. */
   from: HTMLElement | null;
   face: RollFace | undefined;
-  /** The prompt's choices: the mode, the dice that roll in left in, the one-use dice added. */
+  /**
+   * The prompt's choices: the mode, the dice that roll in left in, the one-use
+   * dice added, what is declared for the turn.
+   */
   mode: RollMode;
   rollsIn: boolean[];
   named: boolean[];
+  declared: boolean[];
   /**
    * Damage tapped while an attack waits, in order: made once the attack has
    * landed, so a crit doubles it, and landed with it. The cast spell's own
@@ -275,6 +281,7 @@ export function rollFrom(
         mode: value.preset,
         rollsIn: value.rollsIn.map(() => true),
         named: value.once.map(() => false),
+        declared: value.thisTurn.map(() => false),
         damage: [],
         afterHit,
       },
@@ -323,6 +330,7 @@ export function castFrom(
       mode: 'normal',
       rollsIn: [],
       named: [],
+      declared: [],
       damage: [],
       afterHit: undefined,
     },
@@ -413,6 +421,20 @@ export function nameHeldDie(index: number): void {
   heldRollStore.setState({ held: { ...held, named } });
 }
 
+/**
+ * Declares something for the turn on the waiting roll (Reckless Attack), or
+ * takes it back: the mode goes back to what the sheet sets with it counted.
+ */
+export function declareHeld(index: number): void {
+  const { held } = heldRollStore.getState();
+  const ask = held?.ask;
+  if (held === null || ask === null || ask === undefined || ask.thisTurn[index] === undefined)
+    return;
+  const declared = [...held.declared];
+  declared[index] = !declared[index];
+  heldRollStore.setState({ held: { ...held, declared, mode: ask.presetFor({ declared }) } });
+}
+
 /** Lets the waiting roll go unrolled, and any damage with it. */
 export function cancelHeld(): void {
   if (heldRollStore.getState().held !== null) heldRollStore.setState({ held: null });
@@ -449,6 +471,7 @@ export function rollHeld(): void {
       mode: held.mode,
       rollsIn: held.rollsIn,
       named: held.named,
+      declared: held.declared,
       dropUnnamed: rollOffersStore.getState().before,
     }),
     id,
@@ -456,12 +479,14 @@ export function rollHeld(): void {
   const spent = ask.once.flatMap((o, i) =>
     held.named[i] === true && o.effectId !== undefined ? [o.effectId] : [],
   );
+  const declared = ask.thisTurn.filter((_, i) => held.declared[i] === true);
   land({
     result,
     onLanded: held.onLanded,
     effects: [
       ...held.effects,
       ...spent.map((effectId) => () => rollOffersStore.getState().spend?.(effectId, true)),
+      ...declared.map((d) => d.declare),
     ],
   });
   cast?.cast(picked);

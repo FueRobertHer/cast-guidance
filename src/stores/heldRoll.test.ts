@@ -10,6 +10,7 @@ import {
   attackInPlay,
   cancelHeld,
   critDice,
+  declareHeld,
   followUpStore,
   heldRollStore,
   namedFirst,
@@ -220,6 +221,74 @@ describe('the prompt', () => {
     expect(logged()).toHaveLength(0);
     expect(spend).not.toHaveBeenCalled();
     expect(landed).not.toHaveBeenCalled();
+  });
+});
+
+describe('something declared for the turn (Reckless Attack)', () => {
+  /** A Greataxe attack on a barbarian's first swing, with Reckless Attack to declare. */
+  const reckless =
+    (declare: () => void, poisoned = false) =>
+    () =>
+      d20Ask('1d20+7', {
+        label: 'Greataxe attack',
+        riders: {
+          dice: [],
+          offers: [],
+          advantage: [],
+          disadvantage: poisoned ? ['Poisoned'] : [],
+        },
+        settlesOnNatural: true,
+        attack: { by: 'c1', of: 'Greataxe' },
+        thisTurn: [
+          {
+            source: 'Reckless Attack',
+            mode: 'adv',
+            cost: 'Attack rolls against you have advantage until your next turn',
+            declare,
+          },
+        ],
+      });
+
+  it('waits undeclared, and declaring it moves the mode to what the sheet sets with it', () => {
+    rollFrom(button(), reckless(vi.fn(), true));
+    expect(held()?.declared).toEqual([false]);
+    expect(held()?.mode).toBe('dis');
+    declareHeld(0);
+    expect(held()?.declared).toEqual([true]);
+    // Poisoned's disadvantage and Reckless's advantage cancel.
+    expect(held()?.mode).toBe('normal');
+    declareHeld(0);
+    expect(held()).toMatchObject({ declared: [false], mode: 'dis' });
+  });
+
+  it('declares it as the roll lands, before what the control does, and rolls under it', () => {
+    const order: string[] = [];
+    rollFrom(
+      button(),
+      reckless(() => order.push('declared')),
+      () => order.push('landed'),
+    );
+    declareHeld(0);
+    expect(held()?.mode).toBe('adv');
+    expect(order).toEqual([]);
+    nextFaces(4, 15);
+    rollHeld();
+    expect(order).toEqual(['declared', 'landed']);
+    expect(logged()[0]).toMatchObject({
+      total: 22,
+      meta: { advantage: 'adv', cue: 'Advantage: Reckless Attack' },
+    });
+  });
+
+  it('puts nothing in play when it is not declared, or the roll is cancelled', () => {
+    const declare = vi.fn();
+    rollFrom(button(), reckless(declare));
+    nextFaces(12);
+    rollHeld();
+    rollFrom(button(), reckless(declare));
+    declareHeld(0);
+    cancelHeld();
+    expect(declare).not.toHaveBeenCalled();
   });
 });
 

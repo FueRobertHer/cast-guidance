@@ -8,6 +8,8 @@ import {
   innateSorceryEffect,
   rageDamage,
   rageEffect,
+  recklessAttackEffect,
+  recklessAttackOn,
 } from './namedEffects';
 
 describe('rageDamage', () => {
@@ -28,6 +30,8 @@ describe('the named effects', () => {
       guidanceEffect('g', '2024'),
       bardicEffect('h', '2014', 'd8'),
       bardicEffect('i', '2024', 'd12'),
+      recklessAttackEffect('j', '2014'),
+      recklessAttackEffect('k', '2024'),
     ];
     const read = readActiveEffects(all);
     expect(read.problems).toEqual([]);
@@ -98,5 +102,61 @@ describe("Innate Sorcery's advantage", () => {
     expect(filterReaches(on.on, { kind: 'attack', attack: 'weapon', className: 'Sorcerer' })).toBe(
       false,
     );
+  });
+});
+
+describe('Reckless Attack', () => {
+  const swing = {
+    kind: 'attack',
+    attack: 'weapon',
+    range: 'melee',
+    ability: 'str',
+  } as const;
+
+  it('gives 2014 advantage on melee weapon attacks with Strength, and no other', () => {
+    const on = recklessAttackOn('2014');
+    expect(filterReaches(on, swing)).toBe(true);
+    expect(filterReaches(on, { ...swing, ability: 'dex' })).toBe(false);
+    expect(filterReaches(on, { ...swing, range: 'ranged' })).toBe(false);
+    expect(filterReaches(on, { kind: 'attack', attack: 'spell', ability: 'str' })).toBe(false);
+    // An attack that does not say its range or ability is not reached.
+    expect(filterReaches(on, { kind: 'attack', attack: 'weapon' })).toBe(false);
+    expect(filterReaches(on, { kind: 'check', ability: 'str' })).toBe(false);
+  });
+
+  it('gives 2024 advantage on any attack with Strength, a thrown weapon too', () => {
+    const on = recklessAttackOn('2024');
+    expect(filterReaches(on, swing)).toBe(true);
+    expect(filterReaches(on, { ...swing, range: 'ranged' })).toBe(true);
+    expect(filterReaches(on, { ...swing, ability: 'dex' })).toBe(false);
+    expect(filterReaches(on, { kind: 'save', ability: 'str' })).toBe(false);
+  });
+
+  it('lasts until the start of your next turn, saying its cost', () => {
+    const old = recklessAttackEffect('r', '2014');
+    expect(old).toMatchObject({ name: 'Reckless Attack', turnsLeft: 1, mine: true });
+    expect(old.lasts).toBeUndefined();
+    expect(old.parts).toEqual([
+      { kind: 'rollAdvantage', mode: 'adv', on: recklessAttackOn('2014') },
+      {
+        kind: 'cue',
+        tone: 'warn',
+        text: 'Attack rolls against you have advantage until your next turn',
+      },
+      // 2014's advantage is "during this turn"; its cost lasts until the next.
+      {
+        kind: 'cue',
+        tone: 'info',
+        text: 'The advantage is for your turn only, so none on an opportunity attack',
+      },
+    ]);
+    expect(recklessAttackEffect('r', '2024').parts).toEqual([
+      { kind: 'rollAdvantage', mode: 'adv', on: recklessAttackOn('2024') },
+      {
+        kind: 'cue',
+        tone: 'warn',
+        text: 'Attack rolls against you have advantage until the start of your next turn',
+      },
+    ]);
   });
 });
