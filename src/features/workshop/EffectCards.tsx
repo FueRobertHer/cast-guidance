@@ -556,6 +556,7 @@ function Card({
   effect,
   problems,
   list,
+  pools,
   spells,
   readOnly,
   onChange,
@@ -564,6 +565,7 @@ function Card({
   effect: Eff;
   problems: string[];
   list: readonly Eff[];
+  pools: readonly Eff[];
   spells: readonly SpellOption[];
   readOnly: boolean;
   onChange: (next: Eff, renamedKey?: [string, string]) => void;
@@ -571,7 +573,8 @@ function Card({
 }) {
   const spec = specOf(effect);
   const title = spec?.add ?? effect.kind;
-  const resources = list.filter((x) => x.kind === 'resource' && typeof x.key === 'string');
+  const own = list.filter((x) => x.kind === 'resource' && typeof x.key === 'string');
+  const resources = [...own, ...pools.filter((p) => !own.some((x) => x.key === p.key))];
   const state = typeof effect.while === 'string' ? effect.while : '';
   const set = (f: FieldSpec, text: string) => {
     const v = stored(f, text);
@@ -712,6 +715,7 @@ export function EffectCards({
   onReplace,
   spells,
   hide,
+  resources,
 }: {
   effects: unknown;
   onChange: (next: Eff[]) => void;
@@ -723,6 +727,8 @@ export function EffectCards({
   spells?: readonly SpellOption[];
   /** Effects another control of the editor shows, left out of the cards (an item's charges). */
   hide?: (e: Eff) => boolean;
+  /** Uses kept elsewhere that an action or a spell here can spend too (a class's pools). */
+  resources?: readonly Eff[];
 }) {
   const list: Eff[] = Array.isArray(effects) ? (effects as Eff[]) : [];
   const { problems } = readStoredEffects(list);
@@ -766,6 +772,7 @@ export function EffectCards({
             key={i}
             effect={effect}
             list={list}
+            pools={resources ?? []}
             spells={spells ?? []}
             problems={problemsOf(i)}
             readOnly={readOnly}
