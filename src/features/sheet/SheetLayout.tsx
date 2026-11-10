@@ -31,7 +31,6 @@ import { usePageTitle } from '@/lib/usePageTitle';
 import { useStickyHeight } from '@/lib/useStickyHeight';
 import { announce } from '@/stores/announcer';
 import { notifyFailure } from '@/stores/notices';
-import { AdvToggle } from '@/ui/AdvToggle';
 import { Banner } from '@/ui/Banner';
 import { Button, ButtonCount, buttonClass } from '@/ui/Button';
 import { GameDataProblem } from '@/ui/GameDataProblem';
@@ -386,10 +385,10 @@ export function Component() {
           {OPEN_ELSEWHERE_TEXT}
         </Banner>
       )}
-      {/* Where the dice dock floats, the page ends far enough down that the
-          last row scrolls clear of it (DS-001 DiceDock): the spec's page
-          padding of tab bar, dock and space-12, and from `lg`, where the dock
-          sits 1.5rem up with no tab bar, space-12 above the dock. */}
+      {/* Where the dice button floats, the page ends far enough down that
+          the last row scrolls clear of it (DS-001 DiceDock): the spec's page
+          padding of tab bar, button and space-12, and from `lg`, where the
+          button sits 1.5rem up with no tab bar, space-12 above it. */}
       <main
         className={`flex-1 px-4 pt-1 lg:pl-40 ${
           rollsHere
@@ -454,9 +453,8 @@ export function Component() {
           ),
         )}
       </nav>
-      {rollsHere && <AdvToggle />}
       {/* On every page of the sheet, so a tap on the roll toast can open its
-          history wherever the roll was made; its button only in the dock. */}
+          history wherever the roll was made; its button only where rolls start. */}
       <DiceTray dock={rollsHere} />
     </div>
   );

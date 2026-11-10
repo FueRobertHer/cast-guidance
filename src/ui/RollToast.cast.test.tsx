@@ -5,7 +5,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { d20Ask } from '@/features/sheet/d20Tests';
-import { advModeStore } from '@/stores/advMode';
 import { resetAnnouncer } from '@/stores/announcer';
 import {
   cancelHeld,
@@ -105,7 +104,6 @@ const rolls = () => rollLogStore.getState().rolls;
 
 beforeEach(() => {
   resetAnnouncer();
-  advModeStore.getState().set('normal');
 });
 
 afterEach(() => {

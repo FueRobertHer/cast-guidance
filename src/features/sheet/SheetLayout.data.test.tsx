@@ -15,7 +15,6 @@ vi.mock('./useCharacterSheet', () => ({ useCharacterSheet: () => sheetState.curr
 vi.mock('./useOpenElsewhere', () => ({ useOpenElsewhere: () => false }));
 vi.mock('./HistoryDrawer', () => ({ HistoryDrawer: () => null }));
 vi.mock('@/features/dice/DiceTray', () => ({ DiceTray: () => null }));
-vi.mock('@/ui/AdvToggle', () => ({ AdvToggle: () => null }));
 
 const retry = vi.fn();
 

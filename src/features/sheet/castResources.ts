@@ -156,13 +156,15 @@ export function castingEconomy(
  * since it costs nothing a slot could pay for. This is the automatic pick
  * alone: it never reaches into a convertible pool, so it is not the whole of
  * what an unchosen cast spends: see `defaultCastResource`, which is what the
- * UI resolves against.
+ * UI resolves against. With no class (an innate grant) there is no slot to
+ * reach for, so it is `none`.
  */
 export function nextCastResource(
-  block: SpellcastingBlock,
+  block: SpellcastingBlock | undefined,
   play: PlayState,
   spellLevel: number,
 ): CastResource {
+  if (block === undefined) return { kind: 'none', level: spellLevel };
   if (spellLevel === 0) return { kind: 'cantrip', level: 0 };
   if (arcanumReady(block, play, spellLevel)) return { kind: 'arcanum', level: spellLevel };
   if (
@@ -571,11 +573,7 @@ export function castSpell(
         turn[spell.economy] = true;
         turnUsed = true;
       }
-      const spend =
-        resource ??
-        (block === undefined
-          ? { kind: 'none' as const, level }
-          : nextCastResource(block, d.play, level));
+      const spend = resource ?? nextCastResource(block, d.play, level);
       spent = spend;
       if (spell?.concentration === true) {
         const leveled = spend.kind !== 'cantrip' && spend.kind !== 'none';

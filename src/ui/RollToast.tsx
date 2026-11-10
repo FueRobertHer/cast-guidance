@@ -31,6 +31,7 @@ import { ChipFace } from './ChipFace';
 import { D20Icon } from './D20Icon';
 import { Lift } from './Lift';
 import { RollDetail } from './RollDetail';
+import { ROLL_MODES } from './rollModes';
 import { naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
 import { SegmentedControl } from './SegmentedControl';
 
@@ -176,8 +177,8 @@ function keyboardFocus(el: HTMLElement): boolean {
 /**
  * Global roll feedback: whenever anything rolls, a toast slides up for a
  * moment so the result is never missed. It sits just above the tab bar, or
- * where the dice dock is on screen (Play and Stats), just above the dock, so
- * the roll mode the result was made in stays in sight.
+ * where the dice button is on screen (Play and Stats), just above it, so the
+ * two never cover each other.
  *
  * It stays four seconds, and waits while the pointer is on it or it has
  * focus, so a slow reader can finish it (WCAG 2.2.1). On the sheet's pages it
@@ -515,9 +516,9 @@ export function RollToast() {
   );
 
   // Keyed on the roll counter so a second roll while the first is still up
-  // replays the animation instead of silently swapping the number. The dock
-  // marks itself `data-dice-dock` (AdvToggle); its top is 124px up, and the
-  // toast clears it by 8.
+  // replays the animation instead of silently swapping the number. The dice
+  // button marks itself `data-dice-dock` (DiceTray); its top is 128px up, and
+  // the toast clears it by 8.
   const grouped = offerRow !== false || damageRows !== false;
   const history = opensTray && (
     <button
@@ -600,16 +601,9 @@ export function RollToast() {
 
 /** Where every toast floats, whatever its edge. */
 const FRAME =
-  'fixed inset-x-3 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 rounded-sheet bg-surface py-3 pr-4 pl-3 shadow-overlay ring-inset motion-safe:animate-toast-in lg:right-6 lg:bottom-6 lg:left-auto lg:w-80 [:root:has([data-dice-dock])_&]:bottom-[calc(132px+env(safe-area-inset-bottom))] lg:[:root:has([data-dice-dock])_&]:bottom-20';
+  'fixed inset-x-3 bottom-[calc(76px+env(safe-area-inset-bottom))] z-30 rounded-sheet bg-surface py-3 pr-4 pl-3 shadow-overlay ring-inset motion-safe:animate-toast-in lg:right-6 lg:bottom-6 lg:left-auto lg:w-80 [:root:has([data-dice-dock])_&]:bottom-[calc(136px+env(safe-area-inset-bottom))] lg:[:root:has([data-dice-dock])_&]:bottom-21';
 /** A toast's top row: the tile, the words, the total. */
 const ROW = 'flex items-center gap-3 text-left';
-
-/** The prompt's modes, worst to best, as the dock orders them. */
-const MODES = [
-  { value: 'dis', label: 'Dis', name: 'Disadvantage' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'adv', label: 'Adv', name: 'Advantage' },
-] as const;
 
 /**
  * One extra in the prompt: a die that rolls in (Bless) or a one-use die
@@ -902,7 +896,7 @@ function RollPrompt({
       {ask !== null && (
         <SegmentedControl
           label="Roll mode"
-          options={MODES}
+          options={ROLL_MODES}
           value={held.mode}
           onChange={setHeldMode}
           block

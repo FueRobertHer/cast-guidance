@@ -2,13 +2,12 @@
 // Conditions change the rolls they reach, with a cue where each roll starts
 // and an "Ignore once" that makes the next roll without them (FUTURE_WORK
 // "Condition effects"). The rules are the engine's; this is what a player sees.
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, newCharacterDoc } from '@/engine/types';
-import { advModeStore } from '@/stores/advMode';
 import { rollLogStore } from '@/stores/rollLog';
 import { RollToast } from '@/ui/RollToast';
 import { namelessControls } from '../../../../tests-fixtures/a11y';
@@ -47,7 +46,6 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   rollLogStore.getState().clear();
-  advModeStore.getState().set('normal');
 });
 
 /** A level-3 Warrior under `conditions`, on one tab, with the roll toast mounted. */
@@ -429,11 +427,10 @@ describe('the cues on the Play tab', () => {
     );
   });
 
-  it('cancels the dock’s advantage against a condition, and says so', () => {
-    act(() => advModeStore.getState().set('adv'));
-    renderTab(<PlayTab />, [{ id: 'Poisoned' }]);
+  it('cancels one condition’s advantage against another’s disadvantage, and says so', () => {
+    renderTab(<PlayTab />, [{ id: 'Invisible' }, { id: 'Poisoned' }], '2024');
     rollOn(screen.getByRole('button', { name: /Initiative/ }));
     expect(latest()?.meta?.advantage).toBeUndefined();
-    expect(latest()?.meta?.cue).toBe('Advantage and disadvantage cancel: Poisoned');
+    expect(latest()?.meta?.cue).toBe('Advantage and disadvantage cancel: Invisible, Poisoned');
   });
 });

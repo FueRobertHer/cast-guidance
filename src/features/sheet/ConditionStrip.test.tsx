@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { useRef, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bardicEffect, blessEffect, rageEffect } from '@/engine/curated/namedEffects';
+import { type MomentsInForce, readMoments } from '@/engine/moments';
 import {
   type ActiveEffect,
   type CharacterDoc,
@@ -73,6 +74,7 @@ function renderStrip(
     immune = [],
     edition = '2024',
     concentrating,
+    moments,
   }: {
     /** The sheet tab, by its route segment: Play unless said. */
     tab?: string;
@@ -80,6 +82,7 @@ function renderStrip(
     immune?: DerivedSheet['conditionImmunities'];
     edition?: CharacterDoc['rulesVersion'];
     concentrating?: string;
+    moments?: MomentsInForce;
   } = {},
 ) {
   function Harness() {
@@ -111,10 +114,11 @@ function renderStrip(
           {(doc.play.activeEffects ?? []).map((e) => `${e.name}${e.off ? ' off' : ''}`).join(', ')}
         </p>
         <output data-testid="stored">{JSON.stringify(doc.play.activeEffects ?? [])}</output>
-        <ConditionStrip doc={doc} sheet={sheetWith(immune)} update={update} tab={tab} />
+        <ConditionStrip doc={doc} sheet={sheet} update={update} tab={tab} />
       </>
     );
   }
+  const sheet = { ...sheetWith(immune), ...(moments !== undefined ? { moments } : {}) };
   render(<Harness />);
 }
 
@@ -353,6 +357,94 @@ describe('what a condition coming on ends', () => {
     fireEvent.click(sheet.getByRole('button', { name: /^Apply its effects/ }));
     expect(concentrating()).toBe('Concentrating on nothing');
     expect(noticeStore.getState().notice).toMatchObject({ detail: 'Hold Person · Paralyzed' });
+  });
+
+  it('sets off moments as a condition comes on and comes off, never as it is switched', async () => {
+    const read = readMoments(
+      [
+        {
+          at: 'conditionAdded',
+          condition: 'Prone',
+          do: [{ kind: 'cue', text: 'Standing costs half your speed', tone: 'help' }],
+        },
+        { at: 'conditionEnded', condition: 'prone', do: [{ kind: 'cue', text: 'Back up' }] },
+      ],
+      'Grim Resolve',
+    );
+    expect(read.problems).toEqual([]);
+    const scope = {
+      level: 3,
+      classLevel: 3,
+      prof: 2,
+      hp: 20,
+      maxHp: 20,
+      mod: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+      score: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    };
+    renderStrip([], { moments: { moments: read.moments, scope, pools: [], hpWhenDerived: 20 } });
+    await pickCondition('Prone');
+    expect(noticeStore.getState().notice).toEqual({
+      title: 'Standing costs half your speed',
+      detail: 'Grim Resolve',
+      tone: 'good',
+    });
+    noticeStore.getState().clear();
+    await closeSheet();
+
+    fireEvent.click(button('Prone'));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Prone' }));
+    fireEvent.click(sheet.getByRole('button', { name: /^Apply its effects/ }));
+    fireEvent.click(sheet.getByRole('button', { name: /^Apply its effects/ }));
+    expect(noticeStore.getState().notice).toBeNull();
+    await closeSheet();
+
+    fireEvent.click(button('Remove Prone'));
+    expect(noticeStore.getState().notice).toEqual({
+      title: 'Back up',
+      detail: 'Grim Resolve',
+      tone: 'info',
+    });
+    noticeStore.getState().clear();
+    cleanup();
+
+    // Removed while switched off, it still came off.
+    renderStrip([{ id: 'Prone', ignored: true }], {
+      moments: { moments: read.moments, scope, pools: [], hpWhenDerived: 20 },
+    });
+    fireEvent.click(button('Remove Prone'));
+    expect(noticeStore.getState().notice).toMatchObject({ title: 'Back up' });
+  });
+
+  it('sets off no 0 HP moment on Apply death', async () => {
+    const read = readMoments(
+      [
+        {
+          at: 'zeroHp',
+          do: [
+            { kind: 'tempHp', amount: 5 },
+            { kind: 'cue', text: 'Fight on' },
+          ],
+        },
+      ],
+      'Grim Resolve',
+    );
+    const scope = {
+      level: 3,
+      classLevel: 3,
+      prof: 2,
+      hp: 20,
+      maxHp: 20,
+      mod: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+      score: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    };
+    renderStrip([{ id: 'Exhaustion', level: 6 }], {
+      moments: { moments: read.moments, scope, pools: [], hpWhenDerived: 20 },
+    });
+    fireEvent.click(button('Exhausted 6'));
+    const sheet = within(await screen.findByRole('dialog'));
+    fireEvent.click(sheet.getByRole('button', { name: 'Apply death: drop to 0 HP' }));
+    expect(screen.getByText('HP 0')).toBeTruthy();
+    expect(noticeStore.getState().notice).toBeNull();
   });
 
   it('ends 2024 Rage under Incapacitated, and 2014 Rage only when knocked unconscious', async () => {
