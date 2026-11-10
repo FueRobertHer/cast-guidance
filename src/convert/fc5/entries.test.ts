@@ -523,6 +523,28 @@ describe('backgrounds', () => {
       ]);
     });
 
+    it("reads a guild's spell table, and leaves a granted feat's spells to the feat", () => {
+      const result = done(
+        convertBackground(
+          parseXml(`<background>
+            <name>Lamplighter</name>
+            ${trait(
+              'Lamp Guild Spells',
+              'For you, the spells on the Lamp Guild Spells table are added to the spell list of your spellcasting class.',
+              'Cantrip — light, message',
+              '1st — faerie fire',
+            )}
+            ${trait('Feat: Iron Lungs', 'You learn the Light cantrip.')}
+          </background>`),
+          withOfficial,
+        ),
+      );
+      expect(result.entity.additionalSpells).toEqual([
+        { expanded: { s0: ['light', 'message'], s1: ['faerie fire'] } },
+      ]);
+      expect(result.reasons).toEqual([]);
+    });
+
     it('skips an entry with no name', () => {
       expect(convertBackground(parseXml('<background/>'), ctx)).toEqual({
         skip: 'it has no name',
@@ -639,7 +661,7 @@ describe('races', () => {
         'proficiency in Light Armor is kept as text',
         'its resist "nonmagical bludgeoning" is kept as text',
         'its languages are kept as text',
-        'its innate spells are kept as text',
+        'its spells are kept as text',
         'its condition immunity to asleep is kept as text',
         'its modifiers are kept as text',
       ]);

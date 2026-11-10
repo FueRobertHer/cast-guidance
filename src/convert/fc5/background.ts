@@ -16,6 +16,7 @@ import {
   type FeatRef,
   placeEntity,
 } from './context';
+import { readSpellGrants, spellsKept } from './spellGrants';
 import {
   type AbilityKey,
   abilityKey,
@@ -24,6 +25,7 @@ import {
   entryName,
   own,
   parenthetical,
+  plainText,
   readLanguages,
   readProficiencies,
   readText,
@@ -262,6 +264,7 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const missed: Missed[] = [];
   let sourceLine: string | undefined;
   let grantedFeat: string | undefined;
+  const spellTexts: string[] = [];
   for (const trait of childElements(el, 'trait')) {
     const traitName = childText(trait, 'name') ?? '';
     const lines = childTexts(trait, 'text');
@@ -278,6 +281,10 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
       }
     }
     const label = /^([^:]+):\s*(.+)$/.exec(traitName);
+    // A granted feat's text is the feat's, whose spells it grants itself.
+    if (label?.[1]?.trim().toLowerCase() !== 'feat') {
+      spellTexts.push(plainText(traitEntries, { rows: true }));
+    }
     if (label === null) continue;
     if (label[1]?.trim().toLowerCase() === 'feat') grantedFeat = label[2]?.trim();
     else readRulesLine(label[1] ?? '', label[2]?.trim() ?? '', traitFields, missed);
@@ -294,6 +301,11 @@ export function convertBackground(el: XmlElement, ctx: Fc5Context): Fc5Result {
     if (grant.key !== undefined) traitFields.feats = [{ [grant.key]: true }];
     if (grant.reason !== undefined) reasons.push(grant.reason);
   }
+
+  // Spells it grants, and the guild and college tables that widen a class's list.
+  const spells = readSpellGrants(spellTexts, ctx.spells, { prepares: true, firstLevel: '_' });
+  if (spells.blocks !== undefined) background.additionalSpells = spells.blocks;
+  if (spells.unread) reasons.push(spellsKept(spells.blocks !== undefined));
 
   const proficiency = childText(el, 'proficiency');
   if (proficiency !== undefined) {

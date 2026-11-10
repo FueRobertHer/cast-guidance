@@ -207,6 +207,40 @@ describe('a file that is not well formed', () => {
   });
 });
 
+describe('the spells a trait grants', () => {
+  const race = (text: string, count: number) =>
+    `<compendium>${`<race><name>R</name><trait><name>T</name><text>${text}</text></trait></race>`.repeat(count)}</compendium>`;
+
+  it.each([
+    [
+      'traits full of picks',
+      race('You learn one 1st-level spell of your choice. '.repeat(150), 300),
+    ],
+    [
+      'traits naming many spells',
+      race('You can cast the hex spell and the bane spell. '.repeat(150), 300),
+    ],
+    ['traits of verbs that grant', race('you can cast '.repeat(500), 300)],
+    [
+      'traits of spell rows',
+      race(`For you, these are added to the spell list.\n${'1st | a, b\n'.repeat(600)}`, 300),
+    ],
+    ['traits of level rows', race('Level 3 | a, b, c\n'.repeat(400), 300)],
+  ])('reads %s in linear time', (_label, xml) => {
+    expect(convert(xml).report.converted).not.toEqual({});
+  });
+
+  it('grants spells named like what every object has', () => {
+    const { json } = convert(
+      `<compendium><spell><name>constructor</name><level>1</level></spell><spell><name>__proto__</name><level>0</level></spell><race><name>R</name><trait><name>T</name><text>You can cast __proto__ and constructor with this trait.</text></trait></race></compendium>`,
+    );
+    const [r] = json.race as Record<string, unknown>[];
+    expect(r?.additionalSpells).toEqual([
+      { known: { 1: ['__proto__#c'] }, innate: { 1: ['constructor'] } },
+    ]);
+  });
+});
+
 describe('what an item gives while you wear it', () => {
   const firstItem = (name: string, text: string, extra = '') =>
     (
