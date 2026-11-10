@@ -505,6 +505,23 @@ describe('convertSpell', () => {
       expect(
         lance('The damage increases by 1d10 for each slot level above 1st (maximum 3d10).'),
       ).toContain('{@scaledamage 1d10|1-3|1d10}');
+      expect(
+        lance('The damage increases by 1d10 for each slot level above 1st, up to 3d10.'),
+      ).toContain('{@scaledamage 1d10|1-3|1d10}');
+    });
+
+    it('tags no upcast from a level out of range, which reads as a cantrip', () => {
+      const result = spell(`
+        <name>Ember Lance</name><level>12</level><school>EV</school><time>1 action</time><range>60 feet</range><components>V</components><duration>Instantaneous</duration><classes>Wizard</classes>
+        <text>A lance of fire.</text>
+        <text>At Higher Levels. The damage increases by 1d10 for each slot level above 12th.</text>
+        ${rolls('Fire Damage', [
+          [12, '1d10'],
+          [13, '2d10'],
+        ])}
+      `);
+      expect(result.entity.level).toBe(0);
+      expect(JSON.stringify(result.entity)).not.toContain('{@scaledamage');
     });
 
     it('drops a placeholder bonus from the upcast tag', () => {

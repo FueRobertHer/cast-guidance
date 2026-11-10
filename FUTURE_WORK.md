@@ -266,7 +266,10 @@ work:
   "following benefits" defenses; spell captions (mostly Fight Club's own
   omissions) and language oddities; `<class>` and subclass conversion. A race
   whose text Fight Club takes from another book (Monsters of the Multiverse's
-  Tabaxi climb under Volo's citation) reads that text's speed. `printingOf` does not
+  Tabaxi climb under Volo's citation, its Aarakocra flight under Elemental
+  Evil's) reads that text's speed. A trait offered in place of another
+  ("Variant: Aquatic", "in place of Skill Versatility") gives no speed, since
+  the race lists both. `printingOf` does not
   reach `spellRests.ts` (keyed by the granting origin) or `itemTags.ts`, and
   a name Fight Club words its own way beyond what `officialName` undoes
   names no official entry (about 45% of marked items resolve, mostly magic

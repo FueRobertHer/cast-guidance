@@ -144,6 +144,14 @@ describe('more input that once scanned to the end per character', () => {
       `<compendium><race><name>R</name><speed>30</speed><trait><name>Speed</name><text>${'you have a swimming speed of 30 feet, and '.repeat(20_000)}because of your ${'a '.repeat(100_000)}, you have a flying speed of 30 feet as long as you are not ${'encumbered or '.repeat(50_000)}wearing heavy armor.</text></trait></race></compendium>`,
     ],
     [
+      'a speed trait of many short sentences, state leads and terms words',
+      `<compendium><race><name>R</name><speed>30</speed><trait><name>Speed</name><text>${'because of your beast form, you can breathe air and water. at night. '.repeat(20_000)}in ${'only '.repeat(50_000)}you have a flying speed of 30 feet.</text></trait></race></compendium>`,
+    ],
+    [
+      'a spell whose higher-level text repeats a cap',
+      `<compendium><spell><name>S</name><level>1</level><text>At Higher Levels. ${'up to {@dice '.repeat(50_000)}1d6.</text><roll description="Fire" level="1">1d6</roll><roll description="Fire" level="2">2d6</roll></spell></compendium>`,
+    ],
+    [
       'many class-list stubs for one spell',
       `<compendium><spell><name>Test</name><level>1</level></spell>${'<spell><name>Test</name><classes>Wizard</classes></spell>'.repeat(50_000)}</compendium>`,
     ],

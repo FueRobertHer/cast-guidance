@@ -131,27 +131,56 @@ const SPEED_CLAUSE =
   /^(?:(?:because of|thanks to) your [a-z' -]{1,30}, |in addition, )?you (?:also )?have an? (flying|swimming|climbing|burrowing|fly|swim|climb|burrow) speed (?:of (\d{1,3}) feet|equal to your (?:walking )?speed)(?: (?:as long as|while|if) you(?: are|'re) not (?:encumbered or )?wearing (?:medium or )?heavy armor)?$/;
 /** "Your base walking speed is 30 feet": the `<speed>` tag's to say. */
 const WALK_CLAUSE = /^your (?:base )?walking speed is \d{1,3} feet$/;
+/** A clause beside a speed that holds for good too: "and you can breathe air and water". */
+const STANDING_CLAUSE = /^you can (?:breathe (?:both )?(?:air and water|underwater)|hover)$/;
+/** "Because of your beast form, you have": a speed that holds only in a form or state. */
+const STATE_LEAD =
+  /^(?:because of|thanks to) your [a-z' -]{0,30}\b(?:form|shape|state|rage|transformation)\b/;
+/** A sentence that opens on a level, a time or a place: "At 5th level, …", "Underwater, …". */
+const OPENS_ON_TERMS =
+  /^(?:(?:at|starting|beginning|from|when|whenever|while|if|unless|until|once|after|before|during|underwater)\b|in (?!addition\b))/;
+/** "This replaces the Infernal Legacy trait": a trait taken in place of another, not one every member has. */
+const OPTION_TERMS = /\b(?:replaces?|in place of)\b/;
+/** "You can fly only for 1 minute at a time": a speed that passes. */
+const SPEED_WORDS =
+  /\b(?:speed|fly|flying|swim|swimming|climb|climbing|burrow|burrowing|benefit)\b/;
+const PASSING_TERMS = /\b(?:only|minutes?|hours?|rounds?|bursts?|duration|until)\b/;
+
+/** The speed one clause gives for good, as [mode, feet or `true` for "equal to your walking speed"]. */
+function speedOf(clause: string): [string, number | true] | undefined {
+  const m = SPEED_CLAUSE.exec(clause);
+  const mode = m === null ? undefined : own(MOVES, m[1] ?? '');
+  if (m === null || mode === undefined || STATE_LEAD.test(clause)) return undefined;
+  return [mode, m[2] === undefined ? true : Number(m[2])];
+}
 
 /**
  * The speeds a trait's text gives for good, in any of its sentences: "Your
  * walking speed is 30 feet, and you have a swimming speed equal to your
  * walking speed". A sentence read must hold speeds alone; one that sets terms
- * ("While in beast form, …", "You can't use this flying speed if …") ends
- * the reading, since what follows may hang on it.
+ * ("While in beast form, …", "At 5th level, …", "You can't use this flying
+ * speed if …") ends the reading, since what follows may hang on it. A trait
+ * that is an option ({@link OPTION_TERMS}) or whose speed passes
+ * ({@link PASSING_TERMS}), in whichever sentence, gives none.
  */
 export function traitSpeeds(text: string): Record<string, number | true> {
   const out: Record<string, number | true> = {};
-  for (const sentence of sentences(text.replace(/\s+/g, ' '))) {
-    const found: Record<string, number | true> = {};
+  const read = sentences(text.replace(/\s+/g, ' ')).map((sentence) => {
     const clauses = sentence.split(/,? and (?=you )/);
-    for (const clause of clauses) {
-      const m = SPEED_CLAUSE.exec(clause);
-      const mode = m === null ? undefined : own(MOVES, m[1] ?? '');
-      if (m !== null && mode !== undefined) found[mode] = m[2] === undefined ? true : Number(m[2]);
-    }
-    const speedsAlone = clauses.every((c) => SPEED_CLAUSE.test(c) || WALK_CLAUSE.test(c));
-    if (speedsAlone) Object.assign(out, found);
-    else if (NOT_STANDING.test(sentence)) break;
+    const speeds = clauses.map(speedOf);
+    const alone = clauses.every(
+      (c, i) => speeds[i] !== undefined || WALK_CLAUSE.test(c) || STANDING_CLAUSE.test(c),
+    );
+    return { sentence, speeds, alone };
+  });
+  const withTerms = ({ sentence, alone }: (typeof read)[number]) =>
+    OPTION_TERMS.test(sentence) ||
+    (!alone && SPEED_WORDS.test(sentence) && PASSING_TERMS.test(sentence));
+  if (read.some(withTerms)) return out;
+  for (const { sentence, speeds, alone } of read) {
+    if (alone) {
+      for (const speed of speeds) if (speed !== undefined) out[speed[0]] = speed[1];
+    } else if (NOT_STANDING.test(sentence) || OPENS_ON_TERMS.test(sentence)) break;
   }
   return out;
 }
@@ -238,10 +267,11 @@ interface TraitRules extends ProficiencyGrant {
 }
 
 /**
- * The rules a race trait's first sentence states in the book's own words:
- * languages, proficiencies ({@link proficiencySentence}; a tool only in a
- * trait about tools), and another speed. Anything else, or anything not read
- * in full, is left to the text.
+ * The rules a race trait states in the book's own words: languages and
+ * proficiencies in its first sentence ({@link proficiencySentence}; a tool
+ * only in a trait about tools), and other speeds in any sentence
+ * ({@link traitSpeeds}). Anything else, or anything not read in full, is
+ * left to the text.
  */
 export function traitRules(traitName: string, text: string): TraitRules {
   const sentence = firstSentence(text);
@@ -259,9 +289,9 @@ export function traitRules(traitName: string, text: string): TraitRules {
     return langs === undefined ? {} : { languages: langs };
   }
   const grant = proficiencySentence(sentence, /\btools?\b/i.test(traitName) ? 'any' : 'none');
-  if (grant !== undefined) return grant;
   const speed = traitSpeeds(text);
-  return Object.keys(speed).length > 0 ? { speed } : {};
+  const moves = Object.keys(speed).length > 0 ? { speed } : {};
+  return grant === undefined ? moves : { ...grant, ...moves };
 }
 
 /** A Fight Club `<special>` that names a 5etools trait tag. */
