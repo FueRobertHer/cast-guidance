@@ -677,3 +677,131 @@ describe('convertItem', () => {
     });
   });
 });
+
+describe('what an item gives only under terms', () => {
+  it('reads no defense or AC bonus a condition opens or a terms clause precedes', () => {
+    for (const text of [
+      'While raging, you have resistance to fire damage while you wear this armor.',
+      'If the wand has at least 1 charge remaining, you have resistance to necrotic damage while you hold it.',
+      'While you wear this armor and you are raging, you have resistance to fire damage.',
+      'While wearing this armor, you can use a bonus action to speak its command word, and you have resistance to fire damage.',
+    ]) {
+      expect(itemDefenses(text), text).toEqual({});
+    }
+    for (const text of [
+      'While raging, you gain a +1 bonus to AC while you wear this armor.',
+      'Once per day, you gain a +2 bonus to AC while wearing this armor.',
+      'While enlarged, your size becomes Large, and you gain a +1 bonus to AC while you wield the shield.',
+      'While you wear this armor and you are bloodied, you gain a +2 bonus to AC.',
+      'While wearing this armor, you gain a +1 bonus to AC and to saving throws while you are raging.',
+      'While wearing this ring, you gain a +1 bonus to AC and saving throws against undead.',
+      'While wearing this item, you gain a +2 bonus to AC if you wear no armor and are using a shield.',
+      'While wearing this cloak, you gain a +1 bonus to AC and saving throws in dim light or darkness.',
+      'While wearing this cap underwater, you gain a +1 bonus to AC.',
+      'While you hold this shield aloft, you gain a +2 bonus to AC.',
+    ]) {
+      expect(itemAcBonus(text), text).toBeUndefined();
+    }
+    // The Blackstaff's list of what else the bonus is to.
+    expect(
+      itemAcBonus(
+        'While holding it, you gain a +2 bonus to Armor Class, saving throws, and spell attack rolls.',
+      ),
+    ).toBe('+2');
+    // A clause after the bonus with no hold over it leaves the bonus as it is.
+    expect(
+      itemAcBonus(
+        'While wearing this armor, you gain a +3 bonus to AC, you are immune to fire damage, and you can understand and speak Primordial.',
+      ),
+    ).toBe('+3');
+    expect(
+      itemAcBonus(
+        "While wearing these bracers, you gain a +2 bonus to AC if you aren't wearing armor or using a shield.",
+      ),
+    ).toBe('+2');
+  });
+
+  it('reads no weapon bonus with terms after it, or after a sentence that sets them', () => {
+    for (const text of [
+      'You gain a +1 bonus to attack and damage rolls made with it against undead.',
+      'You gain a +2 bonus to attack and damage rolls made with it while raging.',
+      'You gain a +2 bonus to attack and damage rolls made with this weapon, but only against undead.',
+      'You gain a +1 bonus to attack and damage rolls made with this weapon, once per day.',
+      "When you speak this sword's command word, flames erupt from the blade. You gain a +2 bonus to attack and damage rolls made with this magic weapon.",
+      "You can use a bonus action to speak this magic sword's command word, causing flames to erupt from the blade. You gain a +2 bonus to attack and damage rolls made with this weapon.",
+    ]) {
+      expect(itemWeaponBonus(text), text).toBeUndefined();
+    }
+    for (const text of [
+      'You gain a +2 bonus to attack and damage rolls made with this sword, and it deals an extra 2d6 damage on a hit.',
+      // The terms in a later clause are that clause's.
+      'You gain a +2 bonus to attack and damage rolls made with this magic weapon, and you ignore the normal penalties on ranged weapon attacks while using this weapon underwater.',
+      'You gain a +2 bonus to attack and damage rolls made with this bow, and you suffer no disadvantage when attacking at long range.',
+    ]) {
+      expect(itemWeaponBonus(text), text).toBe('+2');
+    }
+  });
+
+  it("reads no bonus from a part for one of the item's states, or from a bullet line", () => {
+    const weapon = (...text: string[]) =>
+      item(
+        `<name>Wrath Blade</name><type>M</type><magic>YES</magic><dmg1>1d8</dmg1><dmgType>S</dmgType>${text.map((t) => `<text>${t}</text>`).join('')}`,
+      ).entity;
+    expect(
+      weapon(
+        'This weapon awakens as its wielder grows.',
+        'Stirring (Rare): You gain a +1 bonus to attack and damage rolls made with this magic weapon.',
+      ).bonusWeapon,
+    ).toBeUndefined();
+    const jewel = weapon(
+      'In its Dormant State, the jewel has the following properties:',
+      '•You gain a +1 bonus to AC while wearing the jewel.',
+      '•You gain a +1 bonus to attack and damage rolls made with this magic weapon.',
+    );
+    expect([jewel.bonusAc, jewel.bonusWeapon]).toEqual([undefined, undefined]);
+    // A state's label on a line of its own, as the 5.5e file writes Dragon's Wrath weapons.
+    expect(
+      weapon(
+        'This weapon is decorated with dragon heads.',
+        'Slumbering (Uncommon):',
+        'Whenever you roll a 20 on your attack roll with this weapon, each creature of your choice within 5 feet of the target takes 5 damage.',
+        'Stirring (Rare):',
+        'The Stirring weapon has the Slumbering property. In addition, you gain a +1 bonus to attack and damage rolls made using the weapon.',
+      ).bonusWeapon,
+    ).toBeUndefined();
+  });
+
+  it("reads no defense an attuned item's text gives under a heading or a lead-in with terms", () => {
+    const cloak = (text: string) =>
+      item(
+        `<name>Storm Cloak</name><type>W</type><detail>rare (requires attunement)</detail><text>${text}</text>`,
+      ).entity;
+    const scion = cloak(
+      'You gain resistance to lightning damage.\nTATTOOED\nThe distance you can teleport increases to 30 feet.\nSCARIFIED\nYou gain immunity to lightning damage.',
+    );
+    expect([scion.resist, scion.immune]).toEqual([['lightning'], undefined]);
+    expect(
+      cloak(
+        'As an action, you can turn into mist for 1 minute. While in this form:\nYou have resistance to fire damage.',
+      ).resist,
+    ).toBeUndefined();
+  });
+
+  it("keeps a staff's own rolls that match the quarterstaff dice, and drops a bonus the text applies from the report", () => {
+    const staff = item(
+      '<name>Ember Staff</name><type>ST</type><magic>YES</magic><text>The staff has charges.</text><roll description="Regain Charges">1d6+4</roll><roll description="Fire Damage">1d8</roll>',
+    );
+    expect(JSON.stringify(staff.entity.entries)).toContain('Fire Damage {@damage 1d8}');
+    const bracers = item(
+      '<name>Guard Bracers</name><type>W</type><magic>YES</magic><attunement>Requires Attunement</attunement><modifier category="bonus">unarmored armor class +2</modifier><text>While wearing these bracers, you gain a +2 bonus to AC if you are wearing no armor and using no shield.</text>',
+    );
+    expect([bracers.entity.bonusAc, bracers.reasons]).toEqual(['+2', []]);
+  });
+
+  it('reads the defenses a named part gives after a held lead-in that ends a paragraph', () => {
+    const rod = item(
+      '<name>Rod of Embers</name><type>RD</type><detail>very rare (requires attunement)</detail><text>This rod can be used as an arcane focus. While holding this rod, you gain the following benefits:</text><text>Ember Resistance:</text><text>You have resistance to fire and necrotic damage.</text>',
+    ).entity;
+    expect(rod.resist).toEqual(['fire', 'necrotic']);
+  });
+});
