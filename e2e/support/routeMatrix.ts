@@ -317,7 +317,7 @@ export const ROUTES: readonly RouteCase[] = [
   sheetTab('', 'Play', button('Short rest')),
   sheetTab('/stats', 'Stats', (page) => page.getByRole('heading', { name: 'Saving throws' })),
   sheetTab('/inventory', 'Inventory', button('Add item')),
-  sheetTab('/spells', 'Spells', text('This character has no spellcasting.')),
+  sheetTab('/spells', 'Spells', button('Add a spell')),
   sheetTab('/features', 'Features', (page) => page.getByRole('heading', { name: 'Notes' })),
   // Essentials hold no class files, so at that level the class picker says why it is empty.
   sheetTab(

@@ -66,6 +66,7 @@ import { PackProblem } from '@/ui/PackProblem';
 import { Pips } from '@/ui/Pips';
 import { RollChip } from '@/ui/RollChip';
 import { cardClass, listClass, openListClass } from '@/ui/surfaces';
+import { RemoveAddedSpell } from '../AddSpellSheet';
 import {
   type ActionRestore,
   type ActionSpend,
@@ -2180,7 +2181,7 @@ export function Component() {
               if (entity === undefined && spellsSettling) {
                 return (
                   <PendingSpellRow
-                    key={`${g.name}|${g.source}|${g.resourceKey ?? ''}`}
+                    key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
                     name={g.name}
                     source={g.source}
                     version={doc.rulesVersion}
@@ -2239,7 +2240,7 @@ export function Component() {
               const usedUp = depleted && !castsByPrompt(cast);
               return (
                 <div
-                  key={`${g.name}|${g.source}|${g.resourceKey ?? ''}`}
+                  key={`${g.name}|${g.source}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
                   className={`min-h-11 ${ROW} border-line border-b py-1.5 last:border-b-0`}
                 >
                   <div className={ROW_NAME}>
@@ -2248,12 +2249,19 @@ export function Component() {
                       source={g.source}
                       version={doc.rulesVersion}
                       subtitle={subtitle}
+                      footer={
+                        g.added ? <RemoveAddedSpell name={g.name} update={update} /> : undefined
+                      }
                       trigger={
                         // Name and badges on one line while there is room;
-                        // with large text the badges wrap under the name.
+                        // with large text the badges wrap under the name. An
+                        // added spell's mark is too long to share the line
+                        // with a short name and its uses, so its badges wrap.
                         <button
                           type="button"
-                          className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left @min-[15rem]:flex-nowrap"
+                          className={`flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left ${
+                            g.added ? '' : '@min-[15rem]:flex-nowrap'
+                          }`}
                         >
                           <span
                             className={`min-w-0 capitalize ${NAME} ${RULES} underline-offset-2`}
@@ -2262,6 +2270,11 @@ export function Component() {
                           </span>
                           {g.usage === 'prepared' && (
                             <Badge className="shrink-0">Always prepared</Badge>
+                          )}
+                          {g.added && (
+                            <Badge tone="guide" className="shrink-0">
+                              Outside your class
+                            </Badge>
                           )}
                           {remaining !== undefined && limited !== undefined && (
                             <span

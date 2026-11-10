@@ -261,9 +261,9 @@ describe('SheetLayout tabs (design system)', () => {
     expect(labels()).toEqual(['Play', 'Stats', 'Spells', 'Items', 'Features']);
   });
 
-  it('hides Spells for a character with no spellcasting', () => {
+  it('shows Spells for a character with no spellcasting, which can still add one', () => {
     renderAt('/c/x');
-    expect(labels()).toEqual(['Play', 'Stats', 'Items', 'Features']);
+    expect(labels()).toEqual(['Play', 'Stats', 'Spells', 'Items', 'Features']);
   });
 
   it("still shows where a link straight to a non-caster's Spells landed", () => {

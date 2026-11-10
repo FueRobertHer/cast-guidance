@@ -19,6 +19,7 @@ import type { ChipWear } from '@/ui/ChipFace';
 import { PackProblem } from '@/ui/PackProblem';
 import { cardClass, openListClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
+import { RemoveAddedSpell } from './AddSpellSheet';
 import { castsByPrompt, type SpellCast } from './castPlan';
 import { castingEconomy, isConcentratingOn } from './castResources';
 import { conditionLimits } from './conditionEffects';
@@ -320,6 +321,7 @@ function InnateSpellRow({
       concentrating={concentrating}
       marks={
         <>
+          {grant.added && <Badge tone="guide">Outside your class</Badge>}
           {remaining !== undefined && limited !== undefined && (
             <span
               title={
@@ -335,6 +337,7 @@ function InnateSpellRow({
           <VerbalMark entity={entity} noVerbal={ctx.noVerbal} />
         </>
       }
+      rulesFooter={grant.added ? <RemoveAddedSpell name={name} update={update} /> : undefined}
       actions={
         <>
           {spellSaves(entity).length > 0 && modifier !== undefined && (
@@ -729,7 +732,7 @@ export function YourSpells({
               };
               return entity === undefined && spellsSettling ? (
                 <SpellRow
-                  key={`${refUid(g)}|${g.resourceKey ?? ''}`}
+                  key={`${refUid(g)}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
                   name={spell.name}
                   source={g.source}
                   version={doc.rulesVersion}
@@ -740,7 +743,7 @@ export function YourSpells({
                 />
               ) : (
                 <InnateSpellRow
-                  key={`${refUid(g)}|${g.resourceKey ?? ''}`}
+                  key={`${refUid(g)}|${g.resourceKey ?? ''}|${g.added ? 'added' : ''}`}
                   grant={g}
                   spell={spell}
                   ctx={ctx}

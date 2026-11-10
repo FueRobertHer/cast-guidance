@@ -246,6 +246,11 @@ export interface CharacterDoc {
 
   equipment: EquipmentEntry[];
   spellcasting: Record<string, { known: EntityRef[]; prepared: EntityRef[] }>;
+  /**
+   * Spells the player added that nothing in the build grants: a gift or a curse
+   * from the DM, by the table's call. Optional; absent is none.
+   */
+  addedSpells?: AddedSpell[];
 
   /** User "misc modifier" rows — first-class effects. */
   customEffects: EffectInput[];
@@ -256,6 +261,18 @@ export interface CharacterDoc {
   notes: string;
 }
 
+/** A spell the player added outside the build (`CharacterDoc.addedSpells`). */
+export interface AddedSpell {
+  spell: EntityRef;
+  /** The ability it casts with, chosen when it was added. */
+  ability: Ability;
+  /**
+   * How often it casts with no slot, at its own level: once per long rest, once
+   * per short or long rest, or at will. A cantrip is at will whatever this says.
+   */
+  uses: 'long' | 'short' | 'will';
+}
+
 // ---------------------------------------------------------------------------
 // Effects
 // ---------------------------------------------------------------------------
@@ -263,7 +280,10 @@ export interface CharacterDoc {
 export interface EffectOrigin {
   label: string;
   uid: string;
-  /** `active`: an effect on the character during play, its `uid` the effect's id. */
+  /**
+   * `active`: an effect on the character during play, its `uid` the effect's id.
+   * `added`: a spell the player added (`CharacterDoc.addedSpells`).
+   */
   type:
     | 'race'
     | 'background'
@@ -273,7 +293,8 @@ export interface EffectOrigin {
     | 'item'
     | 'custom'
     | 'curated'
-    | 'active';
+    | 'active'
+    | 'added';
   /** The rule pack whose patch this comes from, shown beside what it changes. */
   pack?: string;
 }
@@ -1018,6 +1039,8 @@ export interface DerivedSheet {
      * species', feat's or item's.
      */
     className?: string;
+    /** The player added it (`CharacterDoc.addedSpells`); nothing in the build grants it. */
+    added?: true;
   }>;
   warnings: string[];
   /**

@@ -80,6 +80,18 @@ describe('outOfPolicyPicks (GAME-005)', () => {
     ]);
   });
 
+  it('names a spell added outside the build from a book outside the list', () => {
+    const doc = mixedDoc(['phb']);
+    doc.addedSpells = [
+      { spell: { name: 'Mind Sliver', source: 'TCE' }, ability: 'int', uses: 'will' },
+      { spell: { name: 'Shield', source: 'PHB' }, ability: 'int', uses: 'long' },
+    ];
+    expect(outOfPolicyPicks(doc, resolved).at(-1)).toMatchObject({
+      label: 'Mind Sliver',
+      source: 'TCE',
+    });
+  });
+
   it('finds nothing when the character has no list', () => {
     expect(outOfPolicyPicks(mixedDoc([]), resolved)).toEqual([]);
     expect(

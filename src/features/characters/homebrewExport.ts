@@ -80,6 +80,7 @@ export function collectCharacterRefs(doc: CharacterDoc): EntityRef[] {
       for (const ref of listOf(refOf(sc, 'prepared'))) raw.push(ref);
     }
   }
+  for (const a of listOf(doc.addedSpells)) raw.push(refOf(a, 'spell'));
   const out: EntityRef[] = [];
   for (const r of raw) {
     const ref = refFrom(r);

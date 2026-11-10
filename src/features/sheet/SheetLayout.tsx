@@ -109,16 +109,6 @@ export function buildFrom(state: unknown): (typeof tabs)[number] | undefined {
   return typeof state.sheetFrom === 'string' ? tabFor(state.sheetFrom) : undefined;
 }
 
-/**
- * Whether the tab bar shows Spells: for a character with spellcasting, and on
- * the Spells route itself, so a link straight to a non-caster's Spells still
- * shows where it is. Hidden until the sheet is derived, since only the class
- * data says who casts.
- */
-export function showsSpells(tab: string, spellcastingBlocks: number | undefined): boolean {
-  return tab === 'spells' || (spellcastingBlocks ?? 0) > 0;
-}
-
 /** Edit's accessible name, which says the count its badge shows. */
 export function editLabel(pending: number): string {
   if (pending === 0) return 'Edit character';
@@ -425,33 +415,31 @@ export function Component() {
         aria-label="Character sheet"
         className="fixed inset-x-0 bottom-0 z-10 box-content flex h-tabbar border-line border-t bg-surface px-1 pb-[env(safe-area-inset-bottom)] lg:inset-y-0 lg:box-border lg:right-auto lg:h-auto lg:w-36 lg:flex-col lg:gap-1 lg:border-t-0 lg:border-r lg:px-2 lg:pt-4 lg:pb-0"
       >
-        {tabs.map(({ to, label, icon: Icon, end }) =>
-          to === 'spells' && !showsSpells(tab, state.sheet?.spellcasting.length) ? null : (
-            <NavLink
-              key={label}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
-                  isActive
-                    ? 'font-bold text-ink lg:bg-surface-raised'
-                    : 'text-ink-muted hover:text-ink'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {/* The current tab is marked by weight and a pill, not by
+        {tabs.map(({ to, label, icon: Icon, end }) => (
+          <NavLink
+            key={label}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              `flex min-w-0 flex-1 flex-col items-center gap-[3px] pt-[6px] text-tab lg:min-h-tap lg:flex-none lg:flex-row lg:gap-2.5 lg:rounded-control lg:px-3 lg:text-label ${
+                isActive
+                  ? 'font-bold text-ink lg:bg-surface-raised'
+                  : 'text-ink-muted hover:text-ink'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {/* The current tab is marked by weight and a pill, not by
                     colour alone (A11Y-002); NavLink sets aria-current. */}
-                  <TabPill active={isActive}>
-                    <Icon size={20} aria-hidden className="lg:size-4.5" />
-                  </TabPill>
-                  {label}
-                </>
-              )}
-            </NavLink>
-          ),
-        )}
+                <TabPill active={isActive}>
+                  <Icon size={20} aria-hidden className="lg:size-4.5" />
+                </TabPill>
+                {label}
+              </>
+            )}
+          </NavLink>
+        ))}
       </nav>
       {/* On every page of the sheet, so a tap on the roll toast can open its
           history wherever the roll was made; its button only where rolls start. */}

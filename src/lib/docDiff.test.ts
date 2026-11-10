@@ -418,3 +418,41 @@ describe('effects in play', () => {
     expect(sameContent(base(), kept)).toBe(false);
   });
 });
+
+describe('added spells', () => {
+  const bolt = {
+    spell: { name: 'Fire Bolt', source: 'PHB' },
+    ability: 'wis',
+    uses: 'will',
+  } as const;
+  const shield = {
+    spell: { name: 'Shield', source: 'PHB' },
+    ability: 'wis',
+    uses: 'long',
+  } as const;
+
+  it('names what was added and taken off', () => {
+    const one = edited((d) => {
+      d.addedSpells = [bolt];
+    });
+    const swapped = edited((d) => {
+      d.addedSpells = [shield];
+    });
+    expect(lines(base(), one)).toEqual(['Added spells: +Fire Bolt']);
+    expect(lines(one, swapped)).toEqual(['Added spells: +Shield, −Fire Bolt']);
+    expect(
+      lines(
+        one,
+        edited((d) => (d.addedSpells = [{ ...bolt, ability: 'cha' }])),
+      ),
+    ).toEqual(['Added spell details']);
+  });
+
+  it('reads none added as absent, so an older document keeps its key', () => {
+    const empty = edited((d) => {
+      d.addedSpells = [];
+    });
+    expect(contentKey(empty)).toBe(contentKey(base()));
+    expect(diffDocs(base(), empty)).toEqual([]);
+  });
+});
