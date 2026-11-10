@@ -291,7 +291,8 @@ function endOutOfAction(
  * condition already on (the sheet warns, never blocks) stays.
  *
  * Then the `conditionAdded` moments for it fire, unless it is switched off or
- * held off.
+ * held off. Switching one back on is no new condition: the strip passes limits
+ * with no moments for that, as switching one off fires nothing either.
  */
 export function conditionEndings(play: PlayState, id: string, hp: HpLimits): EffectChange {
   return conditionCame(play, id, hp, newChain());
@@ -317,22 +318,24 @@ function conditionCame(
 
 /**
  * The condition `id` came off (removed, not switched off): its
- * `conditionEnded` moments fire. Call it after taking the condition out.
+ * `conditionEnded` moments fire, unless the character could not have it. Call
+ * it after taking the condition out, for one that was not switched off.
  */
 export function conditionEnded(play: PlayState, id: string, hp: HpLimits): EffectChange {
-  return fire(play, 'conditionEnded', { condition: id }, hp, newChain(), {
-    ended: [],
-    maxHpChange: 0,
-  });
+  const none: EffectChange = { ended: [], maxHpChange: 0 };
+  if (heldOff([{ id }], { immune: hp.immune }).length > 0) return none;
+  return fire(play, 'conditionEnded', { condition: id }, hp, newChain(), none);
 }
 
 /**
  * Dropping to 0 hit points, or dying: the character falls unconscious in both
  * rules versions, so their concentration and Rage end as Unconscious ends them.
- * Then the `zeroHp` moments fire, so call it once for each drop.
+ * Then the `zeroHp` moments fire, when the sheet the limits came from had the
+ * character above 0 HP: a hit at 0 HP is no new drop.
  */
 export function knockedOut(play: PlayState, hp: HpLimits): EffectChange {
   const change = endOutOfAction(play, { incapacitated: true, unconscious: true }, hp);
+  if (hp.moments === undefined || hp.moments.hpWhenDerived <= 0) return change;
   return fire(play, 'zeroHp', {}, hp, newChain(), change);
 }
 
@@ -386,6 +389,8 @@ function fire(
   const change: EffectChange = { ended: [], maxHpChange: 0, moments: report };
   chain.depth++;
   for (const m of due) {
+    // An earlier moment's outcome can set this one off first, in a nested step.
+    if (chain.fired.has(m)) continue;
     chain.fired.add(m);
     for (const o of m.do) {
       const now = { ...hp, maxHp: hp.maxHp + before.maxHpChange + change.maxHpChange };
@@ -419,7 +424,12 @@ function outcome(
       const same = (play.activeEffects ?? []).find(
         (e) => isEffect(e) && !heldByMe(e) && answersTo(e, o.name),
       );
-      const effect = effectNow(o, scope(), chain, same?.id);
+      const { effect, dropped } = effectNow(o, scope(), chain, same?.id);
+      for (const part of dropped) {
+        report.problems.push(
+          `${from}: ${o.name}, effect ${part}: an effect in play cannot hold it with these numbers`,
+        );
+      }
       if (effect === undefined) {
         report.problems.push(`${from}: ${o.name} has nothing an effect in play can do`);
         break;
@@ -440,8 +450,11 @@ function outcome(
       const amount = amountNow(o.amount, scope(), chain);
       const entry = play.resources.find((r) => r.key === pool.key);
       const used = entry?.used ?? 0;
+      // A pool already spent past its maximum (the maximum shrank) spends nothing more.
       const next =
-        o.kind === 'regain' ? Math.max(0, used - amount) : Math.min(pool.max, used + amount);
+        o.kind === 'regain'
+          ? Math.max(0, used - amount)
+          : Math.max(used, Math.min(pool.max, used + amount));
       if (next === used) break;
       if (entry !== undefined) entry.used = next;
       else play.resources.push({ key: pool.key, used: next });
@@ -455,7 +468,10 @@ function outcome(
     case 'tempHp': {
       const amount = amountNow(o.amount, scope(), chain);
       if (amount > 0 && keepHigherTemp(play, amount)) {
-        report.done.push({ text: `${amount} temporary hit points`, from });
+        report.done.push({
+          text: `${amount} temporary hit point${amount === 1 ? '' : 's'}`,
+          from,
+        });
       }
       break;
     }

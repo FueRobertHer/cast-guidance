@@ -9,13 +9,16 @@ import {
   defensesRaisedBy,
   defenseView,
   effectMark,
+  hpLimits,
   immunityTo,
   lastsLine,
+  momentNotice,
   newTurnLines,
   partLine,
   raised,
   raisedBy,
   restLasts,
+  withMoments,
 } from './effectsInPlay';
 
 const value = (n: number, parts: Array<[string, number]> = []): DerivedValue => ({
@@ -488,5 +491,64 @@ describe('newTurnLines', () => {
         3,
       ),
     ).toEqual(['Heroism keeps your temp HP at 3']);
+  });
+});
+
+describe('what moments did', () => {
+  const report = {
+    done: [{ text: 'Exhaustion 1', from: 'Gritty' }],
+    cues: [{ text: 'Tell the DM', tone: 'help' as const, from: 'Gritty' }],
+    offers: [{ label: 'Last stand', dice: '1d6', from: 'Heroic' }],
+    problems: [],
+  };
+
+  it('leads with a cue, then offers, changes and problems, naming where they came from', () => {
+    expect(momentNotice(report)).toEqual({
+      title: 'Tell the DM',
+      detail: 'Last stand: 1d6 · Exhaustion 1 · Gritty · Heroic',
+      tone: 'good',
+    });
+  });
+
+  it('warns when something could not happen, and says nothing when nothing did', () => {
+    expect(
+      momentNotice({ done: [], cues: [], offers: [], problems: ['Gritty: no pool named luck'] }),
+    ).toEqual({ title: 'Gritty: no pool named luck', tone: 'warn' });
+    expect(momentNotice({ done: [], cues: [], offers: [], problems: [] })).toBeNull();
+  });
+
+  it('joins onto a notice already being shown, as one', () => {
+    const broken = {
+      title: 'Concentration broken',
+      detail: 'Bless · Stunned',
+      tone: 'warn' as const,
+    };
+    expect(withMoments(broken, report)).toEqual({
+      title: 'Concentration broken',
+      detail: 'Bless · Stunned · Tell the DM · Last stand: 1d6 · Exhaustion 1',
+      tone: 'warn',
+    });
+    expect(withMoments(broken, undefined)).toBe(broken);
+    expect(withMoments(null, undefined)).toBeNull();
+    expect(withMoments(null, report)).toEqual(momentNotice(report));
+  });
+
+  it('says them on the new turn toast, after what the turn itself did', () => {
+    expect(newTurnLines({ ended: ['Dodge'], maxHpChange: 0, moments: report }, [], 0)).toEqual([
+      'Dodge ended',
+      'Tell the DM',
+      'Last stand: 1d6',
+      'Exhaustion 1',
+    ]);
+  });
+
+  it('come with the limits the sheet gives, only when the sheet has moments', () => {
+    const sheet = {
+      maxHp: { value: 40, base: 40, overridden: false, parts: [] },
+      conditionImmunities: [],
+    } as unknown as DerivedSheet;
+    expect(hpLimits(sheet, '2024')).toStrictEqual({ maxHp: 40, edition: '2024', immune: [] });
+    const moments = { moments: [], scope: {}, pools: [], hpWhenDerived: 40 } as never;
+    expect(hpLimits({ ...sheet, moments }, '2024').moments).toBe(moments);
   });
 });

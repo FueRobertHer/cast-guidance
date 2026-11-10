@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { makeTestContext } from '../../tests-fixtures/testWorld';
 import { CAST_GUIDANCE_LIMITS as L, MOMENTS, RULE_PACK_TYPE } from './castGuidance';
+import { deriveSheet } from './derive';
 import {
   conditionEnded,
   conditionEndings,
@@ -22,6 +24,7 @@ import {
   type ActiveEffect,
   type DataEntity,
   type DerivedSheet,
+  type EngineContext,
   type FormulaScope,
   newCharacterDoc,
   type PlayState,
@@ -55,7 +58,7 @@ const SCOPE: FormulaScope = {
 function inForce(raw: unknown[], pools = [{ key: 'grit', label: 'Grit', max: 4 }]): MomentsInForce {
   const read = readMoments(raw, 'Gritty');
   expect(read.problems).toEqual([]);
-  return { moments: read.moments, scope: SCOPE, pools };
+  return { moments: read.moments, scope: SCOPE, pools, hpWhenDerived: 30 };
 }
 
 /** The sheet's maximum with the effects in `p` counted: 40 before any. */
@@ -164,6 +167,56 @@ describe('readMoments', () => {
     ]);
   });
 
+  it('counts no filter on a moment that never says what it filters', () => {
+    const read = readMoments(
+      [
+        { at: 'zeroHp', level: 3, do: [cue()] },
+        { at: 'turnStart', condition: 'Prone', do: [cue()] },
+        { at: 'castAtLevel', rolls: ['attack'], do: [cue()] },
+        { at: 'conditionEnded', condition: 'Prone', do: [cue('Counts')] },
+      ],
+      'Gritty',
+    );
+    expect(read.moments.map((m) => m.at)).toEqual(['conditionEnded']);
+    expect(read.problems).toEqual([
+      'moment 1 (zeroHp): "level" goes only with castAtLevel',
+      'moment 2 (turnStart): "condition" goes only with conditionAdded or conditionEnded',
+      'moment 3 (castAtLevel): "rolls" goes only with natural20 or natural1',
+    ]);
+  });
+
+  it('says which effects an effect in play cannot hold as written, and keeps the rest', () => {
+    const read = readMoments(
+      [
+        {
+          at: 'turnStart',
+          do: [
+            {
+              kind: 'addEffect',
+              name: 'Fury',
+              effects: [
+                { kind: 'acBonus', amount: 1 },
+                { kind: 'damageDie', scope: 'melee', dice: '1d6 + 2' },
+                { kind: 'critRange', min: 1 },
+                { kind: 'tempHpEachTurn', amount: -2 },
+              ],
+            },
+          ],
+        },
+      ],
+      'Gritty',
+    );
+    const [fury] = read.moments[0]?.do ?? [];
+    expect(fury?.kind === 'addEffect' && fury.effects.map((t) => t.effect.kind)).toEqual([
+      'acBonus',
+    ]);
+    expect(read.problems).toEqual([
+      'moment 1 (turnStart), outcome 1: effect 2 (damageDie): an effect in play cannot hold it as written',
+      'moment 1 (turnStart), outcome 1: effect 3 (critRange): an effect in play cannot hold it as written',
+      'moment 1 (turnStart), outcome 1: effect 4 (tempHpEachTurn): an effect in play cannot hold it as written',
+    ]);
+  });
+
   it('says what keeps a moment or an outcome from counting, and counts the rest', () => {
     const read = readMoments(
       [
@@ -266,7 +319,7 @@ describe('readMoments', () => {
       [
         { at: 'zeroHp', do: [{ kind: 'cue', text: 'x'.repeat(L.textLength + 1) }] },
         { at: 'zeroHp', do: [{ kind: 'offer', label: 'x'.repeat(L.labelLength + 1) }] },
-        { at: 'zeroHp', do: [{ kind: 'tempHp', amount: { f: '1+'.repeat(150) + '1' } }] },
+        { at: 'zeroHp', do: [{ kind: 'tempHp', amount: { f: `${'1+'.repeat(150)}1` } }] },
         { at: 'zeroHp', do: [{ kind: 'tempHp', amount: 1_000_000 }] },
         { at: 'zeroHp', do: [{ kind: 'cue', text: 'x'.repeat(L.textLength) }] },
       ],
@@ -443,15 +496,16 @@ describe('momentsInForce', () => {
   };
 
   it('is nothing for a character with no moments', () => {
-    expect(momentsInForce({ moments: [], problems: [] }, sheet)).toBeUndefined();
+    expect(momentsInForce({ moments: [], problems: [] }, sheet, 30)).toBeUndefined();
   });
 
   it('reads the level, scores, proficiency, HP maximum and pools from the sheet', () => {
     const read = readMoments([{ at: 'zeroHp', do: [cue()] }], 'Gritty');
-    expect(momentsInForce(read, sheet)).toEqual({
+    expect(momentsInForce(read, sheet, 30)).toEqual({
       moments: read.moments,
-      scope: SCOPE,
+      scope: { ...SCOPE, hp: 30 },
       pools: [{ key: 'grit', label: 'Grit', max: 4 }],
+      hpWhenDerived: 30,
     });
   });
 });
@@ -537,6 +591,18 @@ describe('moments where they happen', () => {
     for (let i = 0; i < 7; i++) knockedOut(p, limits(p, moments));
     expect(p.conditions).toEqual([{ id: 'Exhaustion', level: 6 }]);
     expect(knockedOut(p, limits(p, moments)).moments).toBeUndefined();
+  });
+
+  it('a hit at 0 HP is no new drop: the sheet had the character at 0 already', () => {
+    const moments = inForce([{ at: 'zeroHp', do: [{ kind: 'addCondition', condition: 'Prone' }] }]);
+    const p = play();
+    p.currentHp = 0;
+    p.activeEffects = [bless()];
+    p.concentratingOn = { label: 'Bless' };
+    const got = knockedOut(p, limits(p, { ...moments, hpWhenDerived: 0 }));
+    // What dropping ends still ends; the moment does not fire again.
+    expect(got).toStrictEqual({ ended: ['Bless'], maxHpChange: 0 });
+    expect(p.conditions).toEqual([]);
   });
 
   it('adds levels of exhaustion as an outcome says', () => {
@@ -658,6 +724,34 @@ describe('each outcome', () => {
     expect(p.activeEffects?.map((e) => e.id)).toEqual([defiant?.id]);
   });
 
+  it('says which effects come out where an effect in play cannot hold them, and adds the rest', () => {
+    const moments = inForce([
+      {
+        at: 'turnStart',
+        do: [
+          {
+            kind: 'addEffect',
+            name: 'Dim',
+            effects: [
+              { kind: 'acBonus', amount: { f: 'mod.dex' } },
+              { kind: 'tempHpEachTurn', amount: { f: 'mod.str - 5' } },
+            ],
+          },
+        ],
+      },
+    ]);
+    const p = play();
+    expect(newTurn(p, limits(p, moments)).moments).toEqual({
+      done: [{ text: 'Dim', from: 'Gritty' }],
+      cues: [],
+      offers: [],
+      problems: [
+        'Gritty: Dim, effect 2 (tempHpEachTurn): an effect in play cannot hold it with these numbers',
+      ],
+    });
+    expect(p.activeEffects?.[0]?.parts).toEqual([{ kind: 'acBonus', amount: 2 }]);
+  });
+
   it("never replaces the character's own casting of that name", () => {
     const moments = inForce([
       {
@@ -695,6 +789,17 @@ describe('each outcome', () => {
     ]);
   });
 
+  it('spends nothing from a pool already spent past its maximum', () => {
+    const moments = inForce([
+      { at: 'turnStart', do: [{ kind: 'spend', resource: 'grit', amount: 1 }] },
+    ]);
+    const p = play();
+    // The maximum shrank since these were spent.
+    p.resources = [{ key: 'grit', used: 6 }];
+    expect(newTurn(p, limits(p, moments)).moments).toBeUndefined();
+    expect(p.resources).toEqual([{ key: 'grit', used: 6 }]);
+  });
+
   it('gives temporary hit points only when more than the character has', () => {
     const moments = inForce([{ at: 'zeroHp', do: [{ kind: 'tempHp', amount: { f: 'level' } }] }]);
     const p = play();
@@ -706,6 +811,11 @@ describe('each outcome', () => {
     knockedOut(p, limits(p, moments));
     expect(p.tempHp).toBe(5);
     expect(p.tempHpFrom).toBeUndefined();
+    const one = inForce([{ at: 'zeroHp', do: [{ kind: 'tempHp', amount: 1 }] }]);
+    const q = play();
+    expect(knockedOut(q, limits(q, one)).moments?.done).toEqual([
+      { text: '1 temporary hit point', from: 'Gritty' },
+    ]);
   });
 
   it('says cues and offers, in order', () => {
@@ -788,6 +898,38 @@ describe('limits when firing', () => {
     expect(got.moments?.cues).toHaveLength(1);
   });
 
+  it('fires a moment once a chain when an earlier one sets it off first', () => {
+    const moments = inForce([
+      {
+        at: 'conditionAdded',
+        condition: 'Prone',
+        do: [{ kind: 'addCondition', condition: 'Poisoned' }],
+      },
+      {
+        at: 'conditionAdded',
+        do: [
+          { kind: 'addCondition', condition: 'Exhaustion' },
+          { kind: 'regain', resource: 'grit', amount: 1 },
+        ],
+      },
+    ]);
+    const p = play();
+    p.conditions.push({ id: 'Prone' });
+    p.resources = [{ key: 'grit', used: 3 }];
+    const got = conditionEndings(p, 'Prone', limits(p, moments));
+    expect(p.conditions).toEqual([
+      { id: 'Prone' },
+      { id: 'Poisoned' },
+      { id: 'Exhaustion', level: 1 },
+    ]);
+    expect(p.resources).toEqual([{ key: 'grit', used: 2 }]);
+    expect(got.moments?.done).toEqual([
+      { text: 'Poisoned', from: 'Gritty' },
+      { text: 'Exhaustion 1', from: 'Gritty' },
+      { text: 'Grit: regained 1', from: 'Gritty' },
+    ]);
+  });
+
   it('goes at most 8 moments deep', () => {
     const chain = Array.from({ length: 12 }, (_, i) => ({
       at: 'conditionAdded',
@@ -822,10 +964,101 @@ describe('limits when firing', () => {
       moments: [...read.moments, ...second.moments],
       scope: SCOPE,
       pools: [{ key: 'grit', label: 'Grit', max: L.amountLimit }],
+      hpWhenDerived: 30,
     };
     const p = play();
     knockedOut(p, limits(p, moments));
     expect(text.length).toBeLessThanOrEqual(L.formulaLength);
     expect(p.resources).toEqual([{ key: 'grit', used: counted }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The sheet (derive)
+// ---------------------------------------------------------------------------
+
+describe('moments on the derived sheet', () => {
+  function world(extra: Record<string, DataEntity[]>): EngineContext {
+    const base = makeTestContext();
+    return {
+      get(type, name, source) {
+        const hit = (extra[type] ?? []).find(
+          (e) =>
+            String(e.name).toLowerCase() === name.toLowerCase() &&
+            (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+        );
+        return hit ?? base.get(type, name, source);
+      },
+      byType: (type) => [...base.byType(type), ...(extra[type] ?? [])],
+    };
+  }
+
+  const hero = (feats: string[]) => {
+    const d = newCharacterDoc('hero', 'Hero', 'test');
+    d.abilities.base = { str: 14, dex: 14, con: 14, int: 10, wis: 10, cha: 16 };
+    d.classes = [
+      { ref: { name: 'Warrior', source: 'TST' }, levels: 4, hp: ['avg', 'avg', 'avg', 'avg'] },
+    ];
+    d.play.hpInitialized = true;
+    d.play.currentHp = 20;
+    d.feats = feats.map((n, i) => ({ ref: { name: n, source: 'HB' }, instanceId: `f${i}` }));
+    return d;
+  };
+  const feat = (name: string, castGuidance?: unknown): DataEntity => ({
+    name,
+    source: 'HB',
+    entries: [`${name} does something.`],
+    ...(castGuidance !== undefined ? { castGuidance } : {}),
+  });
+
+  it('has none for data with no moments, exactly as before', () => {
+    const ctx = world({ feat: [feat('Plain'), feat('Own', { v: 1, effects: [] })] });
+    const sheet = deriveSheet(hero(['Plain', 'Own']), ctx);
+    expect('moments' in sheet).toBe(false);
+  });
+
+  it("holds the moments of the character's entries and the packs applied to them", () => {
+    const ctx = world({
+      feat: [
+        feat('Grim Resolve', {
+          v: 1,
+          moments: [
+            { at: 'zeroHp', do: [{ kind: 'tempHp', amount: { f: 'mod.cha + prof' } }] },
+            { at: 'payday', do: [cue()] },
+          ],
+        }),
+      ],
+      [RULE_PACK_TYPE]: [
+        pack('Gritty', [{ at: 'turnStart', do: [cue('Breathe')] }], { characters: ['hero'] }),
+        pack('Elsewhere', [{ at: 'turnStart', do: [cue('Not here')] }], { characters: ['other'] }),
+      ],
+    });
+    const sheet = deriveSheet(hero(['Grim Resolve']), ctx);
+    expect(sheet.moments?.moments.map((m) => [m.from, m.at])).toEqual([
+      ['Grim Resolve', 'zeroHp'],
+      ['Gritty', 'turnStart'],
+    ]);
+    expect(sheet.moments?.scope).toMatchObject({
+      level: 4,
+      prof: 2,
+      hp: 20,
+      maxHp: sheet.maxHp.value,
+    });
+    expect(sheet.moments?.scope.mod.cha).toBe(3);
+    expect(sheet.moments?.hpWhenDerived).toBe(20);
+    expect(sheet.warnings).toContain('Grim Resolve: moment 2 (payday): has no moment "payday"');
+
+    // And they fire from the limits the sheet gives.
+    const p = hero(['Grim Resolve']).play;
+    knockedOut(p, { maxHp: sheet.maxHp.value, edition: '2024', moments: sheet.moments });
+    expect(p.tempHp).toBe(5);
+  });
+
+  it('counts an entry met twice once', () => {
+    const ctx = world({
+      feat: [feat('Twice', { v: 1, moments: [{ at: 'zeroHp', do: [cue()] }] })],
+    });
+    const d = hero(['Twice', 'Twice']);
+    expect(deriveSheet(d, ctx).moments?.moments).toHaveLength(1);
   });
 });

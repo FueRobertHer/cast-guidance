@@ -165,6 +165,12 @@ function readLasts(raw: unknown): EffectDuration | undefined {
   return lasts;
 }
 
+/** An effect in play would hold this part as it is: its kind, dice and ranges. */
+function holds(part: unknown): boolean {
+  const [effect] = readActiveEffects([{ id: 'part', name: 'part', parts: [part] }]).effects;
+  return effect?.parts.length === 1;
+}
+
 function readOutcome(raw: unknown, problems: string[], where: string): ReadOutcome {
   if (!isRecord(raw)) throw new Bad('is not an outcome');
   const kind = own(raw, 'kind');
@@ -198,6 +204,15 @@ function readOutcome(raw: unknown, problems: string[], where: string): ReadOutco
         if (!PART_KINDS.has(t.effect.kind)) {
           problems.push(
             `${where}: effect ${i + 1} (${t.effect.kind}): an effect in play reaches only numbers and rolls`,
+          );
+          return false;
+        }
+        // Effects in play are stricter than an entry's own: plain dice ("1d6",
+        // never "1d6 + 2"), a critical range from 2 to 20, no negative amounts.
+        // A part with a formula is checked once its numbers are worked out.
+        if (t.formulas === undefined && !holds(t.effect)) {
+          problems.push(
+            `${where}: effect ${i + 1} (${t.effect.kind}): an effect in play cannot hold it as written`,
           );
           return false;
         }
@@ -259,6 +274,16 @@ function readMoment(raw: unknown, from: string, problems: string[], where: strin
   }
   const condition = optWords(raw, 'condition');
   if (condition !== undefined) moment.condition = condition.toLowerCase();
+  // A filter on a moment that never says what it filters would keep it from ever happening.
+  if (moment.rolls !== undefined && at !== 'natural20' && at !== 'natural1') {
+    throw new Bad('"rolls" goes only with natural20 or natural1');
+  }
+  if (moment.level !== undefined && at !== 'castAtLevel') {
+    throw new Bad('"level" goes only with castAtLevel');
+  }
+  if (moment.condition !== undefined && at !== 'conditionAdded' && at !== 'conditionEnded') {
+    throw new Bad('"condition" goes only with conditionAdded or conditionEnded');
+  }
 
   const outcomes = own(raw, 'do');
   if (!Array.isArray(outcomes) || outcomes.length === 0) throw new Bad('"do" lists what happens');
@@ -401,12 +426,21 @@ export interface MomentsInForce {
   scope: FormulaScope;
   /** The pools uses can be regained into or spent from, by key, and their size. */
   pools: ReadonlyArray<{ key: string; label: string; max: number }>;
+  /**
+   * Current HP when the sheet was derived, so before the change in hand: a
+   * character already at 0 then is not dropping to 0 again when hit.
+   */
+  hpWhenDerived: number;
 }
 
-/** What a sheet gives moments to read: its level, scores, proficiency, HP maximum and pools. */
+/**
+ * What a sheet gives moments to read: its level, scores, proficiency, HP
+ * maximum and pools, and `hp`, current HP as it was derived.
+ */
 export function momentsInForce(
   read: CharacterMoments,
   sheet: Pick<DerivedSheet, 'abilities' | 'profBonus' | 'totalLevel' | 'maxHp' | 'resources'>,
+  hp: number,
 ): MomentsInForce | undefined {
   if (read.moments.length === 0) return undefined;
   const mod = {} as FormulaScope['mod'];
@@ -421,12 +455,13 @@ export function momentsInForce(
       level: sheet.totalLevel,
       classLevel: sheet.totalLevel,
       prof: sheet.profBonus.value,
-      hp: 0,
+      hp,
       maxHp: sheet.maxHp.value,
       mod,
       score,
     },
     pools: sheet.resources.map((r) => ({ key: r.key, label: r.label, max: r.max })),
+    hpWhenDerived: hp,
   };
 }
 
@@ -502,20 +537,25 @@ export function amountNow(a: Amount, scope: FormulaScope, chain: MomentChain): n
 
 /**
  * The effect an `addEffect` outcome puts in play, its numbers worked out now,
- * read back as effects in play are, or undefined when nothing of it can be
- * stored. `id` is the effect's own: one of the same name already in play is
- * replaced rather than added beside it.
+ * read back as effects in play are; undefined when nothing of it can be
+ * stored. `dropped` names each part ("2 (sense)") whose numbers came out where
+ * an effect in play cannot hold them, such as a negative range. `id` is the
+ * effect's own: one of the same name already in play is replaced rather than
+ * added beside it.
  */
 export function effectNow(
   o: Extract<ReadOutcome, { kind: 'addEffect' }>,
   scope: FormulaScope,
   chain: MomentChain,
   id: string = randomId(),
-): ActiveEffect | undefined {
-  const parts = o.effects.map((t) => {
+): { effect: ActiveEffect | undefined; dropped: string[] } {
+  const dropped: string[] = [];
+  const parts: Record<string, unknown>[] = [];
+  o.effects.forEach((t, i) => {
     const part: Record<string, unknown> = structuredClone(t.effect);
     for (const slot of t.formulas ?? []) part[slot.field] = work(slot.formula, scope, chain);
-    return part;
+    if (holds(part)) parts.push(part);
+    else dropped.push(`${i + 1} (${t.effect.kind})`);
   });
   const candidate = {
     id,
@@ -524,7 +564,10 @@ export function effectNow(
     ...(o.lasts !== undefined ? { lasts: o.lasts } : {}),
   };
   const [effect] = readActiveEffects([candidate]).effects;
-  return effect === undefined || effect.parts.length === 0 ? undefined : effect;
+  return {
+    effect: effect === undefined || effect.parts.length === 0 ? undefined : effect,
+    dropped,
+  };
 }
 
 /** The pool `name` names: by key, else by its label, either way ignoring case. */

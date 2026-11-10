@@ -10,7 +10,7 @@ import {
 import type { DocUpdater } from '@/stores/characterSession';
 import { noticeStore } from '@/stores/notices';
 import { castSpell } from './castResources';
-import { castSpellAsking, momentNotice } from './namedStarts';
+import { castSpellAsking } from './namedStarts';
 
 const value = { value: 0, base: 0, overridden: false, parts: [] };
 
@@ -40,7 +40,12 @@ const SCOPE: FormulaScope = {
 function inForce(raw: unknown[]): MomentsInForce {
   const read = readMoments(raw, 'Wild Weave');
   expect(read.problems).toEqual([]);
-  return { moments: read.moments, scope: SCOPE, pools: [{ key: 'flux', label: 'Flux', max: 3 }] };
+  return {
+    moments: read.moments,
+    scope: SCOPE,
+    pools: [{ key: 'flux', label: 'Flux', max: 3 }],
+    hpWhenDerived: 50,
+  };
 }
 
 /** A document and an updater that applies each change to it, counting the changes. */
@@ -117,28 +122,29 @@ describe('castSpellAsking and the castAtLevel moment', () => {
     expect(up.doc.play.slotsSpent).toEqual([1, 1]);
     expect(up.doc.play.tempHp).toBe(3);
   });
-});
 
-describe('momentNotice', () => {
-  it('leads with a cue, then offers, changes and problems, naming where they came from', () => {
-    expect(
-      momentNotice({
-        done: [{ text: 'Exhaustion 1', from: 'Gritty' }],
-        cues: [{ text: 'Tell the DM', tone: 'help', from: 'Gritty' }],
-        offers: [{ label: 'Last stand', dice: '1d6', from: 'Heroic' }],
-        problems: [],
-      }),
-    ).toEqual({
-      title: 'Tell the DM',
-      detail: 'Last stand: 1d6 · Exhaustion 1 · Gritty · Heroic',
-      tone: 'good',
-    });
-  });
-
-  it('warns when something could not happen, and says nothing when nothing did', () => {
-    expect(
-      momentNotice({ done: [], cues: [], offers: [], problems: ['Gritty: no pool named luck'] }),
-    ).toEqual({ title: 'Gritty: no pool named luck', tone: 'warn' });
-    expect(momentNotice({ done: [], cues: [], offers: [], problems: [] })).toBeNull();
+  it('reads the HP maximum as the cast left it, after concentration ended what it held', () => {
+    const hp: HpLimits = {
+      // 90 of the sheet's own and 10 from Bolster, held by the caster's concentration.
+      maxHp: 100,
+      edition: '2024',
+      moments: inForce([
+        { at: 'castAtLevel', level: 1, do: [{ kind: 'tempHp', amount: { f: 'maxHp' } }] },
+      ]),
+    };
+    const { doc, update } = session();
+    doc.play.activeEffects = [
+      {
+        id: 'bolster',
+        name: 'Bolster',
+        parts: [{ kind: 'maxHpBonus', amount: 10 }],
+        lasts: { minutes: 10, concentration: true },
+        mine: true,
+      },
+    ];
+    doc.play.concentratingOn = { label: 'Bolster' };
+    castSpellAsking(update, hp, block(), 1, { ...shield, concentration: true });
+    expect(doc.play.activeEffects).toBeUndefined();
+    expect(doc.play.tempHp).toBe(90);
   });
 });

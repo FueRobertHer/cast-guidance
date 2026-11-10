@@ -793,9 +793,26 @@ function emit(
   }
 }
 
+/** Each derive's entries whose `castGuidance` holds moments, once each, first visit kept. */
+const WITH_MOMENTS = new WeakMap<Collector, Map<DataEntity, MechanicsSubject>>();
+
+/**
+ * The entries this derive met whose own `castGuidance` holds moments (H9), for
+ * `moments.ts` to read. A pack's patch changes an entry's effects, never its
+ * moments, so these count whatever a pack does.
+ */
+export function subjectsWithMoments(col: Collector): MechanicsSubject[] {
+  return [...(WITH_MOMENTS.get(col)?.values() ?? [])];
+}
+
 /** Collect one entry's mechanics, layer by layer (see the top of this file). */
 export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   const raw = own(s.entry, 'castGuidance');
+  if (isRecord(raw) && own(raw, 'moments') !== undefined) {
+    const met = WITH_MOMENTS.get(col) ?? new Map<DataEntity, MechanicsSubject>();
+    WITH_MOMENTS.set(col, met);
+    if (!met.has(s.entry)) met.set(s.entry, s);
+  }
   const mine = raw === undefined ? undefined : readMechanics(raw);
   for (const problem of mine?.problems ?? []) col.warn(`${s.label}: ${problem}`);
   const patches = patchesFor(col).get(s.target.toLowerCase());
