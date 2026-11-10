@@ -78,6 +78,8 @@ export function deriveSheet(
   collectItems(col);
   collectAddedSpells(col);
   for (const custom of doc.customEffects) col.add(custom);
+  // Picks that read the whole build, now that it is in.
+  for (const ask of col.afterAll) ask();
   // Only now is every skill grant known, including ones collected after the
   // pick they overlap.
   noteSkillSources(col);

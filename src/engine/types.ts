@@ -429,6 +429,11 @@ export type EffectInput = {
   | { kind: 'armorProf'; name: string }
   | { kind: 'weaponProf'; name: string }
   | { kind: 'weaponProfFilter'; filter: string } // "type=martial weapon|property=light"
+  /**
+   * A kind of weapon whose mastery property the character can use, by its base
+   * item's name ("Longsword"): a 2024 class's Weapon Mastery pick, Weapon Master's.
+   */
+  | { kind: 'weaponMastery'; name: string }
   | { kind: 'language'; name: string }
   | { kind: 'acFormula'; label: string; base: number; addAbilities: Ability[]; dexMax?: number }
   | { kind: 'acBonus'; amount: number }
