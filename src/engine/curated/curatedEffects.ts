@@ -6,6 +6,7 @@
  *   - class/subclass features:   `featureName|classLabel` (lowercased)
  * These are facts of the game rules — fine to commit.
  */
+import { isProficient } from '../calc/attacks';
 import { countedSpells, parseSpellRef, savedPicks } from '../effects/additionalSpells';
 import { asEntityArray, type Collector } from '../effects/base';
 import { basedOn } from '../effects/mechanics';
@@ -14,6 +15,7 @@ import {
   markKnownLanguages,
   skillOptions,
   toolOptions,
+  weaponMasteryOptions,
   weaponOptions,
 } from '../effects/readers';
 import { reskinOf } from '../effects/reskin';
@@ -248,6 +250,58 @@ function classEntry(col: Collector, className: string) {
 function classLevel(col: Collector, className: string): number {
   return classEntry(col, className)?.levels ?? 0;
 }
+
+/**
+ * How many kinds of weapon a class's Weapon Mastery covers at its level: the
+ * class table's Weapon Mastery column (Barbarian, Fighter and the WoW classes
+ * that carry one), else two.
+ */
+function masteryCount(col: Collector, origin: EffectOrigin): number {
+  const entry = col.doc.classes.find((c) => refUid(c.ref) === origin.uid);
+  const cls = entry && col.ctx.get('class', entry.ref.name, entry.ref.source);
+  for (const group of asEntityArray(cls?.classTableGroups)) {
+    const labels = Array.isArray(group.colLabels) ? group.colLabels.map(String) : [];
+    const at = labels.findIndex((l) => /weapon mastery/i.test(l));
+    const row = Array.isArray(group.rows) ? group.rows[(entry?.levels ?? 1) - 1] : undefined;
+    const count = at >= 0 && Array.isArray(row) ? Number(row[at]) : Number.NaN;
+    if (count > 0) return count;
+  }
+  return 2;
+}
+
+/**
+ * The 2024 Weapon Mastery: a pick of kinds of weapon whose mastery properties the
+ * character can use, swapped on a long rest. `melee`: melee kinds alone (the
+ * Barbarian's). `proficient`: kinds the character is proficient with (the Paladin's,
+ * Ranger's and Rogue's), by the proficiencies collected so far.
+ */
+const weaponMastery =
+  (opts: { melee?: boolean; proficient?: boolean } = {}): CuratedFn =>
+  (col, origin) =>
+    // Asked once the build is in: a feat at a later level, or a later class, can
+    // add the proficiency a kind needs.
+    col.afterAll.push(() => {
+      const profs = col.effects.flatMap((e) => (e.kind === 'weaponProf' ? [e.name] : []));
+      const filters = col.effects.flatMap((e) => (e.kind === 'weaponProfFilter' ? [e.filter] : []));
+      col.choice(
+        {
+          id: `${origin.type}:${origin.uid}:weapon-mastery`,
+          origin,
+          kind: 'generic',
+          label: 'Weapon Mastery',
+          count: masteryCount(col, origin),
+          options: weaponMasteryOptions(
+            col.ctx,
+            (e, ranged) =>
+              (opts.melee !== true || !ranged) &&
+              (opts.proficient !== true || isProficient(e, profs, filters)),
+          ),
+        },
+        (selected) => {
+          for (const name of selected) col.add({ kind: 'weaponMastery', name, origin });
+        },
+      );
+    });
 
 /** "The skills available to Fighters at level 1": that class's own list, in the printing taken. */
 function classSkillList(col: Collector, className: string): string[] {
@@ -905,6 +959,12 @@ export const CURATED: Record<string, CuratedFn> = {
       col.add({ kind: 'sense', sense: 'blindsight', range: 30, origin });
     }
   },
+  // The 2024 classes' (no 2014 class has the feature).
+  'weapon mastery|barbarian': weaponMastery({ melee: true }),
+  'weapon mastery|fighter': weaponMastery(),
+  'weapon mastery|paladin': weaponMastery({ proficient: true }),
+  'weapon mastery|ranger': weaponMastery({ proficient: true }),
+  'weapon mastery|rogue': weaponMastery({ proficient: true }),
   // --- Always-on riders: damage every hit or every cast adds -----------------
   // 2014 says "with a melee weapon", so an unarmed strike goes without; 2024
   // names the Unarmed Strike too.

@@ -35,6 +35,13 @@ export class Collector {
     branch?: string;
   }> = [];
 
+  /**
+   * Picks asked once everything is collected (`askAfterAll`), for one whose
+   * options read what the whole build gives: a later feat's or class's weapon
+   * proficiencies, say.
+   */
+  readonly afterAll: Array<() => void> = [];
+
   constructor(doc: CharacterDoc, ctx: EngineContext) {
     this.doc = doc;
     this.ctx = ctx;
