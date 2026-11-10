@@ -376,12 +376,12 @@ describe('structuredLimit', () => {
       expect(limitOf(classFile({}), 'Path Ward')).toBe(true);
     });
 
-    it("is off for a spell a class's own block names, which the engine does not grant", () => {
+    it("holds for a spell a class's own block names, which the engine grants", () => {
       const own = { additionalSpells: [{ prepared: { 1: { daily: { 2: ['test bolt|hb'] } } } }] };
-      expect(limitOf(classFile(own), 'Class Bolt')).toBe(false);
+      expect(limitOf(classFile(own), 'Class Bolt')).toBe(true);
     });
 
-    it('is off for an optional feature, whose block the engine does not read', () => {
+    it('holds for an optional feature, whose block the engine reads once picked', () => {
       const option = {
         name: 'Bolt Option',
         source: 'HB',
@@ -391,7 +391,7 @@ describe('structuredLimit', () => {
       };
       expect(
         limitOf({ 'optionalfeatures.json': { optionalfeature: [option] } }, 'Bolt Option'),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     const subrace = (additionalSpells: unknown) => ({
