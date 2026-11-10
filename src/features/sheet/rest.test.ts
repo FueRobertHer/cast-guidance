@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DerivedSheet, PlayState } from '@/engine/types';
+import { idleChargePools } from '@/engine/curated/itemCharges';
+import type { DerivedSheet, EquipmentEntry, PlayState } from '@/engine/types';
 import { backCaption, longRest, shortRest } from './rest';
 
 /** Minimal DerivedSheet with just the fields the rest rules read. */
@@ -248,5 +249,70 @@ describe('longRest', () => {
     const p = play({ hitDiceSpent: { dX: 4 } });
     longRest(p, sheet({ hitDice: { dX: 4 } }), '2014'); // total 4 -> budget 2
     expect(p.hitDiceSpent.dX).toBe(2);
+  });
+});
+
+describe("an item's charges on a long rest", () => {
+  const staff = {
+    key: 'item-charges:s1',
+    label: 'Staff of Healing charges',
+    max: 10,
+    resetOn: 'long',
+    regainRoll: '1d6+4',
+    origin: 'Staff of Healing',
+  } as const;
+
+  it('gives back what the dawn roll says, and keeps the rest spent', () => {
+    const p = play({ resources: [{ key: staff.key, used: 9 }] });
+    const restored = longRest(p, sheet({ resources: [staff] }), '2024', 0, () => 6);
+    expect(p.resources).toEqual([{ key: staff.key, used: 3 }]);
+    expect(restored).toContain('6 Staff of Healing charges');
+    // Only charges were spent, so no other pool is said to come back.
+    expect(restored).not.toContain('resources');
+  });
+
+  it('refills it when the roll covers what was spent', () => {
+    const p = play({
+      resources: [
+        { key: staff.key, used: 4 },
+        { key: 'ki', used: 2 },
+      ],
+    });
+    const restored = longRest(p, sheet({ resources: [staff] }), '2024', 0, () => 9);
+    expect(p.resources).toEqual([]);
+    expect(restored).toEqual(expect.arrayContaining(['4 Staff of Healing charges', 'resources']));
+  });
+
+  it('says when the charges come back', () => {
+    expect(backCaption(staff)).toBe('1d6+4 back at dawn (a long rest)');
+  });
+
+  it('gives back the dawn roll of an item put away, whose pool the sheet leaves out', () => {
+    const equipment: EquipmentEntry[] = [
+      {
+        id: 's1',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: false,
+        attuned: true,
+      },
+      // Its pool is on the sheet: not idle.
+      {
+        id: 's2',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: true,
+        attuned: true,
+      },
+      { id: 'r1', ref: { name: 'Rope', source: 'XPHB' }, qty: 1, equipped: false, attuned: false },
+    ];
+    const worn = { ...staff, key: 'item-charges:s2' };
+    const idle = idleChargePools(equipment, [worn]);
+    expect(idle).toEqual([staff]);
+
+    const p = play({ resources: [{ key: staff.key, used: 8 }] });
+    const restored = longRest(p, sheet({ resources: [worn] }), '2024', 0, () => 5, idle);
+    expect(p.resources).toEqual([{ key: staff.key, used: 3 }]);
+    expect(restored).toEqual(['5 Staff of Healing charges']);
   });
 });

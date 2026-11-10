@@ -143,3 +143,53 @@ describe('collectItems: granted spells', () => {
     expect(calcResources(doc, col.effects, ABILITY_SCORES, 2)).toMatchObject([{ max: 2 }]);
   });
 });
+
+describe('collectItems: charges that cast spells', () => {
+  const staff: DataEntity = {
+    name: 'Staff of Healing',
+    source: 'XDMG',
+    type: 'ST|XDMG',
+    reqAttune: 'by a Bard, Cleric, or Druid',
+  };
+  /** The staff equipped, attuned or not, as entry `s1`. */
+  const effectsOf = (attuned: boolean) => {
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.equipment = [
+      {
+        id: 's1',
+        ref: { name: 'Staff of Healing', source: 'XDMG' },
+        qty: 1,
+        equipped: true,
+        attuned,
+      },
+    ];
+    const ctx: EngineContext = {
+      get: (type) => (type === 'item' ? staff : undefined),
+      byType: () => [],
+    };
+    const col = new Collector(doc, ctx);
+    collectItems(col);
+    return { doc, effects: col.effects };
+  };
+
+  it('gives an attuned staff its charges, back by a roll at dawn', () => {
+    const { doc, effects } = effectsOf(true);
+    expect(effects).toContainEqual(
+      expect.objectContaining({
+        kind: 'resource',
+        key: 'item-charges:s1',
+        label: 'Staff of Healing charges',
+        max: 10,
+        resetOn: 'long',
+        regainRoll: '1d6+4',
+      }),
+    );
+    expect(calcResources(doc, effects, ABILITY_SCORES, 2)).toMatchObject([
+      { key: 'item-charges:s1', max: 10, regainRoll: '1d6+4' },
+    ]);
+  });
+
+  it('gives none until it is attuned', () => {
+    expect(effectsOf(false).effects.filter((e) => e.kind === 'resource')).toEqual([]);
+  });
+});

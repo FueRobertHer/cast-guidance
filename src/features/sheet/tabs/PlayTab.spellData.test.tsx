@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypePacksState } from '@/data5e/hooks';
 import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, type EntityRef, newCharacterDoc } from '@/engine/types';
+import { heldRollStore } from '@/stores/heldRoll';
 import { makeTestContext } from '../../../../tests-fixtures/testWorld';
 import type { CharacterSheetState } from '../useCharacterSheet';
 import { Component as PlayTab } from './PlayTab';
@@ -99,7 +100,10 @@ beforeEach(() => {
   data.packs = packs();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  heldRollStore.setState({ held: null });
+});
 
 describe('a known spell on the Play tab', () => {
   it('reads as what it is once its file has arrived, asking for nothing', () => {
@@ -143,11 +147,12 @@ describe('a known spell on the Play tab', () => {
     renderCaster([{ name: 'Forgotten Word', source: 'HB' }]);
     expect(data.requested.at(-1)).toBe('spell');
     expect(screen.getByText('level unknown', { exact: false })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cast Forgotten Word' })).toBeTruthy();
-    // Nothing says what level it is, so the slot it spends is on show and theirs to change.
-    expect(
-      screen.getByRole('button', { name: 'Forgotten Word: casting with Level 1 slot. Change' }),
-    ).toBeTruthy();
+    // Nothing says what level it is, so it casts as level 1, with every way
+    // to cast it on show in the roll prompt and theirs to change.
+    fireEvent.click(screen.getByRole('button', { name: 'Cast Forgotten Word' }));
+    const held = heldRollStore.getState().held;
+    expect(held?.picked).toBe('slot-1');
+    expect(held?.cast?.groups.map((g) => g.title)).toEqual(['Spell slots', 'Sorcery Points']);
   });
 });
 

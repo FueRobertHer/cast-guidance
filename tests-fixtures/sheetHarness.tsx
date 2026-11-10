@@ -31,7 +31,9 @@ import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { db } from '@/db/db';
 import { historyRepo } from '@/db/historyRepo';
 import { type CharacterDoc, type DataEntity, newCharacterDoc } from '@/engine/types';
+import { castLevelStore } from '@/stores/castLevels';
 import { characterSessionStore } from '@/stores/characterSession';
+import { followUpStore, heldRollStore, pickHeldTile, rollHeld } from '@/stores/heldRoll';
 import { noticeStore } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
 import { HARNESS_TAG } from './sheetHarnessMocks';
@@ -324,6 +326,9 @@ export async function resetSheetHarness(): Promise<void> {
   invalidateRegistry();
   noticeStore.setState({ notice: null, seq: 0 });
   rollLogStore.getState().clear();
+  heldRollStore.setState({ held: null });
+  followUpStore.setState({ offer: null });
+  castLevelStore.setState({ levels: {} });
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +397,39 @@ export function notice(): string | undefined {
 export async function dismiss(): Promise<void> {
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull(), { timeout: LOAD_MS });
+}
+
+/**
+ * The ways to cast the roll prompt holds, each tile by its accessible name
+ * ("Level 3 slot, 2 left"). The harness renders no prompt, so this reads the
+ * store the prompt draws from; `RollToast.held.test.tsx` covers the drawing.
+ */
+export function castTiles(): string[] {
+  const held = heldRollStore.getState().held;
+  return held?.cast?.groups.flatMap((g) => g.tiles.map((t) => t.aria)) ?? [];
+}
+
+/** The note by Roll for the cast the prompt holds: what it spends. */
+export function castNote(): string | undefined {
+  const held = heldRollStore.getState().held;
+  return held?.cast?.note(held.picked);
+}
+
+/**
+ * Casts what the roll prompt holds, as Roll does: on the tile whose name
+ * starts with `tile` when given, else on the one the prompt started on.
+ */
+export function castHeld(tile?: string): void {
+  const held = heldRollStore.getState().held;
+  if (held?.cast === undefined) throw new Error('No cast is waiting in the roll prompt');
+  if (tile !== undefined) {
+    const found = held.cast.groups.flatMap((g) => g.tiles).find((t) => t.aria.startsWith(tile));
+    if (found === undefined) {
+      throw new Error(`No tile named "${tile}" among: ${castTiles().join('; ')}`);
+    }
+    act(() => pickHeldTile(found.id));
+  }
+  act(() => rollHeld());
 }
 
 /** The open dialog, for reading its text or pressing one of its buttons. */

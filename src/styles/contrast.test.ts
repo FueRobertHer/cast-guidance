@@ -122,6 +122,8 @@ describe('design token contrast, both themes (DS-001)', () => {
         ['on-brand', 'brand'],
         ['on-brand', 'brand-hover'],
         ['on-danger', 'danger-fill'],
+        // The roll prompt's Heal, for a spell that heals.
+        ['on-brand', 'heal'],
         // The danger banner's main action: the fill's red on a white button.
         ['danger-fill', 'on-danger'],
         // A spell's concentration mark while it is being concentrated on.

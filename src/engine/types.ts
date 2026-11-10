@@ -544,6 +544,11 @@ export type EffectInput = {
        * them all back (2024 Rage, one at a time).
        */
       regainOnShort?: number;
+      /**
+       * Dice of them that come back at dawn (an item's charges), which the
+       * sheet counts at a long rest; absent, a long rest brings them all back.
+       */
+      regainRoll?: string;
     }
   | {
       /** A feature that gives another feature's pool `regainOnShort` (Advanced Artifice). */
@@ -883,6 +888,8 @@ export interface DerivedResource {
   noSlotConversion?: number;
   /** How many come back on a short rest, when `resetOn` is `long`. */
   regainOnShort?: number;
+  /** Dice of them that come back on a long rest (at dawn), in place of all of them. */
+  regainRoll?: string;
 }
 
 export interface DerivedSheet {

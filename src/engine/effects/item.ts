@@ -1,3 +1,4 @@
+import { ITEM_CHARGES, itemChargeKey } from '../curated/itemCharges';
 import { ITEM_TAG_FIXES } from '../curated/itemTags';
 import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
@@ -128,6 +129,20 @@ export function collectItems(col: Collector): void {
           readWornTags(col, e, origin);
         },
       });
+      // Charges that cast spells (`ITEM_CHARGES`): a pool of its own, which
+      // the cast prompt spends and a long rest (dawn) partly refills.
+      const charged = ITEM_CHARGES[origin.uid];
+      if (charged !== undefined) {
+        col.add({
+          kind: 'resource',
+          key: itemChargeKey(entry.id),
+          label: `${origin.label} charges`,
+          max: charged.charges,
+          resetOn: 'long',
+          regainRoll: charged.regain,
+          origin,
+        });
+      }
     }
 
     // Spells the item grants: a wand's cantrip, a cloak's daily misty step.

@@ -10,6 +10,7 @@ import { innateSorceryEffect, rageEffect } from '@/engine/curated/namedEffects';
 import type { CharacterDoc, DataEntity } from '@/engine/types';
 import { rollLogStore } from '@/stores/rollLog';
 import {
+  castHeld,
   classEntry,
   concentratingOn,
   dialog,
@@ -440,6 +441,7 @@ describe('casting Bless', () => {
   it('asks once whether you are one of its targets, and ends your d4 with your concentration', async () => {
     const sheet = await renderSheet(caster(), { extra: { spell: [bless] } });
     press('Cast Bless');
+    castHeld();
     // The cast lands first; the ask comes after it.
     expect((await sheet.saved()).play.concentratingOn).toEqual({ label: 'Bless', level: 1 });
     const ask = await dialog('Bless yourself too?');
@@ -460,6 +462,7 @@ describe('casting Bless', () => {
   it('puts nothing on you for Others only', async () => {
     const sheet = await renderSheet(caster(), { extra: { spell: [bless] } });
     press('Cast Bless');
+    castHeld();
     await (await dialog('Bless yourself too?')).press('Others only');
     const saved = await sheet.saved();
     expect(saved.play.activeEffects).toBeUndefined();
@@ -479,6 +482,7 @@ describe('casting Bless', () => {
     const sheet = await renderSheet(doc, { extra: { spell: [bless], feat: [charm] } });
     // A grant's row is named as the feat lists it.
     press('Cast bless');
+    castHeld();
     await (await dialog('Bless yourself too?')).press('Yes, add +d4');
     const saved = await sheet.saved();
     expect(saved.play.activeEffects?.[0]).toMatchObject({ name: 'Bless', mine: true });

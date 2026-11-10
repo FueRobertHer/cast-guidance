@@ -9,14 +9,18 @@ import {
 } from '@/engine/types';
 import {
   availableCastResources,
+  type CastContext,
+  type CastResource,
   castCost,
-  castResourceChipLabel,
+  castNote,
   castResourceId,
-  castResourceOptions,
+  castResourceLabel,
   castSpell,
+  castWays,
   defaultCastResource,
-  needsCastChoice,
+  defaultCastTile,
   nextCastResource,
+  ordinal,
   poolCastResources,
   setArcanumUsed,
   upcastEffectSummary,
@@ -50,6 +54,23 @@ function points(max: number): DerivedResource {
 
 /** Room enough that ending an effect never moves current HP. */
 const HP = { maxHp: 100, edition: '2024' } as const;
+
+/** What the cast prompt reads, for a level 1 spell of `caster`. */
+function ctxOf(
+  caster: SpellcastingBlock | undefined,
+  play = emptyPlayState(),
+  pools: DerivedResource[] = [],
+): CastContext {
+  return {
+    block: caster,
+    play,
+    pools,
+    spellLevel: 1,
+    characterLevel: 5,
+    rulesVersion: '2014',
+    classes: [],
+  };
+}
 
 describe('nextCastResource', () => {
   it('previews cantrips without a resource', () => {
@@ -196,6 +217,52 @@ describe('castSpell resource override (GAME-001)', () => {
     const play = runCast(block({ slots: [4, 3, 2] }), 1);
     expect(play.slotsSpent[0]).toBe(1); // lowest (level 1)
   });
+
+  /** Casts Cure Wounds with `resource` and no class, as an innate row or an item does. */
+  const castFree = (resource: CastResource, play = emptyPlayState()) => {
+    const doc = { play } as CharacterDoc;
+    let label: string | undefined;
+    castSpell(
+      (recipe, named) => {
+        recipe(doc);
+        label = typeof named === 'function' ? named(doc) : named;
+      },
+      HP,
+      undefined,
+      1,
+      { name: 'Cure Wounds', source: 'xphb', economy: 'action' },
+      resource,
+    );
+    return { play: doc.play, label };
+  };
+
+  it("spends an innate grant's use, and names it in the history", () => {
+    const play = emptyPlayState();
+    play.resources.push({ key: 'rebuke', used: 0 });
+    const out = castFree({ kind: 'uses', level: 2, key: 'rebuke', label: 'Infernal Legacy' }, play);
+    expect(out.play.resources).toEqual([{ key: 'rebuke', used: 1 }]);
+    expect(out.play.slotsSpent.every((n) => n === 0)).toBe(true);
+    expect(out.play.turn?.action).toBe(true);
+    expect(out.label).toBe('Cast Cure Wounds (Infernal Legacy)');
+  });
+
+  it("spends an item's charges at the level picked", () => {
+    const out = castFree({
+      kind: 'charges',
+      level: 3,
+      key: 'item-charges:staff',
+      label: 'Staff of Healing',
+      cost: 3,
+    });
+    expect(out.play.resources).toEqual([{ key: 'item-charges:staff', used: 3 }]);
+    expect(out.label).toBe('Cast Cure Wounds (L3 from 3 Staff of Healing charges)');
+  });
+
+  it('spends nothing with no class and nothing chosen', () => {
+    const out = castFree({ kind: 'none', level: 1 });
+    expect(out.play.resources).toEqual([]);
+    expect(out.play.turn?.action).toBe(true);
+  });
 });
 
 describe('Mystic Arcanum casting', () => {
@@ -256,7 +323,10 @@ describe('Mystic Arcanum casting', () => {
       { kind: 'arcanum', level: 6 },
       { kind: 'slot', level: 6 },
     ]);
-    expect(needsCastChoice(options)).toBe(true);
+    expect(castWays({ ...ctxOf(multiclass), spellLevel: 6 }).map((w) => w.title)).toEqual([
+      'Mystic Arcanum',
+      'Spell slots',
+    ]);
     expect(nextCastResource(multiclass, emptyPlayState(), 6)).toEqual({
       kind: 'arcanum',
       level: 6,
@@ -274,23 +344,31 @@ describe('Mystic Arcanum casting', () => {
     expect('arcanumUsed' in play).toBe(false);
   });
 
-  it('names the arcanum in the chooser and on the chip', () => {
+  it('names the arcanum on its tile and in the note', () => {
     const arcanum = { kind: 'arcanum', level: 6 } as const;
+    const ctx = { ...ctxOf(warlock), spellLevel: 6, characterLevel: 13 };
     expect(castResourceId(arcanum)).toBe('arcanum-6');
-    expect(castResourceChipLabel(arcanum)).toBe('L6 arcanum');
-    const [row] = castResourceOptions([arcanum], {
-      block: warlock,
-      play: emptyPlayState(),
-      spellLevel: 6,
-      characterLevel: 13,
-      rulesVersion: '2024',
-      classes: [],
-    });
-    expect(row).toEqual({
-      id: 'arcanum-6',
-      label: 'Mystic Arcanum · level 6',
-      hint: 'no slot · once per long rest',
-    });
+    expect(castResourceLabel(arcanum)).toBe('Mystic Arcanum · level 6');
+    expect(castWays(ctx)).toEqual([
+      {
+        title: 'Mystic Arcanum',
+        sub: 'once per long rest',
+        tiles: [{ resource: arcanum, ok: true, sub: 'ready' }],
+      },
+    ]);
+    expect(castNote(arcanum, ctx)).toBe('Spends your 6th-level Mystic Arcanum.');
+  });
+
+  it('keeps a used arcanum on show, spent, and starts on nothing', () => {
+    const play = emptyPlayState();
+    setArcanumUsed(play, 6, true);
+    const ctx = { ...ctxOf(warlock, play), spellLevel: 6 };
+    const ways = castWays(ctx);
+    expect(ways[0]?.tiles).toEqual([
+      { resource: { kind: 'arcanum', level: 6 }, ok: false, sub: 'used' },
+    ]);
+    expect(defaultCastTile(ways, ctx)).toBeUndefined();
+    expect(castNote(undefined, ctx)).toBe('Nothing left to spend: it marks only your turn.');
   });
 });
 
@@ -555,102 +633,170 @@ describe('castSpell pool conversion', () => {
   });
 });
 
-describe('cast option wording', () => {
-  const fireball = {
-    name: 'Fireball',
-    source: 'phb',
-    level: 3,
-    entries: ['A creature takes {@damage 8d6} fire damage on a failed save.'],
-    entriesHigherLevel: [
-      { entries: ['The damage increases by {@scaledamage 8d6|3-9|1d6} for each slot above 3rd.'] },
-    ],
-  } as unknown as Entity;
-
-  it('says what each option spends, what is left, and what the dice become', () => {
+describe('ways to cast, as tiles', () => {
+  it('groups slots and a conversion, each tile saying what is left or what it costs', () => {
     const play = emptyPlayState();
     play.slotsSpent = [0, 0, 1, 0, 0, 0, 0, 0, 0];
     const caster = block({ slots: [4, 3, 3, 2] });
-    const options = availableCastResources(caster, play, 3, [points(6)]);
-    expect(
-      castResourceOptions(options, {
-        block: caster,
-        play,
-        pools: [points(6)],
-        spell: fireball,
-        spellLevel: 3,
-        characterLevel: 7,
-        rulesVersion: '2014',
-        classes: [],
-      }),
-    ).toEqual([
-      { id: 'slot-3', label: 'Level 3 slot', hint: '8d6 · 2 left' },
-      { id: 'slot-4', label: 'Level 4 slot (upcast)', hint: '9d6 · 2 left' },
+    const ways = castWays({
+      ...ctxOf(caster, play, [points(6)]),
+      spellLevel: 3,
+      characterLevel: 7,
+    });
+    const pool = (level: number, cost: number) => ({
+      resource: { kind: 'pool', level, key: 'sorcery-points', label: 'Sorcery Points', cost },
+      // Seven points for a 5th-level slot is more than the pool holds.
+      ok: cost <= 6,
+      sub: `${String(cost)} points`,
+    });
+    expect(ways).toEqual([
       {
-        id: 'pool-sorcery-points-3',
-        label: 'Level 3 slot from Sorcery Points',
-        hint: '8d6 · 5 points of 6 · Bonus Action to convert',
+        title: 'Spell slots',
+        tiles: [
+          { resource: { kind: 'slot', level: 3 }, ok: true, sub: '2 left' },
+          { resource: { kind: 'slot', level: 4 }, ok: true, sub: '2 left' },
+        ],
       },
       {
-        id: 'pool-sorcery-points-4',
-        label: 'Level 4 slot from Sorcery Points (upcast)',
-        hint: '9d6 · 6 points of 6 · Bonus Action to convert',
+        title: 'Sorcery Points',
+        sub: '6 left · Bonus Action to convert',
+        tiles: [pool(3, 5), pool(4, 6), pool(5, 7)],
       },
     ]);
   });
 
-  it('labels the pact pool and gives its remaining count', () => {
-    const caster = block({ slots: [], pactSlots: { count: 2, level: 3 } });
-    const options = availableCastResources(caster, emptyPlayState(), 1);
-    expect(
-      castResourceOptions(options, {
-        block: caster,
-        play: emptyPlayState(),
-        spellLevel: 1,
-        characterLevel: 5,
-        rulesVersion: '2014',
-        classes: [],
-      }),
-    ).toEqual([{ id: 'pact', label: 'Pact slot · level 3 (upcast)', hint: '2 left' }]);
+  it('keeps a spent slot level on show, unable to pay', () => {
+    const play = emptyPlayState();
+    play.slotsSpent = [4, 0, 0, 0, 0, 0, 0, 0, 0];
+    const [slots] = castWays(ctxOf(block(), play));
+    expect(slots?.tiles.map((t) => [t.resource.level, t.ok, t.sub])).toEqual([
+      [1, false, '0 left'],
+      [2, true, '3 left'],
+      [3, true, '2 left'],
+    ]);
   });
 
-  it('keeps the chip compact while the spoken name stays specific', () => {
-    expect(castResourceChipLabel({ kind: 'slot', level: 3 })).toBe('L3');
-    expect(castResourceChipLabel({ kind: 'pact', level: 3 })).toBe('L3 pact');
-    expect(
-      castResourceChipLabel({
-        kind: 'pool',
-        level: 2,
-        key: 'sorcery-points',
-        label: 'Sorcery Points',
-        cost: 3,
-      }),
-    ).toBe('L2 SP');
-    expect(castResourceChipLabel({ kind: 'none', level: 2 })).toBe('no slot');
+  it('offers the pact slot at its own level', () => {
+    const caster = block({ slots: [], pactSlots: { count: 2, level: 3 } });
+    const ctx = ctxOf(caster);
+    expect(castWays(ctx)).toEqual([
+      {
+        title: 'Pact slots',
+        tiles: [{ resource: { kind: 'pact', level: 3 }, ok: true, sub: '2 left' }],
+      },
+    ]);
+    expect(castNote({ kind: 'pact', level: 3 }, ctx)).toBe('Spends a pact slot (3rd level).');
+    // A spell above the pact slot's level has no pact tile.
+    expect(castWays({ ...ctx, spellLevel: 4 })).toEqual([]);
+  });
+
+  it('offers an innate grant its uses, with no class to cast it', () => {
+    const play = emptyPlayState();
+    const use = { key: 'tiefling-rebuke', label: 'Infernal Legacy', max: 1 };
+    const ctx = { ...ctxOf(undefined, play), spellLevel: 2 };
+    const resource = { kind: 'uses', level: 2, key: use.key, label: use.label } as const;
+    expect(castWays(ctx, { uses: [use] })).toEqual([
+      { title: 'Infernal Legacy', tiles: [{ resource, ok: true, sub: '1 left' }] },
+    ]);
+    expect(castNote(resource, ctx)).toBe('Spends a use of Infernal Legacy.');
+    play.resources.push({ key: use.key, used: 1 });
+    expect(castWays(ctx, { uses: [use] })[0]?.tiles[0]).toMatchObject({
+      ok: false,
+      sub: '0 left',
+    });
+  });
+
+  it('offers an item its charges a level at a time, with what is left of them', () => {
+    const play = emptyPlayState();
+    play.resources.push({ key: 'item-charges:staff', used: 7 });
+    const staff = {
+      key: 'item-charges:staff',
+      label: 'Staff of Healing',
+      max: 10,
+      costs: [1, 2, 3, 4].map((level) => ({ level, cost: level })),
+    };
+    const ctx = ctxOf(block(), play);
+    const charged = castWays(ctx, { charges: [staff] }).find((w) => w.title === 'Staff of Healing');
+    expect(charged?.sub).toBe('1 charge a level · 3 of 10 left');
+    expect(charged?.tiles.map((t) => [t.resource.level, t.ok, t.sub])).toEqual([
+      [1, true, '1 charge'],
+      [2, true, '2 charges'],
+      [3, true, '3 charges'],
+      [4, false, '4 charges'],
+    ]);
+    const second = charged?.tiles[1]?.resource;
+    expect(second && castNote(second, ctx)).toBe('Spends 2 Staff of Healing charges.');
+    expect(second && castResourceLabel(second)).toBe('Level 2 from Staff of Healing');
+  });
+
+  it('says nothing of a per-level cost for a one-level item', () => {
+    const wand = {
+      key: 'item-charges:wand',
+      label: 'Wand of Fireballs',
+      max: 7,
+      costs: [{ level: 3, cost: 1 }],
+    };
+    const [way] = castWays({ ...ctxOf(undefined), spellLevel: 3 }, { charges: [wand] });
+    expect(way?.sub).toBe('7 of 7 left');
+  });
+
+  it('offers nothing for a cantrip', () => {
+    expect(castWays({ ...ctxOf(block()), spellLevel: 0 })).toEqual([]);
+  });
+
+  it('says levels as a tile does', () => {
+    expect([1, 2, 3, 4, 9, 11, 12, 13, 21].map(ordinal)).toEqual([
+      '1st',
+      '2nd',
+      '3rd',
+      '4th',
+      '9th',
+      '11th',
+      '12th',
+      '13th',
+      '21st',
+    ]);
   });
 });
 
-describe('needsCastChoice', () => {
-  it('asks whenever there is more than one way to pay', () => {
-    expect(needsCastChoice(availableCastResources(block(), emptyPlayState(), 1))).toBe(true);
+describe('the tile a cast starts on', () => {
+  const start = (ctx: CastContext, extra: Parameters<typeof castWays>[1] = {}) =>
+    defaultCastTile(castWays(ctx, extra), ctx)?.resource;
+
+  it('starts on the lowest slot left, as an unchosen cast always spent', () => {
+    const play = emptyPlayState();
+    play.slotsSpent = [4, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(start(ctxOf(block(), play, [points(6)]))).toEqual({ kind: 'slot', level: 2 });
   });
 
-  it('does not ask about a single slot, or about having nothing left', () => {
+  it('starts on the first way left once the slots are gone', () => {
     const play = emptyPlayState();
-    play.slotsSpent = [0, 3, 2, 0, 0, 0, 0, 0, 0]; // only level 1 slots remain
-    expect(needsCastChoice(availableCastResources(block(), play, 1))).toBe(false);
     play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
-    expect(needsCastChoice(availableCastResources(block(), play, 1))).toBe(false);
-    expect(needsCastChoice(availableCastResources(block(), play, 0))).toBe(false); // cantrip
+    expect(start(ctxOf(block(), play, [points(2)]))).toEqual({
+      kind: 'pool',
+      level: 1,
+      key: 'sorcery-points',
+      label: 'Sorcery Points',
+      cost: 2,
+    });
+    const use = { key: 'rebuke', label: 'Infernal Legacy', max: 1 };
+    expect(start(ctxOf(block(), play), { uses: [use] })).toMatchObject({ kind: 'uses' });
   });
 
-  it('asks about a lone conversion, which spends points nothing else mentions', () => {
+  it('starts on nothing when nothing can pay', () => {
     const play = emptyPlayState();
     play.slotsSpent = [4, 3, 2, 0, 0, 0, 0, 0, 0];
-    // Two points buys a level 1 slot and nothing else: one option, still a
-    // spend the player has to see coming.
-    const options = availableCastResources(block(), play, 1, [points(2)]);
-    expect(options).toHaveLength(1);
-    expect(needsCastChoice(options)).toBe(true);
+    expect(start(ctxOf(block(), play))).toBeUndefined();
+  });
+
+  it('says what a slot spends, and what nothing left does', () => {
+    const ctx = ctxOf(block());
+    expect(castNote({ kind: 'slot', level: 1 } satisfies CastResource, ctx)).toBe(
+      'Spends a 1st-level slot.',
+    );
+    expect(castNote({ kind: 'none', level: 1 }, ctx)).toBe(
+      'Nothing left to spend: it marks only your turn.',
+    );
   });
 });
 
@@ -671,20 +817,11 @@ describe('what a conversion costs the turn', () => {
       ...(unit === undefined ? {} : { time: [{ number: 1, unit }] }),
     }) as unknown as Entity;
   const hint = (entity: Entity | undefined, play = emptyPlayState()) =>
-    castResourceOptions([conversion], {
-      block: block(),
-      play,
-      pools: [points(2)],
-      spell: entity,
-      spellLevel: 1,
-      characterLevel: 5,
-      rulesVersion: '2014',
-      classes: [],
-    })[0]?.hint;
+    castNote(conversion, { ...ctxOf(block(), play, [points(2)]), spell: entity });
 
   it('says only what it costs when the turn can hold it', () => {
-    expect(hint(spell('action'))).toBe('2 points of 2 · Bonus Action to convert');
-    expect(hint(undefined)).toBe('2 points of 2 · Bonus Action to convert'); // a ritual
+    expect(hint(spell('action'))).toBe('Spends 2 Sorcery Points and a Bonus Action to convert.');
+    expect(hint(undefined)).toBe('Spends 2 Sorcery Points and a Bonus Action to convert.'); // a ritual
   });
 
   it('says a reaction leaves no Bonus Action to convert with', () => {
@@ -692,13 +829,13 @@ describe('what a conversion costs the turn', () => {
     // no Bonus Action to be had. The turn tracker records one anyway, because
     // it has a flag and not a timeline, so the option is where this gets said.
     expect(hint(spell('reaction'))).toBe(
-      "2 points of 2 · Bonus Action to convert, no Bonus Action on another creature's turn",
+      "Spends 2 Sorcery Points and a Bonus Action to convert, no Bonus Action on another creature's turn.",
     );
   });
 
   it('says when the spell already wants the same slice of the turn', () => {
     expect(hint(spell('bonus'))).toBe(
-      "2 points of 2 · Bonus Action to convert, on top of the spell's own",
+      "Spends 2 Sorcery Points and a Bonus Action to convert, on top of the spell's own.",
     );
   });
 
@@ -706,11 +843,13 @@ describe('what a conversion costs the turn', () => {
     const play = emptyPlayState();
     play.turn = { action: false, bonus: true, reaction: false };
     expect(hint(spell('action'), play)).toBe(
-      '2 points of 2 · Bonus Action to convert, your Bonus Action is already used',
+      'Spends 2 Sorcery Points and a Bonus Action to convert, your Bonus Action is already used.',
     );
     // An unspent turn says nothing extra.
     play.turn = { action: true, bonus: false, reaction: false };
-    expect(hint(spell('action'), play)).toBe('2 points of 2 · Bonus Action to convert');
+    expect(hint(spell('action'), play)).toBe(
+      'Spends 2 Sorcery Points and a Bonus Action to convert.',
+    );
   });
 });
 
@@ -725,33 +864,28 @@ describe('2024 slot creation level (GAME-008)', () => {
     levels,
     hp: [],
   });
-  /** The pool rows' hints for a level-1 spell, by slot level. */
+  /** The conversion tiles' notes for a level-1 spell, by tile. */
   const hints = (
     classes: ClassLevelEntry[],
     rulesVersion: '2014' | '2024' = '2024',
     play = emptyPlayState(),
   ) => {
-    const options = poolCastResources([points(7)], play, 1);
+    const ctx = { ...ctxOf(block({ slots: [] }), play, [points(7)]), rulesVersion, classes };
     return Object.fromEntries(
-      castResourceOptions(options, {
-        block: block({ slots: [] }),
-        play,
-        pools: [points(7)],
-        spellLevel: 1,
-        characterLevel: 7,
-        rulesVersion,
-        classes,
-      }).map((o) => [o.id, o.hint]),
+      castWays(ctx)
+        .flatMap((w) => w.tiles)
+        .map((t) => [castResourceId(t.resource), castNote(t.resource, ctx)]),
     );
   };
 
   it('says what Sorcerer level a 2024 conversion needs, on the rows that need more', () => {
     expect(hints([sorcerer(7)])).toEqual({
-      'pool-sorcery-points-1': '2 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-2': '3 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-3': '5 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-4': '6 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-5': '7 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 9',
+      'pool-sorcery-points-1': 'Spends 2 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-2': 'Spends 3 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-3': 'Spends 5 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-4': 'Spends 6 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-5':
+        'Spends 7 Sorcery Points and a Bonus Action to convert. 2024: needs Sorcerer 9.',
     });
   });
 
@@ -770,11 +904,14 @@ describe('2024 slot creation level (GAME-008)', () => {
 
   it('reads the Sorcerer level, not the character level, for a multiclass', () => {
     expect(hints([sorcerer(3), mage(6)])).toEqual({
-      'pool-sorcery-points-1': '2 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-2': '3 points of 7 · Bonus Action to convert',
-      'pool-sorcery-points-3': '5 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 5',
-      'pool-sorcery-points-4': '6 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 7',
-      'pool-sorcery-points-5': '7 points of 7 · Bonus Action to convert · 2024: needs Sorcerer 9',
+      'pool-sorcery-points-1': 'Spends 2 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-2': 'Spends 3 Sorcery Points and a Bonus Action to convert.',
+      'pool-sorcery-points-3':
+        'Spends 5 Sorcery Points and a Bonus Action to convert. 2024: needs Sorcerer 5.',
+      'pool-sorcery-points-4':
+        'Spends 6 Sorcery Points and a Bonus Action to convert. 2024: needs Sorcerer 7.',
+      'pool-sorcery-points-5':
+        'Spends 7 Sorcery Points and a Bonus Action to convert. 2024: needs Sorcerer 9.',
     });
   });
 
@@ -794,7 +931,7 @@ describe('2024 slot creation level (GAME-008)', () => {
     const play = emptyPlayState();
     play.turn = { action: false, bonus: true, reaction: false };
     expect(hints([sorcerer(7)], '2024', play)['pool-sorcery-points-5']).toBe(
-      '7 points of 7 · Bonus Action to convert, your Bonus Action is already used · 2024: needs Sorcerer 9',
+      'Spends 7 Sorcery Points and a Bonus Action to convert, your Bonus Action is already used. 2024: needs Sorcerer 9.',
     );
   });
 });
