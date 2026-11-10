@@ -1,9 +1,12 @@
+// First, ahead of any module that brings a stylesheet of its own (the roll
+// toast's chip faces, through the router): the minifier keeps a `/*!` banner
+// only at the top of the stylesheet, and the notices find Tailwind by its banner.
+import '@/styles/app.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';
 import { router } from '@/app/router';
 import { initDataLayer } from '@/data5e/loader';
-import '@/styles/app.css';
 // The two type families, self-hosted as Latin-subset woff2 so they work
 // offline (the workbox glob precaches them) and need no font origin in the
 // CSP. Imported here rather than from app.css so each package is a module in
