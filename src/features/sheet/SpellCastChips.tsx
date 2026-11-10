@@ -7,6 +7,7 @@ import { CastButton } from './CastButton';
 import {
   castNow,
   castPlan,
+  castRolls,
   castRowId,
   castStartLevel,
   castsByPrompt,
@@ -14,7 +15,6 @@ import {
   type SpellCast,
 } from './castPlan';
 import type { D20Ask } from './d20Tests';
-import { spellRollActions } from './spellRolls';
 
 /**
  * A spell row's dice and Cast (DS-001 SpellRow, with the rolls canvas's
@@ -57,7 +57,7 @@ export function SpellCastChips({
   /** Cast's tooltip. */
   castTitle: string;
 }) {
-  const { doc, sheet, entity, info } = cast;
+  const { doc, info } = cast;
   const rowId = castRowId(cast);
   const last = useCastLevel(rowId);
   const prompts = !usedUp && castsByPrompt(cast);
@@ -74,12 +74,7 @@ export function SpellCastChips({
   });
   useEffect(() => () => cancelHeldCast(rowId), [rowId]);
   const start = prompts ? castStartLevel(cast) : cast.level;
-  const rollsAt = (slotLevel: number) =>
-    spellRollActions(entity, {
-      characterLevel: sheet.totalLevel,
-      slotLevel,
-      abilityModifier: cast.abilityModifier,
-    });
+  const rollsAt = (slotLevel: number) => castRolls(cast, slotLevel);
   const rolls = rollsAt(running ? (runningLevel ?? cast.level) : (last ?? start));
   // The chip that casts shows what the prompt starts on.
   const castingRolls = running || attack !== undefined ? rolls : rollsAt(start);

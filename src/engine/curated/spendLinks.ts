@@ -258,7 +258,7 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   }),
   // 2024 Turn Undead and Divine Spark are options of the parent feature and never name the pool.
   ...pool('channel-divinity', {
-    'channel divinity: harness divine power|cleric|tce': 1,
+    'channel divinity: harness divine power|cleric|tce': { amount: 1, ownUseToo: true },
     'channel divinity: turn undead|cleric|phb': on('action'),
     'channel divinity: touch of death|death domain|dmg': rider(),
     'channel divinity: knowledge of the ages|knowledge domain|phb': on('action'),
@@ -302,7 +302,7 @@ export const SPEND_LINKS: Readonly<Record<string, SpendLink>> = {
   }),
   // Divine Sense, Champion Challenge and Dreadful Aspect never name the pool either.
   ...pool('channel-divinity-paladin', {
-    'channel divinity: harness divine power|paladin|tce': 1,
+    'channel divinity: harness divine power|paladin|tce': { amount: 1, ownUseToo: true },
     'abjure foes|paladin|xphb': on('action'),
     'control undead|oathbreaker|dmg': on('action'),
     "nature's wrath|oath of the ancients|phb": on('action'),

@@ -10,6 +10,7 @@ import {
   policyAllows,
 } from '@/data5e/sourceFilter';
 import {
+  classListCheck,
   classSpellUids,
   classSpellUidsFromEntities,
   type SpellClassLookup,
@@ -36,6 +37,7 @@ import { OutsideSourcesChip } from '@/ui/OutsideSourcesChip';
 import { PackProblem } from '@/ui/PackProblem';
 import { SourceBadge } from '@/ui/SourceBadge';
 import { fieldClass } from '@/ui/TextField';
+import { expandedListMatcher } from './expandedSpells';
 import { SpellInfoSheet } from './SpellInfoSheet';
 import { isRecommendedStarter, recommendedStarters } from './spellHints';
 import {
@@ -202,6 +204,18 @@ function ClassSpells({
     [registry, block.className, copied, subclassOf],
   );
 
+  // What an expanded list adds (a patron's, Divine Soul's, a dragonmark's), as
+  // a primitive key: the block is rebuilt on every derive.
+  const expandedKey = JSON.stringify(block.expanded ?? []);
+  const expandedFrom = useMemo(
+    () =>
+      expandedListMatcher(
+        JSON.parse(expandedKey) as SpellcastingBlock['expanded'],
+        classListCheck(lookup, registry?.byType('spell') ?? []),
+      ),
+    [expandedKey, lookup, registry],
+  );
+
   const state = doc.spellcasting[block.classUid] ?? { known: [], prepared: [] };
   const knownUids = new Set(state.known.map((r) => `${r.name}|${r.source}`.toLowerCase()));
   const preparedUids = new Set(state.prepared.map((r) => `${r.name}|${r.source}`.toLowerCase()));
@@ -229,7 +243,9 @@ function ClassSpells({
     const isOnSheet = (s: Entity) => onSheet.has(uidOf(s));
     const spells = filterByRulesVersion([...registry.byType('spell')], doc.rulesVersion, {
       keep: isOnSheet,
-    }).filter((s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)));
+    }).filter(
+      (s) => classUids.has(uidOf(s)) || homebrewUids.has(uidOf(s)) || expandedFrom(s) !== undefined,
+    );
     const allowed = showHiddenSources
       ? spells
       : applySourcePolicy(spells, policy, sourceOf, isOnSheet);
@@ -267,6 +283,7 @@ function ClassSpells({
     registry,
     classUids,
     homebrewUids,
+    expandedFrom,
     doc.rulesVersion,
     onSheetKey,
     policy,
@@ -543,6 +560,14 @@ function ClassSpells({
                   const uid = uidOf(s);
                   const known = knownUids.has(uid);
                   const prepared = preparedUids.has(uid);
+                  // On the list through an expanded list alone: say what adds it. A
+                  // class's own (the 2024 Bard's Magical Secrets) would name the
+                  // class on its own list, so it reads as its expanded list.
+                  const from =
+                    classUids?.has(uid) === true || homebrewUids.has(uid)
+                      ? undefined
+                      : expandedFrom(s);
+                  const addedBy = from === block.className ? 'Expanded list' : from;
                   return (
                     <div
                       key={uid}
@@ -552,7 +577,11 @@ function ClassSpells({
                         name={nameOf(s)}
                         source={sourceOf(s)}
                         version={doc.rulesVersion}
-                        subtitle={`${block.className} spell`}
+                        subtitle={
+                          addedBy !== undefined
+                            ? `${block.className} spell, from ${from === block.className ? 'its expanded list' : addedBy}`
+                            : `${block.className} spell`
+                        }
                         trigger={
                           <button
                             type="button"
@@ -591,6 +620,14 @@ function ClassSpells({
                               title={`${unlockNote(lvl)}. Allowed, just flagging it.`}
                             >
                               Above your level
+                            </span>
+                          )}
+                          {addedBy !== undefined && (
+                            <span
+                              className={badgeClass()}
+                              title={`On your ${block.className} list from ${from === block.className ? 'its expanded list' : addedBy}`}
+                            >
+                              {addedBy}
                             </span>
                           )}
                           {scope === 'character' && !policyAllows(policy, sourceOf(s)) && (

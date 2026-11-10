@@ -1,7 +1,12 @@
 import type { Collector } from '../effects/base';
 import { str } from '../effects/base';
 import { lookupItem, magicWorks, parseBonus } from '../effects/item';
-import { masteryNames, weaponFitsTypes } from '../effects/readers';
+import {
+  freeMasteryNames,
+  masteryNames,
+  weaponFitsTypes,
+  weaponKindName,
+} from '../effects/readers';
 import type {
   Ability,
   AttackRow,
@@ -149,7 +154,12 @@ function inProficiencyFilter(e: DataEntity, filter: string): boolean {
   });
 }
 
-function isProficient(e: DataEntity, weaponProfs: string[], filters: string[]): boolean {
+/** Whether the weapon proficiencies and proficiency filters given cover a weapon. */
+export function isProficient(
+  e: DataEntity,
+  weaponProfs: readonly string[],
+  filters: readonly string[],
+): boolean {
   const category = str(e.weaponCategory)?.toLowerCase(); // 'simple' | 'martial'
   const name = str(e.name)?.toLowerCase() ?? '';
   for (const prof of weaponProfs) {
@@ -175,6 +185,10 @@ export function calcAttacks(
   const damageBonuses = effectsOf(effects, 'damageBonus');
   const riderDice = effectsOf(effects, 'damageDie');
   const profFilters = effectsOf(effects, 'weaponProfFilter').map((f) => f.filter);
+  // The kinds of weapon whose mastery the character can use (Weapon Mastery, Weapon Master).
+  const masteredKinds = new Set(
+    effectsOf(effects, 'weaponMastery').map((m) => m.name.trim().toLowerCase()),
+  );
   /**
    * A bonus's scope reaches this attack, and so do its ability and its weapon,
    * when it names them: one on a weapon reaches only that carried weapon.
@@ -227,7 +241,11 @@ export function calcAttacks(
     const riders = [
       ...extraDamage,
       ...riderDice
-        .filter((d) => reaches(d, ranged, ability, weaponId))
+        .filter(
+          (d) =>
+            reaches(d, ranged, ability, weaponId) &&
+            (d.weaponsOnly !== true || weaponId !== undefined),
+        )
         .map((d) => ({
           dice: d.dice,
           ...(d.damageType !== undefined ? { damageType: d.damageType } : {}),
@@ -288,11 +306,14 @@ export function calcAttacks(
     const range = str(e.range);
     // The magic bonus and damage riders wait on attunement when the item asks for it.
     const magic = magicWorks(e, entry.attuned);
+    const proficient = isProficient(e, weaponProfs, profFilters);
+    // Weapon Mastery and Weapon Master each want proficiency with the weapon.
+    const mastered = proficient && masteredKinds.has(weaponKindName(e));
     rows.push(
       buildRow(
         str(e.name) ?? entry.ref.name,
         ability,
-        isProficient(e, weaponProfs, profFilters),
+        proficient,
         magic ? parseBonus(e.bonusWeapon) : 0,
         ranged,
         str(e.dmg1),
@@ -302,8 +323,11 @@ export function calcAttacks(
         str(e.dmg2),
         [
           ...propertyRefs(e).map((p) => propertyName(col.ctx, p.code, p.source)),
-          // 2024 weapon mastery, e.g. "Sap|XPHB" -> "mastery: sap"
-          ...masteryNames(e).map((m) => `mastery: ${m.toLowerCase()}`),
+          // 2024 weapon mastery, e.g. "Sap|XPHB" -> "mastery: sap", for a kind the
+          // character has mastered, or one the weapon gives anyone.
+          ...(mastered ? masteryNames(e) : freeMasteryNames(e)).map(
+            (m) => `mastery: ${m.toLowerCase()}`,
+          ),
         ],
         range !== undefined ? `${range} ft.` : undefined,
         str(e.name) ?? '',

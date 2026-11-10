@@ -86,10 +86,10 @@ const clericFeatures: DataEntity[] = [
   classFeature('Divine Strike', 'Cleric', 'XPHB', 7, [
     'Once on each of your turns, a weapon hit deals an extra 1d8 radiant damage.',
   ]),
-  // Placeholder prose that the scan turns into a reaction, so a test can see
+  // Its curated row adds Wisdom to Cleric cantrips' damage, so a test can see
   // a branch's effects arrive with its card.
   classFeature('Potent Spellcasting', 'Cleric', 'XPHB', 7, [
-    'Your cantrips hit harder. You can use your reaction to steady a spell.',
+    'Add your Wisdom modifier to the damage you deal with any Cleric cantrip.',
   ]),
   classFeature('Improved Blessed Strikes', 'Cleric', 'XPHB', 14, [
     'The option you chose grows stronger.',

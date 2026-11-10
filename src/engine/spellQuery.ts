@@ -49,6 +49,15 @@ export function parseSpellFilter(filter: string): SpellQuery | undefined {
       case 'spell attack':
         query.attacks = values.map((value) => value.toLowerCase());
         break;
+      // "source=EGW;!XGE": printed in EGW, and not in XGE.
+      case 'source':
+        query.sources = values.filter((v) => !v.startsWith('!')).map((v) => v.toUpperCase());
+        query.notSources = values
+          .filter((v) => v.startsWith('!'))
+          .map((v) => v.slice(1).trim().toUpperCase());
+        // A bare "!" names no book, and would rule out nothing.
+        if (query.notSources.includes('')) return undefined;
+        break;
       default:
         return undefined;
     }
@@ -68,6 +77,11 @@ export function spellFitsQuery(spell: DataEntity, query: SpellQuery): boolean {
   if (query.ritual && (spell.meta as { ritual?: unknown } | undefined)?.ritual !== true) {
     return false;
   }
+  const source = String(spell.source).toUpperCase();
+  if (query.sources !== undefined && query.sources.length > 0 && !query.sources.includes(source)) {
+    return false;
+  }
+  if (query.notSources?.includes(source) === true) return false;
   if (query.attacks.length > 0) {
     const attacks = Array.isArray(spell.spellAttack) ? spell.spellAttack : [];
     if (!attacks.some((attack) => query.attacks.includes(String(attack).toLowerCase()))) {
@@ -96,8 +110,15 @@ function levelsText(levels: readonly number[]): string {
 /** A query in words, for a prompt's label: "Level 1 Enchantment or Divination spell". */
 export function describeSpellQuery(query: SpellQuery, count: number): string {
   const cantrip = query.levels.length > 0 && query.levels.every((level) => level === 0);
+  const sources = query.sources ?? [];
+  const notSources = query.notSources ?? [];
   const open =
-    query.levels.length + query.classes.length + query.schools.length + query.attacks.length ===
+    query.levels.length +
+      query.classes.length +
+      query.schools.length +
+      query.attacks.length +
+      sources.length +
+      notSources.length ===
       0 && !query.ritual;
   return capitalized(
     [
@@ -107,9 +128,10 @@ export function describeSpellQuery(query: SpellQuery, count: number): string {
       query.schools.map((school) => SPELL_SCHOOLS[school] ?? school).join(' or '),
       query.ritual ? 'ritual' : '',
       query.attacks.length > 0 ? 'attack' : '',
+      sources.join(' or '),
       `${cantrip ? 'cantrip' : 'spell'}${count > 1 ? 's' : ''}`,
     ]
       .filter((part) => part !== '')
-      .join(' '),
+      .join(' ') + (notSources.length > 0 ? `, not from ${notSources.join(' or ')}` : ''),
   );
 }
