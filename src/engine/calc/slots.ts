@@ -6,6 +6,7 @@ import {
   type ClassLevelEntry,
   type DataEntity,
   type DerivedAbility,
+  type EffectOrigin,
   refUid,
   type SpellcastingBlock,
   type SpellcastingMode,
@@ -251,6 +252,15 @@ export function calcSpellcasting(
   profBonus: number,
 ): SpellcastingBlock[] {
   const blocks: SpellcastingBlock[] = [];
+  // The classes and subclasses this character has, for whose expanded list is whose.
+  const owners = new Set(
+    doc.classes.flatMap((c) => [
+      refUid(c.ref),
+      ...(c.subclass !== undefined ? [refUid(c.subclass)] : []),
+    ]),
+  );
+  const ownedByAClass = (o: EffectOrigin) =>
+    (o.type === 'class' || o.type === 'subclass') && owners.has(o.uid);
 
   const casters = doc.classes.map((entry) => ({ entry, from: casterOf(col, entry) }));
 
@@ -373,6 +383,19 @@ export function calcSpellcasting(
       knownFromRow !== undefined ? Math.max(0, knownFromRow - knownByPick) : undefined;
 
     const className = str(cls.name) ?? entry.ref.name;
+    // A class's or subclass's expanded list widens that class; a race's, a feat's
+    // or a background's, every spellcasting class ("your spellcasting class"). So
+    // does one whose origin names no class or subclass here: an optional feature
+    // takes its host's type but keeps its own uid.
+    const expanded = col.effects.flatMap((e) =>
+      e.kind === 'spellListAdd' &&
+      (!ownedByAClass(e.origin) ||
+        (e.origin.type === 'class'
+          ? e.origin.uid === refUid(entry.ref)
+          : entry.subclass !== undefined && e.origin.uid === refUid(entry.subclass)))
+        ? [{ from: e.origin.label, spells: e.spells, filters: e.filters }]
+        : [],
+    );
     blocks.push({
       classUid: refUid(entry.ref),
       className: sub !== undefined ? (str(sub.name) ?? className) : className,
@@ -390,6 +413,7 @@ export function calcSpellcasting(
       cantripsKnown: cantrips,
       preparedMax,
       spellsKnownMax,
+      ...(expanded.length > 0 ? { expanded } : {}),
     });
   }
   return blocks;

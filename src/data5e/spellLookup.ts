@@ -104,3 +104,27 @@ export function classSpellUids(lookup: SpellClassLookup, className: ClassNames):
   }
   return out;
 }
+
+/**
+ * Asks whether a spell (by its lower-cased `name|source` uid) is on a class's
+ * list, the lookup's or a homebrew spell's own, reading each class's list once.
+ */
+export function classListCheck(
+  lookup: SpellClassLookup | null,
+  spells: readonly Record<string, unknown>[],
+): (className: string, uid: string) => boolean {
+  const lists = new Map<string, ReadonlySet<string>>();
+  return (className, uid) => {
+    const key = className.toLowerCase();
+    let list = lists.get(key);
+    if (list === undefined) {
+      list = new Set([
+        ...classSpellUids(lookup ?? {}, className),
+        // Homebrew spells carry their classes inline.
+        ...classSpellUidsFromEntities(spells, className),
+      ]);
+      lists.set(key, list);
+    }
+    return list.has(uid);
+  };
+}
