@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { setTableCrit } from '@/dice/roll';
+import type { CritDamage } from '@/dice/types';
 import { endEffect } from '@/engine/effectLife';
 import { sheetRules } from '@/engine/rules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, PlayState } from '@/engine/types';
@@ -76,9 +77,19 @@ export function useRollOfferSpending(
     };
   }, []);
 
-  const rules = doc === null || sheet === null ? undefined : sheetRules(sheet, doc.rulesVersion);
-  const before = rules?.oneUseDice === 'before';
-  const crit = rules?.critDamage ?? 'doubleDice';
+  // While the sheet re-derives (its data reloading) it is null for a moment:
+  // the rules it had hold, so a roll waiting under them is not let go.
+  const [held, setHeld] = useState<{ before: boolean; crit: CritDamage }>({
+    before: false,
+    crit: 'doubleDice',
+  });
+  if (doc !== null && sheet !== null) {
+    const rules = sheetRules(sheet, doc.rulesVersion);
+    const now = { before: rules.oneUseDice === 'before', crit: rules.critDamage };
+    if (now.before !== held.before || now.crit !== held.crit) setHeld(now);
+  }
+  const before = doc !== null && held.before;
+  const crit = doc === null ? 'doubleDice' : held.crit;
   useEffect(() => {
     setTableCrit(crit);
     return () => setTableCrit('doubleDice');

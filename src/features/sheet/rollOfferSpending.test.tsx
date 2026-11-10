@@ -45,6 +45,7 @@ function openSheet(effects: ActiveEffect[], build?: (doc: CharacterDoc) => void)
   doc.play.currentHp = 20;
   doc.play.activeEffects = effects;
   const labels: string[] = [];
+  let derived = true;
   const update: DocUpdater = (recipe, label) => {
     const next = structuredClone(doc);
     recipe(next);
@@ -55,9 +56,15 @@ function openSheet(effects: ActiveEffect[], build?: (doc: CharacterDoc) => void)
   const hook = renderHook(() => {
     const app = useAppTableRules();
     const { rules } = sheetRulesField(doc, { byType: () => [], rules: app });
-    return useRollOfferSpending(doc, rules === undefined ? sheet : { ...sheet, rules }, update);
+    const shown = rules === undefined ? sheet : { ...sheet, rules };
+    return useRollOfferSpending(doc, derived ? shown : null, update);
   });
-  return { doc: () => doc, labels, hook, update };
+  /** The sheet gone while it re-derives (`false`), or back (`true`). */
+  const derive = (on: boolean) => {
+    derived = on;
+    hook.rerender();
+  };
+  return { doc: () => doc, labels, hook, update, derive };
 }
 
 const spend = (id: string, taken: boolean) =>
@@ -107,6 +114,17 @@ describe('useRollOfferSpending', () => {
 
 describe('the house rule for one-use dice', () => {
   const namesFirst = () => rollOffersStore.getState().before;
+  /** An Athletics check that offers Guidance's die. */
+  const guidanceAsk = () =>
+    d20Ask('1d20', {
+      label: 'Athletics check',
+      riders: {
+        dice: [],
+        offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
+        advantage: [],
+        disadvantage: [],
+      },
+    });
 
   it('follows the app choice, unless the character keeps its own', () => {
     const s = openSheet([]);
@@ -120,18 +138,20 @@ describe('the house rule for one-use dice', () => {
     expect(namesFirst()).toBe(true);
   });
 
+  it('keeps a waiting roll while the sheet re-derives', () => {
+    const s = openSheet([], (d) => void (d.oneUseDice = 'before'));
+    act(() => rollFrom(null, () => guidanceAsk()));
+    expect(heldRollStore.getState().held).not.toBeNull();
+    act(() => s.derive(false));
+    expect(namesFirst()).toBe(true);
+    act(() => s.derive(true));
+    expect(heldRollStore.getState().held).not.toBeNull();
+    expect(namesFirst()).toBe(true);
+  });
+
   it('lets a waiting roll go unseen when the sheet closes', () => {
     const s = openSheet([], (d) => void (d.oneUseDice = 'before'));
-    const ask = d20Ask('1d20', {
-      label: 'Athletics check',
-      riders: {
-        dice: [],
-        offers: [{ dice: '1d4', source: 'Guidance', once: true, ifFailed: false }],
-        advantage: [],
-        disadvantage: [],
-      },
-    });
-    act(() => rollFrom(null, () => ask));
+    act(() => rollFrom(null, () => guidanceAsk()));
     expect(heldRollStore.getState().held).not.toBeNull();
     s.hook.unmount();
     expect(heldRollStore.getState().held).toBeNull();

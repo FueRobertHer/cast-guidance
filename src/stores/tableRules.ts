@@ -57,7 +57,10 @@ export function appTableRules(): AppTableRules {
 
 const listeners = new Set<() => void>();
 
-/** Choose a rule for the app, or (`undefined`) take the choice back to as written. */
+/**
+ * Choose a rule for the app, or (`undefined`) take the choice back: then a
+ * pack made the app's default decides, else the rule plays as written.
+ */
 export function setAppTableRule<K extends TableRuleId>(
   id: K,
   value: TableRuleChoices[K] | undefined,
