@@ -178,8 +178,9 @@ describe('linkSpend', () => {
 
     it('points at the use when it sits on another row', () => {
       const col = collector();
-      col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin });
-      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', origin);
+      const psi: EffectOrigin = { label: 'Psi Warrior', uid: 'psi warrior|tce', type: 'subclass' };
+      col.add({ kind: 'action', economy: 'bonus', label: 'Telekinetic Master', origin: psi });
+      linkSpend(col, 'telekinetic master|psi warrior|tce', 'Telekinetic Master', psi);
       expect(buyBackOf(col, 'Telekinetic Master')).toMatchObject({
         buyBack: {
           resource: 'psi-warrior-dice',

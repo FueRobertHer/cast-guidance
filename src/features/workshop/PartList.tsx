@@ -6,21 +6,16 @@
  * was (`castGuidance.basedOn`), so it is still saved as that part changed,
  * and the sheet still finds what the original part did.
  */
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { isRecord, own } from '@/engine/castGuidance';
-import { Badge } from '@/ui/Badge';
 import { Button } from '@/ui/Button';
 import { askConfirm } from '@/ui/dialogs';
-import { SegmentedControl } from '@/ui/SegmentedControl';
 import { listClass } from '@/ui/surfaces';
-import { fieldClass } from '@/ui/TextField';
 import { partName, same } from './copyWriter';
-import { EffectCards, guidanceWith } from './EffectCards';
-import { Field, TextBlocks } from './fields';
+import { type FeatureMode, FeatureRow, type FeatureStatus } from './FeatureRow';
 
 type Json = Record<string, unknown>;
-type Mode = 'keep' | 'change' | 'remove';
 
 /** The original part a block stands for: the one it renames, else its own name. */
 export function originOf(block: unknown): string | undefined {
@@ -68,63 +63,6 @@ interface Row {
   /** The original's part; undefined when new. */
   was?: Json;
   index: number;
-}
-
-function PartEditor({
-  part,
-  noun,
-  onChange,
-  readOnly,
-  withEffects,
-  inherits,
-  rename,
-}: {
-  part: Json;
-  noun: string;
-  onChange: (next: Json) => void;
-  readOnly: boolean;
-  withEffects: boolean;
-  inherits?: string;
-  rename: (name: string) => void;
-}) {
-  const g = isRecord(part.castGuidance) ? part.castGuidance : {};
-  const setGuidance = (patch: Json) => {
-    const next = guidanceWith(part.castGuidance, patch);
-    const { castGuidance: _, ...rest } = part;
-    onChange(next !== undefined ? { ...rest, castGuidance: next } : rest);
-  };
-  return (
-    <div className="flex flex-col gap-3 pt-1">
-      <Field label={`${noun[0]?.toUpperCase()}${noun.slice(1)} name`}>
-        <input
-          value={String(part.name ?? '')}
-          disabled={readOnly}
-          onChange={(e) => rename(e.target.value)}
-          className={fieldClass}
-        />
-      </Field>
-      <TextBlocks
-        entries={part.entries}
-        readOnly={readOnly}
-        onChange={(entries) => onChange({ ...part, entries })}
-      />
-      {withEffects && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-label text-ink-muted">What it does on the sheet</span>
-          <EffectCards
-            effects={g.effects}
-            readOnly={readOnly}
-            inherits={inherits}
-            replace={g.replace === true}
-            onReplace={(replace) => setGuidance({ replace: replace ? true : undefined })}
-            onChange={(effects) =>
-              setGuidance({ effects: effects.length > 0 ? effects : undefined })
-            }
-          />
-        </div>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -191,7 +129,7 @@ export function PartList({
   const replaceAt = (index: number, next: Json) =>
     onChange(list.map((b, i) => (i === index ? next : b)));
 
-  const setMode = async (row: Row, mode: Mode) => {
+  const setMode = async (row: Row, mode: FeatureMode) => {
     const name = partName(row.was) ?? '';
     if (mode === 'remove') {
       if (row.now !== undefined) onChange(list.filter((_, i) => i !== row.index));
@@ -229,78 +167,46 @@ export function PartList({
         <ul aria-label={title} className={listClass}>
           {rows.map((row) => {
             const label = partName(row.now ?? row.was) ?? '';
-            const status =
+            const status: FeatureStatus =
               row.was === undefined
-                ? 'New'
+                ? 'new'
                 : row.now === undefined
-                  ? 'Removed'
+                  ? 'removed'
                   : same(row.now, row.was)
-                    ? 'Kept'
-                    : 'Changed';
-            const mode: Mode =
-              status === 'Removed'
-                ? 'remove'
-                : status === 'Changed' || open.has(row.key)
-                  ? 'change'
-                  : 'keep';
-            const editing = row.now !== undefined && (row.was === undefined || mode === 'change');
+                    ? 'kept'
+                    : 'changed';
+            const editing =
+              row.now !== undefined &&
+              (status !== 'kept' || open.has(row.key)) &&
+              status !== 'removed';
             return (
-              <li key={row.key} className="flex flex-col gap-2 px-4 py-3">
-                <div className="flex min-h-tap flex-wrap items-center gap-x-2 gap-y-1">
-                  <span
-                    className={`min-w-0 flex-1 text-body-strong ${status === 'Removed' ? 'text-ink-faint line-through' : ''}`}
-                  >
-                    {label || `Unnamed ${noun}`}
-                  </span>
-                  <Badge
-                    tone={status === 'New' ? 'guide' : status === 'Kept' ? 'neutral' : 'outline'}
-                  >
-                    {status}
-                  </Badge>
-                  {row.was === undefined && !readOnly && (
-                    <button
-                      type="button"
-                      aria-label={`Remove ${label || `unnamed ${noun}`}`}
-                      onClick={() => onChange(list.filter((_, i) => i !== row.index))}
-                      className="tap -my-2 -mr-2 rounded-full text-ink-muted hover:bg-surface-raised hover:text-ink"
-                    >
-                      <X size={16} aria-hidden />
-                    </button>
-                  )}
-                </div>
-                {row.was !== undefined && !readOnly && (
-                  <SegmentedControl<Mode>
-                    label={`${label}: keep, change or remove`}
-                    block
-                    value={mode}
-                    onChange={(m) => void setMode(row, m)}
-                    options={[
-                      { value: 'keep', label: 'Keep' },
-                      { value: 'change', label: 'Change' },
-                      { value: 'remove', label: 'Remove' },
-                    ]}
-                  />
-                )}
-                {editing && row.now !== undefined && (
-                  <PartEditor
-                    part={row.now}
-                    noun={noun}
-                    readOnly={readOnly}
-                    withEffects={withEffects}
-                    inherits={row.was !== undefined ? (partName(row.was) ?? label) : undefined}
-                    onChange={(next) => replaceAt(row.index, next)}
-                    rename={(name) => {
-                      const now = row.now as Json;
-                      replaceAt(
-                        row.index,
-                        row.was !== undefined && source !== undefined
-                          ? renamed(now, name, partName(row.was) ?? name, source)
-                          : { ...now, name },
-                      );
-                    }}
-                  />
-                )}
-              </li>
+              <FeatureRow
+                key={row.key}
+                name={label}
+                noun={noun}
+                status={status}
+                value={row.now}
+                editing={editing}
+                readOnly={readOnly}
+                onMode={row.was !== undefined ? (m) => void setMode(row, m) : undefined}
+                onDelete={
+                  row.was === undefined
+                    ? () => onChange(list.filter((_, i) => i !== row.index))
+                    : undefined
+                }
+                withEffects={withEffects}
+                inherits={row.was !== undefined ? (partName(row.was) ?? label) : undefined}
+                onChange={(next) => replaceAt(row.index, next)}
+                onRename={(name) => {
+                  const now = row.now as Json;
+                  replaceAt(
+                    row.index,
+                    row.was !== undefined && source !== undefined
+                      ? renamed(now, name, partName(row.was) ?? name, source)
+                      : { ...now, name },
+                  );
+                }}
+              />
             );
           })}
         </ul>

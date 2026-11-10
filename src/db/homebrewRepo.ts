@@ -250,6 +250,55 @@ function isWorkshopFile(row: HomebrewFileMeta): boolean {
 /** A save refused because another entry of that type already has the name and book. */
 export class EntryClash extends Error {}
 
+type Row = Record<string, unknown>;
+const eq = (a: unknown, b: unknown) =>
+  typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Entries that belong to another and are saved and deleted with it: a
+ * subclass's own features, found as the sheet finds them (by class, short
+ * name, the subclass's book and level). A class editor adds `class` here.
+ */
+const OWNED: Readonly<
+  Record<
+    string,
+    {
+      type: string;
+      /** Two owners whose features could not be told apart. */
+      peer: (a: Row, b: Row) => boolean;
+      owns: (owner: Row, e: Row) => boolean;
+      /** What tells two owned entries apart. */
+      key: (e: Row) => string;
+    }
+  >
+> = {
+  subclass: {
+    type: 'subclassFeature',
+    peer: (a, b) =>
+      eq(a.className, b.className) && eq(a.shortName, b.shortName) && eq(a.source, b.source),
+    owns: (s, f) =>
+      eq(f.className, s.className) &&
+      eq(f.subclassShortName, s.shortName) &&
+      eq(f.subclassSource, s.source),
+    key: (f) => `${f.name}|${f.className}|${f.subclassShortName}|${f.subclassSource}|${f.level}`,
+  },
+};
+
+/** True when entries of this type own others, which save and go with them. */
+export const ownsEntries = (type: string): boolean => OWNED[type] !== undefined;
+
+/**
+ * `json` without the entries `owner` owns, unless another entry of its type
+ * (`others`) has the same owner identity, so the owned ones may be its too.
+ */
+function withoutOwned(json: Row, type: string, owner: unknown, others: readonly unknown[]): void {
+  const own = OWNED[type];
+  if (own === undefined || !isRecord(owner)) return;
+  if (others.some((o) => isRecord(o) && own.peer(o, owner))) return;
+  const list = json[own.type];
+  if (Array.isArray(list)) json[own.type] = list.filter((e) => !isRecord(e) || !own.owns(owner, e));
+}
+
 /** A new file the player owns, with no entries yet. */
 function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
   return {
@@ -534,11 +583,17 @@ export const homebrewRepo = {
    * renamed or not); without `replaces` it is added. An entry of that type with
    * the new name and book already, other than the one it replaces, refuses the
    * save (`EntryClash`): neither a new entry nor a rename ever overwrites one.
+   *
+   * `owned`, for a type that owns entries (a subclass's features), replaces
+   * every one the entry it replaces owned, in the same write. Another entry
+   * whose owned ones could not be told apart from this one's refuses the
+   * save, as do two owned entries the sheet could not tell apart; the error
+   * says which.
    */
   async saveEntry(
     type: string,
     entry: Record<string, unknown> & EntryKey,
-    opts: { fileId?: string; replaces?: EntryKey } = {},
+    opts: { fileId?: string; replaces?: EntryKey; owned?: readonly Row[] } = {},
   ): Promise<{ fileId: string; created: boolean }> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       let file: HomebrewFile | undefined;
@@ -557,6 +612,31 @@ export const homebrewRepo = {
       if (list.some((e, i) => i !== at && isEntry(e, entry))) {
         throw new EntryClash(`you already have one called ${entry.name}`);
       }
+      const own = OWNED[type];
+      if (opts.owned !== undefined) {
+        if (own === undefined) throw new Error(`a ${type} owns no other entries`);
+        const others = list.filter((_, i) => i !== at);
+        if (others.some((o) => isRecord(o) && own.peer(o, entry))) {
+          throw new Error(
+            `another ${type} in that file has its short name, so their features would mix`,
+          );
+        }
+        withoutOwned(json, type, list[at], others);
+        const kept = Array.isArray(json[own.type]) ? (json[own.type] as unknown[]) : [];
+        const keys = new Set(
+          kept
+            .filter(isRecord)
+            .map(own.key)
+            .map((k) => k.toLowerCase()),
+        );
+        for (const e of opts.owned) {
+          const k = own.key(e).toLowerCase();
+          if (keys.has(k))
+            throw new Error(`two of its features at one level are called ${String(e.name)}`);
+          keys.add(k);
+        }
+        json[own.type] = [...kept, ...opts.owned];
+      }
       if (at === -1) list.push(entry);
       else list[at] = entry;
       json[type] = list;
@@ -572,7 +652,10 @@ export const homebrewRepo = {
     });
   },
 
-  /** Take one entry out of a file the player owns. False when it was not there. */
+  /**
+   * Take one entry out of a file the player owns, with the entries it owns (a
+   * subclass's features). False when it was not there.
+   */
   async removeEntry(fileId: string, type: string, key: EntryKey): Promise<boolean> {
     return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
       const file = await ownedFile(fileId);
@@ -580,7 +663,8 @@ export const homebrewRepo = {
       const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
       const at = list.findIndex((e) => isEntry(e, key));
       if (at === -1) return false;
-      list.splice(at, 1);
+      const [gone] = list.splice(at, 1);
+      withoutOwned(json, type, gone, list);
       json[type] = list;
       return rewrite(fileId, json);
     });
