@@ -18,15 +18,25 @@ import type { Ability, EffectDuration, EffectInput, RollFilter } from './types';
 /** The version this build writes. It reads every version it ever shipped. */
 export const CAST_GUIDANCE_VERSION = 1;
 
-/** What a reader accepts; past these, the rest is a problem, never a crash. */
+/**
+ * What a reader accepts; past these, the rest is a problem, never a crash. A
+ * rule pack past any of them is refused when it is added (`data5e/rulePack.ts`),
+ * so a pack that is applied counts in full.
+ */
 export const CAST_GUIDANCE_LIMITS = {
-  /** Effects one entry, one patch or one moment may carry. */
+  /** Effects one entry, one patch or one moment's `addEffect` may carry. */
   effectsPerEntry: 64,
   /** Drops one entry may carry. */
   dropsPerEntry: 64,
+  /** What one moment does (`do`). */
+  outcomesPerMoment: 64,
   patchesPerPack: 500,
   momentsPerPack: 200,
   cuesPerPack: 200,
+  /** Characters in a patch's `target` (`feature|class` names two things). */
+  targetLength: 200,
+  /** Characters a pack's Apply to may name. */
+  charactersPerPack: 1_000,
   /** States one effect may hold `while`; every one must hold. */
   statesPerEffect: 8,
   /** Characters in one formula. */
@@ -336,7 +346,11 @@ export function readTableRules(raw: unknown): {
 // Rule packs (D5)
 // ---------------------------------------------------------------------------
 
-/** The registry type rule packs reach the engine as, one entry per pack (empty until Phase 10). */
+/**
+ * The registry type rule packs reach the engine as, one entry per pack, in the
+ * player's order. A pack is a homebrew file whose `_meta.castGuidance` is a
+ * `StoredPackGuidance`; `data5e/rulePack.ts` reads it into a `RulePackEntry`.
+ */
 export const RULE_PACK_TYPE = 'rulePack';
 
 /**
@@ -352,7 +366,11 @@ export interface StoredPatch {
   add?: StoredEffect[];
 }
 
-/** A rule pack file's `_meta.castGuidance`. */
+/**
+ * A rule pack file's `_meta.castGuidance`. Data only: nothing in it is run, and a
+ * formula is read by the app's own small grammar (`formula.ts`). A cue at a moment
+ * shows when that moment happens, as a moment's `cue` outcome does.
+ */
 export interface StoredPackGuidance {
   v: number;
   tableRules?: Partial<TableRuleChoices>;
@@ -361,14 +379,21 @@ export interface StoredPackGuidance {
   cues?: StoredCue[];
 }
 
+/** The parts a pack's `castGuidance` may hold; any other key is not read. */
+export const PACK_PARTS = ['v', 'tableRules', 'patches', 'moments', 'cues'] as const;
+
 /**
  * Who a pack reaches. Kept on the stored pack, dropped when it is shared: nothing
  * from a pack applies to a character the player did not apply it to.
  */
 export interface PackAppliesTo {
-  /** Characters, by id. Its patches, moments and cues reach these only. */
+  /** Characters, by id. Everything in the pack reaches these, its table rules over the app's. */
   characters: string[];
-  /** Its table rules are the app's own choice in Settings, under each character's own. */
+  /**
+   * Every character ("Every character" on the review sheet): its patches,
+   * moments and cues reach every one, and its table rules are the app's default,
+   * under a choice made in Settings and under each character's own.
+   */
   appDefault?: boolean;
 }
 

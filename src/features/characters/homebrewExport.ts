@@ -14,7 +14,12 @@
  * export carries only the part the character uses (see `bookParts`), marked
  * as a part: the device that imports it skips it where it has the book, and
  * importing the whole book there replaces it.
+ *
+ * A rule pack applied to the character goes too, so the table's rules travel
+ * with them, without who it is applied to here: the device that imports it
+ * applies it to nobody until its player chooses (`data5e/rulePack.ts`).
  */
+import { packGuidance, packLocal, packRefusals, sharedFile } from '@/data5e/rulePack';
 import { bookParts } from '@/db/homebrewBooks';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import type { CharacterDoc, EntityRef } from '@/engine/types';
@@ -103,8 +108,17 @@ export function collectCharacterSources(doc: CharacterDoc): Set<string> {
   return out;
 }
 
+/** A file as it leaves the device: a pack without who it is applied to here. */
 export function toHomebrewExportDTO(row: HomebrewFile): HomebrewExportDTO {
-  return { fileName: row.fileName, json: row.json };
+  return { fileName: row.fileName, json: sharedFile(row.json) };
+}
+
+/** Whether `row` is a rule pack applied here to the character, or to every character. */
+function packReaches(row: HomebrewFile, characterId: string): boolean {
+  const guidance = packGuidance(row.json);
+  if (guidance === undefined || packRefusals(guidance).length > 0) return false;
+  const to = packLocal(row.json, row.id)?.appliesTo;
+  return to !== undefined && (to.appDefault === true || to.characters.includes(characterId));
 }
 
 /**
@@ -140,7 +154,7 @@ export function homebrewForExport(
     const part = partOf.get(row);
     if (part !== undefined) out.push({ fileName: row.fileName, json: part });
     else if (row.book === undefined) {
-      if (row.sourceIds.some((s) => sources.has(s.toLowerCase()))) {
+      if (row.sourceIds.some((s) => sources.has(s.toLowerCase())) || packReaches(row, doc.id)) {
         out.push(toHomebrewExportDTO(row));
       }
     } else {

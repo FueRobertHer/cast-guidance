@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "sources": [
+      {
+        "json": "GrittyTable",
+        "abbreviation": "GT",
+        "full": "Gritty Table",
+        "version": "1.0.0"
+      }
+    ],
+    "castGuidance": {
+      "v": 1,
+      "tableRules": {
+        "restLength": "gritty",
+        "hpOnLongRest": "half",
+        "critDamage": "maxPlusRoll"
+      },
+      "patches": [
+        {
+          "target": "Alert|PHB",
+          "effects": [{ "kind": "initiativeBonus", "amount": 1 }]
+        },
+        {
+          "target": "Grit|Warrior",
+          "add": [{ "kind": "speedBonus", "amount": 5 }]
+        }
+      ],
+      "moments": [
+        {
+          "at": "zeroHp",
+          "do": [{ "kind": "addCondition", "condition": "Exhaustion" }]
+        }
+      ],
+      "cues": [
+        {
+          "at": "longRest",
+          "text": "A long rest needs a safe haven.",
+          "tone": "warn"
+        }
+      ]
+    }
+  }
+}

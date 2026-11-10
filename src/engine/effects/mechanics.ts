@@ -3,8 +3,8 @@
  * feature, feat, optional feature, species trait, class, subclass and item the
  * collectors meet comes through `mechanicsOf`, in this order:
  *
- * 1. a rule pack's patch for that entry, from packs applied to this character:
- *    `effects` replaces everything below, `add` adds to it;
+ * 1. a rule pack's patch for that entry, from packs applied to this character
+ *    or to every character: `effects` replaces everything below, `add` adds to it;
  * 2. the entry's own `castGuidance.effects`, which add to what it inherits, less
  *    what its `drop` leaves out, or replace it when it says `replace`;
  * 3. what it inherits, which each call site knows: the curated row for its key
@@ -659,7 +659,8 @@ interface PackPatches {
   add: PackChange[];
 }
 
-interface ReadPack {
+/** A pack's patches, read: each target lowercased, and what does not count. */
+export interface ReadPack {
   name: string;
   patches: Array<{ target: string; replace?: EffectTemplate[]; add?: EffectTemplate[] }>;
   problems: string[];
@@ -667,7 +668,8 @@ interface ReadPack {
 
 const PACKS = new WeakMap<object, ReadPack>();
 
-function readPack(entry: DataEntity): ReadPack {
+/** A rule pack's patches (`RULE_PACK_TYPE` entry), read once per entry. Never throws. */
+export function readPack(entry: DataEntity): ReadPack {
   const cached = PACKS.get(entry);
   if (cached !== undefined) return cached;
   const read = readPackOnce(entry);
@@ -698,7 +700,7 @@ function readPackOnce(entry: DataEntity): ReadPack {
   }
   patches.slice(0, L.patchesPerPack).forEach((p, i) => {
     const target = isRecord(p) ? own(p, 'target') : undefined;
-    if (typeof target !== 'string' || target.trim() === '' || target.length > 2 * L.labelLength) {
+    if (typeof target !== 'string' || target.trim() === '' || target.length > L.targetLength) {
       read.problems.push(`patch ${i + 1}: "target" is the key of the entry it changes`);
       return;
     }
@@ -721,13 +723,16 @@ function readPackOnce(entry: DataEntity): ReadPack {
   return read;
 }
 
+/** Applied to this character, or to every character (`appliesTo.appDefault`). */
 function appliesTo(entry: DataEntity, characterId: string): boolean {
   const to = own(entry, 'appliesTo');
-  const characters = isRecord(to) ? own(to, 'characters') : undefined;
+  if (!isRecord(to)) return false;
+  if (own(to, 'appDefault') === true) return true;
+  const characters = own(to, 'characters');
   return Array.isArray(characters) && characters.includes(characterId);
 }
 
-/** This derive's patches by target, from the packs applied to its character, in the player's order. */
+/** This derive's patches by target, from the packs that reach its character, in the player's order. */
 const PATCHES = new WeakMap<Collector, Map<string, PackPatches>>();
 
 function patchesFor(col: Collector): Map<string, PackPatches> {

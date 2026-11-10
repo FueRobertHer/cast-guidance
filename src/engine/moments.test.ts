@@ -441,14 +441,18 @@ describe('collectMoments', () => {
     expect(got.problems).toEqual(['Bad: moment 1 (payday): has no moment "payday"']);
   });
 
-  it('reads packs applied to the character, after its entries, in the player order', () => {
+  it('reads packs applied to the character or to every character, after its entries, in the player order', () => {
     const got = collectMoments(
       [{ entry: feature([{ at: 'zeroHp', do: [cue('Own')] }]), label: 'Grim Resolve' }],
       ctxOf([
         pack('Gritty', [{ at: 'zeroHp', do: [cue('First')] }], { characters: ['hild'] }),
         pack('Elsewhere', [{ at: 'zeroHp', do: [cue('Other')] }], { characters: ['bram'] }),
         pack('Nobody', [{ at: 'zeroHp', do: [cue('No one')] }]),
-        pack('Default only', [{ at: 'zeroHp', do: [cue('Default')] }], { appDefault: true }),
+        // Every character (Phase 10): its moments reach each one, not only its table rules.
+        pack('Every character', [{ at: 'zeroHp', do: [cue('Everyone')] }], {
+          characters: [],
+          appDefault: true,
+        }),
         pack('Odd', [{ at: 'zeroHp', do: [cue('Odd')] }], { characters: 'hild' }),
         pack(
           '',
@@ -466,9 +470,56 @@ describe('collectMoments', () => {
     expect(got.moments.map((m) => [m.from, m.do[0]?.kind === 'cue' && m.do[0].text])).toEqual([
       ['Grim Resolve', 'Own'],
       ['Gritty', 'First'],
+      ['Every character', 'Everyone'],
       ['A rule pack', 'Last'],
     ]);
     expect(got.problems).toEqual(['A rule pack: moment 2 (payday): has no moment "payday"']);
+  });
+
+  it("shows a pack's cue at a moment as that moment's cue, and says what it cannot show", () => {
+    const withCues = (cues: unknown, v: unknown = 1): DataEntity =>
+      ({
+        name: 'Gritty',
+        source: 'Brew',
+        castGuidance: { v, cues },
+        appliesTo: { characters: ['hild'] },
+      }) as DataEntity;
+    const got = collectMoments(
+      [],
+      ctxOf([
+        withCues([
+          { at: 'longRest', text: 'A long rest needs a safe haven.', tone: 'warn' },
+          { at: 'shortRest', text: 'Rest takes 8 hours.' },
+          { at: 'levelUp', text: 'Level up at a long rest only.' },
+          { at: 'payday', text: 'Never' },
+          { at: 'zeroHp', text: 'Loud', tone: 'shout' },
+          { at: 'zeroHp' },
+          'not a cue',
+        ]),
+      ]),
+      'hild',
+    );
+    expect(got.moments.map((m) => [m.from, m.at, m.do])).toEqual([
+      [
+        'Gritty',
+        'longRest',
+        [{ kind: 'cue', text: 'A long rest needs a safe haven.', tone: 'warn' }],
+      ],
+      ['Gritty', 'shortRest', [{ kind: 'cue', text: 'Rest takes 8 hours.', tone: 'info' }]],
+    ]);
+    expect(got.problems).toEqual([
+      'Gritty: cue 3 (levelUp): the app does not show cues at a level up yet',
+      'Gritty: cue 4 (payday): has no moment "payday"',
+      'Gritty: cue 5 (zeroHp): "tone" is help, ward, warn or info',
+      expect.stringMatching(/^Gritty: cue 6 \(zeroHp\): /),
+      'Gritty: cue 7: is not a cue',
+    ]);
+    // Past the limit, the rest are said not to count; an unreadable version counts none.
+    const many = Array.from({ length: 201 }, () => ({ at: 'zeroHp', text: 'Again' }));
+    const capped = collectMoments([], ctxOf([withCues(many)]), 'hild');
+    expect(capped.moments).toHaveLength(200);
+    expect(capped.problems).toEqual(['Gritty: only the first 200 of "cues" count']);
+    expect(collectMoments([], ctxOf([withCues(many, 99)]), 'hild').moments).toEqual([]);
   });
 
   it('reads each stored object once', () => {
