@@ -9,6 +9,7 @@ import { summarizeEntries } from '../summarize';
 import type { Ability, DataEntity, EffectOrigin } from '../types';
 import { asSlotCasts, collectAdditionalSpells, withoutPoolCosts } from './additionalSpells';
 import { asEntityArray, type Collector, str } from './base';
+import { entryKeys, mechanicsOf, officialOf } from './mechanics';
 import {
   buildPrereqContext,
   meetsPrerequisite,
@@ -16,7 +17,6 @@ import {
   summarizePrerequisite,
 } from './prerequisites';
 import { castsWithASlot, proseScanFeature } from './proseScan';
-import { printingOf, tableUids } from './reskin';
 
 /**
  * How many picks a progression gives by `level`: an array indexed by level-1, or
@@ -138,14 +138,23 @@ export function readOptionalFeatures(
             `${idBase}:spells-of:${uid}`,
             level,
           );
-          // A copy of an official option (`printingOf`) reads that option's rows after its own.
-          const uids = tableUids(of, uid.toLowerCase());
-          const printed = printingOf(of)?.source.toLowerCase();
-          const curated = uids.some((key, i) =>
-            emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
-          );
-          if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
-          uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
+          // A copy of an official option (`officialOf`) reads that option's rows after its own.
+          const uids = entryKeys(of, uid.toLowerCase());
+          const printed = officialOf(of)?.source.toLowerCase();
+          mechanicsOf(col, {
+            entry: of,
+            label: ofOrigin.label,
+            origin: ofOrigin,
+            target: uid,
+            classLevel: level,
+            inherited: () => {
+              const curated = uids.some((key, i) =>
+                emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
+              );
+              if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
+              uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
+            },
+          });
         }
       },
     );

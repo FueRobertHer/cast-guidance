@@ -3,6 +3,7 @@ import type { DataEntity, EffectOrigin } from '../types';
 import { refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { type Collector, str } from './base';
+import { mechanicsOf } from './mechanics';
 
 export function itemTypeCode(e: DataEntity): string | undefined {
   const t = str(e.type);
@@ -111,12 +112,22 @@ export function collectItems(col: Collector): void {
       type: 'item',
     };
     if (magicWorks(e, entry.attuned)) {
-      // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
-      const bonusAc = parseBonus(e.bonusAc);
-      if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
-        col.add({ kind: 'acBonus', amount: bonusAc, origin });
-      }
-      readWornTags(col, e, origin);
+      // Its magic fields are what it inherits; its own `castGuidance` adds to
+      // them, and a pack's patch can replace them, while the magic works.
+      mechanicsOf(col, {
+        entry: e,
+        label: origin.label,
+        origin,
+        target: origin.uid,
+        inherited: () => {
+          // Rings/cloaks of protection etc: bonusAc on a non-armor non-shield item.
+          const bonusAc = parseBonus(e.bonusAc);
+          if (bonusAc !== 0 && !isArmor(e) && !isShield(e)) {
+            col.add({ kind: 'acBonus', amount: bonusAc, origin });
+          }
+          readWornTags(col, e, origin);
+        },
+      });
     }
 
     // Spells the item grants: a wand's cantrip, a cloak's daily misty step.

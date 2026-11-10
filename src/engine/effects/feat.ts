@@ -4,6 +4,7 @@ import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { isRepeatableFeat, readFeatOptionalFeatures, readProsePick } from './featPicks';
+import { entryKeys, mechanicsOf, officialOf } from './mechanics';
 import { proseScanFeature } from './proseScan';
 import {
   expertiseOptions,
@@ -17,7 +18,6 @@ import {
   toolOptions,
   weaponOptions,
 } from './readers';
-import { printingOf, tableUids } from './reskin';
 
 /**
  * The name in a prerequisite's feat ref ("name|source", maybe "|display text").
@@ -114,8 +114,8 @@ export function collectFeatEntity(
   );
   readSkillOrToolChoice(col, e.skillToolLanguageProficiencies, origin, `${idBase}:skillTool`);
   readDefenses(col, e, origin, idBase);
-  // A copy of an official feat (`printingOf`) reads that feat's rows after its own.
-  const uids = tableUids(e, uid);
+  // A copy of an official feat (`officialOf`) reads that feat's rows after its own.
+  const uids = entryKeys(e, uid);
   // Asked first, since an invocation Eldritch Adept gives casts with the ability it picks.
   const picked = readProsePick(col, uids, origin, idBase);
   readFeatOptionalFeatures(col, e, uids, origin, idBase, picked?.ability);
@@ -169,12 +169,20 @@ export function collectFeatEntity(
     origin,
     entries: e.entries,
   });
-  const printed = printingOf(e)?.source.toLowerCase();
-  const curated = uids.some((key) =>
-    emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
-  );
-  if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
-  uids.some((key) => linkSpend(col, key, origin.label, origin));
+  const printed = officialOf(e)?.source.toLowerCase();
+  mechanicsOf(col, {
+    entry: e,
+    label: origin.label,
+    origin,
+    target: uid,
+    inherited: () => {
+      const curated = uids.some((key) =>
+        emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
+      );
+      if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
+      uids.some((key) => linkSpend(col, key, origin.label, origin));
+    },
+  });
 }
 
 export function collectFeats(col: Collector): void {

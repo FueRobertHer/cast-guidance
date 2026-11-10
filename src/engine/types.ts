@@ -3,6 +3,7 @@
  * Principle: a CharacterDoc stores CHOICES + PLAY STATE, never derived
  * results; overrides are inputs. Everything else is recomputed on read.
  */
+import type { TableRuleChoices } from './castGuidance';
 
 export type Ability = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
 export const ABILITIES: readonly Ability[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -18,10 +19,19 @@ export interface EntityRef {
 /** Data entities are treated as unknown-shaped JSON with tolerant readers. */
 export type DataEntity = Record<string, unknown>;
 
-/** Minimal lookup surface the engine needs; adapters wrap the registry. */
+/**
+ * Minimal lookup surface the engine needs; adapters wrap the registry. Rule
+ * packs come through `byType` too, as `RULE_PACK_TYPE` (`castGuidance.ts`).
+ */
 export interface EngineContext {
   get(type: string, name: string, source?: string): DataEntity | undefined;
   byType(type: string): readonly DataEntity[];
+  /**
+   * The app's own table rules, chosen in Settings. Absent, or a rule absent,
+   * means as written for the character's edition. A character's own choice and
+   * a pack applied to it come first (`rulesFor`, Phase 4).
+   */
+  rules?: Partial<TableRuleChoices>;
 }
 
 export const CHARACTER_SCHEMA_VERSION = 1;
@@ -263,6 +273,50 @@ export interface EffectOrigin {
     | 'custom'
     | 'curated'
     | 'active';
+  /** The rule pack whose patch this comes from, shown beside what it changes. */
+  pack?: string;
+}
+
+/**
+ * A state the app can see, which an effect may hold only while (H10). `effect`
+ * is an effect of that name in play (raging); `condition` one in play, by name.
+ */
+export type WhileState =
+  | { state: 'bloodied' | 'zeroHp' | 'concentrating' | 'noArmor' | 'shield' }
+  | { state: 'effect'; name: string }
+  | { state: 'condition'; condition: string };
+
+/** What a formula reads when it is worked out (see `formula.ts`). */
+export interface FormulaScope {
+  level: number;
+  /** The level of the class the entry belongs to; the character's level for any other entry. */
+  classLevel: number;
+  prof: number;
+  hp: number;
+  maxHp: number;
+  mod: Record<Ability, number>;
+  score: Record<Ability, number>;
+}
+
+/** A parsed formula. Only `formula.ts` makes them; nothing stored is one. */
+export interface FormulaLike {
+  readonly text: string;
+  readonly cost: number;
+  evaluate(scope: FormulaScope): number;
+}
+
+/** The effect fields a formula may fill (`FORMULA_FIELDS` in `castGuidance.ts`). */
+export type FormulaField = 'amount' | 'min' | 'max' | 'range' | 'speed' | 'base' | 'regainOnShort';
+
+/**
+ * A number an entry's formula fills in at fold time, once abilities and hit
+ * points exist (`derive.ts`). The field holds 0 until then.
+ */
+export interface FormulaSlot {
+  field: FormulaField;
+  formula: FormulaLike;
+  /** `classLevel` as the entry was collected. */
+  classLevel: number;
 }
 
 /**
@@ -323,7 +377,16 @@ export interface ActionRegain {
 /** What a walking speed bonus does not hold with (`speedBonus.unless`). */
 export type SpeedBonusUnless = 'heavyArmor' | 'armorOrShield';
 
-export type EffectInput = { origin: EffectOrigin } & (
+/**
+ * One thing that changes the sheet, and where it comes from. `while`: it counts
+ * only while every state holds. `formulas`: numbers worked out at fold time.
+ * Both come from an entry's own mechanics (`effects/mechanics.ts`).
+ */
+export type EffectInput = {
+  origin: EffectOrigin;
+  while?: readonly WhileState[];
+  formulas?: readonly FormulaSlot[];
+} & (
   | { kind: 'abilityMin'; ability: Ability; min: number }
   /**
    * `max`: the score may go this high with it, past the usual 20 (Primal Champion's 24).
@@ -588,7 +651,7 @@ export const ACTIVE_PART_KINDS = [
 
 export type ActivePartKind = (typeof ACTIVE_PART_KINDS)[number];
 
-type NoOrigin<E> = E extends unknown ? Omit<E, 'origin'> : never;
+type NoOrigin<E> = E extends unknown ? Omit<E, 'origin' | 'while' | 'formulas'> : never;
 /** An amount stored in play is a number: an ally's bonus is worked out on their sheet. */
 type PlainAmount<E> = E extends { amount: unknown } ? Omit<E, 'amount'> & { amount: number } : E;
 
