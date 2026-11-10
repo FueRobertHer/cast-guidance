@@ -388,9 +388,10 @@ export function own(o: Record<string, unknown>, key: string): unknown {
   return Object.hasOwn(o, key) ? o[key] : undefined;
 }
 
-/** A value cut short for a problem's wording. */
+/** A value cut short for a problem's wording. Never throws, whatever a file holds. */
 export function clip(v: unknown): string {
-  const s = String(v);
+  const s =
+    typeof v === 'object' && v !== null ? (Array.isArray(v) ? 'a list' : 'an object') : String(v);
   return s.length > 40 ? `${s.slice(0, 40)}...` : s;
 }
 

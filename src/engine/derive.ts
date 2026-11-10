@@ -34,6 +34,7 @@ import { noteSkillSources } from './effects/skillSources';
 import { Formula } from './formula';
 import type {
   Ability,
+  ActiveEffect,
   CharacterDoc,
   ChoicePrompt,
   DerivedSheet,
@@ -78,8 +79,11 @@ export function deriveSheet(
   settleInheritedAbilities(col);
   // Effects in play come last: they reach numbers and rolls, never a pick.
   let effectsNotCounted: NotCounted[] = [];
+  let played: ActiveEffect[] = [];
   if (options.active !== false) {
-    const { effects: played, problems } = readActiveEffects(doc.play.activeEffects);
+    const read = readActiveEffects(doc.play.activeEffects);
+    played = read.effects;
+    const problems = read.problems;
     for (const problem of problems) col.warn(problem);
     const counting = countingEffects(played);
     for (const e of counting.inputs) col.add(e);
@@ -111,7 +115,7 @@ export function deriveSheet(
     score: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
   };
   const budget = { left: CAST_GUIDANCE_LIMITS.formulaStepsPerDerive, warned: false };
-  const states = new PlayStates(doc, ctx, options.active !== false);
+  const states = new PlayStates(doc, ctx, played);
   fillFormulas(col, (k) => k === 'abilityBonus' || k === 'abilityMin', scope, budget);
   const early = collected.filter((e) => states.hold(e, undefined));
   const abilities = calcAbilities(doc, early);
@@ -125,6 +129,8 @@ export function deriveSheet(
   scope.hp = doc.play.hpInitialized === false ? maxHp.value : doc.play.currentHp;
   fillFormulas(col, (k) => !EARLY_KINDS.has(k), scope, budget);
   const effects = collected.filter((e) => states.hold(e, scope));
+  // What reads the collector from here on (spellcasting) sees only these too.
+  if (effects.length !== col.effects.length) col.effects.splice(0, col.effects.length, ...effects);
 
   const saves = calcSaves(doc, effects, abilities, profBonus.value);
   const checks = calcChecks(effects, abilities, profBonus.value);
@@ -325,32 +331,34 @@ function fillFormulas(
   for (const e of col.effects) {
     // Only `formula.ts` makes a Formula; a slot read from a stored document never counts.
     if (!Array.isArray(e.formulas) || !stage(e.kind)) continue;
-    for (const slot of e.formulas as readonly FormulaSlot[]) {
-      if (!(slot.formula instanceof Formula)) continue;
+    for (const slot of e.formulas as readonly unknown[]) {
+      if (typeof slot !== 'object' || slot === null) continue;
+      if (!((slot as Partial<FormulaSlot>).formula instanceof Formula)) continue;
+      const { field, formula, classLevel } = slot as FormulaSlot;
       let value = 0;
-      if (budget.left >= slot.formula.cost) {
-        budget.left -= slot.formula.cost;
-        value = slot.formula.evaluate({ ...scope, classLevel: slot.classLevel });
+      if (budget.left >= formula.cost) {
+        budget.left -= formula.cost;
+        value = formula.evaluate({ ...scope, classLevel });
       } else if (!budget.warned) {
         budget.warned = true;
         col.warn('This character has too many formulas to work out; the rest count as 0.');
       }
       // Only an amount may be below zero: a penalty. A range, a speed or a maximum may not.
-      (e as Record<string, unknown>)[slot.field] =
-        slot.field === 'amount' ? value : Math.max(0, value);
+      (e as Record<string, unknown>)[field] = field === 'amount' ? value : Math.max(0, value);
     }
   }
 }
 
 /**
  * The states effects may hold `while` (H10), read from play once per derive.
- * `effect` follows the derive's `active` option, as effects in play do; the
- * rest are the character's state whatever is in play.
+ * `effect` reads the effects in play as `readActiveEffects` read them (none
+ * when the derive leaves them out); the rest are the character's state
+ * whatever is in play.
  */
 class PlayStates {
   private readonly doc: CharacterDoc;
   private readonly ctx: EngineContext;
-  private readonly active: boolean;
+  private readonly played: readonly ActiveEffect[];
   private seen?: {
     conditions: Set<string>;
     effects: Set<string>;
@@ -358,10 +366,10 @@ class PlayStates {
     shield: boolean;
   };
 
-  constructor(doc: CharacterDoc, ctx: EngineContext, active: boolean) {
+  constructor(doc: CharacterDoc, ctx: EngineContext, played: readonly ActiveEffect[]) {
     this.doc = doc;
     this.ctx = ctx;
-    this.active = active;
+    this.played = played;
   }
 
   /** Whether every state `e` holds while holds; `hp` is unknown before the maximum is. */
@@ -384,7 +392,7 @@ class PlayStates {
       case 'zeroHp':
         return play.hpInitialized !== false && play.currentHp <= 0;
       case 'concentrating':
-        return play.concentratingOn !== undefined;
+        return play.concentratingOn !== undefined && play.concentratingOn !== null;
       case 'noArmor':
         return !this.read().armor;
       case 'shield':
@@ -409,16 +417,22 @@ class PlayStates {
       const item = lookupItem({ ctx: this.ctx }, entry.ref.name, entry.ref.source);
       return item === undefined ? [] : [item];
     });
+    // Stored play is not checked on load: read only what is the shape it should be.
+    const conditions: unknown[] = Array.isArray(play.conditions) ? play.conditions : [];
     this.seen = {
       conditions: new Set(
-        play.conditions.filter((c) => c.ignored !== true).map((c) => c.id.toLowerCase()),
+        conditions.flatMap((c) => {
+          const { id, ignored } = (typeof c === 'object' && c !== null ? c : {}) as {
+            id?: unknown;
+            ignored?: unknown;
+          };
+          return typeof id === 'string' && ignored !== true ? [id.toLowerCase()] : [];
+        }),
       ),
       effects: new Set(
-        this.active
-          ? (play.activeEffects ?? [])
-              .filter((x) => x.off !== true)
-              .flatMap((x) => [x.name, x.same ?? x.name].map((n) => n.toLowerCase()))
-          : [],
+        this.played
+          .filter((x) => x.off !== true)
+          .flatMap((x) => [x.name, x.same ?? x.name].map((n) => n.toLowerCase())),
       ),
       armor: worn.some(isArmor),
       shield: worn.some(isShield),

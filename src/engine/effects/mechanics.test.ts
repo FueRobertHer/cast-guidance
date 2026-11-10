@@ -354,7 +354,10 @@ describe('mechanicsOf: the layers', () => {
     const inherited = subject(col, cg({ effects: [{ kind: 'acBonus', amount: 1 }] }));
     expect(inherited).toHaveBeenCalledOnce();
     expect(kinds(col)).toEqual(['acBonus', 'resource', 'speedBonus']);
-    expect(col.effects[0]?.origin).toBe(origin);
+    // A copy of the origin: spend links find the inherited action by the object itself.
+    expect(col.effects[0]?.origin).toEqual(origin);
+    expect(col.effects[0]?.origin).not.toBe(origin);
+    expect(col.effects[1]?.origin).toBe(origin);
   });
 
   it('inherits nothing when it says replace', () => {
@@ -855,5 +858,145 @@ describe('while states (H10)', () => {
     expect(ac([null])).toBe(false);
     expect(ac([{ state: 'effect', name: 7 }])).toBe(false);
     expect(ac('bloodied')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('what a review found', () => {
+  it('reads a kind no string can be made of without throwing', () => {
+    const raw = JSON.parse(
+      '{"v":1,"effects":[{"kind":{"toString":0}}],"drop":[{"kind":{"toString":0}}]}',
+    );
+    expect(readMechanics(raw).problems).toEqual([
+      'effect 1: has no kind "an object"',
+      'drop 1: has no kind "an object"',
+    ]);
+  });
+
+  it('takes plain numbers as whole, and 0 or more outside an amount', () => {
+    const read = readMechanics({
+      v: 1,
+      effects: [
+        { kind: 'acBonus', amount: 0.5 },
+        { kind: 'sense', sense: 'darkvision', range: -30 },
+        { kind: 'speedBonus', amount: -10 },
+      ],
+    });
+    expect(read.effects.map((t) => t.effect.kind)).toEqual(['speedBonus']);
+    expect(read.problems).toEqual([
+      'effect 1 (acBonus): "amount" is a whole number',
+      'effect 2 (sense): "range" is 0 or more',
+    ]);
+  });
+
+  it("never lets a spend link rewrite the cost an author gave the entry's own action", async () => {
+    const { linkSpend } = await import('../curated/spendLinks');
+    const col = new Collector(character(), world({}));
+    const entry = cg({
+      effects: [
+        {
+          kind: 'action',
+          label: 'Flurry',
+          economy: 'bonus',
+          cost: { resource: 'mine', amount: 2 },
+        },
+      ],
+    });
+    mechanicsOf(col, {
+      entry,
+      label: 'Flurry',
+      origin,
+      target: 'flurry',
+      inherited: () => {
+        col.add({ kind: 'action', label: 'Flurry of Blows', economy: 'none', origin });
+        linkSpend(col, 'flurry of blows|monk|phb', 'Flurry of Blows', origin);
+      },
+    });
+    const costs = col.effects.map((e) => (e.kind === 'action' ? [e.label, e.cost?.resource] : []));
+    expect(costs).toEqual([
+      ['Flurry', 'mine'],
+      ['Flurry of Blows', 'focus'],
+    ]);
+  });
+
+  it('works out nothing, and never throws, for formula slots a stored document makes up', () => {
+    const doc = character((d) => {
+      d.customEffects = [
+        JSON.parse(
+          '{"kind":"acBonus","amount":1,"origin":{"label":"Odd","uid":"o","type":"custom"},"formulas":[null, 3, {"field":"amount"}]}',
+        ),
+      ];
+    });
+    expect(deriveSheet(doc, world({})).ac.parts.find((p) => p.label === 'Odd')?.amount).toBe(1);
+  });
+
+  it('reads effects in play and conditions only as their readers would, whatever play holds', () => {
+    const doc = withFeats('Gift');
+    doc.play.activeEffects = JSON.parse(
+      '[{"id":"a","parts":[]},null,{"id":"r","name":"Rage","parts":[]},{"id":"r","name":"Haste","parts":[]},{"id":"s","name":"Bless","same":7,"parts":[]}]',
+    );
+    doc.play.conditions = JSON.parse('[{"id":5},null,{"id":"Prone"}]');
+    const effects = [
+      { kind: 'acBonus', amount: 1, while: { effect: 'Rage' } },
+      { kind: 'saveBonus', amount: 1, while: { effect: 'Haste' } },
+      { kind: 'initiativeBonus', amount: 1, while: { condition: 'prone' } },
+      { kind: 'checkBonus', amount: 1, every: true, while: { effect: 'Bless' } },
+    ];
+    const sheet = deriveSheet(doc, world({ feat: [feat('Gift', { effects })] }));
+    expect(sheet.ac.parts.some((p) => p.label === 'Gift')).toBe(true);
+    // The second effect under one id does not count, so it is not in play.
+    expect(sheet.saves.str.total.parts.some((p) => p.label === 'Gift')).toBe(false);
+    expect(sheet.initiative.parts.some((p) => p.label === 'Gift')).toBe(true);
+  });
+
+  it('holds spell save DC and spell attack bonuses to their states too', () => {
+    const dc = (concentrating: boolean) => {
+      const doc = withFeats('Gift');
+      doc.classes = [{ ref: { name: 'Mage', source: 'TST' }, levels: 4, hp: [] }];
+      if (concentrating) doc.play.concentratingOn = { label: 'Bless' };
+      const effects = [
+        { kind: 'spellDcBonus', amount: 2, while: 'concentrating' },
+        { kind: 'attackBonus', amount: 3, attack: 'spell', while: 'concentrating' },
+      ];
+      const block = deriveSheet(doc, world({ feat: [feat('Gift', { effects })] })).spellcasting[0];
+      return [block?.saveDc.value, block?.attackMod.value];
+    };
+    const [dcOff, atkOff] = dc(false);
+    expect(dc(true)).toEqual([(dcOff ?? 0) + 2, (atkOff ?? 0) + 3]);
+  });
+
+  describe('a pack replacement it cannot read', () => {
+    const run = (effects: unknown) => {
+      const ctx = world({
+        [RULE_PACK_TYPE]: [
+          {
+            name: 'P',
+            source: 'P',
+            appliesTo: { characters: ['hero'] },
+            castGuidance: { v: 1, patches: [{ target: 'lantern|hb', effects }] },
+          },
+        ],
+      });
+      const col = new Collector(character(), ctx);
+      const inherited = vi.fn(() => col.add({ kind: 'acBonus', amount: 1, origin }));
+      mechanicsOf(col, {
+        entry: { name: 'Lantern' },
+        label: 'Lantern',
+        origin,
+        target: 'Lantern|HB',
+        inherited,
+      });
+      return inherited.mock.calls.length;
+    };
+
+    it('replaces nothing, so the entry keeps its mechanics', () => {
+      expect(run('none')).toBe(1);
+      expect(run([{ kind: 'fly' }])).toBe(1);
+    });
+
+    it('but an empty list replaces them with nothing, on purpose', () => {
+      expect(run([])).toBe(0);
+    });
   });
 });

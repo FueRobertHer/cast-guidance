@@ -173,7 +173,12 @@ const amount: Field = (v, r, key) => {
   const { names, why } = formulaNamesFor(r.kind);
   const read = readAmount(v, names, why);
   if ('problem' in read) throw new Bad(read.problem);
-  if ('value' in read) return read.value;
+  if ('value' in read) {
+    // As a formula's result is: rounded down, and only an amount below 0.
+    if (!Number.isInteger(read.value)) throw new Bad('is a whole number');
+    if (key !== 'amount' && read.value < 0) throw new Bad('is 0 or more');
+    return read.value;
+  }
   r.slots.push({ field: key as FormulaField, formula: read.formula });
   return 0;
 };
@@ -665,11 +670,16 @@ const PACKS = new WeakMap<object, ReadPack>();
 function readPack(entry: DataEntity): ReadPack {
   const cached = PACKS.get(entry);
   if (cached !== undefined) return cached;
+  const read = readPackOnce(entry);
+  PACKS.set(entry, read);
+  return read;
+}
+
+function readPackOnce(entry: DataEntity): ReadPack {
   const named = own(entry, 'name');
   const name =
     typeof named === 'string' && named.trim() !== '' ? clip(named.trim()) : 'A rule pack';
   const read: ReadPack = { name, patches: [], problems: [] };
-  PACKS.set(entry, read);
   const raw = own(entry, 'castGuidance');
   if (!isRecord(raw)) return read;
   const version = guidanceVersion(raw);
@@ -693,15 +703,18 @@ function readPack(entry: DataEntity): ReadPack {
       return;
     }
     const where = `patch ${i + 1} (${clip(target)})`;
-    const replace = readStoredEffects(own(p as Record<string, unknown>, 'effects'));
+    const rawReplace = own(p as Record<string, unknown>, 'effects');
+    const replace = readStoredEffects(rawReplace);
     const add = readStoredEffects(own(p as Record<string, unknown>, 'add'), 'add');
     for (const problem of [...replace.problems, ...add.problems])
       read.problems.push(`${where}: ${problem}`);
+    // An empty list replaces the entry's mechanics with nothing, on purpose; a
+    // list none of which can be read replaces nothing, so the entry keeps its own.
+    const replaces =
+      Array.isArray(rawReplace) && (rawReplace.length === 0 || replace.effects.length > 0);
     read.patches.push({
       target: target.trim().toLowerCase(),
-      ...(own(p as Record<string, unknown>, 'effects') !== undefined
-        ? { replace: replace.effects }
-        : {}),
+      ...(replaces ? { replace: replace.effects } : {}),
       ...(add.effects.length > 0 ? { add: add.effects } : {}),
     });
   });
@@ -746,7 +759,11 @@ export interface MechanicsSubject {
   entry: DataEntity;
   /** Its name on the sheet, for problems. */
   label: string;
-  /** The origin its effects carry; spend links find its action by this object. */
+  /**
+   * The origin its effects carry. What it inherits carries this object, which
+   * spend links find its action by; its own effects and a pack's carry copies,
+   * so a spend link never rewrites the cost an author gave an action.
+   */
   origin: EffectOrigin;
   /** The key a pack's patch names it by (`StoredPatch.target`). */
   target: string;
@@ -792,7 +809,7 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   if (patches?.replace !== undefined) return;
 
   const self = mine?.readable === true ? mine : undefined;
-  if (self !== undefined) emit(col, self.effects, s.origin, level);
+  if (self !== undefined) emit(col, self.effects, { ...s.origin }, level);
   if (self?.replace === true) return;
   const from = col.effects.length;
   s.inherited?.();
