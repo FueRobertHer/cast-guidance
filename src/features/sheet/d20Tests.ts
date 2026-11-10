@@ -10,6 +10,7 @@ import {
 } from '@/engine/conditions';
 import type { RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
+import { signed } from '@/lib/signed';
 import { namedFirst, whenLanded } from '@/stores/heldRoll';
 import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
 
@@ -154,13 +155,19 @@ export interface D20Choice {
  * Attack, on the turn's first attack). Declared, its mode counts on this roll
  * as an effect's does and its cost is said by Roll; as the roll lands,
  * `declare` puts it in play, where it reaches the turn's later rolls itself.
+ * One that holds for this roll alone (`thisRoll`: flanking, a table rule the
+ * app cannot see) puts nothing in play, and may add a bonus instead of a mode.
  */
 export interface TurnExtra {
   source: string;
-  mode: 'adv' | 'dis';
-  /** What declaring it costs, in words. */
+  mode?: 'adv' | 'dis';
+  /** Declared, what it adds to this roll (flanking's +2 under the table's rule). */
+  bonus?: number;
+  /** What declaring it costs, in words; for one that holds for this roll alone, when it holds. */
   cost: string;
   declare: () => void;
+  /** It holds for this roll alone, not the rest of the turn. */
+  thisRoll?: boolean;
 }
 
 /**
@@ -176,7 +183,10 @@ export interface D20Ask {
   rollsIn: ReadonlyArray<{ dice: string; source: string }>;
   /** One-use dice the prompt offers before the roll (2014 Guidance and Bardic Inspiration). */
   once: readonly RollOffer[];
-  /** What the prompt offers to declare for the turn (Reckless Attack). */
+  /**
+   * What the prompt offers to declare for the turn (Reckless Attack), then
+   * what may hold for this roll alone (flanking, from `riders.declare`).
+   */
   thisTurn: readonly TurnExtra[];
   /** An attack, which a natural 1 or 20 settles. */
   attack: boolean;
@@ -242,6 +252,8 @@ function chosenCue(mode: RollMode, preset: RollMode, e: D20Effects): string {
  * `thisTurn` is what the prompt offers to declare for the turn (Reckless
  * Attack): declared, its advantage counts as an effect's does, so the preset
  * and the cue follow it (`presetFor`), and it goes in play as the roll lands.
+ * What the riders say may hold for this roll (`declare`: flanking) joins it,
+ * declared the same way: its advantage counts, or its bonus is added.
  *
  * `attack` marks an attack roll with whose it is and whether it crit (the kept
  * d20 at `critFrom` or above), which the damage that goes with it reads.
@@ -272,6 +284,25 @@ export function d20Ask(
     attack?: { by: string; of: string; critFrom?: number | undefined };
   },
 ): D20Ask {
+  const extras: readonly TurnExtra[] = [
+    ...thisTurn,
+    ...(riders?.declare ?? []).map(
+      (d): TurnExtra => ({
+        source: d.source,
+        ...(d.mode === undefined ? {} : { mode: d.mode }),
+        ...(d.bonus === undefined ? {} : { bonus: d.bonus }),
+        cost: d.when,
+        declare: () => undefined,
+        thisRoll: true,
+      }),
+    ),
+  ];
+  /** The bonuses `choice` declares (flanking's +2), each named for what gives it. */
+  const bonusesFor = (choice: D20Choice | undefined) =>
+    extras.filter(
+      (t, i): t is TurnExtra & { bonus: number } =>
+        choice?.declared?.[i] === true && t.bonus !== undefined && t.bonus !== 0,
+    );
   const conditionsApply = effects !== undefined && !noD20Effect(effects);
   const kept = ignored || effects === undefined ? NO_EFFECTS : effects;
   const used = {
@@ -283,7 +314,7 @@ export function d20Ask(
   const preset: RollMode = resolution.advantage ?? 'normal';
   /** The effects and how they resolve with what `choice` declares for the turn counted. */
   const under = (choice: D20Choice | undefined) => {
-    const declared = thisTurn.filter((_, i) => choice?.declared?.[i] === true);
+    const declared = extras.filter((_, i) => choice?.declared?.[i] === true);
     if (declared.length === 0) return { used, resolution };
     const sources = (mode: TurnExtra['mode']) =>
       declared.filter((d) => d.mode === mode).map((d) => d.source);
@@ -313,6 +344,7 @@ export function d20Ask(
         parts.push(`${minus(used.penalty.amount)}: ${used.penalty.source}`);
       }
     }
+    for (const b of bonusesFor(choice)) parts.push(`${signed(b.bonus)}: ${b.source}`);
     return parts.filter((part) => part !== '').join(' · ');
   };
   /** The dice that roll in this time, in order: the effects' left in, then the one-use dice added. */
@@ -327,7 +359,7 @@ export function d20Ask(
     preset,
     rollsIn,
     once,
-    thisTurn,
+    thisTurn: extras,
     attack: settlesOnNatural,
     autoFail: resolution.autoFail,
     conditions: conditionsApply && !ignored,
@@ -335,9 +367,10 @@ export function d20Ask(
     cueFor,
     formula: (choice) => {
       const mode = choice?.mode ?? presetFor(choice);
-      const dice = diceFor(choice)
-        .map((d) => ` + ${dieWord(d.dice)} ${d.source}`)
-        .join('');
+      const dice = [
+        ...diceFor(choice).map((d) => ` + ${dieWord(d.dice)} ${d.source}`),
+        ...bonusesFor(choice).map((b) => ` ${signed(b.bonus)} ${b.source}`),
+      ].join('');
       const penalty = resolution.penalty !== 0 ? ` ${minus(resolution.penalty)}` : '';
       const words = mode === 'adv' ? ', advantage' : mode === 'dis' ? ', disadvantage' : '';
       return `d20${modifier === '' ? '' : ` ${modifier}`}${dice}${penalty}${words}`;
@@ -347,7 +380,10 @@ export function d20Ask(
       const advantage = mode === 'normal' ? undefined : mode;
       // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
       const dice = diceFor(choice);
-      const withDice = dice.reduce((e, d) => `${e}+${d.dice}`, expr);
+      const withDice = [
+        ...dice.map((d) => `+${d.dice}`),
+        ...bonusesFor(choice).map((b) => (b.bonus < 0 ? `${b.bonus}` : `+${b.bonus}`)),
+      ].reduce((e, term) => `${e}${term}`, expr);
       const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
       const result = roll(full, { label, advantage, kind: 'd20' });
       // A d20 test's expression is the d20 and flat modifiers, so every die after

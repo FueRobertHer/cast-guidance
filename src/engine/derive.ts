@@ -35,6 +35,7 @@ import { collectRace } from './effects/race';
 import { noteSkillSources } from './effects/skillSources';
 import { Formula } from './formula';
 import { collectMoments, momentsInForce } from './moments';
+import { sheetRulesField } from './rules';
 import type {
   Ability,
   ActiveEffect,
@@ -238,6 +239,10 @@ export function deriveSheet(
     scope.hp,
   );
 
+  // Table rules (H2): on the sheet only when one differs from as written.
+  const tableRules = sheetRulesField(doc, ctx);
+  for (const problem of tableRules.problems) col.warn(problem);
+
   return {
     abilities,
     profBonus,
@@ -305,6 +310,7 @@ export function deriveSheet(
       origin: e.origin.label,
     })),
     ...(moments === undefined ? {} : { moments }),
+    ...(tableRules.rules === undefined ? {} : { rules: tableRules.rules }),
     effectsNotCounted,
     languages: [...new Set(effectsOf(effects, 'language').map((e) => e.name))],
     armorProfs: uniqueNames(effectsOf(effects, 'armorProf').map((e) => e.name)),

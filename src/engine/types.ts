@@ -213,15 +213,23 @@ export interface CharacterDoc {
   /**
    * How HP is gained per level (level 1 is always the max die):
    * 'average' (PHB default), 'rolled' (per-level values in classes[].hp),
-   * 'max' (table rule: full die every level). Optional; default 'average'.
+   * 'max' (table rule: full die every level), 'rolledAtLeastAverage' (the
+   * roll, never under the average). The character's own HP each level rule
+   * (`engine/rules.ts`). Optional; absent follows the app, else 'average'.
    */
-  hpMethod?: 'average' | 'rolled' | 'max';
+  hpMethod?: TableRuleChoices['hpEachLevel'];
   /**
    * When this character's one-use dice (2014 Guidance and Bardic Inspiration)
    * are offered: after the roll, as written, or before it, a house rule.
    * Optional; absent follows the app's choice in Settings (`lib/oneUseDice`).
    */
   oneUseDice?: 'after' | 'before';
+  /**
+   * This character's own table rules, where they differ from the app's
+   * (`engine/rules.ts`). HP each level is `hpMethod` and one-use dice is
+   * `oneUseDice`, so they are not here. Optional; absent follows the app.
+   */
+  tableRules?: Partial<Omit<TableRuleChoices, 'hpEachLevel' | 'oneUseDice'>>;
   /**
    * Whether this character's table uses optional class features: the ones the
    * data marks as variants (Tasha's on 2014 classes, a book's on 2024 ones).
@@ -990,6 +998,12 @@ export interface DerivedSheet {
    * read (`moments.ts`). Absent when there are none.
    */
   moments?: MomentsInForce;
+  /**
+   * The table rules this character plays by (`rules.ts`): their own, a pack's,
+   * the app's, else as written. Absent when every one is as written for their
+   * edition; read it through `sheetRules`.
+   */
+  rules?: TableRuleChoices;
   /** Effects in play that count for nothing because one of the same name does. */
   effectsNotCounted: NotCounted[];
   languages: string[];

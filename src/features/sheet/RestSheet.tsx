@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { TableRuleChoices } from '@/engine/castGuidance';
 import { endsAtRest } from '@/engine/effectLife';
 import type { ActiveEffect } from '@/engine/types';
 import { Button } from '@/ui/Button';
@@ -6,6 +7,7 @@ import { Sheet } from '@/ui/sheet';
 import { restLasts } from './effectsInPlay';
 
 type Rest = 'short' | 'long';
+type Length = TableRuleChoices['restLength'];
 
 /**
  * A rest with effects in play: which of them it ends, ticked by what each one
@@ -16,6 +18,7 @@ type Rest = 'short' | 'long';
  */
 export function RestSheet({
   rest,
+  length = 'standard',
   open,
   effects,
   detail,
@@ -24,6 +27,8 @@ export function RestSheet({
 }: {
   /** The rest asked about, kept while the sheet slides away so it says the same. */
   rest: Rest;
+  /** How long the table's rests take (the rest length rule): what each one ends. */
+  length?: Length;
   open: boolean;
   effects: readonly ActiveEffect[];
   /** What else the rest does, said above the list (a long rest's refill). */
@@ -47,6 +52,7 @@ export function RestSheet({
           <RestEnds
             key={`${rest} ${openings}`}
             rest={rest}
+            length={length}
             effects={effects}
             detail={detail}
             onRest={onRest}
@@ -59,11 +65,13 @@ export function RestSheet({
 
 function RestEnds({
   rest,
+  length,
   effects,
   detail,
   onRest,
 }: {
   rest: Rest;
+  length: Length;
   effects: readonly ActiveEffect[];
   detail?: string;
   onRest: (rest: Rest, ends: ReadonlySet<string>) => void;
@@ -71,7 +79,7 @@ function RestEnds({
   // The list as it opened, so the rows a rest ends stay put while it slides away.
   const [listed] = useState(effects);
   const [ends, setEnds] = useState<ReadonlySet<string>>(
-    () => new Set(listed.filter((e) => endsAtRest(e, rest)).map((e) => e.id)),
+    () => new Set(listed.filter((e) => endsAtRest(e, rest, length)).map((e) => e.id)),
   );
   const tick = (id: string, on: boolean) =>
     setEnds((was) => {

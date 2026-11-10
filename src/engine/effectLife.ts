@@ -11,8 +11,9 @@
  *
  * Moments (H9, `moments.ts`) fire here when `HpLimits.moments` is given: at 0
  * HP (`knockedOut`), as a condition comes on (`conditionEndings`) or comes off
- * (`conditionEnded`), and at the start of a turn (`newTurn`). Without it,
- * nothing fires and every result is as it was.
+ * (`conditionEnded`), at the start of a turn (`newTurn`), on casting
+ * (`spellCast`) and after a rest (`restTaken`). Without it, nothing fires and
+ * every result is as it was.
  */
 import { countingEffects, readActiveEffects } from './activeEffects';
 import type { MomentId } from './castGuidance';
@@ -42,7 +43,10 @@ import {
   reportIsEmpty,
   scopeFor,
 } from './moments';
+import { REST_MINUTES } from './rules';
 import type { ActiveEffect, PlayState } from './types';
+
+type RestLength = keyof typeof REST_MINUTES;
 
 /** What changing effects needs to know of the sheet, to keep current HP within the maximum. */
 export interface HpLimits {
@@ -527,25 +531,59 @@ function addCondition(
 }
 
 /**
- * The effects a rest ends: a short rest (an hour) ends what lasts an hour or
- * less and what lasts until a short rest; a long rest (eight hours) ends what
- * lasts eight hours or less and what lasts until any rest. An effect with no
- * duration stays until ended by hand. Call it before hit points refill, and
- * refill to the maximum plus `maxHpChange`.
+ * The effects a rest ends: a short rest (an hour, as written) ends what lasts
+ * that long or less and what lasts until a short rest; a long rest (eight
+ * hours) ends what lasts that long or less and what lasts until any rest. The
+ * table's rest length (`REST_MINUTES`) sets how long each takes. An effect
+ * with no duration stays until ended by hand. Call it before hit points
+ * refill, and refill to the maximum plus `maxHpChange`.
  */
-export function restEndings(play: PlayState, rest: 'short' | 'long', hp: HpLimits): EffectChange {
-  return endWhere(play, (e) => endsAtRest(e, rest), hp);
+export function restEndings(
+  play: PlayState,
+  rest: 'short' | 'long',
+  hp: HpLimits,
+  length: RestLength = 'standard',
+): EffectChange {
+  return endWhere(play, (e) => endsAtRest(e, rest, length), hp);
 }
 
 /** Does this rest end the effect, by what it lasts? See `restEndings`. */
-export function endsAtRest(e: ActiveEffect, rest: 'short' | 'long'): boolean {
+export function endsAtRest(
+  e: ActiveEffect,
+  rest: 'short' | 'long',
+  length: RestLength = 'standard',
+): boolean {
   // Read as the reader does: a duration that is not one is none.
   const lasts: unknown = e.lasts;
   if (lasts === null || typeof lasts !== 'object') return false;
   const { rest: until, minutes } = lasts as Record<string, unknown>;
   if (until === 'short' || (until === 'long' && rest === 'long')) return true;
-  const limit = rest === 'short' ? 60 : 480;
+  const limit = (REST_MINUTES[length] ?? REST_MINUTES.standard)[rest];
   return typeof minutes === 'number' && minutes >= 0 && minutes <= limit;
+}
+
+/**
+ * A rest was taken. Call it last, once the rest has given back what it gives,
+ * so what its moments give is not reset by it: the `conditionEnded` moments of
+ * each condition the rest took off (`ended`: a long rest's last level of
+ * Exhaustion) fire, then the rest's own (`shortRest` or `longRest`). `before`
+ * is the rest's own change, the effects it ended, joined into the result.
+ */
+export function restTaken(
+  play: PlayState,
+  rest: 'short' | 'long',
+  hp: HpLimits,
+  before: EffectChange = { ended: [], maxHpChange: 0 },
+  ended: readonly string[] = [],
+): EffectChange {
+  let change = before;
+  for (const id of ended) {
+    change = joinChanges(
+      change,
+      conditionEnded(play, id, { ...hp, maxHp: hp.maxHp + change.maxHpChange }),
+    );
+  }
+  return fire(play, rest === 'short' ? 'shortRest' : 'longRest', {}, hp, newChain(), change);
 }
 
 /**
