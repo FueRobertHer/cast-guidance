@@ -21,6 +21,12 @@ describe('classSpellUidsFromEntities (homebrew inline lists)', () => {
     expect(classSpellUidsFromEntities(spells, 'cleric')).toEqual(new Set(['heal word|hb']));
     expect(classSpellUidsFromEntities(spells, 'Bard').size).toBe(0);
   });
+
+  it('reads several names at once, for a Workshop copy and its original', () => {
+    expect(classSpellUidsFromEntities(spells, ['Warden', 'Wizard'])).toEqual(
+      new Set(['brew bolt|hb']),
+    );
+  });
 });
 
 describe('classSpellUids (generated lookup)', () => {
@@ -39,6 +45,11 @@ describe('classSpellUids (generated lookup)', () => {
 
   it('is empty for a class that appears nowhere', () => {
     expect(classSpellUids(lookup, 'Druid').size).toBe(0);
+  });
+
+  it('reads several names at once, for a Workshop copy and its original', () => {
+    expect(classSpellUids(lookup, ['Mender', 'Cleric'])).toEqual(new Set(['cure wounds|phb']));
+    expect(classSpellUids(lookup, ['Mender']).size).toBe(0);
   });
 });
 
@@ -76,5 +87,11 @@ describe('subclassSpellUids (generated lookup)', () => {
   it('needs both names to match', () => {
     expect(subclassSpellUids(lookup, 'Rogue', 'Eldritch Knight').size).toBe(0);
     expect(subclassSpellUids(lookup, 'Wizard', 'Eldritch Knight').size).toBe(0);
+  });
+
+  it("reads a Workshop copy's subclass caster under its original's name too", () => {
+    expect(subclassSpellUids(lookup, ['Warden', 'Fighter'], 'Eldritch Knight')).toEqual(
+      new Set(['shield|phb', 'shield|xphb']),
+    );
   });
 });

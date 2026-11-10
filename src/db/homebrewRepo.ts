@@ -255,9 +255,13 @@ const eq = (a: unknown, b: unknown) =>
   typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
 
 /**
- * Entries that belong to another and are saved and deleted with it: a
- * subclass's own features, found as the sheet finds them (by class, short
- * name, the subclass's book and level). A class editor adds `class` here.
+ * Entries that belong to another and are saved and deleted with it, found as
+ * the sheet finds them: a subclass's own features (by class, short name, the
+ * subclass's book and level) and a class's (by class name, its book and level).
+ *
+ * A class does not own its subclasses. Each is an entry of its own with its own
+ * editor, saves and features, and a class saved without them must not drop or
+ * rewrite them; one renamed takes the file's subclasses of it along (`carry`).
  */
 const OWNED: Readonly<
   Record<
@@ -269,6 +273,8 @@ const OWNED: Readonly<
       owns: (owner: Row, e: Row) => boolean;
       /** What tells two owned entries apart. */
       key: (e: Row) => string;
+      /** What follows the owner when it is saved under another name or book. */
+      carry?: (json: Row, before: Row, after: Row) => void;
     }
   >
 > = {
@@ -282,7 +288,51 @@ const OWNED: Readonly<
       eq(f.subclassSource, s.source),
     key: (f) => `${f.name}|${f.className}|${f.subclassShortName}|${f.subclassSource}|${f.level}`,
   },
+  class: {
+    type: 'classFeature',
+    peer: (a, b) => eq(a.name, b.name) && eq(a.source, b.source),
+    owns: (c, f) => eq(f.className, c.name) && eq(f.classSource, c.source),
+    key: (f) => `${f.name}|${f.className}|${f.classSource}|${f.level}`,
+    carry: carrySubclasses,
+  },
 };
+
+/**
+ * The file's subclasses of a class saved under another name or book, and their
+ * features, moved to it: the sheet finds them by the class's name and book.
+ */
+function carrySubclasses(json: Row, before: Row, after: Row): void {
+  if (eq(before.name, after.name) && eq(before.source, after.source)) return;
+  const of = (e: Row) => eq(e.className, before.name) && eq(e.classSource, before.source);
+  const moved = (e: unknown) =>
+    isRecord(e) && of(e) ? { ...e, className: after.name, classSource: after.source } : e;
+  // A subclass lists its features as `Name|Class|ClassSource|Short|Source|Level`.
+  const ref = (r: unknown) => {
+    if (typeof r !== 'string') return r;
+    const parts = r.split('|');
+    if (!eq(parts[1], before.name) || !eq(parts[2] || 'PHB', before.source)) return r;
+    parts[1] = String(after.name);
+    parts[2] = String(after.source);
+    return parts.join('|');
+  };
+  const refs = (list: unknown) =>
+    Array.isArray(list)
+      ? list.map((x) =>
+          isRecord(x) && typeof x.subclassFeature === 'string'
+            ? { ...x, subclassFeature: ref(x.subclassFeature) }
+            : ref(x),
+        )
+      : list;
+  if (Array.isArray(json.subclass)) {
+    json.subclass = json.subclass.map((s) => {
+      if (!isRecord(s) || !of(s)) return s;
+      const out = moved(s) as Row;
+      if (s.subclassFeatures !== undefined) out.subclassFeatures = refs(s.subclassFeatures);
+      return out;
+    });
+  }
+  if (Array.isArray(json.subclassFeature)) json.subclassFeature = json.subclassFeature.map(moved);
+}
 
 /** True when entries of this type own others, which save and go with them. */
 export const ownsEntries = (type: string): boolean => OWNED[type] !== undefined;
@@ -636,6 +686,7 @@ export const homebrewRepo = {
           keys.add(k);
         }
         json[own.type] = [...kept, ...opts.owned];
+        if (at !== -1 && isRecord(list[at])) own.carry?.(json, list[at] as Row, entry);
       }
       if (at === -1) list.push(entry);
       else list[at] = entry;

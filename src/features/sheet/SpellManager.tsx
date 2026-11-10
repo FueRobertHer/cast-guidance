@@ -15,6 +15,7 @@ import {
   type SpellClassLookup,
   subclassSpellUids,
 } from '@/data5e/spellLookup';
+import { basedOn } from '@/engine/effects/mechanics';
 import {
   type CharacterDoc,
   type DerivedSheet,
@@ -155,12 +156,20 @@ function ClassSpells({
 
   const subclassOf = block.fromSubclass?.className;
   const subclassShort = block.fromSubclass?.shortName;
+  // A Workshop copy of a class reads its original's lists too: a Warden made
+  // from the Fighter casts from the Eldritch Knight's list, as the Fighter does.
+  const entryRef = doc.classes.find((c) => refUid(c.ref) === block.classUid)?.ref;
+  const copied =
+    entryRef !== undefined
+      ? basedOn(registry?.get('class', entryRef.name, entryRef.source))?.name
+      : undefined;
   const classUids = useMemo(() => {
     if (lookup === null) return null;
+    const also = (name: string) => (copied !== undefined ? [name, copied] : name);
     return subclassOf !== undefined && subclassShort !== undefined
-      ? subclassSpellUids(lookup, subclassOf, subclassShort)
-      : classSpellUids(lookup, block.className);
-  }, [lookup, block.className, subclassOf, subclassShort]);
+      ? subclassSpellUids(lookup, also(subclassOf), subclassShort)
+      : classSpellUids(lookup, also(block.className));
+  }, [lookup, block.className, subclassOf, subclassShort, copied]);
 
   // The spell levels this class can learn at its own level. Higher ones wait
   // behind an offer, as hidden books do: allowed, but a choice the player makes.
@@ -178,12 +187,19 @@ function ClassSpells({
   };
 
   // Homebrew spells carry classes.fromClassList inline — union them in.
+  // A subclass caster's block is named for the subclass, so only a class's own
+  // block reads the original's name.
   const homebrewUids = useMemo(
     () =>
       registry !== null
-        ? classSpellUidsFromEntities(registry.byType('spell'), block.className)
+        ? classSpellUidsFromEntities(
+            registry.byType('spell'),
+            copied !== undefined && subclassOf === undefined
+              ? [block.className, copied]
+              : block.className,
+          )
         : new Set<string>(),
-    [registry, block.className],
+    [registry, block.className, copied, subclassOf],
   );
 
   const state = doc.spellcasting[block.classUid] ?? { known: [], prepared: [] };

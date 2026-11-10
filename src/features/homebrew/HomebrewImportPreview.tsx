@@ -13,15 +13,18 @@
 import { type ReactNode, useState } from 'react';
 import { type ConversionReport, convertedTotal, type EntryNote, notesWith } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
+import { packGuidance, packName, packRefusals, sharedFile, withPackLocal } from '@/data5e/rulePack';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { characterRepo } from '@/db/characterRepo';
 import type { HomebrewFileRow } from '@/db/db';
 import { sameBookCopy } from '@/db/homebrewBooks';
 import { homebrewRepo } from '@/db/homebrewRepo';
+import type { PackAppliesTo } from '@/engine/castGuidance';
 import { jsonByteSize } from '@/lib/byteSize';
 import { QUOTA_GUIDANCE, storageErrorText } from '@/lib/storageErrors';
 import { freeStorage } from '@/lib/storageRoom';
 import { notifyFailure } from '@/stores/notices';
+import { useAppTableRules } from '@/stores/tableRules';
 import {
   countsText,
   formatBytes,
@@ -43,6 +46,13 @@ import {
   WINNER_POLICY,
 } from './importPreview';
 import { loadOfficialIndex } from './loadOfficialIndex';
+import {
+  ApplyTo,
+  appliesToAnyone,
+  clashLines,
+  PACK_SAFE_LINE,
+  PackDetails,
+} from './PackReviewSheet';
 
 /**
  * Everything a preview reads, for a prepared file: the files here, the
@@ -160,14 +170,35 @@ async function commitBooks(
 export async function commitHomebrewImport(
   prepared: PreparedImport,
   chosen?: ReadonlySet<string>,
+  applyTo?: PackAppliesTo,
 ): Promise<{ ok: boolean; message: string }> {
   if (prepared.books !== undefined)
     return commitBooks({ ...prepared, books: prepared.books }, chosen);
+  const pack = packGuidance(prepared.row.json);
+  const refusals = pack === undefined ? [] : packRefusals(pack);
+  if (refusals.length > 0) {
+    return {
+      ok: false,
+      message: `"${packName(prepared.row.json)}" was not added: ${refusals.join('; ')}.`,
+    };
+  }
+  // A pack is stored with who it applies to here, bound to its id; whatever
+  // Apply to it arrived with was written for another device, and is dropped.
+  const toStore =
+    pack === undefined
+      ? prepared.row
+      : {
+          ...prepared.row,
+          json: withPackLocal(sharedFile(prepared.row.json as Record<string, unknown>), {
+            file: prepared.row.id,
+            appliesTo: applyTo ?? { characters: [] },
+          }),
+        };
   let committed: Awaited<ReturnType<typeof homebrewRepo.commit>>;
   try {
-    const noRoom = await roomProblem([prepared.row]);
+    const noRoom = await roomProblem([toStore]);
     if (noRoom !== undefined) return { ok: false, message: `Import failed: ${noRoom}` };
-    committed = await homebrewRepo.commit(prepared.row);
+    committed = await homebrewRepo.commit(toStore);
   } catch (err) {
     return { ok: false, message: `Import failed: ${storageErrorText(err)}` };
   }
@@ -186,6 +217,15 @@ export async function commitHomebrewImport(
     return {
       ok: true,
       message: `"${row.fileName}" was already on this device, so nothing was added.`,
+    };
+  }
+  if (pack !== undefined) {
+    const name = packName(row.json);
+    return {
+      ok: true,
+      message: appliesToAnyone(applyTo ?? { characters: [] })
+        ? `Added "${name}" and turned it on.`
+        : `Added "${name}". It applies to nobody until you choose who, from Review.`,
     };
   }
   return { ok: true, message: `Imported "${row.fileName}" (${countsText(row.counts)})` };
@@ -406,8 +446,11 @@ export default function HomebrewImportPreview({
   preview: HomebrewPreview;
   /** Set for a file converted from another app: what carried over. */
   conversion?: ConversionReport;
-  /** Import pressed. For a file stored a book at a time, with the books ticked. */
-  onImport: (chosen?: ReadonlySet<string>) => void;
+  /**
+   * Import pressed. For a file stored a book at a time, with the books ticked;
+   * for a rule pack, with who it applies to.
+   */
+  onImport: (chosen?: ReadonlySet<string>, applyTo?: PackAppliesTo) => void;
   onCancel: () => void;
   /** For an exact duplicate: close and leave the file already here as it is. */
   onKeepExisting: () => void;
@@ -419,6 +462,8 @@ export default function HomebrewImportPreview({
   const [chosen, setChosen] = useState<ReadonlySet<string>>(
     () => new Set(books?.map((b) => b.id) ?? []),
   );
+  const pack = dup === undefined ? p.pack : undefined;
+  const [applyTo, setApplyTo] = useState<PackAppliesTo>({ characters: [], appDefault: true });
   // What Import would store: ticked books not already here.
   const storing = books?.filter((b) => chosen.has(b.id) && b.status !== 'same').length;
   const picking = books !== undefined && books.length > 1;
@@ -432,24 +477,80 @@ export default function HomebrewImportPreview({
           disabled: storing === 0,
         };
 
+  const refused = pack !== undefined && pack.refusals.length > 0;
+  const actions =
+    dup !== undefined
+      ? [{ label: 'Keep the existing file', onClick: onKeepExisting, primary: true }]
+      : pack === undefined
+        ? [{ label: 'Cancel', onClick: onCancel }, importAction]
+        : refused
+          ? [{ label: 'Cancel', onClick: onCancel, primary: true }]
+          : [
+              { label: 'Cancel', onClick: onCancel },
+              {
+                label: 'Add and turn on',
+                onClick: () => onImport(undefined, applyTo),
+                primary: true,
+                disabled: !appliesToAnyone(applyTo),
+              },
+            ];
+  const packIn = p.packIn;
+  const appRules = useAppTableRules();
+  const clashes =
+    packIn === undefined || refused
+      ? []
+      : clashLines(
+          [...(p.packsOn ?? []), { ...packIn, appliesTo: applyTo }],
+          packIn.id,
+          true,
+          appRules,
+        );
+
   return (
     <ImportPreviewDialog
-      title={dup !== undefined ? `"${p.fileName}" is already here` : `Import "${p.fileName}"?`}
+      title={
+        dup !== undefined
+          ? `"${p.fileName}" is already here`
+          : pack !== undefined
+            ? `Add ${pack.name}?`
+            : `Import "${p.fileName}"?`
+      }
       description={
         dup !== undefined
           ? 'Nothing new would be added.'
-          : 'Nothing is added until you choose Import.'
+          : pack !== undefined
+            ? PACK_SAFE_LINE
+            : 'Nothing is added until you choose Import.'
       }
       onDismiss={dup !== undefined ? onKeepExisting : onCancel}
-      actions={
-        dup !== undefined
-          ? [{ label: 'Keep the existing file', onClick: onKeepExisting, primary: true }]
-          : [{ label: 'Cancel', onClick: onCancel }, importAction]
-      }
+      actions={actions}
     >
+      {pack !== undefined && (
+        <>
+          {clashes.length > 0 && (
+            <PreviewList>
+              {clashes.map((c) => (
+                <StatusItem key={c} tone="warn">
+                  {c}
+                </StatusItem>
+              ))}
+            </PreviewList>
+          )}
+          <PackDetails review={pack} />
+          {!refused && <ApplyTo value={applyTo} onChange={setApplyTo} />}
+          {!refused && !appliesToAnyone(applyTo) && (
+            <p className="text-ink-muted">Choose a character, or Every character, to add it.</p>
+          )}
+        </>
+      )}
       <PreviewFacts
         facts={[
-          ['Contents', countsText(p.counts)],
+          [
+            'Contents',
+            pack !== undefined && Object.keys(p.counts).length === 0
+              ? pack.holds
+              : countsText(p.counts),
+          ],
           ['Size', sizeText(p.bytes, p.limitBytes)],
           picking
             ? ['Books', `${books.length}, each kept on its own`]
@@ -630,9 +731,12 @@ export default function HomebrewImportPreview({
         </PreviewSection>
       )}
 
-      <PreviewSection heading="Which version wins">
-        <p className="text-ink-muted">{WINNER_POLICY}</p>
-      </PreviewSection>
+      {/* A pack of rules alone has no entries to win or lose. */}
+      {(pack === undefined || Object.keys(p.counts).length > 0) && (
+        <PreviewSection heading="Which version wins">
+          <p className="text-ink-muted">{WINNER_POLICY}</p>
+        </PreviewSection>
+      )}
     </ImportPreviewDialog>
   );
 }

@@ -17,10 +17,25 @@
  */
 import { type Entity, uidOf } from '@/data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '@/data5e/normalize';
+import { packGuidance, packName, packReach, packRefusals, packsInOrder } from '@/data5e/rulePack';
 import type { HomebrewFileRow } from '@/db/db';
 import { bookKey, oldWholeImports, sameBookCopy } from '@/db/homebrewBooks';
 import { compareMergeOrder, type MergeOrderKey } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
+import {
+  CAST_GUIDANCE_LIMITS,
+  clip,
+  guidanceVersion,
+  own,
+  PACK_PARTS,
+  type PackAppliesTo,
+  readTableRules,
+  TABLE_RULES,
+  type TableRuleChoices,
+  type TableRuleId,
+} from '@/engine/castGuidance';
+import { readPack } from '@/engine/effects/mechanics';
+import { readPackMoments } from '@/engine/moments';
 import type { CharacterDoc } from '@/engine/types';
 import {
   collectCharacterRefs,
@@ -241,6 +256,14 @@ export interface HomebrewPreview {
   affectedCharacters: { id: string; name: string }[];
   officialCoverage: OfficialCoverage;
   notes: string[];
+  /**
+   * For a rule pack: what it holds, and the packs here that are on, in the
+   * player's order, for the review to say what it would clash with.
+   */
+  pack?: PackReview;
+  packsOn?: PackInPlay[];
+  /** The pack coming in, as the clash check reads it once Apply to is chosen. */
+  packIn?: PackInPlay;
   /** For a file stored a book at a time: each book, in the file's order. */
   books?: BookChoice[];
   /**
@@ -442,6 +465,7 @@ const uidKey = (_: EntityType, e: Entity) => (named(e) === undefined ? undefined
 
 export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPreview {
   const { row, existing, official } = input;
+  const pack = packReview(row.json);
   const ownSources = new Set(row.sourceIds.map(lower));
   const books = input.books === undefined ? undefined : bookChoices(input.books, existing);
   const oldImports = books === undefined ? [] : oldWholeImports(row.fileName, existing);
@@ -688,6 +712,13 @@ export function previewHomebrewImport(input: HomebrewPreviewInput): HomebrewPrev
     affectedCharacters,
     officialCoverage: coverage,
     notes,
+    ...(pack === undefined
+      ? {}
+      : {
+          pack,
+          packsOn: packsInPlay(existing.filter((f) => f.enabled && f.id !== row.id)),
+          packIn: { id: row.id, name: pack.name, guidance: packGuidance(row.json) ?? {} },
+        }),
     ...(books === undefined ? {} : { books: books.choices }),
     ...(oldImports.length === 0
       ? {}
@@ -708,4 +739,430 @@ export function describeCollision(c: EntityCollision): string {
   return c.against === 'official'
     ? `${what} is also official content. Official wins, so a character that picks it gets the official version.`
     : `${what} is also in "${c.against.fileName}", which was imported first, so a character that picks it gets that version.`;
+}
+
+// ---------------------------------------------------------------------------
+// Rule packs (H8): what a pack holds, before it goes on and from the Homebrew page
+// ---------------------------------------------------------------------------
+
+/** Each table rule and its values, worded as the Rules board words them. */
+export const RULE_WORDS: {
+  readonly [K in TableRuleId]: {
+    name: string;
+    values: Readonly<Record<(typeof TABLE_RULES)[K][number], string>>;
+  };
+} = {
+  critDamage: {
+    name: 'Critical hits',
+    values: {
+      doubleDice: 'Double the dice',
+      maxPlusRoll: 'Max the dice, then roll them',
+      doubleTotal: 'Double the total',
+    },
+  },
+  restLength: {
+    name: 'Rest length',
+    values: {
+      standard: 'Short 1 hour, long 8 hours',
+      gritty: 'Short 8 hours, long 7 days',
+      heroic: 'Short 5 minutes, long 1 hour',
+    },
+  },
+  hpEachLevel: {
+    name: 'HP each level',
+    values: {
+      average: 'Always the fixed amount',
+      rolled: 'Always roll',
+      max: 'Always the maximum',
+      rolledAtLeastAverage: 'Roll, never under the fixed amount',
+    },
+  },
+  hpOnLongRest: {
+    name: 'HP on a long rest',
+    values: {
+      all: 'All of it',
+      half: 'Half your maximum',
+      hitDice: 'None, spend hit dice to heal',
+    },
+  },
+  flanking: {
+    name: 'Flanking',
+    values: { off: 'Off', advantage: 'Advantage', plusTwo: '+2 to hit' },
+  },
+  oneUseDice: {
+    name: 'Guidance and Bardic Inspiration',
+    values: { after: 'Offered after the roll', before: 'Named before the roll' },
+  },
+};
+
+const ruleName = (id: TableRuleId) => RULE_WORDS[id].name;
+const ruleValue = (id: TableRuleId, value: string) =>
+  (RULE_WORDS[id].values as Record<string, string>)[value] ?? value;
+
+/** One line of a review section: what it is about, then what it does. */
+export interface PackReviewRow {
+  key: string;
+  value: string;
+}
+
+/** What a pack holds, worded for the review sheet. */
+export interface PackReview {
+  name: string;
+  /** The limits it breaks. While any, it cannot be added and reaches nobody. */
+  refusals: string[];
+  rules: PackReviewRow[];
+  changes: PackReviewRow[];
+  moments: PackReviewRow[];
+  /** What the app cannot read in it. It still goes on; these parts do nothing. */
+  problems: string[];
+  /** "3 rules, 2 changed entries, 1 moment": the Homebrew page's line for it. */
+  holds: string;
+}
+
+const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
+const text = (v: unknown) =>
+  typeof v === 'string' ? v.trim().slice(0, CAST_GUIDANCE_LIMITS.textLength) : '';
+const listOf = (raw: Record<string, unknown>, key: string) => {
+  const v = own(raw, key);
+  return Array.isArray(v) ? v : [];
+};
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** A patch's target as the player reads it: `Rage|Barbarian` is "Rage (Barbarian)". */
+export function targetWords(target: string): string {
+  const [name = '', ...rest] = target.split('|').map((part) => part.trim());
+  const more = rest.filter((r) => r !== '');
+  return more.length === 0 ? name : `${name} (${more.join(', ')})`;
+}
+
+const MOMENT_AT: Readonly<Record<string, (m: Record<string, unknown>) => string>> = {
+  zeroHp: () => 'At 0 HP',
+  natural20: () => 'On a natural 20',
+  natural1: () => 'On a natural 1',
+  castAtLevel: (m) => {
+    const level = own(m, 'level');
+    return typeof level === 'number' ? `Casting at level ${level} or higher` : 'Casting a spell';
+  },
+  shortRest: () => 'After a short rest',
+  longRest: () => 'After a long rest',
+  turnStart: () => 'At the start of your turn',
+  conditionAdded: (m) => {
+    const c = text(own(m, 'condition'));
+    return c === '' ? 'On gaining a condition' : `On gaining ${capital(c)}`;
+  },
+  conditionEnded: (m) => {
+    const c = text(own(m, 'condition'));
+    return c === '' ? 'When a condition ends' : `When ${capital(c)} ends`;
+  },
+  levelUp: () => 'At a level up',
+  attack: () => 'On attacks',
+  save: () => 'On saving throws',
+  check: () => 'On ability checks',
+};
+
+function amountWords(a: unknown): string {
+  if (typeof a === 'number') return String(a);
+  if (isRecord(a) && typeof own(a, 'f') === 'string') return text(own(a, 'f'));
+  if (isRecord(a) && isRecord(own(a, 'byLevel'))) return 'an amount by level';
+  return 'an amount';
+}
+
+function outcomeWords(o: unknown): string | undefined {
+  if (!isRecord(o)) return undefined;
+  switch (own(o, 'kind')) {
+    case 'addCondition': {
+      const condition = capital(text(own(o, 'condition')));
+      if (condition.toLowerCase() !== 'exhaustion') return `Gain ${condition}`;
+      const level = own(o, 'level');
+      const levels = typeof level === 'number' && level > 1 ? level : 1;
+      return levels === 1 ? 'Gain a level of Exhaustion' : `Gain ${levels} levels of Exhaustion`;
+    }
+    case 'addEffect':
+      return `${text(own(o, 'name')) || 'An effect'} takes effect`;
+    case 'regain':
+      return `Regain ${amountWords(own(o, 'amount'))} ${text(own(o, 'resource'))}`.trim();
+    case 'spend':
+      return `Spend ${amountWords(own(o, 'amount'))} ${text(own(o, 'resource'))}`.trim();
+    case 'tempHp':
+      return `Gain ${amountWords(own(o, 'amount'))} temporary HP`;
+    case 'cue':
+      return `Says "${text(own(o, 'text'))}"`;
+    case 'offer': {
+      const dice = text(own(o, 'dice'));
+      return `Offers ${text(own(o, 'label'))}${dice === '' ? '' : ` (${dice})`}`;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function changeWords(p: Record<string, unknown>): string {
+  const replace = own(p, 'effects');
+  const add = own(p, 'add');
+  const parts: string[] = [];
+  if (Array.isArray(replace)) {
+    parts.push(
+      replace.length === 0
+        ? 'Does nothing now'
+        : `Works by ${plural(replace.length, 'effect')} in place of its own`,
+    );
+  }
+  if (Array.isArray(add) && add.length > 0) {
+    parts.push(
+      parts.length === 0 ? `Gains ${plural(add.length, 'effect')}` : `gains ${add.length} more`,
+    );
+  }
+  return parts.length === 0 ? 'Changes nothing' : parts.join(', and ');
+}
+
+/** What the pack in `json` holds, or undefined when the file is not a rule pack. */
+export function packReview(json: unknown): PackReview | undefined {
+  const guidance = packGuidance(json);
+  if (guidance === undefined) return undefined;
+  const name = packName(json);
+  const problems = new Set<string>();
+  const version = guidanceVersion(guidance);
+  if ('problem' in version) problems.add(version.problem);
+  for (const key of Object.keys(guidance)) {
+    if (!(PACK_PARTS as readonly string[]).includes(key)) {
+      problems.add(`"${clip(key)}" is not part of a rule pack, so it is not read`);
+    }
+  }
+  const table = readTableRules(own(guidance, 'tableRules'));
+  for (const p of table.problems) problems.add(p);
+  for (const p of readPack({ name, castGuidance: guidance }).problems) problems.add(p);
+  for (const p of readPackMoments(guidance, name).problems) problems.add(p);
+
+  const rules = (Object.keys(table.rules) as TableRuleId[]).map((id) => ({
+    key: ruleName(id),
+    value: ruleValue(id, table.rules[id] as string),
+  }));
+  const changes = listOf(guidance, 'patches')
+    .filter(isRecord)
+    .filter((p) => text(own(p, 'target')) !== '')
+    .map((p) => ({ key: targetWords(text(own(p, 'target'))), value: changeWords(p) }));
+  const moments: PackReviewRow[] = [];
+  for (const m of listOf(guidance, 'moments')) {
+    if (!isRecord(m)) continue;
+    const at = Object.hasOwn(MOMENT_AT, text(own(m, 'at')))
+      ? MOMENT_AT[text(own(m, 'at'))]
+      : undefined;
+    const does = listOf(m, 'do')
+      .map(outcomeWords)
+      .filter((w): w is string => w !== undefined);
+    if (at !== undefined && does.length > 0) {
+      moments.push({ key: at(m), value: does.join(', then ') });
+    }
+  }
+  let cues = 0;
+  for (const c of listOf(guidance, 'cues')) {
+    if (!isRecord(c)) continue;
+    const at = Object.hasOwn(MOMENT_AT, text(own(c, 'at')))
+      ? MOMENT_AT[text(own(c, 'at'))]
+      : undefined;
+    const said = text(own(c, 'text'));
+    if (at === undefined || said === '') continue;
+    cues += 1;
+    moments.push({ key: at(c), value: `Says "${said}"` });
+  }
+  const holds = [
+    rules.length > 0 ? plural(rules.length, 'rule') : '',
+    changes.length > 0 ? plural(changes.length, 'changed entry', 'changed entries') : '',
+    moments.length - cues > 0 ? plural(moments.length - cues, 'moment') : '',
+    cues > 0 ? plural(cues, 'cue') : '',
+  ].filter((s) => s !== '');
+  return {
+    name,
+    refusals: packRefusals(guidance),
+    rules,
+    changes,
+    moments,
+    problems: [...problems],
+    holds: holds.length === 0 ? 'Nothing the app reads yet' : holds.join(', '),
+  };
+}
+
+/** A pack as the clash check sees it: in the player's order, with who it reaches. */
+export interface PackInPlay {
+  id: string;
+  name: string;
+  guidance: Record<string, unknown>;
+  appliesTo?: PackAppliesTo;
+}
+
+/** Two or more packs setting the same thing for the same characters. */
+export interface PackConflict {
+  /** "rest length", or the entry two packs replace. */
+  what: string;
+  /** The packs that set it, in the player's order, by name and by id. */
+  packs: string[];
+  ids: string[];
+  winner: string;
+  winnerId: string;
+  /** `order`: later in the player's order; `chosen`: applied to the characters, over every character. */
+  why: 'order' | 'chosen';
+}
+
+const reaches = (to: PackAppliesTo | undefined): to is PackAppliesTo =>
+  to !== undefined && (to.appDefault === true || to.characters.length > 0);
+
+/** Every character who is not one a pack is applied to by name. */
+const OTHERS = Symbol('others');
+type Who = string | typeof OTHERS;
+
+/** What a pack sets, read once per guidance object. */
+interface PackSets {
+  rules: Partial<TableRuleChoices>;
+  /** The targets it replaces, lowercased, as the engine keys them. */
+  replaces: Set<string>;
+  /** How each target is written, for the sentence. */
+  written: Map<string, string>;
+}
+const SETS = new WeakMap<Record<string, unknown>, PackSets>();
+
+function packSets(p: PackInPlay): PackSets {
+  const known = SETS.get(p.guidance);
+  if (known !== undefined) return known;
+  const replaces = new Set<string>();
+  // The engine's own reader: a list none of whose effects can be read replaces nothing.
+  for (const patch of readPack({ name: p.name, castGuidance: p.guidance }).patches) {
+    if (patch.replace !== undefined) replaces.add(patch.target);
+  }
+  const written = new Map<string, string>();
+  for (const patch of listOf(p.guidance, 'patches')) {
+    const target = isRecord(patch) ? own(patch, 'target') : undefined;
+    if (typeof target !== 'string') continue;
+    const key = target.trim().toLowerCase();
+    if (replaces.has(key) && !written.has(key)) written.set(key, target.trim());
+  }
+  const sets = { rules: readTableRules(own(p.guidance, 'tableRules')).rules, replaces, written };
+  SETS.set(p.guidance, sets);
+  return sets;
+}
+
+/**
+ * Where packs that are on disagree, and which wins, worked out character by
+ * character as the engine does (`engine/rules.ts` for table rules,
+ * `effects/mechanics.ts` for changes). For a table rule, a pack applied to the
+ * character wins over one applied to every character, and between two alike
+ * the later in the player's order; a rule chosen in Settings (`app`) is over
+ * every pack applied to every character, so those do not clash there. Of two
+ * replacing one entry, the later always. Packs that agree, that reach no
+ * character in common, or whose version the app cannot read are no clash.
+ * A character's own choice of a rule, which is over every pack, is not seen.
+ */
+export function packConflicts(
+  packs: readonly PackInPlay[],
+  app: Readonly<Partial<TableRuleChoices>> = {},
+): PackConflict[] {
+  const live = packs
+    .filter((p) => reaches(p.appliesTo) && !('problem' in guidanceVersion(p.guidance)))
+    .map((pack) => ({ pack, sets: packSets(pack), to: pack.appliesTo as PackAppliesTo }));
+  // Each character a pack names, then everyone else: who an every-character pack alone reaches.
+  const people: Who[] = [...new Set(live.flatMap((l) => l.to.characters)), OTHERS];
+  const named = (to: PackAppliesTo, who: Who) => who !== OTHERS && to.characters.includes(who);
+  const found = new Map<string, PackConflict>();
+  const say = (
+    what: string,
+    set: readonly PackInPlay[],
+    winner: PackInPlay,
+    why: PackConflict['why'],
+  ) => {
+    const key = JSON.stringify([what, set.map((p) => p.id), winner.id, why]);
+    if (found.has(key)) return;
+    found.set(key, {
+      what,
+      packs: set.map((p) => p.name),
+      ids: set.map((p) => p.id),
+      winner: winner.name,
+      winnerId: winner.id,
+      why,
+    });
+  };
+  for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+    for (const who of people) {
+      const setters = live.filter(
+        (l) => l.sets.rules[id] !== undefined && (l.to.appDefault === true || named(l.to, who)),
+      );
+      const mine = setters.filter((l) => named(l.to, who));
+      const defaults = app[id] === undefined ? setters.filter((l) => !named(l.to, who)) : [];
+      const counted = setters.filter((l) => mine.includes(l) || defaults.includes(l));
+      if (counted.length < 2 || new Set(counted.map((l) => l.sets.rules[id])).size === 1) continue;
+      const winner = mine[mine.length - 1] ?? defaults[defaults.length - 1];
+      if (winner === undefined) continue;
+      // Chosen only when every pack it overrules is applied to every character;
+      // one that also names the character it beats by order alone.
+      const value = winner.sets.rules[id];
+      const overruled = counted.filter((l) => l.sets.rules[id] !== value);
+      const why =
+        mine.includes(winner) && overruled.every((l) => defaults.includes(l)) ? 'chosen' : 'order';
+      say(
+        ruleName(id).toLowerCase(),
+        counted.map((l) => l.pack),
+        winner.pack,
+        why,
+      );
+    }
+  }
+  const targets = new Map<string, string>();
+  for (const l of live) {
+    for (const [key, target] of l.sets.written) if (!targets.has(key)) targets.set(key, target);
+  }
+  for (const [key, target] of targets) {
+    for (const who of people) {
+      const setters = live.filter(
+        (l) => l.sets.replaces.has(key) && (l.to.appDefault === true || named(l.to, who)),
+      );
+      const winner = setters[setters.length - 1];
+      if (setters.length >= 2 && winner !== undefined) {
+        say(
+          targetWords(target),
+          setters.map((l) => l.pack),
+          winner.pack,
+          'order',
+        );
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+const names = (all: readonly string[]) =>
+  all.length <= 2 ? all.join(' and ') : `${all.slice(0, -1).join(', ')} and ${all[all.length - 1]}`;
+
+/** A clash in a sentence, for the Homebrew page's banner. */
+export function describeConflict(c: PackConflict): string {
+  const why =
+    c.why === 'chosen'
+      ? 'it is applied to those characters, over every character'
+      : 'it comes later in your pack order';
+  const all = c.packs.length === 2 ? 'both' : 'all';
+  return `${names(c.packs)} ${all} set ${c.what}. ${c.winner} wins: ${why}.`;
+}
+
+/** A clash a pack being added would join, worded from its side. */
+export function describeIncomingConflict(c: PackConflict, incomingId: string): string {
+  const others = c.packs.filter((_, i) => c.ids[i] !== incomingId);
+  const incoming = c.packs[c.ids.indexOf(incomingId)] ?? 'This pack';
+  const win =
+    c.winnerId === incomingId
+      ? `${incoming} would win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it goes last in your pack order'}.`
+      : `${c.winner} would still win, as ${c.why === 'chosen' ? 'it is applied to those characters' : 'it comes later in your pack order'}.`;
+  return `Sets ${c.what}, which ${names(others)} also ${others.length === 1 ? 'sets' : 'set'}. ${win}`;
+}
+
+/** The packs among stored files, in the player's order, with who each reaches now. */
+export function packsInPlay(files: readonly HomebrewFile[]): PackInPlay[] {
+  return packsInOrder([...files].sort(compareMergeOrder).map((f) => [f.id, f.json] as const)).map(
+    (p) => {
+      const to = packReach(p);
+      return {
+        id: p.id,
+        name: p.name,
+        guidance: p.guidance,
+        ...(to === undefined ? {} : { appliesTo: to }),
+      };
+    },
+  );
 }

@@ -294,11 +294,11 @@ function readMoment(raw: unknown, from: string, problems: string[], where: strin
 
   const outcomes = own(raw, 'do');
   if (!Array.isArray(outcomes) || outcomes.length === 0) throw new Bad('"do" lists what happens');
-  if (outcomes.length > L.effectsPerEntry) {
-    problems.push(`${where}: only the first ${L.effectsPerEntry} of "do" count`);
+  if (outcomes.length > L.outcomesPerMoment) {
+    problems.push(`${where}: only the first ${L.outcomesPerMoment} of "do" count`);
   }
   const done: ReadOutcome[] = [];
-  outcomes.slice(0, L.effectsPerEntry).forEach((o, i) => {
+  outcomes.slice(0, L.outcomesPerMoment).forEach((o, i) => {
     const here = `${where}, outcome ${i + 1}`;
     try {
       done.push(readOutcome(o, problems, here));
@@ -376,10 +376,87 @@ export interface MomentSubject {
   classLevel?: number;
 }
 
+/** Applied to this character, or to every character (`appliesTo.appDefault`). */
 function appliesTo(entry: DataEntity, characterId: string): boolean {
   const to = own(entry, 'appliesTo');
-  const characters = isRecord(to) ? own(to, 'characters') : undefined;
+  if (!isRecord(to)) return false;
+  if (own(to, 'appDefault') === true) return true;
+  const characters = own(to, 'characters');
   return Array.isArray(characters) && characters.includes(characterId);
+}
+
+/** Where a pack's cue may stand that is no moment the app sees, in words. */
+const CUE_ELSEWHERE: Readonly<Record<string, string>> = {
+  levelUp: 'at a level up',
+  attack: 'on attacks',
+  save: 'on saving throws',
+  check: 'on ability checks',
+};
+
+/**
+ * A pack's cues (`StoredPackGuidance.cues`), read: one at a moment the app sees
+ * is that moment with a `cue` outcome, so it shows when the moment happens. One
+ * at a level up or on a kind of roll is a problem, since nothing shows it yet.
+ */
+function readCues(raw: unknown, from: string): { moments: ReadMoment[]; problems: string[] } {
+  const moments: ReadMoment[] = [];
+  const problems: string[] = [];
+  if (raw === undefined) return { moments, problems };
+  if (!Array.isArray(raw)) return { moments, problems: ['"cues" is not a list'] };
+  if (raw.length > L.cuesPerPack) problems.push(`only the first ${L.cuesPerPack} of "cues" count`);
+  raw.slice(0, L.cuesPerPack).forEach((c, i) => {
+    try {
+      if (!isRecord(c)) throw new Bad('is not a cue');
+      const at = own(c, 'at');
+      const elsewhere = typeof at === 'string' && Object.hasOwn(CUE_ELSEWHERE, at);
+      if (typeof at !== 'string' || (!MOMENT_IDS.has(at) && !elsewhere)) {
+        throw new Bad(`has no moment "${clip(at)}"`);
+      }
+      const tone = own(c, 'tone');
+      if (tone !== undefined && (typeof tone !== 'string' || !TONES.has(tone))) {
+        throw new Bad('"tone" is help, ward, warn or info');
+      }
+      const text = words(c, 'text', L.textLength);
+      if (elsewhere) throw new Bad(`the app does not show cues ${CUE_ELSEWHERE[at]} yet`);
+      moments.push({
+        at: at as MomentId,
+        do: [{ kind: 'cue', text, tone: (tone as CueTone | undefined) ?? 'info' }],
+        from,
+      });
+    } catch (err) {
+      if (!(err instanceof Bad)) throw err;
+      const at = isRecord(c) && typeof own(c, 'at') === 'string' ? ` (${clip(own(c, 'at'))})` : '';
+      problems.push(`cue ${i + 1}${at}: ${err.message}`);
+    }
+  });
+  return { moments, problems };
+}
+
+/** Read once per stored pack `castGuidance` and name, as `momentsIn` is. */
+const PACK_READ = new WeakMap<object, Map<string, Read>>();
+
+/**
+ * A rule pack's moments and its cues at moments, read once per stored object
+ * and name: what reaches a character it is applied to, and what does not count.
+ * A version the app cannot read counts nothing; the patch reader says so.
+ */
+export function readPackMoments(raw: unknown, from: string): CharacterMoments {
+  if (!isRecord(raw)) return { moments: [], problems: [] };
+  const byName = PACK_READ.get(raw) ?? new Map<string, Read>();
+  PACK_READ.set(raw, byName);
+  const known = byName.get(from);
+  if (known !== undefined) return known;
+  const listed = momentsIn(raw, from);
+  const cues =
+    'problem' in guidanceVersion(raw)
+      ? { moments: [], problems: [] }
+      : readCues(own(raw, 'cues'), from);
+  const read: Read = {
+    moments: [...listed.moments, ...cues.moments],
+    problems: [...listed.problems, ...cues.problems],
+  };
+  byName.set(from, read);
+  return read;
 }
 
 /** Every moment a character's entries and the packs applied to them hold, and what did not count. */
@@ -390,8 +467,8 @@ export interface CharacterMoments {
 
 /**
  * The moments in force for one character: each entry's own, then each rule
- * pack applied to them, in the player's order. A pack with no `appliesTo`
- * reaches nobody.
+ * pack applied to them or to every character, in the player's order, with its
+ * cues at moments. A pack with no `appliesTo` reaches nobody.
  */
 export function collectMoments(
   subjects: Iterable<MomentSubject>,
@@ -412,7 +489,7 @@ export function collectMoments(
     const named = own(pack, 'name');
     const name =
       typeof named === 'string' && named.trim() !== '' ? clip(named.trim()) : 'A rule pack';
-    const read = momentsIn(own(pack, 'castGuidance'), name);
+    const read = readPackMoments(own(pack, 'castGuidance'), name);
     for (const p of read.problems) problems.push(`${name}: ${p}`);
     moments.push(...read.moments);
   }

@@ -3,6 +3,9 @@
  * with `_copy` resolved and `_versions` expanded. No browser/DB imports, so
  * the data-audit script exercises exactly the code the app runs.
  */
+
+// Relative, not `@/`: the data-audit script runs this file under plain Bun.
+import { RULE_PACK_TYPE } from '../engine/castGuidance';
 import {
   type CopyModWarning,
   type CopyRef,
@@ -12,6 +15,7 @@ import {
   uidOf,
   withReplaceBudget,
 } from './copyMod';
+import { rulePackEntries } from './rulePack';
 
 /**
  * The list and the union are one declaration, so a type added to one cannot go
@@ -90,6 +94,12 @@ const COUNTED_TYPES = new Set<EntityType>([
 export class EntityRegistry {
   private readonly types = new Map<EntityType, Entity[]>();
   private readonly index = new Map<EntityType, Map<string, Entity>>();
+  /**
+   * The rule packs among the merged homebrew, in the player's order. A list of
+   * their own rather than an `ENTITY_TYPES` entry, so the Library, search and
+   * the audits never list a pack as content.
+   */
+  private packs: readonly Entity[] = [];
   readonly warnings: CopyModWarning[] = [];
   /**
    * The official books a row marks as 2024 rules (see `booksMarkedOne`). Merging
@@ -128,8 +138,14 @@ export class EntityRegistry {
     this.index.set(type, idx);
   }
 
-  byType(type: EntityType): readonly Entity[] {
+  byType(type: EntityType | typeof RULE_PACK_TYPE): readonly Entity[] {
+    if (type === RULE_PACK_TYPE) return this.packs;
     return this.types.get(type) ?? [];
+  }
+
+  /** Replaces the rule packs `byType(RULE_PACK_TYPE)` lists; see `rulePackEntries`. */
+  setRulePacks(packs: readonly Entity[]): void {
+    this.packs = packs;
   }
 
   get(type: EntityType, name: string, source?: string): Entity | undefined {
@@ -395,6 +411,7 @@ export function mergeHomebrew(
   // Every replaceTxt in every file draws on one budget, so the merge as a
   // whole is bounded rather than each operation on its own.
   withReplaceBudget(() => mergeHomebrewFiles(reg, homebrew));
+  reg.setRulePacks(rulePackEntries(homebrew) as unknown as Entity[]);
 }
 
 /**

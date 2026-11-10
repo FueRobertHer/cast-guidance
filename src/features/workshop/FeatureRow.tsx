@@ -5,12 +5,12 @@
  * what it does on the sheet) while it is changed or new.
  *
  * Used for a subclass's features, an entry's named parts (`PartList`: a
- * species' traits, a feat's benefits) and, later, a class's features. The row
+ * species' traits, a feat's benefits) and a class's features. The row
  * holds no entry state: its owner says what it is and gets each change.
  */
 import { ChevronDown, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { isRecord } from '@/engine/castGuidance';
+import { isRecord, type StoredEffect } from '@/engine/castGuidance';
 import { Badge, type BadgeTone } from '@/ui/Badge';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { fieldClass } from '@/ui/TextField';
@@ -41,6 +41,7 @@ export function FeatureEditor({
   readOnly,
   withEffects,
   inherits,
+  resources,
   children,
 }: {
   value: Json;
@@ -51,6 +52,8 @@ export function FeatureEditor({
   withEffects: boolean;
   /** The original feature's name, whose mechanics a changed one keeps unless told not to. */
   inherits?: string;
+  /** Uses kept on the feature's class that its actions can spend (a class's pools). */
+  resources?: readonly StoredEffect[];
   /** Fields of its own kind, after the name (a new feature's level). */
   children?: ReactNode;
 }) {
@@ -83,6 +86,7 @@ export function FeatureEditor({
             effects={g.effects}
             readOnly={readOnly}
             inherits={inherits}
+            resources={resources}
             replace={g.replace === true}
             onReplace={(replace) => setGuidance({ replace: replace ? true : undefined })}
             onChange={(effects) =>
@@ -116,6 +120,8 @@ export interface FeatureRowProps {
   onDelete?: () => void;
   withEffects?: boolean;
   inherits?: string;
+  /** Uses kept on the feature's class that its actions can spend (a class's pools). */
+  resources?: readonly StoredEffect[];
   /**
    * The row folds to its name and badge, opening on a tap (a subclass's many
    * features); otherwise its controls always show (an entry's few parts).
@@ -139,6 +145,7 @@ export function FeatureRow({
   onDelete,
   withEffects = false,
   inherits,
+  resources,
   foldable = false,
   children,
 }: FeatureRowProps) {
@@ -209,6 +216,7 @@ export function FeatureRow({
           readOnly={readOnly}
           withEffects={withEffects}
           inherits={inherits}
+          resources={resources}
           onChange={onChange}
           onRename={onRename}
         >

@@ -10,6 +10,7 @@ import { subclassOptions } from '@/data5e/subclassOptions';
 import { subraceOptions } from '@/data5e/subraceOptions';
 import { roll } from '@/dice/roll';
 import type { TableRuleId } from '@/engine/castGuidance';
+import { basedOn } from '@/engine/effects/mechanics';
 import {
   meetsMulticlassRequirements,
   multiclassRequirementText,
@@ -276,7 +277,13 @@ export function Component() {
   const activeChoices = new Set(sheet.resolvedChoices.map((r) => r.prompt.id));
   const classes = filterByRulesVersion([...registry.byType('class')], doc.rulesVersion);
   const subclassesFor = (entry: ClassLevelEntry) =>
-    subclassOptions(registry.byType('subclass'), entry.ref, doc.rulesVersion, entry.subclass);
+    subclassOptions(
+      registry.byType('subclass'),
+      entry.ref,
+      doc.rulesVersion,
+      entry.subclass,
+      basedOn(registry.get('class', entry.ref.name, entry.ref.source)),
+    );
   const subclassBlurb = makeSubclassBlurb(registry);
   const subclassEntries = makeSubclassEntries(registry);
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);

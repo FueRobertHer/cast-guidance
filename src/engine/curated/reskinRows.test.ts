@@ -540,3 +540,82 @@ describe('the WoW cleric and fighter options', () => {
     expect(action(sheet, 'Mortal Strike')).toMatchObject({ economy: 'none', cost: die });
   });
 });
+
+describe('a class copied in the Workshop', () => {
+  // As the copy resolves: the original's fields, its own name and book, and
+  // `castGuidance.basedOn` naming the original. A copy of a reskin keeps the
+  // reskin's `reskinOf`, so both count.
+  const copyOf = (original: EntityRef, name: string): DataEntity => {
+    const cls = ctx.get('class', original.name, original.source);
+    if (cls === undefined) throw new Error(`no ${original.name} in the world`);
+    return {
+      ...cls,
+      name,
+      source: 'HB',
+      castGuidance: { v: 1, basedOn: `${original.name}|${original.source}` },
+    };
+  };
+  const copies = [
+    copyOf(FIGHTER, 'Warden'),
+    copyOf(DH, 'Felblade'),
+    copyOf(DEATH_KNIGHT, 'Deathlord'),
+    // A class of the player's own made from the Paladin, with no reskin.
+    {
+      name: 'Oathkeeper',
+      source: 'HB',
+      hd: { number: 1, faces: 10 },
+      castGuidance: { v: 1, basedOn: 'Paladin|XPHB' },
+      classFeatures: ['Channel Divinity|Paladin|XPHB|3'],
+    },
+  ];
+  const withCopies: EngineContext = {
+    get: (type, name, source) =>
+      (type === 'class'
+        ? copies.find(
+            (e) =>
+              String(e.name).toLowerCase() === name.toLowerCase() &&
+              (source === undefined || String(e.source).toLowerCase() === source.toLowerCase()),
+          )
+        : undefined) ?? ctx.get(type, name, source),
+    byType: (type) => [...ctx.byType(type), ...(type === 'class' ? copies : [])],
+  };
+  const deriveCopy = (doc: CharacterDoc) => deriveSheet(doc, withCopies);
+  const hb = (name: string) => ({ name, source: 'HB' });
+
+  it("reads a copy of the Fighter at the copy's level", () => {
+    for (const level of [1, 4, 10, 17]) {
+      const warden = deriveCopy(build(hb('Warden'), level));
+      expect(rows(warden), `level ${level}`).toEqual(rows(derive(build(FIGHTER, level))));
+    }
+    const warden = deriveCopy(build(hb('Warden'), 17));
+    expect(pool(warden, 'second-wind')?.max).toBe(4);
+    expect(action(warden, 'Second Wind')?.roll).toBe('1d10+17');
+  });
+
+  it('reads a copy of a reskin as both the class it copies and the one that class reskins', () => {
+    // Soul Fragments read the Demon Hunter's level: the copy's, through basedOn.
+    const felblade = deriveCopy(build(hb('Felblade'), 13, { subclass: wow('Demon Hunter') }));
+    expect(pool(felblade, 'soul-fragments')?.max).toBe(4);
+    // Channel Divinity reads the Paladin's: the copy's, through the Death Knight's reskinOf.
+    const deathlord = deriveCopy(
+      build(hb('Deathlord'), 11, { subclass: wow('Oath of the Ebon Blade') }),
+    );
+    expect(pool(deathlord, 'channel-divinity-paladin')).toMatchObject({
+      label: 'Channel Divinity (Deathlord)',
+      max: 3,
+    });
+  });
+
+  it('reads a class that reskins before one that copies, whichever was taken first', () => {
+    const sheet = deriveCopy(
+      build(DEATH_KNIGHT, 11, {
+        subclass: wow('Oath of the Ebon Blade'),
+        after: { cls: hb('Oathkeeper'), levels: 5 },
+      }),
+    );
+    expect(pool(sheet, 'channel-divinity-paladin')).toMatchObject({
+      label: 'Channel Divinity (Death Knight)',
+      max: 3,
+    });
+  });
+});

@@ -6,22 +6,29 @@ import {
   FileUp,
   Hammer,
   LinkIcon,
+  Package,
   Pencil,
+  Share2,
   Trash2,
 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { ConversionReport } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
+import { sharedFile } from '@/data5e/rulePack';
 import { ensureSourcesVisible } from '@/data5e/sourceFilter';
 import { bookKey, fileKey } from '@/db/homebrewBooks';
 import { type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
-import { downloadJson } from '@/lib/download';
+import type { PackAppliesTo } from '@/engine/castGuidance';
+import { downloadJson, jsonFilename } from '@/lib/download';
 import { IMPORT_LIMITS } from '@/lib/guards';
 import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
+import { useAppTableRules } from '@/stores/tableRules';
+import { Badge } from '@/ui/Badge';
+import { Banner, BannerAction } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { DecodeBoundary } from '@/ui/DecodeBoundary';
@@ -29,9 +36,16 @@ import { askConfirm, askText } from '@/ui/dialogs';
 import { fieldClass } from '@/ui/TextField';
 import type { PreparedImport } from './HomebrewImportPreview';
 import { REFUSED_HOST_REASON } from './homebrewUrl';
-import type { HomebrewPreview } from './importPreview';
+import { describeConflict, type HomebrewPreview, packConflicts } from './importPreview';
 import { ImportCancelledError, NothingToImportError, parseImportFile } from './importText';
 import { fetchHomebrewFromUrl, HomebrewUrlRefusedError } from './importUrl';
+import {
+  inPlay,
+  type PackHere,
+  PackOrderSheet,
+  PackReviewSheet,
+  usePacksHere,
+} from './PackReviewSheet';
 
 /** One file: a card of its own, as a character on the roster is (DS-001). */
 const FILE_CARD =
@@ -122,15 +136,56 @@ function toggleFile(r: HomebrewFileMeta): void {
     .catch((err: unknown) => notifyFailure(r.enabled ? 'Disable' : 'Enable', err));
 }
 
-/** Save a file's content. The list holds metadata only, so the content is read for this. */
+/**
+ * A file's content as it leaves this device. The list holds metadata only, so
+ * the content is read for this; a pack leaves without who it applies to here.
+ */
+async function contentToShare(r: HomebrewFileMeta): Promise<Record<string, unknown>> {
+  const { file, error } = await homebrewRepo.getSafe(r.id);
+  if (file === undefined) throw new Error(error?.message ?? 'the file is gone');
+  return sharedFile(file.json);
+}
+
+/** Save a file's content, as it leaves this device. */
 async function downloadFile(r: HomebrewFileMeta, name: string): Promise<void> {
   try {
-    const { file, error } = await homebrewRepo.getSafe(r.id);
-    if (file === undefined) throw new Error(error?.message ?? 'the file is gone');
-    downloadJson(name, file.json);
+    downloadJson(name, await contentToShare(r));
   } catch (err) {
     notifyFailure('Download', err);
   }
+}
+
+/** Whether this browser can hand a file to the system's share sheet. */
+function canShareFiles(): boolean {
+  try {
+    return (
+      typeof navigator.canShare === 'function' &&
+      navigator.canShare({ files: [new File(['{}'], 'a.json', { type: 'application/json' })] })
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Share a file through the system's share sheet, as Download would save it. */
+async function shareFile(r: HomebrewFileMeta, name: string): Promise<void> {
+  try {
+    const json = JSON.stringify(await contentToShare(r), null, 2);
+    const file = new File([json], jsonFilename(name), { type: 'application/json' });
+    await navigator.share({ files: [file], title: name });
+  } catch (err) {
+    // Closing the share sheet is not a failure.
+    if (err instanceof DOMException && err.name === 'AbortError') return;
+    notifyFailure('Share', err);
+  }
+}
+
+/** Turn a pack on or off from its review, as its switch on the list does. */
+function togglePack(p: PackHere): void {
+  void homebrewRepo
+    .setEnabled(p.id, !p.enabled)
+    .then(invalidateRegistry)
+    .catch((err: unknown) => notifyFailure(p.enabled ? 'Turn off' : 'Turn on', err));
 }
 
 /** One entry of the list: a file, or the books one file was stored as. */
@@ -303,6 +358,25 @@ export function Component() {
   const read = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
   const rows = read?.files;
   const readErrors = read?.errors ?? [];
+  const packs = usePacksHere(rows);
+  const packById = new Map((packs ?? []).map((p) => [p.id, p]));
+  const appRules = useAppTableRules();
+  // Two packs may share a name, so two clashes can read the same: each is said once.
+  const conflicts = useMemo(
+    () => [
+      ...new Set(
+        packConflicts(
+          (packs ?? []).filter((p) => p.enabled).map((p) => inPlay(p)),
+          appRules,
+        ).map(describeConflict),
+      ),
+    ],
+    [packs, appRules],
+  );
+  const [reviewing, setReviewing] = useState<string>();
+  const [ordering, setOrdering] = useState(false);
+  const [sharing] = useState(canShareFiles);
+  const reviewed = reviewing === undefined ? undefined : packById.get(reviewing);
   const fileInput = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
   // `failed` draws the line in `danger` (DS-001); the words say it either way.
@@ -495,11 +569,11 @@ export function Component() {
   };
 
   /** Import pressed in the preview: store the file (or the books) the preview described. */
-  const confirmImport = async (chosen?: ReadonlySet<string>) => {
+  const confirmImport = async (chosen?: ReadonlySet<string>, applyTo?: PackAppliesTo) => {
     const p = pending;
     if (p === undefined) return;
     setPending(undefined);
-    const result = await (await loadImportFlow()).commitHomebrewImport(p.prepared, chosen);
+    const result = await (await loadImportFlow()).commitHomebrewImport(p.prepared, chosen, applyTo);
     // The URL stays in the field until its file is stored, so a failure can
     // be retried without typing it again.
     if (result.ok && p.source === 'url') setUrl('');
@@ -554,8 +628,9 @@ export function Component() {
 
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col">
         <h1 className="font-display text-title-page">Homebrew</h1>
+        <p className="text-caption text-ink-muted">Books, your brew and rule packs</p>
       </header>
 
       <p className="text-body text-ink-muted">
@@ -685,7 +760,7 @@ export function Component() {
           <HomebrewImportPreview
             preview={pending.preview}
             {...(pending.conversion === undefined ? {} : { conversion: pending.conversion })}
-            onImport={(chosen) => void confirmImport(chosen)}
+            onImport={(chosen, applyTo) => void confirmImport(chosen, applyTo)}
             onCancel={cancelImport}
             onKeepExisting={keepExisting}
           />
@@ -698,6 +773,32 @@ export function Component() {
           read and {readErrors.length > 1 ? 'are' : 'is'} not in use. The rest of your homebrew is
           unaffected.
         </p>
+      )}
+
+      {conflicts.length > 0 && (
+        <Banner
+          tone="guide"
+          actions={
+            <BannerAction tone="guide" onClick={() => setOrdering(true)}>
+              Change the order
+            </BannerAction>
+          }
+        >
+          {conflicts.slice(0, 3).join(' ')}
+          {conflicts.length > 3 && ` And ${conflicts.length - 3} more.`}
+        </Banner>
+      )}
+
+      {reviewed !== undefined && (
+        <PackReviewSheet
+          pack={reviewed}
+          packs={packs ?? []}
+          onToggle={() => togglePack(reviewed)}
+          onClose={() => setReviewing(undefined)}
+        />
+      )}
+      {ordering && packs !== undefined && (
+        <PackOrderSheet packs={packs} onClose={() => setOrdering(false)} />
       )}
 
       <div className="flex flex-col gap-2">
@@ -714,6 +815,8 @@ export function Component() {
             );
           }
           const r = item.row;
+          const pack: PackHere | undefined = packById.get(r.id);
+          const title = pack?.review.name ?? r.fileName;
           // A file the list cannot render is exactly the file you came here to
           // remove, so the failure stays in its own row and the rest of the
           // library, and its controls, keep working.
@@ -727,7 +830,7 @@ export function Component() {
                   the filled `ink` pill: a state, so ink rather than a hue. */}
                 <Chip
                   tone="outline"
-                  aria-label={`Enable ${r.fileName}`}
+                  aria-label={`Enable ${title}`}
                   pressed={r.enabled}
                   onClick={() => toggleFile(r)}
                   className="-my-1 mr-auto shrink-0"
@@ -735,9 +838,13 @@ export function Component() {
                   {r.enabled ? 'Enabled' : 'Disabled'}
                 </Chip>
                 <div className="min-w-0 flex-1 max-[359px]:order-first max-[359px]:basis-full">
-                  <div className="truncate text-body-strong">{r.fileName}</div>
+                  <div className="truncate text-body-strong">{title}</div>
                   <div className="truncate text-caption text-ink-muted">
-                    {fileSummary(r, item.also)}
+                    {pack === undefined
+                      ? fileSummary(r, item.also)
+                      : Object.keys(r.counts).length === 0
+                        ? pack.review.holds
+                        : `${pack.review.holds} · ${fileSummary(r, item.also)}`}
                   </div>
                 </div>
                 {r.editable && (
@@ -750,9 +857,20 @@ export function Component() {
                     <Pencil size={18} />
                   </Link>
                 )}
+                {sharing && (
+                  <button
+                    type="button"
+                    aria-label={`Share ${title}`}
+                    title="Share"
+                    onClick={() => void shareFile(r, r.fileName)}
+                    className={ICON_ACTION}
+                  >
+                    <Share2 size={18} />
+                  </button>
+                )}
                 <button
                   type="button"
-                  aria-label={`Download ${r.fileName}`}
+                  aria-label={`Download ${title}`}
                   title="Download"
                   onClick={() => void downloadFile(r, r.fileName)}
                   className={ICON_ACTION}
@@ -761,13 +879,39 @@ export function Component() {
                 </button>
                 <button
                   type="button"
-                  aria-label={`Delete ${r.fileName}`}
+                  aria-label={`Delete ${title}`}
                   title="Delete"
-                  onClick={() => void remove([r.id], r.fileName)}
+                  onClick={() => void remove([r.id], title)}
                   className={ICON_REMOVE}
                 >
                   <Trash2 size={18} />
                 </button>
+                {/* On a line of its own under the name, so the name keeps the
+                    width between the switch and the icons on a phone. */}
+                {(pack !== undefined || r.editable) && (
+                  <div className="-my-1.5 flex basis-full flex-wrap items-center gap-x-3 text-caption">
+                    {pack !== undefined && (
+                      <Badge className="shrink-0">
+                        <Package size={14} aria-hidden="true" /> Rule pack
+                      </Badge>
+                    )}
+                    {pack !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => setReviewing(r.id)}
+                        aria-label={`Review ${title}`}
+                        className={`${LINK} inline-flex min-h-tap items-center`}
+                      >
+                        Review
+                      </button>
+                    )}
+                    {r.editable && (
+                      <Link to="/workshop" className={`${LINK} inline-flex min-h-tap items-center`}>
+                        Open in the Workshop
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             </DecodeBoundary>
           );
