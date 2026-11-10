@@ -66,7 +66,10 @@ export function calcResources(
         resetOn: e.resetOn,
         origin: e.origin.label,
         ...(e.noSlotConversion !== undefined ? { noSlotConversion: e.noSlotConversion } : {}),
-        ...(e.regainOnShort !== undefined ? { regainOnShort: e.regainOnShort } : {}),
+        // None back on a short rest at this level (a pool that turns short later) is none.
+        ...(e.regainOnShort !== undefined && e.regainOnShort > 0
+          ? { regainOnShort: e.regainOnShort }
+          : {}),
         ...(e.regainRoll !== undefined ? { regainRoll: e.regainRoll } : {}),
       });
     } else if (e.stack === true) {

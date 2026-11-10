@@ -61,11 +61,18 @@ import {
   convertClass,
   convertClassAdditions,
 } from './class';
-import { BASE_CLASSES, convertClassOption, isClassOption, isOnOfficialList } from './classOption';
+import {
+  BASE_CLASSES,
+  convertClassOption,
+  homebrewOptionLists,
+  isClassOption,
+  isOnOfficialList,
+} from './classOption';
 import {
   type ClassBinding,
   extraClassKey,
   type Fc5Context,
+  type Fc5Part,
   type Fc5Result,
   type FeatRef,
   type FileClass,
@@ -92,7 +99,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 12;
+export const FC5_CONVERTER_VERSION = 13;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -144,6 +151,10 @@ const WHY = {
   noClass:
     'it adds to a class this file does not have and your game data has no class of that name',
   noSubclasses: 'it adds to a class of that name, and only its subclasses convert: it has none',
+  optionsUnoffered: (names: readonly string[]) => {
+    const more = names.length > 4 ? `, and ${names.length - 4} more` : '';
+    return `its options (${names.slice(0, 4).join(', ')}${more}) are left out: your game data's class has no list of their kind to offer them on`;
+  },
 } as const;
 
 /** The homebrew source of entries that cite no book, named after the file. */
@@ -242,6 +253,34 @@ function withPrinting(
   const ref = printingRef(kind, entity, placement);
   if (ref !== undefined) entity.printingOf = [ref];
   return entity;
+}
+
+/**
+ * A plus or minus sign before a number: `+`, the hyphen, the minus sign
+ * (U+2212) or the en dash (U+2013), built from code points so the source
+ * holds no dash character a formatter could rewrite.
+ */
+const SIGN_BEFORE_NUMBER = new RegExp(
+  `([+${String.fromCharCode(0x2212, 0x2013)}-])\\s*(?=\\d)`,
+  'g',
+);
+
+/**
+ * What an option says, to compare two classes' copies of it: its text
+ * without the source line, lowercased, its letters and digits alone, but for
+ * the sign before a number and what keeps two numbers apart. `+1` and `+ 1`
+ * say the same, `-1` and `−1` too, but not `+1` and `-1`, or `1, 2` and `12`;
+ * `two-weapon` and `two weapon` say the same.
+ */
+function sameText(entries: unknown): string {
+  const said = Array.isArray(entries)
+    ? entries.filter((e) => !(typeof e === 'string' && e.startsWith('{@i Source: ')))
+    : [];
+  return JSON.stringify(said)
+    .toLowerCase()
+    .replace(SIGN_BEFORE_NUMBER, (_, sign: string) => (sign === '+' ? '_p' : '_m'))
+    .replace(/(\d)[^\p{L}\p{N}_]+(?=\d)/gu, '$1_')
+    .replace(/[^\p{L}\p{N}_]+/gu, '');
 }
 
 /** One converted entry, before the checks decide whether it is kept. */
@@ -405,6 +444,9 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   // one the rules have by that name keeps the rules' (`Wizard|PHB`).
   const fileClasses = new Map<string, FileClass>();
   ctx.classes = fileClasses;
+  // The option lists of the file's class options, for the classes they are.
+  const optionLists = new Set<string>();
+  ctx.optionLists = optionLists;
 
   // Whether the game data has an entry, when the data holds its book: in its
   // edition anywhere, for a book cited wrongly, or in any book it cites, under
@@ -458,6 +500,9 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
 
   const index = (el: XmlElement): void => {
     if (el.name === 'spell') {
+      if (isClassOption(el)) {
+        for (const list of homebrewOptionLists(el)) optionLists.add(list);
+      }
       const named = entryName(childText(el, 'name') ?? '');
       if (isFull(el)) {
         const key = named.name.toLowerCase();
@@ -636,8 +681,9 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   const seen = new Set<string>();
   const leftOut = new Map<string, number>();
   const unknown = new Map<string, number>();
-  const unofferedLists = new Set<string>();
-  let unoffered = 0;
+  // Each kept class option the file stores as a spell: those on no official
+  // list, and no list a kept class or subclass offers, are reported.
+  const storedOptions: Record<string, unknown>[] = [];
   let featsConverted = 0;
 
   // The class each class entry's subclasses go on, by its key in `seen`, and
@@ -677,6 +723,132 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     return known ? { className: name, classSource: core } : undefined;
   };
 
+  // Optional features kept, by name, book and edition: one of each, offered
+  // on every list that has it.
+  const optionsKept = new Map<string, Record<string, unknown>>();
+  const optionKey = (name: string, placement: Placement, edition: RulesVersion) =>
+    `${name.toLowerCase()}|${placement.source.json}|${edition}`;
+  // Every option kept of a name, book and edition (by `optionKey`): the one
+  // under that name, and those named for their label.
+  const namesakes = new Map<string, Record<string, unknown>[]>();
+  // Options kept from a class's own list, whose prerequisite (or none) is the
+  // level the class lists it at, not a rule of the option's.
+  const byListing = new WeakSet<Record<string, unknown>>();
+  // What the classes' copies of a kept option say, as `sameText` reads it:
+  // none yet for one only the file stores.
+  const said = new WeakMap<Record<string, unknown>, string>();
+
+  /**
+   * Add an option's lists to the one of its name and book kept already;
+   * false for none. `listed` is true for a class's own option, whose
+   * prerequisite is the level the class lists it at, and which joins only a
+   * kept one that says the same (`keepListed` finds it); a stored option's
+   * prerequisite is its rule.
+   */
+  const mergeOption = (
+    entity: Record<string, unknown>,
+    placement: Placement,
+    edition: RulesVersion,
+    listed: boolean,
+  ): boolean => {
+    const had = optionsKept.get(optionKey(String(entity.name), placement, edition));
+    if (had === undefined) return false;
+    if (listed) said.set(had, sameText(entity.entries));
+    const types = [...(had.featureType as string[]), ...((entity.featureType ?? []) as string[])];
+    had.featureType = [...new Set(types)];
+    const was = had.prerequisite;
+    const now = entity.prerequisite;
+    if (!byListing.has(had)) return true;
+    if (!listed) {
+      // The option's own rule stands over the levels classes list it at.
+      if (now === undefined) delete had.prerequisite;
+      else had.prerequisite = now;
+      byListing.delete(had);
+    } else if (was !== undefined && now === undefined) {
+      // A class offers it from its list's start.
+      delete had.prerequisite;
+    } else if (was !== undefined && now !== undefined) {
+      // A level each class first offers it at: any of them will do, as a
+      // list of prerequisites reads.
+      const all = [...(was as unknown[]), ...(now as unknown[])];
+      had.prerequisite = [...new Map(all.map((p) => [JSON.stringify(p), p])).values()];
+    }
+    return true;
+  };
+
+  /** Keep an option under its name, one of the namesakes of that name. */
+  const keepNamed = (entity: Record<string, unknown>, key: string, placement: Placement): void => {
+    optionsKept.set(optionKey(String(entity.name), placement, placement.edition), entity);
+    namesakes.set(key, [...(namesakes.get(key) ?? []), entity]);
+  };
+
+  /**
+   * Keep a class's option, or add it to the one kept of its name that it is:
+   * one whose classes' copies say the same, else one only the file stores,
+   * which any class's copy is. Two classes' options of one name are one only
+   * when they say the same; a totem warrior's `Totem Spirit: Bear` and
+   * `Aspect of the Beast: Bear` are two. A new one takes its own name when
+   * free, else its label's (`Bear (Aspect of the Beast)`), then that
+   * numbered. False when it joined one kept already.
+   */
+  const keepListed = (o: Fc5Part & { label: string }): boolean => {
+    const { entity, placement } = o;
+    const name = String(entity.name);
+    const key = optionKey(name, placement, placement.edition);
+    const kin = namesakes.get(key) ?? [];
+    const text = sameText(entity.entries);
+    const same =
+      kin.find((k) => said.get(k) === text) ?? kin.find((k) => said.get(k) === undefined);
+    if (same !== undefined) {
+      entity.name = same.name;
+      mergeOption(entity, placement, placement.edition, true);
+      return false;
+    }
+    let free = name;
+    for (let n = 1; optionsKept.has(optionKey(free, placement, placement.edition)); n++) {
+      free = `${name} (${o.label}${n === 1 ? '' : ` ${n}`})`;
+    }
+    entity.name = free;
+    keepNamed(entity, key, placement);
+    byListing.add(entity);
+    said.set(entity, text);
+    return true;
+  };
+
+  /**
+   * A class's or subclass's options, each once per book and never one the
+   * installed data has on its label's official list, which offers that one. Those of
+   * a class left out as installed go on its official list of their label;
+   * the names of those whose label has none, which nothing offers.
+   */
+  const keepOptions = (
+    options: readonly (Fc5Part & { label: string; official?: string })[],
+    ownerKept: boolean,
+  ): string[] => {
+    const unoffered: string[] = [];
+    for (const o of options) {
+      const name = String(o.entity.name);
+      // Only an official list offers the installed one of its name: a homebrew
+      // label's `Defense` is its own, whatever the data's fighting style.
+      if (o.official !== undefined && installed('optionalfeature', name, o.placement)) continue;
+      if (!ownerKept) {
+        if (o.official === undefined) {
+          unoffered.push(name);
+          continue;
+        }
+        o.entity.featureType = [o.official];
+      }
+      // It prints the official one of the name the file gives it, whatever
+      // name it is kept under.
+      const printed = printingRef('optionalfeature', { name }, o.placement);
+      if (!keepListed(o)) continue;
+      if (printed !== undefined) o.entity.printingOf = [printed];
+      out.optionalfeature.push(o.entity);
+      sources.set(o.placement.source.json, o.placement.source);
+    }
+    return unoffered;
+  };
+
   /**
    * Check a converted entry and keep it, with its parts, or leave it out:
    * once in a book, and never what the installed data has.
@@ -694,11 +866,30 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     seen.add(key);
     const className = kind === 'subclass' ? String(e.className) : undefined;
     if (installed(kind, name, placement, className)) {
-      leave(c, 'installed', WHY.installed);
+      // Its options go on the installed class's list of their label.
+      const unoffered = keepOptions(c.result.options ?? [], false);
+      notes.push({
+        kind: c.tag,
+        name,
+        status: 'installed',
+        reasons: [
+          WHY.installed,
+          ...(unoffered.length > 0 ? [WHY.optionsUnoffered(unoffered)] : []),
+        ],
+      });
       return 'installed';
+    }
+    if (
+      kind === 'optionalfeature' &&
+      mergeOption(c.result.entity, placement, c.result.edition, false)
+    ) {
+      return 'duplicate';
     }
     const entity = withPrinting(kind, c.result.entity, placement);
     out[kind].push(entity);
+    if (kind === 'optionalfeature') {
+      keepNamed(entity, optionKey(name, placement, c.result.edition), placement);
+    }
     sources.set(placement.source.json, placement.source);
     // A class's features come with it, each a printing of the official
     // class's feature when the class is one.
@@ -707,10 +898,9 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       out[part.kind].push(part.entity);
       sources.set(part.placement.source.json, part.placement.source);
     }
-    if (kind === 'optionalfeature' && !isOnOfficialList(c.result.entity)) {
-      unoffered += 1;
-      for (const t of c.result.entity.featureType as string[]) unofferedLists.add(t);
-    }
+    keepOptions(c.result.options ?? [], true);
+    // Its lists are read at the end: a class's list of its name may join them.
+    if (kind === 'optionalfeature') storedOptions.push(entity);
     const reasons = [...new Set(c.result.reasons)];
     if (reasons.length > 0) notes.push({ kind: c.tag, name, status: 'partial', reasons });
     return 'kept';
@@ -861,6 +1051,23 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       warnings.push(
         `${unmatchedStubs} spell ${unmatchedStubs === 1 ? 'entry' : 'entries'} left out: ${unmatchedStubs === 1 ? 'it only adds' : 'they only add'} class lists to spells this file does not include.`,
       );
+    }
+    const offered = new Set<string>();
+    for (const e of [...out.class, ...out.subclass]) {
+      const progression = Array.isArray(e.optionalfeatureProgression)
+        ? (e.optionalfeatureProgression as { featureType?: unknown }[])
+        : [];
+      for (const p of progression) {
+        for (const t of Array.isArray(p.featureType) ? p.featureType : []) offered.add(String(t));
+      }
+    }
+    const unofferedLists = new Set<string>();
+    let unoffered = 0;
+    for (const option of storedOptions) {
+      const types = (option.featureType ?? []) as string[];
+      if (isOnOfficialList(option) || types.some((t) => offered.has(t))) continue;
+      unoffered += 1;
+      for (const t of types) unofferedLists.add(t);
     }
     if (unoffered > 0) {
       const total = unoffered;

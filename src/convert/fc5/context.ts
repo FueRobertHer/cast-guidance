@@ -68,6 +68,13 @@ export interface Fc5Context {
    * at it. Whole only in the second pass.
    */
   classes?: FileClasses;
+  /**
+   * The option lists this file's class options stored as spells name, other
+   * than the official lists, as their feature types are written (`Warmage
+   * (Valda): Tricks`), so a class can offer its own. Whole only in the second
+   * pass.
+   */
+  optionLists?: ReadonlySet<string>;
 }
 
 /** A class the file converts, as a spell's class list names it. */
@@ -109,6 +116,12 @@ export type Fc5Result =
       reasons: string[];
       /** Entries that belong to this one ({@link Fc5Part}). */
       parts?: Fc5Part[];
+      /**
+       * A class's or subclass's options, each checked on its own, with the
+       * label it is listed under and the official list that label is, which
+       * offers it when its class is installed.
+       */
+      options?: (Fc5Part & { label: string; official?: string })[];
       /**
        * A class's subclasses, each converted and checked on its own: they are
        * kept when the class is left out as installed, on the installed class.
