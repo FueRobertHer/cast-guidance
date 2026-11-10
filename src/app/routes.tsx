@@ -48,6 +48,10 @@ export const routes: RouteObject[] = [
         ],
       },
       { path: 'homebrew/edit/:fileId', lazy: () => import('@/features/homebrew/BuilderPage') },
+      {
+        path: 'workshop/:action?/:type?/:uid?',
+        lazy: () => import('@/features/workshop/WorkshopPage'),
+      },
     ],
   },
 ];
