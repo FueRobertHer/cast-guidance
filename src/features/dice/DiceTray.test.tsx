@@ -5,7 +5,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { RollResult } from '@/dice/types';
 import { relativeTime } from '@/lib/relativeTime';
-import { advModeStore } from '@/stores/advMode';
 import { diceTrayStore } from '@/stores/diceTray';
 import { rollLogStore } from '@/stores/rollLog';
 import { namelessControls } from '../../../tests-fixtures/a11y';
@@ -30,7 +29,8 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   rollLogStore.getState().clear();
-  advModeStore.getState().set('normal');
+  diceTrayStore.getState().setMode('normal');
+  diceTrayStore.getState().setOpen(false);
 });
 
 const tray = () => screen.getByRole('dialog', { name: 'Dice' });
@@ -58,12 +58,51 @@ describe('DiceTray', () => {
     expect(namelessControls()).toEqual([]);
   });
 
-  it('says which roll mode is on', () => {
+  it('is the dice button alone, marked for the toasts to rise above', () => {
+    render(<DiceTray dock />);
+    const button = screen.getByRole('button', { name: 'Dice tray' });
+    expect(button.hasAttribute('data-dice-dock')).toBe(true);
+  });
+
+  it('says which mode the d20 is in', () => {
     render(<DiceTray dock />);
     fireEvent.click(screen.getByTitle('Dice tray'));
-    fireEvent.click(screen.getByRole('button', { name: 'Disadvantage', pressed: false }));
-    expect(screen.getByRole('button', { name: 'Disadvantage', pressed: true })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Normal', pressed: false })).toBeTruthy();
+    const modes = within(tray()).getByRole('group', { name: 'd20 roll mode' });
+    // Worst to best, as the roll prompt orders them.
+    expect(
+      within(modes)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Dis', 'Normal', 'Adv']);
+    expect(within(modes).getByRole('button', { name: 'Normal', pressed: true })).toBeTruthy();
+    fireEvent.click(within(modes).getByRole('button', { name: 'Disadvantage', pressed: false }));
+    expect(within(modes).getByRole('button', { name: 'Disadvantage', pressed: true })).toBeTruthy();
+    expect(within(modes).getByRole('button', { name: 'Normal', pressed: false })).toBeTruthy();
+  });
+
+  it('rolls the d20 alone under its mode, and keeps the mode while the app is open', () => {
+    render(<DiceTray dock />);
+    fireEvent.click(screen.getByTitle('Dice tray'));
+    fireEvent.click(within(tray()).getByRole('button', { name: 'Advantage' }));
+    fireEvent.click(within(tray()).getByRole('button', { name: 'd20' }));
+    const d20 = rollLogStore.getState().rolls[0];
+    expect(d20?.meta?.advantage).toBe('adv');
+    expect(d20?.terms[0]).toMatchObject({ kind: 'dice', sides: 20 });
+    expect(d20?.terms[0]?.kind === 'dice' && d20.terms[0].rolls.length).toBe(2);
+
+    // Every other die, and dice typed in the field, roll as they are.
+    fireEvent.click(within(tray()).getByRole('button', { name: 'd6' }));
+    expect(rollLogStore.getState().rolls[0]?.meta?.advantage).toBeUndefined();
+    const field = screen.getByRole('textbox', { name: 'Dice expression' });
+    fireEvent.change(field, { target: { value: '1d20+2' } });
+    fireEvent.submit(field.closest('form') as HTMLFormElement);
+    const typed = rollLogStore.getState().rolls[0];
+    expect(typed?.expr).toBe('1d20+2');
+    expect(typed?.meta?.advantage).toBeUndefined();
+
+    act(() => diceTrayStore.getState().setOpen(false));
+    fireEvent.click(screen.getByTitle('Dice tray'));
+    expect(within(tray()).getByRole('button', { name: 'Advantage', pressed: true })).toBeTruthy();
   });
 
   it('opens on the dice, with its views in the header', () => {
@@ -72,8 +111,8 @@ describe('DiceTray', () => {
     const views = within(tray()).getByRole('group', { name: 'Dice tray view' });
     expect(within(views).getByRole('button', { name: 'Roll', pressed: true })).toBeTruthy();
     expect(within(views).getByRole('button', { name: 'History', pressed: false })).toBeTruthy();
-    // Seven dice and the custom tile, four across.
-    for (const d of [4, 6, 8, 10, 12, 20, 100]) {
+    // The d20 apart, then six dice and the custom tile, four across.
+    for (const d of [20, 4, 6, 8, 10, 12, 100]) {
       expect(within(tray()).getByRole('button', { name: `d${d}` })).toBeTruthy();
     }
     expect(within(tray()).getByPlaceholderText('Type dice, like 2d6+3')).toBeTruthy();

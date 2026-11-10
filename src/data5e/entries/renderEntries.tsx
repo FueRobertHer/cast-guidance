@@ -78,6 +78,7 @@ function TagView({
           expr={`1d20${n >= 0 ? '+' : ''}${n}`}
           display={signed(n)}
           variant="d20"
+          label={`Attack roll ${signed(n)}`}
         />
       );
     }
@@ -89,6 +90,7 @@ function TagView({
           expr={`1d20${n >= 0 ? '+' : ''}${n}`}
           display={`d20${n !== 0 ? signed(n) : ''}`}
           variant="d20"
+          label={`d20${n !== 0 ? signed(n) : ''} roll`}
         />
       );
     }

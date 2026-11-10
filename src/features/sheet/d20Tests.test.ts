@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { rollDetail } from '@/dice/format';
 import {
   type ActiveCondition,
@@ -11,7 +11,6 @@ import {
 } from '@/engine/conditions';
 import type { RollEffects } from '@/engine/playRules';
 import { ABILITIES, type Ability } from '@/engine/types';
-import { advModeStore } from '@/stores/advMode';
 import { rollTone } from '@/ui/rollTone';
 import { conditionLimits } from './conditionEffects';
 import {
@@ -39,7 +38,6 @@ function nextFaces(...faces: number[]) {
 const effects = (ids: ActiveCondition[], edition: Edition, test: D20Test) =>
   d20Effects(ids, edition, test);
 
-beforeEach(() => advModeStore.getState().set('normal'));
 afterEach(() => vi.restoreAllMocks());
 
 describe('rollWear: what each roll’s control wears', () => {
@@ -253,31 +251,35 @@ describe('rollD20Test', () => {
     expect(r.meta).toMatchObject({ advantage: 'dis', cue: 'Disadvantage: Poisoned' });
   });
 
-  it('rolls a single d20 when ignored once, keeping the dock mode', () => {
+  it("rolls a single d20 when ignored once, keeping a feature's advantage", () => {
     nextFaces(15);
-    const poisoned = effects([{ id: 'Poisoned' }], '2014', { kind: 'attack' });
-    const r = rollD20Test('1d20+5', { label: 'Attack', effects: poisoned, ignored: true });
+    const poisoned = effects([{ id: 'Poisoned' }], '2014', { kind: 'check', ability: 'str' });
+    const r = rollD20Test('1d20+5', { label: 'STR check', effects: poisoned, ignored: true });
     expect(r.total).toBe(20);
     expect(r.meta?.advantage).toBeUndefined();
     expect(r.meta?.cue).toBe('Conditions ignored for this roll');
 
-    advModeStore.getState().set('adv');
     nextFaces(3, 17);
-    const withDock = rollD20Test('1d20+5', { label: 'Attack', effects: poisoned, ignored: true });
-    expect(withDock.meta?.advantage).toBe('adv');
-    expect(withDock.total).toBe(22);
+    const raging = rollD20Test('1d20+5', {
+      label: 'STR check',
+      effects: poisoned,
+      ignored: true,
+      advantageFrom: ['Rage'],
+    });
+    expect(raging.meta?.advantage).toBe('adv');
+    expect(raging.total).toBe(22);
   });
 
-  it("cancels the dock's advantage against a condition's disadvantage", () => {
-    advModeStore.getState().set('adv');
+  it("cancels a feature's advantage against a condition's disadvantage", () => {
     nextFaces(9);
     const r = rollD20Test('1d20+5', {
       label: 'Attack',
       effects: effects([{ id: 'Prone' }], '2024', { kind: 'attack' }),
+      advantageFrom: ['Reckless Attack'],
     });
     expect(r.terms[0]).toMatchObject({ rolls: [{ v: 9, kept: true }] });
     expect(r.meta?.advantage).toBeUndefined();
-    expect(r.meta?.cue).toBe('Advantage and disadvantage cancel: Prone');
+    expect(r.meta?.cue).toBe('Advantage and disadvantage cancel: Reckless Attack, Prone');
   });
 
   it('takes the 2024 exhaustion penalty off as a term of its own', () => {
@@ -394,13 +396,12 @@ describe('rollD20Test with effects in play', () => {
     expect(r.meta?.offers).toBeUndefined();
     expect(rollTone(r)).toBe('crit');
     // The die kept is the one that counts: disadvantage's low 3, not the 20.
-    advModeStore.getState().set('dis');
     nextFaces(20, 3);
-    const dis = rollD20Test('1d20+5', {
+    const dis = d20Ask('1d20+5', {
       label: 'Longsword attack',
       attack: { by: 'c1', of: 'Longsword', critFrom: 19 },
       settlesOnNatural: true,
-    });
+    }).roll({ mode: 'dis' });
     expect(dis.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false });
   });
 

@@ -372,18 +372,15 @@ export interface D20Resolution {
 }
 
 /**
- * How a roll is made: the dock's mode is one more source of advantage or
- * disadvantage beside the conditions. Any advantage and any disadvantage
- * cancel to a single d20, however many of each there are; more than one of a
- * kind is still one. With `effects` undefined (the player ignored them for
- * this roll) the dock's mode alone decides.
+ * How a roll is made under the effects that reach it. Any advantage and any
+ * disadvantage cancel to a single d20, however many of each there are; more
+ * than one of a kind is still one. With `effects` undefined (the player
+ * ignored them for this roll) it is a single d20. A mode the roll prompt picks
+ * is applied after this, as the last word (`d20Ask`).
  */
-export function resolveD20(
-  dock: 'adv' | 'dis' | undefined,
-  effects: D20Effects | undefined,
-): D20Resolution {
-  const adv = dock === 'adv' || (effects?.advantage.length ?? 0) > 0;
-  const dis = dock === 'dis' || (effects?.disadvantage.length ?? 0) > 0;
+export function resolveD20(effects: D20Effects | undefined): D20Resolution {
+  const adv = (effects?.advantage.length ?? 0) > 0;
+  const dis = (effects?.disadvantage.length ?? 0) > 0;
   return {
     advantage: adv && !dis ? 'adv' : dis && !adv ? 'dis' : undefined,
     cancelled: adv && dis,

@@ -233,6 +233,9 @@ describe('Bless in a roll', () => {
   it('rolls its die into a death save, turning an 8 into a success', async () => {
     const sheet = await renderSheet(warrior([{ ...bless, mine: undefined }], { currentHp: 0 }));
     nextFaces(8, 3);
+    // The first tap asks; the second rolls.
+    press('Roll save');
+    expect(rollLogStore.getState().rolls).toHaveLength(0);
     press('Roll save');
     const roll = rollLogStore.getState().rolls[0];
     expect(roll?.total).toBe(11);
