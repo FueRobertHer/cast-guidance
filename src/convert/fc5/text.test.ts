@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   abilityKey,
+  addGrant,
   defenseSentence,
   entryName,
   inlineText,
@@ -8,6 +9,7 @@ import {
   leadIn,
   markerEdition,
   own,
+  type ProficiencyGrant,
   plainText,
   readArmor,
   readLanguages,
@@ -319,7 +321,27 @@ describe('readLanguages', () => {
   });
 });
 
+describe('addGrant', () => {
+  it("joins grants whose names are an object's own keys as names", () => {
+    const out: ProficiencyGrant = { tools: { any: 1 } };
+    addGrant(out, { tools: { constructor: true, any: 1 } });
+    expect(out.tools).toEqual({ any: 2, constructor: true });
+  });
+});
+
 describe('readTools', () => {
+  it('reads "and" in a list as one name unless both sides are tools of the rules', () => {
+    expect(readTools("Choose one from among ink and quill, thieves' tools")).toEqual({
+      choose: { from: ['ink and quill', "thieves' tools"] },
+    });
+    expect(readTools("Choose one from among a gaming set and thieves' tools")).toEqual({
+      choose: { from: ['gaming set', "thieves' tools"] },
+    });
+    expect(readTools('Any musical instrument or artisan tools')).toEqual({
+      choose: { from: ['musical instrument', "artisan's tools"] },
+    });
+  });
+
   it('reads a kind of tool as a choice of one', () => {
     expect(readTools('Choose one kind of Gaming Set')).toEqual({ anyGamingSet: 1 });
     expect(readTools("One type of Artisan's Tools")).toEqual({ anyArtisansTool: 1 });

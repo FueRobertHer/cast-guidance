@@ -81,7 +81,7 @@ describe('backgrounds', () => {
     ]);
   });
 
-  it('reads a skill of your choice, and no skill a phrase lists', () => {
+  it('reads a skill of your choice, and a list to pick from as a pick, not as skills given', () => {
     const skills = (line: string) => {
       const { json } = convertXmlText(
         `<compendium><background><name>Lamplighter</name>
@@ -93,7 +93,25 @@ describe('backgrounds', () => {
     };
     expect(skills('Insight, and one skill of your choice')).toEqual([{ insight: true, any: 1 }]);
     expect(skills('Survival, plus one from among Arcana, History, and Religion')).toEqual([
-      { survival: true },
+      { survival: true, choose: { from: ['arcana', 'history', 'religion'] } },
     ]);
+    expect(
+      skills('History, plus your choice of one from among Arcana, Nature, and Religion'),
+    ).toEqual([{ history: true, choose: { from: ['arcana', 'nature', 'religion'] } }]);
+    expect(
+      skills(
+        'Persuasion, plus one from among Arcana, History, Nature, and Religion, as appropriate for your order',
+      ),
+    ).toEqual([
+      { persuasion: true, choose: { from: ['arcana', 'history', 'nature', 'religion'] } },
+    ]);
+    expect(skills('Choose two from among Deception, Insight, Persuasion, and Stealth')).toEqual([
+      { choose: { from: ['deception', 'insight', 'persuasion', 'stealth'], count: 2 } },
+    ]);
+    expect(skills('Choose one of Arcana, Investigation, Religion, or Survival')).toEqual([
+      { choose: { from: ['arcana', 'investigation', 'religion', 'survival'] } },
+    ]);
+    // A list naming something other than skills is not a pick.
+    expect(skills('Choose one from among Arcana, Cooking, and Religion')).toBeUndefined();
   });
 });

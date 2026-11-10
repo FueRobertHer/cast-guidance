@@ -207,6 +207,85 @@ describe('a file that is not well formed', () => {
   });
 });
 
+describe('choices read from prose', () => {
+  const race = (text: string, count: number) =>
+    `<compendium>${`<race><name>R</name><trait><name>T</name><text>${text}</text></trait></race>`.repeat(count)}</compendium>`;
+
+  it.each([
+    [
+      'sentences of lead-ins',
+      race(`${'thanks to a gift, '.repeat(2000)}you gain proficiency in arcana. `.repeat(5), 40),
+    ],
+    [
+      'clauses joined to clauses',
+      race('you gain proficiency in arcana, and you '.repeat(3000), 40),
+    ],
+    [
+      'lead-ins that name a race at length',
+      race(`${'as a forest '.repeat(3000)}gnome, you have proficiency in the arcana skill. `, 40),
+    ],
+    [
+      'clauses that set terms',
+      race(`you gain proficiency in arcana; ${'you lose it when '.repeat(3000)}you rest.`, 40),
+    ],
+    [
+      'grants after a list of options',
+      race(
+        `You gain the following benefits:\n${'• You have proficiency in the Stealth skill.\n'.repeat(3000)}Choose one of the following options:\n${'• You have proficiency in the Arcana skill.\n'.repeat(3000)}`,
+        20,
+      ),
+    ],
+    [
+      'expertise sentences in a feat',
+      `<compendium><feat><name>F</name><text>${'Choose one skill in which you have proficiency. You gain expertise with that skill, which means '.repeat(3000)}x.</text></feat></compendium>`,
+    ],
+    [
+      'picks of many items',
+      race(`You gain ${'one skill proficiency, '.repeat(3000)}of your choice. `, 100),
+    ],
+    [
+      'resistance lists',
+      race(
+        `You have resistance to one of the following damage types: ${'fire, '.repeat(20_000)}or cold.`,
+        50,
+      ),
+    ],
+    [
+      'ancestry tables',
+      race(
+        `Dragon | Damage Type\n${'Red | Fire\n'.repeat(2000)}You have resistance to the damage type associated with your draconic ancestry.`,
+        100,
+      ),
+    ],
+    [
+      'background skill picks',
+      `<compendium>${`<background><name>B</name><trait><name>Skill Proficiencies: History, plus one from among ${'Arcana, '.repeat(20_000)}and Religion</name><text>x</text></trait></background>`.repeat(10)}</compendium>`,
+    ],
+    [
+      'background tool picks',
+      `<compendium>${`<background><name>B</name><trait><name>Tool Proficiencies: Choose two from among ${'one musical instrument, '.repeat(20_000)}and thieves' tools</name><text>x</text></trait></background>`.repeat(10)}</compendium>`,
+    ],
+  ])('reads %s in linear time', (_label, xml) => {
+    expect(convert(xml).report.converted).not.toEqual({});
+  });
+
+  it('keeps each distinct resistance pick once, in linear time', () => {
+    const types = ['acid', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'poison', 'psychic'];
+    // Picks that differ only in order: none is a repeat of another.
+    const lines = Array.from({ length: 20_000 }, (_, i) => {
+      const t = [...types];
+      for (let pos = 0; pos < 4; pos += 1) {
+        const d = Math.floor(i / 8 ** pos) % 8;
+        [t[pos], t[d]] = [t[d] ?? '', t[pos] ?? ''];
+      }
+      return `You have resistance to one of the following damage types: ${t.slice(0, 7).join(', ')}, or ${t[7]}.`;
+    });
+    const { json } = convert(race(lines.join(' '), 1));
+    const [r] = json.race as Record<string, unknown>[];
+    expect((r?.resist as unknown[]).length).toBeGreaterThan(1000);
+  });
+});
+
 describe('the spells a trait grants', () => {
   const race = (text: string, count: number) =>
     `<compendium>${`<race><name>R</name><trait><name>T</name><text>${text}</text></trait></race>`.repeat(count)}</compendium>`;

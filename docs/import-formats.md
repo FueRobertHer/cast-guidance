@@ -32,9 +32,9 @@ page (an HTML listing or a page that links to the file) is named as one.
 | --- | --- | --- |
 | `<spell>` | `spell` | Time, range (a 2024 cone or emanation as 5etools writes it), components, duration, classes, saves, attacks, damage dice, cantrip and upcast dice (from `<roll>`s, run to 9th level unless the text names a cap such as "maximum 6d10", or from text such as "increases by 1d6 for each slot level above 1st") |
 | `<item>` | `item` | Type, weapon and armor fields (every staff a quarterstaff, as both Dungeon Master's Guides say), rarity, attunement, value, bonuses (and a bonus to AC or to attack and damage rolls its text states for good, when no `<modifier>` gives one), speed, the resistances and immunities its text states while you wear or are attuned to it |
-| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies, resistances its text states, spells it grants |
-| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; spells it grants, and a guild or college table of spells added to a class's list |
-| `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), languages, proficiencies, spells it grants |
+| `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
+| `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
+| `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
 | `<class>` | (left out) | Not converted yet |
 | `<monster>` | (left out) | The app does not use creatures |
 
@@ -62,6 +62,25 @@ spells come from the feat.
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never
 silently drops it.
+
+A choice the text states becomes the pick the official data writes: a skill,
+tool, language or weapon "of your choice" or from "the following", in any
+sentence of a race trait or a feat ("You therefore have proficiency in one of
+the following skills of your choice: …") but an option among others, a table
+row, or one after a sentence that sets terms ("Choose one of the following
+legacy options"), a resistance from a list or from a
+Dragonborn's ancestry table, Skilled's "any combination of three skills or
+tools", expertise in a skill already proficient, and a background's
+"History, plus your choice of one from among …" line. Where a tag holds
+Fight Club's own pick beside such a choice (`<proficiency>History,
+Arcana</proficiency>`, a `<resist>` type, a race's `<languages>` without the
+trait's "one extra language of your choice"), the choice is read instead; a
+skill only the tag names is Fight Club's pick of "one skill of your choice"
+when there are no more of them than the text lets you pick. A grant that
+hangs on a condition or a time ("Whenever you finish a long rest, you gain
+proficiency …", "As a bonus action, you gain") stays text: only the books'
+own lead-ins ("Thanks to your memory, you have", "As a forest gnome, you
+have") are read past.
 
 Entries the installed game data already has (same kind, name and rules
 edition) are left out: the installed copy carries the app's curated mechanics.
@@ -96,7 +115,7 @@ it came from:
 {
   "_meta": {
     "sources": [{ "json": "FCSpells", "abbreviation": "FCSpells", "full": "spells (Fight Club 5e)" }],
-    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 9, "fileName": "spells.xml" }
+    "convertedFrom": { "format": "fc5-compendium", "converterVersion": 10, "fileName": "spells.xml" }
   },
   "spell": [ /* … */ ]
 }

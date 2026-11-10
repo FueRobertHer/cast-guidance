@@ -10,7 +10,7 @@ import {
 import { fc5Context } from './compendium';
 import type { Fc5Context, Fc5Result, FeatRef } from './context';
 import { abilityFromProse, convertFeat, featCategory, readPrerequisite } from './feat';
-import { convertRace, raceAbility, traitRules } from './race';
+import { convertRace, raceAbility, traitLines, traitRules } from './race';
 
 const ctx: Fc5Context = fc5Context('test.xml');
 
@@ -116,6 +116,12 @@ describe('feats', () => {
       expect(
         abilityFromProse('Increase your Intelligence, Wisdom, or Charisma score by 2.'),
       ).toEqual([{ choose: { from: ['int', 'wis', 'cha'], amount: 2 } }]);
+    });
+
+    it('reads an increase that leaves out the word "score", as newer books write it', () => {
+      expect(
+        abilityFromProse('Increase your Dexterity or Charisma by 1, to a maximum of 20.'),
+      ).toEqual([{ choose: { from: ['dex', 'cha'] } }]);
     });
 
     it('finds nothing in other prose', () => {
@@ -370,7 +376,7 @@ describe('backgrounds', () => {
       expect(featGrant('Iron Lungs', both, '2014', 'FCTest')).toEqual({ key: 'iron lungs|fctest' });
     });
 
-    it('grants the named feat of an either-or, and leaves a choice out', () => {
+    it('grants the named feat of an either-or, a pick of a category, and leaves other choices out', () => {
       const file = withFeats(['Survivor', 'FCOne']);
       expect(
         featGrant('Survivor or a Dark Gift feat of your choice', file, '2024', 'FCOne'),
@@ -388,9 +394,10 @@ describe('backgrounds', () => {
           '2024',
           'FCOne',
         ),
-      ).toEqual({
-        reason:
-          'its feat choice (A Dark Gift feat of your choice (Mist Walker is recommended)) is kept as text',
+      ).toEqual({ choice: { anyFromCategory: { category: ['DG'] } } });
+      // A category the format has no code for stays as text.
+      expect(featGrant('A Planar Pact feat of your choice', file, '2024', 'FCOne')).toEqual({
+        reason: 'its feat choice (A Planar Pact feat of your choice) is kept as text',
       });
     });
   });
@@ -899,12 +906,11 @@ describe('races', () => {
     });
 
     it('reads a speed after a first sentence that grants a proficiency', () => {
-      expect(
-        traitRules(
-          'Climber',
-          'You have proficiency in the Athletics skill. You also have a climbing speed of 30 feet.',
-        ),
-      ).toMatchObject({ speed: { climb: 30 } });
+      const text =
+        'You have proficiency in the Athletics skill. You also have a climbing speed of 30 feet.';
+      expect(traitRules('Climber', text, traitLines('Climber', [text]))).toMatchObject({
+        speed: { climb: 30 },
+      });
     });
 
     it('reads the edition from a Source line in a trait', () => {
@@ -927,5 +933,608 @@ describe('races', () => {
         skip: 'it has no name',
       });
     });
+  });
+});
+
+describe('choices read from prose', () => {
+  const race = (...traits: string[]) =>
+    done(
+      convertRace(
+        parseXml(`<race><name>Emberkin</name><size>M</size>${traits.join('')}</race>`),
+        ctx,
+      ),
+    ).entity as Record<string, unknown>;
+  const feat = (...text: string[]) =>
+    done(
+      convertFeat(
+        parseXml(
+          `<feat><name>Ember Knack</name>${trait('x', ...text).replace(/^<trait><name>x<\/name>|<\/trait>$/g, '')}</feat>`,
+        ),
+        ctx,
+      ),
+    ).entity as Record<string, unknown>;
+
+  it('reads a pick in any sentence of a race trait, in the words newer books use', () => {
+    const r = race(
+      trait(
+        'Natural Affinity',
+        'Your fey connection to animals gives you an intuitive bond with them. You therefore have proficiency in one of the following skills of your choice: Animal Handling, Medicine, Nature, or Survival.',
+      ),
+      trait(
+        'Tireless Precision',
+        'You are proficient in one of the following skills of your choice: Arcana or History. You are also proficient with one tool of your choice.',
+      ),
+    );
+    expect(r.skillProficiencies).toEqual([
+      { choose: { from: ['animal handling', 'medicine', 'nature', 'survival'] } },
+      { choose: { from: ['arcana', 'history'] } },
+    ]);
+    expect(r.toolProficiencies).toEqual([{ any: 1 }]);
+  });
+
+  it('reads picks after words that set no condition, and not after one that does', () => {
+    expect(
+      race(
+        trait(
+          'Fey Gift',
+          'Thanks to your connection to the fey realm, you gain proficiency with two of the following skills of your choice: Deception, Insight, or Stealth.',
+        ),
+      ).skillProficiencies,
+    ).toEqual([{ choose: { from: ['deception', 'insight', 'stealth'], count: 2 } }]);
+    expect(
+      race(
+        trait(
+          'Astral Knowledge',
+          'Whenever you finish a long rest, you gain proficiency in one skill of your choice.',
+        ),
+        trait(
+          'Lineage',
+          "If you don't keep any of those elements, you gain proficiency in two skills of your choice.",
+        ),
+      ).skillProficiencies,
+    ).toBeUndefined();
+  });
+
+  it('reads one skill and one tool of your choice, and joined clauses', () => {
+    const r = race(
+      trait(
+        'Specialized Design',
+        'You gain one skill proficiency and one tool proficiency of your choice.',
+      ),
+      trait(
+        'Reveler',
+        'As an embodiment of revelry, you have proficiency in the Performance and Persuasion skills, and you have proficiency with one musical instrument of your choice.',
+      ),
+    );
+    expect(r.skillProficiencies).toEqual([{ any: 1, performance: true, persuasion: true }]);
+    // Each trait's tool joins the others'.
+    expect(r.toolProficiencies).toEqual([{ any: 1, anyMusicalInstrument: 1 }]);
+  });
+
+  it('reads a resistance picked from a list or from the ancestry table', () => {
+    expect(
+      race(
+        trait(
+          'Hollow Heart',
+          'You have Resistance to one of the following damage types of your choice: Cold, Necrotic, or Poison.',
+        ),
+      ).resist,
+    ).toEqual([{ choose: { from: ['cold', 'necrotic', 'poison'] } }]);
+    expect(
+      race(
+        trait(
+          'Draconic Ancestry',
+          'Choose one type of dragon from the Draconic Ancestry table.',
+          'Dragon | Damage Type | Breath Weapon',
+          'Black | Acid | 5 by 30 ft. line',
+          'Blue | Lightning | 5 by 30 ft. line',
+          'Red | Fire | 15 ft. cone',
+        ),
+        trait(
+          'Damage Resistance',
+          'You have resistance to the damage type associated with your draconic ancestry.',
+        ),
+      ).resist,
+    ).toEqual([{ choose: { from: ['acid', 'lightning', 'fire'] } }]);
+    // No table, nothing to pick from: the sentence stays as text.
+    expect(
+      race(
+        trait(
+          'Damage Resistance',
+          'You have resistance to the damage type associated with your draconic ancestry.',
+        ),
+      ).resist,
+    ).toBeUndefined();
+  });
+
+  it("reads a feat's languages, skills or tools in any mix, and expertise", () => {
+    expect(feat('You learn three languages of your choice.').languageProficiencies).toEqual([
+      { anyStandard: 3 },
+    ]);
+    expect(
+      feat('You gain proficiency in any combination of three skills or tools of your choice.')
+        .skillToolLanguageProficiencies,
+    ).toEqual([{ choose: [{ from: ['anySkill', 'anyTool'], count: 3 }] }]);
+    const prodigy = feat(
+      'You gain one skill proficiency of your choice, one tool proficiency of your choice, and fluency in one language of your choice.',
+      'Choose one skill in which you have proficiency. You gain expertise with that skill, which means your proficiency bonus is doubled.',
+    );
+    expect(prodigy).toMatchObject({
+      skillProficiencies: [{ any: 1 }],
+      toolProficiencies: [{ any: 1 }],
+      languageProficiencies: [{ anyStandard: 1 }],
+      expertise: [{ anyProficientSkill: 1 }],
+    });
+  });
+
+  const raceWith = (inner: string) =>
+    done(convertRace(parseXml(`<race><name>Emberkin</name><size>M</size>${inner}</race>`), ctx))
+      .entity as Record<string, unknown>;
+  const featWith = (inner: string, ...text: string[]) =>
+    done(
+      convertFeat(
+        parseXml(
+          `<feat><name>Ember Knack</name>${inner}${text.map((x) => `<text>${x}</text>`).join('')}</feat>`,
+        ),
+        ctx,
+      ),
+    ).entity as Record<string, unknown>;
+
+  it('reads no grant a condition governs, before it or beside it', () => {
+    for (const text of [
+      'If you are a spellcaster, you gain proficiency in the Arcana skill, and you gain proficiency with the dagger.',
+      'When you reach 3rd level, you gain proficiency with light armor, and you gain proficiency in the Stealth skill.',
+      'As a bonus action, you gain proficiency in the Stealth skill.',
+      'So long as you are in sunlight, you have proficiency in the Stealth skill.',
+      'You gain proficiency in one skill of your choice; you lose it when you finish a long rest.',
+    ]) {
+      const r = race(trait('Knack', text));
+      expect([r.skillProficiencies, r.weaponProficiencies, r.armorProficiencies], text).toEqual([
+        undefined,
+        undefined,
+        undefined,
+      ]);
+    }
+    expect(
+      feat(
+        'If you are a wizard, you gain proficiency in the Arcana skill, and you learn two languages of your choice.',
+      ).languageProficiencies,
+    ).toBeUndefined();
+    // A lead-in from the books leaves the grant as it is.
+    expect(
+      race(
+        trait(
+          'Recall',
+          'Thanks to your memory, you have proficiency in two skills of your choice.',
+        ),
+      ).skillProficiencies,
+    ).toEqual([{ any: 2 }]);
+  });
+
+  it('reads no option, table row, or sentence that hangs on an earlier one', () => {
+    const none = [
+      trait(
+        'Kobold Legacy',
+        'Choose one of the following legacy options for your kobold.',
+        'Craftiness. You have proficiency in one of the following skills of your choice: Arcana, Investigation, Medicine, Sleight of Hand, or Survival.',
+      ),
+      trait(
+        'Gift',
+        'Choose one of the following options:',
+        '• You have proficiency in the Stealth skill.',
+        '• You have proficiency with light armor.',
+      ),
+      trait('Omen', 'Roll | Omen', '1 | You have proficiency in the Stealth skill.'),
+      trait(
+        'Arcane Gift',
+        'If you have the Spellcasting feature, you gain the following benefits.',
+        'You have proficiency in the Arcana skill.',
+      ),
+    ];
+    for (const t of none) {
+      const r = race(t);
+      expect([r.skillProficiencies, r.armorProficiencies], t).toEqual([undefined, undefined]);
+    }
+    expect(
+      race(
+        trait(
+          'Gift',
+          'Choose one of the following options:',
+          '• You have resistance to one of the following damage types of your choice: Cold, Fire, or Poison.',
+        ),
+      ).resist,
+    ).toBeUndefined();
+    // A list after a lead-in that holds for good is read.
+    expect(
+      race(
+        trait(
+          'Gifts',
+          'You gain the following benefits:',
+          '• You have proficiency in the Stealth skill.',
+        ),
+      ).skillProficiencies,
+    ).toEqual([{ stealth: true }]);
+  });
+
+  it('keeps a speed beside a proficiency, and joins grants of one kind', () => {
+    const swimmer = race(
+      trait(
+        'Swimmer',
+        'You have a swimming speed of 30 feet. You have proficiency in the Athletics skill.',
+      ),
+    );
+    expect(swimmer.speed).toEqual({ swim: 30 });
+    expect(swimmer.skillProficiencies).toEqual([{ athletics: true }]);
+    expect(
+      race(
+        trait(
+          'Knack',
+          'You have proficiency in the Stealth skill, and you have proficiency in one skill of your choice.',
+        ),
+      ).skillProficiencies,
+    ).toEqual([{ stealth: true, any: 1 }]);
+    expect(
+      race(
+        trait(
+          'Languages',
+          'You can speak, read, and write Common and Elvish. You also learn one extra language of your choice.',
+        ),
+      ).languageProficiencies,
+    ).toEqual([{ common: true, elvish: true, anyStandard: 1 }]);
+  });
+
+  it("takes a tag's skills as Fight Club's picks of the skills of your choice, when they fit", () => {
+    expect(
+      raceWith(
+        `<proficiency>Athletics</proficiency>${trait('Specialized Design', 'You gain one skill proficiency and one tool proficiency of your choice.')}`,
+      ),
+    ).toMatchObject({ skillProficiencies: [{ any: 1 }], toolProficiencies: [{ any: 1 }] });
+    expect(
+      raceWith(
+        `<proficiency>Perception, Stealth</proficiency>${trait('Recall', 'Thanks to your memory, you have proficiency in two skills of your choice.')}`,
+      ).skillProficiencies,
+    ).toEqual([{ any: 2 }]);
+    // More than the text lets you pick: the tag states them itself.
+    expect(
+      raceWith(
+        `<proficiency>Perception, Stealth</proficiency>${trait('Knack', 'You have proficiency in one skill of your choice.')}`,
+      ).skillProficiencies,
+    ).toEqual([{ perception: true, stealth: true, any: 1 }]);
+    expect(
+      featWith(
+        '<proficiency>Deception</proficiency>',
+        'You gain proficiency in one skill of your choice.',
+      ).skillProficiencies,
+    ).toEqual([{ any: 1 }]);
+  });
+
+  it("keeps a resistance tag that holds more of a pick's types than it allows", () => {
+    const pick = trait(
+      'Hollow Heart',
+      'You have resistance to one of the following damage types of your choice: Cold, Necrotic, or Poison.',
+    );
+    expect(raceWith(`<resist>cold, poison</resist>${pick}`).resist).toEqual(['cold', 'poison']);
+    expect(raceWith(`<resist>cold</resist>${pick}`).resist).toEqual([
+      { choose: { from: ['cold', 'necrotic', 'poison'] } },
+    ]);
+  });
+
+  it('reads expertise only right after the pick of a skill you have', () => {
+    for (const text of [
+      'You gain proficiency in the Stealth skill. You gain expertise in that skill if you already have proficiency in it.',
+      'Choose one of the following skills: Arcana or History. You gain expertise in that skill.',
+    ]) {
+      expect(feat(text).expertise, text).toBeUndefined();
+    }
+    expect(
+      feat(
+        'In addition, choose one skill you have proficiency in. You gain expertise in that skill.',
+      ).expertise,
+    ).toEqual([{ anyProficientSkill: 1 }]);
+  });
+
+  it('reads expertise only as plain words that stand for good', () => {
+    for (const text of [
+      'Choose one skill in which you have proficiency but lack Expertise. You gain Expertise with that skill.',
+      'Choose one of your skill proficiencies with which you lack Expertise. You gain Expertise in that skill.',
+    ]) {
+      expect(feat(text).expertise, text).toEqual([{ anyProficientSkill: 1 }]);
+    }
+    expect(
+      feat(
+        'Choose one skill in which you have proficiency to share with an ally. You gain expertise with that skill.',
+      ).expertise,
+    ).toBeUndefined();
+    // One option of several is not the feat's.
+    expect(
+      feat(
+        'Choose one of the following options:',
+        '• Choose one skill in which you have proficiency. You gain expertise with that skill.',
+        '• You gain proficiency with light armor.',
+      ).expertise,
+    ).toBeUndefined();
+  });
+
+  it("joins a feat's armor and tools from every sentence", () => {
+    const r = feat(
+      'You gain proficiency with light armor. You gain proficiency with medium armor.',
+      "You gain proficiency with thieves' tools. You also gain proficiency with one type of artisan's tools of your choice.",
+    );
+    expect(r.armorProficiencies).toEqual([{ light: true, medium: true }]);
+    expect(r.toolProficiencies).toEqual([{ "thieves' tools": true, anyArtisansTool: 1 }]);
+  });
+
+  it('keeps a skill the text grants outright beside a choice that offers it', () => {
+    expect(
+      feat(
+        'You gain proficiency in the Stealth skill.',
+        'You gain proficiency in one of the following skills of your choice: Acrobatics, Athletics, or Stealth.',
+      ).skillProficiencies,
+    ).toEqual([{ stealth: true }, { choose: { from: ['acrobatics', 'athletics', 'stealth'] } }]);
+  });
+
+  it("counts toward a resistance pick only the tag's types no trait gives outright", () => {
+    expect(
+      raceWith(
+        `<resist>fire, cold</resist>${trait('Hearth', 'You have resistance to fire damage.')}${trait(
+          'Hollow Heart',
+          'You have resistance to one of the following damage types of your choice: Cold, Fire, or Lightning.',
+        )}`,
+      ).resist,
+    ).toEqual(['fire', { choose: { from: ['cold', 'fire', 'lightning'] } }]);
+  });
+
+  it("reads a language named like an object's own key as a language", () => {
+    expect(
+      raceWith(
+        `<languages>Common</languages>${trait('Languages', 'You can speak, read, and write Common and Constructor, and one extra language of your choice.')}`,
+      ).languageProficiencies,
+    ).toEqual([{ common: true }]);
+  });
+
+  it('stops at a sentence that opens on terms, and reads past words in parentheses', () => {
+    expect(
+      race(
+        trait('Shift', 'While shifted, your eyes glow. You have proficiency in the Stealth skill.'),
+      ).skillProficiencies,
+    ).toBeUndefined();
+    expect(
+      race(trait('Rite', 'As part of a ritual, you have proficiency in the Stealth skill.'))
+        .skillProficiencies,
+    ).toBeUndefined();
+    expect(
+      race(
+        trait(
+          'Scales',
+          'Your scales shimmer (choose a colour when you gain this trait). You have proficiency with light armor.',
+        ),
+      ).armorProficiencies,
+    ).toEqual([{ light: true }]);
+  });
+
+  it('reads the items after a benefits lead-in past one that picks a skill or a spell', () => {
+    const r = feat(
+      'You gain the following benefits:',
+      '• Choose one skill in which you have proficiency. You gain expertise with that skill.',
+      "• You gain proficiency with thieves' tools.",
+    );
+    expect(r.expertise).toEqual([{ anyProficientSkill: 1 }]);
+    expect(r.toolProficiencies).toEqual([{ "thieves' tools": true }]);
+    expect(
+      feat(
+        'You gain the following benefits:',
+        '• You learn one cantrip of your choice from the cleric spell list. Intelligence, Wisdom, or Charisma is your spellcasting ability for this spell (choose when you select this feat).',
+        '• You gain proficiency in the Religion skill.',
+      ).skillProficiencies,
+    ).toEqual([{ religion: true }]);
+  });
+
+  it('reads no grant beside a clause that sets its terms, and reads a set of tools', () => {
+    for (const text of [
+      'You gain proficiency in one skill of your choice, and you retain this proficiency for 1 hour.',
+      'You can expend one superiority die, and you gain proficiency in the Intimidation skill.',
+    ]) {
+      expect(feat(text).skillProficiencies, text).toBeUndefined();
+    }
+    expect(
+      feat(
+        "You gain proficiency with your choice of one set of artisan's tools or one musical instrument.",
+      ).toolProficiencies,
+    ).toEqual([{ choose: { from: ["artisan's tools", 'musical instrument'] } }]);
+  });
+
+  it('reads a list after any lead-in that sets no terms, and a paragraph after one that opens on them', () => {
+    expect(
+      feat(
+        'You have picked up some useful tricks:',
+        '• You learn one cantrip of your choice from the wizard spell list.',
+        "• You gain proficiency with one type of artisan's tools of your choice.",
+      ).toolProficiencies,
+    ).toEqual([{ anyArtisansTool: 1 }]);
+    expect(
+      feat(
+        'You can brew strange tonics, granting you the following benefits:',
+        '• When you drink a potion, you regain 1 hit point.',
+        '• You gain proficiency with the herbalism kit.',
+      ).toolProficiencies,
+    ).toEqual([{ 'herbalism kit': true }]);
+    expect(
+      feat(
+        'You gain the following benefits.',
+        'When a creature sees you, it hesitates. If it does, it loses its reaction.',
+        'You gain proficiency in the Intimidation skill.',
+      ).skillProficiencies,
+    ).toEqual([{ intimidation: true }]);
+    for (const lead of [
+      'You can enter a trance for 1 minute, gaining the following benefits:',
+      'You gain one of the following benefits of your choice:',
+      'You have these traits, depending on your homeland:',
+    ]) {
+      expect(
+        feat(lead, '• You gain proficiency in the Stealth skill.').skillProficiencies,
+        lead,
+      ).toBeUndefined();
+    }
+  });
+
+  it('reads each item after a lead-in that holds on its own', () => {
+    const r = race(
+      trait(
+        'Gifts',
+        'You gain the following benefits.',
+        '• Choose one of the following skills: Arcana or History.',
+        '• You have proficiency with light armor.',
+      ),
+    );
+    expect(r.armorProficiencies).toEqual([{ light: true }]);
+  });
+
+  it("reads a feat's tool before a clause that grants none, and its resistance picks", () => {
+    expect(
+      feat(
+        "You gain proficiency with one type of artisan's tools of your choice, and you can use that type of tool as a spellcasting focus.",
+      ).toolProficiencies,
+    ).toEqual([{ anyArtisansTool: 1 }]);
+    expect(
+      feat(
+        'You gain Resistance to two of the following damage types of your choice: Acid, Cold, or Fire.',
+      ).resist,
+    ).toEqual([{ choose: { from: ['acid', 'cold', 'fire'], count: 2 } }]);
+    expect(
+      feat(
+        'You have Resistance to one of the following damage types (choose when you gain this feat): Necrotic, Psychic, or Radiant.',
+      ).resist,
+    ).toEqual([{ choose: { from: ['necrotic', 'psychic', 'radiant'] } }]);
+  });
+
+  it("reads a race's weapon picks and the armor joined to them", () => {
+    const r = race(
+      trait(
+        'Martial Training',
+        'You are proficient with two martial weapons of your choice and with light armor.',
+      ),
+    );
+    expect(r.weaponProficiencies).toEqual([
+      { choose: { fromFilter: 'type=martial weapon|miscellaneous=mundane', count: 2 } },
+    ]);
+    expect(r.armorProficiencies).toEqual([{ light: true }]);
+    expect(
+      feat('You gain proficiency with four weapons of your choice.').weaponProficiencies,
+    ).toEqual([
+      {
+        choose: { fromFilter: 'type=simple weapon;martial weapon|miscellaneous=mundane', count: 4 },
+      },
+    ]);
+  });
+
+  it("reads a race's language pick beside its tag, and the book's other wordings", () => {
+    const tagged = (tag: string, text: string) =>
+      done(
+        convertRace(
+          parseXml(
+            `<race><name>Emberkin</name><languages>${tag}</languages>${trait('Languages', text)}</race>`,
+          ),
+          ctx,
+        ),
+      ).entity.languageProficiencies;
+    expect(
+      tagged(
+        'Common, Elvish',
+        'You can speak, read, and write Common, Elvish, and one extra language of your choice.',
+      ),
+    ).toEqual([{ common: true, elvish: true, anyStandard: 1 }]);
+    // A tag that names another language than the trait's says something else: it wins.
+    expect(
+      tagged(
+        'Common, Dwarvish',
+        'You can speak, read, and write Common, Elvish, and one extra language of your choice.',
+      ),
+    ).toEqual([{ common: true, dwarvish: true }]);
+    expect(
+      race(
+        trait(
+          'Languages',
+          'You speak, read, and write Common, Goblin, and one additional language of your choice.',
+        ),
+      ).languageProficiencies,
+    ).toEqual([{ common: true, goblin: true, anyStandard: 1 }]);
+    expect(
+      race(
+        trait(
+          'Languages',
+          'You can speak, read, and write Common and your choice of Elvish or Vedalken.',
+        ),
+      ).languageProficiencies,
+    ).toEqual([{ common: true, choose: { from: ['elvish', 'vedalken'] } }]);
+  });
+
+  it("leaves out of a race's resist tag the type it holds as Fight Club's pick", () => {
+    const r = done(
+      convertRace(
+        parseXml(
+          `<race><name>Emberkin</name><resist>necrotic, fire</resist>${trait(
+            'Hollow Heart',
+            'You have Resistance to one of the following damage types of your choice: Cold, Necrotic, or Poison.',
+          )}</race>`,
+        ),
+        ctx,
+      ),
+    ).entity;
+    expect(r.resist).toEqual(['fire', { choose: { from: ['cold', 'necrotic', 'poison'] } }]);
+  });
+
+  it("reads a background's skill pick beside a tag that holds Fight Club's pick", () => {
+    const skills = (tag: string) =>
+      done(
+        convertBackground(
+          parseXml(
+            `<background><name>Scholar</name><proficiency>${tag}</proficiency>${trait('Description', '• Skill Proficiencies: History, plus your choice of one from among Arcana, Nature, and Religion')}</background>`,
+          ),
+          ctx,
+        ),
+      ).entity.skillProficiencies;
+    const pick = [{ history: true, choose: { from: ['arcana', 'nature', 'religion'] } }];
+    expect(skills('History')).toEqual(pick);
+    expect(skills('History, Arcana')).toEqual(pick);
+    // A tag naming a skill outside the pick says something else: it wins.
+    expect(skills('History, Stealth')).toEqual([{ history: true, stealth: true }]);
+  });
+
+  it("reads a background's pick of a feat category", () => {
+    const feats = (line: string) =>
+      done(
+        convertBackground(
+          parseXml(`<background><name>Wanderer</name>${trait(`Feat: ${line}`, 'x')}</background>`),
+          ctx,
+        ),
+      ).entity.feats;
+    expect(feats('A Dark Gift feat of your choice (Mist Walker is recommended)')).toEqual([
+      { anyFromCategory: { category: ['DG'] } },
+    ]);
+    expect(featCategory('Dark Gift: Watchers')).toEqual({ name: 'Watchers', category: 'DG' });
+  });
+
+  it('reads a background tool picked from a list', () => {
+    const tools = (line: string) =>
+      done(
+        convertBackground(
+          parseXml(
+            `<background><name>Wayfarer</name>${trait('Tool Proficiencies', line).replace('<name>Tool Proficiencies</name><text>', `<name>Tool Proficiencies: ${line}</name><text>`)}</background>`,
+          ),
+          ctx,
+        ),
+      ).entity.toolProficiencies;
+    expect(
+      tools(
+        'Any one musical instrument or gaming set of your choice, likely something native to your homeland',
+      ),
+    ).toEqual([{ choose: { from: ['musical instrument', 'gaming set'] } }]);
+    expect(
+      tools(
+        "Choose two from among one type of gaming set, one musical instrument, and thieves' tools",
+      ),
+    ).toEqual([
+      { choose: { from: ['gaming set', 'musical instrument', "thieves' tools"], count: 2 } },
+    ]);
   });
 });
