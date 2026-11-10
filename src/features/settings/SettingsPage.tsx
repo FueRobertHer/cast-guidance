@@ -28,7 +28,7 @@ import { cardClass } from '@/ui/surfaces';
 import { fieldClass } from '@/ui/TextField';
 import { PERSIST_DENIED_TEXT, PersistStatus, STORAGE_DETAILS_ID } from '../onboarding/Status';
 import { ConditionMotionSwitch } from './ConditionMotionSwitch';
-import { OneUseDiceSetting } from './OneUseDiceSetting';
+import { HouseRulesSection } from './HouseRulesSection';
 import { SourcesSection } from './SourcesSection';
 import { ThemePicker } from './ThemePicker';
 
@@ -296,15 +296,7 @@ export function Component() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className={H2}>House rules</h2>
-        <p className="px-1 text-caption text-ink-muted">
-          For every character, unless its own Build page says otherwise.
-        </p>
-        <div className={cardClass}>
-          <OneUseDiceSetting />
-        </div>
-      </section>
+      <HouseRulesSection heading={H2} />
 
       <section className="flex flex-col gap-2">
         <h2 className={H2}>Game data</h2>

@@ -1,4 +1,4 @@
-import { appTableRules, setAppTableRule, useAppTableRules } from '@/stores/tableRules';
+import { appTableRules, setAppTableRule } from '@/stores/tableRules';
 
 /**
  * Whether a one-use die that lets you wait for the d20 (2014 Guidance and
@@ -25,17 +25,15 @@ export const ONE_USE_DICE_WHY: Record<OneUseDice, string> = {
     'House rule: add them in the roll prompt or not at all. A die you add is spent even on a natural 1 or 20.',
 };
 
-/** The app's choice, read now. */
+/** The app's choice in Settings, read now: as written ("after") when none was made. */
 export function oneUseDiceSetting(): OneUseDice {
   return appTableRules().oneUseDice ?? 'after';
 }
 
-/** As written ("after") is no choice at all, so the app follows the books. */
+/**
+ * Choose for the app. As written ("after") is stored as chosen too, so it
+ * outranks a rule pack made the app's default (`engine/rules.ts`).
+ */
 export function setOneUseDice(choice: OneUseDice): void {
-  setAppTableRule('oneUseDice', choice === 'after' ? undefined : choice);
-}
-
-/** The app's choice, re-rendering when it changes here or in another tab. */
-export function useOneUseDice(): OneUseDice {
-  return useAppTableRules().oneUseDice ?? 'after';
+  setAppTableRule('oneUseDice', choice);
 }

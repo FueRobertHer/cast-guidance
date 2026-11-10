@@ -41,7 +41,11 @@ describe("the app's table rules", () => {
     localStorage.setItem(ONE_USE_DICE_KEY, 'before');
     expect(appTableRules()).toEqual({ oneUseDice: 'before' });
     expect(oneUseDiceSetting()).toBe('before');
+    // As written, chosen, is stored as made, so it outranks an app-default pack.
     setOneUseDice('after');
+    expect(localStorage.getItem(ONE_USE_DICE_KEY)).toBe('after');
+    expect(appTableRules()).toEqual({ oneUseDice: 'after' });
+    setAppTableRule('oneUseDice', undefined);
     expect(localStorage.getItem(ONE_USE_DICE_KEY)).toBeNull();
     expect(appTableRules()).toEqual({});
   });

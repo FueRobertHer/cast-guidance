@@ -97,6 +97,11 @@ export interface RollResult {
     /** Present when the roll leads with a d20 — powers nat 20/1 highlighting. */
     d20?: { natural: number };
     /**
+     * A sheet's d20 test: the kind of roll it is (initiative is a check), for
+     * the moments a natural 20 or 1 sets off that name the rolls they hold for.
+     */
+    test?: 'attack' | 'save' | 'check';
+    /**
      * What the character's conditions did to the roll, in words
      * ("Disadvantage: Poisoned · −4: Exhaustion 2").
      */

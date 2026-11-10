@@ -48,17 +48,65 @@ describe('diffDocs', () => {
     expect(sameContent(base(), to)).toBe(true);
   });
 
-  it('treats a missing turn tracker or HP rule as their defaults', () => {
+  it('treats a missing turn tracker as its default', () => {
     const old = edited((d) => {
       delete d.play.turn;
-      delete d.hpMethod;
     });
     const fresh = edited((d) => {
       d.play.turn = { action: false, bonus: false, reaction: false };
-      d.hpMethod = 'average';
     });
     expect(diffDocs(old, fresh)).toEqual([]);
     expect(sameContent(old, fresh)).toBe(true);
+  });
+
+  it('tells a chosen fixed amount for HP apart from following Settings, which may say roll', () => {
+    const own = edited((d) => {
+      d.hpMethod = 'average';
+    });
+    const changes = diffDocs(base(), own);
+    expect(changes.map((c) => c.line)).toEqual([
+      'HP each level: as in Settings → the fixed amount',
+    ]);
+    expect(changes.every((c) => c.kind === 'hpRule' && c.structural)).toBe(true);
+    expect(sameContent(base(), own)).toBe(false);
+    expect(
+      lines(
+        own,
+        edited((d) => void (d.hpMethod = 'rolledAtLeastAverage')),
+      ),
+    ).toEqual(['HP each level: the fixed amount → rolled, at least the fixed amount']);
+    // A character with no HP rule of its own keys as it always did, so the
+    // save journal still recognises rows hashed by the app before this one.
+    expect(contentKey(base())).toContain('"hpMethod":"average"');
+  });
+
+  it("names each of a character's own table rules, and reads none as absent", () => {
+    const own = edited((d) => {
+      d.tableRules = { critDamage: 'maxPlusRoll', restLength: 'gritty' };
+    });
+    const changes = diffDocs(base(), own);
+    expect(changes.map((c) => c.line)).toEqual([
+      'Critical hits: as in Settings → max the dice, then roll',
+      'Rest length: as in Settings → gritty',
+    ]);
+    expect(changes.every((c) => c.kind === 'tableRule' && c.structural)).toBe(true);
+    expect(
+      lines(
+        own,
+        edited((d) => void (d.tableRules = { restLength: 'gritty' })),
+      ),
+    ).toEqual(['Critical hits: max the dice, then roll → as in Settings']);
+    const none = edited((d) => {
+      d.tableRules = {};
+    });
+    expect(diffDocs(base(), none)).toEqual([]);
+    expect(contentKey(none)).toBe(contentKey(base()));
+    // An import can hold null there: it hashes as it is, and diffs, without throwing.
+    const unread = edited((d) => {
+      (d as { tableRules: unknown }).tableRules = null;
+    });
+    expect(contentKey(unread)).toContain('"tableRules":null');
+    expect(() => diffDocs(base(), unread)).not.toThrow();
   });
 
   it('treats no effect box used as none listed, in any order', () => {

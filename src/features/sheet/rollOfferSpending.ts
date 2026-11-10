@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { setTableCrit } from '@/dice/roll';
-import type { CritDamage } from '@/dice/types';
-import { endEffect } from '@/engine/effectLife';
+import type { CritDamage, RollResult } from '@/dice/types';
+import { endEffect, naturalRolled } from '@/engine/effectLife';
+import { momentsAt } from '@/engine/moments';
 import { sheetRules } from '@/engine/rules';
 import type { ActiveEffect, CharacterDoc, DerivedSheet, PlayState } from '@/engine/types';
 import type { DocUpdater } from '@/stores/characterSession';
 import { cancelHeld } from '@/stores/heldRoll';
+import { notify } from '@/stores/notices';
+import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
-import { hpLimits } from './effectsInPlay';
+import { hpLimits, momentLines, withMoments } from './effectsInPlay';
 
 /**
  * Lets the roll toast spend the dice it offers while a sheet is open
@@ -101,6 +104,44 @@ export function useRollOfferSpending(
       cancelHeld();
     };
   }, [before]);
+
+  // A natural 20 or 1 on a d20 test the sheet rolled (one that says its kind,
+  // `meta.test`) fires the character's `natural20` or `natural1` moments, once
+  // a roll: rolls already in the log when the sheet opens or the character
+  // changes are passed over, and a roll put back in place (a die added after
+  // it) is the same roll, not a new one. A roll the tray or a rules chip makes
+  // says no kind and sets nothing off. It fires after the step that logged the
+  // roll (a concentration save is logged inside an update), in a change of its own.
+  const docId = doc?.id;
+  useEffect(() => {
+    if (docId === undefined) return;
+    let seq = rollLogStore.getState().seq;
+    const landed = (r: RollResult) => {
+      const natural = r.meta?.d20?.natural;
+      const test = r.meta?.test;
+      if ((natural !== 20 && natural !== 1) || test === undefined) return;
+      const { doc, sheet, update } = latest.current;
+      if (doc === null || sheet === null || doc.id !== docId) return;
+      const hp = hpLimits(sheet, doc.rulesVersion);
+      const at = natural === 20 ? 'natural20' : 'natural1';
+      if (hp.moments === undefined || momentsAt(hp.moments, at, { roll: test }).length === 0)
+        return;
+      let said: ReturnType<typeof withMoments> = null;
+      update((d) => {
+        const change = naturalRolled(d.play, natural, test, hp);
+        // Said only when a moment did something to say.
+        if (change.moments !== undefined && momentLines(change.moments).length > 0)
+          said = withMoments({ title: `Natural ${natural}`, tone: 'info' }, change.moments);
+      }, `Natural ${natural}`);
+      if (said !== null) notify(said);
+    };
+    return rollLogStore.subscribe((s) => {
+      if (s.seq === seq) return;
+      const fresh = s.rolls.slice(0, Math.max(0, Math.min(s.seq - seq, s.rolls.length)));
+      seq = s.seq;
+      for (const r of fresh.reverse()) queueMicrotask(() => landed(r));
+    });
+  }, [docId]);
 
   const hp = doc === null ? undefined : `${doc.play.currentHp}/${doc.play.tempHp}`;
   const seen = useRef(hp);

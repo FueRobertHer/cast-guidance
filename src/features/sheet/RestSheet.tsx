@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TableRuleChoices } from '@/engine/castGuidance';
 import { endsAtRest } from '@/engine/effectLife';
+import { restTakes } from '@/engine/rules';
 import type { ActiveEffect } from '@/engine/types';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/sheet';
@@ -48,7 +49,10 @@ export function RestSheet({
       <Sheet.Portal>
         <Sheet.Scrim />
         <Sheet.Panel aria-describedby={undefined} className="flex max-h-[85dvh] flex-col">
-          <Sheet.Heading>{rest === 'short' ? 'Short rest' : 'Long rest'}</Sheet.Heading>
+          {/* How long it takes under the table's rest length rule. */}
+          <Sheet.Heading aside={restTakes(length, rest)}>
+            {rest === 'short' ? 'Short rest' : 'Long rest'}
+          </Sheet.Heading>
           <RestEnds
             key={`${rest} ${openings}`}
             rest={rest}

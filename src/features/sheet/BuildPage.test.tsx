@@ -10,6 +10,8 @@ import { deriveSheet } from '@/engine/derive';
 import { type CharacterDoc, type EngineContext, newCharacterDoc } from '@/engine/types';
 import { setOneUseDice } from '@/lib/oneUseDice';
 import { dataStatusStore } from '@/stores/dataStatus';
+import { rollLogStore } from '@/stores/rollLog';
+import { setAppTableRule, useAppTableRules } from '@/stores/tableRules';
 import { namelessControls } from '../../../tests-fixtures/a11y';
 import { makeTestContext } from '../../../tests-fixtures/testWorld';
 import { Component as BuildPage } from './BuildPage';
@@ -124,9 +126,11 @@ function renderBuild(build?: (doc: CharacterDoc) => void) {
   };
   function Shell() {
     const live = useSyncExternalStore(subscribe, () => current);
+    // The app's rules from the real Settings store, as useCharacterSheet passes them.
+    const rules = useAppTableRules();
     const sheet = useMemo(
-      () => deriveSheet(live, layeredWorld() as unknown as EngineContext),
-      [live],
+      () => deriveSheet(live, { ...layeredWorld(), rules } as unknown as EngineContext),
+      [live, rules],
     );
     // The app's HP sync (useCharacterSheet): while a character is still being
     // built, current HP follows the derived maximum with a write of its own.
@@ -230,37 +234,90 @@ describe('BuildPage rules-version switch (GAME-003)', () => {
   });
 });
 
-describe('BuildPage one-use dice rule (the buffs canvas, Dice B)', () => {
+// The Rules board, A: a character's own rule, and HP each level, on Build.
+describe('BuildPage house rules', () => {
   afterEach(() => {
-    act(() => setOneUseDice('after'));
+    localStorage.clear();
+    act(() => setAppTableRule('hpEachLevel', undefined));
+    act(() => setAppTableRule('oneUseDice', undefined));
+    act(() => setAppTableRule('critDamage', undefined));
+    rollLogStore.getState().clear();
   });
+  // Hidden too: an open sheet hides the page under it from the accessibility tree.
+  const row = (title: string) =>
+    screen.getByRole('button', { name: new RegExp(`^${title}`), hidden: true });
+  const sheet = () => screen.getByRole('dialog');
+  const pick = (name: RegExp) => fireEvent.click(within(sheet()).getByRole('radio', { name }));
 
-  it('follows Settings until the character keeps its own, and says what each means', () => {
+  it('follows Settings for one-use dice until the character keeps its own, and takes it back', () => {
     const { getDoc } = renderBuild();
-    const group = screen.getByRole('group', { name: /when this character adds a one-use die/ });
-    const pressed = () =>
-      within(group)
-        .getAllByRole('button')
-        .filter((b) => b.getAttribute('aria-pressed') === 'true')
-        .map((b) => b.textContent);
-    expect(pressed()).toEqual(['As in Settings']);
-    expect(group.textContent).toContain('Settings says after too');
+    const dice = () => row('Guidance and Bardic Inspiration').textContent;
+    expect(dice()).toContain('Offered after the roll too · As in Settings');
     act(() => setOneUseDice('before'));
-    expect(group.textContent).toContain('Settings says before only');
+    expect(dice()).toContain('Named before the roll · As in Settings');
 
-    fireEvent.click(within(group).getByRole('button', { name: 'After too' }));
+    fireEvent.click(row('Guidance and Bardic Inspiration'));
+    expect(within(sheet()).getByRole('button', { name: 'Only Hero', pressed: true })).toBeTruthy();
+    expect(within(sheet()).getByText(/^Hero follows Settings here/)).toBeTruthy();
+    pick(/^Offered after the roll too/);
     expect(getDoc().oneUseDice).toBe('after');
-    expect(pressed()).toEqual(['After too']);
-    expect(group.textContent).toContain('any you leave come back after the roll');
-
-    fireEvent.click(within(group).getByRole('button', { name: 'Before only' }));
-    expect(getDoc().oneUseDice).toBe('before');
-    expect(group.textContent).toContain('House rule: add them in the roll prompt or not at all');
+    expect(dice()).toContain('Offered after the roll too · Your own');
+    expect(within(sheet()).getByText(/^Hero has a rule of its own here/)).toBeTruthy();
 
     // Back to Settings leaves no field behind, as a character that never chose.
-    fireEvent.click(within(group).getByRole('button', { name: 'As in Settings' }));
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Follow Settings again' }));
     expect('oneUseDice' in getDoc()).toBe(false);
-    expect(pressed()).toEqual(['As in Settings']);
+    expect(dice()).toContain('Named before the roll · As in Settings');
+  });
+
+  it('sets the rule for every character from the same sheet, leaving the character alone', () => {
+    const { getDoc } = renderBuild();
+    fireEvent.click(row('Critical hits'));
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Every character' }));
+    expect(within(sheet()).getByText('Every character follows this, Hero too.')).toBeTruthy();
+    pick(/^Double the total/);
+    expect(localStorage.getItem('cast-guidance:table-rule:critDamage')).toBe('doubleTotal');
+    expect('tableRules' in getDoc()).toBe(false);
+    expect(row('Critical hits').textContent).toContain('Double the total · As in Settings');
+    // Their own then holds over it, and says so.
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Only Hero' }));
+    pick(/^Max the dice, then roll them/);
+    expect(getDoc().tableRules).toEqual({ critDamage: 'maxPlusRoll' });
+    expect(row('Critical hits').textContent).toContain('Max the dice, then roll them · Your own');
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Every character' }));
+    expect(
+      within(sheet()).getByText('Hero has a rule of its own here, so this does not change Hero.'),
+    ).toBeTruthy();
+  });
+
+  it('rolls HP at level-up and offers the rolls under an app rule of rolled, or at least the average', () => {
+    const { getDoc } = renderBuild();
+    expect(row('HP each level').textContent).toContain('The fixed amount · As in Settings');
+    expect(screen.queryByRole('textbox', { name: 'Warrior level 2 hit points' })).toBeNull();
+
+    act(() => setAppTableRule('hpEachLevel', 'rolled'));
+    expect(row('HP each level').textContent).toContain('Roll each level · As in Settings');
+    expect(screen.getByRole('textbox', { name: 'Warrior level 2 hit points' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Level up' }));
+    const rolled = getDoc().classes[0]?.hp[3];
+    expect(typeof rolled).toBe('number');
+    expect(rollLogStore.getState().rolls[0]?.label).toMatch(/^Warrior level 4 hit points/);
+
+    act(() => setAppTableRule('hpEachLevel', 'rolledAtLeastAverage'));
+    expect(row('HP each level').textContent).toContain('Roll, never under the fixed amount');
+    expect(screen.getByRole('textbox', { name: 'Warrior level 4 hit points' })).toBeTruthy();
+
+    // The character's own fixed amount holds over the app's rule.
+    fireEvent.click(row('HP each level'));
+    pick(/^The fixed amount/);
+    expect(getDoc().hpMethod).toBe('average');
+    expect(row('HP each level').textContent).toContain('The fixed amount · Your own');
+    expect(
+      screen.queryByRole('textbox', { name: 'Warrior level 2 hit points', hidden: true }),
+    ).toBeNull();
+    fireEvent.click(within(sheet()).getByRole('button', { name: 'Done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Level up', hidden: true }));
+    expect(getDoc().classes[0]?.hp[4]).toBe('avg');
   });
 });
 
@@ -606,13 +663,15 @@ describe('BuildPage accessible names', () => {
     expect(screen.getByRole('button', { name: 'Remove a Warrior level' })).toBeTruthy();
   });
 
-  it('reports the rules version and HP method that are set as pressed', () => {
-    renderBuild();
+  it('reports the rules version that is set as pressed, and names the HP rule row by its value', () => {
+    renderBuild((d) => {
+      d.hpMethod = 'rolled';
+    });
     expect(screen.getByRole('button', { name: '2014', pressed: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: '2024', pressed: false })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Rolled', pressed: false }));
-    expect(screen.getByRole('button', { name: 'Rolled', pressed: true })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Average', pressed: false })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'HP each level, Roll each level · Your own' }),
+    ).toBeTruthy();
   });
 
   it('says the score on an ability swap button, and which one is picked up', () => {
