@@ -610,6 +610,29 @@ export function conditionEntries(
   };
 }
 
+/**
+ * The homebrew conditions in force, for derive (H5): `homebrewConditionEffects`
+ * over the data's conditions in the character's edition. The data and the
+ * immunities are read only when a condition in play is not built in, so a
+ * character with none costs nothing and derives as it always has.
+ */
+export function homebrewConditionsInForce(
+  conditions: unknown,
+  data: { byType(type: string): readonly unknown[] },
+  edition: Edition,
+  immune: () => ReadonlyArray<ConditionImmunity>,
+): { effects: ActiveEffect[]; problems: string[] } {
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  const homebrew = list.some((raw) => {
+    const id = isRecord(raw) ? own(raw, 'id') : undefined;
+    return typeof id === 'string' && id.trim() !== '' && !isBuiltInCondition(id);
+  });
+  if (!homebrew) return { effects: [], problems: [] };
+  return homebrewConditionEffects(list, conditionEntries(data.byType('condition'), edition), {
+    immune: immune(),
+  });
+}
+
 const ABILITY_NAMES: Record<Ability, string> = {
   str: 'Strength',
   dex: 'Dexterity',

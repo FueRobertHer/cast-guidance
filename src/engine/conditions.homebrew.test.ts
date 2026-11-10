@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { makeTestContext } from '../../tests-fixtures/testWorld';
 import { readActiveEffects } from './activeEffects';
 import {
+  type ActiveCondition,
   BUILT_IN_CONDITIONS,
   builtInConditionParts,
   conditionEntries,
@@ -8,6 +10,8 @@ import {
   homebrewConditionEffects,
   isBuiltInCondition,
 } from './conditions';
+import { deriveSheet } from './derive';
+import { type CharacterDoc, type DataEntity, type EngineContext, newCharacterDoc } from './types';
 
 const dazed = (effects: unknown, more: Record<string, unknown> = {}) => ({
   name: 'Dazed',
@@ -233,5 +237,82 @@ describe('builtInConditionParts', () => {
       expect(read.problems, name).toEqual([]);
       expect(read.parts, name).toEqual(parts);
     }
+  });
+});
+
+describe('deriveSheet with a homebrew condition', () => {
+  const world = makeTestContext();
+  /** The test world, with a homebrew condition, counting its reads of the conditions. */
+  const withConditions = (...entries: unknown[]) => {
+    const reads = { condition: 0 };
+    const ctx: EngineContext = {
+      get: world.get,
+      byType: (type) => {
+        if (type !== 'condition') return world.byType(type);
+        reads.condition += 1;
+        return entries as DataEntity[];
+      },
+    };
+    return { ctx, reads };
+  };
+
+  /** A level-5 warrior in no armor: AC 12 from DEX 14. */
+  function warrior(conditions: ActiveCondition[] = []): CharacterDoc {
+    const doc = newCharacterDoc('w', 'Hild', 'test-tag');
+    doc.abilities.method = 'manual';
+    doc.abilities.base = { str: 16, dex: 14, con: 14, int: 10, wis: 12, cha: 8 };
+    doc.race = { name: 'Testfolk', source: 'TST' };
+    doc.classes = [{ ref: { name: 'Warrior', source: 'TST' }, levels: 5, hp: ['avg'] }];
+    doc.play.conditions = conditions;
+    return doc;
+  }
+
+  it('changes the sheet while it is on the character', () => {
+    const { ctx } = withConditions(dazed([{ kind: 'acBonus', amount: -2 }, DIS_ATTACKS]));
+    const before = deriveSheet(warrior(), ctx);
+    const after = deriveSheet(warrior([{ id: 'Dazed' }]), ctx);
+    expect(after.ac.value).toBe(before.ac.value - 2);
+    expect(after.ac.parts.at(-1)).toMatchObject({ label: 'Dazed', amount: -2 });
+    expect(after.rollRiders).toEqual(
+      expect.arrayContaining([expect.objectContaining({ origin: 'Dazed', mode: 'dis' })]),
+    );
+    expect(after.warnings).toEqual(before.warnings);
+  });
+
+  it('counts nothing switched off, held off by an immunity, or with effects not counted', () => {
+    const { ctx } = withConditions(dazed([{ kind: 'acBonus', amount: -2 }]));
+    const base = deriveSheet(warrior(), ctx).ac.value;
+    expect(deriveSheet(warrior([{ id: 'Dazed', ignored: true }]), ctx).ac.value).toBe(base);
+    const immune = warrior([{ id: 'dazed' }]);
+    immune.play.activeEffects = [
+      { id: 'w1', name: 'Clear Mind', parts: [{ kind: 'conditionImmune', condition: 'Dazed' }] },
+    ];
+    expect(deriveSheet(immune, ctx).ac.value).toBe(base);
+    expect(deriveSheet(warrior([{ id: 'Dazed' }]), ctx, { active: false }).ac.value).toBe(base);
+  });
+
+  it('warns about what does not count, and counts the rest', () => {
+    const { ctx } = withConditions(
+      dazed([
+        { kind: 'acBonus', amount: -2 },
+        { kind: 'skillProf', skill: 'Stealth', level: 1 },
+      ]),
+    );
+    const sheet = deriveSheet(warrior([{ id: 'Dazed' }]), ctx);
+    expect(sheet.warnings).toContain(
+      'Dazed: effect 2 does not count: a condition changes only numbers and rolls, not proficiencies, uses or actions.',
+    );
+    expect(sheet.ac.parts.at(-1)).toMatchObject({ label: 'Dazed', amount: -2 });
+  });
+
+  it('never reads the data, and derives as before, with only built-in conditions in play', () => {
+    const { ctx, reads } = withConditions(dazed([{ kind: 'acBonus', amount: -2 }]), {
+      name: 'Poisoned',
+      source: 'MyHomebrew',
+      castGuidance: { v: 1, effects: [{ kind: 'acBonus', amount: -5 }] },
+    });
+    const doc = warrior([{ id: 'Poisoned' }, { id: 'Prone' }]);
+    expect(deriveSheet(doc, ctx)).toEqual(deriveSheet(doc, world));
+    expect(reads.condition).toBe(0);
   });
 });
