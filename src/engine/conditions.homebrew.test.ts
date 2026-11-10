@@ -3,6 +3,7 @@ import { readActiveEffects } from './activeEffects';
 import {
   BUILT_IN_CONDITIONS,
   builtInConditionParts,
+  conditionEntries,
   conditionMechanics,
   homebrewConditionEffects,
   isBuiltInCondition,
@@ -144,6 +145,39 @@ describe('homebrewConditionEffects', () => {
   it('counts one of a name once', () => {
     const { effects } = homebrewConditionEffects([{ id: 'Dazed' }, { id: 'dazed' }], entryOf);
     expect(effects).toHaveLength(1);
+  });
+
+  it('reads a stored list it cannot trust without throwing', () => {
+    for (const bad of [undefined, null, 'Dazed', { id: 'Dazed' }, 7]) {
+      expect(homebrewConditionEffects(bad, entryOf).effects).toEqual([]);
+    }
+    const mixed = [null, 'Dazed', { id: 7 }, { id: '  ' }, { level: 2 }, { id: 'Dazed' }];
+    expect(homebrewConditionEffects(mixed, entryOf).effects).toHaveLength(1);
+    const inherited = [Object.create({ id: 'Dazed' })];
+    expect(homebrewConditionEffects(inherited, entryOf).effects).toEqual([]);
+  });
+});
+
+describe('conditionEntries', () => {
+  const printing = (source: string, edition?: string) => ({
+    name: 'Dazed',
+    source,
+    ...(edition !== undefined ? { edition } : {}),
+  });
+
+  it('finds an entry by name in any case, the printing for the edition first', () => {
+    const old = printing('MyHomebrew', 'classic');
+    const fresh = printing('MyHomebrew', 'one');
+    const find = conditionEntries([old, fresh, 7, null, { name: 3 }], '2024');
+    expect(find('dazed')).toBe(fresh);
+    expect(conditionEntries([old, fresh], '2014')('DAZED')).toBe(old);
+    expect(conditionEntries([old], '2024')('Dazed')).toBe(old);
+    expect(find('Bewildered')).toBeUndefined();
+  });
+
+  it('never finds a built-in condition, whatever the data says', () => {
+    const find = conditionEntries([{ name: 'Poisoned', source: 'MyHomebrew' }], '2024');
+    expect(find('Poisoned')).toBeUndefined();
   });
 });
 

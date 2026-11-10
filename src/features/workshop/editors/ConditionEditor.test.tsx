@@ -107,6 +107,8 @@ describe('ConditionEditor', () => {
       },
     });
     expect(conditionMechanics(saved).parts).toHaveLength(2);
+    // All of it is on the list now, so there is nothing more to add.
+    expect(screen.queryByRole('button', { name: 'Add what Poisoned does' })).toBeNull();
   });
 
   it('offers no start for a copy of a homebrew condition', () => {

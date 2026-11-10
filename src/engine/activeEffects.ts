@@ -138,7 +138,38 @@ const FIELDS: Record<ActivePartKind, readonly string[]> = {
 };
 
 /** A roll filter's fields (`RollFilter`). */
-const FILTER_FIELDS = ['rolls', 'abilities', 'skills', 'skilled', 'attack', 'range', 'className'];
+const FILTER_FIELDS: ReadonlySet<string> = new Set([
+  'rolls',
+  'abilities',
+  'skills',
+  'skilled',
+  'attack',
+  'range',
+  'className',
+]);
+
+/** Each kind's own fields, with `kind` and `same`, as a set to look keys up in. */
+const KNOWN: ReadonlyMap<string, ReadonlySet<string>> = new Map(
+  Object.entries(FIELDS).map(([kind, fields]) => [kind, new Set(['kind', 'same', ...fields])]),
+);
+
+/**
+ * The object's own fields that `known` has, in the order it holds them (so a
+ * part reads back as it was stored), each copied by `copy`.
+ */
+function knownFields(
+  o: Raw,
+  known: ReadonlySet<string>,
+  copy: (key: string, v: unknown) => unknown,
+): Raw {
+  const out: Raw = {};
+  for (const key of Object.keys(o)) {
+    if (!known.has(key)) continue;
+    const v = o[key];
+    if (v !== undefined) out[key] = copy(key, v);
+  }
+  return out;
+}
 
 /**
  * A field's value, copied: a list as a new list (a gap in it reads as a
@@ -146,26 +177,18 @@ const FILTER_FIELDS = ['rolls', 'abilities', 'skills', 'skilled', 'attack', 'ran
  * Anything else is kept as it is, and its kind's check refuses what is not a
  * plain value, so a valid part holds no object but its filter.
  */
-function copyValue(v: unknown, filter: boolean): unknown {
+function copyValue(key: string, v: unknown): unknown {
   if (Array.isArray(v)) return Array.from(v);
-  if (!filter || !isObj(v)) return v;
-  const out: Raw = {};
-  for (const key of FILTER_FIELDS) {
-    const field = own(v, key);
-    if (field !== undefined) out[key] = copyValue(field, false);
-  }
-  return out;
+  if (key !== 'on' || !isObj(v)) return v;
+  return knownFields(v, FILTER_FIELDS, (_, x) => (Array.isArray(x) ? Array.from(x) : x));
 }
 
 function readPart(raw: unknown): EffectPart | undefined {
   if (!isObj(raw)) return undefined;
   const kind = own(raw, 'kind');
-  if (!ACTIVE_PART_KINDS.includes(kind as never)) return undefined;
-  const part: Raw = { kind };
-  for (const key of [...FIELDS[kind as ActivePartKind], 'same']) {
-    const v = own(raw, key);
-    if (v !== undefined) part[key] = copyValue(v, key === 'on');
-  }
+  const known = typeof kind === 'string' ? KNOWN.get(kind) : undefined;
+  if (known === undefined) return undefined;
+  const part = knownFields(raw, known, copyValue);
   if (!optStr(part.same) || !VALID[kind as ActivePartKind](part)) return undefined;
   return part as EffectPart;
 }

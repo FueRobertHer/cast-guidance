@@ -10,6 +10,7 @@
  * the roll is about, which the sheet cannot know (a check that needs sight, an
  * attack on anyone but the grappler).
  */
+import { pickForVersion } from '../data5e/rulesVersion';
 import { type StoredProblem, storedInPlay } from './activeEffects';
 import { guidanceVersion, isRecord, own } from './castGuidance';
 import type { Ability, ActiveEffect, EffectPart, RollFilter } from './types';
@@ -557,7 +558,7 @@ export function conditionProblemLine(name: string, p: ConditionProblem): string 
  * as a built-in one does. A name no entry has does nothing.
  */
 export function homebrewConditionEffects(
-  conditions: ReadonlyArray<ActiveCondition>,
+  conditions: unknown,
   entryOf: (name: string) => unknown,
   options: ConditionOptions = {},
 ): { effects: ActiveEffect[]; problems: string[] } {
@@ -565,9 +566,14 @@ export function homebrewConditionEffects(
   const problems: string[] = [];
   const held = heldNames(options);
   const seen = new Set<string>();
-  for (const c of conditions) {
-    const key = c.id.trim().toLowerCase();
-    if (isBuiltInCondition(c.id) || seen.has(key) || !applies(c, held)) continue;
+  // A stored document: a condition it cannot read does nothing here.
+  const list = Array.isArray(conditions) ? Array.from(conditions as unknown[]) : [];
+  for (const raw of list) {
+    const id = isRecord(raw) ? own(raw, 'id') : undefined;
+    if (!isRecord(raw) || typeof id !== 'string' || id.trim() === '') continue;
+    const c: ActiveCondition = { id, ...(own(raw, 'ignored') === true ? { ignored: true } : {}) };
+    const key = id.trim().toLowerCase();
+    if (isBuiltInCondition(id) || seen.has(key) || !applies(c, held)) continue;
     seen.add(key);
     const entry = entryOf(c.id);
     if (entry === undefined) continue;
@@ -578,6 +584,30 @@ export function homebrewConditionEffects(
     }
   }
   return { effects, problems };
+}
+
+/**
+ * Finds a condition's entry by name, in a rules edition: of the entries with
+ * that name (any case), the one printed for the edition, else the first.
+ * Built once per derive from the data's conditions.
+ */
+export function conditionEntries(
+  entries: readonly unknown[],
+  edition: Edition,
+): (name: string) => unknown {
+  const byName = new Map<string, Array<Record<string, unknown>>>();
+  for (const e of entries) {
+    const name = isRecord(e) ? own(e, 'name') : undefined;
+    if (!isRecord(e) || typeof name !== 'string' || isBuiltInCondition(name)) continue;
+    const key = name.trim().toLowerCase();
+    const list = byName.get(key) ?? [];
+    if (list.length === 0) byName.set(key, list);
+    list.push(e);
+  }
+  return (name) => {
+    const list = byName.get(name.trim().toLowerCase());
+    return list === undefined ? undefined : pickForVersion(list, edition);
+  };
 }
 
 const ABILITY_NAMES: Record<Ability, string> = {

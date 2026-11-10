@@ -35,6 +35,9 @@ function ConditionBody({ draft, change, original, readOnly }: EditorProps) {
     original !== undefined && from !== undefined && isBuiltInCondition(from)
       ? builtInConditionParts(from, editionOf(original))
       : [];
+  // Offered until every one of them is on the list, so a second press adds nothing twice.
+  const have = new Set(effects.map((e) => JSON.stringify(e)));
+  const missing = builtIn.filter((p) => !have.has(JSON.stringify(p)));
   // The cards say why the stored reader refuses one; this says what a
   // condition in particular cannot count.
   const problems = conditionMechanics(draft).problems.filter((p) => p.unreadable !== true);
@@ -60,12 +63,12 @@ function ConditionBody({ draft, change, original, readOnly }: EditorProps) {
                 The app counts {from} by its own rules. Your copy counts only what you add here, so
                 start from what {from} does and change it.
               </p>
-              {!readOnly && (
+              {!readOnly && missing.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="self-start"
-                  onClick={() => setEffects([...effects, ...builtIn])}
+                  onClick={() => setEffects([...effects, ...missing])}
                 >
                   Add what {from} does
                 </Button>
