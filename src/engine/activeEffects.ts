@@ -270,11 +270,6 @@ export function readActiveEffects(raw: unknown): ReadEffects {
   return { effects, problems };
 }
 
-/** How long an effect lasts, read from stored data by known keys; none when it is not an object. */
-export function readEffectDuration(raw: unknown): EffectDuration | undefined {
-  return readDuration(raw);
-}
-
 /** A stored effect that an effect in play cannot hold, and why. */
 export interface StoredProblem {
   /** Its place in the stored list, from 1; none when the whole list is at fault. */

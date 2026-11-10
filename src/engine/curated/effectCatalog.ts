@@ -12,7 +12,7 @@
  * the effect does between them. An entry another one grants (a Potion of
  * Speed is Haste) builds from that one's parts rather than copying them.
  */
-import { readEffectDuration, storedInPlay } from '../activeEffects';
+import { storedInPlay } from '../activeEffects';
 import { CAST_GUIDANCE_LIMITS, guidanceVersion, isRecord, own } from '../castGuidance';
 import type { Ability, ActiveEffect, EffectDuration, EffectPart } from '../types';
 import { BARDIC_DICE, bardicEffect, blessEffect, guidanceEffect } from './namedEffects';
@@ -1179,7 +1179,7 @@ export function catalogFor(edition: Edition): CatalogEntry[] {
 }
 
 // ---------------------------------------------------------------------------
-// Homebrew spells and items (H6)
+// Homebrew spells and potions (H6)
 // ---------------------------------------------------------------------------
 
 /** What the entries come from: the registry, or anything that lists entries by type. */
@@ -1221,60 +1221,59 @@ function firstLine(entry: Record<string, unknown>): string {
   return sentence.length > 160 ? `${sentence.slice(0, 157).trimEnd()}...` : sentence;
 }
 
-/** A homebrew spell or item that puts an effect on a target, read; or why it is not offered. */
+/** A homebrew spell or potion that puts an effect on a target, read; or why it is not offered. */
 export interface HomebrewLanding {
   entry?: CatalogEntry;
   problems: string[];
 }
 
+/** A potion, by its item type ("P", or "P|XDMG" in newer data): drunk, not worn. */
+function isPotion(entry: Record<string, unknown>): boolean {
+  const type = own(entry, 'type');
+  return typeof type === 'string' && (type === 'P' || type.startsWith('P|'));
+}
+
+/** A spell whose range is Self lands only on its caster (Shield). */
+function onSelfOnly(entry: Record<string, unknown>): boolean {
+  const range = own(entry, 'range');
+  const distance = isRecord(range) ? own(range, 'distance') : undefined;
+  return isRecord(distance) && own(distance, 'type') === 'self';
+}
+
 /**
- * One homebrew spell or item's `castGuidance.onTarget`: the effects it puts
- * on a target (`storedInPlay`, so only what an effect in play holds), how long
- * they last (its own `lasts`, else a spell's duration), the chip's name when
- * it is not the entry's, and `self` for one that lands only on its caster.
+ * One homebrew spell or potion as + Effect offers it: what its own
+ * `castGuidance.effects` put on a target (`storedInPlay`, so only what an
+ * effect in play holds), for as long as a spell's own duration says. A spell
+ * with a range of Self lands only on its caster. Any other item's effects are
+ * what it does while worn, which the sheet already counts, so it is not one.
  */
 export function homebrewLanding(raw: unknown, type: 'spell' | 'item'): HomebrewLanding {
   const problems: string[] = [];
-  if (!isRecord(raw)) return { problems };
+  if (!isRecord(raw) || (type === 'item' && !isPotion(raw))) return { problems };
   const name = own(raw, 'name');
   const source = own(raw, 'source');
   const guidance = own(raw, 'castGuidance');
   if (typeof name !== 'string' || name.trim() === '' || !isRecord(guidance)) return { problems };
-  const onTarget = own(guidance, 'onTarget');
-  if (onTarget === undefined) return { problems };
-  const say = (why: string) => problems.push(`${name}: ${why}.`);
+  const stored = own(guidance, 'effects');
+  if (stored === undefined) return { problems };
+  const say = (why: string) => problems.push(`${name.trim()}: ${why}.`);
   const version = guidanceVersion(guidance);
   if ('problem' in version) {
     say(version.problem);
     return { problems };
   }
-  if (!isRecord(onTarget)) {
-    say('what it puts on a target could not be read');
-    return { problems };
-  }
-  const read = storedInPlay(own(onTarget, 'effects'), 'an effect on a target');
+  const read = storedInPlay(stored, 'an effect on a target');
   for (const p of read.problems) {
     say(p.place === undefined ? p.why : `effect ${p.place} does not count: ${p.why}`);
   }
   if (read.parts.length === 0) return { problems };
-  const chip = own(onTarget, 'name');
-  const label =
-    typeof chip === 'string' &&
-    chip.trim() !== '' &&
-    chip.length <= CAST_GUIDANCE_LIMITS.labelLength
-      ? chip.trim()
-      : undefined;
-  const lasts =
-    readEffectDuration(own(onTarget, 'lasts')) ?? (type === 'spell' ? spellLasts(raw) : {});
   const level = own(raw, 'level');
   const what =
-    type === 'spell'
-      ? typeof level === 'number' && Number.isInteger(level) && level >= 0 && level <= 9
+    type === 'item'
+      ? 'Potion'
+      : typeof level === 'number' && Number.isInteger(level) && level >= 0 && level <= 9
         ? spell(level)
-        : 'Spell'
-      : own(raw, 'type') === 'P' || String(own(raw, 'type')).startsWith('P|')
-        ? 'Potion'
-        : 'Item';
+        : 'Spell';
   const parts = read.parts;
   const spec: Spec = {
     id: `homebrew:${type}:${lower(name.trim())}|${lower(String(source ?? ''))}`,
@@ -1282,22 +1281,19 @@ export function homebrewLanding(raw: unknown, type: 'spell' | 'item'): HomebrewL
     what,
     keywords: `homebrew ${typeof source === 'string' ? source : ''}`,
     sum: firstLine(raw),
-    lasts,
-    ...(type === 'spell' && own(onTarget, 'self') === true ? { self: true as const } : {}),
-    build: () => ({
-      // A fresh copy each time, so one landed effect never shares parts with the next.
-      parts: structuredClone(parts),
-      ...(label !== undefined && label !== name.trim() ? { name: label } : {}),
-    }),
+    lasts: type === 'spell' ? spellLasts(raw) : {},
+    ...(type === 'spell' && onSelfOnly(raw) ? { self: true as const } : {}),
+    // A fresh copy each time, so one landed effect never shares parts with the next.
+    build: () => ({ parts: structuredClone(parts) }),
   };
   return { entry: { ...spec, asks: [], lastsSay: lastsWords(spec) }, problems };
 }
 
 /**
- * + Effect's entries for the homebrew spells and items that put an effect on
- * a target (H6), found by their `castGuidance.onTarget`: official entries
- * have none. One per name and kind, the first found, as the registry keeps
- * one copy per name and book. Problems are for whoever wants to say them.
+ * + Effect's entries for the homebrew spells and potions that put an effect
+ * on a target (H6), found by their own `castGuidance.effects`: official
+ * entries have none. One per name and kind, the first found, as the registry
+ * keeps one copy per name and book. Problems are for whoever wants to say them.
  */
 export function homebrewCatalog(data: EntriesByType | null | undefined): {
   entries: CatalogEntry[];
@@ -1310,8 +1306,7 @@ export function homebrewCatalog(data: EntriesByType | null | undefined): {
   for (const type of ['spell', 'item'] as const) {
     for (const raw of data.byType(type)) {
       if (!isRecord(raw)) continue;
-      const guidance = own(raw, 'castGuidance');
-      if (!isRecord(guidance) || own(guidance, 'onTarget') === undefined) continue;
+      if (own(raw, 'castGuidance') === undefined) continue;
       const read = homebrewLanding(raw, type);
       problems.push(...read.problems);
       const key = `${type}:${read.entry?.name.toLowerCase()}`;
