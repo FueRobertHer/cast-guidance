@@ -28,8 +28,16 @@ describe('parseSpellFilter', () => {
     ['a level that is not a number', 'level=low'],
     ['a miscellaneous tag other than ritual', 'components & miscellaneous=concentration'],
     ['a part with no value', 'level='],
+    ['a book ruled out with no name', 'source=EGW;!'],
   ])('gives up on %s, rather than offer spells the data rules out', (_what, filter) => {
     expect(parseSpellFilter(filter)).toBeUndefined();
+  });
+
+  it('reads the books a spell is printed in, and the ones it is not', () => {
+    // Chronurgy and Graviturgy's expanded lists.
+    expect(parseSpellFilter('source=EGW;!xge')).toEqual(
+      query({ sources: ['EGW'], notSources: ['XGE'] }),
+    );
   });
 
   it('reads an empty filter as ruling nothing out', () => {
@@ -65,6 +73,14 @@ describe('spellFitsQuery', () => {
     expect(spellFitsQuery({ name: 'Plain', source: 'HB' }, query({ ritual: true }))).toBe(false);
   });
 
+  it('holds a spell to the books named, in any case, and keeps it out of the ones ruled out', () => {
+    const books = query({ sources: ['EGW'], notSources: ['XGE'] });
+    expect(spellFitsQuery({ ...spell, source: 'egw' }, books)).toBe(true);
+    expect(spellFitsQuery({ ...spell, source: 'PHB' }, books)).toBe(false);
+    expect(spellFitsQuery({ ...spell, source: 'XGE' }, query({ notSources: ['XGE'] }))).toBe(false);
+    expect(spellFitsQuery({ ...spell, source: 'PHB' }, query({ notSources: ['XGE'] }))).toBe(true);
+  });
+
   it('fails an attack query for a spell with no attack', () => {
     expect(spellFitsQuery({ name: 'Plain', source: 'HB' }, query({ attacks: ['r'] }))).toBe(false);
   });
@@ -93,6 +109,10 @@ describe('describeSpellQuery', () => {
     ['Level 1 to 7 Abjuration spell', 'level=1;2;3;4;5;6;7|school=A', 1],
     ['Level 1 or 3 spell', 'level=1;3', 1],
     ['Cleric or Wizard Necromancy cantrip', 'level=0|class=Cleric;Wizard|school=N', 1],
+    ['EGW spell', 'source=EGW', 1],
+    ['EGW spell, not from XGE', 'source=EGW;!XGE', 1],
+    ['Level 1 Wizard EGW spells', 'level=1|class=Wizard|source=egw', 2],
+    ['Spell, not from XGE', 'source=!XGE', 1],
     ['Any spell', '', 1],
     ['Any spells', '', 2],
   ])('says %s', (expected, filter, count) => {

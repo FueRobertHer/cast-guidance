@@ -12,7 +12,7 @@ import {
   type SourcePolicy,
 } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
-import { classSpellUids, classSpellUidsFromEntities } from '@/data5e/spellLookup';
+import { classListCheck } from '@/data5e/spellLookup';
 import { parseSpellRef } from '@/engine/effects/additionalSpells';
 import { subclassPromptId } from '@/engine/effects/class';
 import type {
@@ -225,22 +225,10 @@ export function OriginChoices({
   const needsClassLists = openSpellPrompts.some((p) => (p.spellQuery?.classes.length ?? 0) > 0);
   const { lookup, problem: lookupProblem } = useClassLookup(needsClassLists, spellPacks.status);
   const refreshing = useRegistryRefreshing();
-  const onClassList = useMemo(() => {
-    const lists = new Map<string, ReadonlySet<string>>();
-    return (className: string, uid: string) => {
-      const key = className.toLowerCase();
-      let list = lists.get(key);
-      if (list === undefined) {
-        list = new Set([
-          ...classSpellUids(lookup ?? {}, className),
-          // Homebrew spells carry their classes inline.
-          ...classSpellUidsFromEntities(registry?.byType('spell') ?? [], className),
-        ]);
-        lists.set(key, list);
-      }
-      return list.has(uid);
-    };
-  }, [lookup, registry]);
+  const onClassList = useMemo(
+    () => classListCheck(lookup, registry?.byType('spell') ?? []),
+    [lookup, registry],
+  );
 
   if (pending.length === 0 && resolved.length === 0) return null;
 

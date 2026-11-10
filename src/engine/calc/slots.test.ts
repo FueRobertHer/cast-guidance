@@ -175,6 +175,108 @@ describe('a subclass caster', () => {
   });
 });
 
+describe('expanded spell lists', () => {
+  function withLists(
+    origins: Array<{
+      type: 'class' | 'subclass' | 'race' | 'feat' | 'background';
+      uid: string;
+      label: string;
+    }>,
+    ...classes: ClassLevelEntry[]
+  ) {
+    const doc = newCharacterDoc('c', 'Test', 't');
+    doc.classes = classes;
+    const col = new Collector(doc, ctx);
+    for (const origin of origins) {
+      col.add({ kind: 'spellListAdd', spells: [origin.label], filters: [], origin });
+    }
+    return calcSpellcasting(doc, col, abilities, 3);
+  }
+  const from = (block: { expanded?: Array<{ from: string }> } | undefined) =>
+    block?.expanded?.map((x) => x.from);
+
+  it("puts a class's list on that class alone", () => {
+    const [wiz, lock] = withLists(
+      [{ type: 'class', uid: 'warlock|phb', label: 'Pact List' }],
+      entry('Wizard', 3),
+      entry('Warlock', 3),
+    );
+    expect(from(wiz)).toBeUndefined();
+    expect(from(lock)).toEqual(['Pact List']);
+  });
+
+  it("puts a subclass's list on the class it belongs to", () => {
+    const [wiz, ek] = withLists(
+      [{ type: 'subclass', uid: 'eldritch knight|phb', label: 'Knight List' }],
+      entry('Wizard', 3),
+      entry('Fighter', 7, 'Eldritch Knight'),
+    );
+    expect(from(wiz)).toBeUndefined();
+    expect(from(ek)).toEqual(['Knight List']);
+  });
+
+  it("puts a race's, a feat's or a background's list on every spellcasting class", () => {
+    const blocks = withLists(
+      [
+        { type: 'race', uid: 'markfolk|tst', label: 'Markfolk' },
+        { type: 'feat', uid: 'mark of lint|tst', label: 'Mark of Lint' },
+        { type: 'background', uid: 'guild clerk|tst', label: 'Guild Clerk' },
+      ],
+      entry('Wizard', 3),
+      entry('Warlock', 3),
+    );
+    const all = ['Markfolk', 'Mark of Lint', 'Guild Clerk'];
+    expect(blocks.map(from)).toEqual([all, all]);
+    expect(blocks[0]?.expanded?.[0]).toEqual({
+      from: 'Markfolk',
+      spells: ['Markfolk'],
+      filters: [],
+    });
+  });
+});
+
+describe('expanded spell lists on two subclasses', () => {
+  it("keeps each subclass's list on its own class", () => {
+    const doc = newCharacterDoc('c', 'Test', 't');
+    doc.classes = [entry('Fighter', 7, 'Eldritch Knight'), entry('Warlock', 3, 'The Fiend')];
+    const col = new Collector(doc, ctx);
+    for (const [uid, label] of [
+      ['eldritch knight|phb', 'Knight List'],
+      ['the fiend|phb', 'Fiend List'],
+    ] as const) {
+      col.add({
+        kind: 'spellListAdd',
+        spells: [label],
+        filters: [],
+        origin: { type: 'subclass', uid, label },
+      });
+    }
+    const blocks = calcSpellcasting(doc, col, abilities, 3);
+    expect(blocks.map((b) => [b.className, b.expanded?.map((x) => x.from)])).toEqual([
+      ['Eldritch Knight', ['Knight List']],
+      ['Warlock', ['Fiend List']],
+    ]);
+  });
+
+  it("puts a list whose class origin names none of the character's on every class", () => {
+    // An optional feature takes its host's type but keeps its own uid.
+    const doc = newCharacterDoc('c', 'Test', 't');
+    doc.classes = [entry('Wizard', 3), entry('Warlock', 3)];
+    const col = new Collector(doc, ctx);
+    col.add({
+      kind: 'spellListAdd',
+      spells: ['shield'],
+      filters: [],
+      origin: { type: 'class', uid: 'pact of lint|tst', label: 'Pact of Lint' },
+    });
+    const blocks = calcSpellcasting(doc, col, abilities, 3);
+    expect(blocks.map((b) => b.expanded?.map((x) => x.from))).toEqual([
+      ['Pact of Lint'],
+      ['Pact of Lint'],
+    ]);
+  });
+});
+
 describe('learnable spell levels', () => {
   it('follows the full-caster table for a full caster', () => {
     expect(learnableSpellLevels(wizard, 'full', 3)).toEqual({

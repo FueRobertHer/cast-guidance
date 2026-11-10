@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classListCheck,
   classSpellUids,
   classSpellUidsFromEntities,
   type SpellClassLookup,
@@ -93,5 +94,27 @@ describe('subclassSpellUids (generated lookup)', () => {
     expect(subclassSpellUids(lookup, ['Warden', 'Fighter'], 'Eldritch Knight')).toEqual(
       new Set(['shield|phb', 'shield|xphb']),
     );
+  });
+});
+
+describe('classListCheck (the lookup and homebrew together)', () => {
+  const lookup: SpellClassLookup = {
+    phb: { 'cure wounds': { class: { PHB: { Cleric: true } } } },
+  };
+  const spells = [
+    { name: 'Heal Word', source: 'HB', classes: { fromClassList: [{ name: 'Cleric' }] } },
+  ];
+
+  it("asks both the lookup and a homebrew spell's own list, in any case", () => {
+    const onList = classListCheck(lookup, spells);
+    expect(onList('Cleric', 'cure wounds|phb')).toBe(true);
+    expect(onList('cleric', 'heal word|hb')).toBe(true);
+    expect(onList('Wizard', 'cure wounds|phb')).toBe(false);
+  });
+
+  it('reads homebrew alone before the lookup is in', () => {
+    const onList = classListCheck(null, spells);
+    expect(onList('Cleric', 'heal word|hb')).toBe(true);
+    expect(onList('Cleric', 'cure wounds|phb')).toBe(false);
   });
 });

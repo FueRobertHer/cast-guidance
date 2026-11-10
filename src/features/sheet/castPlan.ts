@@ -32,7 +32,7 @@ import {
   upcastEffectSummary,
 } from './castResources';
 import { castGrantedAsking, castSpellAsking } from './namedStarts';
-import { spellRollActions } from './spellRolls';
+import { type SpellRollAction, spellRollActions } from './spellRolls';
 
 /** One spell on one row, and what casting it can spend. */
 export interface SpellCast {
@@ -46,6 +46,11 @@ export interface SpellCast {
   level: number;
   /** The class whose slots it casts with: none for an innate grant. */
   block?: SpellcastingBlock | undefined;
+  /**
+   * The class it is a spell of, when that is not `block`'s: an innate grant from
+   * a class or subclass (a Light Domain's Light is a Cleric cantrip).
+   */
+  className?: string | undefined;
   abilityModifier?: number | undefined;
   /** An innate grant's own pool of uses, which this row casts from. */
   grantPool?: UseWay | undefined;
@@ -54,6 +59,34 @@ export interface SpellCast {
 }
 
 const lower = (s: string) => s.trim().toLowerCase();
+
+/**
+ * What the character adds to this cast's damage (`DerivedSheet.spellDamageBonuses`):
+ * each bonus whose limits all hold for the spell, cast as a spell of its row's class.
+ */
+export function castDamageBonuses(c: SpellCast): Array<{ amount: number; oneRoll?: true }> {
+  const name = typeof c.entity?.name === 'string' ? lower(c.entity.name) : lower(c.info.name);
+  const cls = c.className ?? c.block?.className;
+  const school = typeof c.entity?.school === 'string' ? c.entity.school.toUpperCase() : undefined;
+  return c.sheet.spellDamageBonuses.flatMap((b) =>
+    (b.spells === undefined || b.spells.some((s) => lower(s) === name)) &&
+    (b.className === undefined || (cls !== undefined && lower(cls) === lower(b.className))) &&
+    (b.cantrips !== true || c.level === 0) &&
+    (b.school === undefined || school === b.school.toUpperCase())
+      ? [{ amount: b.amount, ...(b.oneRoll === true ? { oneRoll: true as const } : {}) }]
+      : [],
+  );
+}
+
+/** The spell's rolls when cast at `slotLevel`, with what the character adds to its damage. */
+export function castRolls(c: SpellCast, slotLevel: number): SpellRollAction[] {
+  return spellRollActions(c.entity, {
+    characterLevel: c.sheet.totalLevel,
+    slotLevel,
+    abilityModifier: c.abilityModifier,
+    damageBonuses: castDamageBonuses(c),
+  });
+}
 
 /** The carried items whose charges cast `name`, with what each level costs. */
 export function itemChargeWays(
@@ -167,11 +200,7 @@ export function castsByPrompt(c: SpellCast): boolean {
  * attack's hit offers; with `label`, its roll of that label.
  */
 export function castDiceAt(c: SpellCast, level: number, label?: string): CastDice | undefined {
-  const rolls = spellRollActions(c.entity, {
-    characterLevel: c.sheet.totalLevel,
-    slotLevel: level,
-    abilityModifier: c.abilityModifier,
-  });
+  const rolls = castRolls(c, level);
   const roll =
     label !== undefined
       ? rolls.find((r) => r.label === label)

@@ -88,6 +88,7 @@ export function readProsePick(
   col.choice({ ...offer, id: `${idBase}:${pick}`, origin, count: 1 }, (selected) => {
     const option = offer.options.find((o) => o.id === selected[0]);
     if (option === undefined) return;
+    if (pick === 'weaponMastery') col.add({ kind: 'weaponMastery', name: option.id, origin });
     shown =
       pick === 'castingAbility'
         ? { label: option.label, ability: option.id as Ability }

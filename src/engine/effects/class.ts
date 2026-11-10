@@ -1,6 +1,7 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { linkSpend } from '../curated/spendLinks';
+import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
 import {
   ABILITIES,
@@ -350,6 +351,11 @@ function collectFeatureWithNested(
       if (!curated) proseScanFeature(col, name, feature.entries, featureOrigin, cardOrigin.label);
       names.some((n) =>
         labels.some((label) =>
+          emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
+        ),
+      );
+      names.some((n) =>
+        labels.some((label) =>
           sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),
         ),
       );
@@ -545,46 +551,62 @@ function handleAsi(col: Collector, origin: EffectOrigin, classUid: string, level
           },
         );
       } else if (selected[0] === 'feat') {
-        // Feats picked at other ASI levels — a non-repeatable feat shouldn't be
-        // offered again (it would be deduped on collection anyway). The current
-        // prompt's own pick is excluded so it still reads as selected.
-        const takenElsewhere = new Set<string>();
-        for (const [key, val] of Object.entries(col.doc.choices)) {
-          if (key === `${baseId}:feat` || !key.endsWith(':feat')) continue;
-          for (const v of Array.isArray(val) ? val : [val]) {
-            if (typeof v === 'string') takenElsewhere.add(v.toLowerCase());
-          }
-        }
-        const prereqCtx = buildPrereqContext(col);
-        col.choice(
-          {
-            id: `${baseId}:feat`,
-            origin,
-            kind: 'feat',
-            label: `Level ${level}: choose a feat`,
-            count: 1,
-            options: col.ctx
-              .byType('feat')
-              .filter((f) => str(f.name) !== undefined)
-              .map((f) => {
-                const optId = `${str(f.name)}|${str(f.source)}`.toLowerCase();
-                const alreadyTaken = !isRepeatableFeat(f) && takenElsewhere.has(optId);
-                return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
-              }),
-          },
-          (picked) => {
-            const uid = picked[0];
-            if (uid === undefined) return;
-            const [name, source] = uid.split('|');
-            const feat = name !== undefined ? col.ctx.get('feat', name, source) : undefined;
-            if (feat === undefined) {
-              col.warn(`Chosen feat not found: ${uid}`);
-              return;
-            }
-            collectFeatEntity(col, feat, uid, asiFeatInstance(col.doc, classUid, level, uid));
-          },
-        );
+        featPick(col, origin, classUid, level, `Level ${level}: choose a feat`);
       }
+    },
+  );
+}
+
+/**
+ * A feat a class level gives: the feat half of an Ability Score Improvement, or
+ * the 2024 Epic Boon. Both keep the pick under `class:<uid>:asi:<level>:feat`, so
+ * the feat's own picks, pruning and "already taken" all work the same way.
+ */
+function featPick(
+  col: Collector,
+  origin: EffectOrigin,
+  classUid: string,
+  level: number,
+  label: string,
+): void {
+  const baseId = `class:${classUid}:asi:${level}`;
+  // Feats picked at other ASI levels: a non-repeatable feat shouldn't be
+  // offered again (it would be deduped on collection anyway). The current
+  // prompt's own pick is excluded so it still reads as selected.
+  const takenElsewhere = new Set<string>();
+  for (const [key, val] of Object.entries(col.doc.choices)) {
+    if (key === `${baseId}:feat` || !key.endsWith(':feat')) continue;
+    for (const v of Array.isArray(val) ? val : [val]) {
+      if (typeof v === 'string') takenElsewhere.add(v.toLowerCase());
+    }
+  }
+  const prereqCtx = buildPrereqContext(col);
+  col.choice(
+    {
+      id: `${baseId}:feat`,
+      origin,
+      kind: 'feat',
+      label,
+      count: 1,
+      options: col.ctx
+        .byType('feat')
+        .filter((f) => str(f.name) !== undefined)
+        .map((f) => {
+          const optId = `${str(f.name)}|${str(f.source)}`.toLowerCase();
+          const alreadyTaken = !isRepeatableFeat(f) && takenElsewhere.has(optId);
+          return featChoiceOption(f, prereqCtx, { taken: alreadyTaken });
+        }),
+    },
+    (picked) => {
+      const uid = picked[0];
+      if (uid === undefined) return;
+      const [name, source] = uid.split('|');
+      const feat = name !== undefined ? col.ctx.get('feat', name, source) : undefined;
+      if (feat === undefined) {
+        col.warn(`Chosen feat not found: ${uid}`);
+        return;
+      }
+      collectFeatEntity(col, feat, uid, asiFeatInstance(col.doc, classUid, level, uid));
     },
   );
 }
@@ -710,6 +732,9 @@ export function collectClasses(col: Collector): void {
     );
     // Expertise levels, asked for once the subclass is collected (see below).
     const expertiseAt: number[] = [];
+    // Levels whose ASI ran, and the Epic Boons waiting on them (see below).
+    const asiRan = new Set<number>();
+    const boonAt: number[] = [];
     for (const { refStr, ref, isGainSubclass, sibling } of rows) {
       if (isGainSubclass && entry.subclass === undefined) {
         col.pending.push({
@@ -730,6 +755,9 @@ export function collectClasses(col: Collector): void {
 
       if (ref.name.startsWith('Ability Score Improvement')) {
         handleAsi(col, origin, classUid, ref.level);
+        asiRan.add(ref.level);
+      } else if (ref.name === 'Epic Boon') {
+        boonAt.push(ref.level);
       }
       if (ref.name === 'Expertise') expertiseAt.push(ref.level);
       collectFeatureWithNested(
@@ -740,6 +768,14 @@ export function collectClasses(col: Collector): void {
         sibling.key,
         classGate.choicePrefixFor(sibling, `class:${classUid}`),
       );
+    }
+    // "An Epic Boon feat or another feat of your choice": any feat, in the ASI's
+    // slot, unless an ASI that ran at the same level holds it. Asked once every
+    // feature is walked, since the two can come in either order.
+    for (const level of boonAt) {
+      if (!asiRan.has(level)) {
+        featPick(col, origin, classUid, level, `Level ${level}: Epic Boon, choose a feat`);
+      }
     }
 
     // A spell a class or subclass gives casts with the class's ability by default.
