@@ -186,6 +186,15 @@ describe('homebrewForExport of a book', () => {
     ]);
   });
 
+  it("counts a spell added outside the build toward its book, skipping one that isn't whole", () => {
+    const d = newCharacterDoc('c', 'Hero', 'tag');
+    d.addedSpells = [
+      { spell: { name: 'Ember Bolt', source: 'FCEmber' }, ability: 'cha', uses: 'long' },
+      null as never,
+    ];
+    expect(collectCharacterSources(d)).toEqual(new Set(['fcember']));
+  });
+
   it('reads a spell list too long to spread into a call', () => {
     const d = newCharacterDoc('c', 'Hero', 'tag');
     d.spellcasting = {

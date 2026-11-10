@@ -95,7 +95,7 @@ describe('the spellcasting mode badge (TEST-003)', () => {
     const sheet = await renderSheet(testCharacter('Wren', [classEntry('Warrior', 3)]), {
       path: 'spells',
     });
-    expect(screen.getByText('This character has no spellcasting.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Warrior has no spellcasting' })).toBeTruthy();
 
     await sheet.edit();
     const add = screen.getByText('Add a class (multiclass)').closest('details');
@@ -105,7 +105,7 @@ describe('the spellcasting mode badge (TEST-003)', () => {
     await chooseSpells();
 
     expect(spellBlock('Mage').mode).toBe('Prepared');
-    expect(screen.queryByText('This character has no spellcasting.')).toBeNull();
+    expect(screen.queryByRole('heading', { name: /has no spellcasting/ })).toBeNull();
   });
 });
 

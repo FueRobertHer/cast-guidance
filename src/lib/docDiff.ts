@@ -7,6 +7,7 @@
  * restore preview (current → snapshot) and an undo (now → before).
  */
 import { characterSourceList } from '@/data5e/sourceNames';
+import { addedSpellsOf } from '@/engine/effects/addedSpells';
 import {
   ABILITIES,
   type ActiveEffect,
@@ -206,6 +207,8 @@ export function contentKey(doc: CharacterDoc, revision?: string): string {
   if (effectsInPlay(doc).length === 0) delete (clone.play as Record<string, unknown>).activeEffects;
   // None kept reads as absent too.
   if (keptOf(doc).length === 0) delete clone.keptEffects;
+  // No spells added reads as absent, as a character from before them.
+  if (addedSpellsOf(doc).length === 0) delete clone.addedSpells;
   // Optional class features off reads as absent, as a character from before them.
   if (doc.optionalClassFeatures !== true) delete clone.optionalClassFeatures;
   clone.hpMethod = doc.hpMethod ?? 'average';
@@ -434,6 +437,28 @@ function spellChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): v
   if (out.length === before) out.push({ kind: 'spells', line: 'Spell details', structural: false });
 }
 
+/** The names of the spells added outside the build, before and after. */
+export function addedSpellNames(
+  from: CharacterDoc,
+  to: CharacterDoc,
+): { added: string[]; removed: string[] } {
+  const names = (doc: CharacterDoc) => addedSpellsOf(doc).map((a) => a.spell.name);
+  return nameDiff(names(from), names(to));
+}
+
+function addedSpellChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): void {
+  if (same(addedSpellsOf(from), addedSpellsOf(to))) return;
+  const { added, removed } = addedSpellNames(from, to);
+  out.push({
+    kind: 'spells',
+    line:
+      added.length > 0 || removed.length > 0
+        ? `Added spells: ${signedNames(added, removed)}`
+        : 'Added spell details',
+    structural: false,
+  });
+}
+
 function abilityChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): void {
   if (same(from.abilities, to.abilities)) return;
   const push = (line: string) => out.push({ kind: 'abilities', line, structural: false });
@@ -614,6 +639,7 @@ export function diffDocs(from: CharacterDoc, to: CharacterDoc): DocChange[] {
     });
   equipmentChanges(out, from, to);
   spellChanges(out, from, to);
+  addedSpellChanges(out, from, to);
   if (!same(from.customEffects, to.customEffects))
     out.push({
       kind: 'modifiers',

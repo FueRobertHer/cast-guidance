@@ -22,6 +22,14 @@ export interface SpellInfoSheetProps {
   version?: RulesVersion;
   subtitle?: string;
   trigger: ReactNode;
+  /** Under the rules, outside their scroll: what the player can do with this spell here. */
+  footer?: ReactNode;
+}
+
+/** Opening focus on the sheet itself, as a screen reader expects of a dialog. */
+function focusPanel(event: Event): void {
+  event.preventDefault();
+  (event.currentTarget as HTMLElement | null)?.focus();
 }
 
 /**
@@ -41,7 +49,14 @@ export function SpellInfoSheet(props: SpellInfoSheetProps) {
   return <SpellInfoSheetContent {...props} />;
 }
 
-function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: SpellInfoSheetProps) {
+function SpellInfoSheetContent({
+  name,
+  source,
+  version,
+  subtitle,
+  trigger,
+  footer,
+}: SpellInfoSheetProps) {
   const registry = useRegistry();
   // Mounted by the press that opens it; see `useSheetOpenOnMount`.
   const [open, setOpen] = useSheetOpenOnMount();
@@ -93,6 +108,9 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
           // description: focus lands on Retry or the sheet itself, and the
           // line would otherwise go unread.
           aria-describedby={spell === undefined ? messageId : undefined}
+          // The sheet is for reading. A footer's control (Remove) is not where
+          // focus should land on opening, where a stray Enter would press it.
+          onOpenAutoFocus={footer === undefined ? undefined : focusPanel}
           className="flex max-h-[80dvh] flex-col"
         >
           <Sheet.Heading aside={subtitle}>
@@ -132,6 +150,7 @@ function SpellInfoSheetContent({ name, source, version, subtitle, trigger }: Spe
               </>
             )}
           </div>
+          {footer !== undefined && <div className="mt-3 shrink-0">{footer}</div>}
         </Sheet.Panel>
       </Sheet.Portal>
     </Sheet.Root>

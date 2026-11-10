@@ -295,4 +295,13 @@ describe('historyLabel', () => {
     expect(label.endsWith(' · …')).toBe(true);
     expect(label.split(' · ')).toHaveLength(4); // 3 labels + the ellipsis token
   });
+
+  it('labels a spell added outside the build, and one taken off', () => {
+    const added = base();
+    added.addedSpells = [
+      { spell: { name: 'Fire Bolt', source: 'PHB' }, ability: 'int', uses: 'will' },
+    ];
+    expect(historyLabel(base(), added)).toBe('Added Fire Bolt');
+    expect(historyLabel(added, base())).toBe('Removed Fire Bolt');
+  });
 });

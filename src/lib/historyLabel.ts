@@ -1,6 +1,7 @@
 /** Short human labels for character history snapshots. */
 import type { CharacterDoc } from '@/engine/types';
 import {
+  addedSpellNames,
   diceRuleWords,
   effectChanges,
   firstWithMore,
@@ -32,6 +33,16 @@ function spellsLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined
   const kn = nameDiff(p.known, n.known);
   if (kn.added.length > 0) return `Learned ${firstWithMore(kn.added)}`;
   if (kn.removed.length > 0) return `Unlearned ${firstWithMore(kn.removed)}`;
+  return 'Spells';
+}
+
+function addedSpellsLabel(prev: CharacterDoc, next: CharacterDoc): string | undefined {
+  if (JSON.stringify(prev.addedSpells ?? []) === JSON.stringify(next.addedSpells ?? [])) {
+    return undefined;
+  }
+  const { added, removed } = addedSpellNames(prev, next);
+  if (added.length > 0) return `Added ${firstWithMore(added)}`;
+  if (removed.length > 0) return `Removed ${firstWithMore(removed)}`;
   return 'Spells';
 }
 
@@ -263,6 +274,8 @@ export function historyLabel(prev: CharacterDoc | undefined, next: CharacterDoc)
   if (eq !== undefined) labels.push(eq);
   const sp = spellsLabel(prev, next);
   if (sp !== undefined) labels.push(sp);
+  const addedSp = addedSpellsLabel(prev, next);
+  if (addedSp !== undefined) labels.push(addedSp);
 
   if (JSON.stringify(prev.overrides) !== JSON.stringify(next.overrides)) labels.push('Overrides');
   if (JSON.stringify(prev.customEffects) !== JSON.stringify(next.customEffects))

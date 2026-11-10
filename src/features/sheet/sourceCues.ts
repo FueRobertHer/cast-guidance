@@ -1,5 +1,6 @@
 import { characterSourceList } from '@/data5e/sourceFilter';
 import { canonicalSource } from '@/data5e/sourceNames';
+import { addedSpellsOf } from '@/engine/effects/addedSpells';
 import type { CharacterDoc, DerivedSheet, EntityRef } from '@/engine/types';
 
 export interface OutOfPolicyPick {
@@ -69,5 +70,6 @@ export function outOfPolicyPicks(
   for (const sc of Object.values(doc.spellcasting)) {
     for (const ref of [...sc.known, ...sc.prepared]) addRef('spell', ref);
   }
+  for (const a of addedSpellsOf(doc)) addRef('spell', a.spell);
   return [...out.values()];
 }

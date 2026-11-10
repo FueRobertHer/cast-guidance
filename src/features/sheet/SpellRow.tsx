@@ -25,6 +25,7 @@ export function SpellRow({
   muted = false,
   marks,
   actions,
+  rulesFooter,
 }: {
   name: string;
   source: string;
@@ -41,6 +42,8 @@ export function SpellRow({
   /** Anything else the title line has to say, such as uses left. */
   marks?: ReactNode;
   actions?: ReactNode;
+  /** Under the spell's rules when its name is tapped (see `SpellInfoSheet`). */
+  rulesFooter?: ReactNode;
 }) {
   return (
     <div
@@ -55,6 +58,7 @@ export function SpellRow({
             source={source}
             version={version}
             subtitle={subtitle}
+            footer={rulesFooter}
             trigger={
               <button
                 type="button"

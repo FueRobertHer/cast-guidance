@@ -22,6 +22,7 @@ import {
 import { calcSpellcasting } from './calc/slots';
 import { calcOtherSpeeds, calcSpeedMultiplier, calcWalkSpeed } from './calc/speed';
 import { CAST_GUIDANCE_LIMITS, EARLY_KINDS } from './castGuidance';
+import { collectAddedSpells } from './effects/addedSpells';
 import { settleInheritedAbilities } from './effects/additionalSpells';
 import { collectBackground } from './effects/background';
 import { Collector } from './effects/base';
@@ -73,6 +74,7 @@ export function deriveSheet(
   collectClasses(col);
   collectFeats(col);
   collectItems(col);
+  collectAddedSpells(col);
   for (const custom of doc.customEffects) col.add(custom);
   // Only now is every skill grant known, including ones collected after the
   // pick they overlap.
@@ -541,7 +543,10 @@ function dedupeGrantedSpells(
     // Two sources granting the same spell collapse to one row, unless each
     // brought its own pool of uses: a wand's 3/day fireball beside a race's
     // 1/day is two rows, or one of the two pools would have nothing to spend it.
-    const key = `${e.spell.name}|${e.spell.source}|${e.resourceKey ?? ''}`.toLowerCase();
+    // A spell the player added keeps its own row too, where it can be taken off.
+    const added = e.origin.type === 'added';
+    const key =
+      `${e.spell.name}|${e.spell.source}|${e.resourceKey ?? ''}|${added ? 'added' : ''}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
@@ -552,6 +557,7 @@ function dedupeGrantedSpells(
       resourceKey: e.resourceKey,
       origin: e.origin.label,
       className: classOf.get(`${e.origin.type}:${e.origin.uid}`),
+      ...(added ? { added: true as const } : {}),
     });
   }
   return out;
