@@ -62,13 +62,37 @@ export interface Fc5Context {
    * in the second pass.
    */
   spells?: SpellIndex;
+  /**
+   * The classes this file converts that the rules have no class of that name
+   * for, by lowercased name: a spell list naming one (`Witch (Valda)`) points
+   * at it. Whole only in the second pass.
+   */
+  classes?: FileClasses;
 }
+
+/** A class the file converts, as a spell's class list names it. */
+export interface FileClass {
+  name: string;
+  source: string;
+}
+
+export type FileClasses = ReadonlyMap<string, FileClass>;
 
 /** A feat the file's output holds: its name and source as written, and whether it is under another name. */
 export interface FeatRef {
   name: string;
   source: string;
   alias: boolean;
+}
+
+/**
+ * An entry a converted entry brings with it, kept or left out with it: a
+ * class's features.
+ */
+export interface Fc5Part {
+  kind: ConvertedKind;
+  entity: Record<string, unknown>;
+  placement: Placement;
 }
 
 /** One entry converted, with what it lost, or why it was not converted at all. */
@@ -83,6 +107,8 @@ export type Fc5Result =
       placement: Placement;
       /** What did not carry over, in words; empty for a clean conversion. */
       reasons: string[];
+      /** Entries that belong to this one ({@link Fc5Part}). */
+      parts?: Fc5Part[];
     };
 
 /**

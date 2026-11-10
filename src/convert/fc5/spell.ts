@@ -11,6 +11,8 @@ import {
   extraClassKey,
   type Fc5Context,
   type Fc5Result,
+  type FileClass,
+  type FileClasses,
   placeEntity,
 } from './context';
 import {
@@ -182,15 +184,19 @@ export function parseDuration(raw: string): Record<string, unknown>[] | undefine
 interface ClassLists {
   classes: string[];
   subclasses: { className: string; subclassName: string }[];
+  /** Classes the file converts, by the name and source they convert to. */
+  fileClasses: FileClass[];
   edition?: RulesVersion;
 }
 
 /**
  * "Wizard, Sorcerer", "School: Evocation, Wizard", "Wizard [5.5e]",
- * "Fighter (Eldritch Knight)", "Artificer (UA)".
+ * "Fighter (Eldritch Knight)", "Artificer (UA)". A class the file converts is
+ * found by its whole name first, so `Witch (Valda)` is that class and not a
+ * Witch's subclass.
  */
-export function readClasses(raw: string): ClassLists {
-  const out: ClassLists = { classes: [], subclasses: [] };
+export function readClasses(raw: string, fileClasses?: FileClasses): ClassLists {
+  const out: ClassLists = { classes: [], subclasses: [], fileClasses: [] };
   const seen = new Set<string>();
   for (const part of raw.split(',')) {
     const trimmed = part.trim();
@@ -198,6 +204,14 @@ export function readClasses(raw: string): ClassLists {
     if (trimmed === '' || /^school:|^ritual caster$|\bspells$/i.test(trimmed)) continue;
     const { name, edition } = splitName(trimmed);
     if (edition !== undefined) out.edition = edition;
+    const fileClass = fileClasses?.get(entryName(trimmed).name.toLowerCase());
+    if (fileClass !== undefined) {
+      if (!seen.has(fileClass.name.toLowerCase())) {
+        seen.add(fileClass.name.toLowerCase());
+        out.fileClasses.push(fileClass);
+      }
+      continue;
+    }
     const sub = parenthetical(name);
     if (sub !== undefined && !/^UA$/i.test(sub.inner)) {
       out.subclasses.push({ className: sub.base, subclassName: sub.inner });
@@ -451,6 +465,7 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
     ]
       .filter((c): c is string => c !== undefined)
       .join(', '),
+    ctx.classes,
   );
   const placement = ctx.place(sourceLine, named.edition ?? classes.edition);
   const edition = placement.edition;
@@ -513,11 +528,17 @@ export function convertSpell(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (ritual === 'YES' || ritual === '1' || ritualInTime) spell.meta = { ritual: true };
 
   const classSource = edition === '2024' ? 'XPHB' : 'PHB';
-  if (classes.classes.length > 0 || classes.subclasses.length > 0) {
+  if (
+    classes.classes.length > 0 ||
+    classes.subclasses.length > 0 ||
+    classes.fileClasses.length > 0
+  ) {
     const lists: Record<string, unknown> = {};
-    if (classes.classes.length > 0) {
-      lists.fromClassList = classes.classes.map((name) => ({ name, source: classSource }));
-    }
+    const fromClassList = [
+      ...classes.classes.map((name) => ({ name, source: classSource })),
+      ...classes.fileClasses,
+    ];
+    if (fromClassList.length > 0) lists.fromClassList = fromClassList;
     if (classes.subclasses.length > 0) {
       lists.fromSubclass = classes.subclasses.map((s) => ({
         class: { name: s.className, source: classSource },

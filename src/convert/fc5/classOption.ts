@@ -20,7 +20,7 @@ import { citationEntry, type Fc5Context, type Fc5Result, placeEntity } from './c
 import { type Entry, entryName, inlineText, markerEdition, own, readText, splitName } from './text';
 
 /** The classes a plain spell list names. */
-const BASE_CLASSES = new Set([
+export const BASE_CLASSES: ReadonlySet<string> = new Set([
   'artificer',
   'barbarian',
   'bard',

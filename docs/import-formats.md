@@ -35,7 +35,7 @@ page (an HTML listing or a page that links to the file) is named as one.
 | `<feat>` | `feat` | Category, prerequisite, ability increases, proficiencies and the picks its text offers (skills, tools, languages, weapons, Skilled's skills or tools, expertise), resistances its text states or offers, spells it grants |
 | `<background>` | `background` | `<tools>` and `<languages>`; 2024 trait names (`Ability Scores:`, `Feat:`, `Tool Proficiency:`) become fields; skill and tool lines that pick from a list; a feat of a category picked (`A Dark Gift feat of your choice`); spells it grants, and a guild or college table of spells added to a class's list |
 | `<race>` | `race` | Size, speed (the tags, and a trait's "you have a swimming speed of 30 feet" in any sentence, unless the trait sets terms on it, passes or is an option), ability, darkvision, resistances and condition immunities (tags and text), a resistance picked from a list or the ancestry table, languages, proficiencies and the picks any trait sentence offers, spells it grants |
-| `<class>` | (left out) | Not converted yet |
+| `<class>` | `class`, `classFeature` | Hit die, saving throws, skills to pick, armor, weapons (martial ones of a property as a filter), tools, starting gold, every fixed feature by level as a `classFeature` with an Ability Score Improvement at each `scoreImprovement` level, and spellcasting (see below). Subclasses, options and counters are not converted yet; a `<class>` with no `<hd>`, which adds features to a class of that name, is skipped |
 | `<monster>` | (left out) | The app does not use creatures |
 
 On items, feats, race traits and background traits, a labeled `<roll>` the
@@ -58,6 +58,24 @@ becomes a block per class. A pick a table decides (Strixhaven Initiate), a
 list another feat chose (Magic Connoisseur), a swap or a fallback is not read,
 and the report says so. A background's `Feat:` trait is the feat's text, so its
 spells come from the feat.
+
+A class's spellcasting comes from its own `<slots>` rows (not the optional
+ones, which are a subclass's): the caster progression they follow (full, half
+rounding up or down, third, or pact magic for the warlock's own table when
+slots reset on a short rest), its cantrips by level, and the rows themselves
+as a spell slot table, so a table no progression explains still gives the
+sheet its slots; the report says how it counts with another class, and that
+other slots coming back on a short rest are kept as text. How many spells it knows or prepares
+is read from its spellcasting feature: a `Spells Known` or `Spells Prepared`
+column in a table anywhere in the class, a formula ("your Wisdom modifier +
+your cleric level"), a spellbook ("a spellbook containing six 1st-level
+wizard spells", two more each level), or a 2014 count in words ("You know
+four 1st-level spells", one more "at each level except 12th, 16th"). A spell
+whose `<classes>` names a class the file converts (`Witch (Valda)`, by its
+whole name) is on that class's list; one the rules have by that name
+(`Wizard`) stays the rules' class. Valda's auxiliary levels, one-level
+classes taken in place of a class level, convert as classes, and the report
+says nothing stops a second level.
 
 Every converted entry keeps its full text. What the converter could not read
 as rules stays in that text and is listed in the report, so the sheet never
@@ -105,7 +123,10 @@ book's always is, a later book's (Heroes of Faerûn) only once official data
 is installed, so without it the book is named whatever the mark.
 The name is Fight Club's, except where `officialName` (`renames.ts`) undoes
 a known rewording: `Fist of Unbroken Air` is `Unbroken Air`, and an
-infusion's `(Level 10)` is Fight Club's addition.
+infusion's `(Level 10)` is Fight Club's addition. When a kept class names
+an official one, each of its features names the official feature of its
+name too (`["Second Wind|PHB"]`); an installed class is left out with its
+features.
 
 The converted file declares one source named after the file
 (`spells.xml` becomes `FCSpells`, "spells (Fight Club 5e)") and records where

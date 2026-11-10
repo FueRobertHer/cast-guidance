@@ -18,6 +18,8 @@ export const OFFICIAL_TYPES: Record<ConvertedKind, readonly EntityType[]> = {
   background: ['background'],
   race: ['race', 'subrace'],
   optionalfeature: ['optionalfeature'],
+  class: ['class'],
+  classFeature: ['classFeature'],
 };
 
 /**

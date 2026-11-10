@@ -342,3 +342,58 @@ describe('what an item gives while you wear it', () => {
     expect(firstItem('Ward', text)?.name).toBe('Ward');
   });
 });
+
+describe('a class', () => {
+  const cls = (inner: string) =>
+    `<compendium><class><name>Ash Mage</name><hd>6</hd><spellAbility>Intelligence</spellAbility>${inner}</class></compendium>`;
+  const casting = (text: string) =>
+    cls(
+      `<autolevel level="1"><slots>3,2</slots><feature><name>Spellcasting</name><text>${text}</text></feature></autolevel>`,
+    );
+
+  it.each([
+    [
+      'armor of unread words, then read ones',
+      cls(`<armor>${'Plate Mail, '.repeat(100_000)}${'Light, '.repeat(100_000)}</armor>`),
+    ],
+    ['an armor note of open brackets', cls(`<armor>Light (${'( '.repeat(100_000)}</armor>`)],
+    [
+      'weapons of many martial-property parts',
+      cls(
+        `<weapons>${'Martial weapons that have the Light property, Ember Lance, '.repeat(30_000)}</weapons>`,
+      ),
+    ],
+    [
+      'many features at one level',
+      cls(
+        `<autolevel level="2">${Array.from({ length: 40_000 }, (_, i) => `<feature><name>F${i}</name><text>x</text></feature>`).join('')}</autolevel>`,
+      ),
+    ],
+    [
+      'many blocks at one level',
+      cls(
+        '<autolevel level="4" scoreImprovement="YES"><slots>3,4,3</slots></autolevel>'.repeat(
+          50_000,
+        ),
+      ),
+    ],
+    [
+      'a feature named like a long start note',
+      cls(
+        `<autolevel level="1"><feature><name>Becoming a ${'x As a '.repeat(50_000)}</name><text>x</text></feature><feature><name>Level 1: ${'Starting '.repeat(50_000)}</name><text>x</text></feature></autolevel>`,
+      ),
+    ],
+    [
+      'spellcasting prose of repeated lead-ins',
+      casting(
+        `${'equal to your wisdom modifier + your '.repeat(20_000)}${'add two '.repeat(20_000)}${'spellbook containing '.repeat(20_000)}${'you know four 1st-level '.repeat(20_000)}${'at each level except 1st, '.repeat(20_000)}${'at 2nd through '.repeat(20_000)}`,
+      ),
+    ],
+    [
+      'a spellcasting table of many rows',
+      casting(`Level | Spells Known\n${'1st | 4\n'.repeat(50_000)}`),
+    ],
+  ])('converts %s in linear time', (_label, xml) => {
+    expect(convert(xml).report.converted.class).toBe(1);
+  });
+});
