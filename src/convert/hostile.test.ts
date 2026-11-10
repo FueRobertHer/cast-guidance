@@ -136,6 +136,14 @@ describe('more input that once scanned to the end per character', () => {
       spell(`<time>1 action${' '.repeat(200_000)}x</time>`),
     ],
     [
+      'an item bonus with long tails, clause runs and headings',
+      `<compendium><item><name>I</name><type>M</type><dmg1>1d8</dmg1><detail>rare (requires attunement)</detail><text>While wearing this armor and ${'you are and '.repeat(50_000)}you gain a +1 bonus to AC and to ${'saving throws '.repeat(50_000)}.\n${'WORD '.repeat(100_000)}\nYou gain a +1 bonus to attack and damage rolls made with this weapon, ${'and it '.repeat(100_000)}against undead.\n${'You, you, '.repeat(50_000)}have resistance to fire damage while you wear this armor.</text></item></compendium>`,
+    ],
+    [
+      'an item bonus with a long comma list, many commas after a weapon bonus and many short labels',
+      `<compendium><item><name>I</name><type>M</type><dmg1>1d8</dmg1><text>While holding it, you gain a +2 bonus to armor class${', saving throws'.repeat(50_000)}, and spell attack rolls.\nYou gain a +1 bonus to attack and damage rolls made with this magic weapon${', '.repeat(100_000)}only.\n${'Stirring (Rare): x\n'.repeat(20_000)}Stirring (Rare):\nWhile wearing this cap ${'underwater '.repeat(50_000)}, you gain a +1 bonus to AC.</text></item></compendium>`,
+    ],
+    [
       'a long run of spaces in a modifier',
       `<compendium><item><name>I</name><type>W</type><modifier category="bonus">ac${' '.repeat(200_000)}x</modifier></item></compendium>`,
     ],
@@ -196,5 +204,28 @@ describe('a file that is not well formed', () => {
     expect(() => convert('\n<!DOCTYPE html><html><body>Index of /</body></html>')).toThrow(
       /^This is a web page, not a file the app can import\./,
     );
+  });
+});
+
+describe('what an item gives while you wear it', () => {
+  const firstItem = (name: string, text: string, extra = '') =>
+    (
+      convert(
+        `<compendium><item><name>${name}</name><type>W</type>${extra}<text>${text}</text></item></compendium>`,
+      ).json.item as Record<string, unknown>[]
+    )[0];
+
+  it('reads an item named with every pattern character as plain text', () => {
+    const name = 'Orb [x]{2}|a*b?c^$./-+\\';
+    const i = firstItem(name, `While holding ${name}, you have resistance to fire damage.`);
+    expect(i?.resist).toEqual(['fire']);
+  });
+
+  it.each([
+    ['clauses', `While wearing this armor, ${'you gain a +1 bonus to AC, '.repeat(20_000)}x.`],
+    ['armor terms', `You gain a +1 bonus to AC${', if you are wearing no armor'.repeat(20_000)}.`],
+    ['wearing words', `You gain a +1 bonus to AC${' while wearing this armor'.repeat(20_000)}.`],
+  ])('reads long runs of %s in linear time', (_label, text) => {
+    expect(firstItem('Ward', text)?.name).toBe('Ward');
   });
 });
