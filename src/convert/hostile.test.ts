@@ -201,6 +201,25 @@ describe('choices read from prose', () => {
       race('you gain proficiency in arcana, and you '.repeat(3000), 40),
     ],
     [
+      'lead-ins that name a race at length',
+      race(`${'as a forest '.repeat(3000)}gnome, you have proficiency in the arcana skill. `, 40),
+    ],
+    [
+      'clauses that set terms',
+      race(`you gain proficiency in arcana; ${'you lose it when '.repeat(3000)}you rest.`, 40),
+    ],
+    [
+      'grants after a list of options',
+      race(
+        `You gain the following benefits:\n${'• You have proficiency in the Stealth skill.\n'.repeat(3000)}Choose one of the following options:\n${'• You have proficiency in the Arcana skill.\n'.repeat(3000)}`,
+        20,
+      ),
+    ],
+    [
+      'expertise sentences in a feat',
+      `<compendium><feat><name>F</name><text>${'Choose one skill in which you have proficiency. You gain expertise with that skill, which means '.repeat(3000)}x.</text></feat></compendium>`,
+    ],
+    [
       'picks of many items',
       race(`You gain ${'one skill proficiency, '.repeat(3000)}of your choice. `, 100),
     ],

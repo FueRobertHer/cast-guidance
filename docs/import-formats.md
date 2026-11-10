@@ -48,16 +48,22 @@ silently drops it.
 
 A choice the text states becomes the pick the official data writes: a skill,
 tool, language or weapon "of your choice" or from "the following", in any
-sentence of a race trait ("You therefore have proficiency in one of the
-following skills of your choice: …"), a resistance from a list or from a
+sentence of a race trait or a feat ("You therefore have proficiency in one of
+the following skills of your choice: …") but an option among others, a table
+row, or one after a sentence that sets terms ("Choose one of the following
+legacy options"), a resistance from a list or from a
 Dragonborn's ancestry table, Skilled's "any combination of three skills or
 tools", expertise in a skill already proficient, and a background's
 "History, plus your choice of one from among …" line. Where a tag holds
 Fight Club's own pick beside such a choice (`<proficiency>History,
 Arcana</proficiency>`, a `<resist>` type, a race's `<languages>` without the
-trait's "one extra language of your choice"), the choice is read instead.
-A grant that hangs on a condition or a time ("Whenever you finish a long
-rest, you gain proficiency …") stays text.
+trait's "one extra language of your choice"), the choice is read instead; a
+skill only the tag names is Fight Club's pick of "one skill of your choice"
+when there are no more of them than the text lets you pick. A grant that
+hangs on a condition or a time ("Whenever you finish a long rest, you gain
+proficiency …", "As a bonus action, you gain") stays text: only the books'
+own lead-ins ("Thanks to your memory, you have", "As a forest gnome, you
+have") are read past.
 
 Entries the installed game data already has (same kind, name and rules
 edition) are left out: the installed copy carries the app's curated mechanics.

@@ -270,10 +270,13 @@ work:
   variants such as `Battleaxe +1`). Choices read from prose leave out a grant
   a condition or a table decides (Githyanki's pick each long rest, the
   lineages' "if you don't keep" skills, Crafter's Fast Crafting table, House
-  Agent's house table) and two engine gaps official data shares: a
-  background's `feats` entries are each granted, so "Survivor or a Dark Gift
-  feat" grants both, and an `anyFromCategory` category written as a list (as
-  the data writes it) offers every feat.
+  Agent's house table), a race that splits Draconic Ancestry into one race
+  per colour with its own `<resist>` (the colour's type gives way to the
+  pick), a second trait's weapons when an earlier trait grants some, and two
+  engine gaps official data shares: a background's `feats` entries are each
+  granted, so "Survivor or a Dark Gift feat" grants both, and an
+  `anyFromCategory` category written as a list (as the data writes it)
+  offers every feat.
 
 ### Maintainability and diagnostics
 

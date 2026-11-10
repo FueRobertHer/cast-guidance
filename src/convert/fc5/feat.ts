@@ -13,7 +13,10 @@ import {
   ABILITIES,
   type AbilityKey,
   abilityKey,
+  addGrant,
+  dropTagPicks,
   entryName,
+  grantLines,
   type ProficiencyGrant,
   plainText,
   proficiencySentence,
@@ -24,7 +27,6 @@ import {
   readTools,
   readWeapons,
   resistChoice,
-  sentences,
   standingDefenses,
   tableDamageTypes,
   withRolls,
@@ -155,7 +157,8 @@ function choiceCovers(
 /**
  * A feat's proficiencies: its tags first, then its sentences. Skills add up
  * (a skill a choice names is not also fixed: the tag holds Fight Club's pick);
- * the other kinds come from a tag, or the first sentence that grants one.
+ * the other kinds come from a tag, or else every sentence's join (weapons:
+ * the first sentence that grants them).
  */
 function featProficiencies(
   el: XmlElement,
@@ -172,25 +175,37 @@ function featProficiencies(
     if (other.length > 0) reasons.push(`proficiency in ${other.join(', ')} is kept as text`);
   }
   const lists: Record<string, unknown>[] = [];
+  const tagSkills = Object.keys(skillEntry);
   const chosen = new Set<string>();
+  const named = new Set<string>();
   for (const { skills } of grants) {
     if (skills === undefined) continue;
     const choose = skills.choose as { from?: string[] } | undefined;
     if (choose !== undefined) {
       lists.push(skills);
       for (const f of choose.from ?? []) chosen.add(f);
-    } else if (typeof skills.any === 'number') {
-      skillEntry.any = Number(skillEntry.any ?? 0) + skills.any;
-    } else Object.assign(skillEntry, skills);
+      continue;
+    }
+    for (const [k, v] of Object.entries(skills)) {
+      if (k === 'any') skillEntry.any = Number(skillEntry.any ?? 0) + Number(v);
+      else {
+        skillEntry[k] = v;
+        named.add(k);
+      }
+    }
   }
-  for (const s of chosen) delete skillEntry[s];
+  dropTagPicks(skillEntry, tagSkills, chosen, named);
   if (Object.keys(skillEntry).length > 0) lists.unshift(skillEntry);
   if (lists.length > 0) out.skillProficiencies = lists;
 
+  // Armor, tools and languages from every sentence join; a weapon list is the first one's.
+  const joined: ProficiencyGrant = {};
+  for (const { armor, tools, languages } of grants) addGrant(joined, { armor, tools, languages });
   const fromProse = {
     weapons: grants.find((g) => g.weapons !== undefined)?.weapons,
-    armor: grants.find((g) => g.armor !== undefined)?.armor,
-    tools: grants.find((g) => g.tools !== undefined)?.tools,
+    armor: joined.armor,
+    tools: joined.tools,
+    languages: joined.languages,
   };
   const tags = [
     ['weapons', 'weaponProficiencies', (raw: string) => readWeapons(raw, edition)],
@@ -208,9 +223,7 @@ function featProficiencies(
         ? fromProse.weapons === undefined
           ? undefined
           : readWeapons(fromProse.weapons, edition)
-        : tag === 'languages'
-          ? grants.find((g) => g.languages !== undefined)?.languages
-          : fromProse[tag];
+        : fromProse[tag];
     const found = fromTag ?? prose;
     if (found !== undefined) out[field] = [found];
   }
@@ -227,9 +240,14 @@ function featProficiencies(
 /**
  * Expertise in a skill the reader picks: "Choose one skill in which you have
  * proficiency. You gain expertise with that skill", in a sentence of its own
- * after the choice, as Prodigy, Skill Expert and Boon of Skill write it.
+ * right after the choice, as Prodigy, Skill Expert and Boon of Skill write
+ * it. "That skill" after any other sentence may be a skill the text names.
+ * Both are whole sentences: "choose one skill in which you have proficiency
+ * while raging" is not the plain pick.
  */
-const EXPERTISE = /^you gain expertise (?:with|in) (?:that|the chosen) skill\b/;
+const EXPERTISE = /^you gain expertise (?:with|in) (?:that|the chosen) skill(?:, which means .*)?$/;
+const EXPERT_PICK =
+  /^(?:in addition, )?choose one (?:skill (?:in which you (?:have proficiency(?: but lack expertise)?|lack expertise)|you have proficiency in)|of your skill proficiencies(?: with which you lack expertise)?)$/;
 
 export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const rawName = childText(el, 'name');
@@ -261,14 +279,31 @@ export function convertFeat(el: XmlElement, ctx: Fc5Context): Fc5Result {
   if (Object.keys(fixed).length > 0 && !choiceCovers(fixed, proseAbility)) feat.ability = [fixed];
   else if (proseAbility !== undefined) feat.ability = proseAbility;
 
-  const lines = sentences(prose);
+  // What the feat grants for good, not an option among others ({@link grantLines}).
+  const ancestry = tableDamageTypes(text.entries);
+  const lines = grantLines(
+    text.entries,
+    (line) =>
+      proficiencySentence(line, 'known') !== undefined ||
+      resistChoice(line, ancestry) !== undefined ||
+      EXPERT_PICK.test(line) ||
+      EXPERTISE.test(line),
+  );
   const grants = lines.flatMap((line) => proficiencySentence(line, 'known') ?? []);
   Object.assign(feat, featProficiencies(el, grants, placement.edition, reasons));
   Object.assign(feat, standingDefenses(text.entries));
-  const ancestry = tableDamageTypes(text.entries);
-  const resistPicks = lines.flatMap((line) => resistChoice(line, ancestry) ?? []);
+  const seenPicks = new Set<string>();
+  const resistPicks = lines.flatMap((line) => {
+    const pick = resistChoice(line, ancestry);
+    const key = JSON.stringify(pick);
+    if (pick === undefined || seenPicks.has(key)) return [];
+    seenPicks.add(key);
+    return [pick];
+  });
   if (resistPicks.length > 0) feat.resist = [...((feat.resist as unknown[]) ?? []), ...resistPicks];
-  if (lines.some((line) => EXPERTISE.test(line))) feat.expertise = [{ anyProficientSkill: 1 }];
+  if (lines.some((line, i) => EXPERTISE.test(line) && EXPERT_PICK.test(lines[i - 1] ?? ''))) {
+    feat.expertise = [{ anyProficientSkill: 1 }];
+  }
 
   if (/(?:^|\n)Repeatable\b/.test(prose)) feat.repeatable = true;
   feat.entries = withRolls(text.entries, el);

@@ -22,11 +22,14 @@ import {
   type AbilityKey,
   abilityKey,
   addDefenses,
+  addGrant,
   countWord,
   DAMAGE_TYPES,
   type Defenses,
+  dropTagPicks,
   type Entry,
   entryName,
+  grantLines,
   own,
   type ProficiencyGrant,
   plainText,
@@ -38,7 +41,6 @@ import {
   readTools,
   readWeapons,
   resistChoice,
-  sentences,
   splitList,
   standingDefenses,
   tableDamageTypes,
@@ -203,15 +205,38 @@ interface TraitRules extends ProficiencyGrant {
   speed?: Record<string, number | true>;
 }
 
+/** A trait's tools by any name only in a trait about tools; elsewhere tools of the rules. */
+const toolMode = (traitName: string) => (/\btools?\b/i.test(traitName) ? 'any' : 'known');
+
+/**
+ * The sentences of a trait that may grant something for good ({@link
+ * grantLines}): one that grants a proficiency or a resistance to pick, not
+ * an option among others, a table row, or a sentence that hangs on an earlier
+ * one. "Natural Affinity. Your fey connection to animals gives you an
+ * intuitive bond with them. You therefore have proficiency in one of the
+ * following skills of your choice: …" reads its second sentence.
+ */
+export function traitLines(traitName: string, entries: readonly unknown[]): string[] {
+  const tools = toolMode(traitName);
+  return grantLines(
+    entries,
+    // Every damage type stands in for the ancestry table, read once every trait is.
+    (line) =>
+      proficiencySentence(line, tools) !== undefined ||
+      resistChoice(line, DAMAGE_TYPES) !== undefined,
+  );
+}
+
 /**
  * The rules a race trait states in the book's own words: languages and
- * another speed in its first sentence, proficiencies in any sentence
- * ({@link traitProficiencies}). Anything else, or anything not read in full,
- * is left to the text.
+ * another speed in its first sentence, and what its `lines` grant
+ * ({@link traitLines}): proficiencies, and a language of your choice a later
+ * sentence adds. Anything else, or anything not read in full, is left to the
+ * text.
  */
-export function traitRules(traitName: string, text: string): TraitRules {
+export function traitRules(traitName: string, text: string, lines: readonly string[]): TraitRules {
   const sentence = firstSentence(text);
-  const proficiencies = traitProficiencies(traitName, text);
+  const out: TraitRules = {};
   const speak =
     /^(?:you|your character) (?:can )?(?:speak, read,? and write|read, speak,? and write) (?:both )?(.{1,160})$/.exec(
       sentence,
@@ -223,35 +248,19 @@ export function traitRules(traitName: string, text: string): TraitRules {
         'one extra language of your choice',
       ),
     );
-    return langs === undefined ? (proficiencies ?? {}) : { ...proficiencies, languages: langs };
+    if (langs !== undefined) out.languages = langs;
   }
-  if (proficiencies !== undefined) return proficiencies;
+  const tools = toolMode(traitName);
+  for (const line of lines) addGrant(out, proficiencySentence(line, tools));
   const speed =
     /^you have an? (flying|swimming|climbing|burrowing|fly|swim|climb|burrow) speed (?:of (\d{1,3}) feet|equal to your (?:walking )?speed)$/.exec(
       sentence,
     );
   const mode = speed === null ? undefined : own(MOVES, speed[1] ?? '');
-  if (speed === null || mode === undefined) return {};
-  return { speed: { [mode]: speed[2] === undefined ? true : Number(speed[2]) } };
-}
-
-/**
- * What a trait's sentences grant ({@link proficiencySentence}), any of them,
- * not only its first: "Natural Affinity. Your fey connection to animals gives
- * you an intuitive bond with them. You therefore have proficiency in one of
- * the following skills of your choice: …". Each kind from the first sentence
- * that grants it; a tool by any name only in a trait about tools.
- */
-function traitProficiencies(traitName: string, text: string): ProficiencyGrant | undefined {
-  const tools = /\btools?\b/i.test(traitName) ? 'any' : 'known';
-  const out: ProficiencyGrant = {};
-  for (const line of sentences(text)) {
-    const grant = proficiencySentence(line, tools);
-    for (const [k, v] of Object.entries(grant ?? {}) as [keyof ProficiencyGrant, never][]) {
-      if (out[k] === undefined) out[k] = v;
-    }
+  if (speed !== null && mode !== undefined) {
+    out.speed = { [mode]: speed[2] === undefined ? true : Number(speed[2]) };
   }
-  return Object.keys(out).length > 0 ? out : undefined;
+  return out;
 }
 
 /** A Fight Club `<special>` that names a 5etools trait tag. */
@@ -274,7 +283,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const prose: TraitRules[] = [];
   const traitTags = new Set<string>();
   const abilityTexts: string[] = [];
-  const traitTexts: string[] = [];
+  const grantedLines: string[] = [];
   let defenses: Defenses = {};
   for (const trait of childElements(el, 'trait')) {
     const traitName = childText(trait, 'name') ?? '';
@@ -295,8 +304,9 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
       if (range !== null) darkvision = Number(range[1]);
     }
     if (/^ability score increases?$/i.test(traitName)) abilityTexts.push(plain);
-    prose.push(traitRules(traitName, plain));
-    traitTexts.push(plain);
+    const lines = traitLines(traitName, text.entries);
+    prose.push(traitRules(traitName, plain, lines));
+    grantedLines.push(...lines);
     defenses = addDefenses(defenses, standingDefenses(text.entries));
   }
 
@@ -345,18 +355,26 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     if (other.length > 0) reasons.push(`proficiency in ${other.join(', ')} is kept as text`);
   }
   const skillLists: Record<string, unknown>[] = [];
+  const tagSkills = Object.keys(skillEntry);
   const chosen = new Set<string>();
+  const namedSkills = new Set<string>();
   for (const rules of prose) {
     const { skills } = rules;
     if (skills === undefined) continue;
     if ('choose' in skills) {
       skillLists.push(skills);
       for (const f of (skills.choose as { from?: string[] }).from ?? []) chosen.add(f);
-    } else if ('any' in skills) skillEntry.any = Number(skillEntry.any ?? 0) + Number(skills.any);
-    else Object.assign(skillEntry, skills);
+      continue;
+    }
+    for (const [k, v] of Object.entries(skills)) {
+      if (k === 'any') skillEntry.any = Number(skillEntry.any ?? 0) + Number(v);
+      else {
+        skillEntry[k] = v;
+        namedSkills.add(k);
+      }
+    }
   }
-  // A skill a trait offers as a choice is Fight Club's pick when the tag holds it too.
-  for (const s of chosen) delete skillEntry[s];
+  dropTagPicks(skillEntry, tagSkills, chosen, namedSkills);
   if (Object.keys(skillEntry).length > 0) skillLists.unshift(skillEntry);
   if (skillLists.length > 0) race.skillProficiencies = skillLists;
 
@@ -367,10 +385,13 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     armor: readArmor,
     tools: (raw: string) => readTools(raw.replace(/^you gain proficiency with /i, '')),
   };
+  // Armor and tools from every trait join; a weapon list is the first trait's.
+  const joined: ProficiencyGrant = {};
+  for (const { armor, tools } of prose) addGrant(joined, { armor, tools });
   const fromProse = {
     weapons: proseWeapons === undefined ? undefined : readWeapons(proseWeapons, placement.edition),
-    armor: prose.find((r) => r.armor !== undefined)?.armor,
-    tools: prose.find((r) => r.tools !== undefined)?.tools,
+    armor: joined.armor,
+    tools: joined.tools,
   };
   for (const [tag, field] of [
     ['weapons', 'weaponProficiencies'],
@@ -390,7 +411,7 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const ancestry = tableDamageTypes(entries);
   const resistPicks: Record<string, unknown>[] = [];
   const seenPicks = new Set<string>();
-  for (const line of traitTexts.flatMap((t) => sentences(t))) {
+  for (const line of grantedLines) {
     const pick = resistChoice(line, ancestry);
     const key = JSON.stringify(pick);
     if (pick === undefined || seenPicks.has(key)) continue;
@@ -406,16 +427,25 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
     const fromTag = raw === undefined ? undefined : damageList(raw);
     if (raw !== undefined && fromTag === undefined)
       reasons.push(`its ${field} "${raw}" is kept as text`);
-    // A type a trait offers as a pick is Fight Club's pick when the tag holds it too.
-    const picked = new Set(
-      key === 'resist'
-        ? resistPicks.flatMap((p) => (p.choose as { from?: string[] } | undefined)?.from ?? [])
-        : [],
-    );
+    // A type a trait offers as a pick is Fight Club's pick when the tag holds
+    // it too, and no more of them than the pick allows; a tag that holds more
+    // states them itself, and the pick gives way to it.
+    const picked = new Set<string>();
+    const picks: Record<string, unknown>[] = [];
+    for (const pick of key === 'resist' ? resistPicks : []) {
+      const choose = pick.choose as { from?: string[]; count?: number } | undefined;
+      // A type a trait already gives outright is not the pick's.
+      const inTag = (fromTag ?? []).filter(
+        (t) => choose?.from?.includes(t) === true && defenses[key]?.includes(t) !== true,
+      );
+      if (inTag.length > (choose?.count ?? 1)) continue;
+      for (const t of inTag) picked.add(t);
+      picks.push(pick);
+    }
     const list: unknown[] = [
       ...new Set([...(fromTag ?? []).filter((t) => !picked.has(t)), ...(defenses[key] ?? [])]),
+      ...picks,
     ];
-    if (key === 'resist') list.push(...resistPicks);
     if (list.length > 0) race[key] = list;
   }
   const rawLanguages = childText(el, 'languages');
@@ -425,16 +455,16 @@ export function convertRace(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const proseLanguages: Record<string, unknown> = {};
   for (const rules of prose) {
     for (const [k, v] of Object.entries(rules.languages ?? {})) {
-      proseLanguages[k] = k === 'anyStandard' ? Number(proseLanguages[k] ?? 0) + Number(v) : v;
+      proseLanguages[k] = k === 'anyStandard' ? Number(own(proseLanguages, k) ?? 0) + Number(v) : v;
     }
   }
   // A trait that names the tag's languages and a pick besides ("Common, Elvish,
   // and one extra language of your choice") says what the tag leaves out.
   const addsPick =
     tagLanguages !== undefined &&
-    Object.keys(tagLanguages).every((k) => proseLanguages[k] !== undefined) &&
+    Object.keys(tagLanguages).every((k) => own(proseLanguages, k) !== undefined) &&
     Object.keys(proseLanguages).every(
-      (k) => tagLanguages[k] !== undefined || k === 'anyStandard' || k === 'choose',
+      (k) => own(tagLanguages, k) !== undefined || k === 'anyStandard' || k === 'choose',
     ) &&
     Object.keys(proseLanguages).length > Object.keys(tagLanguages).length;
   if (tagLanguages !== undefined)

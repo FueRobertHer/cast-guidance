@@ -399,6 +399,7 @@ const TOOL_CATEGORIES: Record<string, string> = {
   'gaming set': 'anyGamingSet',
   "artisan's tools": 'anyArtisansTool',
   "artisan's tool": 'anyArtisansTool',
+  'artisan tool': 'anyArtisansTool',
   'musical instrument': 'anyMusicalInstrument',
 };
 
@@ -439,6 +440,23 @@ function toolName(part: string): string | undefined {
   const single = name.replace(/s$/, '');
   return own(TOOL_SPELLINGS, name) ?? (KNOWN_TOOLS.has(single) ? single : name);
 }
+
+/** An option of a tool list without its "and" or its count: "one type of gaming set" is "gaming set". */
+const clean = (part: string) =>
+  part
+    .trim()
+    .replace(/^and /i, '')
+    .replace(/^(?:one (?:type |kind |set )?of |an? |one )/i, '');
+
+/** A kind of tool in a `from` list is its group's name, which the engine expands; else the tool's name. */
+function toolOption(part: string): string | undefined {
+  const category = toolCategory(part);
+  return category !== undefined ? own(CATEGORY_GROUPS, category) : toolName(part);
+}
+
+/** Whether a list option is a kind of tool or a tool of the rules. */
+const known = (part: string) =>
+  toolCategory(part) !== undefined || KNOWN_TOOLS.has(toolName(part) ?? '');
 
 /**
  * One item of a tool list: a kind of tool, which is a choice of that many
@@ -497,16 +515,18 @@ export function readTools(list: string): Record<string, unknown> | undefined {
       : undefined);
   if (alternatives !== undefined && count !== undefined) {
     const options: string[] = [];
-    // "And" separates options only in a "choose two from among" list.
-    for (const part of alternatives.split(among === null ? /,|\bor\b/i : /,|\bor\b|\band\b/i)) {
-      const trimmed = part.trim().replace(/^(?:one (?:type |kind )?of |an? |one )/i, '');
+    for (const part of alternatives.split(/,|\bor\b/i)) {
+      const trimmed = clean(part);
       if (trimmed === '') continue;
-      const category = toolCategory(trimmed);
-      const name = category === undefined ? toolName(trimmed) : undefined;
-      // A kind of tool in a `from` list is its group's name, which the engine expands.
-      const option = category !== undefined ? own(CATEGORY_GROUPS, category) : name;
-      if (option === undefined) return undefined;
-      options.push(option);
+      // "And" separates two options only in a "choose two from among" list, and
+      // only where each side is a tool of the rules: "ink and quill" is one name.
+      const halves = among === null ? [] : trimmed.split(/ and /i).map(clean);
+      const split = halves.length === 2 && halves.every((h) => known(h)) ? halves : [trimmed];
+      for (const piece of split) {
+        const option = toolOption(piece);
+        if (option === undefined) return undefined;
+        options.push(option);
+      }
     }
     if (options.length <= count) return undefined;
     return { choose: count === 1 ? { from: options } : { from: options, count } };
@@ -571,20 +591,25 @@ export interface ProficiencyGrant {
   weapons?: string;
   armor?: Record<string, unknown>;
   tools?: Record<string, unknown>;
-  /** Languages of your choice: `{ any: 3 }`. */
+  /** Languages of your choice: `{ anyStandard: 3 }`. */
   languages?: Record<string, unknown>;
   /** How many skills or tools the reader picks in any mix (Skilled). */
   skillsOrTools?: number;
 }
 
 /**
- * Words before "you" that leave what a sentence grants as it is: "thanks to
- * your memory, you have", "as an embodiment of revelry, you have". Never a
- * condition or a time ("whenever you finish a long rest, you gain", "if you
- * don't keep any of those elements, you gain"), which the grant hangs on.
+ * Words before "you" that leave what a sentence grants as it is, in the books'
+ * own lead-ins: "thanks to your memory, you have", "as an embodiment of
+ * revelry, you have", "in addition, you have", "as a forest gnome, you have".
+ * Only these: other words before "you" may set a condition or a time ("as a
+ * bonus action, you gain", "so long as you are", "if you don't keep any of
+ * those elements, you gain"), which the grant hangs on.
  */
 const LEAD_IN =
-  /^(?!(?:when|whenever|while|if|unless|until|after|before|once|each|as long as|during|for|at|starting|beginning|upon|on|instead)\b)[a-z][^,:;()]{0,80}, (?=you )/;
+  /^(?:(?:thanks to|because of|due to|as an embodiment of|being from|having lived through|having grown up|channeling|adapted to|used to) [^,:;()]{1,80}|in addition|additionally|as a result|as an? (?!result\b)(?![a-z' -]{0,60}\b(?:action|reaction|rest|turn)\b)[a-z'-]{1,20}(?: [a-z'-]{1,20}){0,2}), (?=you )/;
+/** Words in a clause that set terms on the clauses beside it: "you lose it when you finish a long rest". */
+const SETS_TERMS =
+  /\b(?:lose|loses|until|unless|when|whenever|if|while|instead|no longer|only|minutes?|hours?|rounds?|days?|expend|spend|action|reaction)\b/;
 
 /** A sentence in the words the readers below take: "you are also proficient with" is "you have proficiency with". */
 function grantWords(sentence: string): string {
@@ -645,18 +670,69 @@ export function proficiencySentence(
   const clauses = grantWords(sentence)
     .split(/, and (?=you )|; (?=you )/)
     .map(grantWords);
+  // Words before the first "you" that grantWords left are a condition, and it governs every clause.
+  if (!clauses[0]?.startsWith('you ')) return undefined;
   const out: ProficiencyGrant = {};
   for (const clause of clauses) {
     const grant = proficiencyClause(clause, tools);
     if (grant === undefined) {
-      if (clauses.length === 1 || GRANTS.test(clause)) return undefined;
+      if (clauses.length === 1 || GRANTS.test(clause) || SETS_TERMS.test(clause)) return undefined;
       continue;
     }
-    for (const [k, v] of Object.entries(grant) as [keyof ProficiencyGrant, never][]) {
-      if (out[k] === undefined) out[k] = v;
-    }
+    addGrant(out, grant);
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const plainPick = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) && !('choose' in v);
+
+/**
+ * Adds what one sentence or clause grants to what a text grants so far. Two
+ * grants of the same kind join ("the stealth skill" and "one skill of your
+ * choice" are both given), their counts added; a kind whose grants cannot
+ * join (a list to pick from, a weapon list) keeps its first.
+ */
+export function addGrant(out: ProficiencyGrant, grant: ProficiencyGrant | undefined): void {
+  const into = out as Record<string, unknown>;
+  for (const [k, v] of Object.entries(grant ?? {})) {
+    if (v === undefined) continue;
+    const had = into[k];
+    if (had === undefined) into[k] = v;
+    else if (plainPick(had) && plainPick(v)) {
+      const joined: Record<string, unknown> = { ...had };
+      for (const [key, value] of Object.entries(v)) {
+        // Keys come from the file's words: "constructor" is a tool's name, not Object's.
+        if (key === '__proto__') continue;
+        const before = own(joined, key);
+        joined[key] =
+          typeof before === 'number' && typeof value === 'number'
+            ? before + value
+            : (before ?? value);
+      }
+      into[k] = joined;
+    } else if (typeof had === 'number' && typeof v === 'number') into[k] = had + v;
+  }
+}
+
+/**
+ * Takes Fight Club's picks out of a skill entry that holds both its tag and
+ * the text's grants. A skill the text offers as a choice is the tag's pick
+ * of that choice; a skill only the tag names is its pick of "one skill of
+ * your choice", when there are no more of them than the text lets you pick.
+ * Races and feats alike: their tags hold their picks the same way.
+ */
+export function dropTagPicks(
+  entry: Record<string, unknown>,
+  tagSkills: readonly string[],
+  chosen: ReadonlySet<string>,
+  named: ReadonlySet<string>,
+): void {
+  // A skill the text also grants outright stays, whatever a choice offers.
+  for (const s of chosen) if (!named.has(s)) delete entry[s];
+  const picks = Number(entry.any ?? 0);
+  const tagOnly = tagSkills.filter((s) => !named.has(s) && !chosen.has(s));
+  if (picks > 0 && tagOnly.length <= picks) for (const s of tagOnly) delete entry[s];
 }
 
 /** One item of "one skill proficiency, one tool proficiency, and fluency in one language of your choice". */
@@ -672,7 +748,8 @@ function choiceGrants(list: string): ProficiencyGrant | undefined {
     if (m === null || count === undefined) return undefined;
     const field = m[2] === 'skill' ? 'skills' : m[2] === 'tool' ? 'tools' : 'languages';
     if (out[field] !== undefined) return undefined;
-    out[field] = { any: count };
+    // A language "of your choice" is a standard one in 5etools' words.
+    out[field] = field === 'languages' ? { anyStandard: count } : { any: count };
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -691,7 +768,7 @@ function proficiencyClause(
     );
   if (languages !== null) {
     const count = countWord(languages[1] ?? '');
-    return count === undefined ? undefined : { languages: { any: count } };
+    return count === undefined ? undefined : { languages: { anyStandard: count } };
   }
   const mixed =
     /^you gain proficiency in any combination of (one|two|three|four) skills or tools of your choice$/.exec(
@@ -1059,6 +1136,90 @@ export function standingDefenses(entries: readonly unknown[]): Defenses {
       }
     }
     return lead;
+  };
+  walk(entries);
+  return out;
+}
+
+/** A sentence that offers options or leads on to what follows: "Choose one of the following legacy options". */
+const LEADS_ON = /\b(?:choose|chosen|options?|the following)\b/;
+/** "You gain the following benefits", with a colon or a full stop: what follows holds as it does. */
+const BENEFITS = /\bthe following(?: [a-z]{1,20}){0,3}:?$/;
+/**
+ * A lead-in sets terms on what follows when it names a condition, a time, a
+ * cost or a choice. "Can" alone does not: "You can prepare and deliver deadly
+ * poisons, granting you the following benefits:".
+ */
+const LEAD_TERMS =
+  /\b(?:when|whenever|if|until|unless|once|while|after|before|during|each time|as long as|provided|depend(?:s|ing)?|instead|except|only|action|reaction|minutes?|hours?|rounds?|turns?|choose|chosen|choice|one of|options?|form|state|rage|raging)\b/;
+/** A sentence that opens on a condition or a time sets the terms of the rest of its paragraph: "While shifted, you …". */
+const OPENS_ON_TERMS =
+  /^(?:when|whenever|while|if|unless|until|once|after|before|during|as an? (?:[a-z]+ )?(?:action|reaction))\b/;
+
+/**
+ * The sentences of a race trait's or a feat's text that may grant something
+ * for good, in order: every sentence of a paragraph or a named part, and of a
+ * list after a lead-in that holds for good ("You gain the following
+ * benefits:", with a colon or a full stop, or any "You …:" that sets no
+ * terms). Each item of such a list is read on its own: one that offers a
+ * choice leaves the others as they are. A sentence `grants` does not take
+ * that offers options or leads on ("Choose one of the following legacy
+ * options", "If you have the Spellcasting feature, you gain the following
+ * benefits") ends the reading at its level, as in {@link standingDefenses}:
+ * what comes after it is one option, or hangs on it. One that opens on a
+ * condition or a time ("While shifted, your eyes glow") ends its paragraph.
+ * Words in parentheses set no terms. A table's rows are never read, nor a
+ * part whose name sets terms ("While Raging").
+ */
+export function grantLines(
+  entries: readonly unknown[],
+  grants: (line: string) => boolean,
+): string[] {
+  const out: string[] = [];
+  /** Reads one paragraph: whether it ends leading in to a list that holds, or stops its level. */
+  const paragraph = (text: string): 'none' | 'stands' | 'stop' => {
+    let lead: 'none' | 'stands' = 'none';
+    for (const line of sentences(text.replace(TAG_TEXT, '$1'))) {
+      lead = 'none';
+      // Words in parentheses set no terms: "(choose when you select this feat)".
+      const plain = line.replace(/\([^()]*\)/g, '');
+      if (grants(line)) out.push(line);
+      else if (
+        // "You gain the following benefits.", "You've learned some of an artificer's inventiveness:".
+        (BENEFITS.test(plain) || (/^you\b/.test(plain) && plain.endsWith(':'))) &&
+        !LEAD_TERMS.test(plain)
+      ) {
+        lead = 'stands';
+      } else if (LEADS_ON.test(plain) || line.endsWith(':')) return 'stop';
+      // The rest of the paragraph hangs on it; the next paragraph stands apart.
+      else if (OPENS_ON_TERMS.test(line)) return 'none';
+    }
+    return lead;
+  };
+  const walk = (list: readonly unknown[]): void => {
+    let lead: 'none' | 'stands' = 'none';
+    for (const e of list) {
+      if (typeof e === 'string') {
+        const read = paragraph(e);
+        if (read === 'stop') return;
+        lead = read;
+      } else if (e !== null && typeof e === 'object') {
+        const o = e as Record<string, unknown>;
+        // A lead-in holds over every list after it: Fight Club gives each item its own list.
+        if (Array.isArray(o.items)) {
+          if (lead !== 'stands') continue;
+          // Each item stands alone: one that offers a choice leaves the others as they are.
+          for (const item of o.items) if (typeof item === 'string') paragraph(item);
+        } else {
+          lead = 'none';
+          const name = typeof o.name === 'string' ? o.name.toLowerCase() : '';
+          if (!Array.isArray(o.entries) || NOT_STANDING.test(name) || OFFERS_CHOICE.test(name)) {
+            continue;
+          }
+          walk(o.entries);
+        }
+      }
+    }
   };
   walk(entries);
   return out;
