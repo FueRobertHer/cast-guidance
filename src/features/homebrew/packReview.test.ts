@@ -73,6 +73,83 @@ describe('where packs disagree', () => {
     ]);
   });
 
+  it('works out the winner character by character, as the engine does', () => {
+    const got = packConflicts([
+      pack('Gritty', rest('gritty'), to('hild')),
+      pack('Heroic', rest('heroic'), to('bram')),
+      pack('Standard', rest('standard'), every),
+    ]);
+    expect(got.map(describeConflict)).toEqual([
+      'Gritty and Standard both set rest length. Gritty wins: it is applied to those characters, over every character.',
+      'Heroic and Standard both set rest length. Heroic wins: it is applied to those characters, over every character.',
+    ]);
+    const three = packConflicts([
+      pack('A', rest('gritty'), every),
+      pack('B', rest('heroic'), to('hild')),
+      pack('C', rest('standard'), every),
+    ]);
+    expect(three.map(describeConflict)).toEqual([
+      'A, B and C all set rest length. B wins: it is applied to those characters, over every character.',
+      'A and C both set rest length. C wins: it comes later in your pack order.',
+    ]);
+  });
+
+  it('a rule chosen in Settings is over every pack applied to every character', () => {
+    const settings = { restLength: 'standard' } as const;
+    expect(
+      packConflicts(
+        [pack('Gritty', rest('gritty'), every), pack('Heroic', rest('heroic'), every)],
+        settings,
+      ),
+    ).toEqual([]);
+    expect(
+      packConflicts(
+        [pack('Chosen', rest('gritty'), to('hild')), pack('Everyone', rest('heroic'), every)],
+        settings,
+      ),
+    ).toEqual([]);
+    // Packs applied to a character are over Settings, so two of them still clash.
+    expect(
+      packConflicts(
+        [pack('One', rest('gritty'), to('hild')), pack('Two', rest('heroic'), to('hild'))],
+        settings,
+      ).map(describeConflict),
+    ).toEqual(['One and Two both set rest length. Two wins: it comes later in your pack order.']);
+  });
+
+  it('leaves out what the engine does not count', () => {
+    const unread = (id: string, guidance: Record<string, unknown>) => ({
+      ...pack(id, guidance, every),
+      guidance: { ...guidance, v: 99 },
+    });
+    expect(
+      packConflicts([pack('Gritty', rest('gritty'), every), unread('Later', rest('heroic'))]),
+    ).toEqual([]);
+    // A list none of whose effects can be read replaces nothing.
+    expect(
+      packConflicts([
+        pack('One', { patches: [{ target: 'Rage|Barbarian', effects: [] }] }, every),
+        pack('Two', { patches: [{ target: 'Rage|Barbarian', effects: [{ kind: 'odd' }] }] }, every),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('keys and names a target whole, however long', () => {
+    const long = `${'A very long feature name that runs on'.padEnd(60, 'x')}|Book`;
+    const replace = (target: string) => ({ patches: [{ target, effects: [] }] });
+    expect(
+      packConflicts([
+        pack('One', replace(long), every),
+        pack('Two', replace(`${long.slice(0, 45)}y|Book`), every),
+      ]),
+    ).toEqual([]);
+    const [clash] = packConflicts([
+      pack('One', replace(long), every),
+      pack('Two', replace(long), every),
+    ]);
+    expect(clash?.what).toBe(targetWords(long));
+  });
+
   it('says a clash from the side of a pack coming in', () => {
     const packs = [pack('Gritty', rest('gritty'), every), pack('In', rest('heroic'), every)];
     const [clash] = packConflicts(packs);
@@ -110,5 +187,22 @@ describe('what a pack holds', () => {
       'table rules: restLength is one of standard, gritty, heroic',
     ]);
     expect(packReview({ _meta: { sources: [{ json: 'X' }] }, spell: [] })).toBeUndefined();
+  });
+
+  it('shows its words whole', () => {
+    const said = 'A long rest needs a safe haven, a warm meal and a watch kept all night.';
+    const target = 'Sharpshooter Training of the Far Northern Rangers|Book';
+    const review = packReview({
+      _meta: {
+        sources: [{ json: 'Words' }],
+        castGuidance: {
+          v: 1,
+          patches: [{ target, add: [{ kind: 'initiativeBonus', amount: 1 }] }],
+          cues: [{ at: 'longRest', text: said, tone: 'warn' }],
+        },
+      },
+    });
+    expect(review?.changes.map((c) => c.key)).toEqual([targetWords(target)]);
+    expect(review?.moments.map((m) => m.value)).toEqual([`Says "${said}"`]);
   });
 });

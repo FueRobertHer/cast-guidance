@@ -23,6 +23,7 @@ import { bookKey, oldWholeImports, sameBookCopy } from '@/db/homebrewBooks';
 import { compareMergeOrder, type MergeOrderKey } from '@/db/homebrewOrder';
 import type { HomebrewFile } from '@/db/homebrewRepo';
 import {
+  CAST_GUIDANCE_LIMITS,
   clip,
   guidanceVersion,
   own,
@@ -30,6 +31,7 @@ import {
   type PackAppliesTo,
   readTableRules,
   TABLE_RULES,
+  type TableRuleChoices,
   type TableRuleId,
 } from '@/engine/castGuidance';
 import { readPack } from '@/engine/effects/mechanics';
@@ -819,7 +821,8 @@ export interface PackReview {
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
-const text = (v: unknown) => (typeof v === 'string' ? clip(v.trim()) : '');
+const text = (v: unknown) =>
+  typeof v === 'string' ? v.trim().slice(0, CAST_GUIDANCE_LIMITS.textLength) : '';
 const listOf = (raw: Record<string, unknown>, key: string) => {
   const v = own(raw, key);
   return Array.isArray(v) ? v : [];
@@ -1004,84 +1007,120 @@ export interface PackConflict {
 const reaches = (to: PackAppliesTo | undefined): to is PackAppliesTo =>
   to !== undefined && (to.appDefault === true || to.characters.length > 0);
 
-/** Whether two packs reach a character in common. */
-function overlap(a: PackAppliesTo, b: PackAppliesTo): boolean {
-  if (a.appDefault === true || b.appDefault === true) return true;
-  const theirs = new Set(b.characters);
-  return a.characters.some((c) => theirs.has(c));
-}
+/** Every character who is not one a pack is applied to by name. */
+const OTHERS = Symbol('others');
+type Who = string | typeof OTHERS;
 
-/** The packs `pick` finds something in, those of them that meet another, in order. */
-function clashing<T>(
-  packs: readonly PackInPlay[],
-  pick: (p: PackInPlay) => T | undefined,
-): Array<{ pack: PackInPlay; to: PackAppliesTo; value: T }> {
-  const setters: Array<{ pack: PackInPlay; to: PackAppliesTo; value: T }> = [];
-  for (const pack of packs) {
-    if (!reaches(pack.appliesTo)) continue;
-    const value = pick(pack);
-    if (value !== undefined) setters.push({ pack, to: pack.appliesTo, value });
+/** What a pack sets, read once per guidance object. */
+interface PackSets {
+  rules: Partial<TableRuleChoices>;
+  /** The targets it replaces, lowercased, as the engine keys them. */
+  replaces: Set<string>;
+  /** How each target is written, for the sentence. */
+  written: Map<string, string>;
+}
+const SETS = new WeakMap<Record<string, unknown>, PackSets>();
+
+function packSets(p: PackInPlay): PackSets {
+  const known = SETS.get(p.guidance);
+  if (known !== undefined) return known;
+  const replaces = new Set<string>();
+  // The engine's own reader: a list none of whose effects can be read replaces nothing.
+  for (const patch of readPack({ name: p.name, castGuidance: p.guidance }).patches) {
+    if (patch.replace !== undefined) replaces.add(patch.target);
   }
-  return setters.filter((s, i) => setters.some((o, j) => i !== j && overlap(s.to, o.to)));
+  const written = new Map<string, string>();
+  for (const patch of listOf(p.guidance, 'patches')) {
+    const target = isRecord(patch) ? own(patch, 'target') : undefined;
+    if (typeof target !== 'string') continue;
+    const key = target.trim().toLowerCase();
+    if (replaces.has(key) && !written.has(key)) written.set(key, target.trim());
+  }
+  const sets = { rules: readTableRules(own(p.guidance, 'tableRules')).rules, replaces, written };
+  SETS.set(p.guidance, sets);
+  return sets;
 }
-
-const replaces = (p: unknown, key: string) =>
-  isRecord(p) && text(own(p, 'target')).toLowerCase() === key && Array.isArray(own(p, 'effects'));
 
 /**
- * Where packs that are on disagree, and which wins, by the engine's order
- * (`engine/rules.ts` for table rules, `effects/mechanics.ts` for changes): for
- * a table rule, a pack applied to the characters wins over one applied to every
- * character, and between two alike the later in the player's order; of two
- * replacing one entry, the later always. Packs that agree are no clash.
+ * Where packs that are on disagree, and which wins, worked out character by
+ * character as the engine does (`engine/rules.ts` for table rules,
+ * `effects/mechanics.ts` for changes). For a table rule, a pack applied to the
+ * character wins over one applied to every character, and between two alike
+ * the later in the player's order; a rule chosen in Settings (`app`) is over
+ * every pack applied to every character, so those do not clash there. Of two
+ * replacing one entry, the later always. Packs that agree, that reach no
+ * character in common, or whose version the app cannot read are no clash.
+ * A character's own choice of a rule, which is over every pack, is not seen.
  */
-export function packConflicts(packs: readonly PackInPlay[]): PackConflict[] {
-  const found: PackConflict[] = [];
+export function packConflicts(
+  packs: readonly PackInPlay[],
+  app: Readonly<Partial<TableRuleChoices>> = {},
+): PackConflict[] {
+  const live = packs
+    .filter((p) => reaches(p.appliesTo) && !('problem' in guidanceVersion(p.guidance)))
+    .map((pack) => ({ pack, sets: packSets(pack), to: pack.appliesTo as PackAppliesTo }));
+  // Each character a pack names, then everyone else: who an every-character pack alone reaches.
+  const people: Who[] = [...new Set(live.flatMap((l) => l.to.characters)), OTHERS];
+  const named = (to: PackAppliesTo, who: Who) => who !== OTHERS && to.characters.includes(who);
+  const found = new Map<string, PackConflict>();
   const say = (
     what: string,
-    set: ReadonlyArray<{ pack: PackInPlay }>,
+    set: readonly PackInPlay[],
     winner: PackInPlay,
     why: PackConflict['why'],
-  ) =>
-    found.push({
+  ) => {
+    const key = JSON.stringify([what, set.map((p) => p.id), winner.id, why]);
+    if (found.has(key)) return;
+    found.set(key, {
       what,
-      packs: set.map((s) => s.pack.name),
-      ids: set.map((s) => s.pack.id),
+      packs: set.map((p) => p.name),
+      ids: set.map((p) => p.id),
       winner: winner.name,
       winnerId: winner.id,
       why,
     });
+  };
   for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
-    const set = clashing(packs, (p) => readTableRules(own(p.guidance, 'tableRules')).rules[id]);
-    if (set.length < 2 || new Set(set.map((s) => s.value)).size === 1) continue;
-    const chosen = set.filter((s) => s.to.appDefault !== true);
-    const pool = chosen.length > 0 ? chosen : set;
-    const why = chosen.length > 0 && chosen.length < set.length ? 'chosen' : 'order';
-    const winner = pool[pool.length - 1];
-    if (winner !== undefined) say(ruleName(id).toLowerCase(), set, winner.pack, why);
+    for (const who of people) {
+      const setters = live.filter(
+        (l) => l.sets.rules[id] !== undefined && (l.to.appDefault === true || named(l.to, who)),
+      );
+      const mine = setters.filter((l) => named(l.to, who));
+      const defaults = app[id] === undefined ? setters.filter((l) => !named(l.to, who)) : [];
+      const counted = setters.filter((l) => mine.includes(l) || defaults.includes(l));
+      if (counted.length < 2 || new Set(counted.map((l) => l.sets.rules[id])).size === 1) continue;
+      const winner = mine[mine.length - 1] ?? defaults[defaults.length - 1];
+      if (winner === undefined) continue;
+      const why = mine.length > 0 && defaults.length > 0 ? 'chosen' : 'order';
+      say(
+        ruleName(id).toLowerCase(),
+        counted.map((l) => l.pack),
+        winner.pack,
+        why,
+      );
+    }
   }
   const targets = new Map<string, string>();
-  for (const p of packs) {
-    for (const patch of listOf(p.guidance, 'patches')) {
-      const target = isRecord(patch) ? text(own(patch, 'target')) : '';
-      if (
-        target !== '' &&
-        replaces(patch, target.toLowerCase()) &&
-        !targets.has(target.toLowerCase())
-      ) {
-        targets.set(target.toLowerCase(), target);
+  for (const l of live) {
+    for (const [key, target] of l.sets.written) if (!targets.has(key)) targets.set(key, target);
+  }
+  for (const [key, target] of targets) {
+    for (const who of people) {
+      const setters = live.filter(
+        (l) => l.sets.replaces.has(key) && (l.to.appDefault === true || named(l.to, who)),
+      );
+      const winner = setters[setters.length - 1];
+      if (setters.length >= 2 && winner !== undefined) {
+        say(
+          targetWords(target),
+          setters.map((l) => l.pack),
+          winner.pack,
+          'order',
+        );
       }
     }
   }
-  for (const [key, target] of targets) {
-    const set = clashing(packs, (p) =>
-      listOf(p.guidance, 'patches').some((patch) => replaces(patch, key)) ? true : undefined,
-    );
-    const winner = set[set.length - 1];
-    if (set.length >= 2 && winner !== undefined)
-      say(targetWords(target), set, winner.pack, 'order');
-  }
-  return found;
+  return [...found.values()];
 }
 
 const names = (all: readonly string[]) =>
@@ -1093,7 +1132,8 @@ export function describeConflict(c: PackConflict): string {
     c.why === 'chosen'
       ? 'it is applied to those characters, over every character'
       : 'it comes later in your pack order';
-  return `${names(c.packs)} both set ${c.what}. ${c.winner} wins: ${why}.`;
+  const all = c.packs.length === 2 ? 'both' : 'all';
+  return `${names(c.packs)} ${all} set ${c.what}. ${c.winner} wins: ${why}.`;
 }
 
 /** A clash a pack being added would join, worded from its side. */

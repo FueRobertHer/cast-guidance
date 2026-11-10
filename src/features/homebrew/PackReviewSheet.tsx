@@ -11,12 +11,19 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { invalidateRegistry } from '@/data5e/registry';
-import { type PackLocal, packLocal, packsInOrder, withPackLocal } from '@/data5e/rulePack';
+import {
+  type PackLocal,
+  packGuidance,
+  packLocal,
+  packsInOrder,
+  withPackLocal,
+} from '@/data5e/rulePack';
 import { characterRepo } from '@/db/characterRepo';
 import { compareMergeOrder } from '@/db/homebrewOrder';
 import { type HomebrewFile, type HomebrewFileMeta, homebrewRepo } from '@/db/homebrewRepo';
 import type { PackAppliesTo } from '@/engine/castGuidance';
 import { notifyFailure } from '@/stores/notices';
+import { type AppTableRules, useAppTableRules } from '@/stores/tableRules';
 import { Chip } from '@/ui/Chip';
 import { ImportPreviewDialog, PreviewList, PreviewSection, StatusItem } from '@/ui/ImportPreview';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -75,11 +82,21 @@ export function packsHere(files: readonly HomebrewFile[]): PackHere[] {
 }
 
 /**
+ * Each stored file as last read for packs, by id: which content it was (when
+ * it was added and its revision, as a file deleted and added again is a new
+ * one), and the file when it holds a pack (null when it holds none, so its
+ * content is not kept).
+ */
+const READ_FILES = new Map<string, { version: string; pack: HomebrewFile | null }>();
+const versionOf = (f: Pick<HomebrewFileMeta, 'addedAt' | 'rev'>) => `${f.addedAt}:${f.rev ?? 0}`;
+
+/**
  * The rule packs among the files listed, read from their content. Only a file
  * stored whole can be a pack (a converted compendium's books never are), so
- * the books are never read for this. Read again when a file comes, goes, is
- * switched or saved (its revision moves); undefined until first read. A file
- * that cannot be read is left out, as the page reports it on its own.
+ * the books are never read for this. A file is read again only when its
+ * content moves; switching one on or off reads nothing. Undefined until first
+ * read. A file that cannot be read is left out, as the page reports it on its
+ * own.
  */
 export function usePacksHere(
   rows: readonly HomebrewFileMeta[] | undefined,
@@ -88,23 +105,36 @@ export function usePacksHere(
     rows === undefined
       ? undefined
       : JSON.stringify(
-          rows.filter((r) => r.book === undefined).map((r) => [r.id, r.rev ?? 0, r.enabled]),
+          rows.filter((r) => r.book === undefined).map((r) => [r.id, versionOf(r), r.enabled]),
         );
   const [read, setRead] = useState<{ key: string; packs: PackHere[] }>();
   useEffect(() => {
     if (key === undefined) return;
     let live = true;
-    const ids = (JSON.parse(key) as Array<[string, number, boolean]>).map(([id]) => id);
+    const wanted = JSON.parse(key) as Array<[string, string, boolean]>;
     void (async () => {
       const files: HomebrewFile[] = [];
-      for (const id of ids) {
-        try {
-          const { file } = await homebrewRepo.getSafe(id);
-          if (file !== undefined) files.push(file);
-        } catch {
-          // Unreadable: the page lists it among the files that could not be read.
+      for (const [id, version, enabled] of wanted) {
+        let known = READ_FILES.get(id);
+        if (known?.version !== version) {
+          try {
+            const { file } = await homebrewRepo.getSafe(id);
+            if (file === undefined) continue;
+            known = {
+              version: versionOf(file),
+              pack: packGuidance(file.json) === undefined ? null : file,
+            };
+            READ_FILES.set(id, known);
+          } catch {
+            // Unreadable: the page lists it among the files that could not be read.
+            continue;
+          }
         }
+        if (known.pack !== null) files.push({ ...known.pack, enabled });
       }
+      // A file no longer here is not kept.
+      const here = new Set(wanted.map(([id]) => id));
+      for (const id of READ_FILES.keys()) if (!here.has(id)) READ_FILES.delete(id);
       if (live) setRead({ key, packs: packsHere(files) });
     })();
     return () => {
@@ -217,11 +247,15 @@ export function ApplyTo({
   const hint = useId();
   const reach: Reach = value.appDefault === true ? 'every' : 'choose';
   const chosen = new Set(value.characters);
+  // The characters chosen, kept while Every character is picked, for Choose to bring back.
+  const [kept, setKept] = useState<readonly string[]>(value.characters);
   const toggle = (id: string) => {
     const next = new Set(chosen);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    onChange({ characters: roster.map((c) => c.id).filter((c) => next.has(c)) });
+    const characters = roster.map((c) => c.id).filter((c) => next.has(c));
+    setKept(characters);
+    onChange({ characters });
   };
   return (
     <PreviewSection heading="Apply to">
@@ -234,13 +268,13 @@ export function ApplyTo({
           { value: 'choose', label: 'Choose' },
         ]}
         value={reach}
-        onChange={(next) =>
-          onChange(
-            next === 'every'
-              ? { characters: [], appDefault: true }
-              : { characters: value.characters },
-          )
-        }
+        onChange={(next) => {
+          if (next === reach) return;
+          if (next === 'every') {
+            setKept(value.characters);
+            onChange({ characters: [], appDefault: true });
+          } else onChange({ characters: [...kept] });
+        }}
       />
       <p id={hint} className="text-caption text-ink-muted">
         {reach === 'every'
@@ -273,8 +307,13 @@ export const appliesToAnyone = (to: PackAppliesTo): boolean =>
   to.appDefault === true || to.characters.length > 0;
 
 /** The clash lines for one pack, worded from its side or as the page says them. */
-export function clashLines(packs: readonly PackInPlay[], id: string, incoming: boolean): string[] {
-  return packConflicts(packs)
+export function clashLines(
+  packs: readonly PackInPlay[],
+  id: string,
+  incoming: boolean,
+  app: AppTableRules = {},
+): string[] {
+  return packConflicts(packs, app)
     .filter((c) => c.ids.includes(id))
     .map((c) => (incoming ? describeIncomingConflict(c, id) : describeConflict(c)));
 }
@@ -296,9 +335,11 @@ export function PackReviewSheet({
   onClose: () => void;
 }) {
   // A pack never applied here starts at nobody, so closing the sheet applies it to no one.
-  const start: PackAppliesTo = pack.local?.appliesTo ?? { characters: [] };
+  // Kept as the sheet opened: a read of the pack while it is open changes neither.
+  const [start] = useState<PackAppliesTo>(() => pack.local?.appliesTo ?? { characters: [] });
   const [appliesTo, setAppliesTo] = useState<PackAppliesTo>(start);
   const changed = JSON.stringify(appliesTo) !== JSON.stringify(start);
+  const app = useAppTableRules();
   const refused = pack.review.refusals.length > 0;
   const close = (then?: () => void) => {
     onClose();
@@ -314,6 +355,7 @@ export function PackReviewSheet({
       .map((p) => (p.id === pack.id ? inPlay(p, appliesTo) : inPlay(p))),
     pack.id,
     false,
+    app,
   );
   const toggle = { label: pack.enabled ? 'Turn off' : 'Turn on', onClick: () => close(onToggle) };
   const done = { label: 'Done', onClick: () => close() };

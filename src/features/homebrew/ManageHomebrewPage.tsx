@@ -11,7 +11,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { ConversionReport } from '@/convert/types';
 import { invalidateRegistry } from '@/data5e/registry';
@@ -26,6 +26,7 @@ import { safeExternalHref } from '@/lib/url';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { errorText, notifyFailure } from '@/stores/notices';
+import { useAppTableRules } from '@/stores/tableRules';
 import { Badge } from '@/ui/Badge';
 import { Banner, BannerAction } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
@@ -359,7 +360,15 @@ export function Component() {
   const readErrors = read?.errors ?? [];
   const packs = usePacksHere(rows);
   const packById = new Map((packs ?? []).map((p) => [p.id, p]));
-  const conflicts = packConflicts((packs ?? []).filter((p) => p.enabled).map((p) => inPlay(p)));
+  const appRules = useAppTableRules();
+  const conflicts = useMemo(
+    () =>
+      packConflicts(
+        (packs ?? []).filter((p) => p.enabled).map((p) => inPlay(p)),
+        appRules,
+      ),
+    [packs, appRules],
+  );
   const [reviewing, setReviewing] = useState<string>();
   const [ordering, setOrdering] = useState(false);
   const [sharing] = useState(canShareFiles);

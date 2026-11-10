@@ -124,6 +124,9 @@ export function sharedFile<T>(json: T): T {
 const MOST_REASONS = 5;
 const ANY_NAME = formulaNamesFor('acBonus').names;
 const LONG_TEXT = new Set(['text', 'note']);
+/** Keys holding a `Name|Source` reference, which the effect reader takes up to twice a label. */
+const REFS = new Set(['spell', 'basedOn']);
+const REF_LENGTH = 2 * L.labelLength;
 const n = (x: number) => x.toLocaleString('en-US');
 
 /**
@@ -187,12 +190,14 @@ export function packRefusals(guidance: Record<string, unknown>): string[] {
           ? L.targetLength
           : key === 'f'
             ? L.formulaLength
-            : L.labelLength;
+            : REFS.has(key)
+              ? REF_LENGTH
+              : L.labelLength;
       if (value.length > max) {
         reasons.add(
           key === 'f'
             ? `a formula is at most ${max} characters`
-            : `${LONG_TEXT.has(key) ? 'a text' : key === 'target' ? 'a change’s target' : 'a name or label'} is at most ${max} characters`,
+            : `${LONG_TEXT.has(key) ? 'a text' : key === 'target' ? 'a change’s target' : REFS.has(key) ? 'a reference to an entry' : 'a name or label'} is at most ${max} characters`,
         );
       } else if (key === 'f') {
         const read = parseFormula(value, ANY_NAME);

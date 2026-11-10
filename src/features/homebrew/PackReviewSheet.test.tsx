@@ -30,6 +30,7 @@ import { resetAnnouncer } from '@/stores/announcer';
 import { dataStatusStore } from '@/stores/dataStatus';
 import grittyTable from '../../../tests-fixtures/packs/gritty-table.json';
 import { Component as ManageHomebrewPage } from './ManageHomebrewPage';
+import { savePackLocal } from './PackReviewSheet';
 
 beforeAll(() => {
   window.matchMedia = (query: string) =>
@@ -148,6 +149,22 @@ describe('adding a rule pack', () => {
     );
   });
 
+  it('brings back the characters chosen after Every character was picked', async () => {
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
+    renderPage();
+    chooseFile('gritty-table.json', grittyTable);
+    const dialog = await findDialog('Add Gritty Table?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Choose' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Hild', pressed: false }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Every character' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Choose' }));
+    expect(within(dialog).getByRole('button', { name: 'Hild', pressed: true })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add and turn on' }));
+    await waitFor(async () =>
+      expect((await storedPack('Gritty Table')).local?.appliesTo).toEqual({ characters: ['hild'] }),
+    );
+  });
+
   it('refuses a pack past a limit, says why, and offers only Cancel', async () => {
     renderPage();
     const tooBig = structuredClone(grittyTable) as Json;
@@ -218,6 +235,44 @@ describe('packs on the Homebrew page', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Turn off' }));
     await waitFor(async () => expect((await storedPack('Gritty Table')).file?.enabled).toBe(false));
     expect((await storedPack('Gritty Table')).local?.appliesTo).toEqual({ characters: ['hild'] });
+  });
+
+  it('leaves a newer Apply to alone when a sheet open before it closes unchanged', async () => {
+    await characterRepo.put(newCharacterDoc('hild', 'Hild', 'tag'));
+    renderPage();
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Gritty Table' }));
+    const sheet = await findDialog('Gritty Table');
+    const { file } = await storedPack('Gritty Table');
+    if (file === undefined) throw new Error('not stored');
+    // Saved elsewhere (another tab) while the sheet is open.
+    await savePackLocal(file.id, (local) => ({ ...local, appliesTo: { characters: ['hild'] } }));
+    await waitFor(async () =>
+      expect((await storedPack('Gritty Table')).file?.rev).toBeGreaterThan(file.rev ?? 0),
+    );
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await storedPack('Gritty Table')).local?.appliesTo).toEqual({ characters: ['hild'] });
+  });
+
+  it('reads a pack again only when it is saved, not when it is switched', async () => {
+    renderPage();
+    await addThroughPage('gritty-table.json', grittyTable, 'Add Gritty Table?');
+    // Read once, as it lands.
+    expect(await screen.findByText('Rule pack')).toBeTruthy();
+    const reads = vi.spyOn(homebrewRepo, 'getSafe');
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: 'Enable Gritty Table' }));
+      await waitFor(async () =>
+        expect((await storedPack('Gritty Table')).file?.enabled).toBe(false),
+      );
+      expect(
+        await screen.findByRole('button', { name: 'Enable Gritty Table', pressed: false }),
+      ).toBeTruthy();
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('downloads a pack without who it applies to here', async () => {

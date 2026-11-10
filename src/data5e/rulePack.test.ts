@@ -208,6 +208,15 @@ describe('a pack past a limit is refused, with the reason', () => {
       { moments: [{ at: 'zeroHp', do: [{ kind: 'offer', label: 'x'.repeat(101) }] }] },
       /a name or label is at most 100 characters/,
     ],
+    [
+      'a reference',
+      {
+        patches: [
+          { target: 'a|b', add: [{ kind: 'grantSpell', spell: `${'x'.repeat(197)}|PHB` }] },
+        ],
+      },
+      /a reference to an entry is at most 200 characters/,
+    ],
   ])('%s', (_, guidance, reason) => {
     const refusals = packRefusals({ v: 1, ...guidance });
     expect(refusals).toHaveLength(1);
@@ -225,6 +234,14 @@ describe('a pack past a limit is refused, with the reason', () => {
         }),
         cues: many(L.cuesPerPack, { at: 'zeroHp', text: 'x' }),
       }),
+    ).toEqual([]);
+  });
+
+  it('takes a reference as long as the effect reader does', () => {
+    const spell = `${'x'.repeat(2 * L.labelLength - 4)}|PHB`;
+    expect(spell).toHaveLength(2 * L.labelLength);
+    expect(
+      packRefusals({ v: 1, patches: [{ target: 'a|b', add: [{ kind: 'grantSpell', spell }] }] }),
     ).toEqual([]);
   });
 

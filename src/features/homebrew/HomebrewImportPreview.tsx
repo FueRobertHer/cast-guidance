@@ -24,6 +24,7 @@ import { jsonByteSize } from '@/lib/byteSize';
 import { QUOTA_GUIDANCE, storageErrorText } from '@/lib/storageErrors';
 import { freeStorage } from '@/lib/storageRoom';
 import { notifyFailure } from '@/stores/notices';
+import { useAppTableRules } from '@/stores/tableRules';
 import {
   countsText,
   formatBytes,
@@ -494,10 +495,16 @@ export default function HomebrewImportPreview({
               },
             ];
   const packIn = p.packIn;
+  const appRules = useAppTableRules();
   const clashes =
     packIn === undefined || refused
       ? []
-      : clashLines([...(p.packsOn ?? []), { ...packIn, appliesTo: applyTo }], packIn.id, true);
+      : clashLines(
+          [...(p.packsOn ?? []), { ...packIn, appliesTo: applyTo }],
+          packIn.id,
+          true,
+          appRules,
+        );
 
   return (
     <ImportPreviewDialog
