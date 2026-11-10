@@ -456,6 +456,95 @@ describe('class options in a file', () => {
     expect(list(json, 'optionalfeature').filter((o) => o.name === 'Defense')).toHaveLength(1);
   });
 
+  it('keeps apart copies whose numbers differ in sign only', () => {
+    const style = (name: string, text: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="1">${f('Fighting Style', 'Adopt one.', '')}${f('Fighting Style: Archery', text)}${f('Fighting Style: Defense', 'Armor.')}</autolevel></class>`;
+    const { json } = convertFc5Compendium(
+      parseXml(
+        `<compendium>${style('Ember Knight', 'AC changes by +1.')}${style('Ash Warden', 'AC changes by -1.')}</compendium>`,
+      ),
+      { fileName: FILE },
+    );
+    expect(
+      list(json, 'optionalfeature')
+        .filter((o) => String(o.name).startsWith('Archery'))
+        .map((o) => [o.name, o.entries]),
+    ).toEqual([
+      ['Archery', ['AC changes by +1.']],
+      ['Archery (Fighting Style)', ['AC changes by -1.']],
+    ]);
+  });
+
+  it('finds a copy that says the same under another label', () => {
+    const style = (name: string, label: string, text: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="1">${f(label, 'Adopt one.', '')}${f(`${label}: Archery`, text)}${f(`${label}: Defense`, 'Armor.')}</autolevel></class>`;
+    const { json } = convertFc5Compendium(
+      parseXml(
+        `<compendium>${style('Ember Knight', 'Fighting Style', 'One.')}${style('Ash Warden', 'Fighting Style', 'Two.')}${style('Iron Guard', 'Combat Style', 'Two.')}</compendium>`,
+      ),
+      { fileName: FILE },
+    );
+    expect(
+      list(json, 'optionalfeature')
+        .filter((o) => String(o.name).startsWith('Archery'))
+        .map((o) => [o.name, o.featureType]),
+    ).toEqual([
+      ['Archery', ['Ember Knight: Fighting Style']],
+      ['Archery (Fighting Style)', ['Ash Warden: Fighting Style', 'Iron Guard: Combat Style']],
+    ]);
+  });
+
+  it('gives a stored option the first class copy and keeps another apart, in any order', () => {
+    const lance =
+      '<spell><name>Ember Lance</name><level>0</level><classes>Eldritch Invocations</classes><text>Prerequisite: 5th level\nA lance.</text></spell>';
+    const caster = (name: string, text: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="2">${f('Eldritch Invocations', 'Learn two.', '')}${f('Eldritch Invocations: Ember Lance', text)}${f('Eldritch Invocations: Ash Sight', 'S.')}</autolevel></class>`;
+    const a = caster('Ember Knight', 'Lance one.');
+    const b = caster('Ash Warden', 'Lance two.');
+    const c = caster('Iron Guard', 'Lance two.');
+    const lances = (xml: string) =>
+      list(
+        convertFc5Compendium(parseXml(`<compendium>${xml}</compendium>`), { fileName: FILE }).json,
+        'optionalfeature',
+      )
+        .filter((o) => String(o.name).startsWith('Ember Lance'))
+        .map((o) => [o.name, [...(o.featureType as string[])].sort()]);
+    const apart = [
+      ['Ember Lance', ['EI', 'Ember Knight: Eldritch Invocations']],
+      ['Ember Lance (Eldritch Invocations)', ['Ash Warden: Eldritch Invocations']],
+    ];
+    expect(lances(`${a}${b}${lance}`)).toEqual(apart);
+    expect(lances(`${lance}${a}${b}`)).toEqual(apart);
+    expect(lances(`${a}${lance}${b}`)).toEqual(apart);
+    expect(lances(`${a}${b}${lance}${c}`)).toEqual([
+      ['Ember Lance', ['EI', 'Ember Knight: Eldritch Invocations']],
+      [
+        'Ember Lance (Eldritch Invocations)',
+        ['Ash Warden: Eldritch Invocations', 'Iron Guard: Eldritch Invocations'],
+      ],
+    ]);
+  });
+
+  it('gives an option kept under its label the printing of its own name', () => {
+    const phb = 'Source: Player’s Handbook (2014) p. 72';
+    const style = (name: string, text: string) =>
+      `<class><name>${name}</name><hd>10</hd><autolevel level="1">${f('Fighting Style', 'Adopt one.', '')}${f('Fighting Style: Archery', `${text}\n${phb}`)}${f('Fighting Style: Defense', `Armor.\n${phb}`)}</autolevel></class>`;
+    const { json } = convertFc5Compendium(
+      parseXml(
+        `<compendium>${style('Ember Knight', 'Gain +2 to ranged.')}${style('Ash Warden', 'You gain a +2 bonus to ranged attacks.')}</compendium>`,
+      ),
+      { fileName: FILE },
+    );
+    expect(
+      list(json, 'optionalfeature')
+        .filter((o) => String(o.name).startsWith('Archery'))
+        .map((o) => [o.name, o.printingOf]),
+    ).toEqual([
+      ['Archery', ['Archery|PHB']],
+      ['Archery (Fighting Style)', ['Archery|PHB']],
+    ]);
+  });
+
   it("puts an installed class's options on its official list, and names those no list offers", () => {
     const check: InstalledCheck = (kind, name) =>
       (kind === 'class' && name === 'Fighter') ||

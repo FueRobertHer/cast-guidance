@@ -257,8 +257,9 @@ function withPrinting(
 
 /**
  * What an option says, to compare two classes' copies of it: its text
- * without the source line, letters and digits only, lowercased, so `+1` and
- * `+ 1` say the same.
+ * without the source line, lowercased, its words, numbers and signs apart
+ * from other punctuation and spacing, so `+1` and `+ 1` say the same but
+ * `-1` does not.
  */
 function sameText(entries: unknown): string {
   const said = Array.isArray(entries)
@@ -266,7 +267,9 @@ function sameText(entries: unknown): string {
     : [];
   return JSON.stringify(said)
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '');
+    .replace(/[^\p{L}\p{N}+-]+/gu, ' ')
+    .replace(/([+-]) /g, '$1')
+    .trim();
 }
 
 /** One converted entry, before the checks decide whether it is kept. */
@@ -714,40 +717,37 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   const optionsKept = new Map<string, Record<string, unknown>>();
   const optionKey = (name: string, placement: Placement, edition: RulesVersion) =>
     `${name.toLowerCase()}|${placement.source.json}|${edition}`;
+  // Every option kept of a name, book and edition (by `optionKey`): the one
+  // under that name, and those named for their label.
+  const namesakes = new Map<string, Record<string, unknown>[]>();
   // Options kept from a class's own list, whose prerequisite (or none) is the
   // level the class lists it at, not a rule of the option's.
   const byListing = new WeakSet<Record<string, unknown>>();
-  // What each of those says, as `sameText` reads it: every class's that it
-  // stands for.
-  const said = new WeakMap<Record<string, unknown>, Set<string>>();
+  // What the classes' copies of a kept option say, as `sameText` reads it:
+  // none yet for one only the file stores.
+  const said = new WeakMap<Record<string, unknown>, string>();
 
   /**
-   * Add an option's lists to the one of its name and book kept already:
-   * 'none' when there is none, 'other' when that one is another option. Two
-   * classes' options of one name are one when they say the same; a totem
-   * warrior's `Totem Spirit: Bear` and `Aspect of the Beast: Bear` are two.
-   * One the file stores is the option itself, which any class's of its name
-   * stands for. `listed` is true for a class's own option, whose
-   * prerequisite is the level the class lists it at; a stored option's is
-   * its rule.
+   * Add an option's lists to the one of its name and book kept already;
+   * false for none. `listed` is true for a class's own option, whose
+   * prerequisite is the level the class lists it at, and which joins only a
+   * kept one that says the same (`keepListed` finds it); a stored option's
+   * prerequisite is its rule.
    */
   const mergeOption = (
     entity: Record<string, unknown>,
     placement: Placement,
     edition: RulesVersion,
     listed: boolean,
-  ): 'merged' | 'none' | 'other' => {
+  ): boolean => {
     const had = optionsKept.get(optionKey(String(entity.name), placement, edition));
-    if (had === undefined) return 'none';
-    const text = listed ? sameText(entity.entries) : undefined;
-    if (text !== undefined && byListing.has(had) && said.get(had)?.has(text) !== true) {
-      return 'other';
-    }
+    if (had === undefined) return false;
+    if (listed) said.set(had, sameText(entity.entries));
     const types = [...(had.featureType as string[]), ...((entity.featureType ?? []) as string[])];
     had.featureType = [...new Set(types)];
     const was = had.prerequisite;
     const now = entity.prerequisite;
-    if (!byListing.has(had)) return 'merged';
+    if (!byListing.has(had)) return true;
     if (!listed) {
       // The option's own rule stands over the levels classes list it at.
       if (now === undefined) delete had.prerequisite;
@@ -762,27 +762,45 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       const all = [...(was as unknown[]), ...(now as unknown[])];
       had.prerequisite = [...new Map(all.map((p) => [JSON.stringify(p), p])).values()];
     }
-    if (text !== undefined) said.get(had)?.add(text);
-    return 'merged';
+    return true;
+  };
+
+  /** Keep an option under its name, one of the namesakes of that name. */
+  const keepNamed = (entity: Record<string, unknown>, key: string, placement: Placement): void => {
+    optionsKept.set(optionKey(String(entity.name), placement, placement.edition), entity);
+    namesakes.set(key, [...(namesakes.get(key) ?? []), entity]);
   };
 
   /**
-   * Keep a class's option under the first name that is free or is already
-   * this option: its own, else its label's (`Bear (Aspect of the Beast)`),
-   * then that numbered. False when it joined one kept already.
+   * Keep a class's option, or add it to the one kept of its name that it is:
+   * one whose classes' copies say the same, else one only the file stores,
+   * which any class's copy is. Two classes' options of one name are one only
+   * when they say the same; a totem warrior's `Totem Spirit: Bear` and
+   * `Aspect of the Beast: Bear` are two. A new one takes its own name when
+   * free, else its label's (`Bear (Aspect of the Beast)`), then that
+   * numbered. False when it joined one kept already.
    */
   const keepListed = (o: Fc5Part & { label: string }): boolean => {
-    const name = String(o.entity.name);
-    for (let n = 1; ; n++) {
-      const candidate = n === 1 ? name : `${name} (${o.label}${n === 2 ? '' : ` ${n - 1}`})`;
-      o.entity.name = candidate;
-      const found = mergeOption(o.entity, o.placement, o.placement.edition, true);
-      if (found === 'merged') return false;
-      if (found === 'none') break;
+    const { entity, placement } = o;
+    const name = String(entity.name);
+    const key = optionKey(name, placement, placement.edition);
+    const kin = namesakes.get(key) ?? [];
+    const text = sameText(entity.entries);
+    const same =
+      kin.find((k) => said.get(k) === text) ?? kin.find((k) => said.get(k) === undefined);
+    if (same !== undefined) {
+      entity.name = same.name;
+      mergeOption(entity, placement, placement.edition, true);
+      return false;
     }
-    optionsKept.set(optionKey(String(o.entity.name), o.placement, o.placement.edition), o.entity);
-    byListing.add(o.entity);
-    said.set(o.entity, new Set([sameText(o.entity.entries)]));
+    let free = name;
+    for (let n = 1; optionsKept.has(optionKey(free, placement, placement.edition)); n++) {
+      free = `${name} (${o.label}${n === 1 ? '' : ` ${n}`})`;
+    }
+    entity.name = free;
+    keepNamed(entity, key, placement);
+    byListing.add(entity);
+    said.set(entity, text);
     return true;
   };
 
@@ -809,8 +827,12 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
         }
         o.entity.featureType = [o.official];
       }
+      // It prints the official one of the name the file gives it, whatever
+      // name it is kept under.
+      const printed = printingRef('optionalfeature', { name }, o.placement);
       if (!keepListed(o)) continue;
-      out.optionalfeature.push(withPrinting('optionalfeature', o.entity, o.placement));
+      if (printed !== undefined) o.entity.printingOf = [printed];
+      out.optionalfeature.push(o.entity);
       sources.set(o.placement.source.json, o.placement.source);
     }
     return unoffered;
@@ -848,14 +870,14 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     }
     if (
       kind === 'optionalfeature' &&
-      mergeOption(c.result.entity, placement, c.result.edition, false) === 'merged'
+      mergeOption(c.result.entity, placement, c.result.edition, false)
     ) {
       return 'duplicate';
     }
     const entity = withPrinting(kind, c.result.entity, placement);
     out[kind].push(entity);
     if (kind === 'optionalfeature') {
-      optionsKept.set(optionKey(name, placement, c.result.edition), entity);
+      keepNamed(entity, optionKey(name, placement, c.result.edition), placement);
     }
     sources.set(placement.source.json, placement.source);
     // A class's features come with it, each a printing of the official
