@@ -5,7 +5,13 @@
 import type { Entity } from '../data5e/copyMod';
 import { ENTITY_TYPES, type EntityRegistry, type EntityType } from '../data5e/normalize';
 import { editionOf, type RulesVersion } from '../data5e/rulesVersion';
-import type { ConvertedKind, ConvertOptions, InstalledCheck, OfficialFeat } from './types';
+import type {
+  ConvertedKind,
+  ConvertOptions,
+  InstalledCheck,
+  OfficialClass,
+  OfficialFeat,
+} from './types';
 
 /**
  * The registry types an entry of each converted kind could already be. Other
@@ -20,6 +26,8 @@ export const OFFICIAL_TYPES: Record<ConvertedKind, readonly EntityType[]> = {
   optionalfeature: ['optionalfeature'],
   class: ['class'],
   classFeature: ['classFeature'],
+  subclass: ['subclass'],
+  subclassFeature: ['subclassFeature'],
 };
 
 /**
@@ -239,8 +247,44 @@ export function officialFeatLookup(reg: EntityRegistry): OfficialFeat {
 }
 
 /**
+ * The official classes by `name|edition`, lowercased, each as `Name|Source`
+ * as the data writes them: the core rules book's when it has one, else the
+ * first in the data. A class's own book, never one it was also printed in
+ * (`otherSources`), since a subclass names its class by that book.
+ */
+function classIds(reg: EntityRegistry): [string, string][] {
+  const ids = new Map<string, string>();
+  for (const e of reg.byType('class').slice(0, reg.officialCount('class'))) {
+    if (typeof e.name !== 'string' || typeof e.source !== 'string') continue;
+    const edition = editionOf(e);
+    const key = `${e.name.toLowerCase()}|${edition}`;
+    const core = e.source.toLowerCase() === CORE_BOOK[edition];
+    if (!ids.has(key) || core) ids.set(key, `${e.name}|${e.source}`);
+  }
+  return [...ids];
+}
+
+/** {@link OfficialClass} over a set of {@link classIds}. */
+function classLookup(ids: Iterable<[string, string]>): OfficialClass {
+  const byKey = new Map(ids);
+  return (name, edition) => {
+    const id = byKey.get(`${name.toLowerCase()}|${edition}`);
+    const bar = id?.indexOf('|') ?? -1;
+    return id === undefined || bar < 0
+      ? undefined
+      : { name: id.slice(0, bar), source: id.slice(bar + 1) };
+  };
+}
+
+/** The installed class a converted subclass goes on, from the registry. */
+export function officialClassLookup(reg: EntityRegistry): OfficialClass {
+  return classLookup(classIds(reg));
+}
+
+/**
  * What the converter asks of the game data ({@link installedCheck},
- * {@link heldBooks}, the books of the 2024 rules and {@link featIds}), as
+ * {@link heldBooks}, the books of the 2024 rules, {@link featIds} and
+ * {@link classIds}), as
  * plain data: built where the registry is, and sent to a worker that
  * converts without it.
  */
@@ -249,6 +293,7 @@ export interface OfficialKeys {
   books: string[];
   rulesBooks: string[];
   feats: [string, string][];
+  classes: [string, string][];
 }
 
 export function officialKeys(reg: EntityRegistry): OfficialKeys {
@@ -262,13 +307,16 @@ export function officialKeys(reg: EntityRegistry): OfficialKeys {
     books: [...bookCodes(reg)],
     rulesBooks: [...reg.rulesBooks],
     feats: featIds(reg),
+    classes: classIds(reg),
   };
 }
 
 /** The converter's checks from {@link officialKeys}: the same answers the registry gives. */
 export function officialChecks(
   keys: OfficialKeys,
-): Required<Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks' | 'officialFeat'>> {
+): Required<
+  Pick<ConvertOptions, 'isInstalled' | 'hasBook' | 'rulesBooks' | 'officialFeat' | 'officialClass'>
+> {
   const byKind = new Map<ConvertedKind, KindKeys>();
   for (const kind of Object.keys(OFFICIAL_TYPES) as ConvertedKind[]) {
     const k = keys.kinds[kind];
@@ -283,6 +331,7 @@ export function officialChecks(
     hasBook: (code) => books.has(code.toLowerCase()),
     rulesBooks: new Set(keys.rulesBooks),
     officialFeat: featLookup(keys.feats),
+    officialClass: classLookup(keys.classes),
   };
 }
 

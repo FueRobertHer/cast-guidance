@@ -75,12 +75,14 @@ export interface KindComparison {
 }
 
 /**
- * Class features share names across classes and levels (every class has an
- * Ability Score Improvement), so a name finds no one official feature to set a
- * converted one beside; they are compared through their class's sheet
- * (`scripts/fc5-sheet-compare.ts`).
+ * Class and subclass features share names across classes and levels (every
+ * class has an Ability Score Improvement), so a name finds no one official
+ * feature to set a converted one beside; they are compared through their
+ * class's sheet (`scripts/fc5-sheet-compare.ts`).
  */
-const KINDS = (Object.keys(OFFICIAL_TYPES) as ConvertedKind[]).filter((k) => k !== 'classFeature');
+const KINDS = (Object.keys(OFFICIAL_TYPES) as ConvertedKind[]).filter(
+  (k) => k !== 'classFeature' && k !== 'subclassFeature',
+);
 
 /**
  * About the printing or the 5etools site, not the rules, so never a
@@ -135,6 +137,7 @@ const NOT_COMPARED_ON: Partial<Record<ConvertedKind, ReadonlySet<string>>> = {
   race: new Set(['age']),
   // A class's feature refs name its own book; its features are compared apart.
   class: new Set(['classFeatures']),
+  subclass: new Set(['subclassFeatures']),
 };
 
 /**

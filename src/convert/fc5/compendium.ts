@@ -22,6 +22,10 @@
  *   which go to that spell; a `(Ritual Only)` spell repeats one for ritual
  *   casters. Both are left out.
  * - Class options stored as spells become optional features (`classOption.ts`).
+ * - A class's subclasses are checked one by one, on the class they belong to:
+ *   the kept class, or the installed one when the class is left out, so a
+ *   file of official classes still adds its homebrew subclasses. A `<class>`
+ *   with no hit die adds its subclasses to the class of its name.
  * - A second copy of the same entry in the same book is left out.
  *
  * Every entry left out, and every one that lost something on the way, is
@@ -49,9 +53,10 @@ import {
   type HomebrewSource,
   readSourceLine,
 } from './books';
-import { classHitDie, classIdentity, convertClass } from './class';
+import { classHitDie, classIdentity, convertClass, convertClassAdditions } from './class';
 import { BASE_CLASSES, convertClassOption, isClassOption, isOnOfficialList } from './classOption';
 import {
+  type ClassBinding,
   extraClassKey,
   type Fc5Context,
   type Fc5Result,
@@ -59,6 +64,7 @@ import {
   type FileClass,
   type Placement,
   printingRef,
+  type SubclassBinder,
 } from './context';
 import { convertFeat } from './feat';
 import { convertItem } from './item';
@@ -79,7 +85,7 @@ import {
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 11;
+export const FC5_CONVERTER_VERSION = 12;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
@@ -112,6 +118,8 @@ const KIND_ORDER: readonly ConvertedKind[] = [
   'race',
   'class',
   'classFeature',
+  'subclass',
+  'subclassFeature',
 ];
 
 /** Why an entry was left out, in words for the player. */
@@ -125,6 +133,10 @@ const WHY = {
   ritual: 'a ritual-only copy of a spell in the file',
   choice: 'a copy per choice of a feat, and the copies are one feat with the choice here',
   choiceWhole: 'a copy per choice of a feat the file has whole',
+  unbound: 'its class is in your game data, but the converter cannot tell which class it is',
+  noClass:
+    'it adds to a class this file does not have and your game data has no class of that name',
+  noSubclasses: 'it adds to a class of that name, and only its subclasses convert: it has none',
 } as const;
 
 /** The homebrew source of entries that cite no book, named after the file. */
@@ -601,6 +613,8 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
     race: [],
     class: [],
     classFeature: [],
+    subclass: [],
+    subclassFeature: [],
   };
   const sources = new Map<string, HomebrewSource>();
   const seen = new Set<string>();
@@ -609,6 +623,114 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
   const unofferedLists = new Set<string>();
   let unoffered = 0;
   let featsConverted = 0;
+
+  // The class each class entry's subclasses go on, by its key in `seen`, and
+  // by name and edition for a `<class>` that only adds subclasses. Those wait
+  // for the end of the file, so the class they add to can come after them.
+  // Each is found when first asked for: a class with no subclasses asks the
+  // installed data nothing more.
+  type Binding = () => ClassBinding | undefined;
+  const bindings = new Map<string, Binding>();
+  const bindingsByName = new Map<string, Binding>();
+  const once = (find: Binding): Binding => {
+    let found: { bound: ClassBinding | undefined } | undefined;
+    return () => {
+      found ??= { bound: find() };
+      return found.bound;
+    };
+  };
+  const additions: { name: string; edition: RulesVersion; subclasses: SubclassBinder }[] = [];
+
+  /**
+   * The installed class of a name in an edition, as its subclasses name it:
+   * by its own book, which the game data says. With no game data, a rules
+   * class is its core book's. A caller that checks entries but cannot look a
+   * class up gets the core book's, when the data has the class there.
+   */
+  const officialClass = (name: string, edition: RulesVersion): ClassBinding | undefined => {
+    const core = edition === '2024' ? 'XPHB' : 'PHB';
+    if (opts.officialClass !== undefined) {
+      const found = opts.officialClass(name, edition);
+      return found === undefined ? undefined : { className: found.name, classSource: found.source };
+    }
+    const check = opts.isInstalled;
+    const known =
+      check === undefined
+        ? BASE_CLASSES.has(name.toLowerCase())
+        : check('class', name, edition, core);
+    return known ? { className: name, classSource: core } : undefined;
+  };
+
+  /**
+   * Check a converted entry and keep it, with its parts, or leave it out:
+   * once in a book, and never what the installed data has.
+   */
+  const keep = (c: Converted): 'kept' | 'installed' | 'duplicate' => {
+    const { kind, name, placement, entity: e } = c.result;
+    // A subclass is its class's: a book may offer one to two classes (Mage of
+    // Lorehold, for the bard and the warlock).
+    const of = kind === 'subclass' ? `|${String(e.className)}|${String(e.classSource)}` : '';
+    const key = `${kind}|${name.toLowerCase()}|${placement.source.json}|${c.result.edition}${of}`;
+    if (seen.has(key)) {
+      leave(c, 'duplicate', WHY.repeated);
+      return 'duplicate';
+    }
+    seen.add(key);
+    if (installed(kind, name, placement)) {
+      leave(c, 'installed', WHY.installed);
+      return 'installed';
+    }
+    const entity = withPrinting(kind, c.result.entity, placement);
+    out[kind].push(entity);
+    sources.set(placement.source.json, placement.source);
+    // A class's features come with it, each a printing of the official
+    // class's feature when the class is one.
+    for (const part of c.result.parts ?? []) {
+      if (entity.printingOf !== undefined) withPrinting(part.kind, part.entity, part.placement);
+      out[part.kind].push(part.entity);
+      sources.set(part.placement.source.json, part.placement.source);
+    }
+    if (kind === 'optionalfeature' && !isOnOfficialList(c.result.entity)) {
+      unoffered += 1;
+      for (const t of c.result.entity.featureType as string[]) unofferedLists.add(t);
+    }
+    const reasons = [...new Set(c.result.reasons)];
+    if (reasons.length > 0) notes.push({ kind: c.tag, name, status: 'partial', reasons });
+    return 'kept';
+  };
+
+  /** A class's subclasses, each checked on its own, on the class they belong to. */
+  const keepSubclasses = (subclasses: SubclassBinder, bound: ClassBinding): void => {
+    for (const result of subclasses(bound)) keep({ tag: 'subclass', result });
+  };
+
+  /** A class entry's subclasses, on itself when kept, else on the class it stands for. */
+  const bindClass = (c: Converted, status: ReturnType<typeof keep>): void => {
+    const { name, placement, edition } = c.result;
+    const key = `class|${name.toLowerCase()}|${placement.source.json}|${edition}`;
+    const binding =
+      status === 'kept'
+        ? () => ({ className: name, classSource: placement.source.json })
+        : status === 'installed'
+          ? once(() => officialClass(name, edition))
+          : (bindings.get(key) ?? (() => undefined));
+    if (!bindings.has(key)) bindings.set(key, binding);
+    const byName = `${name.toLowerCase()}|${edition}`;
+    if (!bindingsByName.has(byName)) bindingsByName.set(byName, binding);
+    const subclasses = c.result.subclasses;
+    if (subclasses === undefined) return;
+    const bound = binding();
+    if (bound === undefined) {
+      // Named only for the report: they are not kept.
+      const named = subclasses({ className: name, classSource: placement.source.json });
+      for (const r of named) {
+        notes.push({ kind: 'subclass', name: r.name, status: 'skipped', reasons: [WHY.unbound] });
+      }
+      return;
+    }
+    // Fight Club merges entries of one name, so a repeat's subclasses count too.
+    keepSubclasses(subclasses, bound);
+  };
 
   const convert = (el: XmlElement): void => {
     if (!prepared) prepare();
@@ -629,6 +751,14 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       }
     }
     if (isSpellStub(el)) return;
+    if (el.name === 'class' && classHitDie(el) === undefined) {
+      const added = convertClassAdditions(el, ctx);
+      if (added === undefined) {
+        const name = childText(el, 'name') ?? '(no name)';
+        notes.push({ kind: 'class', name, status: 'skipped', reasons: [WHY.noSubclasses] });
+      } else additions.push(added);
+      return;
+    }
     const option = isClassOption(el);
     // Element names come from the file, so `constructor` is not a converter.
     const converter = option
@@ -672,38 +802,37 @@ export function fc5Converter(opts: ConvertOptions): Fc5Converter {
       }
     }
 
-    const key = `${kind}|${name.toLowerCase()}|${placement.source.json}|${result.edition}`;
-    if (seen.has(key)) {
-      leave(c, 'duplicate', WHY.repeated);
-      return;
+    const status = keep(c);
+    if (kind === 'class') bindClass(c, status);
+  };
+
+  /**
+   * The subclasses a `<class>` with no hit die adds: to a class of its name
+   * the file has, else to the rules' class of that name.
+   */
+  const keepAdditions = (): void => {
+    for (const added of additions) {
+      const key = `${added.name.toLowerCase()}|${added.edition}`;
+      const other = added.edition === '2024' ? '2014' : '2024';
+      const bound =
+        bindingsByName.get(key)?.() ??
+        officialClass(added.name, added.edition) ??
+        bindingsByName.get(`${added.name.toLowerCase()}|${other}`)?.();
+      if (bound !== undefined) {
+        keepSubclasses(added.subclasses, bound);
+        continue;
+      }
+      const named = added.subclasses({ className: added.name, classSource: fileSource.json });
+      for (const r of named) {
+        notes.push({ kind: 'subclass', name: r.name, status: 'skipped', reasons: [WHY.noClass] });
+      }
     }
-    seen.add(key);
-    if (installed(kind, name, placement)) {
-      leave(c, 'installed', WHY.installed);
-      return;
-    }
-    const entity = withPrinting(kind, result.entity, placement);
-    out[kind].push(entity);
-    sources.set(placement.source.json, placement.source);
-    // A class's features come with it, each a printing of the official
-    // class's feature when the class is one.
-    for (const part of result.parts ?? []) {
-      if (entity.printingOf !== undefined) withPrinting(part.kind, part.entity, part.placement);
-      out[part.kind].push(part.entity);
-      sources.set(part.placement.source.json, part.placement.source);
-    }
-    if (kind === 'optionalfeature' && !isOnOfficialList(result.entity)) {
-      unoffered += 1;
-      for (const t of result.entity.featureType as string[]) unofferedLists.add(t);
-    }
-    const reasons = [...new Set(result.reasons)];
-    if (reasons.length > 0) {
-      notes.push({ kind: el.name, name, status: 'partial', reasons });
-    }
+    additions.length = 0;
   };
 
   const finish = (): ConversionResult => {
     if (!prepared) prepare();
+    keepAdditions();
     const warnings: string[] = [];
     if (unmatchedStubs > 0) {
       warnings.push(

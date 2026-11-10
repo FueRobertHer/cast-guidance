@@ -5,9 +5,13 @@
  * holding features, a spell slot row and counters. A feature without
  * `optional="YES"` is one every member of the class gets at that level; it
  * becomes a `classFeature` of its own, listed on the class by reference, as
- * 5etools has them. The rest are choices (subclasses and their features,
- * options such as a fighting style, the starting and multiclass notes), which
- * are not converted here.
+ * 5etools has them. The rest are choices. A subclass is picked by a feature
+ * named `Label: Name` (`Martial Archetype: Champion`, `Fighter Subclass:
+ * Champion`), and its features end in its name (`Improved Critical
+ * (Champion)`): each subclass becomes a `subclass` with its `subclassFeature`s,
+ * bound to the class it ends up on ({@link SubclassBinder}). Options such as a
+ * fighting style, and the starting and multiclass notes, are not converted
+ * here.
  *
  * The class's own fields come from its tags: the hit die, the saving throws
  * and skills (`<proficiency>` names the saves first, then the skills to pick
@@ -28,18 +32,22 @@ import type { RulesVersion } from '../../data5e/rulesVersion';
 import { ownCasterLevel, PACT_SLOTS, STANDARD_SLOTS } from '../../engine/calc/slots';
 import { childElements, childText, childTexts, type XmlElement } from '../xml';
 import {
+  type ClassBinding,
   citationEntry,
   type Fc5Context,
+  type Fc5Converted,
   type Fc5Part,
   type Fc5Result,
   type Placement,
   placeEntity,
+  type SubclassBinder,
 } from './context';
 import {
   abilityKey,
   countWord,
   type Entry,
   entryName,
+  lastGroup,
   own,
   plainText,
   readText,
@@ -74,8 +82,11 @@ interface Levels {
   asi: Set<number>;
   /** Blocks whose level is not one a class has. */
   outOfRange: number;
-  /** The names of its counters (`Ki`, `Rage`), each once. */
-  counters: Set<string>;
+  /**
+   * The names of its counters (`Ki`, `Rage`), each once, by the subclass a
+   * counter's `<subclass>` names, lowercased, or '' for the class's own.
+   */
+  counters: Map<string, Set<string>>;
 }
 
 function readLevels(el: XmlElement): Levels {
@@ -84,7 +95,7 @@ function readLevels(el: XmlElement): Levels {
     slots: [],
     asi: new Set(),
     outOfRange: 0,
-    counters: new Set(),
+    counters: new Map(),
   };
   for (const block of childElements(el, 'autolevel')) {
     const level = Number(block.attrs.level);
@@ -106,7 +117,12 @@ function readLevels(el: XmlElement): Levels {
         }
       } else if (child.name === 'counter') {
         const name = childText(child, 'name')?.trim();
-        if (name !== undefined && name !== '') out.counters.add(name);
+        if (name !== undefined && name !== '') {
+          const of = pickKey(childText(child, 'subclass') ?? '');
+          const names = out.counters.get(of) ?? new Set<string>();
+          names.add(name);
+          out.counters.set(of, names);
+        }
       }
     }
   }
@@ -539,21 +555,20 @@ function spellCount(word: string): number | undefined {
 }
 
 /**
- * A class's own spellcasting: its slot rows (the ones every member gets), its
- * ability, and the counts its spellcasting feature gives. Optional rows are a
- * subclass's (an Eldritch Knight's), so a class with only those casts nothing
- * of its own.
+ * A class's or subclass's spellcasting: its slot rows, its ability, and the
+ * counts its spellcasting feature gives. A class's rows are the ones every
+ * member gets; the optional ones are a subclass's (an Eldritch Knight's), so a
+ * class with only those casts nothing of its own.
  */
 function readSpellcasting(
-  levels: Levels,
+  slotRows: readonly SlotRow[],
   spellAbility: string | undefined,
   shortRest: boolean,
   features: readonly { name: string; entries: Entry[] }[],
   described: readonly Entry[],
 ): Spellcasting {
-  const classRows = levels.slots.filter((s) => !s.optional);
-  if (classRows.length === 0) return { fields: {}, reasons: [] };
-  const rows = rowsByLevel(classRows);
+  if (slotRows.length === 0) return { fields: {}, reasons: [] };
+  const rows = rowsByLevel(slotRows);
   const slots = rows.map(slotsOf);
   const cantrips = rows.map((r) => r[0] ?? 0);
   const fields: Record<string, unknown> = {};
@@ -630,6 +645,323 @@ function readSpellcasting(
 }
 
 // ---------------------------------------------------------------------------
+// Subclasses
+// ---------------------------------------------------------------------------
+
+/** A choice a feature's name makes: `Martial Archetype: Champion`. */
+const PICK = /^([^:]{1,60}): (.{1,120})$/;
+
+/** A feature that is a choice, by its name as the class lists it. */
+interface Choice {
+  name: string;
+  level: number;
+  el: XmlElement;
+}
+
+/** A subclass the file offers: the feature that picks it and the ones that end in its name. */
+interface Pick {
+  label: string;
+  /** Its name as the file writes it, qualifiers and all: `Barrow Guard (TP)`. */
+  written: string;
+  level: number;
+  el: XmlElement;
+  features: Choice[];
+}
+
+/** A class's choices, sorted: its subclasses, and how many are options. */
+interface Split {
+  picks: Pick[];
+  /** The label most picks carry (`Martial Archetype`), for `subclassTitle`. */
+  label?: string;
+  options: number;
+}
+
+/**
+ * A subclass's name as a key: `Barber (HB)` whether a feature's group writes
+ * `(Barber (HB) [5.5e])` or the pick `Barber (HB) [5.5e]`.
+ */
+function pickKey(name: string): string {
+  return splitName(name).name.toLowerCase();
+}
+
+/** The last one to three words of a subclass's name: `hexblade` of `The Hexblade`. */
+function tailsOf(key: string): string[] {
+  const words = key.split(' ');
+  return Array.from({ length: Math.min(words.length - 1, 3) }, (_, i) =>
+    words.slice(-(i + 1)).join(' '),
+  );
+}
+
+/**
+ * A class's choices split into subclasses and options. A `Label: Name` choice
+ * picks a subclass when another choice ends in `(Name)`, or in the last words
+ * of it where the class has a feature named for the label (`Blood Hunter
+ * Order: Order of the Ghostslayer` beside `Rite of the Dawn (Ghostslayer)`),
+ * and so does any other choice of a label one of those has (a subclass whose
+ * features name it some other way). A choice ends in a subclass's name as
+ * written, or in the last words of it no other subclass shares. The rest are
+ * options: a fighting style, a totem spirit.
+ */
+function splitChoices(choices: readonly Choice[], named: ReadonlySet<string>): Split {
+  const groups = new Set<string>();
+  for (const c of choices) {
+    const g = lastGroup(c.name);
+    if (g !== undefined) groups.add(pickKey(g.inner));
+  }
+  // `Wizard Subclass: (Legacy)` names nothing.
+  const candidates = choices.flatMap((c) => {
+    const m = PICK.exec(c.name);
+    const written = (m?.[2] ?? '').trim();
+    return m === null || written.startsWith('(')
+      ? []
+      : [{ c, label: (m[1] ?? '').trim(), written, key: pickKey(written) }];
+  });
+  // A label is a subclass's when most of its choices name one: a fighting
+  // style may share its name with a subclass (`Melee Marksman (HB)` and
+  // `Legendary Marksman (Marksman (HB))`).
+  const tally = new Map<string, { all: number; named: number }>();
+  for (const p of candidates) {
+    const label = p.label.toLowerCase();
+    const t = tally.get(label) ?? { all: 0, named: 0 };
+    t.all += 1;
+    if (
+      groups.has(p.key) ||
+      (named.has(label) && tailsOf(p.key).some((tail) => groups.has(tail)))
+    ) {
+      t.named += 1;
+    }
+    tally.set(label, t);
+  }
+  const labels = new Set(
+    [...tally]
+      .filter(([, t]) => t.named * 2 >= t.all && t.named >= Math.min(2, t.all))
+      .map(([l]) => l),
+  );
+  const picks = new Map<string, Pick>();
+  const pickEls = new Set<XmlElement>();
+  const labelCounts = new Map<string, number>();
+  for (const p of candidates) {
+    if (!labels.has(p.label.toLowerCase())) continue;
+    pickEls.add(p.c.el);
+    if (picks.has(p.key)) continue;
+    picks.set(p.key, {
+      label: p.label,
+      written: p.written,
+      level: p.c.level,
+      el: p.c.el,
+      features: [],
+    });
+    labelCounts.set(p.label, (labelCounts.get(p.label) ?? 0) + 1);
+  }
+  // The last words of a subclass's name, when no other's end so.
+  const tails = new Map<string, Pick | null>();
+  for (const [key, pick] of picks) {
+    for (const tail of tailsOf(key)) {
+      if (!picks.has(tail)) tails.set(tail, tails.has(tail) ? null : pick);
+    }
+  }
+  let options = 0;
+  for (const c of choices) {
+    if (pickEls.has(c.el)) continue;
+    const g = lastGroup(c.name);
+    const key = g === undefined ? undefined : pickKey(g.inner);
+    const pick = key === undefined ? undefined : (picks.get(key) ?? tails.get(key) ?? undefined);
+    if (g === undefined || pick === undefined) options += 1;
+    else pick.features.push({ name: g.base, level: c.level, el: c.el });
+  }
+  let label: string | undefined;
+  for (const [l, n] of labelCounts) {
+    if (label === undefined || n > (labelCounts.get(label) ?? 0)) label = l;
+  }
+  return { picks: [...picks.values()], label, options };
+}
+
+/** What a subclass is built from, beside its pick: the class's own parts it shares. */
+interface SubclassFrom {
+  ctx: Fc5Context;
+  /** The class's place, for a subclass that cites no book. */
+  placement: Placement;
+  /** The edition the class's name marks. */
+  edition: RulesVersion | undefined;
+  /** The class's optional slot rows, a subclass caster's. */
+  castingRows: readonly SlotRow[];
+  spellAbility: string | undefined;
+  counters: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+/** A subclass feature's ref: `Name|Class|ClassSource|Subclass|SubclassSource|Level`, and its own source when another. */
+function subclassFeatureRef(
+  name: string,
+  bound: ClassBinding,
+  shortName: string,
+  subclassSource: string,
+  level: number,
+  source: string,
+): string {
+  const ref = `${name}|${bound.className}|${bound.classSource}|${shortName}|${subclassSource}|${level}`;
+  return source === subclassSource ? ref : `${ref}|${source}`;
+}
+
+/** Counters named for a subclass, by its name as written or as converted. */
+function countersReason(names: readonly string[]): string | undefined {
+  if (names.length === 0) return undefined;
+  const more = names.length > 4 ? `, and ${names.length - 4} more` : '';
+  return `its counters (${names.slice(0, 4).join(', ')}${more}) are not converted yet`;
+}
+
+/**
+ * One subclass, on the class it is bound to. Its pick's text opens it as a
+ * feature of its name at the level it is picked, as 5etools has a subclass's
+ * first feature. Its own choices (`Fighting Style: Dueling (College of
+ * Swords)` beside `Fighting Style: Two-Weapon Fighting (College of Swords)`,
+ * two of one label at one level) are options, not features.
+ */
+function convertSubclass(pick: Pick, from: SubclassFrom, bound: ClassBinding): Fc5Converted {
+  const named = entryName(pick.written);
+  const name = refName(named.name);
+  const edition = named.edition ?? from.edition;
+  const pickText = readText(childTexts(pick.el, 'text'));
+  const sourceLine =
+    pickText.sourceLine ??
+    pick.features
+      .map((f) => readText(childTexts(f.el, 'text')).sourceLine)
+      .find((l) => l !== undefined);
+  const placement = sourceLine === undefined ? from.placement : from.ctx.place(sourceLine, edition);
+  const subclassSource = placement.source.json;
+  const reasons: string[] = [];
+
+  const sub: Record<string, unknown> = { name, shortName: name };
+  placeEntity(sub, placement);
+  sub.className = bound.className;
+  sub.classSource = bound.classSource;
+
+  const optionKeys = new Map<string, number>();
+  for (const f of pick.features) {
+    const m = PICK.exec(f.name);
+    if (m !== null) {
+      const key = `${(m[1] ?? '').toLowerCase()}|${f.level}`;
+      optionKeys.set(key, (optionKeys.get(key) ?? 0) + 1);
+    }
+  }
+  const isOption = (f: Choice) => {
+    const m = PICK.exec(f.name);
+    return m !== null && (optionKeys.get(`${(m[1] ?? '').toLowerCase()}|${f.level}`) ?? 0) > 1;
+  };
+
+  const parts: Fc5Part[] = [];
+  const read: { name: string; entries: Entry[] }[] = [];
+  const seen = new Set<string>();
+  const add = (fname: string, level: number, text: { entries: Entry[]; sourceLine?: string }) => {
+    const key = `${fname.toLowerCase()}|${level}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const where =
+      text.sourceLine === undefined ? placement : from.ctx.place(text.sourceLine, edition);
+    read.push({ name: fname, entries: text.entries });
+    const entity: Record<string, unknown> = { name: fname };
+    placeEntity(entity, where);
+    entity.className = bound.className;
+    entity.classSource = bound.classSource;
+    entity.subclassShortName = name;
+    entity.subclassSource = subclassSource;
+    entity.level = level;
+    const entries: Entry[] = [...text.entries];
+    const citation = citationEntry(where);
+    if (citation !== undefined) entries.push(citation);
+    entity.entries = entries;
+    parts.push({ kind: 'subclassFeature', entity, placement: where });
+  };
+  add(name, pick.level, { entries: pickText.entries });
+  let options = 0;
+  const features = [...pick.features].sort((a, b) => a.level - b.level);
+  for (const f of features) {
+    if (isOption(f)) {
+      options += 1;
+      continue;
+    }
+    add(refName(f.name), f.level, readText(childTexts(f.el, 'text')));
+  }
+  parts.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
+  sub.subclassFeatures = parts.map((p) =>
+    subclassFeatureRef(
+      String(p.entity.name),
+      bound,
+      name,
+      subclassSource,
+      Number(p.entity.level),
+      String(p.entity.source),
+    ),
+  );
+
+  // A subclass caster (the Eldritch Knight) casts by the class's optional rows.
+  if (from.castingRows.length > 0 && read.some((f) => CASTING.test(f.name))) {
+    const casting = readSpellcasting(from.castingRows, from.spellAbility, false, read, []);
+    const { classTableGroups, ...fields } = casting.fields;
+    Object.assign(sub, fields);
+    if (classTableGroups !== undefined) sub.subclassTableGroups = classTableGroups;
+    reasons.push(...casting.reasons);
+  }
+  if (options > 0) reasons.push('its options are not converted yet');
+  const counters = new Set([
+    ...(from.counters.get(pickKey(pick.written)) ?? []),
+    ...(from.counters.get(name.toLowerCase()) ?? []),
+  ]);
+  const counted = countersReason([...counters]);
+  if (counted !== undefined) reasons.push(counted);
+
+  return {
+    kind: 'subclass',
+    name,
+    edition: placement.edition,
+    entity: sub,
+    placement,
+    reasons,
+    parts,
+  };
+}
+
+/**
+ * A `<class>` with no hit die adds to a class of its name, as a file of
+ * subclasses for an official class does: its subclasses, every feature read as
+ * a choice. Undefined when it has none.
+ */
+export function convertClassAdditions(
+  el: XmlElement,
+  ctx: Fc5Context,
+): { name: string; edition: RulesVersion; subclasses: SubclassBinder } | undefined {
+  const identity = classIdentity(el, ctx);
+  if (identity === undefined) return undefined;
+  const levels = readLevels(el);
+  const choices: Choice[] = levels.features.flatMap((f) => {
+    const name = featureName(childText(f.el, 'name') ?? '');
+    return name === '' ? [] : [{ name, level: f.level, el: f.el }];
+  });
+  const { picks } = splitChoices(choices, new Set(choices.map((c) => c.name.toLowerCase())));
+  if (picks.length === 0) return undefined;
+  // Every feature is a choice, so the class cites its book in its first pick.
+  const pickLine = picks
+    .map((p) => readText(childTexts(p.el, 'text')).sourceLine)
+    .find((l) => l !== undefined);
+  const placement =
+    classSourceLine(el) === undefined && pickLine !== undefined
+      ? ctx.place(pickLine, identity.edition)
+      : identity.placement;
+  const from: SubclassFrom = {
+    ctx,
+    placement,
+    edition: identity.edition,
+    castingRows: levels.slots,
+    spellAbility: childText(el, 'spellability'),
+    counters: levels.counters,
+  };
+  return {
+    name: identity.name,
+    edition: placement.edition,
+    subclasses: (bound) => picks.map((p) => convertSubclass(p, from, bound)),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The class
 // ---------------------------------------------------------------------------
 
@@ -694,7 +1026,7 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const { name, placement } = identity;
   const hd = classHitDie(el);
   if (hd === undefined) {
-    return { skip: 'it only adds features to a class of that name, which is not converted yet' };
+    return { skip: 'it adds to a class of that name, and only its subclasses convert' };
   }
   if (Number.isNaN(hd)) return { skip: 'its hit die is not a die' };
   const edition = placement.edition;
@@ -729,7 +1061,7 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   const features: Fc5Part[] = [];
   const read: { name: string; level: number; entries: Entry[] }[] = [];
   const seen = new Set<string>();
-  let choices = 0;
+  const choices: Choice[] = [];
   let startNotes = 0;
   const sorted = levels.features
     .map((f, i) => ({ ...f, at: i }))
@@ -742,8 +1074,10 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
       startNotes += 1;
       continue;
     }
-    if (f.optional) {
-      choices += 1;
+    // An Ability Score Improvement offered as a choice, at a level marked for
+    // one, is the class's: the choice is the feat it may be taken as.
+    if (f.optional && !(fname === ASI_NAME && levels.asi.has(f.level))) {
+      choices.push({ name: fname, level: f.level, el: f.el });
       continue;
     }
     const key = `${fname.toLowerCase()}|${f.level}`;
@@ -775,16 +1109,42 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
       placement,
     });
   }
+  // Its subclasses: the class names what it calls them, and the feature that
+  // picks one opens the choice on the sheet. A class that has no such feature
+  // gets one where its first subclass is picked.
+  const split = splitChoices(choices, new Set(read.map((f) => f.name.toLowerCase())));
+  let picksAt: Fc5Part | undefined;
+  if (split.label !== undefined) {
+    const label = split.label;
+    cls.subclassTitle = label;
+    picksAt = features.find((p) => String(p.entity.name).toLowerCase() === label.toLowerCase());
+    if (picksAt === undefined) {
+      const level = Math.min(...split.picks.map((p) => p.level));
+      picksAt = {
+        kind: 'classFeature',
+        entity: featureEntity(
+          label,
+          of,
+          level,
+          { entries: [`You choose your ${label}.`] },
+          placement,
+        ),
+        placement,
+      };
+      features.push(picksAt);
+    }
+  }
   features.sort((a, b) => Number(a.entity.level) - Number(b.entity.level));
-  cls.classFeatures = features.map((p) =>
-    featureRef(
+  cls.classFeatures = features.map((p) => {
+    const ref = featureRef(
       String(p.entity.name),
       name,
       classSource,
       Number(p.entity.level),
       String(p.entity.source),
-    ),
-  );
+    );
+    return p === picksAt ? { classFeature: ref, gainSubclassFeature: true } : ref;
+  });
 
   // The class's description, which some files give its tables in.
   const fluff: Entry[] = childElements(el, 'trait').flatMap((t) => {
@@ -798,25 +1158,44 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
   });
   if (fluff.length > 0) cls.fluff = { entries: fluff };
 
+  const spellAbility = childText(el, 'spellability');
   const casting = readSpellcasting(
-    levels,
-    childText(el, 'spellability'),
+    levels.slots.filter((s) => !s.optional),
+    spellAbility,
     /^s$/i.test(childText(el, 'slotsreset') ?? ''),
     read,
     fluff,
   );
   Object.assign(cls, casting.fields);
   reasons.push(...casting.reasons);
-  if (choices > 0) reasons.push('its subclasses and options are not converted yet');
+  if (split.options > 0) reasons.push('its options are not converted yet');
   if (startNotes > 0) {
     reasons.push('its notes on starting equipment and multiclassing are not converted yet');
   }
-  if (levels.counters.size > 0) {
-    const names = [...levels.counters];
-    const more = names.length > 4 ? `, and ${names.length - 4} more` : '';
-    reasons.push(`its counters (${names.slice(0, 4).join(', ')}${more}) are not converted yet`);
-  }
+  // The class's counters, and any named for a subclass it does not have.
+  const subclassKeys = new Set(
+    split.picks.flatMap((p) => [
+      pickKey(p.written),
+      refName(entryName(p.written).name).toLowerCase(),
+    ]),
+  );
+  const counted = countersReason([
+    ...new Set(
+      [...levels.counters]
+        .filter(([of]) => of === '' || !subclassKeys.has(of))
+        .flatMap(([, names]) => [...names]),
+    ),
+  ]);
+  if (counted !== undefined) reasons.push(counted);
 
+  const from: SubclassFrom = {
+    ctx,
+    placement,
+    edition: identity.edition,
+    castingRows: levels.slots.filter((s) => s.optional),
+    spellAbility,
+    counters: levels.counters,
+  };
   return {
     kind: 'class',
     name,
@@ -825,6 +1204,9 @@ export function convertClass(el: XmlElement, ctx: Fc5Context): Fc5Result {
     placement,
     reasons,
     parts: features,
+    ...(split.picks.length > 0 && {
+      subclasses: (bound: ClassBinding) => split.picks.map((p) => convertSubclass(p, from, bound)),
+    }),
   };
 }
 

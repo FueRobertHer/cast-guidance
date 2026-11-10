@@ -15,7 +15,9 @@ export type ConvertedKind =
   | 'race'
   | 'optionalfeature'
   | 'class'
-  | 'classFeature';
+  | 'classFeature'
+  | 'subclass'
+  | 'subclassFeature';
 
 /**
  * Whether the installed game data already has this entry: in the book given
@@ -38,11 +40,23 @@ export type InstalledCheck = (
  */
 export type OfficialFeat = (name: string, edition: RulesVersion) => string | undefined;
 
+/**
+ * The installed class a name stands for in a rules edition, by its own name
+ * and book (`Artificer`, `TCE`), or undefined when the game data has none: the
+ * class a converted subclass goes on when the file's copy of its class is left
+ * out. The book is the class's own, not one it was also printed in.
+ */
+export type OfficialClass = (
+  name: string,
+  edition: RulesVersion,
+) => { name: string; source: string } | undefined;
+
 export interface ConvertOptions {
   /** The imported file's name; it names the homebrew source of entries that cite no book. */
   fileName: string;
   isInstalled?: InstalledCheck;
   officialFeat?: OfficialFeat;
+  officialClass?: OfficialClass;
   /**
    * Whether the installed game data holds a book, by code. An entry from a
    * book it lacks is kept as a printing of its own. Absent, every book the app

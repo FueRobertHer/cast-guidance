@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { convertXmlText } from '@/convert';
-import { heldBooks, installedCheck, officialChecks, officialKeys } from '@/convert/official';
+import {
+  heldBooks,
+  installedCheck,
+  officialChecks,
+  officialClassLookup,
+  officialKeys,
+} from '@/convert/official';
 import { notesWith } from '@/convert/types';
 import { normalizeDataset } from '@/data5e/normalize';
 
@@ -185,5 +191,31 @@ describe('officialKeys', () => {
       expect(copied.hasBook(code), code).toBe(direct.hasBook(code));
     }
     expect(copied.rulesBooks).toEqual(reg.rulesBooks);
+  });
+
+  it('names an installed class by its own book, the core one first, from a copy too', () => {
+    const reg = normalizeDataset(
+      new Map<string, unknown>([
+        [
+          'class/class-test.json',
+          {
+            class: [
+              { name: 'Artificer', source: 'TCE', otherSources: [{ source: 'ERLW' }] },
+              { name: 'Fighter', source: 'WoW' },
+              { name: 'Fighter', source: 'PHB' },
+              { name: 'Fighter', source: 'XPHB', edition: 'one' },
+            ],
+          },
+        ],
+      ]),
+    );
+    const direct = officialClassLookup(reg);
+    const copied = officialChecks(structuredClone(officialKeys(reg))).officialClass;
+    for (const lookup of [direct, copied]) {
+      expect(lookup('artificer', '2014')).toEqual({ name: 'Artificer', source: 'TCE' });
+      expect(lookup('Fighter', '2014')).toEqual({ name: 'Fighter', source: 'PHB' });
+      expect(lookup('Fighter', '2024')).toEqual({ name: 'Fighter', source: 'XPHB' });
+      expect(lookup('Ember Knight', '2014')).toBeUndefined();
+    }
   });
 });

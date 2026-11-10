@@ -109,7 +109,24 @@ export type Fc5Result =
       reasons: string[];
       /** Entries that belong to this one ({@link Fc5Part}). */
       parts?: Fc5Part[];
+      /**
+       * A class's subclasses, each converted and checked on its own: they are
+       * kept when the class is left out as installed, on the installed class.
+       */
+      subclasses?: SubclassBinder;
     };
+
+/** A converted entry: an {@link Fc5Result} that was not skipped. */
+export type Fc5Converted = Extract<Fc5Result, { kind: ConvertedKind }>;
+
+/** The class a subclass belongs to, as its `className` and `classSource` name it. */
+export interface ClassBinding {
+  className: string;
+  classSource: string;
+}
+
+/** A class's subclasses, built once the class they belong to is known. */
+export type SubclassBinder = (bound: ClassBinding) => Fc5Converted[];
 
 /**
  * The key {@link Fc5Context.extraClasses} files a spell's added class lists
