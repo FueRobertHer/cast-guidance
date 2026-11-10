@@ -26,22 +26,25 @@ export function NoSpellsCue({ className = '' }: { className?: string }) {
 
 /**
  * A casting class's save DC in `arcane`, the colour of what spellcasting
- * spends, ringed when an effect in play raised it (Innate Sorcery's +1), and
- * saying by what. `short` is a spell row's "DC 14"; the class's own reads
- * "Save DC 14".
+ * spends, ringed when an effect in play raised it (Innate Sorcery's +1) or
+ * lowered it (in red), and saying by what. `short` is a spell row's "DC 14";
+ * the class's own reads "Save DC 14".
  */
 export function SaveDcBadge({
   value,
   raisedBy,
+  loweredBy = [],
   short = false,
 }: {
   value: number;
   raisedBy: readonly string[];
+  loweredBy?: readonly string[];
   short?: boolean;
 }) {
   const up = raisedBy.length > 0;
+  const down = !up && loweredBy.length > 0;
   return (
-    <Lift on={up} className="rounded-chip">
+    <Lift on={up || down} down={down} className="rounded-chip">
       <Badge tone="arcane">
         {short ? (
           `DC ${value}`
@@ -51,6 +54,7 @@ export function SaveDcBadge({
           </>
         )}
         {up && <span className="sr-only">, raised by {raisedBy.join(', ')}</span>}
+        {down && <span className="sr-only">, lowered by {loweredBy.join(', ')}</span>}
       </Badge>
     </Lift>
   );

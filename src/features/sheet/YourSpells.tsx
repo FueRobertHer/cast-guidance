@@ -32,7 +32,7 @@ import {
   rollWear,
   useIgnoreOnce,
 } from './d20Tests';
-import { conditionsInForce, hpLimits, saveDcRaisedBy } from './effectsInPlay';
+import { conditionsInForce, hpLimits, saveDcLoweredBy, saveDcRaisedBy } from './effectsInPlay';
 import { RollEffectCue } from './RollEffectCue';
 import { SpellCastChips } from './SpellCastChips';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
@@ -104,6 +104,8 @@ interface RowContext {
   entityOf: (ref: { name: string; source: string }) => Entity | undefined;
   /** What raised a class's save DC (Innate Sorcery), for its ring. */
   dcRaisedBy: (block: SpellcastingBlock) => string[];
+  /** What lowered it, for its red ring. */
+  dcLoweredBy: (block: SpellcastingBlock) => string[];
 }
 
 const hasSpellAttack = (entity: Entity | undefined) =>
@@ -222,7 +224,12 @@ function SlotSpellRow({
       actions={
         <>
           {spellSaves(entity).length > 0 && (
-            <SaveDcBadge value={block.saveDc.value} raisedBy={ctx.dcRaisedBy(block)} short />
+            <SaveDcBadge
+              value={block.saveDc.value}
+              raisedBy={ctx.dcRaisedBy(block)}
+              loweredBy={ctx.dcLoweredBy(block)}
+              short
+            />
           )}
           <SpellCastChips
             cast={cast}
@@ -494,7 +501,11 @@ function ClassSection({
           </span>
         </div>
         <div className="flex flex-wrap gap-1">
-          <SaveDcBadge value={block.saveDc.value} raisedBy={ctx.dcRaisedBy(block)} />
+          <SaveDcBadge
+            value={block.saveDc.value}
+            raisedBy={ctx.dcRaisedBy(block)}
+            loweredBy={ctx.dcLoweredBy(block)}
+          />
           <Badge tone="arcane">
             Attack <strong>{signed(block.attackMod.value)}</strong>
           </Badge>
@@ -643,6 +654,7 @@ export function YourSpells({
     noVerbal: limits.noVerbal,
     entityOf,
     dcRaisedBy: (block) => saveDcRaisedBy(block, built),
+    dcLoweredBy: (block) => saveDcLoweredBy(block, built),
   };
 
   // Always prepared grants cast with a class's slots, so they sit in its list.

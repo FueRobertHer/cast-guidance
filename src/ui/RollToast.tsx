@@ -679,6 +679,7 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
             surface={cast ? 'cast' : 'chip'}
             tone={face.tone === 'cast' ? undefined : face.tone}
             lift={face.lift}
+            down={face.down}
           >
             {face.text}
           </ChipFace>
@@ -687,7 +688,7 @@ function PromptHeader({ face, setAside }: { face: RollFace | undefined; setAside
     );
   }
   return (
-    <Lift on={face.lift === true} className="shrink-0 rounded-chip">
+    <Lift on={face.lift === true} down={face.down === true} className="shrink-0 rounded-chip">
       <span className={`${chip} px-2 ${FACE_TONE[face.tone ?? 'roll']}`} aria-hidden="true">
         {face.text}
       </span>

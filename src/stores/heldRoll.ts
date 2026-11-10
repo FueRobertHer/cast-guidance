@@ -46,6 +46,8 @@ export interface RollFace {
   text: string;
   wear?: ChipWear | undefined;
   lift?: boolean | undefined;
+  /** With `lift`: an effect lowered it, so it wears the red edge. */
+  down?: boolean | undefined;
   /** A chip's colour when it is not the roll blue: damage, healing, or Cast's outline. */
   tone?: 'danger' | 'heal' | 'cast' | undefined;
 }

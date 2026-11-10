@@ -2,8 +2,12 @@
  * A number an effect in play raised (Lift.tsx): a heal-green ring around its
  * control and a lift mark at the bottom right, where a condition's own mark
  * (top right) never goes. Whole pixels on every side of the mark's icon, so it
- * cannot land half a pixel off.
+ * cannot land half a pixel off. One an effect lowered is `fx-down`: the same
+ * edge in danger red, its mark dropping in from above.
  */
+.fx-down {
+  --lift-tone: var(--cg-danger);
+}
 .fx-lift {
   position: relative;
   display: inline-flex;
@@ -14,7 +18,7 @@
   content: "";
   position: absolute;
   inset: var(--lift-inset, -3px);
-  border: 1.5px solid var(--cg-heal);
+  border: 1.5px solid var(--lift-tone, var(--cg-heal));
   border-radius: inherit;
   pointer-events: none;
 }
@@ -29,7 +33,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--cg-heal);
+  background: var(--lift-tone, var(--cg-heal));
   color: var(--cg-surface);
   pointer-events: none;
 }
@@ -45,6 +49,9 @@
 .fx-lift-arrive .fx-lift-mark {
   animation: fx-mark-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+.fx-down.fx-lift-arrive .fx-lift-mark {
+  animation-name: fx-mark-drop;
+}
 @keyframes fx-ring-in {
   from {
     opacity: 0;
@@ -59,6 +66,16 @@
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fx-mark-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.4);
   }
   to {
     opacity: 1;

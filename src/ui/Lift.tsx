@@ -5,8 +5,9 @@ import './lift.css';
 /**
  * The lift mark: two chevrons whose ink, strokes included, is centred in its
  * circle (the buffs canvas, Wear A). Lucide's chevrons-up sits a pixel high.
+ * `down` turns them over, for a number an effect lowered.
  */
-export function LiftIcon({ className }: { className?: string }) {
+export function LiftIcon({ className, down = false }: { className?: string; down?: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -18,8 +19,17 @@ export function LiftIcon({ className }: { className?: string }) {
       aria-hidden="true"
       className={className}
     >
-      <path d="m18 10.5-6-6-6 6" />
-      <path d="m18 19.5-6-6-6 6" />
+      {down ? (
+        <>
+          <path d="m18 4.5-6 6-6-6" />
+          <path d="m18 13.5-6 6-6-6" />
+        </>
+      ) : (
+        <>
+          <path d="m18 10.5-6-6-6 6" />
+          <path d="m18 19.5-6-6-6 6" />
+        </>
+      )}
     </svg>
   );
 }
@@ -47,42 +57,48 @@ export function useLiftArrival(on: boolean): boolean {
 }
 
 /**
- * The lift mark in its heal-green circle, which the ring's control places. The
- * icon is in px as its 16px circle is, so larger text cannot push it out.
+ * The lift mark in its circle, which the ring's control places: heal green, or
+ * danger red with its chevrons down inside an `fx-down` edge. The icon is in px
+ * as its 16px circle is, so larger text cannot push it out.
  */
-export function LiftMark() {
+export function LiftMark({ down = false }: { down?: boolean }) {
   return (
     <span className="fx-lift-mark" aria-hidden="true">
-      <LiftIcon className="size-[10px]" />
+      <LiftIcon className="size-[10px]" down={down} />
     </span>
   );
 }
 
 /**
  * A number an effect in play raised: a ring in heal green around its control
- * and a small lift mark at its bottom right (the buffs canvas, Wear A). A
- * condition owns a chip's face; a buff owns its edge, so a chip can wear both.
- * It sits still, drawing in only as the effect arrives, so it is for a control
- * nothing moves: a control a condition can move draws its ring on `ChipFace`
- * (`lift`), which moves it with the face. The mark says nothing to a screen
- * reader: the control names what raised it.
+ * and a small lift mark at its bottom right (the buffs canvas, Wear A). One an
+ * effect lowered (`down`) wears the same edge in danger red, its chevrons
+ * pointing down: the default look for a homebrew condition's penalty. A
+ * condition owns a chip's face; a buff or a debuff owns its edge, so a chip can
+ * wear both. It sits still, drawing in only as the effect arrives, so it is for
+ * a control nothing moves: a control a condition can move draws its ring on
+ * `ChipFace` (`lift`), which moves it with the face. The mark says nothing to a
+ * screen reader: the control names what raised or lowered it.
  */
 export function Lift({
   on,
+  down = false,
   className = '',
   children,
 }: {
   on: boolean;
+  /** An effect lowered it: the red edge, chevrons down. */
+  down?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const arriving = useLiftArrival(on);
   return (
     <span
-      className={`fx-lift ${on ? 'fx-lift-on' : ''} ${arriving ? 'fx-lift-arrive' : ''} ${className}`}
+      className={`fx-lift ${on ? 'fx-lift-on' : ''} ${on && down ? 'fx-down' : ''} ${arriving ? 'fx-lift-arrive' : ''} ${className}`}
     >
       {children}
-      {on && <LiftMark />}
+      {on && <LiftMark down={down} />}
     </span>
   );
 }

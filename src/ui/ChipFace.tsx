@@ -223,6 +223,7 @@ function Part({ className }: { className: string }) {
  * face, so Prone tips all three as one (the buffs canvas, round 7). The layer is
  * there whenever `lift` is given, so its motion keeps time with the face's from
  * the moment a condition arrives, and a ring that comes later only draws in.
+ * One an effect lowered passes `down` too: the same edge in danger red.
  */
 export function ChipFace({
   wear,
@@ -231,6 +232,7 @@ export function ChipFace({
   surface = 'chip',
   tone,
   lift,
+  down = false,
   children,
 }: {
   wear: ChipWear;
@@ -240,8 +242,10 @@ export function ChipFace({
   surface?: WearSurface;
   /** A chip's plain colour, when it is not the roll blue. */
   tone?: 'danger' | 'heal' | undefined;
-  /** An effect in play raised it; left out for a control nothing raises. */
+  /** An effect in play raised or lowered it; left out for a control nothing moves. */
   lift?: boolean | undefined;
+  /** With `lift`: an effect lowered it, so its edge is the red one, chevrons down. */
+  down?: boolean | undefined;
   children: ReactNode;
 }) {
   const animate = useAnimateConditions();
@@ -363,10 +367,11 @@ export function ChipFace({
         ['cx-lift', 'cx-lift cx-lift-top'].map((layer) => (
           <span
             key={layer}
-            className={`${card ? layer : moved(layer)}${liftArriving ? ' fx-lift-arrive' : ''}`}
+            className={`${card ? layer : moved(layer)}${lift && down ? ' fx-down' : ''}${liftArriving ? ' fx-lift-arrive' : ''}`}
             aria-hidden="true"
           >
-            {lift && (layer === 'cx-lift' ? <i className="fx-lift-ring" /> : <LiftMark />)}
+            {lift &&
+              (layer === 'cx-lift' ? <i className="fx-lift-ring" /> : <LiftMark down={down} />)}
           </span>
         ))}
       {!card && tags}
