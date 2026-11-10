@@ -652,31 +652,47 @@ describe('deriveSheet: a spell a class or its subclass learns', () => {
     expect(deriveSheet(doc, world).spellcasting[0]?.spellsKnownMax).toBe(5);
   });
 
-  it('asks nothing for the parts of a class list that hold no pick', () => {
-    const lists: unknown[] = [
-      [{ ability: { choose: ['int', 'wis'] }, known: { 1: ['fake named'] } }],
-      [
+  describe('the spells a class list names', () => {
+    const withList = (additionalSpells: unknown): typeof ctx => ({
+      ...world,
+      get: (type, name, source) => {
+        const found = world.get(type, name, source);
+        if (type !== 'class' || name !== 'Warrior' || found === undefined) return found;
+        return { ...found, additionalSpells };
+      },
+    });
+    const classAsks = (using: typeof ctx, doc = warriorDoc()) =>
+      deriveSheet(doc, using).pending.filter((p) =>
+        /^class:warrior\|tst:(spell|ability|branch)/.test(p.id),
+      );
+
+    it("grants them always prepared, as the class's own, from the level they name", () => {
+      const using = withList([{ prepared: { 1: ['fake named'], 9: ['fake later'] } }]);
+      const sheet = deriveSheet(warriorDoc(), using);
+      expect(sheet.grantedSpells.filter((g) => /^fake/.test(g.name))).toMatchObject([
+        { name: 'fake named', usage: 'prepared', origin: 'Warrior', className: 'Warrior' },
+      ]);
+      expect(classAsks(using)).toEqual([]);
+    });
+
+    it('asks for an ability or a branch they wait on, as a subclass list does', () => {
+      const ability = withList([
+        { ability: { choose: ['int', 'wis'] }, known: { 1: ['fake named'] } },
+      ]);
+      expect(classAsks(ability).map((p) => p.kind)).toEqual(['ability']);
+      const doc = warriorDoc();
+      doc.choices[classAsks(ability)[0]?.id ?? ''] = ['int'];
+      expect(
+        deriveSheet(doc, ability).grantedSpells.find((g) => g.name === 'fake named'),
+      ).toMatchObject({
+        ability: 'int',
+      });
+      const branches = withList([
         { name: 'Fake Named', known: { 1: ['fake named'] } },
         { name: 'Fake Picked', known: { 3: [filter] } },
-      ],
-    ];
-    for (const additionalSpells of lists) {
-      const using: typeof ctx = {
-        ...world,
-        get: (type, name, source) => {
-          const found = world.get(type, name, source);
-          if (type !== 'class' || name !== 'Warrior' || found === undefined) return found;
-          return { ...found, additionalSpells };
-        },
-      };
-      const asks = deriveSheet(warriorDoc(), using).pending.filter(
-        (p) => p.id.startsWith('class:warrior|tst:') && /:(branch|ability|spell):?/.test(p.id),
-      );
-      expect(asks.every((p) => p.kind === 'spell')).toBe(true);
-      expect(deriveSheet(warriorDoc(), using).grantedSpells.map((g) => g.name)).not.toContain(
-        'fake named',
-      );
-    }
+      ]);
+      expect(classAsks(branches).map((p) => p.kind)).toEqual(['generic']);
+    });
   });
 
   it('leaves another class alone when only one has the picks', () => {
