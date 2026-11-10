@@ -530,10 +530,13 @@ export function Component() {
   );
   // Features whose crit rules live in prose, found as the capability cards
   // find them. Savage Attacks (the 2014 half-orc's): a melee crit with a
-  // weapon rolls one of its damage dice once more. The Champion's Improved and
-  // Superior Critical: weapon attacks crit on 19, then 18.
+  // weapon rolls one of its damage dice once more. Brutal Critical (the 2014
+  // barbarian's): one more for each of its cards, at 9th, 13th and 17th level.
+  // The Champion's Improved and Superior Critical: weapon attacks crit on 19,
+  // then 18.
   const capabilities = new Set(collectCapabilityCards(sheet.features).map((c) => c.key));
   const savage = capabilities.has('savage attacks');
+  const brutal = sheet.features.filter((f) => capabilityKey(f.name) === 'brutal critical').length;
   const weaponCritFrom = capabilities.has('superior critical')
     ? 18
     : capabilities.has('improved critical')
@@ -591,11 +594,18 @@ export function Component() {
     ...(a.ranged === undefined ? {} : { range: a.ranged ? 'ranged' : 'melee' }),
     ...(a.ability === undefined ? {} : { ability: a.ability }),
   });
-  /** Savage Attacks' die for a carried melee weapon's damage `expr`: its first die, once. */
-  const savageDie = (a: AttackRow, expr: string) => {
-    if (!savage || a.ranged !== false || a.weaponId === undefined) return undefined;
+  /**
+   * The extra crit dice for a carried melee weapon's damage `expr`, of its first
+   * die: one for Savage Attacks, and one for each Brutal Critical card.
+   */
+  const extraCritDice = (a: AttackRow, expr: string) => {
+    const count = (savage ? 1 : 0) + brutal;
+    if (count === 0 || a.ranged !== false || a.weaponId === undefined) return undefined;
     const sides = firstDieSides(expr);
-    return sides === undefined ? undefined : { dice: `1d${sides}`, source: 'Savage Attacks' };
+    const source = [savage ? 'Savage Attacks' : '', brutal > 0 ? 'Brutal Critical' : '']
+      .filter((s) => s !== '')
+      .join(' and ');
+    return sides === undefined ? undefined : { dice: `${count}d${sides}`, source };
   };
   /** The attack rolls' cue: over the attack list, and again over spells with attack rolls. */
   const attackCue = (heading?: string) => (
@@ -1790,7 +1800,7 @@ export function Component() {
                       damageAfter={{
                         expr: a.damage,
                         label: damageLabel(a.label, a.damageType),
-                        withAttack: attackDamage(a.label, savageDie(a, a.damage)),
+                        withAttack: attackDamage(a.label, extraCritDice(a, a.damage)),
                       }}
                     />
                     <RollChip
@@ -1799,7 +1809,7 @@ export function Component() {
                       variant="damage"
                       raisedBy={lift.damage ? lift.damageBy : []}
                       loweredBy={drop.damage}
-                      withAttack={attackDamage(a.label, savageDie(a, a.damage))}
+                      withAttack={attackDamage(a.label, extraCritDice(a, a.damage))}
                     />
                     {a.versatileDamage !== undefined && (
                       <RollChip
@@ -1808,7 +1818,7 @@ export function Component() {
                         variant="damage"
                         raisedBy={lift.versatile ? lift.damageBy : []}
                         loweredBy={drop.versatile}
-                        withAttack={attackDamage(a.label, savageDie(a, a.versatileDamage))}
+                        withAttack={attackDamage(a.label, extraCritDice(a, a.versatileDamage))}
                       />
                     )}
                     {/* Each rider rolls on its own: the totals are resisted
@@ -2337,6 +2347,7 @@ export function Component() {
                 entity,
                 level,
                 block: g.usage === 'prepared' ? block : undefined,
+                className: g.className,
                 abilityModifier,
                 grantPool:
                   limited === undefined
