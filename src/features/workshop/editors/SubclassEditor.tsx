@@ -86,7 +86,7 @@ function isAt(f: Json, raw: string): boolean {
     eq(f.className, r.className) &&
     eq(f.subclassShortName, r.shortName) &&
     eq(f.subclassSource, r.shortSource) &&
-    Number(f.level) === r.level
+    f.level === r.level
   );
 }
 
@@ -95,10 +95,12 @@ function findFeature(registry: EntityRegistry, raw: string): Json | undefined {
   return registry.byType(FEATURE).find((f) => isAt(f as Json, raw)) as Json | undefined;
 }
 
+/** The Armorer's models are a pick, not features under it (`PICK_ONE` on the sheet). */
+const isPick = (f: Json) => eq(f.name, 'armor model') && eq(f.subclassShortName, 'armorer');
+
 /** The refs a feature's text holds to features under it, at its top level only. */
 function kidRefs(f: Json): string[] {
-  // The Armorer's models are a pick, not features under it (`PICK_ONE` on the sheet).
-  if (eq(f.name, 'armor model') && eq(f.subclassShortName, 'armorer')) return [];
+  if (isPick(f)) return [];
   const list = Array.isArray(f.entries) ? f.entries : [];
   return list.flatMap((b) =>
     isRecord(b) && b.type === REF && typeof b.subclassFeature === 'string'
@@ -240,6 +242,8 @@ export function openSubclass(
       for (const k of PLACE) if (from.entity[k] !== undefined) now[k] = from.entity[k];
       if (changeCount(from.base, now) > 0) edits.changed[from.ref] = now;
     } else edits.added.push(now);
+    // A pick renamed still holds its choices, not features under it.
+    if (from?.entity !== undefined && isPick(from.entity)) return;
     for (const k of kidRefs(f)) visit(k);
   };
   for (const ref of refsOf(entry)) visit(ref);

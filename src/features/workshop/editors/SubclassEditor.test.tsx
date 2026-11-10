@@ -437,6 +437,70 @@ describe('openSubclass', () => {
     expect(back.changed[smite.ref]).toMatchObject({ entries: ['Twice.'] });
   });
 
+  it('keeps a renamed pick’s choices inside it, not as new features', () => {
+    const arm = (name: string, entries: unknown[]): Json => ({
+      ...feature(name, 3, entries),
+      source: 'TCE',
+      className: 'Artificer',
+      classSource: 'TCE',
+      subclassShortName: 'Armorer',
+      subclassSource: 'TCE',
+    });
+    const refTo = (name: string) => `${name}|Artificer|TCE|Armorer|TCE|3`;
+    const registry = normalizeDataset(
+      new Map([
+        [
+          'class/class-artificer.json',
+          {
+            subclass: [
+              {
+                name: 'Armorer',
+                shortName: 'Armorer',
+                source: 'TCE',
+                className: 'Artificer',
+                classSource: 'TCE',
+                subclassFeatures: [refTo('Armor Model')],
+              },
+            ],
+            subclassFeature: [
+              arm('Armor Model', [
+                'Pick one.',
+                { type: 'refSubclassFeature', subclassFeature: refTo('Guardian') },
+                { type: 'refSubclassFeature', subclassFeature: refTo('Infiltrator') },
+              ]),
+              arm('Guardian', ['Thunder gauntlets.']),
+              arm('Infiltrator', ['Lightning launcher.']),
+            ],
+          },
+        ],
+      ]),
+    );
+    const sub = registry.get('subclass', 'Armorer', 'TCE') as Json;
+    const [model] = featureTree(sub, registry);
+    if (model === undefined) throw new Error('no Armor Model');
+    const draft = openSubclass(structuredClone(sub), { original: sub, registry });
+    draft.name = 'Lantern Armor';
+    draft._features = {
+      changed: { [model.ref]: { ...model.base, name: 'Lantern Model' } },
+      removed: [],
+      added: [],
+    };
+    const written = writeSubclass({
+      original: sub,
+      copied: sub,
+      draft,
+      source: 'MyHomebrew',
+      mode: 'changes',
+      registry,
+    });
+    const file = { subclass: [written.entry], subclassFeature: written.owned };
+    const { entry } = readStored(structuredClone(written.entry), sub);
+    const back = editsOf(openSubclass(entry, { original: sub, registry, file }));
+    expect(back.added).toEqual([]);
+    expect(back.removed).toEqual([]);
+    expect(Object.keys(back.changed)).toEqual([model.ref]);
+  });
+
   it('pairs a changed feature with the original at its level when names repeat', () => {
     const at = (level: number): Json => ({
       ...feature('More Maneuvers', level, [`Two more at ${level}.`]),
