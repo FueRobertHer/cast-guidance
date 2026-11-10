@@ -335,13 +335,16 @@ function Editor({
       return next;
     });
 
+  const source = at.stored?.source ?? into?.source ?? WORKSHOP_SOURCE;
+  // A full copy reopened keeps the mark of the original it was made from.
+  const base = mode === 'full' && subject.mode === 'full' ? undefined : original;
   const problem = readOnly
     ? `${missingOriginal(missing ?? '')} It can be deleted, not changed.`
     : name === ''
       ? 'Give it a name to save it.'
       : name.includes('|')
         ? 'A name cannot have | in it.'
-        : spec.check?.(draft);
+        : spec.check?.(draft, { original: base, copied: original, source, mode, registry });
   const footnote = (() => {
     if (problem !== undefined) return problem;
     if (original === undefined) return 'Saved to your homebrew file on this device.';
@@ -359,9 +362,6 @@ function Editor({
     setSaving(true);
     setFailure(undefined);
     try {
-      // A full copy reopened keeps the mark of the original it was made from.
-      const base = mode === 'full' && subject.mode === 'full' ? undefined : original;
-      const source = at.stored?.source ?? into?.source ?? WORKSHOP_SOURCE;
       // An entry that owns others (a subclass's features) is written by its
       // editor, and saved with them in one write.
       const written = spec.write?.({

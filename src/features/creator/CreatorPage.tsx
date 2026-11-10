@@ -9,6 +9,7 @@ import { subclassOptions } from '@/data5e/subclassOptions';
 import { subraceOptions } from '@/data5e/subraceOptions';
 import { characterRepo } from '@/db/characterRepo';
 import { deriveSheet } from '@/engine/derive';
+import { basedOn } from '@/engine/effects/mechanics';
 import { subclassUnlockLevel } from '@/engine/multiclass';
 import {
   ABILITIES,
@@ -470,6 +471,7 @@ export function Component() {
           doc.classes[0].ref,
           doc.rulesVersion,
           doc.classes[0].subclass,
+          basedOn(classEntity),
         )
       : [];
   const races = filterByRulesVersion([...registry.byType('race')], doc.rulesVersion);
