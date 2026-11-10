@@ -68,7 +68,7 @@ import { abilityKey, entryName, lastGroup, sourceLineEdition, splitName } from '
 export const FC5_FORMAT = 'fc5-compendium';
 export const FC5_FORMAT_NAME = 'Fight Club 5e';
 /** Bump when the same file would convert differently, so old imports can be told apart. */
-export const FC5_CONVERTER_VERSION = 6;
+export const FC5_CONVERTER_VERSION = 8;
 
 const CONVERTERS: Record<string, (el: XmlElement, ctx: Fc5Context) => Fc5Result> = {
   spell: convertSpell,
