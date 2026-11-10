@@ -12,6 +12,11 @@ export interface SpellRollOptions {
   /** Slot actually used for this cast; defaults to the spell's base level. */
   slotLevel?: number;
   abilityModifier?: number;
+  /**
+   * What the character adds to this spell's damage (Agonizing Blast, Potent
+   * Spellcasting): to each damage roll, or with `oneRoll` to the first alone.
+   */
+  damageBonuses?: ReadonlyArray<{ amount: number; oneRoll?: boolean }>;
 }
 
 interface TaggedRoll {
@@ -245,6 +250,19 @@ function withAbilityModifier(roll: TaggedRoll, modifier: number | undefined): Ta
   return { ...roll, expr: `${roll.expr}${modifier > 0 ? '+' : ''}${modifier}` };
 }
 
+/**
+ * A roll with a flat amount added, folded into the number its dice end with
+ * (Magic Missile's "1d4+1" and 3 make "1d4+4").
+ */
+function plus(roll: TaggedRoll, amount: number): TaggedRoll {
+  if (amount === 0) return roll;
+  const flat = /^(.*d\d+)([+-]\d+)$/i.exec(roll.expr);
+  const [dice, total] =
+    flat?.[1] !== undefined ? [flat[1], Number(flat[2]) + amount] : [roll.expr, amount];
+  if (total === 0) return { ...roll, expr: dice };
+  return { ...roll, expr: `${dice}${total > 0 ? '+' : ''}${total}` };
+}
+
 /** Whether a roll restores hit points, by the words around it. */
 function heals(roll: TaggedRoll): boolean {
   return /\bregains?\b|\bhealing\b/.test(roll.source.toLowerCase());
@@ -288,20 +306,29 @@ export function spellRollActions(
     blocks.length === 0
       ? primary
       : [...scaled, ...primary.filter((roll) => roll.kind !== 'damage' && !describesScaling(roll))];
+  const bonuses = options.damageBonuses ?? [];
+  const each = bonuses.reduce((sum, b) => sum + (b.oneRoll === true ? 0 : b.amount), 0);
+  const once = bonuses.reduce((sum, b) => sum + (b.oneRoll === true ? b.amount : 0), 0);
+  let damageRolls = 0;
   const seen = new Set<string>();
   const out: SpellRollAction[] = [];
   for (const raw of rolls) {
-    const roll = withAbilityModifier(
+    const plain = withAbilityModifier(
       applySlotScaling(raw, entity, baseLevel, slotLevel),
       options.abilityModifier,
     );
-    const label = rollLabel(name, roll, roll.scalingLabel);
-    const key = `${roll.kind}|${roll.expr}|${label}`.toLowerCase();
+    const label = rollLabel(name, plain, plain.scalingLabel);
+    // A roll the spell states twice is one chip. Checked before a bonus is
+    // added, since a one-roll bonus would make the second look different.
+    const key = `${plain.kind}|${plain.expr}|${label}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
+    const roll =
+      plain.kind === 'damage' ? plus(plain, each + (damageRolls === 0 ? once : 0)) : plain;
     // Damage first: a spell that hurts and heals (Vampiric Touch) still
     // rolls its damage dice as damage.
     const variant = roll.kind === 'damage' ? 'damage' : heals(roll) ? 'heal' : 'dice';
+    if (roll.kind === 'damage') damageRolls++;
     out.push({ expr: roll.expr, label, variant });
   }
   return out;

@@ -227,7 +227,11 @@ export function calcAttacks(
     const riders = [
       ...extraDamage,
       ...riderDice
-        .filter((d) => reaches(d, ranged, ability, weaponId))
+        .filter(
+          (d) =>
+            reaches(d, ranged, ability, weaponId) &&
+            (d.weaponsOnly !== true || weaponId !== undefined),
+        )
         .map((d) => ({
           dice: d.dice,
           ...(d.damageType !== undefined ? { damageType: d.damageType } : {}),

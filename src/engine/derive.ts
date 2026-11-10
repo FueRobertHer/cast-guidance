@@ -49,6 +49,7 @@ import type {
   FormulaSlot,
   NotCounted,
   RollRider,
+  SpellDamageBonus,
 } from './types';
 import { ABILITIES, refUid } from './types';
 
@@ -308,6 +309,17 @@ export function deriveSheet(
         best === undefined || e.min < best.min ? { min: e.min, origin: e.origin.label } : best,
       undefined,
     ),
+    spellDamageBonuses: sameNamedOnce(
+      effectsOf(effects, 'spellDamageBonus').map((e) => ({
+        amount: bonusAmount(e.amount, abilities, profBonus.value),
+        origin: e.origin.label,
+        ...(e.spells === undefined ? {} : { spells: e.spells }),
+        ...(e.className === undefined ? {} : { className: e.className }),
+        ...(e.cantrips === true ? { cantrips: true as const } : {}),
+        ...(e.school === undefined ? {} : { school: e.school }),
+        ...(e.oneRoll === true ? { oneRoll: true as const } : {}),
+      })),
+    ),
     tempHpEachTurn: effectsOf(effects, 'tempHpEachTurn').reduce<DerivedSheet['tempHpEachTurn']>(
       (best, e) =>
         best === undefined || e.amount > best.amount
@@ -508,6 +520,22 @@ function uniqueNames(names: readonly string[]): string[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * One of each spell damage bonus a same-named feature gives, the highest: a 2024
+ * Cleric with a 2014 domain can have Potent Spellcasting from Blessed Strikes and
+ * from the domain, and the same feature does not add twice.
+ */
+function sameNamedOnce(bonuses: readonly SpellDamageBonus[]): SpellDamageBonus[] {
+  const best = new Map<string, SpellDamageBonus>();
+  for (const b of bonuses) {
+    const { amount, ...rest } = b;
+    const key = JSON.stringify(rest);
+    const held = best.get(key);
+    if (held === undefined || amount > held.amount) best.set(key, b);
+  }
+  return [...best.values()];
 }
 
 /** Collapse repeated collector notes while preserving the first useful wording. */

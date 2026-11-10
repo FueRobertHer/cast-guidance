@@ -357,3 +357,80 @@ describe('spellRollActions on hostile text', () => {
     ]);
   }, 2000);
 });
+
+describe('spellRollActions with what the character adds to the damage', () => {
+  const iceStorm: Entity = {
+    name: 'Ice Storm',
+    level: 4,
+    entries: [
+      'Each creature takes {@damage 2d8} bludgeoning damage and {@damage 4d6} cold damage.',
+    ],
+  };
+  const missile: Entity = {
+    name: 'Magic Missile',
+    level: 1,
+    entries: ['Each dart deals {@damage 1d4 + 1} force damage to its target.'],
+  };
+
+  it('adds a bonus to every damage roll, and a one-roll bonus to the first alone', () => {
+    const exprs = (damageBonuses: Array<{ amount: number; oneRoll?: boolean }>) =>
+      spellRollActions(iceStorm, { characterLevel: 7, damageBonuses }).map((r) => r.expr);
+    expect(exprs([])).toEqual(['2d8', '4d6']);
+    expect(exprs([{ amount: 3 }])).toEqual(['2d8+3', '4d6+3']);
+    expect(exprs([{ amount: 3, oneRoll: true }])).toEqual(['2d8+3', '4d6']);
+    expect(exprs([{ amount: 2 }, { amount: 3, oneRoll: true }])).toEqual(['2d8+5', '4d6+2']);
+    expect(exprs([{ amount: -1 }])).toEqual(['2d8-1', '4d6-1']);
+  });
+
+  it('keeps a roll the spell states twice as one chip, with its one-roll bonus', () => {
+    // Witch Bolt's opening hit and each later turn's damage are the same roll.
+    const witchBolt: Entity = {
+      name: 'Witch Bolt',
+      level: 1,
+      entries: [
+        'On a hit, the target takes {@damage 1d12} lightning damage.',
+        'On each of your turns, you can deal {@damage 1d12} lightning damage to the target.',
+      ],
+    };
+    const chips = spellRollActions(witchBolt, {
+      characterLevel: 3,
+      damageBonuses: [{ amount: 4, oneRoll: true }],
+    });
+    expect(chips.map((c) => `${c.label}=${c.expr}`)).toEqual([
+      'Witch Bolt lightning damage=1d12+4',
+    ]);
+  });
+
+  it('adds it to each outcome of a cantrip, at its tier', () => {
+    const tollTheDead: Entity = {
+      name: 'Toll the Dead',
+      level: 0,
+      entries: ['It takes {@damage 1d8} necrotic damage, or {@damage 1d12} if wounded.'],
+      scalingLevelDice: [
+        { label: 'necrotic damage', scaling: { '1': '1d8', '5': '2d8' } },
+        { label: 'necrotic damage to wounded creature', scaling: { '1': '1d12', '5': '2d12' } },
+      ],
+    };
+    expect(
+      spellRollActions(tollTheDead, { characterLevel: 5, damageBonuses: [{ amount: 4 }] }).map(
+        (r) => r.expr,
+      ),
+    ).toEqual(['2d8+4', '2d12+4']);
+  });
+
+  it('folds the bonus into a flat number the dice already add, and leaves other rolls alone', () => {
+    const roll = (amount: number) =>
+      spellRollActions(missile, { characterLevel: 3, damageBonuses: [{ amount }] })[0]?.expr;
+    expect(roll(3)).toBe('1d4+4');
+    expect(roll(-1)).toBe('1d4');
+    expect(roll(-3)).toBe('1d4-2');
+    const healing: Entity = {
+      name: 'Cure Wounds',
+      level: 1,
+      entries: ['The creature regains hit points equal to {@dice 1d8}.'],
+    };
+    expect(
+      spellRollActions(healing, { characterLevel: 3, damageBonuses: [{ amount: 3 }] })[0]?.expr,
+    ).toBe('1d8');
+  });
+});
