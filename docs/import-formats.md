@@ -293,12 +293,16 @@ official one, then swaps it into an otherwise official character at levels 1,
 5, 11 and 20 and derives both characters through the engine the sheet uses. A
 race, background, feat or equipped item goes on a Fighter; a class option goes
 on the class or subclass whose data offers it, compared only at the levels
-where either side was offered it. It tallies, field by field, where the two
+where either side was offered it. A class is the character's class, and a
+subclass goes on the official class from the level it is chosen; both sides
+answer their prompts alike, the converted side taking the options of the names
+the official side took. It tallies, field by field, where the two
 sheets part: scores, saves, skills, AC, HP, speed, senses, defenses, languages,
 proficiencies, attacks, spellcasting, resources, actions, features, choices and
 warnings. Spells are compared as the Spells tab reads them (caption, save,
-attack, rolls at each slot, class lists). Races, backgrounds, feats, items and
-spells with no official counterpart are read alone, to show they work at all;
-class options without one are not. The header lists the options; `--release`
+attack, rolls at each slot, class lists). Races, backgrounds, feats, items,
+spells, classes (at level 5) and subclasses (at level 20) with no official
+counterpart are read alone, to show they work at all; class options without
+one are not. The header lists the options; `--release`
 and `--lookup` name files that cache the fetched data, so later runs stay
 offline.

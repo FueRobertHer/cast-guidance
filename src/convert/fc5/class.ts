@@ -558,9 +558,13 @@ function preparedFormula(prose: string, own: string | undefined): string | undef
     : `<$level$> / ${divisor} + <$${ability}_mod$>`;
 }
 
-/** "a spellbook containing six 1st-level wizard spells", "add two wizard spells … to your spellbook". */
-const SPELLBOOK_START = /spellbook containing (\w{1,6}) (?:1st-level|level 1)/i;
-const SPELLBOOK_ADD = /add (\w{1,6}) [\w ]{0,30}?spells? [^.]{0,60}?to your spellbook/i;
+/**
+ * "a spellbook containing six 1st-level wizard spells", "add two wizard spells
+ * … to your spellbook"; 2024: "It starts with six level 1 Wizard spells", "add
+ * two Wizard spells of your choice to your spell book".
+ */
+const SPELLBOOK_START = /(?:spellbook containing|it starts with) (\w{1,6}) (?:1st-level|level 1)/i;
+const SPELLBOOK_ADD = /add (\w{1,6}) [\w ]{0,30}?spells? [^.]{0,60}?to your spell ?book/i;
 
 function spellbook(prose: string): number[] | undefined {
   const start = SPELLBOOK_START.exec(prose);

@@ -22,7 +22,10 @@
  * official character, and both characters are derived through the engine the
  * sheet uses and compared field by field. A class option is taken on the class
  * or subclass that offers it, at the levels where either side was offered it.
- * Spells are compared as the Spells tab reads them, entry against entry.
+ * A class is the character's class; a subclass goes on the official class, from
+ * the level it is chosen. Their prompts are answered alike: the converted side
+ * takes the options of the names the official side took, else the first by
+ * name. Spells are compared as the Spells tab reads them, entry against entry.
  *
  * Game data never lands in the repo: the release comes from the network or a
  * cached file outside it, the XML from paths given.
@@ -41,8 +44,10 @@ import { type EntityRegistry, mergeHomebrew, normalizeDataset } from '../src/dat
 import { editionOf } from '../src/data5e/rulesVersion';
 import { GithubTagSource } from '../src/data5e/source';
 import { deriveSheet } from '../src/engine/derive';
+import { subclassUnlockLevel } from '../src/engine/multiclass';
 import {
   type CharacterDoc,
+  type ChoicePrompt,
   type DerivedSheet,
   type EngineContext,
   type EntityRef,
@@ -71,6 +76,14 @@ const PREFIX = 'CVT';
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 const KINDS: ConvertedKind[] = ['race', 'background', 'feat', 'item', 'spell', 'optionalfeature'];
+/** Kinds swapped in as the character's class. */
+const CLASS_KINDS: ConvertedKind[] = ['class', 'subclass'];
+/** Kinds paired with an official entry and counted. */
+const PAIRED: ConvertedKind[] = [...KINDS, ...CLASS_KINDS];
+/** Kinds whose entries take a converted source of their own, refs included. */
+const SOURCED: ConvertedKind[] = [...PAIRED, 'classFeature', 'subclassFeature'];
+/** Fields that name a converted class or subclass by its source alone. */
+const SOURCE_FIELDS = ['classSource', 'subclassSource'];
 
 // ---------------------------------------------------------------- data
 
@@ -176,11 +189,16 @@ async function convertSet(
     if (!isRecord(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([k, inner]) => [resource(k), deep(inner)]));
   };
-  for (const kind of KINDS) {
+  for (const kind of SOURCED) {
     const list = (json[kind] as Entity[] | undefined) ?? [];
     json[kind] = list.map((e) => {
       const out = deep(e) as Entity;
       if (typeof out.source === 'string') out.source = PREFIX + out.source;
+      // A subclass or feature names its converted class by source alone.
+      for (const field of SOURCE_FIELDS) {
+        const v = out[field];
+        if (typeof v === 'string' && ids.has(v.toLowerCase())) out[field] = PREFIX + v;
+      }
       return out;
     });
   }
@@ -246,9 +264,15 @@ function pairs(
       races.set(`${r.name}|${r.source}`.toLowerCase(), r);
     }
   }
+  // A subclass pairs with the official one of its name on a class of its class's name.
+  const classOf = (kind: ConvertedKind, e: Entity) =>
+    kind === 'subclass' ? `|${String(e.className).toLowerCase()}` : '';
+  // A converted class's `name|source` to the official class source it pairs with.
+  const uidOf = (n: unknown, s: unknown) => `${String(n)}|${String(s)}`.toLowerCase();
+  const pairedClasses = new Map<string, string>();
   const out: Pair[] = [];
   const unmatched: Entity[] = [];
-  for (const kind of KINDS) {
+  for (const kind of PAIRED) {
     const index = new Map<string, Pair['official'][]>();
     const add = (key: string, o: Pair['official']) => {
       const list = index.get(key) ?? [];
@@ -264,24 +288,40 @@ function pairs(
             ? races.get(`${String(e.raceName)}|${String(e.raceSource)}`.toLowerCase())
             : undefined;
         const o = { type, entity: e, ...(race === undefined ? {} : { race }) };
-        for (const n of officialNames(type, e)) add(keyOf(n, edition), o);
+        const of = classOf(kind, e);
+        for (const n of officialNames(type, e)) add(keyOf(n, edition) + of, o);
         for (const flag of ['srd', 'srd52']) {
-          if (typeof e[flag] === 'string') add(keyOf(e[flag] as string, edition), o);
+          if (typeof e[flag] === 'string') add(keyOf(e[flag] as string, edition) + of, o);
         }
       }
     }
     for (const converted of (set.json[kind] as Entity[] | undefined) ?? []) {
       const name = typeof converted.name === 'string' ? converted.name : '';
       const edition = editionOf(converted);
-      const candidates = index.get(keyOf(name, edition));
+      const found = index.get(keyOf(name, edition) + classOf(kind, converted)) ?? [];
+      // A subclass the data has on two printings of its class (the PHB and
+      // XPHB bard): the one on the official class its own class pairs with.
+      const onClass =
+        kind === 'subclass'
+          ? (pairedClasses.get(uidOf(converted.className, converted.classSource)) ??
+            String(converted.classSource).toLowerCase())
+          : undefined;
+      const onIt = found.filter((o) => String(o.entity.classSource).toLowerCase() === onClass);
+      const candidates = onIt.length > 0 ? onIt : found;
       const own = bookOf(converted, true);
       const pick =
-        candidates?.find((o) => own !== undefined && bookOf(o.entity, false) === own) ??
-        candidates?.find((o) => FREE_RULES.some((f) => o.entity[f] !== undefined)) ??
-        candidates?.[0];
+        candidates.find((o) => own !== undefined && bookOf(o.entity, false) === own) ??
+        candidates.find((o) => FREE_RULES.some((f) => o.entity[f] !== undefined)) ??
+        candidates[0];
       if (pick === undefined) {
         unmatched.push(converted);
         continue;
+      }
+      if (kind === 'class') {
+        pairedClasses.set(
+          uidOf(converted.name, converted.source),
+          String(pick.entity.source).toLowerCase(),
+        );
       }
       out.push({
         kind,
@@ -321,38 +361,91 @@ function baseDoc(
 const isConvertedId = (id: string) => id.toLowerCase().includes(`|${PREFIX.toLowerCase()}`);
 
 /**
+ * Prompt kinds where a name another prompt of the kind took adds nothing (a
+ * second expertise in Acrobatics, a second Archery): the engine closes such
+ * picks only for a `distinct` prompt, and only once the first is saved, so a
+ * repeat would leave the later grant untested.
+ */
+const NO_REPEAT = new Set<ChoicePrompt['kind']>([
+  'skill',
+  'skillOrTool',
+  'expertise',
+  'language',
+  'tool',
+  'optionalfeature',
+  'feat',
+  'damageType',
+]);
+const repeatGroup = (kind: ChoicePrompt['kind']) => (kind === 'skillOrTool' ? 'skill' : kind);
+const pickName = (id: string) => id.toLowerCase().split('|')[0] ?? '';
+
+/**
  * Answer every open prompt the same way on both sides: an Ability Score
  * Improvement where offered, otherwise the first options by label, never a
  * converted entry unless `prefer` names it. `prefer` goes first; any other
  * printing of the same name (`under`, lowercased) is left out, so the
- * official twin of a converted option never rides along with it.
+ * official twin of a converted option never rides along with it. For a class
+ * swapped in (`anyPrinting`), converted options are taken like any, and two
+ * printings of one name never fill one prompt. A name another prompt of the
+ * same kind took is not taken again where a repeat adds nothing (`NO_REPEAT`).
  */
 function settle(
   doc: CharacterDoc,
   ctx: EngineContext,
   prefer?: (id: string) => boolean,
   under?: string,
+  anyPrinting = false,
 ) {
   const twin = (id: string) => under !== undefined && id.toLowerCase().split('|')[0] === under;
   let sheet = deriveSheet(doc, ctx, { active: false });
+  // The names each kind's prompts hold, by prompt, so a prompt's own picks stay its own.
+  const held = new Map<string, Map<string, Set<string>>>();
+  const hold = (p: ChoicePrompt, ids: readonly string[]) => {
+    const group = repeatGroup(p.kind);
+    const byPrompt = held.get(group) ?? new Map<string, Set<string>>();
+    byPrompt.set(p.id, new Set(ids.map(pickName)));
+    held.set(group, byPrompt);
+  };
+  const heldElsewhere = (p: ChoicePrompt, id: string) => {
+    if (p.allowRepeat === true || !(p.distinct === true || NO_REPEAT.has(p.kind))) return false;
+    for (const [promptId, names] of held.get(repeatGroup(p.kind)) ?? []) {
+      if (promptId !== p.id && names.has(pickName(id))) return true;
+    }
+    return false;
+  };
+  for (const r of sheet.resolvedChoices) hold(r.prompt, r.selected);
   for (let round = 0; round < 16; round++) {
-    const open = sheet.pending.filter(
+    let open = sheet.pending.filter(
       (p) => doc.choices[p.id] === undefined && p.spellQuery === undefined,
     );
     if (open.length === 0) break;
+    // Expertise picks from the skills a class's own prompt gives: those first.
+    if (anyPrinting && open.some((p) => p.kind === 'skill' || p.kind === 'skillOrTool')) {
+      open = open.filter((p) => p.kind !== 'expertise');
+    }
     for (const p of open) {
-      const usable = p.options.filter((o) => o.disabled === undefined);
+      const usable = p.options.filter((o) => o.disabled === undefined && !heldElsewhere(p, o.id));
       const wanted = prefer === undefined ? [] : usable.filter((o) => prefer(o.id));
       const asi = usable.filter((o) => /ability score/i.test(o.label));
       const rest = usable
-        .filter((o) => !isConvertedId(o.id) && !twin(o.id))
+        .filter((o) => (anyPrinting || !isConvertedId(o.id)) && !twin(o.id))
         .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
       const ordered = [...wanted, ...(p.kind === 'asiOrFeat' ? asi : []), ...rest];
       const n = Math.max(1, p.count);
       const ids = ordered.length === 0 ? [] : p.allowRepeat ? Array(n).fill(ordered[0]?.id) : [];
+      const names = new Set<string>();
       if (!p.allowRepeat)
-        for (const o of ordered) if (ids.length < n && !ids.includes(o.id)) ids.push(o.id);
+        for (const o of ordered) {
+          const named = o.id.toLowerCase().split('|')[0] ?? '';
+          if (ids.length >= n || ids.includes(o.id) || (anyPrinting && names.has(named))) continue;
+          ids.push(o.id);
+          names.add(named);
+        }
       doc.choices[p.id] = n === 1 ? (ids[0] ?? '') : ids;
+      hold(
+        p,
+        ids.filter((id): id is string => typeof id === 'string' && id !== ''),
+      );
     }
     sheet = deriveSheet(doc, ctx, { active: false });
   }
@@ -629,6 +722,20 @@ function optionHosts(reg: EntityRegistry): Map<string, Host[]> {
   return out;
 }
 
+/**
+ * A converted class's or subclass's sheet with its uid read as the official
+ * one's (`bard|fcsystemreferencedocumentv521` as `bard|xphb`, `psi
+ * warrior|fctashascauldronofeverything` as `psi warrior|tce`), so a row
+ * differs on what it holds, not on whose it is.
+ */
+function asOfficial(v: Record<string, unknown>, pair: Pair): Record<string, unknown> {
+  if (pair.kind !== 'class' && pair.kind !== 'subclass') return v;
+  const from = unprefix(refUid(ref(pair.converted)));
+  const to = refUid(ref(pair.official.entity));
+  const text = JSON.stringify(v);
+  return JSON.parse(text.split(from).join(to)) as Record<string, unknown>;
+}
+
 /** An entry's label in the report: two printings of one name stay apart. */
 const labelOf = (name: string, edition: string, converted: Entity) =>
   `${name} (${edition}, ${unprefix(String(converted.source))})`;
@@ -699,6 +806,40 @@ function runSwaps(
           });
           a.equipment = [entry(o.entity)];
           b.equipment = [entry(pair.converted)];
+        } else if (pair.kind === 'class' || pair.kind === 'subclass') {
+          let cls = ref(pair.official.entity);
+          let from = 1;
+          if (pair.kind === 'subclass') {
+            // On the official class, from the level it is chosen.
+            cls = { name: String(o.entity.className), source: String(o.entity.classSource) };
+            from = subclassUnlockLevel(regA.get('class', cls.name, cls.source));
+            if (level < from) continue;
+          }
+          a = baseDoc(pair.edition, level, cls);
+          b = baseDoc(pair.edition, level, pair.kind === 'class' ? ref(pair.converted) : cls);
+          if (pair.kind === 'subclass') {
+            const ca = a.classes[0];
+            const cb = b.classes[0];
+            if (ca !== undefined) ca.subclass = ref(o.entity);
+            if (cb !== undefined) cb.subclass = ref(pair.converted);
+          }
+          const sa = settle(a, ctxA, undefined, undefined, true);
+          // The names the official side took, so both sides take the same.
+          const took = new Set(
+            sa.resolvedChoices.flatMap((r) =>
+              r.selected.map((x) => x.toLowerCase().split('|')[0] ?? ''),
+            ),
+          );
+          const sb = settle(
+            b,
+            ctxB,
+            (id) => took.has(id.toLowerCase().split('|')[0] ?? ''),
+            undefined,
+            true,
+          );
+          report.scenarios += 1;
+          tally(report, label, view(sa), asOfficial(view(sb), pair), `L${level} `);
+          continue;
         } else {
           const types = Array.isArray(pair.converted.featureType)
             ? (pair.converted.featureType as string[])
@@ -823,7 +964,7 @@ function runUnmatched(set: ConvertedSet, regB: EntityRegistry, unmatched: Entity
   const ctx = engineContextFor(regB);
   const report = newReport(set.name, 'unmatched');
   const kindOf = new Map<Entity, ConvertedKind>();
-  for (const kind of KINDS)
+  for (const kind of PAIRED)
     for (const e of (set.json[kind] as Entity[] | undefined) ?? []) kindOf.set(e, kind);
   const stats: FieldStats = { same: 0, differs: 0, examples: [] };
   report.fields.warnings = stats;
@@ -842,8 +983,17 @@ function runUnmatched(set: ConvertedSet, regB: EntityRegistry, unmatched: Entity
       continue;
     }
     const edition = editionOf(e);
-    const doc = baseDoc(edition, 5);
-    if (kind === 'race') doc.race = ref(e);
+    // A class at 5th level; a subclass on its class at 20th, so every feature is reached.
+    const doc =
+      kind === 'class'
+        ? baseDoc(edition, 5, ref(e))
+        : kind === 'subclass'
+          ? baseDoc(edition, 20, { name: String(e.className), source: String(e.classSource) })
+          : baseDoc(edition, 5);
+    const first = doc.classes[0];
+    if (kind === 'class' || kind === 'subclass') {
+      if (kind === 'subclass' && first !== undefined) first.subclass = ref(e);
+    } else if (kind === 'race') doc.race = ref(e);
     else if (kind === 'background') doc.background = ref(e);
     else if (kind === 'feat') doc.feats = [{ ref: ref(e), instanceId: 'f1' }];
     else
@@ -852,8 +1002,9 @@ function runUnmatched(set: ConvertedSet, regB: EntityRegistry, unmatched: Entity
       ];
     report.scenarios += 1;
     try {
-      const s = settle(doc, ctx);
-      const own = s.warnings.filter((w) => !/subclass/i.test(w));
+      const s = settle(doc, ctx, undefined, undefined, kind === 'class' || kind === 'subclass');
+      // The base character has no subclass; a subclass under test must be found.
+      const own = s.warnings.filter((w) => kind === 'subclass' || !/subclass/i.test(w));
       if (own.length === 0) stats.same += 1;
       else {
         stats.differs += 1;
@@ -899,9 +1050,11 @@ for (const s of sets) {
   mergeHomebrew(regB, new Map([[s.name, set.json]]));
   const { pairs: all, unmatched } = pairs(regA, set, books);
   const converted = Object.fromEntries(
-    KINDS.map((k) => [k, ((set.json[k] as unknown[]) ?? []).length]),
+    PAIRED.map((k) => [k, ((set.json[k] as unknown[]) ?? []).length]),
   );
-  const matched = Object.fromEntries(KINDS.map((k) => [k, all.filter((p) => p.kind === k).length]));
+  const matched = Object.fromEntries(
+    PAIRED.map((k) => [k, all.filter((p) => p.kind === k).length]),
+  );
   const reports = [
     ...runSwaps(set, regA, regB, all),
     runSpells(set, all, classesOf),

@@ -340,6 +340,10 @@ describe('readTools', () => {
     expect(readTools('Any musical instrument or artisan tools')).toEqual({
       choose: { from: ['musical instrument', "artisan's tools"] },
     });
+    // The 2024 monk's, with "any one" on each side.
+    expect(
+      readTools("Any one type of artisan's tools or any one musical instrument of your choice"),
+    ).toEqual({ choose: { from: ["artisan's tools", 'musical instrument'] } });
   });
 
   it('reads a kind of tool as a choice of one', () => {
