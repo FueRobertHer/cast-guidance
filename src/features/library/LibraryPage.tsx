@@ -1,4 +1,5 @@
-import { ArrowLeft, ChevronDown, Search } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { ArrowLeft, ChevronDown, GitFork, Hammer, Pencil, Plus, Search } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Entity } from '@/data5e/copyMod';
@@ -16,13 +17,15 @@ import { type SearchResult, searchAll } from '@/data5e/search/client';
 import { DEFAULT_QUERY_LIMIT } from '@/data5e/search/protocol';
 import { applySourcePolicy, policyForSearch, useSourcePolicy } from '@/data5e/sourceFilter';
 import { sourceName } from '@/data5e/sourceNames';
+import { homebrewRepo } from '@/db/homebrewRepo';
+import { hasEditor } from '@/features/workshop/editorTypes';
 import { useBack } from '@/lib/useBack';
 import { useOnReconnect } from '@/lib/useOnline';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { announce, cancelAnnouncement } from '@/stores/announcer';
 import { useDbLifecycle } from '@/stores/dbLifecycle';
 import { badgeClass } from '@/ui/Badge';
-import { Button } from '@/ui/Button';
+import { Button, buttonClass } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { useFailureAlert } from '@/ui/failureAlert';
 import { SourceBadge, sourceBadgeLabel } from '@/ui/SourceBadge';
@@ -347,8 +350,12 @@ function LibraryHome({ registry }: { registry: EntityRegistry | null }) {
   }, [registry, policy]);
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-4">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-2">
         <h1 className="font-display text-title-page">Library</h1>
+        <Link to="/workshop" className={buttonClass({ variant: 'outline', size: 'sm' })}>
+          <Hammer size={16} aria-hidden />
+          Workshop
+        </Link>
       </header>
       <GlobalSearch />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -563,6 +570,15 @@ function TypeList({ type, reg }: { type: EntityType; reg: RegistryState }) {
           </h1>
           <span className="text-caption text-ink-muted tabular-nums">{items.length}</span>
         </div>
+        {hasEditor(type) && (
+          <Link
+            to={`/workshop/new/${type}`}
+            className={`ml-auto shrink-0 ${buttonClass({ variant: 'outline', size: 'sm' })}`}
+          >
+            <Plus size={16} aria-hidden />
+            Make your own
+          </Link>
+        )}
       </header>
       {/* An empty list and a failed download used to look identical here. */}
       {failed && <SectionProblem reg={reg} packs={packs} />}
@@ -912,6 +928,7 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
         <p className="text-caption text-ink-muted">{sourceName(sourceOf(entity))}</p>
       </header>
       <PrintingSwitch type={type} printings={printings} current={entity} />
+      {hasEditor(type) && <WorkshopLink type={type} entity={entity} />}
       {facts.length > 0 && (
         <dl className={`${cardClass} grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body`}>
           {facts.map(([label, value]) => (
@@ -927,6 +944,30 @@ function EntityDetail({ type, uid, reg }: { type: EntityType; uid: string; reg: 
       {type === 'class' && registry !== null && <ClassExtras registry={registry} entity={entity} />}
       {type === 'book' && registry !== null && <BookExtras registry={registry} entity={entity} />}
     </main>
+  );
+}
+
+/**
+ * Into the Workshop from an entry: Edit a copy of anything, or Edit one in a
+ * homebrew file the player made on this device (ADR-001, D3). An imported
+ * file cannot be changed, so its entries are copied like a book's.
+ */
+function WorkshopLink({ type, entity }: { type: EntityType; entity: Entity }) {
+  const source = sourceOf(entity);
+  const key = encodeURIComponent(`${nameOf(entity)}|${source}`);
+  const files = useLiveQuery(() => homebrewRepo.listMetaSafe(), []);
+  const lower = source.toLowerCase();
+  const theirs =
+    files?.files.some((f) => f.editable && f.sourceIds.some((s) => s.toLowerCase() === lower)) ===
+    true;
+  return (
+    <Link
+      to={`/workshop/${theirs ? 'edit' : 'copy'}/${type}/${key}`}
+      className={`self-start ${buttonClass({ variant: 'outline', size: 'sm' })}`}
+    >
+      {theirs ? <Pencil size={16} aria-hidden /> : <GitFork size={16} aria-hidden />}
+      {theirs ? 'Edit' : 'Edit a copy'}
+    </Link>
   );
 }
 
