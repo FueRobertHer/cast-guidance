@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONDITION_MOTION_KEY, setAnimateConditions } from '@/lib/conditionMotion';
 import { conditionSheetStore } from '@/stores/conditionSheet';
+import { cancelHeld } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import {
   ChipFace,
@@ -74,6 +75,7 @@ afterEach(() => {
     setAnimateConditions(true);
     conditionSheetStore.setState({ open: false });
   });
+  cancelHeld();
   rollLogStore.getState().clear();
 });
 
@@ -611,6 +613,9 @@ describe('RollChip, wearing conditions', () => {
     render(<RollChip {...props} wear={{ looks: ['Exhaustion'], ignored: false, penalty: -4 }} />);
     const button = screen.getByRole('button', { name: '+5' });
     expect(button.getAttribute('title')).toBe('Longsword attack');
+    // A d20 chip asks first, in the roll prompt; tapped again, it rolls.
+    fireEvent.click(button);
+    expect(rollLogStore.getState().rolls).toHaveLength(0);
     fireEvent.click(button);
     expect(rollLogStore.getState().rolls).toHaveLength(1);
   });
@@ -621,6 +626,8 @@ describe('RollChip, wearing conditions', () => {
       return buf;
     });
     const { container } = render(<RollChip {...props} wear={POISONED} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(container.querySelector('.cx-surge')).toBeNull();
     fireEvent.click(screen.getByRole('button'));
     expect(container.querySelector('.cx-surge')).not.toBeNull();
     expect(screen.getByRole('button').textContent).toBe('15');

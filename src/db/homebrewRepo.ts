@@ -218,6 +218,87 @@ function newestFirst(a: HomebrewFileMeta, b: HomebrewFileMeta): number {
   return b.addedAt - a.addedAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 }
 
+/**
+ * The book the Workshop keeps the player's own entries in: one file per
+ * device, made on the first save. Its entries are `name|MyHomebrew`, apart
+ * from every official printing of the same name.
+ */
+export const WORKSHOP_SOURCE = 'MyHomebrew';
+const WORKSHOP_TITLE = 'My homebrew';
+
+/** An entry's identity in a file: its name and its book, compared without case. */
+export interface EntryKey {
+  name: string;
+  source: string;
+}
+
+function isEntry(e: unknown, key: EntryKey): boolean {
+  return (
+    isRecord(e) &&
+    typeof e.name === 'string' &&
+    typeof e.source === 'string' &&
+    e.name.toLowerCase() === key.name.toLowerCase() &&
+    e.source.toLowerCase() === key.source.toLowerCase()
+  );
+}
+
+/** The player's Workshop file among stored rows: theirs to edit, in the Workshop's book. */
+function isWorkshopFile(row: HomebrewFileMeta): boolean {
+  return row.editable && row.sourceIds[0] === WORKSHOP_SOURCE;
+}
+
+/** A save refused because another entry of that type already has the name and book. */
+export class EntryClash extends Error {}
+
+/** A new file the player owns, with no entries yet. */
+function editableRow(fullName: string, abbreviation: string): HomebrewFileRow {
+  return {
+    id: crypto.randomUUID(),
+    fileName: `${fullName.replaceAll(/[^\w-]+/g, '_')}.json`,
+    json: {
+      _meta: {
+        sources: [
+          { json: abbreviation, abbreviation, full: fullName, authors: [], version: '1.0.0' },
+        ],
+      },
+    },
+    enabled: true,
+    editable: true,
+    sourceIds: [abbreviation],
+    counts: {},
+    addedAt: Date.now(),
+  };
+}
+
+/**
+ * Write new content to a file the player owns, bumping `rev` so the registry
+ * and the search index notice a change under the same id. The caller holds a
+ * transaction over both tables. False when the row is gone.
+ */
+async function rewrite(id: string, json: Record<string, unknown>): Promise<boolean> {
+  const count = await db.homebrewFiles
+    .where('id')
+    .equals(id)
+    .modify((row) => {
+      delete row.json;
+      row.counts = homebrewEntityCounts(json);
+      row.rev = (row.rev ?? 0) + 1;
+    });
+  if (count > 0) await db.homebrewJson.put({ id, json });
+  return count > 0;
+}
+
+/** A stored file the player owns, with its content, or why it cannot take a save. */
+async function ownedFile(id: string): Promise<HomebrewFile> {
+  const row = await db.homebrewFiles.get(id);
+  if (row === undefined) throw new Error('that homebrew file is no longer on this device');
+  const read = partitionHomebrewRows(await withContent([row]));
+  const file = read.files[0];
+  if (file === undefined) throw new Error(read.errors[0]?.message ?? 'the file could not be read');
+  if (!file.editable) throw new Error('that file was imported, so it cannot be changed here');
+  return file;
+}
+
 export const homebrewRepo = {
   /** Every stored homebrew file, newest first. */
   async listSafe(): Promise<HomebrewListResult> {
@@ -421,23 +502,7 @@ export const homebrewRepo = {
 
   /** New in-app editable homebrew file (uuid id — edits don't change identity). */
   async createEditable(fullName: string, abbreviation: string): Promise<HomebrewFileRow> {
-    const json: Record<string, unknown> = {
-      _meta: {
-        sources: [
-          { json: abbreviation, abbreviation, full: fullName, authors: [], version: '1.0.0' },
-        ],
-      },
-    };
-    const row: HomebrewFileRow = {
-      id: crypto.randomUUID(),
-      fileName: `${fullName.replaceAll(/[^\w-]+/g, '_')}.json`,
-      json,
-      enabled: true,
-      editable: true,
-      sourceIds: [abbreviation],
-      counts: {},
-      addedAt: Date.now(),
-    };
+    const row = editableRow(fullName, abbreviation);
     await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () => putHomebrewRow(row));
     return row;
   },
@@ -445,21 +510,79 @@ export const homebrewRepo = {
   async saveEditable(id: string, json: Record<string, unknown>): Promise<void> {
     // Bump rev so the registry/search signature notices the content change even
     // though the file id stays the same across edits.
-    const modified = await db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
-      const count = await db.homebrewFiles
-        .where('id')
-        .equals(id)
-        .modify((row) => {
-          delete row.json;
-          row.counts = homebrewEntityCounts(json);
-          row.rev = (row.rev ?? 0) + 1;
-        });
-      if (count > 0) await db.homebrewJson.put({ id, json });
-      return count;
-    });
+    const modified = await db.transaction('rw', db.homebrewFiles, db.homebrewJson, () =>
+      rewrite(id, json),
+    );
     // Matching no rows is not success. The builder reports what this resolves
     // to, so a save against a file deleted in another tab has to say so rather
     // than close the form over an edit that reached nothing.
-    if (modified === 0) throw new Error(`homebrew file ${id} no longer exists`);
+    if (!modified) throw new Error(`homebrew file ${id} no longer exists`);
+  },
+
+  /** Every file the player owns, with its content: where the Workshop finds their entries. */
+  async ownedSafe(): Promise<HomebrewListResult> {
+    const rows = (await db.homebrewFiles.toArray()).filter((r) => r.editable === true);
+    const result = partitionHomebrewRows(await withContent(rows));
+    result.files.sort(newestFirst);
+    return result;
+  },
+
+  /**
+   * Save one entry into a file the player owns, as one write: into `fileId`,
+   * else the Workshop file, made on the first save (`created` says so). It
+   * takes the place of the entry `replaces` names (the one the editor opened,
+   * renamed or not); without `replaces` it is added. An entry of that type with
+   * the new name and book already, other than the one it replaces, refuses the
+   * save (`EntryClash`): neither a new entry nor a rename ever overwrites one.
+   */
+  async saveEntry(
+    type: string,
+    entry: Record<string, unknown> & EntryKey,
+    opts: { fileId?: string; replaces?: EntryKey } = {},
+  ): Promise<{ fileId: string; created: boolean }> {
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      let file: HomebrewFile | undefined;
+      if (opts.fileId !== undefined) file = await ownedFile(opts.fileId);
+      else {
+        const mine = partitionHomebrewMeta(await db.homebrewFiles.toArray()).files.find(
+          isWorkshopFile,
+        );
+        if (mine !== undefined) file = await ownedFile(mine.id);
+      }
+      const row = file === undefined ? editableRow(WORKSHOP_TITLE, WORKSHOP_SOURCE) : undefined;
+      const json = structuredClone(file?.json ?? (row?.json as Record<string, unknown>));
+      const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
+      const { replaces } = opts;
+      const at = replaces === undefined ? -1 : list.findIndex((e) => isEntry(e, replaces));
+      if (list.some((e, i) => i !== at && isEntry(e, entry))) {
+        throw new EntryClash(`you already have one called ${entry.name}`);
+      }
+      if (at === -1) list.push(entry);
+      else list[at] = entry;
+      json[type] = list;
+      assertJsonWithinLimits(json);
+      if (row !== undefined) {
+        await putHomebrewRow({ ...row, json, counts: homebrewEntityCounts(json) });
+        return { fileId: row.id, created: true };
+      }
+      const id = (file as HomebrewFile).id;
+      if (!(await rewrite(id, json)))
+        throw new Error('that homebrew file is no longer on this device');
+      return { fileId: id, created: false };
+    });
+  },
+
+  /** Take one entry out of a file the player owns. False when it was not there. */
+  async removeEntry(fileId: string, type: string, key: EntryKey): Promise<boolean> {
+    return db.transaction('rw', db.homebrewFiles, db.homebrewJson, async () => {
+      const file = await ownedFile(fileId);
+      const json = structuredClone(file.json);
+      const list: unknown[] = Array.isArray(json[type]) ? [...(json[type] as unknown[])] : [];
+      const at = list.findIndex((e) => isEntry(e, key));
+      if (at === -1) return false;
+      list.splice(at, 1);
+      json[type] = list;
+      return rewrite(fileId, json);
+    });
   },
 };

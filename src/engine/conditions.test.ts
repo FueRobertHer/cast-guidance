@@ -294,42 +294,39 @@ describe('resolveD20', () => {
     ...over,
   });
 
-  it('takes the dock mode alone when nothing applies or the player ignored the effects', () => {
-    expect(resolveD20('adv', effects({})).advantage).toBe('adv');
-    expect(resolveD20(undefined, undefined)).toEqual({
-      advantage: undefined,
-      cancelled: false,
-      penalty: 0,
-      autoFail: false,
-    });
-    expect(resolveD20('dis', undefined).advantage).toBe('dis');
+  it('rolls a single d20 when nothing applies or the player ignored the effects', () => {
+    const single = { advantage: undefined, cancelled: false, penalty: 0, autoFail: false };
+    expect(resolveD20(effects({}))).toEqual(single);
+    expect(resolveD20(undefined)).toEqual(single);
   });
 
-  it("applies a condition's disadvantage or advantage on a normal roll", () => {
-    expect(resolveD20(undefined, effects({ disadvantage: ['Poisoned'] })).advantage).toBe('dis');
-    expect(resolveD20(undefined, effects({ advantage: ['Invisible'] })).advantage).toBe('adv');
+  it("applies a condition's disadvantage or advantage", () => {
+    expect(resolveD20(effects({ disadvantage: ['Poisoned'] })).advantage).toBe('dis');
+    expect(resolveD20(effects({ advantage: ['Invisible'] })).advantage).toBe('adv');
   });
 
   it('cancels any advantage against any disadvantage, however many of each', () => {
-    const r = resolveD20('adv', effects({ disadvantage: ['Poisoned', 'Prone'] }));
+    const r = resolveD20(
+      effects({ advantage: ['Invisible'], disadvantage: ['Poisoned', 'Prone'] }),
+    );
     expect(r).toMatchObject({ advantage: undefined, cancelled: true });
     expect(
-      resolveD20(undefined, effects({ advantage: ['Invisible'], disadvantage: ['Prone'] })),
+      resolveD20(effects({ advantage: ['Invisible'], disadvantage: ['Prone'] })),
     ).toMatchObject({ advantage: undefined, cancelled: true });
   });
 
   it('does not stack the same kind twice', () => {
-    expect(resolveD20('dis', effects({ disadvantage: ['Poisoned'] }))).toMatchObject({
+    expect(resolveD20(effects({ disadvantage: ['Poisoned', 'Prone'] }))).toMatchObject({
       advantage: 'dis',
       cancelled: false,
     });
   });
 
   it('carries the penalty and an automatic failure through', () => {
-    expect(
-      resolveD20(undefined, effects({ penalty: { amount: -4, source: 'Exhaustion 2' } })).penalty,
-    ).toBe(-4);
-    expect(resolveD20(undefined, effects({ autoFail: ['Stunned'] })).autoFail).toBe(true);
+    expect(resolveD20(effects({ penalty: { amount: -4, source: 'Exhaustion 2' } })).penalty).toBe(
+      -4,
+    );
+    expect(resolveD20(effects({ autoFail: ['Stunned'] })).autoFail).toBe(true);
   });
 });
 

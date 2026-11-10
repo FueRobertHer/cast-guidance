@@ -146,7 +146,7 @@
   --color-meter-mid: var(--cg-meter-mid);
   --color-scrim: var(--cg-scrim);
 
-  /* Only floating things cast shadows: the dice dock and button (`float`),
+  /* Only floating things cast shadows: the dice button (`float`),
      sheets, dialogs and the roll toast (`overlay`). Cards sit flat in dark. */
   --shadow-float: var(--cg-shadow-float);
   --shadow-overlay: var(--cg-shadow-overlay);
@@ -233,7 +233,7 @@
   --spacing-tap: 2.75rem; /* 44px: a control used during play, apart from the kinds docs/a11y-audit.md names */
   --spacing-header: 3.5rem; /* 56px: the sheet header, section headers */
   --spacing-tabbar: 64px; /* the tab bar, before the safe-area inset; px with its labels */
-  --spacing-dock: 3rem; /* 48px: the dice dock */
+  --spacing-dock: 3.25rem; /* 52px: the dice button */
   --container-content: 40rem; /* 640px: the widest one column gets */
 
   /*
@@ -329,7 +329,7 @@ html {
   }
 }
 /*
- * The sheet's dice dock floats above the tab bar (from `lg`, alone at the
+ * The sheet's dice button floats above the tab bar (from `lg`, alone at the
  * bottom right) and moves away only while the page scrolls down, so where it
  * is drawn the padding clears it too. Without this, Tab could land on a
  * control under it without scrolling: in landscape, the score of the last

@@ -10,7 +10,6 @@ import {
 } from '@/engine/conditions';
 import type { RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
-import { currentAdvantage } from '@/stores/advMode';
 import { namedFirst, whenLanded } from '@/stores/heldRoll';
 import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
 
@@ -119,13 +118,7 @@ function rollCue(e: D20Effects, r: D20Resolution): string {
   const parts: string[] = [];
   if (r.autoFail) parts.push(`Fails automatically: ${names(e.autoFail)}`);
   if (r.cancelled) {
-    const sources = [...e.advantage, ...e.disadvantage];
-    // The dock's mode can be the other half of the pair.
-    parts.push(
-      sources.length > 0
-        ? `Advantage and disadvantage cancel: ${names(sources)}`
-        : 'Advantage and disadvantage cancel',
-    );
+    parts.push(`Advantage and disadvantage cancel: ${names([...e.advantage, ...e.disadvantage])}`);
   } else if (r.advantage === 'adv' && e.advantage.length > 0) {
     parts.push(`Advantage: ${names(e.advantage)}`);
   } else if (r.advantage === 'dis' && e.disadvantage.length > 0) {
@@ -177,7 +170,7 @@ export interface TurnExtra {
 export interface D20Ask {
   readonly kind: 'ask';
   label: string;
-  /** The mode the sheet sets: the dock's, the conditions', features' and effects' combined. */
+  /** The mode the sheet sets: the conditions', features' and effects' combined. */
   preset: RollMode;
   /** Dice that roll in unless the prompt takes them out (Bless). */
   rollsIn: ReadonlyArray<{ dice: string; source: string }>;
@@ -226,14 +219,13 @@ function chosenCue(mode: RollMode, preset: RollMode, e: D20Effects): string {
 }
 
 /**
- * A d20 test (`expr` leads with 1d20) under the dock's mode and the
- * conditions' effects, asked before it is rolled: the roll prompt shows what
+ * A d20 test (`expr` leads with 1d20) under the conditions' effects, asked before it is rolled: the roll prompt shows what
  * the sheet sets and why, and `roll` makes it under what the prompt chose.
  * Advantage and disadvantage combine and cancel, the 2024 exhaustion penalty
  * is a term of its own, and an automatic failure is marked on the result,
  * never hidden: the dice still show. `ignored` is the player's override for
- * this one roll, which leaves the dock's mode, and a feature's advantage
- * (`advantageFrom`: War Caster, Durable), which is not a condition's to ignore.
+ * this one roll, which leaves a feature's advantage (`advantageFrom`: War
+ * Caster, Durable), which is not a condition's to ignore.
  * A mode the prompt picks over the sheet's is the last word on advantage, and
  * the cue says what it set aside.
  *
@@ -287,9 +279,7 @@ export function d20Ask(
     advantage: [...kept.advantage, ...advantageFrom, ...(riders?.advantage ?? [])],
     disadvantage: [...kept.disadvantage, ...(riders?.disadvantage ?? [])],
   };
-  // Read once, as the prompt opens: the dock can change while it waits.
-  const dock = currentAdvantage();
-  const resolution = resolveD20(dock, used);
+  const resolution = resolveD20(used);
   const preset: RollMode = resolution.advantage ?? 'normal';
   /** The effects and how they resolve with what `choice` declares for the turn counted. */
   const under = (choice: D20Choice | undefined) => {
@@ -302,7 +292,7 @@ export function d20Ask(
       advantage: [...used.advantage, ...sources('adv')],
       disadvantage: [...used.disadvantage, ...sources('dis')],
     };
-    return { used: withDeclared, resolution: resolveD20(dock, withDeclared) };
+    return { used: withDeclared, resolution: resolveD20(withDeclared) };
   };
   const presetFor = (choice?: D20Choice): RollMode =>
     under(choice).resolution.advantage ?? 'normal';
