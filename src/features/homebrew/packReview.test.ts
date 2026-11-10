@@ -117,10 +117,15 @@ describe('where packs disagree', () => {
     ]);
   });
 
-  it('names as the winner the rule the engine plays by, for every rule', () => {
+  it('names as the winner the rule the engine plays by, for every rule and everyone', () => {
     const everyone = pack(
       'Everyone',
       { tableRules: { critDamage: 'maxPlusRoll', restLength: 'gritty', hpOnLongRest: 'half' } },
+      every,
+    );
+    const also = pack(
+      'Also everyone',
+      { tableRules: { critDamage: 'doubleDice', hpOnLongRest: 'hitDice' } },
       every,
     );
     const hilds = pack(
@@ -128,19 +133,27 @@ describe('where packs disagree', () => {
       { tableRules: { critDamage: 'doubleTotal', restLength: 'gritty', hpOnLongRest: 'all' } },
       to('hild'),
     );
-    const settings: Array<Partial<TableRuleChoices>> = [
+    const settings = [
       {},
       { critDamage: 'doubleDice' },
       { hpOnLongRest: 'hitDice', flanking: 'advantage' },
+      // A value Settings cannot hold is no choice, as the engine reads it.
+      { critDamage: 'bogus' },
+    ] as Array<Partial<TableRuleChoices>>;
+    const orders = [
+      [everyone, also, hilds],
+      [everyone, hilds, also],
+      [also, everyone, hilds],
+      [also, hilds, everyone],
+      [hilds, everyone, also],
+      [hilds, also, everyone],
     ];
     const rulesOf = (p: PackInPlay) => readTableRules(p.guidance.tableRules).rules;
     let checked = 0;
-    for (const order of [
-      [everyone, hilds],
-      [hilds, everyone],
-    ]) {
+    for (const order of orders) {
       for (const chosen of settings) {
         const clashes = packConflicts(order, chosen);
+        const read = readTableRules(chosen).rules;
         // The registry's packs, as `rulePackEntries` hands them to the engine.
         const ctx = {
           byType: (type: string) =>
@@ -153,26 +166,51 @@ describe('where packs disagree', () => {
               : [],
           rules: chosen,
         };
-        const played = tableRulesFor({ id: 'hild', rulesVersion: '2024' }, ctx).rules;
-        for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
-          const clash = clashes.find((c) => c.what === RULE_WORDS[id].name.toLowerCase());
-          const winner = order.find((p) => p.id === clash?.winnerId);
-          if (winner !== undefined) {
-            expect(rulesOf(winner)[id], `${id} under ${JSON.stringify(chosen)}`).toBe(played[id]);
+        // Hild's sets every rule a pack here sets, so a clash it is in is Hild's, and one it is not in, everyone else's.
+        for (const who of ['hild', 'bram']) {
+          const played = tableRulesFor({ id: who, rulesVersion: '2024' }, ctx).rules;
+          const theirs = clashes.filter((c) => (who === 'hild') === c.ids.includes(hilds.id));
+          const clashOn = (id: TableRuleId) =>
+            theirs.find((c) => c.what === RULE_WORDS[id].name.toLowerCase());
+          for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+            const clash = clashOn(id);
+            const winner = order.find((p) => p.id === clash?.winnerId);
+            if (winner === undefined) continue;
+            const where = `${who}, ${id}, ${order.map((p) => p.name).join(' < ')}, ${JSON.stringify(chosen)}`;
+            expect(rulesOf(winner)[id], where).toBe(played[id]);
             checked += 1;
           }
-          // Both set crits; Settings hides the every-character pack's, so only then is there no clash.
-          if (id === 'critDamage') {
-            expect(clash !== undefined, JSON.stringify(chosen)).toBe(
-              chosen.critDamage === undefined,
-            );
+          // The every-character packs disagree on crits and HP on a long rest, and Hild's too;
+          // a choice in Settings hides only the every-character packs.
+          const crits = clashOn('critDamage');
+          expect(crits !== undefined, `${who} crits`).toBe(read.critDamage === undefined);
+          expect(clashOn('hpOnLongRest') !== undefined, `${who} HP`).toBe(
+            read.hpOnLongRest === undefined,
+          );
+          expect(clashOn('restLength')).toBeUndefined();
+          if (who === 'hild') {
             expect(played.critDamage).toBe('doubleTotal');
+            expect(crits?.why ?? 'chosen').toBe('chosen');
           }
         }
       }
     }
-    // Crits in four cases, HP on a long rest in four: rest length agrees, so never a clash.
-    expect(checked).toBe(8);
+    // Per order: crits and HP for both under no choice or a bogus one, one of them under each other.
+    expect(checked).toBe(orders.length * (4 + 2 + 2 + 4));
+  });
+
+  it('keeps everyone else apart from a character, whatever their id', () => {
+    const odd = '\u0000anyone else';
+    expect(
+      packConflicts([
+        pack('A', rest('gritty'), every),
+        pack('B', rest('heroic'), every),
+        pack('C', rest('standard'), to(odd)),
+      ]).map(describeConflict),
+    ).toEqual([
+      'A, B and C all set rest length. C wins: it is applied to those characters, over every character.',
+      'A and B both set rest length. B wins: it comes later in your pack order.',
+    ]);
   });
 
   it('a rule chosen in Settings is over every pack applied to every character', () => {

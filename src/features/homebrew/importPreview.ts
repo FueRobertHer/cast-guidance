@@ -1043,38 +1043,42 @@ function packSets(p: PackInPlay): PackSets {
   return sets;
 }
 
-/** A character no pack names: who the packs applied to every character alone reach. */
-const NAMED_BY_NONE = '\u0000anyone else';
-
 /** Which pack a character plays a rule by, by its place among the packs, and whether it names them. */
 type PlayedBy = Partial<Record<TableRuleId, { place: number; named: boolean }>>;
 
 /**
- * The pack each rule comes from for the character `who`, as the engine
- * decides it (`ruleSources`, then `appRulesFor` where the rule is the app's):
- * none where a choice in Settings or the book sets it. Each pack goes in
- * named by its place, so two packs sharing a name are never confused.
+ * Some packs as the engine reads them, each named by its place so two packs
+ * sharing a name are never confused, with the app's rules from them, which
+ * are the same for every character. `appRulesFor` names the pack behind a
+ * rule, which decides only where Settings has no choice of it.
  */
-function playedBy(
-  packs: readonly DataEntity[],
-  who: string,
-  settings: Readonly<Partial<TableRuleChoices>>,
-): PlayedBy {
+function engineView(packs: readonly DataEntity[], settings: Readonly<Partial<TableRuleChoices>>) {
   const ctx = {
     byType: (type: string) => (type === RULE_PACK_TYPE ? packs : []),
     rules: settings,
   };
-  const doc = { id: who, rulesVersion: '2024' as const };
-  const from = ruleSources(doc, ctx);
-  const app = appRulesFor(ctx, doc.rulesVersion);
-  // `appRulesFor` names the pack behind a rule, which decides only where Settings has none.
+  const app = appRulesFor(ctx, '2024').packs;
   const chosen = readTableRules(settings).rules;
+  const appPacks: Partial<Record<TableRuleId, string>> = {};
+  for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
+    if (chosen[id] === undefined && app[id] !== undefined) appPacks[id] = app[id];
+  }
+  return { ctx, appPacks };
+}
+
+/**
+ * The pack each rule comes from for the character `who`, as the engine
+ * decides it (`ruleSources`, then the app's pack where the rule is the
+ * app's): none where a choice in Settings or the book sets it.
+ */
+function playedBy(view: ReturnType<typeof engineView>, who: string): PlayedBy {
+  const from = ruleSources({ id: who, rulesVersion: '2024' }, view.ctx);
   const out: PlayedBy = {};
   for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
     const source = from[id];
-    const appPack = app.packs[id];
+    const appPack = view.appPacks[id];
     if (source.from === 'pack') out[id] = { place: Number(source.pack), named: true };
-    else if (source.from === 'app' && chosen[id] === undefined && appPack !== undefined)
+    else if (source.from === 'app' && appPack !== undefined)
       out[id] = { place: Number(appPack), named: false };
   }
   return out;
@@ -1124,17 +1128,16 @@ export function packConflicts(
     castGuidance: l.pack.guidance,
     appliesTo: l.to,
   }));
+  // An id no pack names, for everyone else: no character's id, however it was made.
+  let nobody = '\u0000anyone else';
+  while (people.includes(nobody)) nobody += '\u0000';
   // For each character: the pack behind each rule with every pack on, and with each alone.
+  const all = engineView(entries, app);
+  const each = entries.map((e) => engineView([e], app));
   const played = new Map(
     people.map((who) => {
-      const id = who === OTHERS ? NAMED_BY_NONE : who;
-      return [
-        who,
-        {
-          all: playedBy(entries, id, app),
-          alone: entries.map((e) => playedBy([e], id, app)),
-        },
-      ] as const;
+      const id = who === OTHERS ? nobody : who;
+      return [who, { all: playedBy(all, id), alone: each.map((v) => playedBy(v, id)) }] as const;
     }),
   );
   for (const id of Object.keys(TABLE_RULES) as TableRuleId[]) {
