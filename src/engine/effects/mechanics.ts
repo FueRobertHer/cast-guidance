@@ -9,7 +9,8 @@
  *    what its `drop` leaves out, or replace it when it says `replace`;
  * 3. what it inherits, which each call site knows: the curated row for its key
  *    or for the entry it copies (`basedOn`), else the prose scan, then its spend
- *    links; an item's magic fields.
+ *    links; an item's magic fields. A built-in rule set's row (`RULE_SET_TYPE`)
+ *    under the subject's `ruleKeys` is its curated row, in place of `CURATED`.
  *
  * Data without `castGuidance`, and a character no pack applies to, reaches only
  * layer 3, exactly as the call sites did before this seam.
@@ -28,6 +29,11 @@ import {
   CAST_GUIDANCE_LIMITS as L,
   own,
   RULE_PACK_TYPE,
+  RULE_SET_EDITIONS,
+  RULE_SET_LIMITS,
+  RULE_SET_PARTS,
+  RULE_SET_SCANS,
+  RULE_SET_TYPE,
 } from '../castGuidance';
 import { type Formula, readAmount } from '../formula';
 import { SPELL_SCHOOLS } from '../spellQuery';
@@ -779,6 +785,194 @@ function patchesFor(col: Collector): Map<string, PackPatches> {
 }
 
 // ---------------------------------------------------------------------------
+// Built-in rule sets
+// ---------------------------------------------------------------------------
+
+/** The code table a built-in row stands in for (`RULE_SET_PARTS`). */
+export type RulePart = (typeof RULE_SET_PARTS)[number];
+
+/** Whether a built-in row turns the prose scan off for its entry (`replace`) or runs beside it. */
+export type RuleScan = (typeof RULE_SET_SCANS)[number];
+
+/** One built-in row, read. */
+export interface RuleRow {
+  part: RulePart;
+  /** Lowercased, as the part's code table keys its rows. */
+  keys: readonly string[];
+  scan: RuleScan;
+  effects: readonly EffectTemplate[];
+}
+
+/** A built-in rule set (`RULE_SET_TYPE` entry), read. */
+export interface ReadRuleSet {
+  name: string;
+  edition?: (typeof RULE_SET_EDITIONS)[number];
+  rows: RuleRow[];
+  problems: string[];
+}
+
+const RULE_SETS = new WeakMap<object, ReadRuleSet>();
+
+/** A built-in rule set, read once per object. Never throws. */
+export function readRuleSet(raw: unknown): ReadRuleSet {
+  if (!isRecord(raw)) return { name: 'A rule set', rows: [], problems: ['is not a rule set'] };
+  const cached = RULE_SETS.get(raw);
+  if (cached !== undefined) return cached;
+  const read = readRuleSetOnce(raw);
+  RULE_SETS.set(raw, read);
+  return read;
+}
+
+const isOneOf = <T extends string>(values: readonly T[], v: unknown): v is T =>
+  typeof v === 'string' && (values as readonly string[]).includes(v);
+
+function readRuleSetOnce(raw: Record<string, unknown>): ReadRuleSet {
+  const named = own(raw, 'name');
+  const name = typeof named === 'string' && named.trim() !== '' ? clip(named.trim()) : 'A rule set';
+  const read: ReadRuleSet = { name, rows: [], problems: [] };
+  if (own(raw, 'type') !== RULE_SET_TYPE) {
+    read.problems.push(`"type" is "${RULE_SET_TYPE}"`);
+    return read;
+  }
+  const version = guidanceVersion(raw);
+  if ('problem' in version) {
+    read.problems.push(version.problem);
+    return read;
+  }
+  const edition = own(raw, 'edition');
+  if (isOneOf(RULE_SET_EDITIONS, edition)) read.edition = edition;
+  else if (edition !== undefined) read.problems.push('"edition" is "2014", "2024" or "both"');
+  const rows = own(raw, 'rows');
+  if (!Array.isArray(rows)) {
+    read.problems.push('"rows" is not a list');
+    return read;
+  }
+  if (rows.length > RULE_SET_LIMITS.rowsPerSet) {
+    read.problems.push(`only the first ${RULE_SET_LIMITS.rowsPerSet} rows count`);
+  }
+  // Keys already taken, by part: a second row under one is left out.
+  const taken = new Map<RulePart, Set<string>>();
+  rows.slice(0, RULE_SET_LIMITS.rowsPerSet).forEach((row, i) => {
+    const where = `row ${i + 1}`;
+    if (!isRecord(row)) {
+      read.problems.push(`${where}: is not a row`);
+      return;
+    }
+    const part = own(row, 'part');
+    if (!isOneOf(RULE_SET_PARTS, part)) {
+      read.problems.push(`${where}: has no part "${clip(part)}"`);
+      return;
+    }
+    const scan = own(row, 'scan') ?? 'replace';
+    if (!isOneOf(RULE_SET_SCANS, scan)) {
+      read.problems.push(`${where}: "scan" is "replace" or "keep"`);
+      return;
+    }
+    const rawKeys = own(row, 'keys');
+    if (!Array.isArray(rawKeys) || rawKeys.length === 0) {
+      read.problems.push(`${where}: "keys" lists the keys it is found under`);
+      return;
+    }
+    if (rawKeys.length > RULE_SET_LIMITS.keysPerRow) {
+      read.problems.push(`${where}: only the first ${RULE_SET_LIMITS.keysPerRow} keys count`);
+    }
+    const inPart = taken.get(part) ?? new Set<string>();
+    taken.set(part, inPart);
+    const keys: string[] = [];
+    for (const k of rawKeys.slice(0, RULE_SET_LIMITS.keysPerRow)) {
+      if (typeof k !== 'string' || k.trim() === '' || k.length > L.targetLength) {
+        read.problems.push(`${where}: a key is a name, as "stunning strike|monk"`);
+        continue;
+      }
+      const key = k.trim().toLowerCase();
+      if (inPart.has(key) || keys.includes(key)) {
+        read.problems.push(`${where}: "${clip(key)}" is already a row`);
+        continue;
+      }
+      keys.push(key);
+    }
+    if (keys.length === 0) return;
+    const at = `${where} (${clip(keys[0])})`;
+    if (!Array.isArray(own(row, 'effects'))) {
+      read.problems.push(`${at}: "effects" is not a list`);
+      return;
+    }
+    // Only a row that counts takes its keys, so a later one may still have them.
+    for (const key of keys) inPart.add(key);
+    const { effects, problems } = readStoredEffects(own(row, 'effects'));
+    for (const problem of problems) read.problems.push(`${at}: ${problem}`);
+    read.rows.push({ part, keys, scan, effects });
+  });
+  return read;
+}
+
+/** Rows by part, then by key. */
+type RuleIndex = Map<RulePart, Map<string, RuleRow>>;
+
+/** Per rule set list: the registry hands out the same list until it rebuilds. */
+const RULE_INDEX = new WeakMap<object, RuleIndex>();
+/** Per derive, so a context that makes a new list per call still reads it once. */
+const RULE_INDEX_OF = new WeakMap<Collector, RuleIndex>();
+/** Rule set objects whose problems were logged. */
+const LOGGED = new WeakSet<object>();
+
+function ruleIndexFor(col: Collector): RuleIndex {
+  const known = RULE_INDEX_OF.get(col);
+  if (known !== undefined) return known;
+  const sets = col.ctx.byType(RULE_SET_TYPE);
+  const index = RULE_INDEX.get(sets) ?? buildRuleIndex(sets);
+  RULE_INDEX.set(sets, index);
+  RULE_INDEX_OF.set(col, index);
+  return index;
+}
+
+function buildRuleIndex(sets: readonly DataEntity[]): RuleIndex {
+  const index: RuleIndex = new Map();
+  for (const entry of sets) {
+    const set = readRuleSet(entry);
+    // The app's own files: a problem is a bug in them, found by their tests, not
+    // something a player can fix, so it goes to the console rather than the sheet.
+    const raw: unknown = entry;
+    const once = typeof raw === 'object' && raw !== null;
+    if (set.problems.length > 0 && !(once && LOGGED.has(raw))) {
+      if (once) LOGGED.add(raw);
+      console.warn(`${set.name}: ${set.problems.join('; ')}`);
+    }
+    for (const row of set.rows) {
+      const byKey = index.get(row.part) ?? new Map<string, RuleRow>();
+      index.set(row.part, byKey);
+      // A later set's row wins over an earlier one's for the same part and key.
+      for (const key of row.keys) byKey.set(key, row);
+    }
+  }
+  return index;
+}
+
+/**
+ * The built-in row of `part` found under the first of `keys` that has one, as
+ * the part's code table is tried today: the first key with a row wins. While
+ * rows are moving out of code, `inCode` says which keys the code table still
+ * has a row under, and the walk stops at the first of those, so a built-in row
+ * under a later key never takes the place of a code row under an earlier one.
+ */
+export function builtInRuleFor(
+  col: Collector,
+  part: RulePart,
+  keys: readonly string[],
+  inCode?: (key: string) => boolean,
+): RuleRow | undefined {
+  const byKey = ruleIndexFor(col).get(part);
+  if (byKey === undefined) return undefined;
+  for (const k of keys) {
+    const key = k.toLowerCase();
+    const row = byKey.get(key);
+    if (row !== undefined) return row;
+    if (inCode?.(key) === true) return undefined;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // The seam
 // ---------------------------------------------------------------------------
 
@@ -797,8 +991,30 @@ export interface MechanicsSubject {
   target: string;
   /** What `classLevel` and level tables read in its formulas; the character's level when absent. */
   classLevel?: number;
-  /** Layer 3: what it inherits, which the call site knows how to collect. */
-  inherited?: () => void;
+  /**
+   * The keys its curated row is found under, in the order the call site tries
+   * `CURATED`: a built-in rule set's `curated` row under the first of them that
+   * has one is its curated row (layer 3). Absent: none is looked for.
+   */
+  ruleKeys?: readonly string[];
+  /**
+   * Whether the code table the call site reads (`CURATED`) has a row under a
+   * lowercased key: the first of `ruleKeys` with a row in either table wins, as
+   * the call site tried them, so a code row under an earlier key is still read.
+   */
+  inCode?: (key: string) => boolean;
+  /**
+   * Layer 3: what it inherits, which the call site knows how to collect.
+   * `builtIn` is the built-in curated row found for `ruleKeys`, already
+   * emitted: the call site then skips `CURATED`, and its prose scan when the row
+   * says `replace`.
+   */
+  inherited?: (builtIn: BuiltInHit | undefined) => void;
+}
+
+/** What a call site needs to know of the built-in row `mechanicsOf` emitted for it. */
+export interface BuiltInHit {
+  scan: RuleScan;
 }
 
 const labelOf = (e: EffectInput): string | undefined =>
@@ -809,12 +1025,18 @@ function emit(
   templates: readonly EffectTemplate[],
   origin: EffectOrigin,
   classLevel: number,
+  builtIn = false,
 ): void {
   for (const t of templates) {
     // A fresh copy each time: fold time fills its numbers in place.
     const e = { ...structuredClone(t.effect), origin } as EffectInput;
     if (t.formulas !== undefined) {
-      e.formulas = t.formulas.map((f) => ({ field: f.field, formula: f.formula, classLevel }));
+      e.formulas = t.formulas.map((f) => ({
+        field: f.field,
+        formula: f.formula,
+        classLevel,
+        ...(builtIn ? { builtIn: true } : {}),
+      }));
     }
     if (t.while !== undefined) e.while = t.while;
     col.add(e);
@@ -857,7 +1079,13 @@ export function mechanicsOf(col: Collector, s: MechanicsSubject): void {
   if (self !== undefined) emit(col, self.effects, { ...s.origin }, level);
   if (self?.replace === true) return;
   const from = col.effects.length;
-  s.inherited?.();
+  // The built-in curated row is inherited, as the `CURATED` row it stands in
+  // for: after `from`, so the entry's `drop` reaches it, and with the subject's
+  // own origin, which spend links find its action by.
+  const row =
+    s.ruleKeys === undefined ? undefined : builtInRuleFor(col, 'curated', s.ruleKeys, s.inCode);
+  if (row !== undefined) emit(col, row.effects, s.origin, level, true);
+  s.inherited?.(row === undefined ? undefined : { scan: row.scan });
   if (self === undefined || self.drop.length === 0) return;
   for (let i = col.effects.length - 1; i >= from; i--) {
     const e = col.effects[i] as EffectInput;

@@ -1885,6 +1885,11 @@ export function emitCuratedTrait(col: Collector, traitName: string, origin: Effe
   return fn !== undefined;
 }
 
+/** Whether `CURATED` has a row under a key, as `emitCuratedEffects` looks it up. */
+export function hasCuratedRow(key: string): boolean {
+  return CURATED[key] !== undefined;
+}
+
 /** Returns whether a curated entry handled the key (callers fall back to prose scan). */
 export function emitCuratedEffects(
   col: Collector,

@@ -23,9 +23,23 @@ const vercelConfig: { headers?: unknown } = JSON.parse(
 // them, and `bun run notices` turns them into THIRD_PARTY_NOTICES.md.
 const shippedModules = shippedModulesCollector(__dirname);
 
+// The built-in rule sets' folder, as Rolldown spells a module id (forward slashes).
+const RULES_DIR = `${path.resolve(__dirname, 'src/rules').replaceAll('\\', '/')}/`;
+
 export default defineConfig({
   build: {
     license: { fileName: '.vite/licenses.json' },
+    rolldownOptions: {
+      output: {
+        // A built-in rule set (`src/rules/`, loaded by `src/data5e/builtInRules.ts`)
+        // is data standing in for code: a name of its own, so the bundle budget
+        // measures it on a line of its own.
+        chunkFileNames: (chunk) =>
+          (chunk.facadeModuleId ?? '').replaceAll('\\', '/').startsWith(RULES_DIR)
+            ? 'assets/rule-set-[name]-[hash].js'
+            : 'assets/[name]-[hash].js',
+      },
+    },
   },
   worker: {
     plugins: () => [shippedModules.worker()],

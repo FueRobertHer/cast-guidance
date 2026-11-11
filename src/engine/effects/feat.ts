@@ -1,4 +1,4 @@
-import { emitCuratedEffects } from '../curated/curatedEffects';
+import { emitCuratedEffects, hasCuratedRow } from '../curated/curatedEffects';
 import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
@@ -177,10 +177,15 @@ export function collectFeatEntity(
     label: origin.label,
     origin,
     target: uid,
-    inherited: () => {
-      const curated = uids.some((key) =>
-        emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
-      );
+    ruleKeys: uids,
+    inCode: hasCuratedRow,
+    inherited: (builtIn) => {
+      const curated =
+        builtIn !== undefined
+          ? builtIn.scan === 'replace'
+          : uids.some((key) =>
+              emitCuratedEffects(col, key, origin, key === uid ? undefined : printed),
+            );
       if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
       emitRollAdvantages(col, uids, origin);
       emitRollExtras(col, uids, origin);

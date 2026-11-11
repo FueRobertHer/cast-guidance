@@ -69,6 +69,11 @@ export function deriveSheet(
   options: DeriveOptions = {},
 ): DerivedSheet {
   const col = new Collector(doc, ctx);
+  if (ctx.ruleSetsFailed === true) {
+    col.warn(
+      'The built-in rules did not load, so some features show no mechanics. Reload to try again.',
+    );
+  }
 
   // 1. Collect effects in origin order
   collectRace(col);
@@ -388,9 +393,11 @@ function fillFormulas(
     for (const slot of e.formulas as readonly unknown[]) {
       if (typeof slot !== 'object' || slot === null) continue;
       if (!((slot as Partial<FormulaSlot>).formula instanceof Formula)) continue;
-      const { field, formula, classLevel } = slot as FormulaSlot;
+      const { field, formula, classLevel, builtIn } = slot as FormulaSlot;
       let value = 0;
-      if (budget.left >= formula.cost) {
+      if (builtIn === true) {
+        value = formula.evaluate({ ...scope, classLevel });
+      } else if (budget.left >= formula.cost) {
         budget.left -= formula.cost;
         value = formula.evaluate({ ...scope, classLevel });
       } else if (!budget.warned) {

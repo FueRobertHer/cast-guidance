@@ -3,7 +3,7 @@
  * maneuvers, fighting styles, metamagic. Both write them the same way in
  * `optionalfeatureProgression`, and a pick works the same from either.
  */
-import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { emitCuratedEffects as emitCurated, hasCuratedRow } from '../curated/curatedEffects';
 import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
@@ -150,10 +150,15 @@ export function readOptionalFeatures(
             origin: ofOrigin,
             target: uid,
             classLevel: level,
-            inherited: () => {
-              const curated = uids.some((key, i) =>
-                emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
-              );
+            ruleKeys: uids,
+            inCode: hasCuratedRow,
+            inherited: (builtIn) => {
+              const curated =
+                builtIn !== undefined
+                  ? builtIn.scan === 'replace'
+                  : uids.some((key, i) =>
+                      emitCurated(col, key, ofOrigin, i === 0 ? undefined : printed),
+                    );
               if (!curated) proseScanFeature(col, str(of.name) ?? uid, of.entries, ofOrigin);
               uids.some((key, i) =>
                 emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),

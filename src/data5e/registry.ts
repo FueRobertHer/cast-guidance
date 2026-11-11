@@ -6,6 +6,7 @@
 import { dataCacheRepo } from '@/db/dataCacheRepo';
 import { homebrewRepo } from '@/db/homebrewRepo';
 import { singleFlight } from '@/lib/singleFlight';
+import { attachBuiltInRules, loadBuiltInRules } from './builtInRules';
 import { getLandedCount, getRevision, subscribeLanded } from './landing';
 import {
   ensurePack,
@@ -191,9 +192,10 @@ async function rebuild({
   // throw out of here, and every view needs the compendium. The signature is
   // the one of what is read here: a file imported since the caller's check is
   // in this build, and the next check sees the registry current.
-  const [files, { files: brews }] = await Promise.all([
+  const [files, { files: brews }, builtInRules] = await Promise.all([
     cachedFilesMap(tag),
     homebrewRepo.enabledSafe(),
+    loadBuiltInRules(),
   ]);
   const signature = computeRegistrySignature(tag, paths, brews);
   // Before the registry is published, so the first render that can show a
@@ -212,6 +214,9 @@ async function rebuild({
     if ((await noteRegistryBuildFailed(tag)) || getActiveTag() !== tag) return undefined;
     throw err;
   }
+  // Outside the rollback too: rules that did not load say nothing about the
+  // release, and every sheet says they are missing (`ruleSetsFailed`).
+  attachBuiltInRules(reg, builtInRules);
   // The official build is what an install is judged on, so this is where its
   // start finishes and the release is confirmed. Waiting for the publish
   // below let a homebrew file that broke the merge leave every start

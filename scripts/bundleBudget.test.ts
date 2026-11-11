@@ -39,7 +39,7 @@ const INDEX_HTML = `<!doctype html>
 </html>
 `;
 
-const SW_JS = `if(!self.define){let s,e={};const l=(l,r)=>(l=new URL(l+".js",r).href,e[l]||new Promise(e=>{if("document"in self){const s=document.createElement("script");s.src=l,s.onload=e,document.head.appendChild(s)}else s=l,importScripts(l),e()}))}define(["./workbox-2fbc6a65"],function(s){"use strict";self.skipWaiting(),s.clientsClaim(),s.precacheAndRoute([{url:"index.html",revision:"823bcab41c235bdcb4fe522766ac14f3"},{url:"favicon.svg",revision:"fbc0d548fa2c68f14796ee59fc91634e"},{url:"assets/search.worker-CGmySGpb.js",revision:null},{url:"assets/registry-qSDUE6yK.js",revision:null},{url:"assets/react-DTwi_8cj.js",revision:null},{url:"assets/index-Cz6s2DaM.css",revision:null},{url:"assets/index-CtC1UB32.js",revision:null},{url:"assets/BuildPage-BpTzIkpz.js",revision:null},{url:"favicon.svg",revision:"fbc0d548fa2c68f14796ee59fc91634e"},{url:"manifest.webmanifest",revision:"51c6008ca9880659b6f562830c6bc9f4"}],{}),s.cleanupOutdatedCaches(),s.registerRoute(new s.NavigationRoute(s.createHandlerBoundToURL("index.html")))});
+const SW_JS = `if(!self.define){let s,e={};const l=(l,r)=>(l=new URL(l+".js",r).href,e[l]||new Promise(e=>{if("document"in self){const s=document.createElement("script");s.src=l,s.onload=e,document.head.appendChild(s)}else s=l,importScripts(l),e()}))}define(["./workbox-2fbc6a65"],function(s){"use strict";self.skipWaiting(),s.clientsClaim(),s.precacheAndRoute([{url:"index.html",revision:"823bcab41c235bdcb4fe522766ac14f3"},{url:"favicon.svg",revision:"fbc0d548fa2c68f14796ee59fc91634e"},{url:"assets/search.worker-CGmySGpb.js",revision:null},{url:"assets/registry-qSDUE6yK.js",revision:null},{url:"assets/react-DTwi_8cj.js",revision:null},{url:"assets/index-Cz6s2DaM.css",revision:null},{url:"assets/index-CtC1UB32.js",revision:null},{url:"assets/BuildPage-BpTzIkpz.js",revision:null},{url:"assets/rule-set-curated-Dq3k1aB2.js",revision:null},{url:"favicon.svg",revision:"fbc0d548fa2c68f14796ee59fc91634e"},{url:"manifest.webmanifest",revision:"51c6008ca9880659b6f562830c6bc9f4"}],{}),s.cleanupOutdatedCaches(),s.registerRoute(new s.NavigationRoute(s.createHandlerBoundToURL("index.html")))});
 `;
 
 const file = (p: string, bytes: number, gzipBytes = Math.round(bytes / 3)): DistFile => ({
@@ -59,6 +59,7 @@ const FILES: DistFile[] = [
   file('assets/registry-qSDUE6yK.js', 130_000, 43_000),
   file('assets/search.worker-CGmySGpb.js', 30_000),
   file('assets/BuildPage-BpTzIkpz.js', 60_000),
+  file('assets/rule-set-curated-Dq3k1aB2.js', 4_000, 1_000),
   file('assets/index-Cz6s2DaM.css', 42_000, 8_000),
 ];
 
@@ -72,6 +73,8 @@ const GENEROUS: Budget = {
   totalJsBytes: 700_000,
   largestChunkBytes: 400_000,
   cssBytes: 50_000,
+  rulesBytes: 10_000,
+  rulesGzipBytes: 3_000,
   precacheBytes: 700_000,
 };
 
@@ -105,7 +108,7 @@ describe('index.html parsing', () => {
 describe('sw.js parsing', () => {
   it('dedupes the precache manifest, keeping first-seen order', () => {
     const urls = parsePrecacheUrls(SW_JS);
-    expect(urls).toHaveLength(9);
+    expect(urls).toHaveLength(10);
     expect(urls.filter((u) => u === 'favicon.svg')).toHaveLength(1);
     expect(urls[0]).toBe('index.html');
     expect(urls.at(-1)).toBe('manifest.webmanifest');
@@ -121,10 +124,24 @@ describe('measure', () => {
       'assets/react-DTwi_8cj.js',
       'assets/registry-qSDUE6yK.js',
     ]);
-    // Root-level workbox runtime and sw.js are not app chunks.
+    // Root-level workbox runtime and sw.js are not app chunks, and a rule set's is data.
     expect(m.allJs).toHaveLength(5);
+    expect(m.rules.map((f) => f.path)).toEqual(['assets/rule-set-curated-Dq3k1aB2.js']);
     expect(m.css.map((f) => f.path)).toEqual(['assets/index-Cz6s2DaM.css']);
-    expect(m.precache).toHaveLength(9);
+    expect(m.precache).toHaveLength(10);
+  });
+
+  it('fails when the build has no rule set chunk', () => {
+    const files = FILES.filter((f) => !f.path.startsWith('assets/rule-set-'));
+    const swJs = SW_JS.replace('{url:"assets/rule-set-curated-Dq3k1aB2.js",revision:null},', '');
+    expect(() => measure({ ...INPUT, files, swJs })).toThrow(/no built-in rule set chunks/);
+  });
+
+  it('fails when a rule set chunk is left out of the precache', () => {
+    const swJs = SW_JS.replace('{url:"assets/rule-set-curated-Dq3k1aB2.js",revision:null},', '');
+    expect(() => measure({ ...INPUT, swJs })).toThrow(
+      /unavailable offline: assets\/rule-set-curated-Dq3k1aB2\.js/,
+    );
   });
 
   it('fails when index.html has no module entry', () => {
@@ -168,8 +185,11 @@ describe('evaluate', () => {
       totalJsBytes: 610_000,
       largestChunkBytes: 380_000,
       cssBytes: 42_000,
+      rulesBytes: 4_000,
+      rulesGzipBytes: 1_000,
       // Unique precache entries: favicon.svg counted once.
-      precacheBytes: 2_000 + 500 + 30_000 + 130_000 + 10_000 + 42_000 + 380_000 + 60_000 + 400,
+      precacheBytes:
+        2_000 + 500 + 30_000 + 130_000 + 10_000 + 42_000 + 380_000 + 60_000 + 4_000 + 400,
     });
     expect(violations).toEqual([]);
   });
