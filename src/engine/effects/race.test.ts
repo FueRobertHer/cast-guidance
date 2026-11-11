@@ -176,6 +176,11 @@ const SUBRACES: DataEntity[] = [
   // A later copy of the same race's one (homebrew re-adding it): the first
   // wins, as in the registry and the picker.
   sub('Twin', { speed: 40, entries: [trait('Late Twin')] }, HALFKIN),
+  // Tajuru-Nation-shaped: skills and tools in any mix, as the Skilled feat asks.
+  sub('Versatile', {
+    skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill', 'anyTool'], count: 2 }] }],
+    entries: [trait('Skill Versatility')],
+  }),
   sub('Late Arrangement', { ability: [{}, weighted([1], ['cha'])] }, ARRKIN),
   sub('Odd Pick', { ability: [{ choose: { from: ['cha'] } }, {}] }, ODDKIN),
   // Nameless subraces, each its race's base entry. Another book's printing's
@@ -407,6 +412,23 @@ describe('the rest of the 5etools subrace merge', () => {
     const asked = ['race:arrkin|tst:ability:arrangement'];
     expect(racePicks(derive(undefined, 'Arrkin'), 'arrkin')).toEqual(asked);
     expect(racePicks(derive('Late Arrangement', 'Arrkin'), 'arrkin')).toEqual(asked);
+  });
+
+  it("asks for a subrace's skills and tools in any mix, and grants each as what it is", () => {
+    const id = 'subrace:versatile|tst:skillTool:0';
+    const prompt = derive('Versatile').pending.find((p) => p.id === id);
+    expect([prompt?.kind, prompt?.count, prompt?.label]).toEqual([
+      'skillOrTool',
+      2,
+      'Skill or tool proficiency',
+    ]);
+    const ids = prompt?.options.map((o) => o.id) ?? [];
+    expect(ids).toEqual(expect.arrayContaining(['Stealth', "thieves' tools"]));
+    const sheet = derive('Versatile', 'Fiendkin', { [id]: ['Stealth', "thieves' tools"] });
+    expect(sheet.skills.Stealth?.profBase).toBe(1);
+    expect(sheet.toolProfs).toContain("thieves' tools");
+    expect(sheet.pending.some((p) => p.id === id)).toBe(false);
+    expect(derive('Plain').pending.some((p) => p.id.includes(':skillTool:'))).toBe(false);
   });
 
   it('counts only the ability picks the ability reader asks', () => {

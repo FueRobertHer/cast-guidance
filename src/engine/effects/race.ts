@@ -25,6 +25,7 @@ import {
   readAbilityBlock,
   readDefenses,
   readProficiencyList,
+  readSkillOrToolChoice,
   skillOptions,
   toolOptions,
   weaponOptions,
@@ -263,6 +264,9 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
     (name) => col.add({ kind: 'armorProf', name, origin }),
     genericOptions,
   );
+  // A pick of skills and tools in any mix (the Tajuru Nation, a Githyanki's
+  // Decadent Mastery, the Nephalia), as the Skilled feat asks.
+  readSkillOrToolChoice(col, e.skillToolLanguageProficiencies, origin, `${idBase}:skillTool`);
   readDefenses(col, e, origin, idBase);
   collectAdditionalSpells(col, e.additionalSpells, origin, undefined, idBase);
 

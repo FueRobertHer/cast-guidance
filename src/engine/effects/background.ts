@@ -7,6 +7,7 @@ import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import {
   languageOptions,
   readAbilityBlock,
+  readLanguageOrToolMix,
   readProficiencyList,
   skillOptions,
   toolOptions,
@@ -37,16 +38,28 @@ export function collectBackground(col: Collector): void {
     (name) => col.add({ kind: 'skillProf', skill: name, level: 1, origin }),
     skillOptions,
   );
-  readProficiencyList(
+  // Custom Background's languages and tools are one grant, "two of your choice",
+  // which `skillToolLanguageProficiencies` spells out and `languageProficiencies`
+  // shortens to two languages, so the one stands in for the other. The pick keeps
+  // the id the two languages had, so a saved pair still holds.
+  const mixed = readLanguageOrToolMix(
     col,
-    e.languageProficiencies,
+    e.skillToolLanguageProficiencies,
     origin,
-    `${idBase}:lang`,
-    'language',
-    'Language',
-    (name) => col.add({ kind: 'language', name, origin }),
-    languageOptions,
+    `${idBase}:lang:0`,
   );
+  if (!mixed) {
+    readProficiencyList(
+      col,
+      e.languageProficiencies,
+      origin,
+      `${idBase}:lang`,
+      'language',
+      'Language',
+      (name) => col.add({ kind: 'language', name, origin }),
+      languageOptions,
+    );
+  }
   readProficiencyList(
     col,
     e.toolProficiencies,
