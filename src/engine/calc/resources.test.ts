@@ -74,6 +74,21 @@ describe('calcResources pooling', () => {
     expect(out[0]?.max).toBe(5);
   });
 
+  it('keeps the largest die of the sources it stacks', () => {
+    const die = (...dice: Array<string | undefined>) =>
+      calcResources(
+        doc,
+        dice.map((d) => res(1, { stack: true, ...(d !== undefined ? { die: d } : {}) })),
+        abilities(),
+        2,
+      )[0]?.die;
+    expect(die('1d6', '1d10')).toBe('1d10');
+    expect(die('1d10', '1d6')).toBe('1d10');
+    expect(die(undefined, '1d8')).toBe('1d8');
+    expect(die('1d8', undefined)).toBe('1d8');
+    expect(die(undefined, undefined)).toBeUndefined();
+  });
+
   it('keeps the first source (curated wins) when not stacking', () => {
     const effects = [res(4, { label: 'Curated' }), res(1, { label: 'Prose' })];
     const out = calcResources(doc, effects, abilities(), 2);

@@ -34,6 +34,7 @@ import {
 } from './d20Tests';
 import { conditionsInForce, hpLimits, saveDcLoweredBy, saveDcRaisedBy } from './effectsInPlay';
 import { RollEffectCue } from './RollEffectCue';
+import { pricedRollEffects } from './rollPrice';
 import { SpellCastChips } from './SpellCastChips';
 import { classifyKnown, OVER, spellNeedsConcentration } from './SpellManager';
 import { SpellRow } from './SpellRow';
@@ -654,13 +655,17 @@ export function YourSpells({
         label,
         effects: attackEffects,
         ignored: ignore.take('attack', attackEffects),
-        riders: rollEffects(sheet, {
-          kind: 'attack',
-          attack: 'spell',
-          ...(className === undefined ? {} : { className }),
-          // A melee spell attack is a melee attack (flanking, a melee rider).
-          ...(range === undefined ? {} : { range }),
-        }),
+        riders: pricedRollEffects(
+          rollEffects(sheet, {
+            kind: 'attack',
+            attack: 'spell',
+            ...(className === undefined ? {} : { className }),
+            // A melee spell attack is a melee attack (flanking, a melee rider).
+            ...(range === undefined ? {} : { range }),
+          }),
+          sheet,
+          doc.play,
+        ),
         settlesOnNatural: true,
         attack: { by: doc.id, of, critFrom: sheet.critRange?.min },
       });

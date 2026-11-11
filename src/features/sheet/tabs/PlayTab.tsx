@@ -120,6 +120,7 @@ import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
 import { backCaption, giveBack, restWith } from '../rest';
+import { pricedRollEffects } from '../rollPrice';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
@@ -572,7 +573,7 @@ export function Component() {
       label,
       effects: attackEffects,
       ignored: ignore.take('attack', attackEffects),
-      riders: rollEffects(sheet, test),
+      riders: pricedRollEffects(rollEffects(sheet, test), sheet, doc.play),
       settlesOnNatural: true,
       thisTurn: turnExtras(test),
       attack: {
@@ -1432,7 +1433,11 @@ export function Component() {
                     label: 'Initiative',
                     effects: initiativeEffects,
                     ignored: ignore.take('initiative', initiativeEffects),
-                    riders: rollEffects(sheet, { kind: 'initiative' }),
+                    riders: pricedRollEffects(
+                      rollEffects(sheet, { kind: 'initiative' }),
+                      sheet,
+                      doc.play,
+                    ),
                   }),
                 initiativeRoll.rolled,
                 {

@@ -40,6 +40,7 @@ import { sheetRulesField } from './rules';
 import type {
   Ability,
   ActiveEffect,
+  BonusAmount,
   CharacterDoc,
   ChoicePrompt,
   DerivedSheet,
@@ -300,7 +301,7 @@ export function deriveSheet(
       origin: e.origin.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
     })),
-    rollRiders: rollRiders(effects),
+    rollRiders: rollRiders(effects, (a) => bonusAmount(a, abilities, profBonus.value)),
     extraActions: effectsOf(effects, 'extraAction').map((e) => ({
       label: e.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
@@ -486,11 +487,30 @@ class PlayStates {
   }
 }
 
-/** Dice and advantage for rolls, each under its source and, from an effect in play, its id. */
-function rollRiders(effects: readonly EffectInput[]): RollRider[] {
+/** The fields that are set, so an optional field is left out rather than undefined. */
+function definedOnly<T extends object>(o: T): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]?: Exclude<T[K], undefined>;
+  };
+}
+
+/**
+ * Dice and advantage for rolls, each under its source and, from an effect in
+ * play, its id. A paid extra's bonus is worked out here (`amount`).
+ */
+function rollRiders(
+  effects: readonly EffectInput[],
+  amount: (a: BonusAmount) => number,
+): RollRider[] {
   const out: RollRider[] = [];
   for (const e of effects) {
-    if (e.kind !== 'rollDie' && e.kind !== 'rollOffer' && e.kind !== 'rollAdvantage') continue;
+    if (
+      e.kind !== 'rollDie' &&
+      e.kind !== 'rollOffer' &&
+      e.kind !== 'rollAdvantage' &&
+      e.kind !== 'rollPaid'
+    )
+      continue;
     const from = {
       on: e.on,
       origin: e.origin.label,
@@ -505,7 +525,25 @@ function rollRiders(effects: readonly EffectInput[]): RollRider[] {
         ...(e.once !== undefined ? { once: e.once } : {}),
         ...(e.ifFailed !== undefined ? { ifFailed: e.ifFailed } : {}),
       });
-    else
+    else if (e.kind === 'rollPaid') {
+      const { dice, poolDie, bonus, advantage, after, ifFailed, spentOnSuccess, reaction, when } =
+        e;
+      out.push({
+        ...from,
+        kind: 'paid',
+        ...definedOnly({
+          dice,
+          poolDie,
+          advantage,
+          after,
+          ifFailed,
+          spentOnSuccess,
+          reaction,
+          when,
+        }),
+        ...(bonus !== undefined ? { bonus: amount(bonus) } : {}),
+      });
+    } else
       out.push({
         ...from,
         kind: 'advantage',

@@ -72,6 +72,21 @@ export interface RollOffer {
   effectId?: string;
   once: boolean;
   ifFailed: boolean;
+  /**
+   * The character's own feature, paid for as its Use is (the engine's
+   * `OfferPay`): pool uses and the turn's reaction, and the words for them.
+   */
+  pay?: {
+    spends: ReadonlyArray<{ key: string; max: number; amount: number }>;
+    reaction: boolean;
+    words: string;
+  };
+  /** When it holds, which the app cannot see: "Only against a spell". */
+  when?: string;
+  /** Offered only once the d20 shows, never before it (a flat bonus). */
+  after?: boolean;
+  /** Its use is spent only if the roll then succeeds: taken off a roll that failed, it comes back. */
+  spentOnSuccess?: boolean;
 }
 
 export interface RollResult {

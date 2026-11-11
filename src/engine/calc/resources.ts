@@ -17,6 +17,9 @@ import { effectsOf } from './core';
  */
 const SAME_POOL: Readonly<Record<string, string>> = { ki: 'focus', focus: 'ki' };
 
+/** A die's sides ("1d10" is 10), 0 for anything else. */
+const sides = (die: string) => Number(/^\d*d(\d+)$/.exec(die)?.[1] ?? 0);
+
 /** What a sheet has to pay a spell slot or Hit Point Die cost with. */
 export interface SlotsAndDice {
   /** The highest level of spell slot any class gives, 0 with none. */
@@ -138,12 +141,17 @@ export function calcResources(
           ? { regainOnShort: e.regainOnShort }
           : {}),
         ...(e.regainRoll !== undefined ? { regainRoll: e.regainRoll } : {}),
+        ...(e.die !== undefined ? { die: e.die } : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).
       const row = out[existingIdx];
       if (row !== undefined) {
         row.max += max;
+        // A Battle Master's d10s beside Martial Adept's d6: the pool rolls its largest.
+        if (e.die !== undefined && (row.die === undefined || sides(e.die) > sides(row.die))) {
+          row.die = e.die;
+        }
         if (e.noSlotConversion !== undefined) {
           row.noSlotConversion = (row.noSlotConversion ?? 0) + e.noSlotConversion;
         }

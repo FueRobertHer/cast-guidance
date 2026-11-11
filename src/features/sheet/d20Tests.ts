@@ -12,6 +12,7 @@ import type { RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { namedFirst, whenLanded } from '@/stores/heldRoll';
+import { rollOffersStore } from '@/stores/rollOffers';
 import { type ChipLook, type ChipWear, isChipLook } from '@/ui/ChipFace';
 
 /**
@@ -166,6 +167,11 @@ export interface TurnExtra {
   /** What declaring it costs, in words; for one that holds for this roll alone, when it holds. */
   cost: string;
   declare: () => void;
+  /**
+   * Paid for as the roll is made, before the d20 (2024 Lucky's Luck Point):
+   * false, with nothing left to pay with, leaves it out of the roll.
+   */
+  paid?: () => boolean;
   /** It holds for this roll alone, not the rest of the turn. */
   thisRoll?: boolean;
 }
@@ -208,6 +214,9 @@ export interface D20Ask {
 
 /** "1d8" as a chip says it: "d8". */
 const dieWord = (dice: string) => dice.replace(/^1d/, 'd');
+
+/** "spends 1 Luck Points" as a sentence starts. */
+const capitalized = (words: string) => `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
 
 /**
  * What the roll's cue says when the prompt chose a mode the sheet did not set:
@@ -286,16 +295,28 @@ export function d20Ask(
 ): D20Ask {
   const extras: readonly TurnExtra[] = [
     ...thisTurn,
-    ...(riders?.declare ?? []).map(
-      (d): TurnExtra => ({
+    ...(riders?.declare ?? []).map((d): TurnExtra => {
+      const { pay } = d;
+      return {
         source: d.source,
         ...(d.mode === undefined ? {} : { mode: d.mode }),
         ...(d.bonus === undefined ? {} : { bonus: d.bonus }),
-        cost: d.when,
+        // A paid claim (2024 Lucky) says its price, then when it holds.
+        cost:
+          pay === undefined
+            ? d.when
+            : [capitalized(pay.words), d.when].filter((w) => w !== '').join('. '),
         declare: () => undefined,
+        // Paid as the roll is made, as the feature's Use would be.
+        ...(pay === undefined
+          ? {}
+          : {
+              paid: () =>
+                rollOffersStore.getState().pay?.({ source: d.source, pay }, true) ?? false,
+            }),
         thisRoll: true,
-      }),
-    ),
+      };
+    }),
   ];
   /** The bonuses `choice` declares (flanking's +2), each named for what gives it. */
   const bonusesFor = (choice: D20Choice | undefined) =>
@@ -404,7 +425,11 @@ export function d20Ask(
       const after = settled
         ? []
         : offers.filter(
-            (o) => !named.includes(o) && !(choice?.dropUnnamed === true && namedFirst(o)),
+            (o) =>
+              !named.includes(o) &&
+              // The house rule is for an effect's die (2014 Guidance and
+              // Bardic); a feature's own (Precision Attack) waits as written.
+              !(choice?.dropUnnamed === true && namedFirst(o) && o.pay === undefined),
           );
       const cue = cueFor(mode, choice);
       // The kind of roll, for a natural 20 or 1's moments (`useRollOfferSpending`).

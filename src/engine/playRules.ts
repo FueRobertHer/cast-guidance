@@ -11,7 +11,18 @@ import {
   type Edition,
   testAbility,
 } from './conditions';
-import type { DerivedSheet, RollFilter } from './types';
+import type { DerivedSheet, PaidRoll, RollFilter } from './types';
+
+/**
+ * What paying for a feature's extra takes, as its Use does: pool uses (each
+ * with the pool's size, so paying never runs past it) and the turn's reaction.
+ * `words` says it as Use's title does: "spends 1 Superiority Dice".
+ */
+export interface OfferPay {
+  spends: ReadonlyArray<{ key: string; max: number; amount: number }>;
+  reaction: boolean;
+  words: string;
+}
 
 /** What effects in play bring to one d20 test, each named for its effect. */
 export interface RollEffects {
@@ -28,6 +39,15 @@ export interface RollEffects {
     effectId?: string;
     once: boolean;
     ifFailed: boolean;
+    /**
+     * A feature's own extra, priced (`PaidRoll`): what adding it pays, when it
+     * holds, whether only once the d20 shows, and whether a roll that still
+     * fails gives the use back when it is taken off.
+     */
+    pay?: OfferPay;
+    when?: string;
+    after?: boolean;
+    spentOnSuccess?: boolean;
   }>;
   /** Sources of advantage, which reach the roll as a feature's do (`advantageFrom`). */
   advantage: string[];
@@ -37,7 +57,20 @@ export interface RollEffects {
    * flanking, under the table's rule, on a melee attack. Said, it brings
    * advantage (`mode`) or a bonus to hit. `when` says when it holds.
    */
-  declare?: Array<{ source: string; mode?: 'adv'; bonus?: number; when: string }>;
+  declare?: Array<{
+    source: string;
+    mode?: 'adv';
+    bonus?: number;
+    when: string;
+    /** Paid for as the feature's Use is (2024 Lucky's Luck Point), as the roll lands. */
+    pay?: OfferPay;
+  }>;
+  /**
+   * What the character's own features add when paid for (`PaidRoll`), once a
+   * source, before the sheet prices them against what is left and turns them
+   * into offers and claims (`pricedRollEffects`).
+   */
+  paid?: Array<{ source: string } & Omit<PaidRoll, 'bonus'> & { bonus?: number }>;
   /** The kind of roll the test is (initiative is a check), which its roll carries. */
   test?: RollFilter['rolls'][number];
 }
@@ -85,7 +118,8 @@ const FLANKING_WHEN = 'Only with an ally next to the target, on its opposite sid
  * and flanking on a melee attack when the table plays with it (`sheet.rules`).
  * An advantage that holds only sometimes (`when`: Brave against being
  * Frightened) is offered to declare, as flanking is, once a source. A death
- * save is never against a threat, so it takes only those that name it.
+ * save is never against a threat, so it takes only those that name it, and
+ * the same goes for what a feature adds when paid for (`paid`).
  */
 export function rollEffects(
   sheet: Pick<DerivedSheet, 'rollRiders' | 'rules'>,
@@ -120,7 +154,16 @@ export function rollEffects(
         once: r.once === true,
         ifFailed: r.ifFailed === true,
       });
-    else if (r.when !== undefined) {
+    else if (r.kind === 'paid') {
+      if (test.kind === 'save' && test.purpose === 'death' && r.on.save !== 'death') continue;
+      // Initiative has no failure to turn into a success (Tactical Mind).
+      if (test.kind === 'initiative' && r.ifFailed === true) continue;
+      const paid = out.paid ?? [];
+      if (paid.some((p) => same(p.source, r.origin))) continue;
+      const { kind: _kind, on: _on, origin, effectId: _effectId, ...rest } = r;
+      paid.push({ source: origin, ...rest });
+      out.paid = paid;
+    } else if (r.when !== undefined) {
       // Only advantage is declared; no table or reader gives a disadvantage a `when`.
       if (r.mode !== 'adv') continue;
       if (test.kind === 'save' && test.purpose === 'death' && r.on.save !== 'death') continue;

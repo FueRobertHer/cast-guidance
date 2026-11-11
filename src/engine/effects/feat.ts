@@ -1,5 +1,6 @@
 import { emitCuratedEffects } from '../curated/curatedEffects';
 import { emitRollAdvantages } from '../curated/rollAdvantages';
+import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { type DataEntity, type EffectOrigin, refUid, SKILLS } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
@@ -182,6 +183,7 @@ export function collectFeatEntity(
       );
       if (!curated) proseScanFeature(col, origin.label, e.entries, origin);
       emitRollAdvantages(col, uids, origin);
+      emitRollExtras(col, uids, origin);
       uids.some((key) => linkSpend(col, key, origin.label, origin));
     },
   });

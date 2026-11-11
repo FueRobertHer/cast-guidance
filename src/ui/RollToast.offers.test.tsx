@@ -3,11 +3,11 @@
 // buffs canvas, Dice A): tap to add, tap again to take off, the x to keep it.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RollResult } from '@/dice/types';
+import type { RollOffer, RollResult } from '@/dice/types';
 import { getAnnouncerState, resetAnnouncer, THROTTLE_MS } from '@/stores/announcer';
 import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
-import { OFFER_WAIT_MS, ROLL_TOAST_MS, RollToast, withAdded } from './RollToast';
+import { OFFER_WAIT_MS, offerPrices, ROLL_TOAST_MS, RollToast, withAdded } from './RollToast';
 
 /** The faces the next dice show, in order (the roller draws from crypto). */
 function nextFaces(...faces: number[]) {
@@ -54,7 +54,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   resetAnnouncer();
   rollLogStore.setState({ rolls: [], seq: 0 });
-  rollOffersStore.setState({ spend: null, expired: 0 });
+  rollOffersStore.setState({ spend: null, pay: null, expired: 0 });
 });
 
 describe('withAdded', () => {
@@ -69,6 +69,38 @@ describe('withAdded', () => {
     expect(r.total).toBe(16);
     expect(r.meta?.from).toEqual([{ term: 2, source: 'Bardic Inspiration' }]);
     expect(withAdded(save, [{ value: 5, term }], [false])).toBe(save);
+  });
+});
+
+describe('offerPrices', () => {
+  const pay = { spends: [], reaction: true, words: 'marks your reaction' };
+  const offer = (over: Partial<RollOffer>): RollOffer => ({
+    dice: '1d4',
+    source: 'Lucky Footwork',
+    once: true,
+    ifFailed: true,
+    ...over,
+  });
+
+  it('says what each paid extra pays, when it holds, and what taking it off gives back', () => {
+    expect(
+      offerPrices([
+        offer({ pay, when: 'Only while you can move' }),
+        bardic,
+        offer({
+          source: 'Tactical Mind',
+          pay: { ...pay, reaction: false, words: 'spends 1 Second Wind' },
+          spentOnSuccess: true,
+        }),
+      ]),
+    ).toBe(
+      'Lucky Footwork marks your reaction. Only while you can move. ' +
+        'Tactical Mind spends 1 Second Wind. If the roll still fails, take it off for the use back.',
+    );
+  });
+
+  it('says nothing with nothing paid', () => {
+    expect(offerPrices([bardic])).toBe('');
   });
 });
 
@@ -101,6 +133,92 @@ describe('a roll with dice on offer', () => {
     expect(rollLogStore.getState().rolls[0]?.total).toBe(11);
     fireEvent.click(screen.getByRole('button', { name: 'Add Bardic Inspiration, +d8' }));
     expect(rollLogStore.getState().rolls[0]?.total).toBe(16);
+  });
+
+  it('adds a flat bonus a feature pays for, naming it, and gives the use back taken off', () => {
+    const pay = vi.fn(() => true);
+    rollOffersStore.setState({ pay });
+    const guided: RollOffer = {
+      dice: '10',
+      source: 'Guided Strike',
+      once: true,
+      ifFailed: true,
+      after: true,
+      pay: {
+        spends: [{ key: 'cd', max: 2, amount: 1 }],
+        reaction: false,
+        words: 'spends 1 Channel Divinity',
+      },
+    };
+    render(<RollToast />);
+    act(() =>
+      rollLogStore.getState().append({ ...save, meta: { ...save.meta, offers: [guided] } }),
+    );
+    expect(screen.getByRole('group', { name: 'Roll result' }).textContent).toContain(
+      'Guided Strike spends 1 Channel Divinity.',
+    );
+    const chip = screen.getByRole('button', {
+      name: 'Add Guided Strike, +10, if the roll failed. It spends 1 Channel Divinity',
+    });
+    expect(chip.textContent).toContain('· paid');
+    fireEvent.click(chip);
+    expect(total()).toContain('21');
+    expect(total()).toContain('+ 10 Guided Strike');
+    expect(pay).toHaveBeenLastCalledWith(guided, true);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Guided Strike, 10 added. Tap to take it off' }),
+    );
+    expect(pay).toHaveBeenLastCalledWith(guided, false);
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(11);
+  });
+
+  it('leaves a feature’s die off when it cannot be paid, keeping the number it rolled', () => {
+    const pay = vi.fn(() => false);
+    rollOffersStore.setState({ pay });
+    const footwork: RollOffer = {
+      dice: '1d4',
+      source: 'Lucky Footwork',
+      once: true,
+      ifFailed: true,
+      pay: { spends: [], reaction: true, words: 'marks your reaction' },
+    };
+    render(<RollToast />);
+    act(() =>
+      rollLogStore.getState().append({ ...save, meta: { ...save.meta, offers: [footwork] } }),
+    );
+    nextFaces(3);
+    const chip = () => screen.getByRole('button', { name: /^Add Lucky Footwork/ });
+    fireEvent.click(chip());
+    expect(pay).toHaveBeenCalledWith(footwork, true);
+    expect(chip().getAttribute('aria-pressed')).toBe('false');
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(11);
+    // Paid the next time, it goes on with the number it already rolled.
+    pay.mockReturnValue(true);
+    fireEvent.click(chip());
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(14);
+  });
+
+  it('waits while a die whose use comes back on a failure is on, until kept as it is', () => {
+    rollOffersStore.setState({ pay: () => true });
+    const mind: RollOffer = {
+      dice: '1d10',
+      source: 'Tactical Mind',
+      once: true,
+      ifFailed: true,
+      spentOnSuccess: true,
+      pay: { spends: [], reaction: false, words: 'spends 1 Second Wind' },
+    };
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append({ ...save, meta: { ...save.meta, offers: [mind] } }));
+    nextFaces(6);
+    fireEvent.click(screen.getByRole('button', { name: /^Add Tactical Mind/ }));
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS + 100));
+    expect(
+      screen.getByRole('button', { name: 'Tactical Mind, 6 added. Tap to take it off' }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep this roll as it is' }));
+    act(() => vi.advanceTimersByTime(ROLL_TOAST_MS + 100));
+    expect(screen.queryByRole('group', { name: 'Roll result' })).toBeNull();
   });
 
   it('waits a minute for a die, then goes; kept as it is, it goes as any roll does', () => {

@@ -63,6 +63,9 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
       // "+ 0" says nothing, and most of a level 1 sheet's modifiers are it.
       const sign = t.value < 0 ? '−' : '+';
       parts.push({ text: `${i > 0 ? ' ' : ''}${sign} ${Math.abs(t.value)}` });
+      // A bonus a feature added says whose it is too: "+ 10 Guided Strike".
+      const from = result.meta?.from?.find((f) => f.term === i);
+      if (from !== undefined) parts.push({ text: ` ${from.source}` });
     }
   });
   return parts.filter((p) => p.text !== '');

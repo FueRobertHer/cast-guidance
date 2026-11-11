@@ -395,12 +395,25 @@ const skillOrLanguage =
       markKnownLanguages(col, LANGUAGE_OPTIONS),
     );
 
+/** Tides of Chaos (both printings): one use, back on a long rest. */
+const tidesOfChaos: CuratedFn = (col, origin) => {
+  col.add({
+    kind: 'resource',
+    key: 'tides-of-chaos',
+    label: 'Tides of Chaos',
+    max: 1,
+    resetOn: 'long',
+    origin,
+  });
+};
+
 /** Superior Technique fighting style: one d6 superiority die (stacks) + a maneuver. */
 const superiorTechnique: CuratedFn = (col, origin) => {
   col.add({
     kind: 'resource',
     key: 'superiority-dice',
     label: 'Superiority Dice (d6)',
+    die: '1d6',
     max: 1,
     resetOn: 'short',
     stack: true,
@@ -441,6 +454,7 @@ function psionicEnergyDice(
     kind: 'resource',
     key,
     label: `Psionic Energy Dice (d${die})`,
+    die: `1d${die}`,
     max: printed2024 ? count2024 : 'twiceProfBonus',
     resetOn: 'long',
     ...(printed2024 ? { regainOnShort: 1 } : {}),
@@ -680,6 +694,11 @@ const signatureSpells: CuratedFn = (col, origin) => {
 
 export const CURATED: Record<string, CuratedFn> = {
   // --- Feats ---------------------------------------------------------------
+  // The 2024 printing counts its one use in no words the prose scan reads
+  // ("must cast a Sorcerer spell with a spell slot or finish a Long Rest"), so
+  // both printings set it here; the spell's refill is a pip tap.
+  'tides of chaos|wild magic': tidesOfChaos,
+  'tides of chaos|wild magic sorcery': tidesOfChaos,
   'alert|phb': (col, origin) => {
     col.add({ kind: 'initiativeBonus', amount: 5, origin });
   },
@@ -741,6 +760,7 @@ export const CURATED: Record<string, CuratedFn> = {
       kind: 'resource',
       key: 'superiority-dice',
       label: 'Superiority Dice (d6)',
+      die: '1d6',
       max: 1,
       resetOn: 'short',
       stack: true,
@@ -761,6 +781,7 @@ export const CURATED: Record<string, CuratedFn> = {
       kind: 'resource',
       key: 'superiority-dice',
       label: `Superiority Dice (${die})`,
+      die: `1${die}`,
       max: count,
       resetOn: 'short',
       stack: true,
@@ -1158,18 +1179,19 @@ export const CURATED: Record<string, CuratedFn> = {
     });
   },
   'bardic inspiration|bard': (col, origin) => {
+    // The die it gives, by Bard level: d6, d8 at 5, d10 at 10, d12 at 15. The
+    // 2014 printing says so in cards of its own, the 2024 one in its table.
+    const level = classLevel(col, 'Bard');
+    const die = BARDIC_DICE[level >= 15 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0];
     col.add({
       kind: 'resource',
       key: 'bardic-inspiration',
       label: 'Bardic Inspiration',
       max: 'abilityMod:cha', // resolved against final CHA in the resources calc
-      resetOn: classLevel(col, 'Bard') >= 5 ? 'short' : 'long',
+      resetOn: level >= 5 ? 'short' : 'long',
+      die: `1${die}`,
       origin,
     });
-    // The die it gives, by Bard level: d6, d8 at 5, d10 at 10, d12 at 15. The
-    // 2014 printing says so in cards of its own, the 2024 one in its table.
-    const level = classLevel(col, 'Bard');
-    const die = BARDIC_DICE[level >= 15 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0];
     col.add({
       kind: 'action',
       economy: 'bonus',

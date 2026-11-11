@@ -11,8 +11,8 @@
  * Every `when` starts "Only", as the prompt and the Defenses sheet read it.
  *
  * Kept out on purpose:
- *   - advantage paid for at the roll (Tides of Chaos, 2024 Lucky, Kenku Recall,
- *     Feinting Attack, Fighting Spirit): item 11b, with its spend;
+ *   - advantage paid for at the roll (Tides of Chaos, 2024 Lucky, Kenku Recall):
+ *     the paid extras' table (`ROLL_EXTRAS`), which spends its use;
  *   - advantage for allies or against the character (Wolf totem, Zealous
  *     Presence, Alert), which is not this character's roll;
  *   - Rage, Reckless Attack and 2024 Innate Sorcery, whose effects in play
@@ -38,21 +38,21 @@ interface AdvantageRow {
   level?: number;
 }
 
-const INITIATIVE: RollFilter = { rolls: ['check'], initiative: true };
+export const INITIATIVE: RollFilter = { rolls: ['check'], initiative: true };
 const DEATH: RollFilter = { rolls: ['save'], save: 'death' };
 const CONCENTRATION: RollFilter = { rolls: ['save'], abilities: ['con'], save: 'concentration' };
-const ATTACKS: RollFilter = { rolls: ['attack'] };
+export const ATTACKS: RollFilter = { rolls: ['attack'] };
 const MELEE: RollFilter = { rolls: ['attack'], range: 'melee' };
-const SAVES: RollFilter = { rolls: ['save'] };
-const CHECKS: RollFilter = { rolls: ['check'] };
-const D20_TESTS: RollFilter = { rolls: ['attack', 'check', 'save'] };
-const saves = (...abilities: Ability[]): RollFilter => ({ rolls: ['save'], abilities });
-const checks = (...abilities: Ability[]): RollFilter => ({ rolls: ['check'], abilities });
-const checksAndSaves = (...abilities: Ability[]): RollFilter => ({
+export const SAVES: RollFilter = { rolls: ['save'] };
+export const CHECKS: RollFilter = { rolls: ['check'] };
+export const D20_TESTS: RollFilter = { rolls: ['attack', 'check', 'save'] };
+export const saves = (...abilities: Ability[]): RollFilter => ({ rolls: ['save'], abilities });
+export const checks = (...abilities: Ability[]): RollFilter => ({ rolls: ['check'], abilities });
+export const checksAndSaves = (...abilities: Ability[]): RollFilter => ({
   rolls: ['check', 'save'],
   abilities,
 });
-const skills = (...names: string[]): RollFilter => ({ rolls: ['check'], skills: names });
+export const skills = (...names: string[]): RollFilter => ({ rolls: ['check'], skills: names });
 const MENTAL = saves('int', 'wis', 'cha');
 const BLOODIED: readonly WhileState[] = [{ state: 'bloodied' }];
 

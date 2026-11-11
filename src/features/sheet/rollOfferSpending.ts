@@ -9,8 +9,9 @@ import type { DocUpdater } from '@/stores/characterSession';
 import { cancelHeld } from '@/stores/heldRoll';
 import { noticeStore, notify } from '@/stores/notices';
 import { rollLogStore } from '@/stores/rollLog';
-import { rollOffersStore } from '@/stores/rollOffers';
+import { type PaidExtra, rollOffersStore } from '@/stores/rollOffers';
 import { hpLimits, momentLines, withMoments } from './effectsInPlay';
+import { payOffer, refundOffer } from './rollPrice';
 
 /**
  * Lets the roll toast spend the dice it offers while a sheet is open
@@ -75,8 +76,42 @@ export function useRollOfferSpending(
       }, `Took back ${back.effect.name}`);
     };
     rollOffersStore.getState().setSpend(spend);
+    // A feature's own extra, paid as its Use is: the uses and the reaction it
+    // takes, in one update, and given back the same way. Only what was paid
+    // for (this very extra) is given back.
+    const paidFor = new WeakSet<PaidExtra>();
+    const pay = (extra: PaidExtra, taken: boolean): boolean => {
+      const { doc, update } = latest.current;
+      const price = extra.pay;
+      if (doc === null || price === undefined) return false;
+      if (taken) {
+        if (paidFor.has(extra)) return true;
+        // Tried on a copy first, so a price that cannot be paid leaves no
+        // "Used" row in the history; then paid on the doc as it stands.
+        let paid = false;
+        if (payOffer(structuredClone(doc.play), price)) {
+          update((d) => {
+            paid = payOffer(d.play, price);
+          }, `Used ${extra.source}`);
+        }
+        if (paid) paidFor.add(extra);
+        else
+          notify({
+            title: `Not paid: ${extra.source}`,
+            detail: `Nothing left to pay with: it ${price.words}.`,
+            tone: 'warn',
+          });
+        return paid;
+      }
+      if (!paidFor.has(extra)) return false;
+      paidFor.delete(extra);
+      update((d) => refundOffer(d.play, price), `Took back ${extra.source}`);
+      return true;
+    };
+    rollOffersStore.getState().setPay(pay);
     return () => {
       if (rollOffersStore.getState().spend === spend) rollOffersStore.getState().setSpend(null);
+      if (rollOffersStore.getState().pay === pay) rollOffersStore.getState().setPay(null);
     };
   }, []);
 

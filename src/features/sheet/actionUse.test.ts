@@ -29,6 +29,13 @@ describe('actionUse', () => {
     expect(u.disabled).toBe(false);
   });
 
+  it('says "an" before a pool name that starts with a vowel', () => {
+    const u = use(action({ label: 'Aberrant Dragonmark' }), [
+      resource('own', 'Aberrant Dragonmark', 1),
+    ]);
+    expect(u.title).toBe('Use: marks your bonus action and spends an Aberrant Dragonmark use');
+  });
+
   it('says no uses are left when that pool is empty', () => {
     const u = use(action(), [OWN], { own: 2 });
     expect(u.disabled).toBe(true);

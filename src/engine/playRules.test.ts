@@ -151,6 +151,83 @@ describe('rollEffects', () => {
     expect(initiative.dice).toEqual([]);
   });
 
+  describe('what a feature adds when paid for (`paid`)', () => {
+    const ambush: RollRider[] = [
+      {
+        kind: 'paid',
+        on: { rolls: ['check'], skills: ['Stealth'] },
+        poolDie: true,
+        origin: 'Maneuvers: Ambush',
+      },
+      {
+        kind: 'paid',
+        on: { rolls: ['check'], initiative: true },
+        poolDie: true,
+        origin: 'Maneuvers: Ambush',
+      },
+    ];
+    const tacticalMind: RollRider = {
+      kind: 'paid',
+      on: { rolls: ['check'] },
+      dice: '1d10',
+      ifFailed: true,
+      spentOnSuccess: true,
+      origin: 'Tactical Mind',
+    };
+    const deflection: RollRider = {
+      kind: 'paid',
+      on: { rolls: ['save'] },
+      bonus: 4,
+      after: true,
+      reaction: true,
+      ifFailed: true,
+      origin: 'Arcane Deflection',
+    };
+
+    it('passes each on unpriced, with what it adds and its flags, and offers nothing yet', () => {
+      const effects = rollEffects(
+        { rollRiders: [tacticalMind, deflection] },
+        { kind: 'check', ability: 'int' },
+      );
+      expect(effects.paid).toEqual([
+        {
+          source: 'Tactical Mind',
+          dice: '1d10',
+          ifFailed: true,
+          spentOnSuccess: true,
+        },
+      ]);
+      expect(effects.offers).toEqual([]);
+      expect(rollEffects({ rollRiders: [deflection] }, { kind: 'save' }).paid).toEqual([
+        { source: 'Arcane Deflection', bonus: 4, after: true, reaction: true, ifFailed: true },
+      ]);
+    });
+
+    it('takes one a source, though two of its rows fit', () => {
+      const both = { ...ambush[1], on: { rolls: ['check' as const] } } as RollRider;
+      const effects = rollEffects(
+        { rollRiders: [...ambush.slice(0, 1), both] },
+        { kind: 'check', ability: 'dex', skill: 'Stealth' },
+      );
+      expect(effects.paid?.map((p) => p.source)).toEqual(['Maneuvers: Ambush']);
+    });
+
+    it('gives initiative what adds before the roll, and nothing that turns a failure', () => {
+      const initiative = rollEffects(
+        { rollRiders: [...ambush, tacticalMind] },
+        { kind: 'initiative' },
+      );
+      expect(initiative.paid?.map((p) => p.source)).toEqual(['Maneuvers: Ambush']);
+    });
+
+    it('gives a death save only what names it', () => {
+      const death = { kind: 'save', purpose: 'death' } as const;
+      expect(rollEffects({ rollRiders: [deflection] }, death).paid).toBeUndefined();
+      const named = { ...deflection, on: { rolls: ['save' as const], save: 'death' as const } };
+      expect(rollEffects({ rollRiders: [named] }, death).paid).toHaveLength(1);
+    });
+  });
+
   describe('flanking, under the table’s rule', () => {
     const melee: D20Test = { kind: 'attack', attack: 'weapon', range: 'melee', ability: 'str' };
     const when = 'Only with an ally next to the target, on its opposite side';

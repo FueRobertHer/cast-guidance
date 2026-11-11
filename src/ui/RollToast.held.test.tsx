@@ -93,7 +93,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   resetAnnouncer();
   rollLogStore.setState({ rolls: [], seq: 0 });
-  rollOffersStore.setState({ spend: null, expired: 0, before: false });
+  rollOffersStore.setState({ spend: null, pay: null, expired: 0, before: false });
   followUpStore.setState({ offer: null });
   document.body.replaceChildren();
 });
@@ -179,6 +179,68 @@ describe('the roll prompt', () => {
     // Added before, so not offered after; the die left comes back, as written.
     expect(screen.queryByRole('button', { name: /Guidance/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Bardic Inspiration/ })).toBeTruthy();
+  });
+
+  it('adds a feature’s own die, saying what it pays, and pays as it rolls', () => {
+    const pay = vi.fn(() => true);
+    rollOffersStore.setState({ pay });
+    const ambush: RollOffer = {
+      dice: '1d8',
+      source: 'Ambush',
+      once: true,
+      ifFailed: false,
+      pay: {
+        spends: [{ key: 'sd', max: 4, amount: 1 }],
+        reaction: false,
+        words: 'spends 1 Superiority Dice',
+      },
+    };
+    const container = render(<RollToast />).container;
+    act(() =>
+      rollFrom(control('Stealth'), () =>
+        d20Ask('1d20+3', {
+          label: 'Stealth check',
+          riders: riders({ offers: [ambush, guidance] }),
+        }),
+      ),
+    );
+    const chip = screen.getByRole('button', {
+      name: '+d8 Ambush, paid: Ambush spends 1 Superiority Dice.',
+    });
+    expect(chip.textContent).toBe('+d8 Ambush· paid');
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole('button', { name: '+d4 Guidance, once' }));
+    expect(prompt('Stealth check').textContent).toContain(
+      'Spends Guidance. Ambush spends 1 Superiority Dice.',
+    );
+    expect(pay).not.toHaveBeenCalled();
+    nextFaces(12, 5, 2);
+    fireEvent.click(roll());
+    expect(container.textContent).toContain('d20 [12] + 3 + d8 [5] Ambush + d4 [2] Guidance');
+    expect(pay).toHaveBeenCalledExactlyOnceWith(ambush, true);
+  });
+
+  it('says under the house rule that only an effect’s die left is gone', () => {
+    rollOffersStore.setState({ before: true });
+    const ambush: RollOffer = {
+      dice: '1d8',
+      source: 'Ambush',
+      once: true,
+      ifFailed: false,
+      pay: { spends: [], reaction: true, words: 'marks your reaction' },
+    };
+    render(<RollToast />);
+    act(() =>
+      rollFrom(control('Stealth'), () =>
+        d20Ask('1d20+3', {
+          label: 'Stealth check',
+          riders: riders({ offers: [ambush, guidance] }),
+        }),
+      ),
+    );
+    expect(prompt('Stealth check').textContent).toContain(
+      'Left, Guidance is gone once the d20 shows; the rest come back after the roll.',
+    );
   });
 
   it('lets the dice left go under the house rule', () => {

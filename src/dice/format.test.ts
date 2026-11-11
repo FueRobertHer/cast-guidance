@@ -45,6 +45,15 @@ describe('rollDetail', () => {
     expect(detail(roll('2d6+3', { rng: seq(4, 5), advantage: 'dis' }))).toBe('2d6 [4, 5] + 3');
   });
 
+  it('names a modifier a feature added, as it names a die', () => {
+    const result = roll('1d20+5+10', { rng: seq(7) });
+    const added = {
+      ...result,
+      meta: { ...result.meta, from: [{ term: 2, source: 'Guided Strike' }] },
+    };
+    expect(detail(added)).toBe('d20 [7] + 5 + 10 Guided Strike');
+  });
+
   it('says nothing of a modifier of zero', () => {
     expect(detail(roll('1d20+0', { rng: seq(7) }))).toBe('d20 [7]');
   });

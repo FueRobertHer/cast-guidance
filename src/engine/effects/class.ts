@@ -1,6 +1,7 @@
 import { plainEntryText } from '../../data5e/entries/plainText';
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
 import { emitRollAdvantages } from '../curated/rollAdvantages';
+import { emitRollExtras } from '../curated/rollExtras';
 import { linkSpend } from '../curated/spendLinks';
 import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
@@ -355,14 +356,11 @@ function collectFeatureWithNested(
           emitStanding(col, `${n}|${label}`.toLowerCase(), featureOrigin, printing, level),
         ),
       );
-      emitRollAdvantages(
-        col,
-        names.flatMap((n) =>
-          labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
-        ),
-        featureOrigin,
-        level,
+      const rollKeys = names.flatMap((n) =>
+        labels.flatMap((label) => sources.map((source) => `${n}|${label}|${source}`)),
       );
+      emitRollAdvantages(col, rollKeys, featureOrigin, level);
+      emitRollExtras(col, rollKeys, featureOrigin, level);
       names.some((n) =>
         labels.some((label) =>
           sources.some((source) => linkSpend(col, `${n}|${label}|${source}`, name, featureOrigin)),

@@ -16,7 +16,8 @@ import {
 import { setOneUseDice } from '@/lib/oneUseDice';
 import type { DocUpdater } from '@/stores/characterSession';
 import { heldRollStore, rollFrom } from '@/stores/heldRoll';
-import { rollOffersStore } from '@/stores/rollOffers';
+import { noticeStore } from '@/stores/notices';
+import { type PaidExtra, rollOffersStore } from '@/stores/rollOffers';
 import { setAppTableRule, useAppTableRules } from '@/stores/tableRules';
 import { d20Ask } from './d20Tests';
 import { useRollOfferSpending } from './rollOfferSpending';
@@ -25,7 +26,8 @@ afterEach(() => {
   cleanup();
   act(() => setOneUseDice('after'));
   act(() => setAppTableRule('critDamage', undefined));
-  rollOffersStore.setState({ spend: null, expired: 0, before: false });
+  rollOffersStore.setState({ spend: null, pay: null, expired: 0, before: false });
+  noticeStore.setState({ notice: null });
 });
 
 const fx = (id: string, name: string): ActiveEffect => ({ id, name, parts: [] });
@@ -109,6 +111,88 @@ describe('useRollOfferSpending', () => {
     expect(rollOffersStore.getState().expired).toBe(seen + 1);
     act(() => s.update((d) => void (d.play.tempHp = 5)));
     expect(rollOffersStore.getState().expired).toBe(seen + 2);
+  });
+});
+
+describe('paying for a feature’s own extra', () => {
+  const ambush = (reaction = true): PaidExtra => ({
+    source: 'Ambush',
+    pay: {
+      spends: [{ key: 'superiority-dice', max: 2, amount: 1 }],
+      reaction,
+      words: reaction
+        ? 'marks your reaction and spends 1 Superiority Dice'
+        : 'spends 1 Superiority Dice',
+    },
+  });
+  const pay = (extra: PaidExtra, taken: boolean) => {
+    let said: boolean | undefined;
+    act(() => {
+      said = rollOffersStore.getState().pay?.(extra, taken);
+    });
+    return said;
+  };
+  const dice = (s: ReturnType<typeof openSheet>) =>
+    s.doc().play.resources.find((r) => r.key === 'superiority-dice')?.used ?? 0;
+
+  it('pays its uses and the reaction in one change, and gives them back taken off', () => {
+    const s = openSheet([]);
+    const extra = ambush();
+    expect(pay(extra, true)).toBe(true);
+    expect(dice(s)).toBe(1);
+    expect(s.doc().play.turn?.reaction).toBe(true);
+    expect(pay(extra, false)).toBe(true);
+    expect(dice(s)).toBe(0);
+    expect(s.doc().play.turn?.reaction).toBe(false);
+    expect(s.labels).toEqual(['Used Ambush', 'Took back Ambush']);
+  });
+
+  it('pays once for the same extra, and gives back only what it paid for', () => {
+    const s = openSheet([]);
+    // No reaction to stop a second payment: only the extra itself does.
+    const extra = ambush(false);
+    pay(extra, true);
+    expect(pay(extra, true)).toBe(true);
+    expect(dice(s)).toBe(1);
+    // Another offer of the same feature, never paid for, gives nothing back.
+    pay(ambush(false), false);
+    expect(dice(s)).toBe(1);
+    pay(extra, false);
+    pay(extra, false);
+    expect(dice(s)).toBe(0);
+    expect(s.labels).toEqual(['Used Ambush', 'Took back Ambush']);
+  });
+
+  it('says so and pays nothing when there is nothing left to pay with', () => {
+    const s = openSheet([], (d) => {
+      d.play.resources = [{ key: 'superiority-dice', used: 2 }];
+    });
+    const extra = ambush();
+    expect(pay(extra, true)).toBe(false);
+    expect(dice(s)).toBe(2);
+    expect(s.doc().play.turn?.reaction ?? false).toBe(false);
+    expect(noticeStore.getState().notice).toMatchObject({
+      title: 'Not paid: Ambush',
+      detail: 'Nothing left to pay with: it marks your reaction and spends 1 Superiority Dice.',
+      tone: 'warn',
+    });
+    // Not paid, so no change to name, and nothing to give back.
+    pay(extra, false);
+    expect(dice(s)).toBe(2);
+    expect(s.labels).toEqual([]);
+  });
+
+  it('pays nothing for an extra with no price', () => {
+    const s = openSheet([]);
+    expect(pay({ source: 'Guidance' }, true)).toBe(false);
+    expect(s.labels).toEqual([]);
+  });
+
+  it('lets go of the store when the sheet closes', () => {
+    const s = openSheet([]);
+    expect(rollOffersStore.getState().pay).not.toBeNull();
+    s.hook.unmount();
+    expect(rollOffersStore.getState().pay).toBeNull();
   });
 });
 
