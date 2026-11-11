@@ -41,7 +41,8 @@ export type D20Test =
       /** The class whose spell this is, for a spell attack. */
       className?: string;
     }
-  | { kind: 'check'; ability?: Ability; skill?: string }
+  /** `proficient`: the check's skill is one the character is proficient in, or has expertise in. */
+  | { kind: 'check'; ability?: Ability; skill?: string; proficient?: boolean }
   | { kind: 'initiative' }
   /** `purpose` names a death save or a save to keep concentrating, which some features reach alone. */
   | { kind: 'save'; ability?: Ability; purpose?: 'death' | 'concentration' };

@@ -350,6 +350,55 @@ describe('pricedRollEffects', () => {
       expect(pricedRollEffects(riders([low]), withRerolls, play()).rerollOffers).toBeUndefined();
     });
 
+    it('keeps a floor as the d20 lands whether or not it is marked so, and never offers it', () => {
+      const might = { source: 'Indomitable Might', floor: 18 };
+      expect(pricedRollEffects(riders([might]), withRerolls, undefined).rerolls).toEqual([might]);
+      const priced = pricedRollEffects(riders([might]), withRerolls, play());
+      expect(priced.rerolls).toEqual([might]);
+      expect(priced.rerollOffers).toBeUndefined();
+    });
+
+    it('offers a set with its number, free or paid from the pool named for it', () => {
+      const trance = {
+        source: 'Trance of Order',
+        to: 10,
+        atMost: 9,
+        free: true,
+        when: 'Only while it lasts',
+      };
+      const stroke = { source: 'Stroke of Luck', to: 20, ifFailed: true };
+      const withStroke = {
+        ...withRerolls,
+        resources: [...withRerolls.resources, resource('stroke-of-luck', 'Stroke of Luck', 1)],
+      };
+      const priced = pricedRollEffects(riders([trance, stroke]), withStroke, play());
+      expect(priced.rerollOffers).toEqual([
+        {
+          source: 'Trance of Order',
+          die: 'all',
+          ifFailed: false,
+          atMost: 9,
+          to: 10,
+          when: 'Only while it lasts',
+        },
+        {
+          source: 'Stroke of Luck',
+          die: 'all',
+          ifFailed: true,
+          to: 20,
+          pay: expect.objectContaining({ spends: [{ key: 'stroke-of-luck', max: 1, amount: 1 }] }),
+        },
+      ]);
+      // With its use spent, the paid one is not offered.
+      expect(
+        pricedRollEffects(
+          riders([trance, stroke]),
+          withStroke,
+          play({ 'stroke-of-luck': 1 }),
+        ).rerollOffers?.map((o) => o.source),
+      ).toEqual(['Trance of Order']);
+    });
+
     it('carries which die a reroll takes and the most it may show', () => {
       const twins = { source: 'Khenra Twins', die: 'one' as const, atMost: 1, free: true };
       expect(pricedRollEffects(riders([twins]), withRerolls, play()).rerollOffers).toEqual([

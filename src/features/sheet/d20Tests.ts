@@ -407,9 +407,13 @@ export function d20Ask(
         ...bonusesFor(choice).map((b) => (b.bonus < 0 ? `${b.bonus}` : `+${b.bonus}`)),
       ].reduce((e, term) => `${e}${term}`, expr);
       const full = resolution.penalty !== 0 ? `${withDice}${resolution.penalty}` : withDice;
-      // What rerolls as the d20 lands (Halfling Luck's 1, Elven Accuracy): never worse.
+      // What rerolls as the d20 lands (Halfling Luck's 1, Elven Accuracy), then what
+      // sets it (Reliable Talent's 10), then a floor (Indomitable Might): never worse.
+      const step = (r: { to?: number; floor?: number }) =>
+        r.floor !== undefined ? 2 : r.to !== undefined ? 1 : 0;
       const result = (riders?.rerolls ?? [])
-        .filter((r) => r.auto === true)
+        .filter((r) => r.auto === true || r.floor !== undefined)
+        .sort((a, b) => step(a) - step(b))
         .reduce((r, how) => rerollD20(r, how) ?? r, roll(full, { label, advantage, kind: 'd20' }));
       // A d20 test's expression is the d20 and flat modifiers, so every die after
       // the first is an effect's, in order.

@@ -20,7 +20,7 @@ import {
   useState,
 } from 'react';
 import { useStore } from 'zustand';
-import { canReroll, rerollD20 } from '@/dice/reroll';
+import { canReroll, rawTotal, rerollD20, withRaw } from '@/dice/reroll';
 import { roll } from '@/dice/roll';
 import type {
   CritDamage,
@@ -126,13 +126,23 @@ export function rollAnnouncement(result: RollResult): string {
               ? ', critical'
               : '';
   const rerolled = result.meta?.rerolled ?? [];
+  const setBy = result.meta?.setBy ?? [];
   const dice = result.terms
     .map((t, i) => {
-      const said = termSpeech(t, i === 0);
-      return i === 0 && rerolled.length > 0 ? `${said}, rerolled by ${andWords(rerolled)}` : said;
+      if (i > 0) return termSpeech(t, false);
+      return [
+        termSpeech(t, true),
+        ...(rerolled.length > 0 ? [`rerolled by ${andWords(rerolled)}`] : []),
+        ...(setBy.length > 0 ? [`set by ${andWords(setBy)}`] : []),
+      ].join(', ');
     })
     .join(', ');
-  const rolled = dice === '' ? '' : `. Rolled ${dice}`;
+  const floor = result.meta?.floor;
+  const held =
+    floor !== undefined && floor.raw < floor.at
+      ? `, ${floor.raw} set to ${floor.at} by ${floor.source}`
+      : '';
+  const rolled = dice === '' ? '' : `. Rolled ${dice}${held}`;
   const cue = result.meta?.cue === undefined ? '' : `. ${result.meta.cue}`;
   return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
 }
@@ -188,7 +198,8 @@ export function withAdded(
   const offers = base.meta?.offers ?? [];
   const terms = [...base.terms];
   const from = [...(base.meta?.from ?? [])];
-  let total = base.total;
+  // Counted from what the terms come to, so a floor (Indomitable Might) still holds.
+  let total = rawTotal(base);
   offers.forEach((o, i) => {
     const r = rolled[i];
     if (on[i] !== true || r === undefined) return;
@@ -197,7 +208,7 @@ export function withAdded(
     total += r.value;
   });
   if (from.length === (base.meta?.from ?? []).length) return base;
-  return { ...base, total, terms, meta: { ...base.meta, from } };
+  return withRaw({ ...base, terms, meta: { ...base.meta, from } }, total);
 }
 
 /** "1d8" as the chip says it: "d8". */
@@ -244,11 +255,12 @@ export function rerollPrices(rerolls: readonly RerollOffer[]): string {
     .join(' ');
 }
 
-/** What a reroll's chip is named, for a screen reader. */
+/** What a reroll's chip is named, for a screen reader: a set says the number. */
 function rerollName(o: RerollOffer): string {
   const price = o.pay !== undefined ? `. It ${o.pay.words}` : '';
   const when = o.when !== undefined ? `. ${o.when}` : '';
-  return `Reroll with ${o.source}${o.ifFailed ? ', if the roll failed' : ''}${price}${when}`;
+  const what = o.to !== undefined ? `Set the d20 to ${o.to} with` : 'Reroll with';
+  return `${what} ${o.source}${o.ifFailed ? ', if the roll failed' : ''}${price}${when}`;
 }
 
 /** Was this focused from the keyboard? A browser that cannot say counts it as not. */
@@ -623,7 +635,8 @@ function RollResultToast({
       followUpStore.setState({ offer: { ...damageOffer, expr: critDice(damageOffer.expr) } });
     const next = withAdded(base, rolled, added);
     rollLogStore.getState().replace(next);
-    announce(`${o.source}: rerolled. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
+    const done = o.to !== undefined ? `set to ${o.to}` : 'rerolled';
+    announce(`${o.source}: ${done}. ${rollAnnouncement(next)}`, { key: 'roll', repeat: true });
   };
 
   // The dice an effect offers, after the roll: tap to add, tap again to take
@@ -702,7 +715,13 @@ function RollResultToast({
                 i === firstReroll && firstOpen < 0 && damageOffer === null ? firstOffer : undefined
               }
               type="button"
-              aria-label={rerolledWith[i] === true ? `Rerolled with ${o.source}` : rerollName(o)}
+              aria-label={
+                rerolledWith[i] !== true
+                  ? rerollName(o)
+                  : o.to !== undefined
+                    ? `Set to ${o.to} with ${o.source}`
+                    : `Rerolled with ${o.source}`
+              }
               aria-disabled={rerolledWith[i] === true}
               onClick={() => rerollWith(i)}
               className={`inline-flex min-h-tap items-center gap-1 rounded-full px-3 font-semibold text-ink text-label ${
@@ -714,12 +733,16 @@ function RollResultToast({
               {rerolledWith[i] === true ? (
                 <>
                   <Check size={14} aria-hidden="true" className="shrink-0 text-heal" />
-                  Rerolled, {o.source}
+                  {o.to !== undefined ? `Set to ${o.to}` : 'Rerolled'}, {o.source}
                 </>
               ) : (
                 <>
-                  <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
-                  Reroll, {o.source}
+                  {o.to !== undefined ? (
+                    <ChevronsUp size={14} aria-hidden="true" className="shrink-0 text-heal" />
+                  ) : (
+                    <RefreshCw size={14} aria-hidden="true" className="shrink-0 text-heal" />
+                  )}
+                  {o.to !== undefined ? `Set ${o.to}` : 'Reroll'}, {o.source}
                   {o.ifFailed ? ', if it failed' : ''}
                   {o.pay !== undefined && (
                     <span className="font-normal text-ink-muted">· paid</span>

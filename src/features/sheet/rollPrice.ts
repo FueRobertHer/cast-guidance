@@ -97,7 +97,8 @@ export function pricedRollEffects(
 ): RollEffects {
   const { paid = [], rerolls = [], ...rest } = riders;
   if (riders.paid === undefined && riders.rerolls === undefined) return riders;
-  const auto = rerolls.filter((r) => r.auto === true);
+  // Made as the d20 lands: what is marked so, and a floor, which always holds.
+  const auto = rerolls.filter((r) => r.auto === true || r.floor !== undefined);
   // What costs nothing and never hurts rolls with no play state too.
   const out = auto.length > 0 ? { ...rest, rerolls: auto } : rest;
   if (play === undefined) return out;
@@ -105,7 +106,7 @@ export function pricedRollEffects(
   const declare = [...(out.declare ?? [])];
   const rerollOffers: NonNullable<RollEffects['rerollOffers']> = [];
   for (const r of rerolls) {
-    if (r.auto === true || r.die === 'low') continue;
+    if (r.auto === true || r.die === 'low' || r.floor !== undefined) continue;
     // The reaction alone is a price with no action or pool behind it.
     const price =
       r.free !== true
@@ -119,6 +120,7 @@ export function pricedRollEffects(
       die: r.die ?? 'all',
       ifFailed: r.ifFailed === true,
       ...(r.atMost !== undefined ? { atMost: r.atMost } : {}),
+      ...(r.to !== undefined ? { to: r.to } : {}),
       ...(r.bonus !== undefined ? { bonus: r.bonus } : {}),
       ...(price.pay !== undefined ? { pay: price.pay } : {}),
       ...(r.when !== undefined ? { when: r.when } : {}),

@@ -7,6 +7,66 @@ export interface RerollHow {
   die?: 'all' | 'one' | 'low' | 'extra';
   atMost?: number;
   bonus?: number;
+  /** A set, not a reroll: the kept d20, at `atMost` or less, counts as this. */
+  to?: number;
+  /** A floor, not a reroll: the total counts as at least this (Indomitable Might). */
+  floor?: number;
+}
+
+/** What a roll's terms come to, before a floor holds the total up. */
+export function rawTotal(result: RollResult): number {
+  return result.meta?.floor?.raw ?? result.total;
+}
+
+/** The roll with its terms coming to `raw`, its total held at its floor, if it has one. */
+export function withRaw(result: RollResult, raw: number): RollResult {
+  const floor = result.meta?.floor;
+  if (floor === undefined) return { ...result, total: raw };
+  return {
+    ...result,
+    total: Math.max(raw, floor.at),
+    meta: { ...result.meta, floor: { ...floor, raw } },
+  };
+}
+
+/**
+ * The roll with its kept d20 set to `to`, as `how` says: the die it replaces
+ * is set aside, and the natural and an attack's crit follow the new number.
+ * Undefined when it can change nothing: the die shows more than `atMost`, or
+ * `to` already.
+ */
+function setD20(
+  result: RollResult,
+  first: Extract<RollResult['terms'][number], { kind: 'dice' }>,
+  how: RerollHow & { to: number },
+): RollResult | undefined {
+  const rolls = first.rolls.map((r) => ({ ...r }));
+  const was = rolls.find((r) => r.kept);
+  if (was === undefined || was.v >= how.to || was.v > (how.atMost ?? how.to)) return undefined;
+  was.kept = false;
+  was.out = true;
+  rolls.push({ v: how.to, kept: true });
+  const attack = result.meta?.attack;
+  const set: RollResult = {
+    ...result,
+    terms: [{ ...first, rolls }, ...result.terms.slice(1)],
+    meta: {
+      ...result.meta,
+      d20: { natural: how.to },
+      setBy: [...(result.meta?.setBy ?? []), how.source],
+      ...(attack !== undefined
+        ? { attack: { ...attack, crit: how.to >= (attack.critFrom ?? 20) } }
+        : {}),
+    },
+  };
+  return withRaw(set, rawTotal(result) - was.v + how.to);
+}
+
+/** The roll with a total under `at` counting as `at`; undefined when it is `at` or more. */
+function floorTotal(result: RollResult, at: number, source: string): RollResult | undefined {
+  const raw = rawTotal(result);
+  if (raw >= at || (result.meta?.floor?.at ?? 0) >= at) return undefined;
+  return withRaw({ ...result, meta: { ...result.meta, floor: { at, source, raw } } }, raw);
 }
 
 /**
@@ -18,6 +78,7 @@ export interface RerollHow {
  * again, and the total, the natural and an attack's crit follow it; a bonus
  * (2024 Indomitable) joins as a term named for its source. Undefined when it
  * can change nothing: no die shows low enough, or `low` with no advantage.
+ * A set (`to`) or a floor (`floor`) changes the roll in place of a reroll.
  */
 export function rerollD20(
   result: RollResult,
@@ -26,6 +87,8 @@ export function rerollD20(
 ): RollResult | undefined {
   const [first, ...rest] = result.terms;
   if (first?.kind !== 'dice' || first.sides !== 20) return undefined;
+  if (how.floor !== undefined) return floorTotal(result, how.floor, how.source);
+  if (how.to !== undefined) return setD20(result, first, { ...how, to: how.to });
   const mode = result.meta?.advantage;
   const rolls = first.rolls.map((r) => ({ ...r }));
   const was = rolls.find((r) => r.kept);
@@ -68,20 +131,22 @@ export function rerollD20(
     terms.push({ kind: 'mod', value: bonus });
   }
   const attack = result.meta?.attack;
-  return {
-    ...result,
-    total: result.total - was.v + keep.v + Math.max(0, bonus),
-    terms,
-    meta: {
-      ...result.meta,
-      d20: { natural: keep.v },
-      rerolled: [...(result.meta?.rerolled ?? []), how.source],
-      ...(from.length > 0 ? { from } : {}),
-      ...(attack !== undefined
-        ? { attack: { ...attack, crit: keep.v >= (attack.critFrom ?? 20) } }
-        : {}),
+  return withRaw(
+    {
+      ...result,
+      terms,
+      meta: {
+        ...result.meta,
+        d20: { natural: keep.v },
+        rerolled: [...(result.meta?.rerolled ?? []), how.source],
+        ...(from.length > 0 ? { from } : {}),
+        ...(attack !== undefined
+          ? { attack: { ...attack, crit: keep.v >= (attack.critFrom ?? 20) } }
+          : {}),
+      },
     },
-  };
+    rawTotal(result) - was.v + keep.v + Math.max(0, bonus),
+  );
 }
 
 /** Could this reroll change the roll as it stands: is there a die it rerolls? */

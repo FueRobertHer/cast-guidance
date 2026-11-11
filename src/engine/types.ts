@@ -190,6 +190,8 @@ export interface RollFilter {
   skills?: string[];
   /** Checks made with any skill, not a bare ability check (2024 Guidance). */
   skilled?: boolean;
+  /** Checks with a skill the character is proficient in, or has expertise in (Reliable Talent). */
+  proficient?: boolean;
   attack?: 'weapon' | 'spell';
   range?: 'melee' | 'ranged';
   /** Attacks with this class's spells (2024 Innate Sorcery: Sorcerer). */
@@ -931,7 +933,7 @@ export interface PaidRoll {
 
 /**
  * A reroll a feature of the character's own gives their d20 tests, whose new
- * roll stands.
+ * roll stands; or, with `to` or `floorScore`, a number set in place of the roll.
  * - `die`: what rerolls. Unset or `all`: the roll's d20s again, in its mode
  *   (Indomitable rerolls the save); `one`: a die showing `atMost` or less
  *   (Halfling Luck's 1); `low`: the lower die of advantage (Elven Accuracy);
@@ -941,11 +943,18 @@ export interface PaidRoll {
  *   which the player counts); with `reaction`, the reaction alone (Living
  *   Legend, whose use went as it began).
  * - `bonus`: added to the new roll (2024 Indomitable: the Fighter level).
+ * - `to`: no reroll; the d20 kept, showing `atMost` or less (less than `to`
+ *   when unset), counts as `to` (Reliable Talent's 9 or lower as a 10, Stroke
+ *   of Luck's 20).
+ * - `floorScore`: no reroll; a total under this ability's score counts as the
+ *   score (Indomitable Might). Always `auto`.
  * - `reaction`, `ifFailed` and `when` as `PaidRoll` has them.
  */
 export interface Reroll {
   die?: 'all' | 'one' | 'low' | 'extra';
   atMost?: number;
+  to?: number;
+  floorScore?: Ability;
   auto?: boolean;
   free?: boolean;
   reaction?: boolean;
@@ -966,7 +975,8 @@ export type RollRider = {
   | { kind: 'advantage'; mode: 'adv' | 'dis'; when?: string }
   /** A feature's paid extra, its bonus worked out (`PaidRoll`). */
   | ({ kind: 'paid' } & Omit<PaidRoll, 'bonus'> & { bonus?: number })
-  | ({ kind: 'reroll' } & Reroll)
+  /** A reroll or a set, a `floorScore` worked out as the score itself (`floor`). */
+  | ({ kind: 'reroll' } & Omit<Reroll, 'floorScore'> & { floor?: number })
 );
 
 /** Part of an effect in play that counts for nothing, and the effect that counts instead. */

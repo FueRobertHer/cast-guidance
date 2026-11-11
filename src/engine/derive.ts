@@ -301,7 +301,11 @@ export function deriveSheet(
       origin: e.origin.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
     })),
-    rollRiders: rollRiders(effects, (a) => bonusAmount(a, abilities, profBonus.value)),
+    rollRiders: rollRiders(
+      effects,
+      (a) => bonusAmount(a, abilities, profBonus.value),
+      (a) => abilities[a].value,
+    ),
     extraActions: effectsOf(effects, 'extraAction').map((e) => ({
       label: e.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
@@ -496,11 +500,13 @@ function definedOnly<T extends object>(o: T): { [K in keyof T]?: Exclude<T[K], u
 
 /**
  * Dice and advantage for rolls, each under its source and, from an effect in
- * play, its id. A paid extra's bonus is worked out here (`amount`).
+ * play, its id. A paid extra's bonus is worked out here (`amount`), and a
+ * floor at an ability's score as that score (`score`: Indomitable Might).
  */
 function rollRiders(
   effects: readonly EffectInput[],
   amount: (a: BonusAmount) => number,
+  score: (a: Ability) => number,
 ): RollRider[] {
   const out: RollRider[] = [];
   for (const e of effects) {
@@ -545,11 +551,12 @@ function rollRiders(
         ...(bonus !== undefined ? { bonus: amount(bonus) } : {}),
       });
     } else if (e.kind === 'rollReroll') {
-      const { die, atMost, auto, free, reaction, ifFailed, bonus, when } = e;
+      const { die, atMost, to, floorScore, auto, free, reaction, ifFailed, bonus, when } = e;
       out.push({
         ...from,
         kind: 'reroll',
-        ...definedOnly({ die, atMost, auto, free, reaction, ifFailed, bonus, when }),
+        ...definedOnly({ die, atMost, to, auto, free, reaction, ifFailed, bonus, when }),
+        ...(floorScore !== undefined ? { floor: score(floorScore), auto: true } : {}),
       });
     } else
       out.push({
