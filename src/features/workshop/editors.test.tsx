@@ -208,6 +208,22 @@ describe('BackgroundEditor', () => {
       languageProficiencies: [{ anyStandard: 2 }],
     });
   });
+
+  it("keeps Custom Background's languages or tools, which its languages stand for", () => {
+    const custom: Json = {
+      name: 'Custom Background',
+      source: 'PHB',
+      languageProficiencies: [{ anyStandard: 2 }],
+      skillToolLanguageProficiencies: [
+        { anyLanguage: 2 },
+        { anyLanguage: 1, anyTool: 1 },
+        { anyTool: 1 },
+      ],
+    };
+    mount(background, structuredClone(custom), custom);
+    expect(screen.queryByLabelText('Languages of your choice')).toBeNull();
+    expect(screen.getByText(/languages or tools of your choice, kept as they are/)).toBeTruthy();
+  });
 });
 
 describe('SpeciesEditor', () => {

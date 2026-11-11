@@ -521,6 +521,70 @@ export function readSkillOrToolChoice(
   }
 }
 
+/**
+ * Whether `skillToolLanguageProficiencies` is written as alternatives of counts of
+ * languages and tools, as Custom Background's
+ * `[{ anyLanguage: 2 }, { anyLanguage: 1, anyTool: 1 }, { anyTool: 1 }]` is.
+ */
+export function isLanguageOrToolMix(raw: unknown): boolean {
+  const alternatives = asEntityArray(raw);
+  const counted = (key: string) => key === 'anyLanguage' || key === 'anyTool';
+  return (
+    alternatives.length > 0 &&
+    alternatives.every((a) => {
+      const keys = Object.keys(a);
+      return keys.length > 0 && keys.every((k) => counted(k) && num(a[k]) !== undefined);
+    })
+  );
+}
+
+/**
+ * Alternatives of counts (`isLanguageOrToolMix`) read as one pick from every
+ * language and tool, in any mix. The rule is "a total of two tool proficiencies or
+ * languages", but the data's last alternative has one tool, so the pick takes the
+ * largest alternative's count. Returns whether the field had this shape; anything
+ * else in it (a `choose`, a skill) is left to the other readers.
+ */
+export function readLanguageOrToolMix(
+  col: Collector,
+  raw: unknown,
+  origin: EffectOrigin,
+  id: string,
+): boolean {
+  if (!isLanguageOrToolMix(raw)) return false;
+  const alternatives = asEntityArray(raw);
+  const count = Math.max(
+    ...alternatives.map((a) => (num(a.anyLanguage) ?? 0) + (num(a.anyTool) ?? 0)),
+  );
+  const languages = alternatives.some((a) => a.anyLanguage !== undefined)
+    ? markKnownLanguages(col, languageOptions())
+    : [];
+  const tools = alternatives.some((a) => a.anyTool !== undefined) ? toolOptions() : [];
+  const spoken = new Set(languages.map((o) => o.id));
+  col.choice(
+    {
+      id,
+      origin,
+      kind: languages.length > 0 ? 'language' : 'tool',
+      label:
+        tools.length === 0
+          ? 'Language'
+          : languages.length === 0
+            ? 'Tool proficiency'
+            : 'Language or tool',
+      count,
+      options: [...languages, ...tools],
+    },
+    (selected) => {
+      for (const s of selected) {
+        if (spoken.has(s)) col.add({ kind: 'language', name: s, origin });
+        else col.add({ kind: 'toolProf', name: s, origin });
+      }
+    },
+  );
+  return true;
+}
+
 function weightedOf(
   entry: Record<string, unknown>,
 ): { from: unknown[]; weights: number[] } | undefined {

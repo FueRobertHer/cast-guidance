@@ -10,7 +10,9 @@ import { Collector } from './base';
 import {
   ARTISANS_TOOLS,
   GAMING_SETS,
+  isLanguageOrToolMix,
   MUSICAL_INSTRUMENTS,
+  readLanguageOrToolMix,
   readProficiencyList,
   toolOptions,
   weaponOptions,
@@ -240,5 +242,42 @@ describe('weapon proficiency choices', () => {
     expect(weaponCollector([{ 'hand crossbow|phb': true }]).effects).toEqual([
       { kind: 'weaponProf', name: 'Hand Crossbow', origin },
     ]);
+  });
+});
+
+describe('languages and tools in any mix', () => {
+  const mix = (raw: unknown) => {
+    const col = new Collector(newCharacterDoc('id', 'Test', 'test-tag'), ctx);
+    const read = readLanguageOrToolMix(col, raw, origin, 'background:test|tst:lang:0');
+    const p = col.pending[0];
+    const ids = p?.options.map((o) => o.id) ?? [];
+    return { read, kind: p?.kind, label: p?.label, count: p?.count, ids };
+  };
+
+  it('reads alternatives of language and tool counts alone', () => {
+    expect(isLanguageOrToolMix([{ anyLanguage: 2 }, { anyLanguage: 1, anyTool: 1 }])).toBe(true);
+    expect(isLanguageOrToolMix([])).toBe(false);
+    expect(isLanguageOrToolMix(undefined)).toBe(false);
+    expect(isLanguageOrToolMix([{}])).toBe(false);
+    expect(isLanguageOrToolMix([{ anyLanguage: 1, anySkill: 1 }])).toBe(false);
+    expect(isLanguageOrToolMix([{ anyLanguage: true }])).toBe(false);
+    expect(isLanguageOrToolMix([{ choose: [{ from: ['anySkill', 'anyTool'] }] }])).toBe(false);
+    expect(mix([{ choose: [{ from: ['anySkill', 'anyTool'] }] }]).read).toBe(false);
+  });
+
+  it('offers only the kinds the alternatives name, as many as the largest', () => {
+    const languages = mix([{ anyLanguage: 1 }, { anyLanguage: 2 }]);
+    expect([languages.read, languages.kind, languages.label, languages.count]).toEqual([
+      true,
+      'language',
+      'Language',
+      2,
+    ]);
+    expect(languages.ids).toContain('Elvish');
+    expect(languages.ids).not.toContain("thieves' tools");
+    const tools = mix([{ anyTool: 1 }]);
+    expect([tools.kind, tools.label, tools.count]).toEqual(['tool', 'Tool proficiency', 1]);
+    expect(tools.ids).toContain("thieves' tools");
+    expect(tools.ids).not.toContain('Elvish');
   });
 });

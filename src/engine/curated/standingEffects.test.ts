@@ -64,6 +64,33 @@ describe('standing rows', () => {
     expect(fire(14)).toEqual([]);
   });
 
+  it("asks for Tiger's two skills at level 6 alone, and grants them", () => {
+    const tiger = sub('path of the totem warrior|phb', 'Tiger');
+    const asked = (level: number) =>
+      emit('tiger|path of the totem warrior', tiger, { level }).pending.map((p) => [
+        p.id,
+        p.count,
+        p.options.map((o) => o.id),
+      ]);
+    expect(asked(3)).toEqual([]);
+    expect(asked(6)).toEqual([
+      [
+        'subclass:path of the totem warrior|phb:skill:tiger',
+        2,
+        ['Athletics', 'Acrobatics', 'Stealth', 'Survival'],
+      ],
+    ]);
+    expect(asked(14)).toEqual([]);
+    const doc = newCharacterDoc('c', 'H', 't');
+    doc.choices['subclass:path of the totem warrior|phb:skill:tiger'] = ['Stealth', 'Survival'];
+    const col = new Collector(doc, empty);
+    emitStandingEffects(col, 'tiger|path of the totem warrior', tiger, undefined, 6);
+    expect(of(col, 'skillProf').map((e) => [e.skill, e.level])).toEqual([
+      ['Stealth', 1],
+      ['Survival', 1],
+    ]);
+  });
+
   it('holds a raging feature only while Rage is in play', () => {
     const col = emit('mindless rage|path of the berserker', sub('path of the berserker|phb'));
     expect(of(col, 'conditionImmune').map((e) => [e.condition, e.while])).toEqual([

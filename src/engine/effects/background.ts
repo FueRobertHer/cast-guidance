@@ -1,12 +1,14 @@
-import { type EffectOrigin, refUid } from '../types';
+import { type DataEntity, type EffectOrigin, refUid } from '../types';
 import { collectAdditionalSpells } from './additionalSpells';
 import { asEntityArray, type Collector, num, str } from './base';
 import { collectFeatEntity } from './feat';
 import { isRepeatableFeat } from './featPicks';
 import { buildPrereqContext, featChoiceOption } from './prerequisites';
 import {
+  isLanguageOrToolMix,
   languageOptions,
   readAbilityBlock,
+  readLanguageOrToolMix,
   readProficiencyList,
   skillOptions,
   toolOptions,
@@ -37,9 +39,16 @@ export function collectBackground(col: Collector): void {
     (name) => col.add({ kind: 'skillProf', skill: name, level: 1, origin }),
     skillOptions,
   );
+  // Custom Background's languages and tools are one grant, "two of your choice",
+  // which `skillToolLanguageProficiencies` spells out and `languageProficiencies`
+  // shortens to two languages, so the mix stands in for the languages' picks and
+  // only a language named outright is still read. The pick keeps the id the two
+  // languages had, so a saved pair still holds. The named ones come first, so the
+  // mix marks them as spoken.
+  const mixed = isLanguageOrToolMix(e.skillToolLanguageProficiencies);
   readProficiencyList(
     col,
-    e.languageProficiencies,
+    mixed ? namedOnly(e.languageProficiencies) : e.languageProficiencies,
     origin,
     `${idBase}:lang`,
     'language',
@@ -47,6 +56,7 @@ export function collectBackground(col: Collector): void {
     (name) => col.add({ kind: 'language', name, origin }),
     languageOptions,
   );
+  readLanguageOrToolMix(col, e.skillToolLanguageProficiencies, origin, `${idBase}:lang:0`);
   readProficiencyList(
     col,
     e.toolProficiencies,
@@ -83,6 +93,15 @@ export function collectBackground(col: Collector): void {
   }
 
   col.features.push({ name: origin.label, origin, entries: e.entries });
+}
+
+/** A proficiency list without its picks (`choose`, `any…`): the grants it names outright. */
+function namedOnly(raw: unknown): DataEntity[] {
+  return asEntityArray(raw).map((entry) =>
+    Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== 'choose' && !key.startsWith('any')),
+    ),
+  );
 }
 
 /**

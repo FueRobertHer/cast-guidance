@@ -224,7 +224,7 @@ const skills =
   };
 
 /** A pick of `count` plain proficiencies, among `from` or every skill. */
-const skillPick =
+export const skillPick =
   (count: number, from: readonly string[] = []): CuratedFn =>
   (col, origin) =>
     featureSkillPick(col, origin, count, from);

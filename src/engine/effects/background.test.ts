@@ -189,4 +189,113 @@ describe('collectBackground', () => {
       }),
     );
   });
+
+  describe("Custom Background's languages and tools", () => {
+    // As the release prints it: the alternatives beside a two-language shorthand.
+    const custom: DataEntity = {
+      name: 'Custom',
+      skillProficiencies: [{ any: 2 }],
+      languageProficiencies: [{ anyStandard: 2 }],
+      skillToolLanguageProficiencies: [
+        { anyLanguage: 2 },
+        { anyLanguage: 1, anyTool: 1 },
+        { anyTool: 1 },
+      ],
+      entries: ['x'],
+    };
+    const id = 'background:custom|tst:lang:0';
+    function picked(selected: string[], bg = custom) {
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.background = { name: 'Custom', source: 'TST' };
+      doc.choices[id] = selected;
+      const col = new Collector(doc, ctxWith(bg));
+      collectBackground(col);
+      return col;
+    }
+    const granted = (col: Collector) =>
+      col.effects.flatMap((e) =>
+        e.kind === 'language'
+          ? [`language ${e.name}`]
+          : e.kind === 'toolProf'
+            ? [`tool ${e.name}`]
+            : [],
+      );
+
+    it('asks one pick of two from languages and tools, where two languages were asked', () => {
+      const col = collect(custom);
+      const asked = col.pending.filter((p) => p.kind !== 'skill');
+      expect(asked.map((p) => [p.id, p.label, p.count])).toEqual([[id, 'Language or tool', 2]]);
+      expect(asked[0]?.options.map((o) => o.id)).toEqual(
+        expect.arrayContaining(['Elvish', "thieves' tools", 'lute']),
+      );
+    });
+
+    it('keeps a saved pair of languages', () => {
+      const col = picked(['Elvish', 'Dwarvish']);
+      expect(granted(col)).toEqual(['language Elvish', 'language Dwarvish']);
+      expect(col.pending.some((p) => p.id === id)).toBe(false);
+    });
+
+    it('grants a language and a tool, or two tools, as the rule allows', () => {
+      expect(granted(picked(['Elvish', "thieves' tools"]))).toEqual([
+        'language Elvish',
+        "tool thieves' tools",
+      ]);
+      expect(granted(picked(['lute', "thieves' tools"]))).toEqual([
+        'tool lute',
+        "tool thieves' tools",
+      ]);
+    });
+
+    it('still grants a fixed tool beside the mix', () => {
+      const col = picked(['Elvish', 'Dwarvish'], {
+        ...custom,
+        toolProficiencies: [{ "thieves' tools": true }],
+      });
+      expect(granted(col)).toEqual(['language Elvish', 'language Dwarvish', "tool Thieves' Tools"]);
+    });
+
+    it('still grants a named language beside the mix, and asks only the mix', () => {
+      const col = picked(['Dwarvish', 'lute'], {
+        ...custom,
+        languageProficiencies: [{ elvish: true, anyStandard: 2 }],
+      });
+      expect(granted(col)).toEqual(['language Elvish', 'language Dwarvish', 'tool lute']);
+      expect(col.pending.filter((p) => p.kind !== 'skill')).toEqual([]);
+      const mix = collect({
+        ...custom,
+        languageProficiencies: [
+          { elvish: true, anyStandard: 2 },
+          { choose: { from: ['giant', 'orc'] } },
+        ],
+      }).pending.filter((p) => p.kind !== 'skill');
+      expect(mix.map((p) => p.id)).toEqual([id]);
+      const elvish = mix[0]?.options.find((o) => o.id === 'Elvish');
+      expect(elvish?.disabled?.reason).toBe('You already speak Elvish');
+    });
+
+    it('marks a language the character already speaks', () => {
+      const doc = newCharacterDoc('c', 'H', 't');
+      doc.background = { name: 'Custom', source: 'TST' };
+      const col = new Collector(doc, ctxWith(custom));
+      col.add({
+        kind: 'language',
+        name: 'Elvish',
+        origin: { label: 'Elf', uid: 'elf|tst', type: 'race' },
+      });
+      collectBackground(col);
+      const elvish = col.pending.find((p) => p.id === id)?.options.find((o) => o.id === 'Elvish');
+      expect(elvish?.disabled?.reason).toBe('You already speak Elvish');
+    });
+
+    it('reads the other fields as before when the alternatives are not counts alone', () => {
+      const col = collect({
+        ...custom,
+        skillToolLanguageProficiencies: [{ choose: [{ from: ['anySkill', 'anyTool'] }] }],
+        toolProficiencies: [{ "thieves' tools": true }],
+      });
+      expect(col.pending.find((p) => p.id === id)?.label).toBe('Language');
+      expect(granted(col)).toEqual(["tool Thieves' Tools"]);
+    });
+  });
 });

@@ -6,6 +6,7 @@
  */
 import { useState } from 'react';
 import { isRecord } from '@/engine/castGuidance';
+import { isLanguageOrToolMix } from '@/engine/effects/readers';
 import { SKILLS } from '@/engine/types';
 import { fieldClass } from '@/ui/TextField';
 import type { EditorProps, EditorSpec, Json } from '../editorTypes';
@@ -116,8 +117,11 @@ function BackgroundBody({ draft, change, original, registry, readOnly }: EditorP
   const skills = trueKeys(draft.skillProficiencies, new Set(SKILL_KEYS.map(([k]) => k)));
   const tools = trueKeys(draft.toolProficiencies);
   const langs = draft.languageProficiencies;
-  const anyLangs =
-    langs === undefined || langs === null
+  // Custom Background's languages and tools in any mix stand in for its languages.
+  const mixed = isLanguageOrToolMix(draft.skillToolLanguageProficiencies);
+  const anyLangs = mixed
+    ? undefined
+    : langs === undefined || langs === null
       ? 0
       : Array.isArray(langs) &&
           langs.length === 1 &&
@@ -182,6 +186,8 @@ function BackgroundBody({ draft, change, original, registry, readOnly }: EditorP
               })
             }
           />
+        ) : mixed ? (
+          <Kept label="Languages">languages or tools of your choice, kept as they are.</Kept>
         ) : (
           <Kept label="Languages">named languages, kept as they are.</Kept>
         )}

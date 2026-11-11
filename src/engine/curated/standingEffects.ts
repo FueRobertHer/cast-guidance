@@ -11,6 +11,7 @@
  */
 import type { Collector } from '../effects/base';
 import { ABILITIES, type Ability, type EffectOrigin, type WhileState } from '../types';
+import { skillPick } from './curatedEffects';
 
 type StandingFn = (
   col: Collector,
@@ -235,6 +236,12 @@ export const STANDING: Record<string, StandingFn> = {
   ),
   'eagle|path of the totem warrior': atLevel(14, (col, origin) =>
     col.add({ kind: 'moveSpeed', mode: 'fly', speed: 'walk', while: RAGING, origin }),
+  ),
+  // Aspect of the Beast's Tiger (SCAG); its Totem Spirit and Totemic Attunement
+  // keep what the scan reads (the level 14 bonus action attack).
+  'tiger|path of the totem warrior': atLevel(
+    6,
+    skillPick(2, ['Athletics', 'Acrobatics', 'Stealth', 'Survival']),
   ),
   // Storm Soul's options, by the environment picked for Storm Aura.
   'desert|path of the storm herald': atLevel(6, resists(['fire'])),
