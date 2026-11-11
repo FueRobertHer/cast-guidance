@@ -12,6 +12,7 @@ import { RollChip } from '@/ui/RollChip';
 import { parseEntityRef, tokenizeEntryText } from '../tags';
 import { DISPLAY_ARG, PLAIN_REF_TAGS } from './inlineTags';
 import { libraryPath } from './libraryPath';
+import { setsDice, slotLevelsLabel, slotLevelsOf, tagLevels } from './upcast';
 
 // ---------------------------------------------------------------------------
 // Inline tags
@@ -39,11 +40,14 @@ function TagView({
   args,
   inline,
   heals = false,
+  lead = '',
 }: {
   tag: string;
   args: string[];
   inline: boolean;
   heals?: boolean;
+  /** The words of its sentence before it. */
+  lead?: string;
 }): ReactNode {
   const body = args[0] ?? '';
   switch (tag) {
@@ -59,14 +63,15 @@ function TagView({
       );
     case 'scaledamage':
     case 'scaledice': {
-      // {@scaledamage 8d6|3-9|1d6} — the last arg is the per-step add.
+      // {@scaledamage 8d6|3-9|1d6}: the last arg is the per-step add, or the
+      // dice outright where the sentence says "increases to".
       const add = args[2] ?? body;
       return (
         <RollChip
           inline={inline}
           expr={add}
           variant={tag === 'scaledice' && heals ? 'heal' : 'damage'}
-          label={`scaling: +${add} per level`}
+          label={scaleLabel(add, args[1] ?? '', lead)}
         />
       );
     }
@@ -196,6 +201,27 @@ function healsBetween(before: string, after: string): boolean {
   return /\bregains?\b/i.test(lead) && /\bhit points?\b/i.test(sentence);
 }
 
+/**
+ * What an upcast chip adds: a step each slot level ("+1d6 per slot level"), a
+ * step at the levels a list names ("+1d6 at slot levels 4, 6 and 8", Flame
+ * Blade's every two), or the dice outright at the slots its sentence names
+ * (Elemental Weapon's "increases to 2d4" at 5th and 6th).
+ */
+function scaleLabel(add: string, list: string, lead: string): string {
+  if (setsDice(lead)) {
+    const levels = slotLevelsOf(lead);
+    return levels === undefined
+      ? `scaling: ${add} at a higher slot`
+      : `scaling: ${add} at slot level${levels.length > 1 ? 's' : ''} ${slotLevelsLabel(levels)}`;
+  }
+  const levels = tagLevels(list);
+  const each =
+    levels === undefined || levels.every((l, i) => i === 0 || l === (levels[i - 1] ?? 0) + 1);
+  return each || levels === undefined
+    ? `scaling: +${add} per slot level`
+    : `scaling: +${add} at slot levels ${slotLevelsLabel(levels.slice(1))}`;
+}
+
 export function InlineText({ text }: { text: string }): ReactNode {
   const tokens = tokenizeEntryText(text);
   const prose = tokens.some((t) => t.kind === 'text' && t.text.trim() !== '');
@@ -208,7 +234,10 @@ export function InlineText({ text }: { text: string }): ReactNode {
         const heals =
           before?.kind === 'text' &&
           healsBetween(before.text, after?.kind === 'text' ? after.text : '');
-        return <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} />;
+        const lead = before?.kind === 'text' ? (before.text.match(/[^.]*$/)?.[0] ?? '') : '';
+        return (
+          <TagView key={i} tag={t.tag} args={t.args} inline={prose} heals={heals} lead={lead} />
+        );
       })}
     </>
   );
