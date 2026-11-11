@@ -16,8 +16,10 @@ export { giveBack } from '@/engine/rest';
 
 /** When a pool comes back, for its row. */
 export function backCaption(
-  r: Pick<DerivedResource, 'resetOn' | 'regainOnShort' | 'regainRoll'>,
+  r: Pick<DerivedResource, 'resetOn' | 'regainOnShort' | 'regainRoll' | 'foretell'>,
 ): string {
+  // Portent's numbers: rolled again on a long rest, those left lost.
+  if (r.foretell === true) return 'Foretold anew on a long rest';
   // An item's charges: at dawn, which the sheet counts at a long rest.
   if (r.regainRoll !== undefined) return `${r.regainRoll} back at dawn (a long rest)`;
   if (r.resetOn === 'short' || r.regainOnShort === undefined) return `Back on a ${r.resetOn} rest`;

@@ -17,11 +17,15 @@ import type { DerivedSheet, PaidRoll, Reroll, RollFilter } from './types';
  * What paying for a feature's extra takes, as its Use does: pool uses (each
  * with the pool's size, so paying never runs past it) and the turn's reaction.
  * `words` says it as Use's title does: "spends 1 Superiority Dice".
+ * `inspiration` spends the character's Inspiration, and `foretold` uses up one
+ * of a pool's foretold numbers (Portent's 17), as well as its use.
  */
 export interface OfferPay {
   spends: ReadonlyArray<{ key: string; max: number; amount: number }>;
   reaction: boolean;
   words: string;
+  inspiration?: boolean;
+  foretold?: { key: string; v: number };
 }
 
 /** What effects in play bring to one d20 test, each named for its effect. */
@@ -90,6 +94,12 @@ export interface RollEffects {
     pay?: OfferPay;
     when?: string;
   }>;
+  /**
+   * Numbers a long rest foretold (Portent), any of which the prompt may put in
+   * place of the d20 before the roll, each priced: the pool's use and the
+   * number itself. Only the sheet sets these (`pricedRollEffects`).
+   */
+  foretold?: Array<{ source: string; v: number; pay: OfferPay }>;
   /** The kind of roll the test is (initiative is a check), which its roll carries. */
   test?: RollFilter['rolls'][number];
 }

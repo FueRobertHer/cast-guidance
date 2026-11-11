@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { canReroll, rerollD20 } from '@/dice/reroll';
-import { roll } from '@/dice/roll';
+import { cryptoRng, roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
 import {
   type ActiveCondition,
@@ -9,7 +9,7 @@ import {
   noD20Effect,
   resolveD20,
 } from '@/engine/conditions';
-import type { RollEffects } from '@/engine/playRules';
+import type { OfferPay, RollEffects } from '@/engine/playRules';
 import type { Ability } from '@/engine/types';
 import { signed } from '@/lib/signed';
 import { namedFirst, whenLanded } from '@/stores/heldRoll';
@@ -150,6 +150,8 @@ export interface D20Choice {
   dropUnnamed?: boolean;
   /** Per `thisTurn`: true declares it for the turn. */
   declared?: readonly boolean[];
+  /** Which of `foretold` is the d20 (Portent's 17), in place of rolling it. */
+  foretold?: number;
 }
 
 /**
@@ -195,6 +197,11 @@ export interface D20Ask {
    * what may hold for this roll alone (flanking, from `riders.declare`).
    */
   thisTurn: readonly TurnExtra[];
+  /**
+   * Numbers foretold that may be the d20 instead of a roll (Portent), each with
+   * what using it pays. One chosen, no d20 is rolled, so the mode counts for nothing.
+   */
+  foretold: ReadonlyArray<{ source: string; v: number; pay: OfferPay }>;
   /** An attack, which a natural 1 or 20 settles. */
   attack: boolean;
   /** A condition makes it fail whatever the d20 shows. */
@@ -353,12 +360,27 @@ export function d20Ask(
   const offers = riders?.offers ?? [];
   // Offered before the roll: only an automatic failure, which the cue says, asks nothing.
   const once = resolution.autoFail ? [] : offers.filter(namedFirst);
+  const foretold = resolution.autoFail ? [] : (riders?.foretold ?? []);
+  /** The foretold number `choice` puts in place of the d20, if any. */
+  const toldFor = (choice: D20Choice | undefined) =>
+    choice?.foretold === undefined ? undefined : foretold[choice.foretold];
   const ignoredWords = ignored && conditionsApply ? 'Conditions ignored for this roll' : '';
   const cueFor = (mode: RollMode, choice?: D20Choice) => {
     const now = under(choice);
     const set = now.resolution.advantage ?? 'normal';
     const parts = [ignoredWords];
-    if (mode === set) parts.push(rollCue(now.used, now.resolution));
+    const told = toldFor(choice);
+    if (told !== undefined) {
+      // No d20 is rolled, so no mode counts; what else the roll takes still does.
+      const shown = mode !== 'normal' ? mode : set;
+      if (shown !== 'normal') {
+        const word = shown === 'adv' ? 'Advantage' : 'Disadvantage';
+        parts.push(`${word} does not count: ${told.source} foretold the d20`);
+      }
+      if (used.penalty !== undefined) {
+        parts.push(`${minus(used.penalty.amount)}: ${used.penalty.source}`);
+      }
+    } else if (mode === set) parts.push(rollCue(now.used, now.resolution));
     else {
       if (resolution.autoFail) parts.push(`Fails automatically: ${names(used.autoFail)}`);
       parts.push(chosenCue(mode, set, now.used));
@@ -382,6 +404,7 @@ export function d20Ask(
     rollsIn,
     once,
     thisTurn: extras,
+    foretold,
     attack: settlesOnNatural,
     autoFail: resolution.autoFail,
     conditions: conditionsApply && !ignored,
@@ -394,11 +417,17 @@ export function d20Ask(
         ...bonusesFor(choice).map((b) => ` ${signed(b.bonus)} ${b.source}`),
       ].join('');
       const penalty = resolution.penalty !== 0 ? ` ${minus(resolution.penalty)}` : '';
+      const told = toldFor(choice);
+      // A foretold d20 is the number, with no mode: "17 Portent +7".
+      if (told !== undefined) {
+        return `${told.v} ${told.source}${modifier === '' ? '' : ` ${modifier}`}${dice}${penalty}`;
+      }
       const words = mode === 'adv' ? ', advantage' : mode === 'dis' ? ', disadvantage' : '';
       return `d20${modifier === '' ? '' : ` ${modifier}`}${dice}${penalty}${words}`;
     },
     roll: (choice) => {
-      const mode = choice?.mode ?? presetFor(choice);
+      const told = toldFor(choice);
+      const mode = told !== undefined ? 'normal' : (choice?.mode ?? presetFor(choice));
       const advantage = mode === 'normal' ? undefined : mode;
       // The effects' dice follow the modifiers, ahead of the exhaustion penalty.
       const dice = diceFor(choice);
@@ -414,10 +443,26 @@ export function d20Ask(
       const made = (riders?.rerolls ?? [])
         .filter((r) => r.auto === true || r.floor !== undefined)
         .sort((a, b) => step(a) - step(b));
-      const landed = made.reduce(
-        (r, how) => rerollD20(r, how) ?? r,
-        roll(full, { label, advantage, kind: 'd20' }),
-      );
+      // A foretold number is the d20, as if rolled (a 20 crits); the effects' dice still roll.
+      let first = told !== undefined;
+      const rng = (sides: number) => {
+        if (first && sides === 20 && told !== undefined) {
+          first = false;
+          return told.v;
+        }
+        return cryptoRng(sides);
+      };
+      const rolled = roll(full, {
+        label,
+        advantage,
+        kind: 'd20',
+        ...(told !== undefined ? { rng } : {}),
+      });
+      const base: RollResult =
+        told === undefined
+          ? rolled
+          : { ...rolled, meta: { ...rolled.meta, foretold: told.source } };
+      const landed = made.reduce((r, how) => rerollD20(r, how) ?? r, base);
       // A set made as the d20 lands holds for a reroll after it too.
       const holds = made.flatMap((r) =>
         r.to === undefined ? [] : [{ source: r.source, to: r.to }],
@@ -453,7 +498,8 @@ export function d20Ask(
         resolution.autoFail || (settlesOnNatural && (natural === 20 || crit))
           ? []
           : (riders?.rerollOffers ?? []).filter((o) => canReroll(result, o));
-      const cue = cueFor(mode, choice);
+      // A foretold d20 says the mode it set aside, as the prompt did.
+      const cue = cueFor(told !== undefined ? (choice?.mode ?? presetFor(choice)) : mode, choice);
       // The kind of roll, for a natural 20 or 1's moments (`useRollOfferSpending`).
       const test = riders?.test;
       if (

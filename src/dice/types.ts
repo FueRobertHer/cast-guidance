@@ -75,12 +75,15 @@ export interface RollOffer {
   ifFailed: boolean;
   /**
    * The character's own feature, paid for as its Use is (the engine's
-   * `OfferPay`): pool uses and the turn's reaction, and the words for them.
+   * `OfferPay`): pool uses and the turn's reaction, and the words for them;
+   * Inspiration spent, or a number a foretelling pool kept (Portent).
    */
   pay?: {
     spends: ReadonlyArray<{ key: string; max: number; amount: number }>;
     reaction: boolean;
     words: string;
+    inspiration?: boolean;
+    foretold?: { key: string; v: number };
   };
   /** When it holds, which the app cannot see: "Only against a spell". */
   when?: string;
@@ -157,6 +160,11 @@ export interface RollResult {
     rerolled?: string[];
     /** What set its d20 to a number (Reliable Talent's 10): the die it replaced shows dropped. */
     setBy?: string[];
+    /**
+     * What foretold its d20, which was not rolled (Portent's 17): the number counts
+     * as the roll, a 20 a natural 20. A reroll after takes the mark off.
+     */
+    foretold?: string;
     /** Sets that hold for every d20 the roll keeps, so a reroll after is set again. */
     holds?: Array<{ source: string; to: number }>;
     /**

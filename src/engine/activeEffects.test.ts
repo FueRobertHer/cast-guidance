@@ -783,6 +783,14 @@ describe('deriveSheet with effects in play', () => {
       { kind: 'die', dice: '1d4', on: ATTACKS_AND_SAVES, origin: 'Bless', effectId: blessing.id },
       expect.objectContaining({ kind: 'offer', dice: '1d4', once: true, origin: 'Guidance' }),
       expect.objectContaining({ kind: 'advantage', mode: 'adv', origin: 'Reckless Attack' }),
+      // Spending Inspiration gives advantage under the 2014 rules, on any character.
+      {
+        kind: 'paid',
+        on: { rolls: ['attack', 'check', 'save'] },
+        origin: 'Inspiration',
+        advantage: true,
+        inspiration: true,
+      },
     ]);
     expect(sheet.tempHpEachTurn).toEqual({ amount: 5, origin: 'Inspiring Song' });
     expect(sheet.critRange).toEqual({ min: 19, origin: "Hexblade's Curse" });

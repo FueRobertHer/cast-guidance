@@ -340,6 +340,14 @@ describe('roll extras on a derived sheet', () => {
         ifFailed: true,
         origin: 'Once Guard',
       },
+      // Any 2014 character's Inspiration, paid for by spending it.
+      {
+        kind: 'paid',
+        on: { rolls: ['attack', 'check', 'save'] },
+        origin: 'Inspiration',
+        advantage: true,
+        inspiration: true,
+      },
     ]);
   });
 
@@ -381,7 +389,7 @@ describe('roll extras on a derived sheet', () => {
   it('rolls a free die in, and leaves the paid ones to be priced', () => {
     const check = rollEffects(sheet(), { kind: 'check', ability: 'wis' });
     expect(check.dice).toEqual([{ dice: '1d4', source: 'Grit' }]);
-    expect(check.paid?.map((p) => p.source)).toEqual(['Test Surge']);
+    expect(check.paid?.map((p) => p.source)).toEqual(['Test Surge', 'Inspiration']);
     expect(check.offers).toEqual([]);
   });
 
@@ -394,9 +402,14 @@ describe('roll extras on a derived sheet', () => {
     expect(id).toBeDefined();
     doc.choices[id ?? ''] = ['archery|phb'];
     const s = deriveSheet(doc, ctx);
-    expect(rollEffects(s, { kind: 'initiative' }).paid).toEqual([{ source: 'Alert', dice: '1d8' }]);
+    const inspiration = { source: 'Inspiration', advantage: true, inspiration: true };
+    expect(rollEffects(s, { kind: 'initiative' }).paid).toEqual([
+      { source: 'Alert', dice: '1d8' },
+      inspiration,
+    ]);
     expect(rollEffects(s, { kind: 'attack' }).paid).toEqual([
       { source: 'Combat Stance: Archery', advantage: true },
+      inspiration,
     ]);
   });
 });

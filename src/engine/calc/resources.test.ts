@@ -97,6 +97,17 @@ describe('calcResources pooling', () => {
   });
 });
 
+describe('calcResources: a foretelling pool', () => {
+  const doc = docWith([{ ref: { name: 'Wizard', source: 'PHB' }, levels: 2, hp: [] }]);
+
+  it('carries that its uses are numbers kept (Portent), and says nothing for any other', () => {
+    expect(calcResources(doc, [res(2, { foretell: true })], abilities(), 2)[0]?.foretell).toBe(
+      true,
+    );
+    expect(calcResources(doc, [res(2)], abilities(), 2)[0]).not.toHaveProperty('foretell');
+  });
+});
+
 describe('calcResources: regaining on a short rest', () => {
   const regain = (key: string, amount: number): EffectInput => ({
     kind: 'resourceRegain',

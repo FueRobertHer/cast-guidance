@@ -631,7 +631,10 @@ const maneuverSave =
     });
   };
 
-/** Portent's foretelling rolls, rolled after a long rest: 2, or 3 from Wizard 14. */
+/**
+ * Portent's foretelling rolls, rolled after a long rest: 2, or 3 from Wizard 14.
+ * The numbers are kept (`foretell`), and one replaces a d20 test's d20.
+ */
 const portent: CuratedFn = (col, origin) => {
   col.add({
     kind: 'resource',
@@ -639,6 +642,7 @@ const portent: CuratedFn = (col, origin) => {
     label: 'Portent',
     max: classLevel(col, 'Wizard') >= 14 ? 3 : 2,
     resetOn: 'long',
+    foretell: true,
     origin,
   });
 };

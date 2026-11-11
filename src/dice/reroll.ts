@@ -144,8 +144,8 @@ export function rerollD20(
     terms.push({ kind: 'mod', value: bonus });
   }
   const attack = result.meta?.attack;
-  // The new die was rolled, not set: a set names it again only if it holds.
-  const { setBy: _setBy, ...meta } = result.meta ?? {};
+  // The new die was rolled, not set or foretold: a set names it again only if it holds.
+  const { setBy: _setBy, foretold: _foretold, ...meta } = result.meta ?? {};
   const rerolled = withRaw(
     {
       ...result,

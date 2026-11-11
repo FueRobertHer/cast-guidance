@@ -56,12 +56,18 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
       if (i === 0 && mode !== undefined && t.sides === 20 && t.rolls.length > 1) {
         parts.push({ text: mode === 'adv' ? ' advantage' : ' disadvantage' });
       }
+      // A d20 not rolled but foretold: "d20 [17] foretold by Portent", first,
+      // as the screen reader hears it.
+      const foretold = i === 0 ? result.meta?.foretold : undefined;
+      if (foretold !== undefined) parts.push({ text: ` foretold by ${foretold}` });
       // What rerolled the d20, whose dice set aside show dropped: "Luck reroll";
       // and what set it to a number: "set by Reliable Talent".
       const rerolled = i === 0 ? (result.meta?.rerolled ?? []) : [];
       if (rerolled.length > 0) parts.push({ text: ` ${rerolled.join(', ')} reroll` });
       const setBy = i === 0 ? (result.meta?.setBy ?? []) : [];
-      if (setBy.length > 0) parts.push({ text: ` set by ${setBy.join(', ')}` });
+      if (setBy.length > 0) {
+        parts.push({ text: `${foretold !== undefined ? ',' : ''} set by ${setBy.join(', ')}` });
+      }
     } else if (t.kind === 'multiplier') {
       parts.push({ text: ' × ' });
       parts.push(...(t.detail.kind === 'dice' ? diceParts(t.detail) : [{ text: String(t.value) }]));

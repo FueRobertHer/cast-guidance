@@ -1,7 +1,7 @@
 import { createStore } from 'zustand/vanilla';
 import { roll } from '@/dice/roll';
 import type { RollOffer, RollResult } from '@/dice/types';
-import type { D20Ask, RollMode } from '@/features/sheet/d20Tests';
+import type { D20Ask, RollMode, TurnExtra } from '@/features/sheet/d20Tests';
 import type { ChipWear } from '@/ui/ChipFace';
 import { announce } from './announcer';
 import { rollLogStore } from './rollLog';
@@ -155,6 +155,8 @@ export interface HeldRoll {
   rollsIn: boolean[];
   named: boolean[];
   declared: boolean[];
+  /** Which of the ask's foretold numbers is the d20 (Portent), or none. */
+  foretold: number | null;
   /**
    * Damage tapped while an attack waits, in order: made once the attack has
    * landed, so a crit doubles it, and landed with it. The cast spell's own
@@ -294,6 +296,7 @@ export function rollFrom(
         rollsIn: value.rollsIn.map(() => true),
         named: value.once.map(() => false),
         declared: value.thisTurn.map(() => false),
+        foretold: null,
         damage: [],
         afterHit,
       },
@@ -343,6 +346,7 @@ export function castFrom(
       rollsIn: [],
       named: [],
       declared: [],
+      foretold: null,
       damage: [],
       afterHit: undefined,
     },
@@ -451,6 +455,21 @@ export function declareHeld(index: number): void {
   heldRollStore.setState({ held: { ...held, declared, mode: ask.presetFor({ declared }) } });
 }
 
+/**
+ * A claim for this roll that gives its mode and nothing else (2014 Inspiration,
+ * Tides of Chaos): a foretold number in place of the d20 leaves it nothing to give.
+ */
+export function modeAlone(t: TurnExtra): boolean {
+  return t.thisRoll === true && t.mode !== undefined && t.bonus === undefined;
+}
+
+/** Puts a foretold number in place of the waiting roll's d20 (Portent), or takes it back. */
+export function foretellHeld(index: number): void {
+  const { held } = heldRollStore.getState();
+  if (held === null || held.ask?.foretold[index] === undefined) return;
+  heldRollStore.setState({ held: { ...held, foretold: held.foretold === index ? null : index } });
+}
+
 /** Lets the waiting roll go unrolled, and any damage with it. */
 export function cancelHeld(): void {
   if (heldRollStore.getState().held !== null) heldRollStore.setState({ held: null });
@@ -490,8 +509,17 @@ export function rollHeld(): void {
     const o = ask.once[i];
     return on && (o?.pay === undefined || pay?.(o, true) === true);
   });
+  // A foretold number is paid for (its use, and the number) or the d20 is rolled.
+  const told = held.foretold === null ? undefined : ask.foretold[held.foretold];
+  const foretold =
+    told !== undefined && pay?.({ source: told.source, pay: told.pay }, true) === true
+      ? held.foretold
+      : null;
+  // With no d20 rolled, a claim of the mode alone gives nothing, so it is not paid.
   const isDeclared = held.declared.map((on, i) => {
-    const paid = ask.thisTurn[i]?.paid;
+    const extra = ask.thisTurn[i];
+    if (foretold !== null && extra !== undefined && modeAlone(extra)) return false;
+    const paid = extra?.paid;
     return on && (paid === undefined || paid());
   });
   // A claim left out takes its advantage with it, unless the mode was picked by hand.
@@ -507,6 +535,7 @@ export function rollHeld(): void {
       named,
       declared: isDeclared,
       dropUnnamed: rollOffersStore.getState().before,
+      ...(foretold !== null ? { foretold } : {}),
     }),
     id,
   };

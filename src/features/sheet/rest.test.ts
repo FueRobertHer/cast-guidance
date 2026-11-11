@@ -316,3 +316,56 @@ describe("an item's charges on a long rest", () => {
     expect(restored).toEqual(['5 Staff of Healing charges']);
   });
 });
+
+describe("a foretelling pool's numbers on a long rest (Portent)", () => {
+  const portent = {
+    key: 'portent',
+    label: 'Portent',
+    max: 3,
+    resetOn: 'long',
+    origin: 'Portent',
+    foretell: true,
+  } as const;
+
+  it('rolls a d20 a use, in place of what was left, and says the numbers', () => {
+    const rolls = [17, 4, 12];
+    const p = play({ foretold: { portent: [9] }, resources: [{ key: 'portent', used: 2 }] });
+    const asked: string[] = [];
+    const restored = longRest(p, sheet({ resources: [portent] }), '2024', 0, (dice) => {
+      asked.push(dice);
+      return rolls.shift() ?? 0;
+    });
+    expect(asked).toEqual(['1d20', '1d20', '1d20']);
+    expect(p.foretold).toEqual({ portent: [17, 4, 12] });
+    expect(p.resources).toEqual([]);
+    expect(restored).toEqual(['resources', 'Portent (17, 4 and 12)']);
+  });
+
+  it('says one number as one, and two as a pair', () => {
+    const one = play();
+    expect(
+      longRest(one, sheet({ resources: [{ ...portent, max: 1 }] }), '2014', 0, () => 20),
+    ).toEqual(['Portent (20)']);
+    const two = play();
+    let n = 0;
+    longRest(two, sheet({ resources: [{ ...portent, max: 2 }] }), '2014', 0, () => ++n);
+    expect(two.foretold).toEqual({ portent: [1, 2] });
+  });
+
+  it('drops numbers no foretelling pool keeps any more, absent rather than empty', () => {
+    const p = play({ foretold: { portent: [6] } });
+    const restored = longRest(p, sheet(), '2024', 0, () => 11);
+    expect(p).not.toHaveProperty('foretold');
+    expect(restored).toEqual([]);
+  });
+
+  it('leaves the numbers alone on a short rest', () => {
+    const p = play({ foretold: { portent: [6] } });
+    shortRest(p, sheet({ resources: [portent] }));
+    expect(p.foretold).toEqual({ portent: [6] });
+  });
+
+  it('says they are foretold anew on a long rest', () => {
+    expect(backCaption(portent)).toBe('Foretold anew on a long rest');
+  });
+});
