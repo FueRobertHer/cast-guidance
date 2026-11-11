@@ -87,6 +87,9 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
       armorLight: 'any light armor',
       setGaming: 'a gaming set',
       toolArtisan: "artisan's tools",
+      focusSpellcastingArcane: 'an arcane focus',
+      focusSpellcastingDruidic: 'a druidic focus',
+      focusSpellcastingHoly: 'a holy symbol',
     };
     return {
       label: types.map((t) => labels[t] ?? t).join(' or '),
@@ -191,6 +194,7 @@ export function itemsForEquipmentType(
       ?.toLowerCase();
   const melee = (e: DataEntity) => typeCode(e) === 'M';
   const byType = (code: string) => (e: DataEntity) => typeCode(e) === code;
+  const focus = (kind: string) => (e: DataEntity) => typeCode(e) === 'SCF' && e.scfType === kind;
   const filters: Record<string, (e: DataEntity) => boolean> = {
     weaponSimple: (e) => isWeapon(e) && category(e) === 'simple',
     weaponSimpleMelee: (e) => isWeapon(e) && category(e) === 'simple' && melee(e),
@@ -200,6 +204,10 @@ export function itemsForEquipmentType(
     instrumentMusical: byType('INS'),
     setGaming: byType('GS'),
     toolArtisan: byType('AT'),
+    // A spellcasting focus of its kind: an orb, a sprig of mistletoe, an amulet.
+    focusSpellcastingArcane: focus('arcane'),
+    focusSpellcastingDruidic: focus('druid'),
+    focusSpellcastingHoly: focus('holy'),
   };
   // A slot of several types ("instrumentMusical|toolArtisan") takes any of them.
   const kinds = type.split('|');

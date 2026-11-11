@@ -157,3 +157,37 @@ describe('startingEquipment of a background', () => {
     expect(monk?.items[0]?.equipmentType).toBe('instrumentMusical|toolArtisan');
   });
 });
+
+describe('itemsForEquipmentType, a spellcasting focus', () => {
+  const baseitems: DataEntity[] = [
+    { name: 'Orb', source: 'PHB', type: 'SCF', scfType: 'arcane' },
+    {
+      name: 'Wooden Staff',
+      source: 'PHB',
+      type: 'SCF',
+      scfType: 'druid',
+      weaponCategory: 'simple',
+    },
+  ];
+  const items: DataEntity[] = [
+    { name: 'Amulet', source: 'PHB', type: 'SCF', scfType: 'holy' },
+    { name: 'Sprig of Mistletoe', source: 'PHB', type: 'SCF', scfType: 'druid' },
+  ];
+  const names = (type: string) =>
+    itemsForEquipmentType(type, baseitems, items, '2014').map((e) => String(e.name));
+
+  it('offers the foci of its kind, from the weapons and the gear alike', () => {
+    expect(names('focusSpellcastingArcane')).toEqual(['Orb']);
+    expect(names('focusSpellcastingDruidic')).toEqual(['Wooden Staff', 'Sprig of Mistletoe']);
+    expect(names('focusSpellcastingHoly')).toEqual(['Amulet']);
+  });
+
+  it('names the slot for what it is', () => {
+    const cleric = parseStartingEquipment({
+      startingEquipment: {
+        defaultData: [{ _: [{ item: 'shield|phb' }, { equipmentType: 'focusSpellcastingHoly' }] }],
+      },
+    } as unknown as DataEntity)[0]?.[0];
+    expect(cleric?.label).toBe('shield, a holy symbol');
+  });
+});
