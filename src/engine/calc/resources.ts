@@ -142,6 +142,7 @@ export function calcResources(
           : {}),
         ...(e.regainRoll !== undefined ? { regainRoll: e.regainRoll } : {}),
         ...(e.die !== undefined ? { die: e.die } : {}),
+        ...(e.foretell === true ? { foretell: true } : {}),
       });
     } else if (e.stack === true) {
       // Stackable sources add to the shared pool (superiority dice, etc.).

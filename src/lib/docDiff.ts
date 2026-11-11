@@ -617,6 +617,14 @@ function playChanges(out: DocChange[], from: CharacterDoc, to: CharacterDoc): vo
     const now = nr.get(key) ?? 0;
     if (was !== now) push('resources', `${humanKey(key)} used ${was} → ${now}`);
   }
+  // A foretelling pool's numbers (Portent): "Portent foretold 17, 4 → 4".
+  const toldWas = from.play.foretold ?? {};
+  const toldNow = to.play.foretold ?? {};
+  for (const key of new Set([...Object.keys(toldWas), ...Object.keys(toldNow)])) {
+    const was = (toldWas[key] ?? []).join(', ') || 'none';
+    const now = (toldNow[key] ?? []).join(', ') || 'none';
+    if (was !== now) push('resources', `${humanKey(key)} foretold ${was} → ${now}`);
+  }
 
   const saves = (d: CharacterDoc['play']['deathSaves']) =>
     d.success === 0 && d.fail === 0

@@ -114,13 +114,14 @@ import {
   saveDcRaisedBy,
   withMoments,
 } from '../effectsInPlay';
+import { ForetoldNumbers } from '../ForetoldNumbers';
 import { type HpMode, HpSheet } from '../HpSheet';
 import { answersTo, namedStart, recklessStart } from '../namedStarts';
 import { clampPlayStateToMax, detectPlayStateOverages } from '../playStateLimits';
 import { RestSheet } from '../RestSheet';
 import { RollEffectCue } from '../RollEffectCue';
 import { backCaption, giveBack, restWith } from '../rest';
-import { pricedRollEffects } from '../rollPrice';
+import { payOffer, pricedRollEffects } from '../rollPrice';
 import { SpellCastChips } from '../SpellCastChips';
 import { SpellInfoSheet } from '../SpellInfoSheet';
 import { spellNeedsConcentration } from '../SpellManager';
@@ -1608,7 +1609,11 @@ export function Component() {
           aria-pressed={play.inspiration}
           onClick={() => update((d) => void (d.play.inspiration = !d.play.inspiration))}
           className={`${TOGGLE} ${play.inspiration ? 'bg-guide-soft text-guide' : TOGGLE_OFF}`}
-          title="Heroic Inspiration: reroll a d20"
+          title={
+            doc.rulesVersion === '2024'
+              ? 'Heroic Inspiration: spend it to reroll a die you just rolled'
+              : 'Inspiration: spend it for advantage on an attack, save or check'
+          }
         >
           {/* Filled while held: a change of shape as well as colour. */}
           <Star size={16} fill={play.inspiration ? 'currentColor' : 'none'} className="shrink-0" />
@@ -1833,7 +1838,33 @@ export function Component() {
                     )}
                     <span className="text-caption text-ink-muted">{backCaption(r)}</span>
                   </div>
-                  {r.max > 12 ? (
+                  {r.foretell === true ? (
+                    <ForetoldNumbers
+                      pool={r}
+                      used={used}
+                      numbers={play.foretold?.[r.key]}
+                      onUse={(v) =>
+                        update(
+                          (d) =>
+                            void payOffer(d.play, {
+                              spends: [{ key: r.key, max: r.max, amount: 1 }],
+                              reaction: false,
+                              words: `uses the foretold ${v}`,
+                              foretold: { key: r.key, v },
+                            }),
+                          `Used ${r.label}'s ${v}`,
+                        )
+                      }
+                      onRoll={(count) =>
+                        update((d) => {
+                          d.play.foretold = {
+                            ...d.play.foretold,
+                            [r.key]: Array.from({ length: count }, () => roll('1d20').total),
+                          };
+                        }, `Rolled ${r.label}`)
+                      }
+                    />
+                  ) : r.max > 12 ? (
                     // Point pools (Lay on Hands, ki, sorcery points) outgrow
                     // pips fast, and pips can't even reach uses beyond the
                     // twelfth; a stepper covers the whole range. ±5 as well as

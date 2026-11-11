@@ -41,6 +41,7 @@ import {
   critDice,
   declareHeld,
   followUpStore,
+  foretellHeld,
   type HeldRoll,
   heldRollStore,
   nameHeldDie,
@@ -127,11 +128,13 @@ export function rollAnnouncement(result: RollResult): string {
               : '';
   const rerolled = result.meta?.rerolled ?? [];
   const setBy = result.meta?.setBy ?? [];
+  const foretold = result.meta?.foretold;
   const dice = result.terms
     .map((t, i) => {
       if (i > 0) return termSpeech(t, false);
       return [
         termSpeech(t, true),
+        ...(foretold !== undefined ? [`foretold by ${foretold}`] : []),
         ...(rerolled.length > 0 ? [`rerolled by ${andWords(rerolled)}`] : []),
         ...(setBy.length > 0 ? [`set by ${andWords(setBy)}`] : []),
       ].join(', ');
@@ -1111,7 +1114,9 @@ function RollPrompt({
     rollsIn: held.rollsIn,
     named: held.named,
     declared: held.declared,
+    ...(held.foretold !== null ? { foretold: held.foretold } : {}),
   };
+  const told = held.foretold === null ? undefined : ask?.foretold[held.foretold];
   const why = ask?.cueFor(held.mode, choice) ?? '';
   const setAside = ask !== null && held.mode !== ask.presetFor(choice) && ask.conditions;
   const once = ask?.once ?? [];
@@ -1133,6 +1138,7 @@ function RollPrompt({
   // An effect's die spends the effect; a feature's own die says what it pays.
   const unpaid = named.filter((o) => o.pay === undefined);
   const spends = [
+    told !== undefined ? `Uses ${told.source}'s ${told.v}.` : '',
     unpaid.length > 0 ? `Spends ${andWords(unpaid.map((o) => o.source))}.` : '',
     offerPrices(named),
   ]
@@ -1256,7 +1262,8 @@ function RollPrompt({
         </button>
       </div>
       <CastTiles held={held} />
-      {ask !== null && (
+      {/* A foretold d20 is not rolled: there is no mode to pick. */}
+      {ask !== null && told === undefined && (
         <SegmentedControl
           label="Roll mode"
           options={ROLL_MODES}
@@ -1267,8 +1274,22 @@ function RollPrompt({
       )}
       {why !== '' && <p className="text-caption text-guide">{why}</p>}
       {ask !== null &&
-        (ask.rollsIn.length > 0 || ask.once.length > 0 || ask.thisTurn.length > 0) && (
+        (ask.foretold.length > 0 ||
+          ask.rollsIn.length > 0 ||
+          ask.once.length > 0 ||
+          ask.thisTurn.length > 0) && (
           <div className="flex flex-wrap items-center gap-1.5">
+            {ask.foretold.map((f, i) => (
+              <Extra
+                // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll
+                key={`told${i}`}
+                on={held.foretold === i}
+                source={`${f.source} ${f.v}`}
+                when="foretold"
+                holds={`${f.v} in place of the d20`}
+                onClick={() => foretellHeld(i)}
+              />
+            ))}
             {ask.rollsIn.map((d, i) => (
               <Extra
                 // biome-ignore lint/suspicious/noArrayIndexKey: an extra's place is its identity in this roll

@@ -93,6 +93,11 @@ export interface PlayState {
    */
   arcanumUsed?: number[];
   /**
+   * The numbers a long rest foretold (Portent), by the pool's key: those not
+   * used yet, in the order rolled. Absent rather than empty when none are.
+   */
+  foretold?: Record<string, number[]>;
+  /**
    * Active conditions. `ignored` is the player switching a condition's effects
    * off (a ruling at the table): it stays listed, and nothing applies.
    */
@@ -676,6 +681,12 @@ export type EffectInput = {
        * adds it to a roll (`PaidRoll.poolDie`). A stacked pool keeps the largest.
        */
       die?: string;
+      /**
+       * Its uses are numbers: each long rest rolls a d20 a use and keeps them
+       * (`PlayState.foretold`), and one used replaces a d20 test's d20 before
+       * the roll, the character's own or another creature's (Portent).
+       */
+      foretell?: boolean;
     }
   | {
       /** A feature that gives another feature's pool `regainOnShort` (Advanced Artifice). */
@@ -918,6 +929,8 @@ export interface DamageRider {
  * - `reaction`: true takes the turn's reaction whatever its Use takes; false
  *   never does (2024 Guided Strike takes one only for an ally's roll).
  * - `when`: when it holds, which the app cannot see ("Only against a spell").
+ * - `inspiration`: paid by spending Inspiration (`PlayState.inspiration`), not
+ *   by a Use: 2014 Inspiration's advantage.
  */
 export interface PaidRoll {
   dice?: string;
@@ -929,6 +942,7 @@ export interface PaidRoll {
   spentOnSuccess?: boolean;
   reaction?: boolean;
   when?: string;
+  inspiration?: boolean;
 }
 
 /**
@@ -948,7 +962,8 @@ export interface PaidRoll {
  *   `die` say nothing to a set.
  * - `floorScore`: no reroll; a total under this ability's score counts as the
  *   score (Indomitable Might). Always `auto`.
- * - `reaction`, `ifFailed` and `when` as `PaidRoll` has them.
+ * - `reaction`, `ifFailed`, `when` and `inspiration` (Heroic Inspiration's
+ *   reroll) as `PaidRoll` has them.
  */
 export interface Reroll {
   die?: 'all' | 'one' | 'low' | 'extra';
@@ -961,6 +976,7 @@ export interface Reroll {
   ifFailed?: boolean;
   bonus?: number;
   when?: string;
+  inspiration?: boolean;
 }
 
 /** A die or advantage an effect brings to rolls, as `DerivedSheet.rollRiders` lists it. */
@@ -1103,6 +1119,8 @@ export interface DerivedResource {
   regainRoll?: string;
   /** The die one use rolls ("1d8"), the largest where pools stack. */
   die?: string;
+  /** Its uses are d20s a long rest rolls and keeps (`PlayState.foretold`): Portent. */
+  foretell?: boolean;
 }
 
 export interface DerivedSheet {

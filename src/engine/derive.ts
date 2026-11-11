@@ -49,6 +49,7 @@ import type {
   FormulaScope,
   FormulaSlot,
   NotCounted,
+  RollFilter,
   RollRider,
   SpellDamageBonus,
 } from './types';
@@ -301,11 +302,14 @@ export function deriveSheet(
       origin: e.origin.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
     })),
-    rollRiders: rollRiders(
-      effects,
-      (a) => bonusAmount(a, abilities, profBonus.value),
-      (a) => abilities[a].value,
-    ),
+    rollRiders: [
+      ...rollRiders(
+        effects,
+        (a) => bonusAmount(a, abilities, profBonus.value),
+        (a) => abilities[a].value,
+      ),
+      inspirationRider(doc.rulesVersion),
+    ],
     extraActions: effectsOf(effects, 'extraAction').map((e) => ({
       label: e.label,
       ...(e.note !== undefined ? { note: e.note } : {}),
@@ -533,8 +537,18 @@ function rollRiders(
         ...(e.ifFailed !== undefined ? { ifFailed: e.ifFailed } : {}),
       });
     else if (e.kind === 'rollPaid') {
-      const { dice, poolDie, bonus, advantage, after, ifFailed, spentOnSuccess, reaction, when } =
-        e;
+      const {
+        dice,
+        poolDie,
+        bonus,
+        advantage,
+        after,
+        ifFailed,
+        spentOnSuccess,
+        reaction,
+        when,
+        inspiration,
+      } = e;
       out.push({
         ...from,
         kind: 'paid',
@@ -547,15 +561,39 @@ function rollRiders(
           spentOnSuccess,
           reaction,
           when,
+          inspiration,
         }),
         ...(bonus !== undefined ? { bonus: amount(bonus) } : {}),
       });
     } else if (e.kind === 'rollReroll') {
-      const { die, atMost, to, floorScore, auto, free, reaction, ifFailed, bonus, when } = e;
+      const {
+        die,
+        atMost,
+        to,
+        floorScore,
+        auto,
+        free,
+        reaction,
+        ifFailed,
+        bonus,
+        when,
+        inspiration,
+      } = e;
       out.push({
         ...from,
         kind: 'reroll',
-        ...definedOnly({ die, atMost, to, auto, free, reaction, ifFailed, bonus, when }),
+        ...definedOnly({
+          die,
+          atMost,
+          to,
+          auto,
+          free,
+          reaction,
+          ifFailed,
+          bonus,
+          when,
+          inspiration,
+        }),
         ...(floorScore !== undefined ? { floor: score(floorScore) } : {}),
       });
     } else
@@ -567,6 +605,25 @@ function rollRiders(
       });
   }
   return out;
+}
+
+/**
+ * What spending Inspiration does, which any character may have (`PlayState.inspiration`):
+ * under the 2024 rules Heroic Inspiration rerolls a die just rolled (one d20 of
+ * the roll, the lowest), under the 2014 rules it gives advantage on the roll.
+ */
+function inspirationRider(edition: CharacterDoc['rulesVersion']): RollRider {
+  const on: RollFilter = { rolls: ['attack', 'check', 'save'] };
+  return edition === '2024'
+    ? {
+        kind: 'reroll',
+        on,
+        origin: 'Heroic Inspiration',
+        die: 'one',
+        atMost: 20,
+        inspiration: true,
+      }
+    : { kind: 'paid', on, origin: 'Inspiration', advantage: true, inspiration: true };
 }
 
 /**

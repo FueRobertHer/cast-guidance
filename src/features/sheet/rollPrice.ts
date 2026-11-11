@@ -89,19 +89,32 @@ export function offerPrice(
  * and all of them with no play state to pay from. A reroll the result offers
  * is priced the same way, unless it is free, or takes the reaction alone
  * (`free` with `reaction`: Living Legend); one made as the d20 lands stays.
+ * What Inspiration pays for is offered only while the character has it, and
+ * a foretelling pool's numbers (Portent) while it has a use left, each once.
  */
 export function pricedRollEffects(
   riders: RollEffects,
   sheet: Pick<DerivedSheet, 'actions' | 'resources'>,
-  play: Pick<PlayState, 'resources' | 'turn'> | undefined,
+  play:
+    | (Pick<PlayState, 'resources' | 'turn'> & Partial<Pick<PlayState, 'inspiration' | 'foretold'>>)
+    | undefined,
 ): RollEffects {
   const { paid = [], rerolls = [], ...rest } = riders;
-  if (riders.paid === undefined && riders.rerolls === undefined) return riders;
+  const foretold = play === undefined ? [] : foretoldNumbers(sheet, play);
+  if (riders.paid === undefined && riders.rerolls === undefined && foretold.length === 0) {
+    return riders;
+  }
   // Made as the d20 lands: what is marked so, and a floor, which always holds.
   const auto = rerolls.filter((r) => r.auto === true || r.floor !== undefined);
   // What costs nothing and never hurts rolls with no play state too.
   const out = auto.length > 0 ? { ...rest, rerolls: auto } : rest;
   if (play === undefined) return out;
+  const priceOf = (source: string, reaction?: boolean, inspiration?: boolean) =>
+    inspiration === true
+      ? play.inspiration === true
+        ? { pay: { spends: [], reaction: false, words: 'is spent', inspiration: true } }
+        : undefined
+      : offerPrice(sheet, play, source, reaction);
   const offers = [...out.offers];
   const declare = [...(out.declare ?? [])];
   const rerollOffers: NonNullable<RollEffects['rerollOffers']> = [];
@@ -110,7 +123,7 @@ export function pricedRollEffects(
     // The reaction alone is a price with no action or pool behind it.
     const price =
       r.free !== true
-        ? offerPrice(sheet, play, r.source, r.reaction)
+        ? priceOf(r.source, r.reaction, r.inspiration)
         : r.reaction === true
           ? offerPrice({ actions: [], resources: [] }, play, r.source, true)
           : { pay: undefined };
@@ -127,7 +140,7 @@ export function pricedRollEffects(
     });
   }
   for (const p of paid) {
-    const price = offerPrice(sheet, play, p.source, p.reaction);
+    const price = priceOf(p.source, p.reaction, p.inspiration);
     if (price === undefined) continue;
     const { pay, die } = price;
     if (p.advantage === true) {
@@ -152,7 +165,38 @@ export function pricedRollEffects(
     offers,
     ...(declare.length > 0 ? { declare } : {}),
     ...(rerollOffers.length > 0 ? { rerollOffers } : {}),
+    ...(foretold.length > 0 ? { foretold } : {}),
   };
+}
+
+/**
+ * The numbers a foretelling pool's long rest kept (Portent), each priced as
+ * its use and the number itself, once a number: none while the pool has no use
+ * left, which the player may have marked by hand.
+ */
+function foretoldNumbers(
+  sheet: Pick<DerivedSheet, 'resources'>,
+  play: Pick<PlayState, 'resources'> & Partial<Pick<PlayState, 'inspiration' | 'foretold'>>,
+): NonNullable<RollEffects['foretold']> {
+  const out: NonNullable<RollEffects['foretold']> = [];
+  for (const pool of sheet.resources) {
+    if (pool.foretell !== true) continue;
+    const used = play.resources.find((r) => r.key === pool.key)?.used ?? 0;
+    if (used >= pool.max) continue;
+    for (const v of new Set(play.foretold?.[pool.key] ?? [])) {
+      out.push({
+        source: pool.label,
+        v,
+        pay: {
+          spends: [{ key: pool.key, max: pool.max, amount: 1 }],
+          reaction: false,
+          words: `uses the foretold ${v}`,
+          foretold: { key: pool.key, v },
+        },
+      });
+    }
+  }
+  return out;
 }
 
 /** What an extra adds: its die, the paying pool's die, or its bonus, as a roll reads it. */
@@ -165,13 +209,29 @@ function diceOf(p: Paid, poolDie: string | undefined): string | undefined {
 }
 
 /**
- * Pay for an extra, all of it or none: false, paying nothing, when a use or the
- * reaction is gone (a tap that beat the last render).
+ * Pay for an extra, all of it or none: false, paying nothing, when a use, the
+ * reaction, Inspiration or a foretold number is gone (a tap that beat the last
+ * render).
  */
 export function payOffer(play: PlayState, pay: OfferPay): boolean {
   const entryOf = (key: string) => play.resources.find((r) => r.key === key);
   if (pay.spends.some((s) => (entryOf(s.key)?.used ?? 0) + s.amount > s.max)) return false;
   if (pay.reaction && play.turn?.reaction === true) return false;
+  if (pay.inspiration === true && !play.inspiration) return false;
+  const told = pay.foretold;
+  const numbers = told === undefined ? undefined : play.foretold?.[told.key];
+  if (told !== undefined && !numbers?.includes(told.v)) return false;
+  if (told !== undefined && numbers !== undefined) {
+    const left = [...numbers];
+    left.splice(left.indexOf(told.v), 1);
+    const all = { ...play.foretold };
+    if (left.length > 0) all[told.key] = left;
+    else delete all[told.key];
+    // Absent rather than empty, as `PlayState.foretold` says.
+    if (Object.keys(all).length > 0) play.foretold = all;
+    else delete play.foretold;
+  }
+  if (pay.inspiration === true) play.inspiration = false;
   if (pay.reaction) {
     play.turn = { ...(play.turn ?? { action: false, bonus: false }), reaction: true };
   }
@@ -183,11 +243,22 @@ export function payOffer(play: PlayState, pay: OfferPay): boolean {
   return true;
 }
 
-/** Give back what paying for an extra took: its uses, and the reaction it marked. */
+/**
+ * Give back what paying for an extra took: its uses, the reaction it marked,
+ * Inspiration and a foretold number.
+ */
 export function refundOffer(play: PlayState, pay: OfferPay): void {
   for (const { key, amount } of pay.spends) {
     const entry = play.resources.find((r) => r.key === key);
     if (entry !== undefined) entry.used = Math.max(0, entry.used - amount);
   }
   if (pay.reaction && play.turn !== undefined) play.turn = { ...play.turn, reaction: false };
+  if (pay.inspiration === true) play.inspiration = true;
+  const told = pay.foretold;
+  if (told !== undefined) {
+    play.foretold = {
+      ...play.foretold,
+      [told.key]: [...(play.foretold?.[told.key] ?? []), told.v],
+    };
+  }
 }

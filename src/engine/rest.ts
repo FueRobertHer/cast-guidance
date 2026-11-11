@@ -148,6 +148,21 @@ export function longRestRecovery(
   delete play.arcanumUsed;
   play.resources = kept;
   play.deathSaves = { success: 0, fail: 0 };
+  // A foretelling pool's d20s are rolled again, one a use, and those not used
+  // are lost (Portent): "Portent (17 and 4)".
+  const foretold: Record<string, number[]> = {};
+  for (const r of sheet.resources) {
+    if (r.foretell !== true) continue;
+    const rolls = Array.from({ length: r.max }, () => rollTotal('1d20'));
+    foretold[r.key] = rolls;
+    const last = rolls.at(-1);
+    restored.push(
+      `${r.label} (${rolls.length > 1 ? `${rolls.slice(0, -1).join(', ')} and ${last}` : last})`,
+    );
+  }
+  // Absent rather than empty, as `PlayState.foretold` says.
+  if (Object.keys(foretold).length > 0) play.foretold = foretold;
+  else delete play.foretold;
 
   // Regain spent Hit Dice up to half your TOTAL number of them (minimum 1),
   // not half of *each* die type, which over-counts the minimum and under-counts

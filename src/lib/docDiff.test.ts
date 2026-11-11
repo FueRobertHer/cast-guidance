@@ -196,6 +196,19 @@ describe('diffDocs', () => {
     ]);
   });
 
+  it("describes a foretelling pool's numbers as from and to, none when absent", () => {
+    const from = edited((d) => {
+      d.play.foretold = { portent: [17, 4] };
+    });
+    const to = edited((d) => {
+      d.play.foretold = { portent: [4] };
+    });
+    expect(lines(from, to)).toEqual(['portent foretold 17, 4 → 4']);
+    expect(lines(to, base())).toEqual(['portent foretold 4 → none']);
+    expect(lines(base(), from)).toEqual(['portent foretold none → 17, 4']);
+    expect(lines(from, from)).toEqual([]);
+  });
+
   it("describes a condition's effects switched off", () => {
     const from = edited((d) => {
       d.play.conditions = [{ id: 'Poisoned' }];

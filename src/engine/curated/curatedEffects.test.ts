@@ -558,6 +558,10 @@ describe('pools, dice and DCs only class prose states', () => {
       expect(pools(run(key, col('Wizard', 3)))).toEqual(['portent Portent 2 long']);
       expect(pools(run(key, col('Wizard', 13)))).toEqual(['portent Portent 2 long']);
       expect(pools(run(key, col('Wizard', 14)))).toEqual(['portent Portent 3 long']);
+      // The numbers are kept, each one in place of a d20 test's d20.
+      expect(run(key, col('Wizard', 3)).effects).toEqual([
+        expect.objectContaining({ kind: 'resource', key: 'portent', foretell: true }),
+      ]);
     }
     expect(run('greater portent|diviner', col('Wizard', 14)).effects).toEqual([]);
   });
