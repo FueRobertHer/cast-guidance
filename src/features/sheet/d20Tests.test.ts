@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { rollDetail } from '@/dice/format';
+import { rerollD20 } from '@/dice/reroll';
 import type { RollResult } from '@/dice/types';
 import {
   type ActiveCondition,
@@ -810,6 +811,86 @@ describe('rollD20Test with effects in play', () => {
         settlesOnNatural: true,
       });
       expect(r.meta?.attack).toEqual({ by: 'c1', of: 'Longsword', crit: false, critFrom: 18 });
+    });
+  });
+
+  describe('sets and floors (Reliable Talent, Stroke of Luck, Indomitable Might)', () => {
+    const talent = { source: 'Reliable Talent', to: 10, auto: true, free: true };
+    const luck = { source: 'Luck', die: 'one' as const, atMost: 1, auto: true, free: true };
+    const might = { source: 'Indomitable Might', floor: 18, auto: true, free: true };
+    const stroke = { source: 'Stroke of Luck', die: 'all' as const, to: 20, ifFailed: true };
+    const words = (r: RollResult) =>
+      rollDetail(r)
+        .map((p) => (p.dropped ? `~${p.text}~` : p.text))
+        .join('');
+
+    it('sets the d20 as it lands, after the rerolls made then, and then holds the total up', () => {
+      nextFaces(1, 4);
+      const r = rollD20Test('1d20+3', {
+        label: 'Athletics check',
+        // Listed out of order: the reroll goes first, the set next, the floor last.
+        riders: riders({ rerolls: [might, talent, luck] }),
+      });
+      expect(words(r)).toBe(
+        'd20 [~1~, ~4~, 10] Luck reroll set by Reliable Talent + 3 = 13, set to 18 by Indomitable Might',
+      );
+      expect(r.total).toBe(18);
+      expect(r.meta?.d20).toEqual({ natural: 10, set: true });
+    });
+
+    it('keeps the sets made as the d20 lands, whether or not they set it, for a reroll after', () => {
+      nextFaces(15);
+      const r = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [luck, talent, might] }),
+      });
+      expect(r.total).toBe(18);
+      expect(r.meta?.holds).toEqual([{ source: 'Reliable Talent', to: 10 }]);
+      const again = rerollD20(r, { source: 'Magical Guidance' }, () => 2);
+      expect(again?.total).toBe(13);
+      nextFaces(15);
+      const none = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [luck] }),
+      });
+      expect(none.meta?.holds).toBeUndefined();
+    });
+
+    it('holds a total up even on a floor the row did not mark auto', () => {
+      nextFaces(2);
+      const r = rollD20Test('1d20+1', {
+        label: 'STR save',
+        riders: riders({ rerolls: [{ source: 'Indomitable Might', floor: 16 }] }),
+      });
+      expect(r.total).toBe(16);
+    });
+
+    it('sets nothing on a roll over the number, and leaves a set offered after for the result', () => {
+      nextFaces(12);
+      const high = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [talent] }),
+      });
+      expect(high.total).toBe(15);
+      expect(high.meta?.setBy).toBeUndefined();
+      nextFaces(4);
+      const offered = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [{ ...talent, auto: false }] }),
+      });
+      expect(offered.total).toBe(7);
+    });
+
+    it('offers a set on the result only while the die can still rise to it', () => {
+      const offers = { rerollOffers: [stroke] };
+      nextFaces(14);
+      expect(
+        rollD20Test('1d20', { label: 'Perception check', riders: riders(offers) }).meta?.rerolls,
+      ).toEqual([stroke]);
+      nextFaces(20);
+      expect(
+        rollD20Test('1d20', { label: 'Perception check', riders: riders(offers) }).meta?.rerolls,
+      ).toBeUndefined();
     });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rollDetail } from './format';
-import { canReroll, rerollD20 } from './reroll';
+import { canReroll, rawTotal, rerollD20, withRaw } from './reroll';
 import { roll } from './roll';
 import type { RollResult } from './types';
 
@@ -201,5 +201,180 @@ describe('rerollD20', () => {
     const copy = structuredClone(before);
     rerollD20(before, { source: 'Luck', die: 'one', atMost: 1 }, faces(9));
     expect(before).toEqual(copy);
+  });
+});
+
+describe('rerollD20 setting a number', () => {
+  const talent = { source: 'Reliable Talent', to: 10 };
+  const noDie = () => {
+    throw new Error('a set rolls no die');
+  };
+
+  it('sets a kept d20 of 9 or lower to 10, the die it replaces set aside', () => {
+    const r = rerollD20(rolled('1d20+7', [4]), talent, noDie) as RollResult;
+    expect(r.total).toBe(17);
+    expect(r.meta?.d20).toEqual({ natural: 10, set: true });
+    expect(d20(r)).toEqual([
+      { v: 4, kept: false, out: true },
+      { v: 10, kept: true },
+    ]);
+    expect(r.meta?.setBy).toEqual(['Reliable Talent']);
+    expect(r.meta?.rerolled).toBeUndefined();
+    expect(words(r)).toBe('d20 [~4~, 10] set by Reliable Talent + 7');
+  });
+
+  it('sets a 9 but not a 10 or more', () => {
+    expect(rerollD20(rolled('1d20', [9]), talent, noDie)?.total).toBe(10);
+    expect(rerollD20(rolled('1d20', [10]), talent, noDie)).toBeUndefined();
+    expect(rerollD20(rolled('1d20', [15]), talent, noDie)).toBeUndefined();
+    expect(canReroll(rolled('1d20', [9]), talent)).toBe(true);
+    expect(canReroll(rolled('1d20', [10]), talent)).toBe(false);
+  });
+
+  it('sets only the die kept: under advantage a low die not kept changes nothing', () => {
+    expect(rerollD20(rolled('1d20', [3, 14], 'adv'), talent, noDie)).toBeUndefined();
+    const adv = rerollD20(rolled('1d20+1', [6, 3], 'adv'), talent, noDie) as RollResult;
+    expect(adv.total).toBe(11);
+    expect(d20(adv)).toEqual([
+      { v: 6, kept: false, out: true },
+      { v: 3, kept: false },
+      { v: 10, kept: true },
+    ]);
+    const dis = rerollD20(rolled('1d20+1', [3, 15], 'dis'), talent, noDie) as RollResult;
+    expect(dis.total).toBe(11);
+    expect(dis.meta?.d20).toEqual({ natural: 10, set: true });
+  });
+
+  it('sets any roll under the number (Stroke of Luck), never a 20', () => {
+    const luck = { source: 'Stroke of Luck', to: 20 };
+    expect(rerollD20(rolled('1d20+3', [19]), luck, noDie)?.total).toBe(23);
+    expect(rerollD20(rolled('1d20+3', [1]), luck, noDie)?.meta?.d20).toEqual({
+      natural: 20,
+      set: true,
+    });
+    expect(rerollD20(rolled('1d20+3', [20]), luck, noDie)).toBeUndefined();
+  });
+
+  it("settles an attack's crit by the number it sets", () => {
+    const attack = (face: number, critFrom?: number) => ({
+      ...rolled('1d20+5', [face]),
+      meta: {
+        d20: { natural: face },
+        attack: { by: 'c1', of: 'Dagger', crit: false, ...(critFrom ? { critFrom } : {}) },
+      },
+    });
+    const luck = { source: 'Stroke of Luck', to: 20 };
+    expect(rerollD20(attack(4), luck)?.meta?.attack).toEqual({
+      by: 'c1',
+      of: 'Dagger',
+      crit: true,
+    });
+    expect(rerollD20(attack(1), talent)?.meta?.attack?.crit).toBe(false);
+    expect(rerollD20(attack(1), { ...talent, to: 19 }, noDie)?.meta?.attack?.crit).toBe(false);
+    expect(rerollD20(attack(1, 19), { ...talent, to: 19 }, noDie)?.meta?.attack?.crit).toBe(true);
+  });
+
+  it('names every set in order, after the rerolls before it', () => {
+    const lucky = rerollD20(
+      rolled('1d20', [1]),
+      { source: 'Luck', die: 'one', atMost: 1 },
+      faces(3),
+    );
+    const r = rerollD20(lucky as RollResult, talent, noDie) as RollResult;
+    expect(r.total).toBe(10);
+    expect(r.meta?.rerolled).toEqual(['Luck']);
+    expect(r.meta?.setBy).toEqual(['Reliable Talent']);
+    expect(words(r)).toBe('d20 [~1~, ~3~, 10] Luck reroll set by Reliable Talent');
+    const again = rerollD20(
+      rerollD20(
+        rolled('1d20', [2]),
+        { ...talent, source: 'Ear for Deceit', to: 8 },
+        noDie,
+      ) as RollResult,
+      talent,
+      noDie,
+    ) as RollResult;
+    expect(again.total).toBe(10);
+    expect(again.meta?.setBy).toEqual(['Ear for Deceit', 'Reliable Talent']);
+  });
+
+  it('sets a rerolled d20 again for a set that holds, and names it once', () => {
+    const talent = { source: 'Reliable Talent', to: 10, hold: true };
+    const set = rerollD20(rolled('1d20+5', [4]), talent) as RollResult;
+    expect(set.meta?.holds).toEqual([{ source: 'Reliable Talent', to: 10 }]);
+    const low = rerollD20(set, { source: 'Magical Guidance' }, faces(3)) as RollResult;
+    expect(low.total).toBe(15);
+    expect(low.meta?.d20).toEqual({ natural: 10, set: true });
+    expect(low.meta?.setBy).toEqual(['Reliable Talent']);
+    expect(words(low)).toBe(
+      'd20 [~4~, ~10~, ~3~, 10] Magical Guidance reroll set by Reliable Talent + 5',
+    );
+    // A new roll over the number stands as rolled, and no set is named for it.
+    const high = rerollD20(set, { source: 'Magical Guidance' }, faces(16)) as RollResult;
+    expect(high.total).toBe(21);
+    expect(high.meta?.d20).toEqual({ natural: 16 });
+    expect(high.meta?.setBy).toBeUndefined();
+    expect(words(high)).toBe('d20 [~4~, ~10~, 16] Magical Guidance reroll + 5');
+  });
+
+  it('lets a set made once go with the die it set: a reroll after stands as rolled', () => {
+    const set = rerollD20(rolled('1d20+5', [4]), {
+      source: 'Adept of the Red Robes',
+      to: 10,
+    }) as RollResult;
+    expect(set.meta?.holds).toBeUndefined();
+    expect(rerollD20(set, { source: 'Magical Guidance' }, faces(3))?.total).toBe(8);
+  });
+
+  it('leaves the roll it was given as it was', () => {
+    const before = rolled('1d20', [2]);
+    const copy = structuredClone(before);
+    rerollD20(before, talent, noDie);
+    expect(before).toEqual(copy);
+  });
+});
+
+describe('rerollD20 holding a total up', () => {
+  const might = { source: 'Indomitable Might', floor: 18 };
+
+  it('counts a total under the floor as the floor, and says what the terms came to', () => {
+    const r = rerollD20(rolled('1d20+4', [5]), might) as RollResult;
+    expect(r.total).toBe(18);
+    expect(r.meta?.floor).toEqual({ at: 18, source: 'Indomitable Might', raw: 9 });
+    expect(r.meta?.d20).toEqual({ natural: 5 });
+    expect(rawTotal(r)).toBe(9);
+    expect(words(r)).toBe('d20 [5] + 4 = 9, set to 18 by Indomitable Might');
+  });
+
+  it('changes nothing at or over the floor, nor under a floor as high', () => {
+    expect(rerollD20(rolled('1d20+4', [14]), might)).toBeUndefined();
+    expect(rerollD20(rolled('1d20+4', [15]), might)).toBeUndefined();
+    const held = rerollD20(rolled('1d20+4', [5]), might) as RollResult;
+    expect(rerollD20(held, might)).toBeUndefined();
+    expect(canReroll(rolled('1d20+4', [5]), might)).toBe(true);
+  });
+
+  it('keeps holding through a reroll, counted from what the terms come to', () => {
+    const held = rerollD20(rolled('1d20+4', [5]), might) as RollResult;
+    const low = rerollD20(held, { source: 'Indomitable' }, faces(2)) as RollResult;
+    expect(low.total).toBe(18);
+    expect(low.meta?.floor?.raw).toBe(6);
+    const high = rerollD20(held, { source: 'Indomitable' }, faces(19)) as RollResult;
+    expect(high.total).toBe(23);
+    expect(words(high)).toBe('d20 [~5~, 19] Indomitable reroll + 4');
+    // A set that would leave the total where the floor holds it changes nothing.
+    expect(rerollD20(held, { source: 'Reliable Talent', to: 10 })).toBeUndefined();
+    expect(canReroll(held, { source: 'Adept of the Red Robes', to: 10 })).toBe(false);
+    const lifts = rerollD20(held, { source: 'Stroke of Luck', to: 20 }) as RollResult;
+    expect(lifts.total).toBe(24);
+    expect(lifts.meta?.floor?.raw).toBe(24);
+  });
+
+  it('counts a new total against the floor with withRaw, and a roll with none as it is', () => {
+    const held = rerollD20(rolled('1d20+4', [5]), might) as RollResult;
+    expect(withRaw(held, 12).total).toBe(18);
+    expect(withRaw(held, 21)).toMatchObject({ total: 21, meta: { floor: { raw: 21 } } });
+    expect(withRaw(rolled('1d20', [3]), 7).total).toBe(7);
+    expect(rawTotal(rolled('1d20', [3]))).toBe(3);
   });
 });

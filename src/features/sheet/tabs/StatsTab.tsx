@@ -386,6 +386,8 @@ export function Component() {
               kind: 'check',
               ability: s.ability,
               skill: name,
+              // Reliable Talent reaches a skill the character is proficient in.
+              ...(s.prof > 0 ? { proficient: true } : {}),
             })(from, landed)
           }
         />

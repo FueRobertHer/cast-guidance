@@ -72,16 +72,19 @@ export interface RollEffects {
    */
   paid?: Array<{ source: string } & Omit<PaidRoll, 'bonus'> & { bonus?: number }>;
   /**
-   * Rerolls the character's own features give (`Reroll`), once a source. An
-   * `auto` one rolls as the d20 lands; the rest wait for the sheet to price
-   * them into `rerollOffers`, and with no price they offer nothing.
+   * Rerolls and sets the character's own features give (`Reroll`), once a
+   * source. An `auto` one is made as the d20 lands, and a `floor` always is
+   * (Indomitable Might); the rest wait for the sheet to price them into
+   * `rerollOffers`, and with no price they offer nothing.
    */
-  rerolls?: Array<{ source: string } & Reroll>;
-  /** Rerolls the result offers, priced as each feature's Use is (`pricedRollEffects`). */
+  rerolls?: Array<{ source: string } & Omit<Reroll, 'floorScore'> & { floor?: number }>;
+  /** Rerolls and sets the result offers, priced as each feature's Use is (`pricedRollEffects`). */
   rerollOffers?: Array<{
     source: string;
     die: 'all' | 'one' | 'extra';
     atMost?: number;
+    /** A set, not a reroll: the kept d20 counts as this (`Reroll.to`). */
+    to?: number;
     ifFailed: boolean;
     bonus?: number;
     pay?: OfferPay;
@@ -96,8 +99,8 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /**
  * Does an effect's filter reach this test? Initiative is a Dexterity check, a
  * death save a save with no ability. Abilities narrow every roll; skills, or
- * any skill, narrow checks; and attack type, range and a spell's class narrow
- * attacks. A filter that asks what the test does not say (a skill, an
+ * any skill, narrow checks, and so does a skill the character is proficient
+ * in; and attack type, range and a spell's class narrow attacks. A filter that asks what the test does not say (a skill, an
  * attack's range) does not reach it. One for initiative alone reaches no other
  * check, and one for a death or concentration save no other save.
  */
@@ -115,6 +118,7 @@ export function filterReaches(on: RollFilter, test: D20Test): boolean {
     if (skill === undefined) return false;
     if (on.skills !== undefined && !on.skills.some((s) => same(s, skill))) return false;
   }
+  if (on.proficient === true && (test.kind !== 'check' || test.proficient !== true)) return false;
   if (test.kind === 'attack') {
     if (on.attack !== undefined && test.attack !== on.attack) return false;
     if (on.range !== undefined && test.range !== on.range) return false;
@@ -183,7 +187,13 @@ export function rollEffects(
       if (test.kind === 'initiative' && r.ifFailed === true) continue;
       // Once a source and die: a 2014 halfling's Lucky trait and the Lucky feat share a name.
       const rerolls = out.rerolls ?? [];
-      if (rerolls.some((p) => same(p.source, r.origin) && p.die === r.die)) continue;
+      if (
+        rerolls.some(
+          (p) =>
+            same(p.source, r.origin) && p.die === r.die && p.to === r.to && p.floor === r.floor,
+        )
+      )
+        continue;
       const { kind: _kind, on: _on, origin, effectId: _effectId, ...rest } = r;
       rerolls.push({ source: origin, ...rest });
       out.rerolls = rerolls;

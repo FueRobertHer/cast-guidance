@@ -63,6 +63,35 @@ describe('filterReaches', () => {
     expect(filterReaches(skilled, { kind: 'save', ability: 'wis' })).toBe(false);
   });
 
+  it('reaches only a skill check the character is proficient in, when it says proficient', () => {
+    const proficient = { rolls: ['check' as const], proficient: true };
+    expect(
+      filterReaches(proficient, {
+        kind: 'check',
+        ability: 'dex',
+        skill: 'Stealth',
+        proficient: true,
+      }),
+    ).toBe(true);
+    expect(filterReaches(proficient, { kind: 'check', ability: 'dex', skill: 'Stealth' })).toBe(
+      false,
+    );
+    expect(filterReaches(proficient, { kind: 'check', ability: 'dex' })).toBe(false);
+    expect(filterReaches(proficient, { kind: 'initiative' })).toBe(false);
+    // Narrowed by skill too: Persuasion with proficiency is not Deception.
+    const deception = { ...proficient, skills: ['Deception'] };
+    expect(
+      filterReaches(deception, {
+        kind: 'check',
+        ability: 'cha',
+        skill: 'Persuasion',
+        proficient: true,
+      }),
+    ).toBe(false);
+    // A filter that does not say proficient reaches a check with or without it.
+    expect(filterReaches({ rolls: ['check'] }, { kind: 'check', skill: 'Stealth' })).toBe(true);
+  });
+
   it('reaches initiative alone, and no other Dexterity check, when it names initiative', () => {
     const initiative = { rolls: ['check' as const], initiative: true };
     expect(filterReaches(initiative, { kind: 'initiative' })).toBe(true);
@@ -264,6 +293,37 @@ describe('rollEffects', () => {
       const trait: RollRider = { ...luck, origin: 'Lucky' };
       const save = rollEffects({ rollRiders: [trait, feat] }, { kind: 'save', ability: 'wis' });
       expect(save.rerolls?.map((r) => r.die)).toEqual(['one', 'extra']);
+    });
+
+    it('passes a set and a floor on with their numbers, apart from a reroll of the same name', () => {
+      const talent: RollRider = {
+        kind: 'reroll',
+        on: luck.on,
+        to: 10,
+        auto: true,
+        free: true,
+        origin: 'Lucky',
+      };
+      // A reroll of the whole roll names no die, as a set and a floor do not.
+      const again: RollRider = { ...indomitable, on: { rolls: ['check'] }, origin: 'Lucky' };
+      const might: RollRider = {
+        kind: 'reroll',
+        on: { rolls: ['check'], abilities: ['str'] },
+        floor: 18,
+        auto: true,
+        free: true,
+        origin: 'Lucky',
+      };
+      const check = rollEffects(
+        { rollRiders: [{ ...luck, origin: 'Lucky' }, again, talent, might, { ...might }] },
+        { kind: 'check', ability: 'str', skill: 'Athletics' },
+      );
+      expect(check.rerolls).toEqual([
+        { source: 'Lucky', die: 'one', atMost: 1, auto: true, free: true },
+        { source: 'Lucky', ifFailed: true, bonus: 9 },
+        { source: 'Lucky', to: 10, auto: true, free: true },
+        { source: 'Lucky', floor: 18, auto: true, free: true },
+      ]);
     });
 
     it('gives a death save the rerolls of saves, and initiative none that turns a failure', () => {

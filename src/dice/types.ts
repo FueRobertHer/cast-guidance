@@ -94,12 +94,14 @@ export interface RollOffer {
  * A reroll the result offers (Indomitable, on a failed save), paid as the
  * feature's Use is (`pay`, as `RollOffer` has it). `die` says what rerolls, as
  * the engine's `Reroll` does: the roll's d20s, one showing `atMost` or less,
- * or one d20 more with the best kept. The new roll stands.
+ * or one d20 more with the best kept. The new roll stands. With `to` it is a
+ * set, not a reroll: the kept d20, when it shows less, counts as `to`.
  */
 export interface RerollOffer {
   source: string;
   die: 'all' | 'one' | 'extra';
   atMost?: number;
+  to?: number;
   ifFailed: boolean;
   /** Added to the new roll (2024 Indomitable). */
   bonus?: number;
@@ -127,8 +129,12 @@ export interface RollResult {
     critical?: boolean;
     /** A critical roll's house rule, when not the dice twice (`CritDamage`), for the toast to name. */
     critRule?: Exclude<CritDamage, 'doubleDice'>;
-    /** Present when the roll leads with a d20 — powers nat 20/1 highlighting. */
-    d20?: { natural: number };
+    /**
+     * Present when the roll leads with a d20 — powers nat 20/1 highlighting.
+     * `set`: a feature set the kept d20 to `natural` (Reliable Talent's 10),
+     * so it counts as that number but is no natural 20 or 1 to name.
+     */
+    d20?: { natural: number; set?: boolean };
     /**
      * A sheet's d20 test: the kind of roll it is (initiative is a check), for
      * the moments a natural 20 or 1 sets off that name the rolls they hold for.
@@ -149,6 +155,15 @@ export interface RollResult {
     rerolls?: RerollOffer[];
     /** What rerolled its d20, in order ("Luck"): the dice it set aside show dropped. */
     rerolled?: string[];
+    /** What set its d20 to a number (Reliable Talent's 10): the die it replaced shows dropped. */
+    setBy?: string[];
+    /** Sets that hold for every d20 the roll keeps, so a reroll after is set again. */
+    holds?: Array<{ source: string; to: number }>;
+    /**
+     * A total that counts as at least `at` (Indomitable Might): `raw` is what
+     * the terms come to, and `total` the higher of the two.
+     */
+    floor?: { at: number; source: string; raw: number };
     /** The roll this one went with: damage tapped while its attack waited. */
     withRoll?: string;
     /**

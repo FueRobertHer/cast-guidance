@@ -19,9 +19,16 @@
  * paid as the feature's Use is (Indomitable) or free (`free`), its limit said
  * in its `when` for the player to keep (Fanatical Focus, once a Rage).
  *
+ * A reroll row can set a number instead (`Reroll.to`): the d20 kept counts as
+ * it (Reliable Talent's 9 or lower as a 10, Stroke of Luck's 20), made, paid
+ * or free as a reroll is. Or a total floor (`floorScore`: Indomitable Might),
+ * which always holds as the d20 lands.
+ *
  * Kept out on purpose:
- *   - what sets the d20 rather than rerolling it (Stroke of Luck, Reliable
- *     Talent, Portent), and Curving Shot, which rerolls against another target;
+ *   - Portent's foretold rolls, which need numbers kept in play, and Curving
+ *     Shot, which rerolls against another target;
+ *   - 2014 Stroke of Luck's miss turned into a hit, which no number on the d20
+ *     makes, and Starry Form's Dragon on concentration saves, which roll at once;
  *   - a price the player picks (Focused Aim's 1 to 3 ki), or a bonus the app
  *     cannot count (Saving Face, the allies you can see);
  *   - what lasts the turn or adds damage too (Fighting Spirit, Feinting
@@ -83,6 +90,12 @@ const reroll = (on: RollFilter, row: RerollRow = {}): Extract<ExtraRow, { reroll
 });
 /** "Reroll a 1 ... you must use the new roll": made as the d20 lands. */
 const LUCK: RerollRow = { die: 'one', atMost: 1, auto: true, free: true };
+/** "Treat a d20 roll of 9 or lower as a 10": it never hurts, so made as the d20 lands. */
+const AS_TEN: RerollRow = { to: 10, auto: true, free: true };
+/** The same, only sometimes, which the player says: offered on the result. */
+const asTenWhen = (when: string): RerollRow => ({ to: 10, free: true, when });
+/** "Use that score in place of the total". */
+const STRENGTH_FLOOR: RerollRow = { floorScore: 'str', auto: true, free: true };
 const RAGING: readonly WhileState[] = [{ state: 'effect', name: 'Rage' }];
 
 const FAILED = { ifFailed: true } as const;
@@ -93,6 +106,8 @@ const CHECKS_AND_SAVES: RollFilter = { rolls: ['check', 'save'] };
 const WEAPON_ATTACKS: RollFilter = { rolls: ['attack'], attack: 'weapon' };
 const STRENGTH: RollFilter = { rolls: ['attack', 'check', 'save'], abilities: ['str'] };
 const SPELL_ATTACKS: RollFilter = { rolls: ['attack'], attack: 'spell' };
+const PROFICIENT_SKILLS: RollFilter = { rolls: ['check'], proficient: true };
+const STRENGTH_CHECKS: RollFilter = { rolls: ['check'], abilities: ['str'] };
 
 export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   // --- Classes ---------------------------------------------------------------
@@ -111,6 +126,18 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'diamond soul|monk|phb': [reroll(SAVES, FAILED)],
   'disciplined survivor|monk|xphb': [reroll(SAVES, FAILED)],
   'magical guidance|sorcerer|tce': [reroll(CHECKS, FAILED)],
+  // 2014: a check "that lets you add your proficiency bonus"; 2024: "one of your
+  // skill or tool proficiencies". Tool checks roll nowhere on the sheet.
+  'reliable talent|rogue|phb': [reroll(PROFICIENT_SKILLS, AS_TEN)],
+  'reliable talent|rogue|xphb': [reroll(PROFICIENT_SKILLS, AS_TEN)],
+  'reliable talent|expert sidekick|tce': [reroll(PROFICIENT_SKILLS, AS_TEN)],
+  // 2014: a failed check's d20 as a 20 (the miss into a hit is kept out); 2024: any D20 Test.
+  'stroke of luck|rogue|phb': [reroll(CHECKS, { to: 20, ...FAILED })],
+  'stroke of luck|rogue|xphb': [reroll(D20_TESTS, { to: 20, ...FAILED })],
+  'indomitable might|barbarian|phb': [reroll(STRENGTH_CHECKS, STRENGTH_FLOOR)],
+  'indomitable might|barbarian|xphb': [
+    reroll({ rolls: ['check', 'save'], abilities: ['str'] }, STRENGTH_FLOOR),
+  ],
 
   // --- Subclasses -------------------------------------------------------------
   'peerless skill|college of lore|phb': [poolDie(CHECKS)],
@@ -171,6 +198,26 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
       when: 'Only while Living Legend lasts',
     }),
   ],
+  'silver tongue|college of eloquence|tce': [reroll(skills('Persuasion', 'Deception'), AS_TEN)],
+  'ear for deceit|inquisitive|xge': [
+    reroll(skills('Insight'), {
+      to: 8,
+      free: true,
+      when: 'Only to tell whether a creature is lying',
+    }),
+  ],
+  'trance of order|clockwork soul|tce': [
+    reroll(D20_TESTS, asTenWhen('Only while Trance of Order lasts')),
+  ],
+  'trance of order|clockwork sorcery|xphb': [
+    reroll(D20_TESTS, asTenWhen('Only while Trance of Order lasts')),
+  ],
+  'dragon|circle of stars|tce': [
+    reroll({ rolls: ['check'], abilities: ['int', 'wis'] }, asTenWhen('Only in your Dragon form')),
+  ],
+  'dragon|circle of the stars|xphb': [
+    reroll({ rolls: ['check'], abilities: ['int', 'wis'] }, asTenWhen('Only in your Dragon form')),
+  ],
   // Its use goes only once it turns a failure into a success, which the player marks.
   'draconic disciple|way of the ascendant dragon|ftd': [
     reroll(skills('Intimidation', 'Persuasion'), {
@@ -198,6 +245,8 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
 
   // --- Feats ---------------------------------------------------------------------
   'lucky|xphb': [paidAdvantage(D20_TESTS)],
+  // Magical Balance, a use of its proficiency-bonus pool.
+  'adept of the red robes|dsotdq': [reroll({ rolls: ['attack', 'check'] }, { to: 10 })],
   // "Roll an additional d20 ... You choose which of the d20s is used."
   'lucky|phb': [reroll(D20_TESTS, { die: 'extra' })],
   'elven accuracy|xge': [

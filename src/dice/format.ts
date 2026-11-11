@@ -29,7 +29,7 @@ function diceParts(term: DiceRollDetail): RollDetailPart[] {
  * The working of a roll, as "d20 [17, 4] advantage + 3": every die face in
  * order, the dropped ones marked, the mode that rolled the second d20 in words,
  * then the flat modifiers with a true minus, and a die an effect added named
- * for it. Shown under the total in both the
+ * for it. A d20 a feature rerolled or set, and a total a floor held up, say so. Shown under the total in both the
  * toast and the tray's history (`ui/RollDetail`), which is why it lives here
  * rather than in either of them.
  */
@@ -56,9 +56,12 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
       if (i === 0 && mode !== undefined && t.sides === 20 && t.rolls.length > 1) {
         parts.push({ text: mode === 'adv' ? ' advantage' : ' disadvantage' });
       }
-      // What rerolled the d20, whose dice set aside show dropped: "Luck reroll".
+      // What rerolled the d20, whose dice set aside show dropped: "Luck reroll";
+      // and what set it to a number: "set by Reliable Talent".
       const rerolled = i === 0 ? (result.meta?.rerolled ?? []) : [];
       if (rerolled.length > 0) parts.push({ text: ` ${rerolled.join(', ')} reroll` });
+      const setBy = i === 0 ? (result.meta?.setBy ?? []) : [];
+      if (setBy.length > 0) parts.push({ text: ` set by ${setBy.join(', ')}` });
     } else if (t.kind === 'multiplier') {
       parts.push({ text: ' × ' });
       parts.push(...(t.detail.kind === 'dice' ? diceParts(t.detail) : [{ text: String(t.value) }]));
@@ -71,5 +74,10 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
       if (from !== undefined) parts.push({ text: ` ${from.source}` });
     }
   });
+  // A total a floor holds up says what the terms came to: "= 9, set to 18 by Indomitable Might".
+  const floor = result.meta?.floor;
+  if (floor !== undefined && floor.raw < floor.at) {
+    parts.push({ text: ` = ${floor.raw}, set to ${floor.at} by ${floor.source}` });
+  }
   return parts.filter((p) => p.text !== '');
 }

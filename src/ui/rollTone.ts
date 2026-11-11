@@ -19,12 +19,25 @@ export type RollTone = 'crit' | 'fumble' | 'd20' | 'damage' | 'heal';
 /**
  * The d20's natural face, when it is one worth naming: on a d20 roll (or one
  * with no kind that leads with a d20), and never on an automatic failure,
- * which is not a natural 20 to celebrate, nor a natural 1.
+ * which is not a natural 20 to celebrate, nor a natural 1, nor on a d20 a
+ * feature set to a number (Stroke of Luck's 20), which was not rolled.
  */
 export function naturalOf(result: RollResult): number | undefined {
   if (result.meta?.autoFail === true) return undefined;
   if (result.kind !== undefined && result.kind !== 'd20') return undefined;
+  if (result.meta?.d20?.set === true) return undefined;
   return result.meta?.d20?.natural;
+}
+
+/**
+ * An attack that crit with no natural 20 to name: inside a crit range a
+ * feature or effect lowered (Hexblade's Curse's 19), or set to a number that
+ * crits (Stroke of Luck's 20).
+ */
+export function critWithoutNatural20(result: RollResult): boolean {
+  if (result.meta?.attack?.crit !== true || result.meta.autoFail === true) return false;
+  const nat = naturalOf(result);
+  return nat !== undefined ? nat !== 20 : result.meta.d20?.set === true;
 }
 
 export function rollTone(result: RollResult): RollTone {
@@ -32,8 +45,8 @@ export function rollTone(result: RollResult): RollTone {
   // the die shows, a natural 20 included.
   if (result.meta?.autoFail === true) return 'fumble';
   const nat = naturalOf(result);
-  // An attack that crits below 20 (Hexblade's Curse's 19) is a crit to spot too.
-  if (nat === 20 || (nat !== undefined && result.meta?.attack?.crit === true)) return 'crit';
+  // An attack that crits below 20 (Hexblade's Curse's 19), or on a d20 set to 20, is a crit to spot too.
+  if (nat === 20 || critWithoutNatural20(result)) return 'crit';
   if (nat === 1) return 'fumble';
   if (result.kind !== undefined) return result.kind;
   return result.meta?.d20 !== undefined ? 'd20' : 'damage';
