@@ -249,6 +249,18 @@ const subclassLookup =
     return withClass ?? matches[0];
   };
 
+/**
+ * The traits of the race a subrace with versions belongs to: a version's `_mod`
+ * is written against the race and subrace merged. Undefined when its race is
+ * not found, so its versions' mods read the subrace alone.
+ */
+function raceTraitsOf(reg: EntityRegistry, subrace: Entity): unknown[] | undefined {
+  const { raceName, raceSource } = subrace;
+  if (typeof raceName !== 'string' || typeof raceSource !== 'string') return undefined;
+  const entries = reg.get('race', raceName, raceSource)?.entries;
+  return Array.isArray(entries) ? entries : undefined;
+}
+
 export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityRegistry {
   const reg = new EntityRegistry();
   const warn = (w: CopyModWarning[]) => reg.warnings.push(...w);
@@ -262,8 +274,10 @@ export function normalizeDataset(files: ReadonlyMap<string, unknown>): EntityReg
   warn(resolveCopies(races, byNameSource(races), 'race'));
   warn(resolveCopies(subraces, subraceLookup(subraces), 'subrace'));
   const raceVersions = races.flatMap((r) => expandVersions(r, reg.warnings));
-  const subraceVersions = subraces.flatMap((r) => expandVersions(r, reg.warnings));
   reg.addAll('race', [...races, ...raceVersions]);
+  const subraceVersions = subraces.flatMap((r) =>
+    expandVersions(r, reg.warnings, raceTraitsOf(reg, r)),
+  );
   reg.addAll('subrace', [...subraces, ...subraceVersions]);
 
   // Flat copy-within-type entity files
@@ -534,7 +548,9 @@ function mergeHomebrewFiles(
       const entities = seen === undefined ? listed : laterCopiesOut(listed, seen);
       if (entities.length === 0) continue;
       if (type === 'race' || type === 'subrace') {
-        const versions = entities.flatMap((e) => expandVersions(e, reg.warnings));
+        const versions = entities.flatMap((e) =>
+          expandVersions(e, reg.warnings, type === 'subrace' ? raceTraitsOf(reg, e) : undefined),
+        );
         reg.addAll(type, [...entities, ...versions]);
       } else {
         reg.addAll(type, entities);

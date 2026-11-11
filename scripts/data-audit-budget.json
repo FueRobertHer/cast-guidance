@@ -30,9 +30,7 @@
         "subclassFeature": 1441,
         "spell": 936
       },
-      "warningGroups": {
-        "versions: replaceArr target not found on \"…\": \"…\"": 40
-      },
+      "warningGroups": {},
       "unresolvedCopies": 0,
       "spellsWithDice": 402,
       "invalidSpellRolls": 0,
@@ -118,9 +116,7 @@
         "subclassFeature": 1499,
         "spell": 969
       },
-      "warningGroups": {
-        "versions: replaceArr target not found on \"…\": \"…\"": 40
-      },
+      "warningGroups": {},
       "unresolvedCopies": 0,
       "spellsWithDice": 420,
       "invalidSpellRolls": 0,
@@ -213,9 +209,7 @@
         "subclassFeature": 1499,
         "spell": 969
       },
-      "warningGroups": {
-        "versions: replaceArr target not found on \"…\": \"…\"": 40
-      },
+      "warningGroups": {},
       "unresolvedCopies": 0,
       "spellsWithDice": 420,
       "invalidSpellRolls": 0,
@@ -838,9 +832,7 @@
         "subclassFeature": 1564,
         "spell": 1038
       },
-      "warningGroups": {
-        "versions: replaceArr target not found on \"…\": \"…\"": 40
-      },
+      "warningGroups": {},
       "unresolvedCopies": 0,
       "spellsWithDice": 478,
       "invalidSpellRolls": 0,
