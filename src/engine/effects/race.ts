@@ -6,6 +6,7 @@ import {
   dragonOptions,
   namedDragon,
 } from '../curated/draconicAncestry';
+import { emitRollAdvantages } from '../curated/rollAdvantages';
 import {
   type CharacterDoc,
   type DataEntity,
@@ -270,7 +271,8 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
   for (const entry of asEntityArray(e.entries)) {
     const traitName = str(entry.name);
     if (traitName === undefined) continue;
-    const names = [traitName, basedOn(entry)?.name].filter((n) => n !== undefined);
+    const based = basedOn(entry);
+    const names = [traitName, based?.name].filter((n) => n !== undefined);
     mechanicsOf(col, {
       entry,
       label: traitName,
@@ -280,6 +282,16 @@ function collectFrom(col: Collector, e: DataEntity, origin: EffectOrigin, idBase
         if (!names.some((n) => emitCuratedTrait(col, n, origin))) {
           proseScanFeature(col, traitName, entry.entries, origin);
         }
+        // Advantage the trait states, named for the trait (Brave), not the race.
+        emitRollAdvantages(
+          col,
+          [
+            `${traitName}|${str(e.name)}|${str(e.source)}`,
+            `${traitName}|${str(e.source)}`,
+            ...(based !== undefined ? [`${based.name}|${based.source}`] : []),
+          ],
+          { ...origin, label: traitName },
+        );
       },
     });
   }

@@ -4,6 +4,7 @@
  * `optionalfeatureProgression`, and a pick works the same from either.
  */
 import { emitCuratedEffects as emitCurated } from '../curated/curatedEffects';
+import { emitRollAdvantages } from '../curated/rollAdvantages';
 import { linkSpend } from '../curated/spendLinks';
 import { emitStandingEffects as emitStanding } from '../curated/standingEffects';
 import { summarizeEntries } from '../summarize';
@@ -156,6 +157,7 @@ export function readOptionalFeatures(
               uids.some((key, i) =>
                 emitStanding(col, key, ofOrigin, i === 0 ? undefined : printed, level),
               );
+              emitRollAdvantages(col, uids, ofOrigin, level);
               uids.some((key) => linkSpend(col, key, str(of.name) ?? uid, ofOrigin));
             },
           });

@@ -865,22 +865,23 @@ export function Component() {
 
   const dying = play.currentHp === 0 && maxHp.value > 0;
 
-  /** Does the character have one of these feats/features (by `name|source` uid)? */
-  const hasFeature = (...uids: string[]) => sheet.features.some((f) => uids.includes(f.origin.uid));
   const concentrationEffects = effectsFor({ kind: 'save', ability: 'con' });
-  // War Caster: advantage on concentration saves, which the character's
-  // conditions combine with and can cancel.
-  const warCaster = hasFeature('war caster|phb', 'war caster|xphb') ? ['War Caster'] : [];
-  // Durable (2024): advantage on death saves.
-  const durable = hasFeature('durable|xphb') ? ['Durable'] : [];
+  // The build's advantage on these saves (War Caster on concentration, 2024
+  // Durable on death saves), which the character's conditions combine with
+  // and can cancel, and which their cues name.
+  const concentrationRiders = rollEffects(sheet, {
+    kind: 'save',
+    ability: 'con',
+    purpose: 'concentration',
+  });
+  const deathRiders = rollEffects(sheet, { kind: 'save', purpose: 'death' });
   const rollConcentrationSave = (label: string) =>
     rollD20Test(`1d20${fmt(sheet.saves.con.total.value)}`, {
       label,
       effects: concentrationEffects,
       ignored: ignore.take('concentration', concentrationEffects),
-      advantageFrom: warCaster,
       // Settled on the spot, so nothing is offered after it.
-      riders: { ...rollEffects(sheet, { kind: 'save', ability: 'con' }), offers: [] },
+      riders: { ...concentrationRiders, offers: [] },
     });
 
   const usedOf = (key: string) => play.resources.find((r) => r.key === key)?.used ?? 0;
@@ -1275,7 +1276,7 @@ export function Component() {
           <div className="mb-2 text-heading text-danger">Death saving throws</div>
           <div className="mb-2 -mx-1">
             <RollEffectCue
-              lines={effectLines(deathEffects, durable)}
+              lines={effectLines(deathEffects, deathRiders.advantage)}
               notes={noteLines(deathEffects)}
               rolls="death save"
               ignored={ignore.armed('death')}
@@ -1332,10 +1333,9 @@ export function Component() {
                       label: 'Death save',
                       effects: deathEffects,
                       ignored: ignore.take('death', deathEffects),
-                      advantageFrom: durable,
                       // Bless reaches a death save; it is settled on the
                       // spot, so nothing is offered after it.
-                      riders: { ...rollEffects(sheet, { kind: 'save' }), offers: [] },
+                      riders: { ...deathRiders, offers: [] },
                     }),
                   (r) =>
                     update((d) => {
@@ -1657,7 +1657,7 @@ export function Component() {
           <div className="basis-full">
             <RollEffectCue
               heading="Concentration saves"
-              lines={effectLines(concentrationEffects, warCaster)}
+              lines={effectLines(concentrationEffects, concentrationRiders.advantage)}
               notes={noteLines(concentrationEffects)}
               rolls="concentration save"
               ignored={ignore.armed('concentration')}

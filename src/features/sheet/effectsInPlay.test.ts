@@ -6,6 +6,8 @@ import type {
   DerivedSheet,
   DerivedValue,
   EffectPart,
+  RollFilter,
+  RollRider,
 } from '@/engine/types';
 import {
   andList,
@@ -139,6 +141,9 @@ describe('partLine', () => {
         on: { rolls: ['check', 'save'], abilities: ['str'] },
       }),
     ).toBe('Advantage on Strength checks and Strength saving throws');
+    expect(
+      partLine({ kind: 'rollAdvantage', mode: 'adv', on: { rolls: ['check'], initiative: true } }),
+    ).toBe('Advantage on initiative rolls');
     expect(
       partLine({
         kind: 'attackBonus',
@@ -533,6 +538,32 @@ describe('defenseView', () => {
       say: 'Defenses: 1 condition you cannot have',
       icon: 'check',
     });
+  });
+
+  it('says when a save advantage holds, and names death and concentration saves', () => {
+    const adv = (on: RollFilter, origin: string, when?: string): RollRider => ({
+      kind: 'advantage',
+      mode: 'adv',
+      on,
+      origin,
+      ...(when === undefined ? {} : { when }),
+    });
+    const view = defenseView(
+      sheet({
+        rollRiders: [
+          adv({ rolls: ['save'] }, 'Brave', 'Only against being Frightened'),
+          adv({ rolls: ['save'], save: 'death' }, 'Durable'),
+          adv({ rolls: ['save'], abilities: ['con'], save: 'concentration' }, 'War Caster'),
+          adv({ rolls: ['check'], initiative: true }, 'Feral Instinct'),
+        ],
+      }),
+      none,
+    );
+    expect(view.saves).toEqual([
+      { what: 'Advantage on saving throws against being Frightened', from: 'Brave' },
+      { what: 'Advantage on death saving throws', from: 'Durable' },
+      { what: 'Advantage on saving throws to keep concentrating', from: 'War Caster' },
+    ]);
   });
 });
 
