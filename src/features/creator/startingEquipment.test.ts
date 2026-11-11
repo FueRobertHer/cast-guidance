@@ -3,6 +3,7 @@ import type { DataEntity } from '@/engine/types';
 import {
   bundleGoldCp,
   bundleToEquipment,
+  coinLabel,
   itemsForEquipmentType,
   parseStartingEquipment,
 } from './startingEquipment';
@@ -189,5 +190,13 @@ describe('itemsForEquipmentType, a spellcasting focus', () => {
       },
     } as unknown as DataEntity)[0]?.[0];
     expect(cleric?.label).toBe('shield, a holy symbol');
+  });
+});
+
+describe('coinLabel', () => {
+  it('says copper as the coins it makes, and none as no gold', () => {
+    expect(coinLabel(1557)).toBe('15 gp 5 sp 7 cp');
+    expect(coinLabel(7)).toBe('7 cp');
+    expect(coinLabel(0)).toBe('0 gp');
   });
 });
