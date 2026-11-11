@@ -8,12 +8,16 @@ import type { DataEntity, EquipmentEntry } from '@/engine/types';
 
 export interface ParsedBundleItem {
   label: string;
+  /** What a gear item with no entry to name it is called in the inventory: the label with no count. */
+  name?: string;
   /** Resolvable "name|source" item uid, when the entry names a concrete item. */
   uid?: string;
   /** Open slot ("any martial weapon") the player fills with a concrete item. */
   equipmentType?: string;
   /** Value in copper for a "gold instead of gear" entry — becomes currency. */
   goldCp?: number;
+  /** Copper held in the item (a pouch with 15 gp), which becomes currency beside it. */
+  containsCp?: number;
   quantity: number;
 }
 
@@ -22,6 +26,20 @@ export interface EquipmentBundle {
   label: string;
   items: ParsedBundleItem[];
 }
+
+/** Copper as coins: 1500 is "15 gp", 10 is "1 sp", 1550 is "15 gp 5 sp". */
+export function coinLabel(cp: number): string {
+  const coins = [
+    [Math.floor(cp / 100), 'gp'],
+    [Math.floor((cp % 100) / 10), 'sp'],
+    [cp % 10, 'cp'],
+  ] as const;
+  const shown = coins.filter(([n]) => n > 0).map(([n, coin]) => `${n} ${coin}`);
+  return shown.length > 0 ? shown.join(' ') : '0 gp';
+}
+
+const count = (e: DataEntity) =>
+  typeof e.quantity === 'number' && e.quantity > 1 ? ` ×${e.quantity}` : '';
 
 function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
   if (typeof entry === 'string') {
@@ -32,16 +50,34 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
   const e = entry as DataEntity;
   if (typeof e.item === 'string') {
     const [name] = e.item.split('|');
+    // The background's own words for it ("prayer book" for a book), and what it holds.
+    const called = typeof e.displayName === 'string' ? e.displayName : name;
+    const holds = typeof e.containsValue === 'number' ? e.containsValue : undefined;
     return {
-      label: `${name}${typeof e.quantity === 'number' && e.quantity > 1 ? ` ×${e.quantity}` : ''}`,
+      label: `${called}${count(e)}${holds !== undefined ? ` with ${coinLabel(holds)}` : ''}`,
       uid: e.item.toLowerCase(),
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
+      ...(holds !== undefined ? { containsCp: holds } : {}),
     };
   }
   if (typeof e.special === 'string') {
-    return { label: e.special, quantity: typeof e.quantity === 'number' ? e.quantity : 1 };
+    const worth = typeof e.worthValue === 'number' ? ` worth ${coinLabel(e.worthValue)}` : '';
+    const name = `${e.special}${worth}`;
+    return {
+      label: `${name}${count(e)}`,
+      name,
+      quantity: typeof e.quantity === 'number' ? e.quantity : 1,
+    };
   }
-  if (typeof e.equipmentType === 'string') {
+  // One slot of a type, or of any of several ("a musical instrument or artisan's
+  // tools", as `equipmentTypes`), kept as the types joined by "|".
+  const types =
+    typeof e.equipmentType === 'string'
+      ? [e.equipmentType]
+      : Array.isArray(e.equipmentTypes)
+        ? e.equipmentTypes.filter((t): t is string => typeof t === 'string')
+        : [];
+  if (types.length > 0) {
     const labels: Record<string, string> = {
       weaponSimple: 'any simple weapon',
       weaponSimpleMelee: 'any simple melee weapon',
@@ -53,26 +89,30 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
       toolArtisan: "artisan's tools",
     };
     return {
-      label: labels[e.equipmentType] ?? e.equipmentType,
-      equipmentType: e.equipmentType,
+      label: types.map((t) => labels[t] ?? t).join(' or '),
+      equipmentType: types.join('|'),
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
     };
   }
   if (typeof e.value === 'number') {
-    return { label: `${Math.floor(e.value / 100)} gp`, goldCp: e.value, quantity: 1 };
+    return { label: coinLabel(e.value), goldCp: e.value, quantity: 1 };
   }
   return undefined;
 }
 
-/** Total copper of the "gold instead of gear" entries in a bundle. */
+/** Total copper of a bundle's coins: "gold instead of gear" and what its items hold. */
 export function bundleGoldCp(bundle: EquipmentBundle): number {
-  return bundle.items.reduce((sum, i) => sum + (i.goldCp ?? 0), 0);
+  return bundle.items.reduce((sum, i) => sum + (i.goldCp ?? 0) + (i.containsCp ?? 0), 0);
 }
 
-/** defaultData: [{ a: [...], b: [...] }, { _: [...] }] -> selectable bundles. */
+/**
+ * Groups of bundles, one bundle to pick per group: [{ a: [...], b: [...] }, { _: [...] }].
+ * A class keeps them under `defaultData`, beside the `default` words; a background's
+ * `startingEquipment` is the list itself.
+ */
 export function parseStartingEquipment(entity: DataEntity | undefined): EquipmentBundle[][] {
-  const se = entity?.startingEquipment as DataEntity | undefined;
-  const defaultData = se?.defaultData;
+  const se: unknown = entity?.startingEquipment;
+  const defaultData = Array.isArray(se) ? se : (se as DataEntity | undefined)?.defaultData;
   if (!Array.isArray(defaultData)) return [];
   const groups: EquipmentBundle[][] = [];
   defaultData.forEach((group, gi) => {
@@ -121,7 +161,7 @@ export function bundleToEquipment(
     }
     return {
       id: crypto.randomUUID(),
-      custom: { name: item.label, note: 'from starting equipment' },
+      custom: { name: item.name ?? item.label, note: 'from starting equipment' },
       qty: item.quantity,
       equipped: false,
       attuned: false,
@@ -161,10 +201,14 @@ export function itemsForEquipmentType(
     setGaming: byType('GS'),
     toolArtisan: byType('AT'),
   };
-  const filter = filters[type];
-  if (filter === undefined) return [];
-  const pool =
-    type.startsWith('weapon') || type === 'armorLight' ? baseitems : [...baseitems, ...items];
+  // A slot of several types ("instrumentMusical|toolArtisan") takes any of them.
+  const kinds = type.split('|');
+  const known = kinds.flatMap((k) => (filters[k] === undefined ? [] : [filters[k]]));
+  if (known.length === 0) return [];
+  const filter = (e: DataEntity) => known.some((f) => f(e));
+  const pool = kinds.every((k) => k.startsWith('weapon') || k === 'armorLight')
+    ? baseitems
+    : [...baseitems, ...items];
   // Core printings only — starting gear means longswords, not laser rifles.
   const coreSources = new Set(['phb', 'xphb']);
   const printings = new Map<string, DataEntity[]>();

@@ -511,8 +511,9 @@ describe('changes that take something away', () => {
           name: 'Kit Sage',
           source: 'TST',
           feats: [{ 'skilled|tst': true }],
-          startingEquipment: { defaultData: [{ _: ['Dagger|TST'] }] },
-          entries: ['Comes with a feat and a dagger.'],
+          // As a background prints it: the list of groups, a pouch with coins in it.
+          startingEquipment: [{ _: ['Dagger|TST', { item: 'pouch|tst', containsValue: 1000 }] }],
+          entries: ['Comes with a feat, a dagger and a pouch with 10 gp.'],
         },
       ],
     ];
@@ -673,13 +674,16 @@ describe('changes that take something away', () => {
       d.choices = { 'feat:skilled|tst:kit sage|tst:skill:0': ['stealth', 'arcana', 'history'] };
     });
     tap('(B) Dagger, 5 gp');
-    expect(saved().equipment).toHaveLength(2);
+    expect(saved().equipment.map((i) => i.ref?.name)).toEqual(['dagger', 'dagger', 'pouch']);
+    // The class's 5 gp and the 10 in the pouch.
+    expect(saved().play.currency.gp).toBe(15);
 
     await goto('background');
     tap('Change background');
     tap('Scholar');
     expect(saved().choices).toEqual({});
     expect(saved().equipment).toEqual([]);
+    expect(saved().play.currency.gp).toBe(0);
     // The class's row stays picked for the regrant.
     await goto('equipment');
     expect(pressed('(B) Dagger, 5 gp')).toBe('true');
@@ -689,7 +693,8 @@ describe('changes that take something away', () => {
     expect(saved().choices).toEqual({
       'feat:skilled|tst:kit sage|tst:skill:0': ['stealth', 'arcana', 'history'],
     });
-    expect(saved().equipment).toHaveLength(2);
+    expect(saved().equipment).toHaveLength(3);
+    expect(saved().play.currency.gp).toBe(15);
   });
 
   it('offers nothing for a first pick, which takes nothing away', () => {

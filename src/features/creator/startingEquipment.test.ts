@@ -66,3 +66,94 @@ describe('itemsForEquipmentType', () => {
     ]);
   });
 });
+
+describe('itemsForEquipmentType, a slot of several types', () => {
+  const items: DataEntity[] = [
+    { name: 'Lute', source: 'XPHB', type: 'INS|XPHB' },
+    { name: "Smith's Tools", source: 'XPHB', type: 'AT|XPHB' },
+    { name: 'Dice Set', source: 'XPHB', type: 'GS|XPHB' },
+  ];
+  const names = (list: DataEntity[]) => list.map((e) => String(e.name));
+
+  it('offers an item of any of them, and nothing for types it does not know', () => {
+    expect(
+      names(itemsForEquipmentType('instrumentMusical|toolArtisan', [], items, '2024')),
+    ).toEqual(['Lute', "Smith's Tools"]);
+    expect(itemsForEquipmentType('vehicleLand|vehicleWater', [], items, '2024')).toEqual([]);
+  });
+});
+
+// The 2014 Acolyte as printed: a background's kit is the list of groups itself.
+const acolyte = {
+  startingEquipment: [
+    {
+      _: [
+        {
+          item: 'holy symbol|phb',
+          displayName: 'holy symbol (a gift to you when you entered the priesthood)',
+        },
+        { special: 'sticks of incense', quantity: 5 },
+        'common clothes|phb',
+        { item: 'pouch|phb', containsValue: 1500 },
+      ],
+    },
+    { a: [{ item: 'book|phb', displayName: 'prayer book' }], b: [{ special: 'prayer wheel' }] },
+  ],
+} as unknown as DataEntity;
+
+describe('startingEquipment of a background', () => {
+  const groups = parseStartingEquipment(acolyte);
+  const [kit, book] = groups;
+
+  it('reads the list of groups, in the words the background uses', () => {
+    expect(groups.map((g) => g.map((b) => b.label))).toEqual([
+      [
+        'holy symbol (a gift to you when you entered the priesthood), sticks of incense ×5, common clothes, pouch with 15 gp',
+      ],
+      ['(A) prayer book', '(B) prayer wheel'],
+    ]);
+  });
+
+  it('gives the pouch and the coins in it', () => {
+    const bundle = kit?.[0] ?? { key: '', label: '', items: [] };
+    expect(bundleGoldCp(bundle)).toBe(1500);
+    const gear = bundleToEquipment(bundle);
+    expect(gear.map((g) => g.ref?.name ?? g.custom?.name)).toEqual([
+      'holy symbol',
+      'sticks of incense',
+      'common clothes',
+      'pouch',
+    ]);
+    expect(gear[1]?.qty).toBe(5);
+  });
+
+  it('keeps the item a display name stands for', () => {
+    const prayerBook = bundleToEquipment(book?.[0] ?? { key: '', label: '', items: [] });
+    expect(prayerBook.map((g) => g.ref)).toEqual([{ name: 'book', source: 'phb' }]);
+  });
+
+  it('says what a keepsake is worth, and coins short of a gold piece as they are', () => {
+    const traveler = parseStartingEquipment({
+      startingEquipment: [
+        {
+          _: [
+            { special: 'small piece of jewelry', worthValue: 1000 },
+            { value: 10 },
+            { value: 1550 },
+          ],
+        },
+      ],
+    } as unknown as DataEntity)[0]?.[0];
+    expect(traveler?.label).toBe('small piece of jewelry worth 10 gp, 1 sp, 15 gp 5 sp');
+  });
+
+  it('reads a slot of several types, as the 2024 Monk’s kit has', () => {
+    const monk = parseStartingEquipment({
+      startingEquipment: {
+        defaultData: [{ A: [{ equipmentTypes: ['instrumentMusical', 'toolArtisan'] }] }],
+      },
+    } as unknown as DataEntity)[0]?.[0];
+    expect(monk?.label).toBe("(A) a musical instrument or artisan's tools");
+    expect(monk?.items[0]?.equipmentType).toBe('instrumentMusical|toolArtisan');
+  });
+});
