@@ -200,3 +200,36 @@ describe('coinLabel', () => {
     expect(coinLabel(0)).toBe('0 gp');
   });
 });
+
+describe('startingEquipment, what the background says of its gear', () => {
+  const kit = (entries: unknown[]) =>
+    parseStartingEquipment({
+      startingEquipment: [{ _: entries }],
+    } as unknown as DataEntity)[0]?.[0] ?? {
+      key: '',
+      label: '',
+      items: [],
+    };
+
+  it('gives the coins in a purse that names no item, as the 2014 Noble has', () => {
+    const noble = kit([{ special: 'purse', containsValue: 2500 }]);
+    expect(noble.label).toBe('purse with 25 gp');
+    expect(bundleGoldCp(noble)).toBe(2500);
+    expect(bundleToEquipment(noble).map((g) => g.custom?.name)).toEqual(['purse']);
+  });
+
+  it('names a slot in its own words', () => {
+    const slot = kit([{ equipmentType: 'setGaming', displayName: 'Gaming Set (same as above)' }]);
+    expect(slot.label).toBe('Gaming Set (same as above)');
+    expect(slot.items[0]?.equipmentType).toBe('setGaming');
+  });
+
+  it('counts once a name that says its own count', () => {
+    const rations = kit([
+      { item: 'rations|xphb', quantity: 3, displayName: "Rations (3 days' worth)" },
+      { item: 'torch|xphb', quantity: 5, displayName: 'Torches' },
+    ]);
+    expect(rations.label).toBe("Rations (3 days' worth), Torches ×5");
+    expect(rations.items.map((i) => i.quantity)).toEqual([3, 5]);
+  });
+});

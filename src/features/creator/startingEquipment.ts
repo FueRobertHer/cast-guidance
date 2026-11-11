@@ -38,8 +38,19 @@ export function coinLabel(cp: number): string {
   return shown.length > 0 ? shown.join(' ') : '0 gp';
 }
 
+/** "×5", unless the background's own name for it already says how many ("Parchment (4 sheets)"). */
 const count = (e: DataEntity) =>
-  typeof e.quantity === 'number' && e.quantity > 1 ? ` ×${e.quantity}` : '';
+  typeof e.quantity === 'number' &&
+  e.quantity > 1 &&
+  !(typeof e.displayName === 'string' && /\d/.test(e.displayName))
+    ? ` ×${e.quantity}`
+    : '';
+
+/** The coins an item or a purse holds (`containsValue`), said after it: " with 15 gp". */
+const held = (e: DataEntity) =>
+  typeof e.containsValue === 'number'
+    ? { words: ` with ${coinLabel(e.containsValue)}`, cp: { containsCp: e.containsValue } }
+    : { words: '', cp: {} };
 
 function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
   if (typeof entry === 'string') {
@@ -52,21 +63,24 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
     const [name] = e.item.split('|');
     // The background's own words for it ("prayer book" for a book), and what it holds.
     const called = typeof e.displayName === 'string' ? e.displayName : name;
-    const holds = typeof e.containsValue === 'number' ? e.containsValue : undefined;
+    const holds = held(e);
     return {
-      label: `${called}${count(e)}${holds !== undefined ? ` with ${coinLabel(holds)}` : ''}`,
+      label: `${called}${count(e)}${holds.words}`,
       uid: e.item.toLowerCase(),
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
-      ...(holds !== undefined ? { containsCp: holds } : {}),
+      ...holds.cp,
     };
   }
   if (typeof e.special === 'string') {
     const worth = typeof e.worthValue === 'number' ? ` worth ${coinLabel(e.worthValue)}` : '';
     const name = `${e.special}${worth}`;
+    // A purse with coins in it names no item, so it is gear by its words.
+    const holds = held(e);
     return {
-      label: `${name}${count(e)}`,
+      label: `${name}${count(e)}${holds.words}`,
       name,
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
+      ...holds.cp,
     };
   }
   // One slot of a type, or of any of several ("a musical instrument or artisan's
@@ -92,7 +106,11 @@ function parseItemEntry(entry: unknown): ParsedBundleItem | undefined {
       focusSpellcastingHoly: 'a holy symbol',
     };
     return {
-      label: types.map((t) => labels[t] ?? t).join(' or '),
+      // The background's words for the slot ("Gaming Set (same as above)") where it has them.
+      label:
+        typeof e.displayName === 'string'
+          ? e.displayName
+          : types.map((t) => labels[t] ?? t).join(' or '),
       equipmentType: types.join('|'),
       quantity: typeof e.quantity === 'number' ? e.quantity : 1,
     };
