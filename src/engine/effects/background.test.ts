@@ -255,6 +255,25 @@ describe('collectBackground', () => {
       expect(granted(col)).toEqual(['language Elvish', 'language Dwarvish', "tool Thieves' Tools"]);
     });
 
+    it('still grants a named language beside the mix, and asks only the mix', () => {
+      const col = picked(['Dwarvish', 'lute'], {
+        ...custom,
+        languageProficiencies: [{ elvish: true, anyStandard: 2 }],
+      });
+      expect(granted(col)).toEqual(['language Elvish', 'language Dwarvish', 'tool lute']);
+      expect(col.pending.filter((p) => p.kind !== 'skill')).toEqual([]);
+      const mix = collect({
+        ...custom,
+        languageProficiencies: [
+          { elvish: true, anyStandard: 2 },
+          { choose: { from: ['giant', 'orc'] } },
+        ],
+      }).pending.filter((p) => p.kind !== 'skill');
+      expect(mix.map((p) => p.id)).toEqual([id]);
+      const elvish = mix[0]?.options.find((o) => o.id === 'Elvish');
+      expect(elvish?.disabled?.reason).toBe('You already speak Elvish');
+    });
+
     it('marks a language the character already speaks', () => {
       const doc = newCharacterDoc('c', 'H', 't');
       doc.background = { name: 'Custom', source: 'TST' };
