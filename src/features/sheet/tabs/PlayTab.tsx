@@ -2428,6 +2428,7 @@ export function Component() {
                                       kind: 'attack',
                                       attack: 'spell',
                                       className: sc.className,
+                                      ability: sc.ability,
                                       ...spellRange(entity),
                                     },
                                     ref.name,

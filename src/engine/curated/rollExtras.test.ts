@@ -27,7 +27,7 @@ describe('the roll extras table', () => {
     for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
       expect(key).toBe(key.toLowerCase());
       for (const row of rows) {
-        if (row.free === true || row.when === undefined) continue;
+        if (row.free === true || row.reroll !== undefined || row.when === undefined) continue;
         expect(row.when, key).toMatch(/^Only /);
         expect(row.when, key).not.toMatch(/[–—.]$/);
       }
@@ -37,7 +37,7 @@ describe('the roll extras table', () => {
   it('gives every paid row one thing to add, and a flat bonus only once the d20 shows', () => {
     for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
       for (const row of rows) {
-        if (row.free === true) continue;
+        if (row.free === true || row.reroll !== undefined) continue;
         const adds = [row.dice, row.poolDie, row.bonus, row.advantage].filter(
           (x) => x !== undefined,
         );
@@ -56,7 +56,7 @@ describe('the roll extras table', () => {
       const held = ROLL_ADVANTAGES[key];
       if (held === undefined) continue;
       expect(
-        rows.some((r) => r.free !== true && r.advantage === true),
+        rows.some((r) => r.free !== true && r.reroll === undefined && r.advantage === true),
         key,
       ).toBe(false);
     }
@@ -114,6 +114,88 @@ describe('the roll extras table', () => {
   });
 });
 
+describe('the rerolls in the roll extras table', () => {
+  function rerolls(keys: string[], level?: number, classLevel?: number) {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
+    emitRollExtras(col, keys, origin, level, classLevel);
+    return col.effects.filter((e) => e.kind === 'rollReroll');
+  }
+
+  it('words every limit as the result reads it, and rolls on its own only what never hurts', () => {
+    let count = 0;
+    for (const [key, rows] of Object.entries(ROLL_EXTRAS)) {
+      for (const row of rows) {
+        if (row.reroll === undefined) continue;
+        count++;
+        const r = row.reroll;
+        if (r.when !== undefined) expect(r.when, key).not.toMatch(/[–—.]$/);
+        // A reroll made unasked costs nothing, waits on nothing, and keeps or betters the roll.
+        if (r.auto === true) {
+          expect(r.free, key).toBe(true);
+          expect(r.ifFailed, key).toBeUndefined();
+          expect(r.when, key).toBeUndefined();
+          expect(r.die === 'low' || (r.die === 'one' && r.atMost === 1), key).toBe(true);
+        }
+        if (r.die === 'low') expect(r.auto, key).toBe(true);
+        if (r.atMost !== undefined) expect(r.die, key).toBe('one');
+      }
+    }
+    expect(count).toBeGreaterThan(20);
+  });
+
+  it("reads a reroll with its bonus at the feature's class level", () => {
+    expect(rerolls(['indomitable|fighter|xphb'], 9, 13)).toEqual([
+      {
+        kind: 'rollReroll',
+        on: { rolls: ['save'] },
+        ifFailed: true,
+        bonus: 13,
+        origin,
+      },
+    ]);
+    // The cards at 13 and 17 add none of their own.
+    expect(rerolls(['indomitable|fighter|xphb'], 13, 13)).toEqual([]);
+    expect(rerolls(['indomitable|fighter|phb'], 9, 9)[0]).not.toHaveProperty('bonus');
+  });
+
+  it("holds Fanatical Focus only while raging, the 2024 one with Rage's damage", () => {
+    const [focus2014] = rerolls(['fanatical focus|path of the zealot|xge'], 6, 9);
+    expect(focus2014).toMatchObject({ while: [{ state: 'effect', name: 'Rage' }], free: true });
+    expect(focus2014).not.toHaveProperty('bonus');
+    expect(rerolls(['fanatical focus|path of the zealot|xphb'], 6, 9)[0]).toMatchObject({
+      bonus: 3,
+      while: [{ state: 'effect', name: 'Rage' }],
+    });
+    expect(rerolls(['fanatical focus|path of the zealot|xphb'], 6, 16)[0]?.bonus).toBe(4);
+  });
+
+  it("gives a 2014 halfling Luck, never the 2014 Lucky feat's row its fallback key holds", () => {
+    expect(rerolls(['lucky|halfling|phb', 'lucky|phb'])).toEqual([
+      {
+        kind: 'rollReroll',
+        on: { rolls: ['attack', 'check', 'save'] },
+        die: 'one',
+        atMost: 1,
+        auto: true,
+        free: true,
+        origin,
+      },
+    ]);
+    expect(rerolls(['lucky|phb'])[0]).toMatchObject({ die: 'extra' });
+  });
+
+  it('keeps Survivor’s bonus on a save and adds its reroll on initiative', () => {
+    const col = new Collector(newCharacterDoc('c', 'H', 't'), empty);
+    emitRollExtras(col, ['survivor|rhw'], origin);
+    expect(col.effects.map((e) => e.kind)).toEqual(['rollPaid', 'rollReroll']);
+    expect(col.effects[1]).toMatchObject({
+      on: { rolls: ['check'], initiative: true },
+      die: 'one',
+      atMost: 9,
+    });
+  });
+});
+
 describe('roll extras on a derived sheet', () => {
   // Rows for the synthetic world's own species traits and class feature, so the
   // walks read the table as they read real data.
@@ -127,8 +209,18 @@ describe('roll extras on a derived sheet', () => {
         reaction: true,
         ifFailed: true,
       },
+      {
+        on: { rolls: ['attack' as const] },
+        reroll: { die: 'one' as const, atMost: 1, auto: true, free: true },
+      },
     ],
-    'grit|warrior|tst': [{ free: true as const, on: { rolls: ['check' as const] }, dice: '1d4' }],
+    'grit|warrior|tst': [
+      { free: true as const, on: { rolls: ['check' as const] }, dice: '1d4' },
+      {
+        on: { rolls: ['save' as const] },
+        reroll: { ifFailed: true, bonus: 'classLevel' as const },
+      },
+    ],
     'alert|phb': [{ on: { rolls: ['check' as const], initiative: true }, dice: '1d8' }],
     'archery|phb': [{ on: { rolls: ['attack' as const] }, advantage: true }],
   };
@@ -159,6 +251,19 @@ describe('roll extras on a derived sheet', () => {
         ifFailed: true,
         origin: 'Once Guard',
       },
+    ]);
+  });
+
+  it("reads a class feature's reroll with its bonus at the class's level", () => {
+    expect(rollEffects(sheet(), { kind: 'save', ability: 'con' }).rerolls).toEqual([
+      { source: 'Grit', ifFailed: true, bonus: 5 },
+    ]);
+  });
+
+  it("reads a trait's reroll made as the d20 lands, with each of its flags", () => {
+    const attack = { kind: 'attack', attack: 'weapon', range: 'melee', ability: 'str' } as const;
+    expect(rollEffects(sheet(), attack).rerolls).toEqual([
+      { source: 'Once Guard', die: 'one', atMost: 1, auto: true, free: true },
     ]);
   });
 

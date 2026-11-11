@@ -56,6 +56,9 @@ export function rollDetail(result: RollResult): RollDetailPart[] {
       if (i === 0 && mode !== undefined && t.sides === 20 && t.rolls.length > 1) {
         parts.push({ text: mode === 'adv' ? ' advantage' : ' disadvantage' });
       }
+      // What rerolled the d20, whose dice set aside show dropped: "Luck reroll".
+      const rerolled = i === 0 ? (result.meta?.rerolled ?? []) : [];
+      if (rerolled.length > 0) parts.push({ text: ` ${rerolled.join(', ')} reroll` });
     } else if (t.kind === 'multiplier') {
       parts.push({ text: ' × ' });
       parts.push(...(t.detail.kind === 'dice' ? diceParts(t.detail) : [{ text: String(t.value) }]));

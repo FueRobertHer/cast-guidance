@@ -14,8 +14,14 @@
  *     it, else the pool named for the feature. A row the sheet finds no price
  *     for is not offered.
  *
+ * A third kind, a reroll (`Reroll`): one made as the d20 lands, since it never
+ * makes the roll worse (Halfling Luck's natural 1), or one the result offers,
+ * paid as the feature's Use is (Indomitable) or free (`free`), its limit said
+ * in its `when` for the player to keep (Fanatical Focus, once a Rage).
+ *
  * Kept out on purpose:
- *   - rerolls (Halfling Luck, Indomitable, Diamond Soul, 2014 Lucky): item 11c;
+ *   - what sets the d20 rather than rerolling it (Stroke of Luck, Reliable
+ *     Talent, Portent), and Curving Shot, which rerolls against another target;
  *   - a price the player picks (Focused Aim's 1 to 3 ki), or a bonus the app
  *     cannot count (Saving Face, the allies you can see);
  *   - what lasts the turn or adds damage too (Fighting Spirit, Feinting
@@ -28,12 +34,17 @@
  * Keys are those of `ROLL_ADVANTAGES`.
  */
 import type { Collector } from '../effects/base';
-import type { BonusAmount, EffectOrigin, PaidRoll, RollFilter } from '../types';
+import type { BonusAmount, EffectOrigin, PaidRoll, Reroll, RollFilter, WhileState } from '../types';
+import { rageDamage } from './namedEffects';
 import { ATTACKS, CHECKS, D20_TESTS, INITIATIVE, SAVES, saves, skills } from './rollAdvantages';
 
+/** A reroll's bonus by the feature's class level: the level itself, or Rage's damage at it. */
+type RerollRow = Omit<Reroll, 'bonus'> & { bonus?: 'classLevel' | 'rageDamage' };
+
 type ExtraRow = (
-  | { free: true; on: RollFilter; dice: string }
-  | ({ free?: undefined; on: RollFilter } & PaidRoll)
+  | { free: true; on: RollFilter; dice: string; reroll?: undefined }
+  | ({ free?: undefined; on: RollFilter; reroll?: undefined } & PaidRoll)
+  | { free?: undefined; on: RollFilter; reroll: RerollRow; while?: readonly WhileState[] }
 ) & {
   /** The level the feature is gained at, where one feature prints two cards. */
   level?: number;
@@ -65,6 +76,15 @@ const paidAdvantage = (on: RollFilter, when?: string): ExtraRow => ({
   ...(when !== undefined ? { when } : {}),
 });
 
+/** A reroll, offered on the result unless `auto`. */
+const reroll = (on: RollFilter, row: RerollRow = {}): Extract<ExtraRow, { reroll: RerollRow }> => ({
+  on,
+  reroll: row,
+});
+/** "Reroll a 1 ... you must use the new roll": made as the d20 lands. */
+const LUCK: RerollRow = { die: 'one', atMost: 1, auto: true, free: true };
+const RAGING: readonly WhileState[] = [{ state: 'effect', name: 'Rage' }];
+
 const FAILED = { ifFailed: true } as const;
 /** "Isn't expended" on a failure: the player takes it off a roll that still failed. */
 const FAILED_KEPT = { ifFailed: true, spentOnSuccess: true } as const;
@@ -72,6 +92,7 @@ const SKILLED: RollFilter = { rolls: ['check'], skilled: true };
 const CHECKS_AND_SAVES: RollFilter = { rolls: ['check', 'save'] };
 const WEAPON_ATTACKS: RollFilter = { rolls: ['attack'], attack: 'weapon' };
 const STRENGTH: RollFilter = { rolls: ['attack', 'check', 'save'], abilities: ['str'] };
+const SPELL_ATTACKS: RollFilter = { rolls: ['attack'], attack: 'spell' };
 
 export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   // --- Classes ---------------------------------------------------------------
@@ -83,6 +104,13 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'flash of genius|artificer|efa': [
     paidBonus(CHECKS_AND_SAVES, 'abilityModMin1:int', { reaction: true, ifFailed: true }),
   ],
+  'indomitable|fighter|phb': [reroll(SAVES, FAILED)],
+  // Three cards, at 9, 13 and 17.
+  'indomitable|fighter|xphb': [{ ...reroll(SAVES, { ...FAILED, bonus: 'classLevel' }), level: 9 }],
+  'indomitable|warrior sidekick|tce': [reroll(SAVES, FAILED)],
+  'diamond soul|monk|phb': [reroll(SAVES, FAILED)],
+  'disciplined survivor|monk|xphb': [reroll(SAVES, FAILED)],
+  'magical guidance|sorcerer|tce': [reroll(CHECKS, FAILED)],
 
   // --- Subclasses -------------------------------------------------------------
   'peerless skill|college of lore|phb': [poolDie(CHECKS)],
@@ -110,6 +138,48 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'arcane deflection|war magic|xge': [paidBonus(SAVES, 4, { reaction: true, ifFailed: true })],
   'tides of chaos|wild magic|phb': [paidAdvantage(D20_TESTS)],
   'tides of chaos|wild magic sorcery|xphb': [paidAdvantage(D20_TESTS)],
+  'fanatical focus|path of the zealot|xge': [
+    { ...reroll(SAVES, { ...FAILED, free: true, when: 'Once a Rage' }), while: RAGING },
+  ],
+  'fanatical focus|path of the zealot|xphb': [
+    {
+      ...reroll(SAVES, { ...FAILED, free: true, bonus: 'rageDamage', when: 'Once a Rage' }),
+      while: RAGING,
+    },
+  ],
+  'unerring accuracy|way of the kensei|xge': [
+    reroll(WEAPON_ATTACKS, {
+      ...FAILED,
+      free: true,
+      when: 'Only with a monk weapon, on your turn, once a turn',
+    }),
+  ],
+  // The reaction alone: the feature's use went as it began.
+  'living legend|oath of glory|tce': [
+    reroll(SAVES, {
+      ...FAILED,
+      free: true,
+      reaction: true,
+      when: 'Only while Living Legend lasts',
+    }),
+  ],
+  'living legend|oath of glory|xphb': [
+    reroll(SAVES, {
+      ...FAILED,
+      free: true,
+      reaction: true,
+      when: 'Only while Living Legend lasts',
+    }),
+  ],
+  // Its use goes only once it turns a failure into a success, which the player marks.
+  'draconic disciple|way of the ascendant dragon|ftd': [
+    reroll(skills('Intimidation', 'Persuasion'), {
+      ...FAILED,
+      free: true,
+      reaction: true,
+      when: 'Once it turns a failure into a success, not again until a long rest',
+    }),
+  ],
 
   // --- Optional features: maneuvers ----------------------------------------
   // 2014: "before or after making the attack roll"; 2024: on a miss.
@@ -122,8 +192,23 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'tactical assessment|tce': [poolDie(skills('Investigation', 'History', 'Insight'))],
   'tactical assessment|xphb': [poolDie(skills('Investigation', 'History', 'Insight'))],
 
+  // --- Optional features: metamagic ----------------------------------------
+  'seeking spell|tce': [reroll(SPELL_ATTACKS, FAILED)],
+  'seeking spell|xphb': [reroll(SPELL_ATTACKS, FAILED)],
+
   // --- Feats ---------------------------------------------------------------------
   'lucky|xphb': [paidAdvantage(D20_TESTS)],
+  // "Roll an additional d20 ... You choose which of the d20s is used."
+  'lucky|phb': [reroll(D20_TESTS, { die: 'extra' })],
+  'elven accuracy|xge': [
+    reroll(
+      { rolls: ['attack'], abilities: ['dex', 'int', 'wis', 'cha'] },
+      { die: 'low', auto: true, free: true },
+    ),
+  ],
+  "boon of fortune's favor|frhof": [
+    reroll(SAVES, { ...FAILED, free: true, when: 'Once until the start of your next turn' }),
+  ],
   'aberrant dragonmark|efa': [paidDice(saves('con'), '1d4', { reaction: true, ifFailed: true })],
   'transmuted anatomy|au': [paidDice(saves('con'), '1d4', { reaction: true, ifFailed: true })],
   'arcane omens|au': [paidDice(SAVES, '1d4', { reaction: true, ifFailed: true })],
@@ -136,6 +221,7 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
       ifFailed: true,
       when: 'Only to avoid or end being Charmed or Frightened',
     }),
+    reroll(INITIATIVE, { die: 'one', atMost: 9, free: true }),
   ],
   'arcane eloquence|au': [free(skills('Deception', 'Intimidation', 'Persuasion'))],
   'arcane undertaker|au': [free(skills('History', 'Medicine'))],
@@ -153,6 +239,21 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
   'mark of warding|efa': [free(skills('Investigation'))],
 
   // --- Species traits ---------------------------------------------------------------
+  // Named for the species: a halfling's `lucky|phb` would be the 2014 feat.
+  'lucky|halfling|phb': [reroll(D20_TESTS, LUCK)],
+  'luck|halfling|xphb': [reroll(D20_TESTS, LUCK)],
+  'lucky|kor|psz': [reroll(D20_TESTS, LUCK)],
+  'luck|kithkin|lfl': [reroll(D20_TESTS, LUCK)],
+  'luck|kithkin; lorwyn|lfl': [reroll(D20_TESTS, LUCK)],
+  'luck|kithkin; shadowmoor|lfl': [reroll(D20_TESTS, LUCK)],
+  'khenra twins|khenra|psa': [
+    reroll(D20_TESTS, {
+      die: 'one',
+      atMost: 1,
+      free: true,
+      when: 'Only while your twin lives and you can see them',
+    }),
+  ],
   'kenku recall|kenku|mpmm': [paidAdvantage(SKILLED, 'Only with a skill you are proficient in')],
   'lucky footwork|harengon|mpmm': [
     paidDice(saves('dex'), '1d4', {
@@ -190,24 +291,45 @@ export const ROLL_EXTRAS: Record<string, readonly ExtraRow[]> = {
 
 /**
  * Add the rows of the first key that has any, as `ROLL_ADVANTAGES` is read:
- * a free die as `rollDie`, a paid extra as `rollPaid`. Says whether a key had rows.
+ * a free die as `rollDie`, a paid extra as `rollPaid`, a reroll as
+ * `rollReroll`, its bonus worked out at the feature's `classLevel`. Says
+ * whether a key had rows.
  */
 export function emitRollExtras(
   col: Collector,
   keys: readonly string[],
   origin: EffectOrigin,
   level?: number,
+  classLevel?: number,
 ): boolean {
   for (const key of keys) {
     const rows = ROLL_EXTRAS[key.toLowerCase()];
     if (rows === undefined) continue;
     for (const row of rows) {
       if (row.level !== undefined && row.level !== level) continue;
+      if (row.reroll !== undefined) {
+        const { bonus, ...rest } = row.reroll;
+        const amount =
+          bonus === undefined || classLevel === undefined
+            ? 0
+            : bonus === 'classLevel'
+              ? classLevel
+              : rageDamage(classLevel);
+        col.add({
+          kind: 'rollReroll',
+          on: row.on,
+          ...rest,
+          ...(amount > 0 ? { bonus: amount } : {}),
+          ...(row.while !== undefined ? { while: [...row.while] } : {}),
+          origin,
+        });
+        continue;
+      }
       if (row.free === true) {
         col.add({ kind: 'rollDie', dice: row.dice, on: row.on, origin });
         continue;
       }
-      const { free: _free, level: _level, on, ...paid } = row;
+      const { free: _free, level: _level, reroll: _reroll, on, ...paid } = row;
       col.add({ kind: 'rollPaid', on, ...paid, origin });
     }
     return true;
