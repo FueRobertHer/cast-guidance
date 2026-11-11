@@ -194,6 +194,13 @@ export interface RollFilter {
   range?: 'melee' | 'ranged';
   /** Attacks with this class's spells (2024 Innate Sorcery: Sorcerer). */
   className?: string;
+  /** Initiative rolls alone, not other Dexterity checks (Feral Instinct). */
+  initiative?: boolean;
+  /**
+   * One kind of save alone: a death save (2024 Durable), or a Constitution
+   * save to keep concentrating (War Caster).
+   */
+  save?: 'death' | 'concentration';
 }
 
 export interface CharacterDoc {
@@ -603,7 +610,12 @@ export type EffectInput = {
    * that failed, which the player says (2024 Bardic Inspiration).
    */
   | { kind: 'rollOffer'; dice: string; on: RollFilter; once?: boolean; ifFailed?: boolean }
-  | { kind: 'rollAdvantage'; mode: 'adv' | 'dis'; on: RollFilter }
+  /**
+   * Advantage or disadvantage on every roll the filter reaches. `when` (with
+   * advantage only) says it holds only then, which the app cannot see (Brave:
+   * "Only against being Frightened"), so the roll prompt offers it to claim.
+   */
+  | { kind: 'rollAdvantage'; mode: 'adv' | 'dis'; on: RollFilter; when?: string }
   /** Temporary hit points at the start of each of the character's turns (Heroism). */
   | { kind: 'tempHpEachTurn'; amount: number }
   /** One more thing to do each turn, with what it may be spent on (Haste). */
@@ -887,7 +899,7 @@ export type RollRider = {
 } & (
   | { kind: 'die'; dice: string }
   | { kind: 'offer'; dice: string; once?: boolean; ifFailed?: boolean }
-  | { kind: 'advantage'; mode: 'adv' | 'dis' }
+  | { kind: 'advantage'; mode: 'adv' | 'dis'; when?: string }
 );
 
 /** Part of an effect in play that counts for nothing, and the effect that counts instead. */

@@ -134,10 +134,13 @@ export function rollsWords(on: RollFilter): string {
       return `${kind === '' ? '' : `${kind} `}attack rolls${abilities ? ` made with ${abilities}` : ''}`;
     }
     if (r === 'check') {
+      if (on.initiative === true) return 'initiative rolls';
       if (on.skills !== undefined && on.skills.length > 0) return `${andList(on.skills)} checks`;
       if (on.skilled === true) return abilities ? `${abilities} skill checks` : 'skill checks';
       return abilities ? `${abilities} checks` : 'ability checks';
     }
+    if (on.save === 'death') return 'death saving throws';
+    if (on.save === 'concentration') return 'saving throws to keep concentrating';
     return abilities ? `${abilities} saving throws` : 'saving throws';
   });
   return andList(words);
@@ -474,7 +477,10 @@ export interface DefenseView {
   half: DefenseRow[];
   double: DefenseRow[];
   cannot: DefenseRow[];
-  /** Advantage on saves an effect in play gives: "Strength saving throws". */
+  /**
+   * Advantage on saves a feature or an effect in play gives: "Strength saving
+   * throws", "saving throws against being Frightened".
+   */
   saves: DefenseRow[];
   /** The chip on the HP card; undefined when there is nothing to show. */
   chip?: {
@@ -549,7 +555,10 @@ export function defenseView(
   const saves = sheet.rollRiders
     .filter((r) => r.kind === 'advantage' && r.mode === 'adv' && r.on.rolls.includes('save'))
     .map((r) => ({
-      what: `Advantage on ${rollsWords({ ...r.on, rolls: ['save'] })}`,
+      // A `when` reads on from the rolls: "Only against spells" → "… against spells".
+      what: `Advantage on ${rollsWords({ ...r.on, rolls: ['save'] })}${
+        r.kind === 'advantage' && r.when !== undefined ? ` ${r.when.replace(/^Only /, '')}` : ''
+      }`,
       from: r.origin,
     }));
 

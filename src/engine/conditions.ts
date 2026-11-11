@@ -43,7 +43,8 @@ export type D20Test =
     }
   | { kind: 'check'; ability?: Ability; skill?: string }
   | { kind: 'initiative' }
-  | { kind: 'save'; ability?: Ability };
+  /** `purpose` names a death save or a save to keep concentrating, which some features reach alone. */
+  | { kind: 'save'; ability?: Ability; purpose?: 'death' | 'concentration' };
 
 /** A condition the character is immune to, and what makes them so (`DerivedSheet.conditionImmunities`). */
 export interface ConditionImmunity {

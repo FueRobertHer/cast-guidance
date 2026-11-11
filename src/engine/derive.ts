@@ -505,7 +505,13 @@ function rollRiders(effects: readonly EffectInput[]): RollRider[] {
         ...(e.once !== undefined ? { once: e.once } : {}),
         ...(e.ifFailed !== undefined ? { ifFailed: e.ifFailed } : {}),
       });
-    else out.push({ ...from, kind: 'advantage', mode: e.mode });
+    else
+      out.push({
+        ...from,
+        kind: 'advantage',
+        mode: e.mode,
+        ...(e.when !== undefined ? { when: e.when } : {}),
+      });
   }
   return out;
 }

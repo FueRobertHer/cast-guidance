@@ -49,11 +49,14 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
  * death save a save with no ability. Abilities narrow every roll; skills, or
  * any skill, narrow checks; and attack type, range and a spell's class narrow
  * attacks. A filter that asks what the test does not say (a skill, an
- * attack's range) does not reach it.
+ * attack's range) does not reach it. One for initiative alone reaches no other
+ * check, and one for a death or concentration save no other save.
  */
 export function filterReaches(on: RollFilter, test: D20Test): boolean {
   const kind = test.kind === 'initiative' ? 'check' : test.kind;
   if (!on.rolls.includes(kind)) return false;
+  if (on.initiative === true && test.kind !== 'initiative') return false;
+  if (on.save !== undefined && (test.kind !== 'save' || test.purpose !== on.save)) return false;
   if (on.abilities !== undefined) {
     const ability = testAbility(test);
     if (ability === undefined || !on.abilities.includes(ability)) return false;
@@ -80,6 +83,9 @@ const FLANKING_WHEN = 'Only with an ally next to the target, on its opposite sid
 /**
  * The dice, offers and advantage the effects in play bring to one d20 test,
  * and flanking on a melee attack when the table plays with it (`sheet.rules`).
+ * An advantage that holds only sometimes (`when`: Brave against being
+ * Frightened) is offered to declare, as flanking is, once a source. A death
+ * save is never against a threat, so it takes only those that name it.
  */
 export function rollEffects(
   sheet: Pick<DerivedSheet, 'rollRiders' | 'rules'>,
@@ -114,7 +120,15 @@ export function rollEffects(
         once: r.once === true,
         ifFailed: r.ifFailed === true,
       });
-    else {
+    else if (r.when !== undefined) {
+      // Only advantage is declared; no table or reader gives a disadvantage a `when`.
+      if (r.mode !== 'adv') continue;
+      if (test.kind === 'save' && test.purpose === 'death' && r.on.save !== 'death') continue;
+      const declare = out.declare ?? [];
+      if (!declare.some((d) => same(d.source, r.origin)))
+        declare.push({ source: r.origin, mode: 'adv', when: r.when });
+      out.declare = declare;
+    } else {
       const list = r.mode === 'adv' ? out.advantage : out.disadvantage;
       if (!list.includes(r.origin)) list.push(r.origin);
     }

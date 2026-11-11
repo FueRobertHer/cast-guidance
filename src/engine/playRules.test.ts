@@ -62,6 +62,39 @@ describe('filterReaches', () => {
     expect(filterReaches(skilled, { kind: 'initiative' })).toBe(false);
     expect(filterReaches(skilled, { kind: 'save', ability: 'wis' })).toBe(false);
   });
+
+  it('reaches initiative alone, and no other Dexterity check, when it names initiative', () => {
+    const initiative = { rolls: ['check' as const], initiative: true };
+    expect(filterReaches(initiative, { kind: 'initiative' })).toBe(true);
+    expect(filterReaches(initiative, { kind: 'check', ability: 'dex' })).toBe(false);
+    expect(filterReaches(initiative, { kind: 'save', ability: 'dex' })).toBe(false);
+  });
+
+  it('reaches a death or concentration save alone when it names one', () => {
+    const death = { rolls: ['save' as const], save: 'death' as const };
+    const concentration = {
+      rolls: ['save' as const],
+      abilities: ['con' as const],
+      save: 'concentration' as const,
+    };
+    expect(filterReaches(death, { kind: 'save', purpose: 'death' })).toBe(true);
+    expect(filterReaches(death, { kind: 'save' })).toBe(false);
+    expect(filterReaches(death, { kind: 'save', ability: 'con', purpose: 'concentration' })).toBe(
+      false,
+    );
+    expect(
+      filterReaches(concentration, { kind: 'save', ability: 'con', purpose: 'concentration' }),
+    ).toBe(true);
+    expect(filterReaches(concentration, { kind: 'save', ability: 'con' })).toBe(false);
+    // A filter that names no purpose still reaches both, as Bless does.
+    expect(filterReaches(ATTACKS_AND_SAVES, { kind: 'save', purpose: 'death' })).toBe(true);
+    expect(
+      filterReaches(
+        { rolls: ['save'], abilities: ['con'] },
+        { kind: 'save', ability: 'con', purpose: 'concentration' },
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('rollEffects', () => {
@@ -148,6 +181,63 @@ describe('rollEffects', () => {
       ] as D20Test[]) {
         expect(rollEffects(under('advantage'), test).declare).toBeUndefined();
       }
+    });
+  });
+
+  describe('an advantage that holds only sometimes (`when`)', () => {
+    const brave: RollRider = {
+      kind: 'advantage',
+      mode: 'adv',
+      on: { rolls: ['save'] },
+      when: 'Only against being Frightened',
+      origin: 'Brave',
+    };
+    const tokens: RollRider = {
+      kind: 'advantage',
+      mode: 'adv',
+      on: { rolls: ['save'], save: 'death' },
+      when: 'Only while you have a soul trinket',
+      origin: 'Tokens of the Departed',
+    };
+
+    it('is offered to declare, not given, once a source', () => {
+      const effects = rollEffects(
+        { rollRiders: [brave, { ...brave }] },
+        { kind: 'save', ability: 'wis' },
+      );
+      expect(effects.advantage).toEqual([]);
+      expect(effects.declare).toEqual([
+        { source: 'Brave', mode: 'adv', when: 'Only against being Frightened' },
+      ]);
+    });
+
+    it('follows flanking in the prompt', () => {
+      const melee: D20Test = { kind: 'attack', attack: 'weapon', range: 'melee', ability: 'str' };
+      const grappler: RollRider = { ...brave, on: { rolls: ['attack'] }, origin: 'Grappler' };
+      const sheet = {
+        rollRiders: [grappler],
+        rules: { ...AS_WRITTEN['2014'], flanking: 'advantage' as const },
+      };
+      expect(rollEffects(sheet, melee).declare?.map((d) => d.source)).toEqual([
+        'Flanking',
+        'Grappler',
+      ]);
+    });
+
+    it('reaches a death save only when it names one', () => {
+      const death = rollEffects(
+        { rollRiders: [brave, tokens] },
+        { kind: 'save', purpose: 'death' },
+      );
+      expect(death.declare?.map((d) => d.source)).toEqual(['Tokens of the Departed']);
+      expect(rollEffects({ rollRiders: [brave] }, { kind: 'save' }).declare).toHaveLength(1);
+    });
+
+    it('declares no disadvantage', () => {
+      const curse: RollRider = { ...brave, mode: 'dis', origin: 'Curse' };
+      const effects = rollEffects({ rollRiders: [curse] }, { kind: 'save', ability: 'wis' });
+      expect(effects.declare).toBeUndefined();
+      expect(effects.disadvantage).toEqual([]);
     });
   });
 
