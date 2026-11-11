@@ -411,10 +411,19 @@ export function d20Ask(
       // sets it (Reliable Talent's 10), then a floor (Indomitable Might): never worse.
       const step = (r: { to?: number; floor?: number }) =>
         r.floor !== undefined ? 2 : r.to !== undefined ? 1 : 0;
-      const result = (riders?.rerolls ?? [])
+      const made = (riders?.rerolls ?? [])
         .filter((r) => r.auto === true || r.floor !== undefined)
-        .sort((a, b) => step(a) - step(b))
-        .reduce((r, how) => rerollD20(r, how) ?? r, roll(full, { label, advantage, kind: 'd20' }));
+        .sort((a, b) => step(a) - step(b));
+      const landed = made.reduce(
+        (r, how) => rerollD20(r, how) ?? r,
+        roll(full, { label, advantage, kind: 'd20' }),
+      );
+      // A set made as the d20 lands holds for a reroll after it too.
+      const holds = made.flatMap((r) =>
+        r.to === undefined ? [] : [{ source: r.source, to: r.to }],
+      );
+      const result: RollResult =
+        holds.length > 0 ? { ...landed, meta: { ...landed.meta, holds } } : landed;
       // A d20 test's expression is the d20 and flat modifiers, so every die after
       // the first is an effect's, in order.
       const from: Array<{ term: number; source: string }> = [];

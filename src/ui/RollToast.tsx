@@ -57,7 +57,7 @@ import { D20Icon } from './D20Icon';
 import { Lift } from './Lift';
 import { RollDetail } from './RollDetail';
 import { ROLL_MODES } from './rollModes';
-import { naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
+import { critWithoutNatural20, naturalOf, ROLL_INK, type RollTone, rollTone } from './rollTone';
 import { SegmentedControl } from './SegmentedControl';
 
 /**
@@ -120,7 +120,7 @@ export function rollAnnouncement(result: RollResult): string {
         ? ', natural 20'
         : nat === 1
           ? ', natural 1'
-          : critBelow20(result)
+          : critWithoutNatural20(result)
             ? ', critical hit'
             : result.meta?.critical === true
               ? ', critical'
@@ -145,12 +145,6 @@ export function rollAnnouncement(result: RollResult): string {
   const rolled = dice === '' ? '' : `. Rolled ${dice}${held}`;
   const cue = result.meta?.cue === undefined ? '' : `. ${result.meta.cue}`;
   return `${result.label ?? result.expr}${flag}: ${result.total}${rolled}${cue}`;
-}
-
-/** An attack that crit on less than a 20, inside a crit range a feature or effect lowered. */
-function critBelow20(result: RollResult): boolean {
-  const nat = naturalOf(result);
-  return nat !== undefined && nat !== 20 && result.meta?.attack?.crit === true;
 }
 
 /** "Bless", "Bless and Heroism", "Bless, Heroism and Enlarge". */
@@ -541,7 +535,7 @@ function RollResultToast({
         <span className="flex items-baseline gap-1.5">
           <span className="min-w-0 truncate text-body-strong">{current.label ?? current.expr}</span>
           {nat === 20 && flag('Natural 20!', 'text-heal')}
-          {critBelow20(current) && flag('Critical hit!', 'text-heal')}
+          {critWithoutNatural20(current) && flag('Critical hit!', 'text-heal')}
           {nat === 1 && flag('Natural 1', 'text-danger')}
           {/* Damage a crit doubled: why the dice show twice what the chip says. */}
           {current.meta?.critical === true && flag('Critical', 'text-danger')}
@@ -623,7 +617,11 @@ function RollResultToast({
     const o = rerolls[i];
     // A reroll made, or one that can change nothing, rolls no die.
     if (o === undefined || rerollable[i] !== true) return;
-    const base = rerollD20(visible, o);
+    // A free set the player claims for the roll holds for a reroll after it (Trance of Order).
+    const base = rerollD20(
+      visible,
+      o.to !== undefined && o.pay === undefined ? { ...o, hold: true } : o,
+    );
     if (base === undefined) return;
     if (o.pay !== undefined && rollOffersStore.getState().pay?.(o, true) !== true) return;
     const nextRerolled = [...rerolledWith];

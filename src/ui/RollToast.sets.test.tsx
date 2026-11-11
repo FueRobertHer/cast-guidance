@@ -9,6 +9,7 @@ import { followUpStore } from '@/stores/heldRoll';
 import { rollLogStore } from '@/stores/rollLog';
 import { rollOffersStore } from '@/stores/rollOffers';
 import { RollToast, rerollPrices, rollAnnouncement } from './RollToast';
+import { rollTone } from './rollTone';
 
 /** The faces the next dice show, in order (the roller draws from crypto). */
 function nextFaces(...faces: number[]) {
@@ -106,7 +107,7 @@ describe('a roll with a set on offer', () => {
     expect(total()).toContain('d20 [7, 10] set by Trance of Order + 2');
     const logged = rollLogStore.getState().rolls[0];
     expect(logged?.total).toBe(12);
-    expect(logged?.meta?.d20).toEqual({ natural: 10 });
+    expect(logged?.meta?.d20).toEqual({ natural: 10, set: true });
     expect(logged?.meta?.setBy).toEqual(['Trance of Order']);
     // Made, it stays as a chip that says so, and sets nothing again.
     const made = screen.getByRole('button', { name: 'Set to 10 with Trance of Order' });
@@ -147,6 +148,58 @@ describe('a roll with a set on offer', () => {
     expect(paying).toHaveBeenCalledWith(stroke, true);
     expect(rollLogStore.getState().rolls[0]?.meta?.attack?.crit).toBe(true);
     expect(screen.getByRole('button', { name: 'Roll 2d4' })).toBeTruthy();
+    // A crit, but no natural 20: the d20 was set, not rolled.
+    expect(screen.getByText('Critical hit!')).toBeTruthy();
+    expect(screen.queryByText('Natural 20!')).toBeNull();
+    expect(rollTone(rollLogStore.getState().rolls[0] as RollResult)).toBe('crit');
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    expect(spoken().at(-1)).toMatch(
+      /^Stroke of Luck: set to 20\. Dagger attack, critical hit: 22\./,
+    );
+  });
+
+  it('names no natural 20 for a check set to 20', () => {
+    rollOffersStore.setState({ pay: () => true });
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(save(6, [stroke])));
+    fireEvent.click(screen.getByRole('button', { name: /^Set the d20 to 20/ }));
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(22);
+    expect(screen.queryByText('Natural 20!')).toBeNull();
+    expect(screen.queryByText('Critical hit!')).toBeNull();
+    expect(rollTone(rollLogStore.getState().rolls[0] as RollResult)).toBe('d20');
+    act(() => vi.advanceTimersByTime(THROTTLE_MS));
+    expect(spoken().at(-1)).toMatch(/WIS save: 22\./);
+  });
+
+  it('sets a later reroll again for a free set made on the roll, never for a paid one', () => {
+    const indomitable: RerollOffer = { source: 'Indomitable', die: 'all', ifFailed: true };
+    rollOffersStore.setState({ pay: () => true });
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(save(6, [trance, indomitable])));
+    fireEvent.click(screen.getByRole('button', { name: /^Set the d20 to 10 with Trance/ }));
+    nextFaces(3);
+    fireEvent.click(screen.getByRole('button', { name: /^Reroll with Indomitable/ }));
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(12);
+    expect(total()).toContain('d20 [6, 10, 3, 10] Indomitable reroll set by Trance of Order + 2');
+  });
+
+  it('lets a paid set go with the die it set: a reroll after stands as rolled', () => {
+    const indomitable: RerollOffer = { source: 'Indomitable', die: 'all', ifFailed: true };
+    const adept: RerollOffer = {
+      source: 'Adept of the Red Robes',
+      die: 'all',
+      to: 10,
+      ifFailed: false,
+      pay: { spends: [], reaction: false, words: 'spends an Adept of the Red Robes use' },
+    };
+    rollOffersStore.setState({ pay: () => true });
+    render(<RollToast />);
+    act(() => rollLogStore.getState().append(save(6, [adept, indomitable])));
+    fireEvent.click(screen.getByRole('button', { name: /^Set the d20 to 10 with Adept/ }));
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(12);
+    nextFaces(3);
+    fireEvent.click(screen.getByRole('button', { name: /^Reroll with Indomitable/ }));
+    expect(rollLogStore.getState().rolls[0]?.total).toBe(5);
   });
 
   it('leaves the roll as it is when the set cannot be paid', () => {

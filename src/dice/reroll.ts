@@ -9,6 +9,11 @@ export interface RerollHow {
   bonus?: number;
   /** A set, not a reroll: the kept d20, when it shows less, counts as this. */
   to?: number;
+  /**
+   * A set that holds for every d20 the roll keeps after it, so a reroll later
+   * is set again (`meta.holds`): Trance of Order claimed for the roll.
+   */
+  hold?: boolean;
   /** A floor, not a reroll: the total counts as at least this (Indomitable Might). */
   floor?: number;
 }
@@ -31,14 +36,15 @@ export function withRaw(result: RollResult, raw: number): RollResult {
 
 /**
  * The roll with its kept d20 set to `to`, as `how` says: the die it replaces
- * is set aside, and the natural and an attack's crit follow the new number.
- * Undefined when it can change nothing: the die shows `to` or more.
+ * is set aside, and an attack's crit and a natural 1's miss follow the new
+ * number, which is marked set (`d20.set`), so no natural 20 or 1 is named for
+ * it. A set that holds (`hold`) joins `meta.holds`. Undefined when it can
+ * change nothing: the die shows `to` or more, or a floor holds the total above
+ * where the set would take it.
  */
-function setD20(
-  result: RollResult,
-  first: Extract<RollResult['terms'][number], { kind: 'dice' }>,
-  how: RerollHow & { to: number },
-): RollResult | undefined {
+function setD20(result: RollResult, how: RerollHow & { to: number }): RollResult | undefined {
+  const [first, ...rest] = result.terms;
+  if (first?.kind !== 'dice') return undefined;
   const rolls = first.rolls.map((r) => ({ ...r }));
   const was = rolls.find((r) => r.kept);
   if (was === undefined || was.v >= how.to) return undefined;
@@ -46,19 +52,26 @@ function setD20(
   was.out = true;
   rolls.push({ v: how.to, kept: true });
   const attack = result.meta?.attack;
-  const set: RollResult = {
-    ...result,
-    terms: [{ ...first, rolls }, ...result.terms.slice(1)],
-    meta: {
-      ...result.meta,
-      d20: { natural: how.to },
-      setBy: [...(result.meta?.setBy ?? []), how.source],
-      ...(attack !== undefined
-        ? { attack: { ...attack, crit: how.to >= (attack.critFrom ?? 20) } }
-        : {}),
+  const holds = result.meta?.holds ?? [];
+  const set = withRaw(
+    {
+      ...result,
+      terms: [{ ...first, rolls }, ...rest],
+      meta: {
+        ...result.meta,
+        d20: { natural: how.to, set: true },
+        setBy: [...(result.meta?.setBy ?? []), how.source],
+        ...(how.hold === true && !holds.some((h) => h.source === how.source)
+          ? { holds: [...holds, { source: how.source, to: how.to }] }
+          : {}),
+        ...(attack !== undefined
+          ? { attack: { ...attack, crit: how.to >= (attack.critFrom ?? 20) } }
+          : {}),
+      },
     },
-  };
-  return withRaw(set, rawTotal(result) - was.v + how.to);
+    rawTotal(result) - was.v + how.to,
+  );
+  return set.total === result.total ? undefined : set;
 }
 
 /** The roll with a total under `at` counting as `at`; undefined when it is `at` or more. */
@@ -77,7 +90,8 @@ function floorTotal(result: RollResult, at: number, source: string): RollResult 
  * again, and the total, the natural and an attack's crit follow it; a bonus
  * (2024 Indomitable) joins as a term named for its source. Undefined when it
  * can change nothing: no die shows low enough, or `low` with no advantage.
- * A set (`to`) or a floor (`floor`) changes the roll in place of a reroll.
+ * A set (`to`) or a floor (`floor`) changes the roll in place of a reroll, and
+ * the sets that hold (`meta.holds`: Reliable Talent) set the new d20 again.
  */
 export function rerollD20(
   result: RollResult,
@@ -87,7 +101,7 @@ export function rerollD20(
   const [first, ...rest] = result.terms;
   if (first?.kind !== 'dice' || first.sides !== 20) return undefined;
   if (how.floor !== undefined) return floorTotal(result, how.floor, how.source);
-  if (how.to !== undefined) return setD20(result, first, { ...how, to: how.to });
+  if (how.to !== undefined) return setD20(result, { ...how, to: how.to });
   const mode = result.meta?.advantage;
   const rolls = first.rolls.map((r) => ({ ...r }));
   const was = rolls.find((r) => r.kept);
@@ -130,12 +144,14 @@ export function rerollD20(
     terms.push({ kind: 'mod', value: bonus });
   }
   const attack = result.meta?.attack;
-  return withRaw(
+  // The new die was rolled, not set: a set names it again only if it holds.
+  const { setBy: _setBy, ...meta } = result.meta ?? {};
+  const rerolled = withRaw(
     {
       ...result,
       terms,
       meta: {
-        ...result.meta,
+        ...meta,
         d20: { natural: keep.v },
         rerolled: [...(result.meta?.rerolled ?? []), how.source],
         ...(from.length > 0 ? { from } : {}),
@@ -146,6 +162,7 @@ export function rerollD20(
     },
     rawTotal(result) - was.v + keep.v + Math.max(0, bonus),
   );
+  return (result.meta?.holds ?? []).reduce((r, h) => setD20(r, h) ?? r, rerolled);
 }
 
 /** Could this reroll change the roll as it stands: is there a die it rerolls? */

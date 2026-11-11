@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { rollDetail } from '@/dice/format';
+import { rerollD20 } from '@/dice/reroll';
 import type { RollResult } from '@/dice/types';
 import {
   type ActiveCondition,
@@ -834,7 +835,25 @@ describe('rollD20Test with effects in play', () => {
         'd20 [~1~, ~4~, 10] Luck reroll set by Reliable Talent + 3 = 13, set to 18 by Indomitable Might',
       );
       expect(r.total).toBe(18);
-      expect(r.meta?.d20).toEqual({ natural: 10 });
+      expect(r.meta?.d20).toEqual({ natural: 10, set: true });
+    });
+
+    it('keeps the sets made as the d20 lands, whether or not they set it, for a reroll after', () => {
+      nextFaces(15);
+      const r = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [luck, talent, might] }),
+      });
+      expect(r.total).toBe(18);
+      expect(r.meta?.holds).toEqual([{ source: 'Reliable Talent', to: 10 }]);
+      const again = rerollD20(r, { source: 'Magical Guidance' }, () => 2);
+      expect(again?.total).toBe(13);
+      nextFaces(15);
+      const none = rollD20Test('1d20+3', {
+        label: 'Stealth check',
+        riders: riders({ rerolls: [luck] }),
+      });
+      expect(none.meta?.holds).toBeUndefined();
     });
 
     it('holds a total up even on a floor the row did not mark auto', () => {
